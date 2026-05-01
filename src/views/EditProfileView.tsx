@@ -46,7 +46,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         {/* Name */}
         <div>
           <div className="flex items-center gap-1.5 mb-2">
-            <h3 className="font-bold text-base">Nombre de usuario</h3>
+            <h3 className="font-bold text-base">Nombre</h3>
             <HelpCircle className="w-4 h-4 text-slate-500" />
           </div>
           <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
