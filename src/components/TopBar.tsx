@@ -15,10 +15,6 @@ export function TopBar({ className }: { className?: string }) {
       </div>
       
       <div className="flex items-center gap-3">
-        <button className="hidden sm:block px-4 py-1.5 rounded-full border border-white/10 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
-          Plataforma API
-        </button>
-        
         <button className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 transition-colors relative">
            <Bell className="w-4 h-4" />
            <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" />

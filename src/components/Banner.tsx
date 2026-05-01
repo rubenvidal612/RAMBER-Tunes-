@@ -15,9 +15,9 @@ export function Banner() {
             </div>
             
             <div className="flex items-center gap-4">
-              <span className="font-bold text-xl drop-shadow-md">Paquete de créditos para videos musicales</span>
-              <div className="bg-yellow-400 text-black text-xs font-black px-2 py-1 rotate-[-10deg] shadow-lg border border-yellow-500">
-                50%<br/>OFF
+              <span className="font-bold text-xl drop-shadow-md">Crea Maquetas con IA</span>
+              <div className="bg-yellow-400 text-black text-xs font-black px-2 py-1 rotate-[-10deg] shadow-lg border border-yellow-500 whitespace-nowrap text-center leading-tight">
+                5 Canciones<br/>GRATIS
               </div>
             </div>
         </div>
