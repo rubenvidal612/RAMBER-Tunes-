@@ -4,8 +4,12 @@ import { BottomNav } from './components/BottomNav';
 import { MiniPlayer } from './components/MiniPlayer';
 import { CreateView } from './views/CreateView';
 import { LibraryView } from './views/LibraryView';
+import { ProfileView } from './views/ProfileView';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
+
+import { Banner } from './components/Banner';
+import { Sidebar } from './components/Sidebar';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<ViewTab>('inicio');
@@ -75,15 +79,36 @@ export default function App() {
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden">
       <TopBar className="flex-shrink-0" />
+      <Banner />
       
-      <main className="flex-1 overflow-hidden flex flex-col relative w-full h-full pb-[76px]">
-        {currentTab === 'inicio' && <CreateView onSongCreated={addCancion} />}
-        {currentTab === 'biblioteca' && <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
-        
-        {/* Placeholders */}
-        {currentTab === 'mv' && <div className="flex-1 flex items-center justify-center text-slate-500">Music Videos (Próximamente)</div>}
-        {currentTab === 'studio' && <div className="flex-1 flex items-center justify-center text-slate-500">Studio (Próximamente)</div>}
-        {currentTab === 'perfil' && <div className="flex-1 flex items-center justify-center text-slate-500">Perfil (Próximamente)</div>}
+      <main className="flex-1 overflow-hidden flex w-full h-full relative">
+        {/* Mobile View Switching */}
+        <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
+           {currentTab === 'inicio' && <CreateView onSongCreated={addCancion} />}
+           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+           {currentTab === 'perfil' && <ProfileView />}
+           
+           {/* Placeholders */}
+           {currentTab === 'mv' && <div className="flex-1 flex items-center justify-center text-slate-500">Music Videos (Próximamente)</div>}
+           {currentTab === 'studio' && <div className="flex-1 flex items-center justify-center text-slate-500">Studio (Próximamente)</div>}
+        </div>
+        {/* Desktop 3-column layout */}
+        <div className="hidden md:flex flex-1 overflow-hidden">
+           {/* Sidebar */}
+           <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/5 bg-black flex flex-col">
+             <Sidebar currentTab={currentTab} onChange={setCurrentTab} />
+           </div>
+
+           {/* Create View (Middle) */}
+           <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
+             <CreateView onSongCreated={addCancion} />
+           </div>
+
+           {/* Library / Results View (Right) */}
+           <div className="flex-1 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
+             {currentTab === 'perfil' ? <ProfileView /> : <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+           </div>
+        </div>
       </main>
 
       <MiniPlayer 
@@ -92,7 +117,9 @@ export default function App() {
         onPlayPause={togglePlay}
         onClose={() => setActiveSong(null)}
       />
-      <BottomNav currentTab={currentTab} onChange={setCurrentTab} />
+      <div className="md:hidden">
+        <BottomNav currentTab={currentTab} onChange={setCurrentTab} />
+      </div>
       
       <audio 
         ref={audioRef} 

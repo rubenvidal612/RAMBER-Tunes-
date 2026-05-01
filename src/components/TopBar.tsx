@@ -1,37 +1,36 @@
-import { Menu } from 'lucide-react';
+import { Menu, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function TopBar({ className }: { className?: string }) {
   return (
-    <header className={cn('flex items-center justify-between px-4 py-3 glass-panel border-x-0 border-t-0 border-white/10 z-10', className)}>
-      <button className="p-2 -ml-2 text-white">
-        <Menu className="w-6 h-6" />
-      </button>
+    <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/50 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
-        <span className="text-xl font-bold tracking-tight text-white flex items-center gap-1">
-          <svg
-            viewBox="0 0 24 24"
-            width="24"
-            height="24"
-            stroke="currentColor"
-            strokeWidth="2"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-primary w-6 h-6"
-          >
-            <path d="M9 18V5l12-2v13"></path>
-            <circle cx="6" cy="18" r="3"></circle>
-            <circle cx="18" cy="16" r="3"></circle>
-          </svg>
-          <span className="text-base font-bold gradient-text">Maquetas</span>
+        <span className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+          {/* Logo mock replacing SVG */}
+          <div className="w-8 h-8 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center font-serif italic text-lg shadow-[0_0_15px_rgba(74,222,128,0.2)]">
+            R
+          </div>
+          <span className="text-base font-bold text-slate-100">RAMBER Tunes</span>
         </span>
       </div>
-      <div className="flex items-center gap-1.5 glass-card rounded-full px-3 py-1.5">
-        <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center">
-          <span className="text-black text-[10px] font-bold">♪</span>
-        </div>
-        <span className="text-sm font-semibold text-white">5100</span>
+      
+      <div className="flex items-center gap-3">
+        <button className="hidden sm:block px-4 py-1.5 rounded-full border border-white/10 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          Plataforma API
+        </button>
+        
+        <button className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 transition-colors relative">
+           <Bell className="w-4 h-4" />
+           <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" />
+        </button>
+        
+        <button className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-sm shadow-inner overflow-hidden">
+          R
+        </button>
+
+        <button className="p-2 -mr-2 text-slate-300 hover:text-white transition-colors">
+          <Menu className="w-6 h-6" />
+        </button>
       </div>
     </header>
   );
