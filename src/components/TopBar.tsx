@@ -1,7 +1,12 @@
 import { Menu, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export function TopBar({ className }: { className?: string }) {
+interface TopBarProps {
+  className?: string;
+  onMenuClick?: () => void;
+}
+
+export function TopBar({ className, onMenuClick }: TopBarProps) {
   return (
     <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/50 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
@@ -24,7 +29,7 @@ export function TopBar({ className }: { className?: string }) {
           R
         </button>
 
-        <button className="p-2 -mr-2 text-slate-300 hover:text-white transition-colors">
+        <button onClick={onMenuClick} className="p-2 -mr-2 text-slate-300 hover:text-white transition-colors">
           <Menu className="w-6 h-6" />
         </button>
       </div>

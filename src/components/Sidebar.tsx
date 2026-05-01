@@ -16,10 +16,16 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
         <div>
           <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Explorar</div>
           <button 
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            onClick={() => onChange('inicio')}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+              currentTab === 'inicio'
+                ? "bg-indigo-500/20 text-indigo-400 font-bold"
+                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
+            )}
           >
             <Home className="w-5 h-5" />
-            <span className="text-sm font-medium">Destacados</span>
+            <span className="text-sm">Destacados</span>
           </button>
         </div>
 
@@ -27,10 +33,10 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
         <div>
           <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Crear</div>
           <button 
-            onClick={() => onChange('inicio')}
+            onClick={() => onChange('studio')}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'inicio' || currentTab === 'biblioteca' 
+              currentTab === 'studio' || currentTab === 'biblioteca' 
                 ? "bg-indigo-500/20 text-indigo-400 font-bold" 
                 : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
             )}

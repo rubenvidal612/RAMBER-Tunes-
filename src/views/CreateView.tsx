@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Type, Dices, RefreshCw, Plus, Settings2, Trash2, ListMusic, Music, Maximize2, Upload } from 'lucide-react';
+import { Type, Dices, RefreshCw, Plus, Settings2, Trash2, ListMusic, Music, Maximize2, Upload, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { GoogleGenAI } from "@google/genai";
@@ -64,9 +64,6 @@ export function CreateView({ onSongCreated }: CreateViewProps) {
           >
             Personalizado
           </button>
-          <button className="px-5 py-1.5 rounded-full text-sm font-semibold text-slate-300 hover:text-white transition-colors">
-            Sonidos
-          </button>
         </div>
         
         <div className="border border-white/20 hover:border-white/40 block rounded-full px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors">
@@ -110,11 +107,8 @@ export function CreateView({ onSongCreated }: CreateViewProps) {
           ) : (
             <Music className="w-5 h-5" strokeWidth={2} />
           )}
-          <span>Crear canción</span>
+          <span>Crear</span>
         </button>
-        <p className="text-[10px] text-center text-slate-500 font-medium leading-tight">
-          Usa la IA de forma responsable y asegúrate de tener los derechos sobre tu contenido.
-        </p>
       </div>
     </div>
   );
@@ -188,59 +182,100 @@ function CustomForm({ instrumental, setInstrumental, lyrics, setLyrics, gender, 
 
   return (
     <>
-      <div className="flex gap-4">
-        <label className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner">
-          <Plus className="w-5 h-5 text-slate-400" /> 
-          {audioFile ? audioFile.name.substring(0, 10) + '...' : 'Audio'}
-          <input 
-            type="file" 
-            accept="audio/*" 
-            className="absolute inset-0 opacity-0 cursor-pointer" 
-            onChange={(e) => {
-              if (e.target.files && e.target.files.length > 0) {
-                setAudioFile(e.target.files[0]);
-              }
-            }}
-          />
-        </label>
-        <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner">
-          <Plus className="w-5 h-5 text-slate-400" /> Vibe
-        </button>
-      </div>
-
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 flex flex-col mt-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
         <div className="flex items-center justify-between mb-4">
           <label className="font-bold text-white text-base">Letras</label>
           <div className="flex items-center gap-3">
-            <button 
-              onClick={handleGenerateLyrics}
-              disabled={isGeneratingLyrics}
-              className="flex items-center gap-2 text-green-400 hover:text-green-300 font-semibold text-sm transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={cn("w-4 h-4", isGeneratingLyrics && "animate-spin")} />
-              Escribir letras
-            </button>
             <button className="text-slate-400 hover:text-white transition-colors">
               <ListMusic className="w-5 h-5" />
             </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-300">Instrumental</span>
+              <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+            </div>
           </div>
         </div>
         
-        <div className="relative">
+        <div className="relative flex flex-col">
           <textarea
             value={lyrics}
             onChange={(e) => setLyrics(e.target.value)}
-            placeholder="Escribe la letra o genérala con IA — déjalo en blanco para instrumental"
-            className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[140px] text-white"
+            placeholder="Agrega tu propia letra o ingresa un tema para generar"
+            className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
           />
-          <button className="absolute bottom-0 right-0 text-slate-600 hover:text-slate-400">
-             <Settings2 className="w-4 h-4" />
+          <button className="absolute top-0 right-0 text-slate-400 hover:text-white">
+             <Maximize2 className="w-4 h-4" />
+          </button>
+          
+          <div className="flex justify-end mt-2">
+            <button 
+              onClick={handleGenerateLyrics}
+              disabled={isGeneratingLyrics}
+              className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {isGeneratingLyrics && <RefreshCw className="w-4 h-4 animate-spin" />}
+              Generar letra
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Instrucciones (Estilos) */}
+      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
+        <label className="font-bold text-white text-base mb-4 block">Instrucciones</label>
+        <textarea
+          placeholder="Describe el estilo, el ambiente o los instrumentos de tu música"
+          className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[80px] text-white"
+        />
+        
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar mt-4">
+          <button className="flex-shrink-0 bg-white/5 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 border border-white/5">
+            <List className="w-4 h-4" />
+          </button>
+          <button className="flex-shrink-0 bg-white/5 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 border border-white/5">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <span className="flex-shrink-0 bg-white/5 text-slate-300 px-4 py-2 rounded-full text-sm font-medium border border-white/5 truncate max-w-[200px]">
+            raspy female vocals
+          </span>
+          <span className="flex-shrink-0 bg-white/5 text-slate-300 px-4 py-2 rounded-full text-sm font-medium border border-white/5 truncate max-w-[200px]">
+            modern danceh...
+          </span>
+        </div>
+      </div>
+
+      {/* Género */}
+      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4 flex items-center justify-between">
+        <label className="font-bold text-white text-base">Género</label>
+        <div className="flex gap-4">
+          <button 
+            onClick={() => setGender('Masculino')}
+            className={cn("text-sm font-semibold transition-colors", gender === 'Masculino' ? "text-slate-200" : "text-slate-500")}
+          >
+            Masculino
+          </button>
+          <button 
+            onClick={() => setGender('Femenino')}
+            className={cn("text-sm font-semibold transition-colors", gender === 'Femenino' ? "text-slate-200" : "text-slate-500")}
+          >
+            Femenino
           </button>
         </div>
       </div>
 
-      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
-        <label className="font-bold text-white text-base mb-1 block">Estilo de música</label>
+      {/* Título de la canción */}
+      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4 mb-4">
+        <label className="font-bold text-white text-base mb-4 block">Título de la canción <span className="text-slate-500 font-normal">(Opcional)</span></label>
+        <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
+          <input 
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value.substring(0, 80))}
+            placeholder="Introduce el título de tu canción"
+            className="bg-transparent text-white placeholder:text-slate-500 outline-none flex-1 text-[15px]"
+          />
+          <span className="text-slate-500 text-sm">{title.length}/80</span>
+        </div>
       </div>
     </>
   );
