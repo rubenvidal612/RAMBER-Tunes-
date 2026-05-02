@@ -161,7 +161,7 @@ async function handleGenerate(req: any, res: any) {
 
     const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
     if (personaId) {
-      if (model !== "V5_5") return send(res, 400, { error: "personaId solo se permite con el modelo V5.5." });
+      if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
       body.personaId = personaId.slice(0, 200);
     }
 
@@ -799,4 +799,3 @@ export default async function handler(req: any, res: any) {
 
   return send(res, 404, { error: "Ruta no encontrada", action: a || null });
 }
-

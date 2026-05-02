@@ -19,6 +19,11 @@ body {
   background-attachment: fixed;
   color: #f1f5f9;
   font-family: var(--font-sans);
+  overscroll-behavior-y: none;
+}
+
+html {
+  overscroll-behavior-y: none;
 }
 
 .glass-panel {

@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
     const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : ""; 
     if (personaId) { 
-      if (model !== "V5_5") return json({ error: "personaId solo se permite con el modelo V5.5." }, 400); 
+      if (!(model === "V5" || model === "V5_5")) return json({ error: "personaId solo se permite con modelos V5/V5.5." }, 400); 
       body.personaId = personaId.slice(0, 200); 
     } 
 

@@ -10,11 +10,12 @@ interface LibraryViewProps {
   onAddVibe: (v: VibeItem) => void;
   onPlaySong: (s: SongItem) => void;
   onDeleteSong?: (id: string) => void;
+  onOpenPersonaPicker?: () => void;
   activeSongId?: string;
   isPlaying?: boolean;
 }
 
-export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteSong, activeSongId, isPlaying }: LibraryViewProps) {
+export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteSong, onOpenPersonaPicker, activeSongId, isPlaying }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -217,9 +218,9 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteS
           song={menuSong}
           onClose={() => setMenuSong(null)}
           onPlay={() => onPlaySong(menuSong)}
-          onCreateVibe={() => {
+          onUsePersona={() => {
             setMenuSong(null);
-            setIsCreateVibeOpen(true);
+            onOpenPersonaPicker?.();
           }}
           onDelete={() => {
             const id = menuSong.id;
@@ -236,13 +237,13 @@ function SongOptionsSheet({
   song,
   onClose,
   onPlay,
-  onCreateVibe,
+  onUsePersona,
   onDelete,
 }: {
   song: SongItem;
   onClose: () => void;
   onPlay: () => void;
-  onCreateVibe: () => void;
+  onUsePersona: () => void;
   onDelete: () => void;
 }) {
   const [isBusy, setIsBusy] = useState(false);
@@ -350,9 +351,9 @@ function SongOptionsSheet({
 
         <div className="px-5 pb-5">
           <div className="glass-card rounded-2xl overflow-hidden">
-            <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={() => alert('Versión: Próximamente')}>
+            <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={() => alert('Cover: Próximamente')}>
               <div className="flex items-center gap-3 text-slate-200 font-semibold">
-                <AudioLines className="w-5 h-5 text-slate-300" /> Versión
+                <AudioLines className="w-5 h-5 text-slate-300" /> Cover
               </div>
               <div className="text-slate-400 text-sm">V3.0</div>
             </button>
@@ -370,8 +371,8 @@ function SongOptionsSheet({
               <Music2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Samplear esta canción</span>
               <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">NUEVO</span>
             </button>
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={onCreateVibe}>
-              <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Crear Vibe</span>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={onUsePersona}>
+              <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Persona (Usar Voz)</span>
             </button>
           </div>
 
