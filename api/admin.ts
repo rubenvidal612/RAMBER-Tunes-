@@ -97,24 +97,47 @@ async function handleTransfer(req: any, res: any) {
   if (!toEmail) return send(res, 400, { error: "Falta email" });
   if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
 
-  const { data: target, error: findErr } = await auth.admin
-    .from("profiles")
-    .select("id, email")
-    .ilike("email", toEmail)
-    .limit(2);
+  let userId = "";
 
-  if (findErr) {
-    return send(res, 500, { error: "No pude buscar el usuario", detail: findErr.message });
-  }
-  if (!Array.isArray(target) || target.length === 0) {
-    return send(res, 404, { error: "No encontré ese correo. Ese usuario debe iniciar sesión al menos una vez para quedar registrado." });
-  }
-  if (target.length > 1) {
-    return send(res, 409, { error: "Hay más de un usuario con ese correo. Revisa tu Supabase." });
+  try {
+    const { data: target, error: findErr } = await auth.admin
+      .from("profiles")
+      .select("id, email")
+      .ilike("email", toEmail)
+      .limit(2);
+
+    if (findErr) throw new Error(findErr.message);
+    if (Array.isArray(target) && target.length === 1) {
+      userId = String(target[0].id || "");
+    } else if (Array.isArray(target) && target.length > 1) {
+      return send(res, 409, { error: "Hay más de un usuario con ese correo. Revisa tu Supabase." });
+    }
+  } catch {
+    userId = "";
   }
 
-  const userId = String(target[0].id || "");
-  if (!userId) return send(res, 500, { error: "Usuario inválido" });
+  if (!userId) {
+    try {
+      for (let page = 1; page <= 10 && !userId; page++) {
+        const { data, error } = await (auth.admin as any).auth.admin.listUsers({ page, perPage: 200 });
+        if (error) break;
+        const users = Array.isArray(data?.users) ? data.users : [];
+        const u = users.find((x: any) => typeof x?.email === "string" && x.email.toLowerCase() === toEmail);
+        if (u?.id) userId = String(u.id);
+        if (users.length < 200) break;
+      }
+    } catch {
+      userId = "";
+    }
+  }
+
+  if (!userId) {
+    return send(res, 404, {
+      error: "No encontré ese correo. Ese usuario debe iniciar sesión/registrarse primero para existir en Supabase Auth.",
+    });
+  }
+
+  await auth.admin.from("profiles").upsert({ id: userId }, { onConflict: "id" });
 
   const upd = await adjustUserCredits(auth.admin, userId, credits);
   if (!upd.ok) return send(res, 500, { error: upd.error || "No pude enviar créditos" });
@@ -147,4 +170,3 @@ export default async function handler(req: any, res: any) {
 
   return send(res, 404, { error: "Ruta no encontrada", action: a || null });
 }
-
