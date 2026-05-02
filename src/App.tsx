@@ -103,6 +103,18 @@ export default function App() {
     }
   };
 
+  const deleteCancion = async (songId: string) => {
+    const updatedCanciones = canciones.filter((c) => c.id !== songId);
+    setCanciones(updatedCanciones);
+    await store.saveData({ canciones: updatedCanciones, vibes });
+    await store.deleteAudio(songId).catch(() => {});
+    if (activeSong?.id === songId) {
+      setActiveSong(null);
+      setIsPlaying(false);
+      if (audioRef.current) audioRef.current.src = '';
+    }
+  };
+
   const playSong = async (song: SongItem) => {
     if (activeSong?.id === song.id) {
       togglePlay();
@@ -179,7 +191,7 @@ export default function App() {
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={credits} />}
-           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
            {/* Placeholders */}
@@ -205,7 +217,7 @@ export default function App() {
 
                {/* Library / Results View (Right) */}
                <div className="flex-1 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
-                 {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+                {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
                </div>
              </>
            )}
@@ -217,6 +229,7 @@ export default function App() {
         isPlaying={isPlaying} 
         onPlayPause={togglePlay}
         onClose={() => setActiveSong(null)}
+        placement={currentTab === 'studio' ? 'aboveCreate' : 'default'}
       />
       <div className="md:hidden">
         <BottomNav currentTab={currentTab} onChange={setCurrentTab} />

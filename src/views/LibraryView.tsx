@@ -1,21 +1,24 @@
 import { useState } from 'react';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, Music, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2 } from 'lucide-react';
+import { getAccessToken } from '@/lib/supabaseBrowser';
 
 interface LibraryViewProps {
   canciones: SongItem[];
   vibes: VibeItem[];
   onAddVibe: (v: VibeItem) => void;
   onPlaySong: (s: SongItem) => void;
+  onDeleteSong?: (id: string) => void;
   activeSongId?: string;
   isPlaying?: boolean;
 }
 
-export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, activeSongId, isPlaying }: LibraryViewProps) {
+export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteSong, activeSongId, isPlaying }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
+  const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   
   const tabs: {id: LibraryTab, label: string}[] = [
     { id: 'canciones', label: 'Canciones' },
@@ -169,7 +172,11 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, activeSon
                   </div>
                   
                   {/* Options Menu */}
-                  <button className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors shrink-0">
+                  <button
+                    onClick={() => setMenuSong(song)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors shrink-0"
+                    aria-label="Opciones"
+                  >
                     <MoreVertical className="w-4 h-4 text-slate-400" />
                   </button>
                 </div>
@@ -204,6 +211,209 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, activeSon
       {isCreateListOpen && (
         <CreateListModal onClose={() => setIsCreateListOpen(false)} />
       )}
+
+      {menuSong && (
+        <SongOptionsSheet
+          song={menuSong}
+          onClose={() => setMenuSong(null)}
+          onPlay={() => onPlaySong(menuSong)}
+          onCreateVibe={() => {
+            setMenuSong(null);
+            setIsCreateVibeOpen(true);
+          }}
+          onDelete={() => {
+            const id = menuSong.id;
+            setMenuSong(null);
+            onDeleteSong?.(id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SongOptionsSheet({
+  song,
+  onClose,
+  onPlay,
+  onCreateVibe,
+  onDelete,
+}: {
+  song: SongItem;
+  onClose: () => void;
+  onPlay: () => void;
+  onCreateVibe: () => void;
+  onDelete: () => void;
+}) {
+  const [isBusy, setIsBusy] = useState(false);
+  const [published, setPublished] = useState(false);
+
+  const share = async () => {
+    const url = (song.audioUrl || '').toString();
+    const title = (song.title || 'Canción').toString();
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text: title, url: url || undefined });
+        return;
+      }
+    } catch {
+    }
+    if (url) {
+      try {
+        await navigator.clipboard.writeText(url);
+        alert('Copiado al portapapeles.');
+      } catch {
+        alert(url);
+      }
+      return;
+    }
+    alert('No hay link para compartir.');
+  };
+
+  const download = async () => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Tu plan no incluye descargas.');
+        return;
+      }
+
+      const url = (song.audioUrl || '').toString();
+      if (!url) {
+        alert('No hay audio para descargar.');
+        return;
+      }
+      window.open(url, '_blank');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-end md:items-center justify-center bg-black/60">
+      <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
+      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+        <div className="flex justify-center py-3">
+          <div className="w-12 h-1 bg-white/20 rounded-full" />
+        </div>
+
+        <div className="px-5 pb-4">
+          <div className="flex items-start gap-4">
+            <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+              <img src={`https://picsum.photos/seed/${song.id}/200/200`} alt="Cover" className="w-full h-full object-cover" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
+              <div className="text-slate-400 text-sm truncate">Ruben</div>
+            </div>
+            <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="px-5 pb-4">
+          <div className="grid grid-cols-3 gap-3">
+            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
+              <div className="flex items-center gap-3">
+                <AppWindow className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-200 font-semibold text-sm">Agregar a apps</div>
+              </div>
+            </button>
+            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
+              <div className="flex items-center gap-3">
+                <ThumbsUp className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-200 font-semibold text-sm">Me gusta</div>
+              </div>
+            </button>
+            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
+              <div className="flex items-center gap-3">
+                <MessageCircle className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-200 font-semibold text-sm">Comentar</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="px-5 pb-5">
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={() => alert('Versión: Próximamente')}>
+              <div className="flex items-center gap-3 text-slate-200 font-semibold">
+                <AudioLines className="w-5 h-5 text-slate-300" /> Versión
+              </div>
+              <div className="text-slate-400 text-sm">V3.0</div>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Extender: Próximamente')}>
+              <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Extender</span>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reutilizar: Próximamente')}>
+              <Repeat2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reutilizar</span>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Próximamente')}>
+              <Sparkle className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Usar como inspiración</span>
+              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">NUEVO</span>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Próximamente')}>
+              <Music2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Samplear esta canción</span>
+              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">NUEVO</span>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={onCreateVibe}>
+              <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Crear Vibe</span>
+            </button>
+          </div>
+
+          <div className="glass-card rounded-2xl overflow-hidden mt-4">
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
+              <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={download} disabled={isBusy}>
+              <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
+            </button>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
+              <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
+            </button>
+            <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => setPublished(!published)} disabled={isBusy}>
+              <div className="flex items-center gap-3">
+                <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Publicar</span>
+              </div>
+              <div className={cn("w-12 h-7 rounded-full p-1 transition-colors", published ? "bg-emerald-500" : "bg-white/10")}>
+                <div className={cn("w-5 h-5 rounded-full bg-white transition-transform", published ? "translate-x-5" : "translate-x-0")} />
+              </div>
+            </button>
+          </div>
+
+          <button
+            className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"
+            onClick={() => {
+              if (confirm('¿Eliminar esta canción?')) onDelete();
+            }}
+            disabled={isBusy}
+          >
+            <Trash2 className="w-5 h-5" /> <span className="font-extrabold">Eliminar</span>
+          </button>
+
+          <button
+            className="w-full mt-3 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+            onClick={onPlay}
+            disabled={isBusy}
+          >
+            Reproducir
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

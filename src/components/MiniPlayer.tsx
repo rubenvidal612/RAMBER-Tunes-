@@ -6,13 +6,18 @@ interface MiniPlayerProps {
   isPlaying: boolean;
   onPlayPause: () => void;
   onClose: () => void;
+  placement?: 'default' | 'aboveCreate';
 }
 
-export function MiniPlayer({ song, isPlaying, onPlayPause, onClose }: MiniPlayerProps) {
+export function MiniPlayer({ song, isPlaying, onPlayPause, onClose, placement = 'default' }: MiniPlayerProps) {
   if (!song) return null;
 
+  const bottomClass = placement === 'aboveCreate' ? 'bottom-[168px]' : 'bottom-[76px]';
+
   return (
-    <div className="fixed bottom-[72px] left-2 right-2 glass-panel rounded-2xl p-3 flex items-center justify-between shadow-2xl shadow-indigo-900/20 z-40 animate-in slide-in-from-bottom-5">
+    <div
+      className={`fixed ${bottomClass} md:bottom-4 left-2 right-2 glass-panel rounded-2xl p-3 flex items-center justify-between shadow-2xl shadow-indigo-900/20 z-40 animate-in slide-in-from-bottom-5`}
+    >
       <div className="flex items-center gap-3 flex-1 overflow-hidden">
         <div className="w-10 h-10 bg-white/10 rounded-md flex items-center justify-center flex-shrink-0 relative overflow-hidden">
            {/* Simple gradient or cover art */}

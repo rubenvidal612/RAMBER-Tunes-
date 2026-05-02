@@ -171,7 +171,7 @@ export function CreateView({ onSongCreated, credits }: CreateViewProps) {
         </div>
       </div>
 
-      <div className="px-4 space-y-4 pb-32">
+      <div className="px-4 space-y-4 pb-[220px] md:pb-32">
         {mode === 'simple' ? (
           <SimpleForm instrumental={instrumental} setInstrumental={setInstrumental} description={description} setDescription={setDescription} />
         ) : (
@@ -193,7 +193,7 @@ export function CreateView({ onSongCreated, credits }: CreateViewProps) {
       </div>
 
       {/* Action Buttons & Sticky Create */}
-      <div className="sticky bottom-0 mt-auto left-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-20">
+      <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
         <button 
           onClick={handleCreate}
           disabled={isGenerating}

@@ -1,4 +1,4 @@
-import { get, set } from 'idb-keyval';
+import { del, get, set } from 'idb-keyval';
 import { type VibeItem, type SongItem } from '../types';
 
 interface AppData {
@@ -29,5 +29,8 @@ export const store = {
   },
   getAudio: async (id: string): Promise<Blob | undefined> => {
     return await get(`audio-${id}`);
-  }
+  },
+  deleteAudio: async (id: string) => {
+    await del(`audio-${id}`);
+  },
 };
