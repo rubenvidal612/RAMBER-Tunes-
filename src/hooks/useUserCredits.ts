@@ -1,16 +1,25 @@
 import { useState, useEffect } from 'react';
 import { creditsFromProfile } from '@/lib/credits';
+import { supabaseBrowser, ensureAnonSession } from '@/lib/supabaseBrowser';
 
 // Hook personalizado para manejar los créditos del usuario
 export function useUserCredits() {
-  const [credits, setCredits] = useState(5100); // Valor por defecto temporal
+  const [credits, setCredits] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // Función para cargar créditos del perfil (cuando tengamos backend)
-  const loadCredits = async (profile: any) => {
-    if (profile) {
-      const userCredits = creditsFromProfile(profile);
-      setCredits(userCredits);
+  const refreshCredits = async () => {
+    if (!supabaseBrowser) return;
+    setLoading(true);
+    try {
+      const s = await ensureAnonSession();
+      if (!s.ok) return;
+      const { data } = await supabaseBrowser.auth.getUser();
+      const user = data?.user;
+      if (!user) return;
+      const { data: profile } = await supabaseBrowser.from('profiles').select('id, song_balance, ramber_credits').eq('id', user.id).maybeSingle();
+      if (profile) setCredits(creditsFromProfile(profile));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -28,10 +37,14 @@ export function useUserCredits() {
     setCredits(prev => prev + amount);
   };
 
+  useEffect(() => {
+    refreshCredits().catch(() => {});
+  }, []);
+
   return {
     credits,
     loading,
-    loadCredits,
+    refreshCredits,
     consumeCredits,
     addCredits
   };

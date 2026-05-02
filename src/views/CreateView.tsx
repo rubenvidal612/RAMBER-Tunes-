@@ -3,6 +3,7 @@ import { Type, Dices, RefreshCw, Plus, Settings2, Trash2, ListMusic, Music, Maxi
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { GoogleGenAI } from "@google/genai";
+import { getAccessToken } from '@/lib/supabaseBrowser';
 
 interface CreateViewProps {
   onSongCreated?: (song: SongItem, audioBlob?: Blob) => void;
@@ -13,6 +14,7 @@ export function CreateView({ onSongCreated, credits }: CreateViewProps) {
   const [mode, setMode] = useState<CreateMode>('simple');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
+  const [style, setStyle] = useState('');
   
   const [title, setTitle] = useState('');
   const [lyrics, setLyrics] = useState('');
@@ -21,25 +23,112 @@ export function CreateView({ onSongCreated, credits }: CreateViewProps) {
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (!onSongCreated) return;
+
+    const prompt = (mode === 'simple' ? description : (lyrics || description)).trim();
+    if (!prompt) {
+      alert('Escribe una descripción o letra para crear la canción.');
+      return;
+    }
+
     setIsGenerating(true);
-    // Simulate generation process, then save to library
-    setTimeout(() => {
-      setIsGenerating(false);
-      if (onSongCreated) {
-        const newSong: SongItem = {
-          id: Math.random().toString(36).substring(2, 9),
-          title: title || (mode === 'simple' ? 'Nueva Maqueta (Simple)' : 'Nueva Maqueta (Personalizada)'),
-          description: description,
-          lyrics: lyrics,
-          genre: gender,
-        };
-        onSongCreated(newSong, audioFile || undefined);
-        alert('Canción creada y guardada en Biblioteca.');
-        setAudioFile(null);
-        setTitle('');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
       }
-    }, 1500);
+
+      const wantsCustomMode = mode === 'personalizado' && (style.trim() || title.trim());
+      const payload: any = {
+        prompt,
+        instrumental,
+        customMode: wantsCustomMode,
+      };
+      if (wantsCustomMode) {
+        payload.style = (style || 'General').trim();
+        payload.title = (title || 'Nueva Canción').trim();
+      }
+
+      const r = await fetch('/api/suno/generate', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No se pudo crear la canción.');
+        return;
+      }
+
+      const taskId = typeof out?.taskId === 'string' ? out.taskId : '';
+      if (!taskId) {
+        alert('No recibí taskId del servidor.');
+        return;
+      }
+
+      let lastStatus = '';
+      for (let i = 0; i < 60; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const s = await fetch(`/api/suno/task?taskId=${encodeURIComponent(taskId)}&kind=generate`, {
+          headers: {
+            authorization: `Bearer ${t.token}`,
+          },
+        });
+        const st = await s.json().catch(() => ({}));
+        const data = st?.data || st?.data?.data || st?.data;
+        const status = String(data?.status || data?.successFlag || '').toUpperCase();
+        lastStatus = status || lastStatus;
+
+        if (status === 'SUCCESS') {
+          const list =
+            (Array.isArray(data?.response?.data) && data.response.data) ||
+            (Array.isArray(data?.response?.sunoData) && data.response.sunoData) ||
+            [];
+          const track = list[0] || null;
+          const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
+          const audioId = (track?.id || '').toString();
+          const tTitle = (track?.title || title || 'Nueva Canción').toString();
+          if (!audioUrl) {
+            alert('La canción se generó, pero no recibí el audio.');
+            return;
+          }
+
+          onSongCreated({
+            id: audioId || taskId,
+            title: tTitle,
+            description: mode === 'simple' ? description : style,
+            lyrics: mode === 'personalizado' ? lyrics : undefined,
+            genre: gender,
+            audioUrl,
+          });
+
+          setAudioFile(null);
+          setTitle('');
+          setLyrics('');
+          setDescription('');
+          setStyle('');
+          alert('Canción creada y guardada en Biblioteca.');
+          return;
+        }
+
+        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED') {
+          const msg = data?.errorMessage || data?.error_message || 'Error en la generación';
+          alert(String(msg));
+          return;
+        }
+      }
+
+      alert(`Sigue generándose... estado: ${lastStatus || 'PENDIENTE'}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error creando la canción');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -95,6 +184,8 @@ export function CreateView({ onSongCreated, credits }: CreateViewProps) {
             setGender={setGender}
             title={title}
             setTitle={setTitle}
+            style={style}
+            setStyle={setStyle}
             audioFile={audioFile}
             setAudioFile={setAudioFile}
           />
@@ -163,7 +254,7 @@ function SimpleForm({ instrumental, setInstrumental, description, setDescription
   );
 }
 
-function CustomForm({ instrumental, setInstrumental, lyrics, setLyrics, gender, setGender, title, setTitle, audioFile, setAudioFile }: any) {
+function CustomForm({ instrumental, setInstrumental, lyrics, setLyrics, gender, setGender, title, setTitle, style, setStyle, audioFile, setAudioFile }: any) {
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
 
   const handleGenerateLyrics = async () => {
@@ -188,6 +279,16 @@ function CustomForm({ instrumental, setInstrumental, lyrics, setLyrics, gender, 
 
   return (
     <>
+      <div className="glass-card rounded-2xl p-4">
+        <label className="block text-sm font-semibold text-slate-200 mb-2">Estilo</label>
+        <input
+          value={style}
+          onChange={(e) => setStyle(e.target.value)}
+          placeholder="Ej: corrido tumbado, reggaetón, pop, banda..."
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
+        />
+      </div>
+
       <div className="flex gap-4">
         <label className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner">
           <Plus className="w-5 h-5 text-slate-400" /> 

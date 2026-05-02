@@ -28,7 +28,7 @@ export default function App() {
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const { credits, consumeCredits } = useUserCredits();
+  const { credits } = useUserCredits();
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -95,12 +95,6 @@ export default function App() {
   };
 
   const addCancion = async (cancion: SongItem, audioBlob?: Blob) => {
-    // Consumir 12 créditos por cada canción creada
-    if (!consumeCredits(12)) {
-      alert('Créditos insuficientes. Necesitas 12 créditos para crear una canción.');
-      return;
-    }
-    
     const updatedCanciones = [cancion, ...canciones];
     setCanciones(updatedCanciones);
     await store.saveData({ canciones: updatedCanciones, vibes });
@@ -117,7 +111,13 @@ export default function App() {
     setActiveSong(song);
     setIsPlaying(false);
     
-    // We will wait for useEffect to load the object URL
+    if (song.audioUrl && audioRef.current) {
+      audioRef.current.src = song.audioUrl;
+      await audioRef.current.play();
+      setIsPlaying(true);
+      return;
+    }
+
     try {
       const blob = await store.getAudio(song.id);
       if (blob && audioRef.current) {
