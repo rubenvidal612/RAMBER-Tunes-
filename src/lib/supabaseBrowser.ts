@@ -1,13 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
-const supabaseUrl = env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || "";
+const supabaseUrl = (process.env.SUPABASE_URL as string | undefined) || "";
+const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY as string | undefined) || "";
 
 export const supabaseBrowser = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 export async function ensureAnonSession() {
-  if (!supabaseBrowser) return { ok: false as const, error: "Falta VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY" };
+  if (!supabaseBrowser) return { ok: false as const, error: "Falta SUPABASE_URL o SUPABASE_ANON_KEY" };
 
   const { data: sessionData } = await supabaseBrowser.auth.getSession();
   if (sessionData?.session) return { ok: true as const, session: sessionData.session };
@@ -22,4 +21,3 @@ export async function getAccessToken() {
   if (!s.ok) return { ok: false as const, error: s.error };
   return { ok: true as const, token: s.session.access_token };
 }
-
