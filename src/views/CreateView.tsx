@@ -32,6 +32,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const modelBtnRef = useRef<HTMLButtonElement | null>(null);
+  const modelMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [weirdness, setWeirdness] = useState(50);
   const [styleInfluence, setStyleInfluence] = useState(50);
@@ -135,6 +138,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       })
       .catch(() => {});
   }, [isPersonaPickerOpen]);
+
+  useEffect(() => {
+    if (!isModelMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as any;
+      const btn = modelBtnRef.current;
+      const menu = modelMenuRef.current;
+      if (btn && (btn === t || btn.contains(t))) return;
+      if (menu && (menu === t || menu.contains(t))) return;
+      setIsModelMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [isModelMenuOpen]);
 
   const clearAudio = () => {
     setAudioFile(null);
@@ -515,25 +532,68 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           </button>
         </div>
         
-        <div className="border border-white/20 hover:border-white/40 block rounded-full px-3 py-1.5 hover:bg-white/5 transition-colors">
-          <div className="flex items-center gap-2">
-            <select
-              value={model}
-              onChange={(e) => {
-                const v = e.target.value as any;
-                setModel(v);
-              }}
-              className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
-            >
-              <option value="V5">V5</option>
-              <option value="V5_5">V5.5</option>
-              <option value="V4_5PLUS">V4.5+</option>
-              <option value="V4_5ALL">V4.5 All</option>
-              <option value="V4_5">V4.5</option>
-              <option value="V4">V4</option>
-            </select>
-            <ChevronDown className="w-4 h-4 text-slate-200 -ml-3 pointer-events-none" />
+        <div className="relative">
+          <div className="border border-white/20 hover:border-white/40 block rounded-full px-3 py-1.5 hover:bg-white/5 transition-colors md:hidden">
+            <div className="flex items-center gap-2">
+              <select
+                value={model}
+                onChange={(e) => {
+                  const v = e.target.value as any;
+                  setModel(v);
+                }}
+                className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
+              >
+                <option value="V5">V5</option>
+                <option value="V5_5">V5.5</option>
+                <option value="V4_5PLUS">V4.5+</option>
+                <option value="V4_5ALL">V4.5 All</option>
+                <option value="V4_5">V4.5</option>
+                <option value="V4">V4</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-200 -ml-3 pointer-events-none" />
+            </div>
           </div>
+
+          <button
+            ref={modelBtnRef}
+            type="button"
+            onClick={() => setIsModelMenuOpen((v) => !v)}
+            className="hidden md:flex items-center gap-2 border border-white/20 hover:border-white/40 rounded-full px-3 py-1.5 hover:bg-white/5 transition-colors"
+          >
+            <span className="text-xs font-semibold text-slate-200">{model === 'V5_5' ? 'V5.5' : model === 'V4_5PLUS' ? 'V4.5+' : model === 'V4_5ALL' ? 'V4.5 All' : model === 'V4_5' ? 'V4.5' : model}</span>
+            <ChevronDown className={cn("w-4 h-4 text-slate-200 transition-transform", isModelMenuOpen ? "rotate-180" : "rotate-0")} />
+          </button>
+
+          {isModelMenuOpen && (
+            <div
+              ref={modelMenuRef}
+              className="hidden md:block absolute right-0 mt-2 w-[160px] bg-[#0b0f16] border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.55)] z-[90]"
+            >
+              {[
+                { value: 'V5', label: 'V5' },
+                { value: 'V5_5', label: 'V5.5' },
+                { value: 'V4_5PLUS', label: 'V4.5+' },
+                { value: 'V4_5ALL', label: 'V4.5 All' },
+                { value: 'V4_5', label: 'V4.5' },
+                { value: 'V4', label: 'V4' },
+              ].map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    setModel(m.value as any);
+                    setIsModelMenuOpen(false);
+                  }}
+                  className={cn(
+                    "w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors",
+                    model === (m.value as any) ? "text-emerald-300" : "text-slate-200"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
