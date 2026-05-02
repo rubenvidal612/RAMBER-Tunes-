@@ -1,18 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
-import { PricingView } from './PricingView';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { ensureAnonSession, supabaseBrowser } from '@/lib/supabaseBrowser';
 
-export function SettingsView({ onClose }: { onClose: () => void }) {
-  const [showPricing, setShowPricing] = useState(false);
+export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; onOpenPricing?: () => void }) {
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const { credits, refreshCredits } = useUserCredits();
-
-  if (showPricing) {
-    return <PricingView onClose={() => setShowPricing(false)} />;
-  }
 
   useEffect(() => {
     fetch('/api/suno/credits')
@@ -61,7 +55,10 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             <HelpCircle className="w-4 h-4 text-slate-500" />
           </div>
           <button 
-            onClick={() => setShowPricing(true)}
+            onClick={() => {
+              onOpenPricing?.();
+              onClose();
+            }}
             className="bg-green-500 hover:bg-green-400 text-[#020617] font-semibold text-xs px-4 py-2 rounded-full transition-colors"
           >
             Obtener más canciones

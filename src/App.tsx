@@ -399,7 +399,7 @@ export default function App() {
         className="hidden" 
       />
 
-      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} />}
+      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} />}
       {isPricingOpen && <PricingView onClose={() => setIsPricingOpen(false)} />}
       {showIosHelp && (
         <div className="fixed inset-0 z-[300] bg-black/70 flex items-end md:hidden">
