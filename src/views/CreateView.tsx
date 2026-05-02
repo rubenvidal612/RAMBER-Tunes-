@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library } from 'lucide-react';
+import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { GoogleGenAI } from "@google/genai";
@@ -58,7 +58,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (typeof d?.description === 'string') setDescription(d.description);
       if (typeof d?.instructions === 'string') setInstructions(d.instructions);
       if (typeof d?.title === 'string') setTitle(d.title);
-      if (typeof d?.lyrics === 'string') setLyrics(d.lyrics);
       const g = typeof d?.gender === 'string' ? d.gender : '';
       if (g === 'Masculino' || g === 'Femenino') setGender(g);
       const w = Number(d?.weirdness);
@@ -70,6 +69,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const pid = typeof d?.persona_id === 'string' ? d.persona_id : '';
       const pn = typeof d?.persona_name === 'string' ? d.persona_name : '';
       if (pid) setSelectedPersona({ persona_id: pid, name: pn || 'Persona' });
+
+      if (typeof d?.lyrics === 'string') {
+        try {
+          const { lyrics: _oldLyrics, ...rest } = d;
+          localStorage.setItem('ramber_create_draft_v1', JSON.stringify(rest));
+        } catch {
+        }
+      }
     } catch {
     }
   }, []);
@@ -84,7 +91,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           description,
           instructions,
           title,
-          lyrics,
           gender,
           weirdness,
           styleInfluence,
@@ -95,7 +101,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       );
     } catch {
     }
-  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence]);
+  }, [mode, instrumental, description, instructions, title, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence]);
 
   useEffect(() => {
     if (!openPersonaPickerSignal) return;
@@ -543,8 +549,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 }}
                 className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
               >
-                <option value="V5">V5</option>
                 <option value="V5_5">V5.5</option>
+                <option value="V5">V5</option>
                 <option value="V4_5PLUS">V4.5+</option>
                 <option value="V4_5ALL">V4.5 All</option>
                 <option value="V4_5">V4.5</option>
@@ -570,8 +576,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               className="hidden md:block absolute right-0 mt-2 w-[160px] bg-[#0b0f16] border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.55)] z-[90]"
             >
               {[
-                { value: 'V5', label: 'V5' },
                 { value: 'V5_5', label: 'V5.5' },
+                { value: 'V5', label: 'V5' },
                 { value: 'V4_5PLUS', label: 'V4.5+' },
                 { value: 'V4_5ALL', label: 'V4.5 All' },
                 { value: 'V4_5', label: 'V4.5' },
@@ -937,6 +943,7 @@ function CustomForm({
 }: any) {
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
+  const [prevLyrics, setPrevLyrics] = useState<string>('');
 
   const normalizeLyrics = (t: string) => {
     const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
@@ -965,6 +972,14 @@ function CustomForm({
     return mapped.join('\n').replaceAll(/\n{3,}/g, '\n\n').trim();
   };
 
+  const setLyricsWithUndo = (next: string) => {
+    const current = (lyrics || '').toString();
+    const n = (next || '').toString();
+    if (n === current) return;
+    setPrevLyrics(current);
+    setLyrics(n);
+  };
+
   const handleGenerateLyrics = async (auto?: boolean) => {
     if (!process.env.GEMINI_API_KEY) {
       if (!auto) alert("La clave de Gemini no está configurada. Agrégala en Vercel (GEMINI_API_KEY).");
@@ -989,7 +1004,7 @@ function CustomForm({
         contents: prompt,
       });
       const text = normalizeLyrics(response.text || '');
-      if (text) setLyrics(text);
+      if (text) setLyricsWithUndo(text);
     } catch (e) {
       if (!auto) alert("Error al generar letra.");
     }
@@ -1067,7 +1082,42 @@ function CustomForm({
 
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 flex flex-col mt-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
         <div className="flex items-center justify-between mb-4">
-          <label className="font-bold text-white text-base">Letras</label>
+          <div className="flex items-center gap-2">
+            <label className="font-bold text-white text-base">Letras</label>
+            <button
+              type="button"
+              onClick={() => {
+                if (!prevLyrics) return;
+                const current = (lyrics || '').toString();
+                setPrevLyrics(current);
+                setLyrics(prevLyrics);
+              }}
+              disabled={!prevLyrics}
+              className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 disabled:opacity-40"
+              aria-label="Regresar letra"
+              title="Regresar letra"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const current = (lyrics || '').toString();
+                if (!current.trim()) {
+                  setLyrics('');
+                  return;
+                }
+                if (!confirm('¿Seguro que quieres eliminar la letra?')) return;
+                setPrevLyrics(current);
+                setLyrics('');
+              }}
+              className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
+              aria-label="Eliminar letra"
+              title="Eliminar letra"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <button className="text-slate-400 hover:text-white transition-colors">
               <ListMusic className="w-5 h-5" />
@@ -1082,7 +1132,7 @@ function CustomForm({
         <div className="relative flex flex-col">
           <textarea
             value={lyrics}
-            onChange={(e) => setLyrics(e.target.value)}
+            onChange={(e) => setLyricsWithUndo(e.target.value)}
             placeholder="Agrega tu propia letra o ingresa un tema para generar"
             className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
           />
