@@ -13,8 +13,6 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [officeStats, setOfficeStats] = useState<{ users_total: number | null; personas_total: number | null; payments_total: number | null } | null>(null);
   const [balance, setBalance] = useState<{ credits: number; song_balance: number; downloads_allowed: boolean; free_claimed: boolean } | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
   const [transferEmail, setTransferEmail] = useState('');
   const [transferCredits, setTransferCredits] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
@@ -74,29 +72,23 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
     supabaseBrowser.auth.getUser().then(({ data }) => {
       const email = (data?.user?.email || '').toString();
       setUserEmail(email);
-      setLoginEmail(email);
     }).catch(() => {});
   }, []);
 
-  const signIn = async () => {
+  const sendAdminLink = async () => {
     if (!supabaseBrowser) return;
     setIsAuthBusy(true);
     try {
-      const email = loginEmail.trim();
-      const password = loginPassword;
-      if (!email || !password) {
-        alert('Pon tu correo y contraseña.');
-        return;
-      }
-      const { error } = await supabaseBrowser.auth.signInWithPassword({ email, password });
+      const redirectTo = window.location.origin;
+      const { error } = await supabaseBrowser.auth.signInWithOtp({
+        email: ADMIN_EMAIL,
+        options: { emailRedirectTo: redirectTo },
+      });
       if (error) {
         alert(error.message);
         return;
       }
-      const { data } = await supabaseBrowser.auth.getUser();
-      setUserEmail((data?.user?.email || '').toString());
-      await refreshCredits();
-      alert('Listo: sesión iniciada.');
+      alert('Te mandé un link al correo del admin. Ábrelo y vuelve a entrar a la app.');
     } finally {
       setIsAuthBusy(false);
     }
@@ -108,7 +100,6 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
     try {
       await supabaseBrowser.auth.signOut().catch(() => {});
       setUserEmail('');
-      setLoginPassword('');
       await ensureAnonSession();
       await refreshCredits();
       alert('Sesión cerrada.');
@@ -305,32 +296,26 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {!userEmail && (
-          <div className="glass-card rounded-2xl p-4">
-            <div className="text-slate-200 font-semibold mb-3">Iniciar sesión (Admin)</div>
-            <div className="grid grid-cols-1 gap-3">
-              <input
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="Tu correo"
-                className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
-              />
-              <input
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Tu contraseña"
-                type="password"
-                className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
-              />
-              <button
-                onClick={() => signIn().catch(() => {})}
-                disabled={isAuthBusy}
-                className="bg-indigo-500 hover:bg-indigo-400 text-[#020617] font-semibold text-xs px-4 py-3 rounded-full transition-colors disabled:opacity-60"
-              >
-                Iniciar sesión
-              </button>
+        {!isAdmin && (
+          <div className="glass-card rounded-2xl p-4 border border-white/10">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                <Shield className="w-5 h-5 text-slate-300" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Oficina (solo dueño)</div>
+                <div className="text-slate-400 text-sm mt-1">
+                  Para entrar sin contraseña, te mando un link al correo del admin. Solo lo abres y listo.
+                </div>
+                <button
+                  onClick={() => sendAdminLink().catch(() => {})}
+                  disabled={isAuthBusy}
+                  className="mt-3 bg-indigo-500 hover:bg-indigo-400 text-[#020617] font-semibold text-xs px-4 py-3 rounded-full transition-colors disabled:opacity-60"
+                >
+                  Enviar link al correo
+                </button>
+              </div>
             </div>
-            <div className="text-slate-500 text-xs mt-2">Esto es para que tu correo quede como admin (Oficina).</div>
           </div>
         )}
 
