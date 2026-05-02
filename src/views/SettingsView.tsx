@@ -12,6 +12,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [officeError, setOfficeError] = useState<string | null>(null);
   const [officeStats, setOfficeStats] = useState<{ users_total: number | null; personas_total: number | null; payments_total: number | null } | null>(null);
   const [balance, setBalance] = useState<{ credits: number; song_balance: number; downloads_allowed: boolean; free_claimed: boolean } | null>(null);
+  const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [transferEmail, setTransferEmail] = useState('');
   const [transferCredits, setTransferCredits] = useState('');
@@ -73,6 +74,17 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
       const email = (data?.user?.email || '').toString();
       setUserEmail(email);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/account/balance?source=provider')
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (!ok) return;
+        const c = Number(j?.credits);
+        if (Number.isFinite(c)) setProviderCredits(c);
+      })
+      .catch(() => {});
   }, []);
 
   const sendAdminLink = async () => {
@@ -268,7 +280,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
-            <span className="font-semibold text-slate-200">{credits} Créditos</span>
+            <span className="font-semibold text-slate-200">{typeof providerCredits === 'number' ? providerCredits : credits} Créditos</span>
             <HelpCircle className="w-4 h-4 text-slate-500" />
           </div>
           <button 
@@ -296,28 +308,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {!isAdmin && (
-          <div className="glass-card rounded-2xl p-4 border border-white/10">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
-                <Shield className="w-5 h-5 text-slate-300" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-white font-extrabold">Oficina (solo dueño)</div>
-                <div className="text-slate-400 text-sm mt-1">
-                  Para entrar sin contraseña, te mando un link al correo del admin. Solo lo abres y listo.
-                </div>
-                <button
-                  onClick={() => sendAdminLink().catch(() => {})}
-                  disabled={isAuthBusy}
-                  className="mt-3 bg-indigo-500 hover:bg-indigo-400 text-[#020617] font-semibold text-xs px-4 py-3 rounded-full transition-colors disabled:opacity-60"
-                >
-                  Enviar link al correo
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        
 
         <div className="glass-card rounded-2xl overflow-hidden">
           <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5">

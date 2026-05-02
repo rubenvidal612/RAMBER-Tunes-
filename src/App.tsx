@@ -61,20 +61,20 @@ export default function App() {
   }, []);
 
   const refreshProviderCredits = async () => {
-    const t = await getAccessToken();
-    if (!t.ok) return;
-    const r = await fetch('/api/account/balance?source=provider', {
-      headers: { authorization: `Bearer ${t.token}` },
-    });
+    const r = await fetch('/api/account/balance?source=provider');
     const out = await r.json().catch(() => ({}));
-    if (!r.ok) return;
+    if (!r.ok) {
+      const msg = (out?.error || 'No pude consultar créditos.').toString();
+      if (msg) showToast(msg);
+      return;
+    }
     const c = Number(out?.credits);
     if (Number.isFinite(c)) setProviderCredits(c);
   };
 
   useEffect(() => {
     refreshProviderCredits().catch(() => {});
-    const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 45000);
+    const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 20000);
     return () => window.clearInterval(interval);
   }, []);
 

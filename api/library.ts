@@ -1,5 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
+const TABLE = "library_items";
+const ITEM_TYPE = "song";
+const BUCKET = "ramber-tunes";
+
 function send(res: any, status: number, body: any) {
   res.statusCode = status;
   res.setHeader("content-type", "application/json");
@@ -44,7 +48,7 @@ async function requireUser(req: any) {
   if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
 
   const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-  return { ok: true as const, user, admin };
+  return { ok: true as const, user, admin, supabaseUrl };
 }
 
 async function hasPaid(admin: any, userId: string) {
@@ -58,37 +62,89 @@ async function hasPaid(admin: any, userId: string) {
   return Array.isArray(data) && data.length > 0;
 }
 
-async function cleanupFreeUser(admin: any, userId: string) {
+function storagePathFromPublicUrl(supabaseUrl: string, bucket: string, url: string) {
+  try {
+    const u = new URL(url);
+    if (!supabaseUrl) return null;
+    const supa = new URL(supabaseUrl);
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const idx = u.pathname.indexOf(marker);
+    if (idx < 0) return null;
+    const path = u.pathname.slice(idx + marker.length);
+    const decoded = decodeURIComponent(path);
+    if (!decoded) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function shouldDeletePhysicalFile(path: string) {
+  return path.startsWith("uploads/") || path.startsWith("personas/");
+}
+
+async function deletePhysicalFiles(admin: any, supabaseUrl: string, rows: any[]) {
+  const paths: string[] = [];
+  for (const r of rows) {
+    const a = typeof r?.audio_url === "string" ? r.audio_url : "";
+    const c = typeof r?.cover_url === "string" ? r.cover_url : "";
+    for (const url of [a, c]) {
+      if (!url) continue;
+      const p = storagePathFromPublicUrl(supabaseUrl, BUCKET, url);
+      if (!p) continue;
+      if (!shouldDeletePhysicalFile(p)) continue;
+      paths.push(p);
+    }
+  }
+  const unique = Array.from(new Set(paths)).filter(Boolean);
+  if (unique.length === 0) return 0;
+  const { error } = await admin.storage.from(BUCKET).remove(unique);
+  if (error) return 0;
+  return unique.length;
+}
+
+async function cleanupFreeUser(admin: any, supabaseUrl: string, userId: string) {
   const paid = await hasPaid(admin, userId);
   if (paid) return 0;
 
   const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await admin
-    .from("songs")
-    .update({ deleted_at: new Date().toISOString(), deleted_reason: "free_15_days" })
+  const { data } = await admin
+    .from(TABLE)
+    .select("id, audio_url, cover_url, created_at")
     .eq("user_id", userId)
+    .eq("type", ITEM_TYPE)
     .is("deleted_at", null)
     .lt("created_at", cutoff)
-    .select("id");
+    .order("created_at", { ascending: true })
+    .limit(500);
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length === 0) return 0;
 
+  await deletePhysicalFiles(admin, supabaseUrl, rows);
+
+  const ids = rows.map((r) => String(r?.id || "")).filter(Boolean);
+  if (ids.length === 0) return 0;
+  const { error } = await admin.from(TABLE).delete().in("id", ids).eq("user_id", userId).eq("type", ITEM_TYPE);
   if (error) return 0;
-  return Array.isArray(data) ? data.length : 0;
+  return ids.length;
 }
 
-async function enforceLimit100(admin: any, userId: string) {
+async function enforceLimit100(admin: any, supabaseUrl: string, userId: string) {
   const { count } = await admin
-    .from("songs")
+    .from(TABLE)
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
+    .eq("type", ITEM_TYPE)
     .is("deleted_at", null);
   const total = typeof count === "number" ? count : 0;
   if (total < 100) return { deleted: false as const };
 
   const needToDelete = Math.max(1, total - 99);
   const { data } = await admin
-    .from("songs")
-    .select("id, title, created_at")
+    .from(TABLE)
+    .select("id, title, created_at, audio_url, cover_url")
     .eq("user_id", userId)
+    .eq("type", ITEM_TYPE)
     .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .limit(needToDelete);
@@ -97,11 +153,9 @@ async function enforceLimit100(admin: any, userId: string) {
   const titles = rows.map((r) => String(r?.title || "")).filter(Boolean);
   if (ids.length === 0) return { deleted: false as const };
 
-  await admin
-    .from("songs")
-    .update({ deleted_at: new Date().toISOString(), deleted_reason: "limit_100" })
-    .in("id", ids)
-    .eq("user_id", userId);
+  await deletePhysicalFiles(admin, supabaseUrl, rows);
+
+  await admin.from(TABLE).delete().in("id", ids).eq("user_id", userId).eq("type", ITEM_TYPE);
 
   return {
     deleted: true as const,
@@ -114,9 +168,10 @@ async function enforceLimit100(admin: any, userId: string) {
 
 async function listSongs(admin: any, userId: string, deleted: boolean) {
   const q = admin
-    .from("songs")
+    .from(TABLE)
     .select("*")
     .eq("user_id", userId)
+    .eq("type", ITEM_TYPE)
     .order(deleted ? "deleted_at" : "created_at", { ascending: false })
     .limit(200);
   if (deleted) q.not("deleted_at", "is", null);
@@ -132,7 +187,7 @@ async function handleList(req: any, res: any) {
   if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
   const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
-  const cleaned = await cleanupFreeUser(auth.admin, auth.user.id);
+  const cleaned = await cleanupFreeUser(auth.admin, auth.supabaseUrl, auth.user.id);
   const r = await listSongs(auth.admin, auth.user.id, deleted);
   if (!r.ok) return send(res, 500, { error: "Error cargando canciones", detail: r.error });
   return send(res, 200, { songs: r.songs, cleanup_deleted: cleaned });
@@ -143,8 +198,8 @@ async function handleCreate(req: any, res: any) {
   const auth = await requireUser(req);
   if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
-  await cleanupFreeUser(auth.admin, auth.user.id);
-  const lim = await enforceLimit100(auth.admin, auth.user.id);
+  await cleanupFreeUser(auth.admin, auth.supabaseUrl, auth.user.id);
+  const lim = await enforceLimit100(auth.admin, auth.supabaseUrl, auth.user.id);
 
   const body = parseJsonBody(req);
   if (!body) return send(res, 400, { error: "Body inválido" });
@@ -161,6 +216,7 @@ async function handleCreate(req: any, res: any) {
 
   const insertRow: any = {
     user_id: auth.user.id,
+    type: ITEM_TYPE,
     title,
     description: description || null,
     lyrics,
@@ -172,7 +228,7 @@ async function handleCreate(req: any, res: any) {
     is_cover: isCover,
   };
 
-  const { data, error } = await auth.admin.from("songs").insert(insertRow).select("*").single();
+  const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
   if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
 
   return send(res, 200, {
@@ -194,10 +250,11 @@ async function handleDelete(req: any, res: any) {
   if (!id) return send(res, 400, { error: "Falta id" });
 
   const { error } = await auth.admin
-    .from("songs")
+    .from(TABLE)
     .update({ deleted_at: new Date().toISOString(), deleted_reason: "user_deleted" })
     .eq("id", id)
-    .eq("user_id", auth.user.id);
+    .eq("user_id", auth.user.id)
+    .eq("type", ITEM_TYPE);
   if (error) return send(res, 500, { error: "No pude eliminar", detail: error.message });
   return send(res, 200, { ok: true });
 }
@@ -207,8 +264,8 @@ async function handleRestore(req: any, res: any) {
   const auth = await requireUser(req);
   if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
-  await cleanupFreeUser(auth.admin, auth.user.id);
-  const lim = await enforceLimit100(auth.admin, auth.user.id);
+  await cleanupFreeUser(auth.admin, auth.supabaseUrl, auth.user.id);
+  const lim = await enforceLimit100(auth.admin, auth.supabaseUrl, auth.user.id);
 
   const body = parseJsonBody(req);
   if (!body) return send(res, 400, { error: "Body inválido" });
@@ -216,10 +273,11 @@ async function handleRestore(req: any, res: any) {
   if (!id) return send(res, 400, { error: "Falta id" });
 
   const { error } = await auth.admin
-    .from("songs")
+    .from(TABLE)
     .update({ deleted_at: null, deleted_reason: null })
     .eq("id", id)
-    .eq("user_id", auth.user.id);
+    .eq("user_id", auth.user.id)
+    .eq("type", ITEM_TYPE);
   if (error) return send(res, 500, { error: "No pude recuperar", detail: error.message });
 
   return send(res, 200, {
