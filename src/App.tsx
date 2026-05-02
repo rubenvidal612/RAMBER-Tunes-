@@ -18,11 +18,11 @@ export default function App() {
   const [canciones, setCanciones] = useState<SongItem[]>([]);
   const [vibes, setVibes] = useState<VibeItem[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const { credits } = useUserCredits(); // Hook de créditos
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const { credits, consumeCredits } = useUserCredits(); // Hook de créditos
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const { credits, consumeCredits } = useUserCredits();
 
   useEffect(() => {
     store.getData().then(data => {
@@ -117,12 +117,12 @@ export default function App() {
              <>
                {/* Create View (Middle) */}
                <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                 <CreateView onSongCreated={addCancion} />
+                 <CreateView onSongCreated={addCancion} credits={credits} />
                </div>
 
                {/* Library / Results View (Right) */}
                <div className="flex-1 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
-                 {currentTab === 'perfil' ? <ProfileView /> : <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+                 {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
                </div>
              </>
            )}
