@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2 } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 interface LibraryViewProps {
@@ -296,6 +296,7 @@ function SongOptionsSheet({
   const [isBusy, setIsBusy] = useState(false);
   const [published, setPublished] = useState(false);
   const [showPersonaSave, setShowPersonaSave] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
   const [personaName, setPersonaName] = useState('');
   const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
   const fmt = (iso?: string) => {
@@ -534,6 +535,13 @@ function SongOptionsSheet({
           </div>
 
           <div className="glass-card rounded-2xl overflow-hidden mt-4">
+            <button
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors"
+              onClick={() => setShowLyrics(true)}
+              disabled={isBusy}
+            >
+              <FileText className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Letra</span>
+            </button>
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
@@ -629,6 +637,28 @@ function SongOptionsSheet({
               >
                 Guardar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLyrics && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowLyrics(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Letra</div>
+              <button
+                onClick={() => setShowLyrics(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
+                {song.lyrics ? song.lyrics : 'Esta canción no tiene letra guardada.'}
+              </div>
             </div>
           </div>
         </div>

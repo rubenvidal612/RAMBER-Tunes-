@@ -26,11 +26,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-  const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [audioAction, setAudioAction] = useState<'cover' | 'extend' | 'library'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
+
+  const [weirdness, setWeirdness] = useState(50);
+  const [styleInfluence, setStyleInfluence] = useState(50);
+  const [audioInfluence, setAudioInfluence] = useState(25);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const [isPersonaPickerOpen, setIsPersonaPickerOpen] = useState(false);
   const [personas, setPersonas] = useState<Array<{ persona_id: string; name: string; photo_url?: string }>>([]);
@@ -52,6 +57,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (typeof d?.lyrics === 'string') setLyrics(d.lyrics);
       const g = typeof d?.gender === 'string' ? d.gender : '';
       if (g === 'Masculino' || g === 'Femenino') setGender(g);
+      const w = Number(d?.weirdness);
+      const si = Number(d?.styleInfluence);
+      const ai = Number(d?.audioInfluence);
+      if (Number.isFinite(w)) setWeirdness(Math.max(0, Math.min(100, Math.round(w))));
+      if (Number.isFinite(si)) setStyleInfluence(Math.max(0, Math.min(100, Math.round(si))));
+      if (Number.isFinite(ai)) setAudioInfluence(Math.max(0, Math.min(100, Math.round(ai))));
       const pid = typeof d?.persona_id === 'string' ? d.persona_id : '';
       const pn = typeof d?.persona_name === 'string' ? d.persona_name : '';
       if (pid) setSelectedPersona({ persona_id: pid, name: pn || 'Persona' });
@@ -71,13 +82,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           title,
           lyrics,
           gender,
+          weirdness,
+          styleInfluence,
+          audioInfluence,
           persona_id: selectedPersona?.persona_id || '',
           persona_name: selectedPersona?.name || '',
         }),
       );
     } catch {
     }
-  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona]);
+  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence]);
 
   useEffect(() => {
     if (!openPersonaPickerSignal) return;
@@ -125,9 +139,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioFile(null);
     setAudioUploadUrl('');
     setIsUploadingAudio(false);
-    setIsAudioModalOpen(false);
     setAudioAction('cover');
     setUploadProgress(0);
+    setIsAudioModalOpen(false);
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
@@ -146,7 +160,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   useEffect(() => {
     if (!audioUploadUrl) return;
     if (!audioFile) return;
-    setUploadProgress((p) => (p >= 95 ? 100 : Math.max(p, 100)));
+    setUploadProgress((p) => (p >= 95 ? 100 : 100));
   }, [audioUploadUrl, audioFile]);
 
   const uploadAudio = async (file: File) => {
@@ -203,6 +217,39 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     uploadAudio(file).catch(() => {});
   };
 
+  const saveUploadedAudioToLibrary = async () => {
+    if (!onSongCreated) return;
+    if (!audioFile) return;
+    if (!audioUploadUrl) {
+      alert('Todavía se está subiendo el audio. Espera un momento.');
+      return;
+    }
+    const titleFromFile = (audioFile.name || 'Audio').toString().slice(0, 120);
+    onSongCreated({
+      id: `upload_${Date.now()}`,
+      title: titleFromFile,
+      description: (instructions || 'Audio subido').toString().slice(0, 2000),
+      lyrics: lyrics || undefined,
+      genre: gender,
+      audioUrl: audioUploadUrl,
+      coverUrl: undefined,
+      sunoTaskId: null,
+      sunoAudioId: null,
+      isCover: false,
+    });
+    clearAudio();
+    onGoLibrary?.();
+  };
+
+  const continueFromAudio = async () => {
+    if (audioAction === 'library') return saveUploadedAudioToLibrary();
+    if (audioAction === 'extend') {
+      alert('Extender: Próximamente');
+      return;
+    }
+    return handleCoverFromAudio();
+  };
+
   const handleCoverFromAudio = async () => {
     if (!onSongCreated) return;
     if (!audioUploadUrl) {
@@ -225,6 +272,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         style: (instructions || 'General').trim(),
         title: (title || 'Cover').trim(),
         model,
+        weirdnessConstraint: weirdness / 100,
+        styleWeight: styleInfluence / 100,
+        audioWeight: audioInfluence / 100,
       };
       if (selectedPersona?.persona_id) {
         payload.personaId = selectedPersona.persona_id;
@@ -332,6 +382,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (wantsCustomMode) {
         payload.style = (instructions || 'General').trim();
         payload.title = (title || 'Nueva Canción').trim();
+        payload.weirdnessConstraint = weirdness / 100;
+        payload.styleWeight = styleInfluence / 100;
+        payload.audioWeight = audioInfluence / 100;
       }
       if (selectedPersona?.persona_id) {
         payload.personaId = selectedPersona.persona_id;
@@ -490,6 +543,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             setTitle={setTitle}
             instructions={instructions}
             setInstructions={setInstructions}
+            showMoreOptions={showMoreOptions}
+            setShowMoreOptions={setShowMoreOptions}
+            weirdness={weirdness}
+            setWeirdness={setWeirdness}
+            styleInfluence={styleInfluence}
+            setStyleInfluence={setStyleInfluence}
+            audioInfluence={audioInfluence}
+            setAudioInfluence={setAudioInfluence}
             audioFile={audioFile}
             setAudioFile={setAudioFile}
             audioInputRef={audioInputRef}
@@ -500,6 +561,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onCoverFromAudio={handleCoverFromAudio}
             onOpenPersonaPicker={() => setIsPersonaPickerOpen(true)}
             onPickAudio={pickAudio}
+            uploadProgress={uploadProgress}
+            onOpenAudioModal={() => setIsAudioModalOpen(true)}
             selectedPersona={selectedPersona}
             onClearPersona={() => setSelectedPersona(null)}
           />
@@ -599,8 +662,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
             <div className="p-4">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                  <div className="text-sm font-extrabold text-slate-100">{Math.max(0, Math.min(100, Math.round(uploadProgress)))}%</div>
+                <div
+                  className="w-14 h-14 rounded-full p-[2px] shrink-0"
+                  style={{
+                    background: `conic-gradient(#22c55e ${Math.max(0, Math.min(100, Number(uploadProgress || 0))) * 3.6}deg, rgba(255,255,255,0.10) 0deg)`,
+                  }}
+                >
+                  <div className="w-full h-full rounded-full bg-[#0b0f16] border border-white/10 flex items-center justify-center">
+                    <div className={cn("text-xs font-extrabold", Number(uploadProgress || 0) >= 87 ? "text-red-300" : "text-slate-100")}>
+                      {Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))))}%
+                    </div>
+                  </div>
                 </div>
                 <div className="min-w-0">
                   <div className="text-white font-extrabold truncate">{audioFile.name}</div>
@@ -617,6 +689,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     "rounded-2xl p-4 border transition-colors text-left",
                     audioAction === 'cover' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
                   )}
+                  disabled={isUploadingAudio}
                 >
                   <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
                     <AudioLines className="w-5 h-5" />
@@ -630,6 +703,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     "rounded-2xl p-4 border transition-colors text-left",
                     audioAction === 'extend' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
                   )}
+                  disabled={isUploadingAudio}
                 >
                   <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
                     <Pencil className="w-5 h-5" />
@@ -643,6 +717,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     "rounded-2xl p-4 border transition-colors text-left",
                     audioAction === 'library' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
                   )}
+                  disabled={isUploadingAudio}
                 >
                   <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
                     <Library className="w-5 h-5" />
@@ -653,18 +728,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
               <button
                 onClick={() => {
-                  if (audioAction === 'library') {
-                    setIsAudioModalOpen(false);
-                    onGoLibrary?.();
-                    return;
-                  }
-                  if (audioAction === 'extend') {
-                    alert('Extender: Próximamente');
-                    return;
-                  }
-                  handleCoverFromAudio().catch(() => {});
+                  setIsAudioModalOpen(false);
+                  continueFromAudio().catch(() => {});
                 }}
-                disabled={isUploadingAudio || (audioAction === 'cover' && !audioUploadUrl)}
+                disabled={
+                  isUploadingAudio ||
+                  (audioAction === 'cover' && !audioUploadUrl) ||
+                  (audioAction === 'library' && !audioUploadUrl)
+                }
                 className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[52px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
                 Continuar
@@ -738,6 +809,14 @@ function CustomForm({
   setTitle,
   instructions,
   setInstructions,
+  showMoreOptions,
+  setShowMoreOptions,
+  weirdness,
+  setWeirdness,
+  styleInfluence,
+  setStyleInfluence,
+  audioInfluence,
+  setAudioInfluence,
   audioFile,
   setAudioFile,
   audioInputRef,
@@ -748,51 +827,110 @@ function CustomForm({
   onCoverFromAudio,
   onOpenPersonaPicker,
   onPickAudio,
+  uploadProgress,
+  onOpenAudioModal,
   selectedPersona,
   onClearPersona,
 }: any) {
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
+  const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
 
-  const handleGenerateLyrics = async () => {
+  const normalizeLyrics = (t: string) => {
+    const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
+    const mapped = lines.map((line) => {
+      const s = line.trim();
+      if (!s) return '';
+      const lower = s.toLowerCase();
+      const isTag =
+        lower === 'coro' ||
+        lower.startsWith('coro ') ||
+        lower === 'chorus' ||
+        lower.startsWith('chorus ') ||
+        lower.startsWith('verso') ||
+        lower.startsWith('verse') ||
+        lower.startsWith('pre-coro') ||
+        lower.startsWith('pre coro') ||
+        lower.startsWith('bridge') ||
+        lower.startsWith('puente') ||
+        lower.startsWith('outro') ||
+        lower.startsWith('intro');
+      if (isTag && !s.startsWith('[')) return `[${s.replaceAll(':', '').trim()}]`;
+      if (s.startsWith('[') && s.endsWith(']')) return s;
+      if (s.endsWith(':') && s.length < 20) return `[${s.slice(0, -1).trim()}]`;
+      return line;
+    });
+    return mapped.join('\n').replaceAll(/\n{3,}/g, '\n\n').trim();
+  };
+
+  const handleGenerateLyrics = async (auto?: boolean) => {
     if (!process.env.GEMINI_API_KEY) {
-      alert("La clave de Gemini no está configurada. Usa el panel de configuraciones.");
+      if (!auto) alert("La clave de Gemini no está configurada. Agrégala en Vercel (GEMINI_API_KEY).");
       return;
     }
     setIsGeneratingLyrics(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `Actúa como un escritor de canciones. Escribe una letra breve y creativa para una canción en español. Estilo aleatorio. Solo devuelve la letra, sin introducciones ni comentarios.`;
+      const contextTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '';
+      const contextStyle = (typeof instructions === 'string' && instructions.trim()) ? instructions.trim() : '';
+      const prompt = [
+        'Actúa como un compositor profesional.',
+        'Escribe una letra en español.',
+        'Requisitos:',
+        '- Usa etiquetas de sección siempre entre corchetes, por ejemplo: [Verso 1], [Pre-Coro], [Coro], [Verso 2], [Puente], [Outro].',
+        '- No escribas explicaciones, solo la letra.',
+        contextTitle ? `Título (opcional): ${contextTitle}` : '',
+        contextStyle ? `Instrucciones/estilo: ${contextStyle}` : '',
+      ].filter(Boolean).join('\n');
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
       });
-      setLyrics(response.text || '');
+      const text = normalizeLyrics(response.text || '');
+      if (text) setLyrics(text);
     } catch (e) {
-      alert("Error al generar letra.");
+      if (!auto) alert("Error al generar letra.");
     }
     setIsGeneratingLyrics(false);
   };
 
+  useEffect(() => {
+    if (!audioFile) return;
+    if (instrumental) return;
+    const hasLyrics = (lyrics || '').toString().trim().length > 0;
+    if (hasLyrics) return;
+    handleGenerateLyrics(true).catch(() => {});
+  }, [audioFile, instrumental]);
+
   return (
     <>
       <div className="flex gap-4">
-        <label className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner">
+        <button
+          type="button"
+          onClick={() => {
+            if (audioFile) {
+              onOpenAudioModal?.();
+              return;
+            }
+            audioInputRef?.current?.click?.();
+          }}
+          className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
+        >
           <Plus className="w-5 h-5 text-slate-400" /> 
           {audioFile ? 'Audio cargado' : 'Audio'}
-          <input 
-            type="file" 
-            accept="audio/*" 
-            className="absolute inset-0 opacity-0 cursor-pointer" 
-            ref={audioInputRef}
-            onChange={(e) => {
-              if (e.target.files && e.target.files.length > 0) {
-                const f = e.target.files[0];
-                setAudioFile(f);
-                onPickAudio(f);
-              }
-            }}
-          />
-        </label>
+        </button>
+        <input 
+          type="file" 
+          accept="audio/*" 
+          className="hidden" 
+          ref={audioInputRef}
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              const f = e.target.files[0];
+              setAudioFile(f);
+              onPickAudio(f);
+            }
+          }}
+        />
         <button
           onClick={onOpenPersonaPicker}
           className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner"
@@ -845,13 +983,17 @@ function CustomForm({
             placeholder="Agrega tu propia letra o ingresa un tema para generar"
             className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
           />
-          <button className="absolute top-0 right-0 text-slate-400 hover:text-white">
-             <Maximize2 className="w-4 h-4" />
+          <button
+            className="absolute top-0 right-0 text-slate-400 hover:text-white"
+            onClick={() => setIsLyricsExpanded(true)}
+            type="button"
+          >
+            <Maximize2 className="w-4 h-4" />
           </button>
           
           <div className="flex justify-end mt-2">
             <button 
-              onClick={handleGenerateLyrics}
+              onClick={() => handleGenerateLyrics(false).catch(() => {})}
               disabled={isGeneratingLyrics}
               className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
             >
@@ -860,6 +1002,62 @@ function CustomForm({
             </button>
           </div>
         </div>
+      </div>
+
+      {isLyricsExpanded && (
+        <div className="fixed inset-0 z-[140] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsLyricsExpanded(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Letras</div>
+              <button
+                onClick={() => setIsLyricsExpanded(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea
+                value={lyrics}
+                onChange={(e) => setLyrics(e.target.value)}
+                placeholder="Agrega tu propia letra o ingresa un tema para generar"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[15px] text-white placeholder:text-slate-500 outline-none min-h-[55vh] resize-none"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
+        <button
+          type="button"
+          onClick={() => setShowMoreOptions(!showMoreOptions)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="text-white font-bold text-base">Más opciones</div>
+          <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform", showMoreOptions ? "rotate-180" : "rotate-0")} />
+        </button>
+
+        {showMoreOptions && (
+          <div className="mt-4 space-y-4">
+            <SliderRow
+              label="Weirdness"
+              value={weirdness}
+              onChange={setWeirdness}
+            />
+            <SliderRow
+              label="Influencia de estilo"
+              value={styleInfluence}
+              onChange={setStyleInfluence}
+            />
+            <SliderRow
+              label="Influencia de audio"
+              value={audioInfluence}
+              onChange={setAudioInfluence}
+            />
+          </div>
+        )}
       </div>
 
       {/* Instrucciones (Estilos) */}
@@ -943,5 +1141,33 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
         )}
       />
     </button>
+  );
+}
+
+function SliderRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const v = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-slate-300 text-sm font-semibold">{label}</div>
+        <div className="text-slate-400 text-sm">{v}%</div>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={v}
+        onChange={(e) => onChange(Math.max(0, Math.min(100, Number(e.target.value))))}
+        className="w-full accent-emerald-500"
+      />
+    </div>
   );
 }

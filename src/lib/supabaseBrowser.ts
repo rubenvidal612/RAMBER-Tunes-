@@ -12,7 +12,17 @@ export async function ensureAnonSession() {
   if (sessionData?.session) return { ok: true as const, session: sessionData.session };
 
   const { data, error } = await supabaseBrowser.auth.signInAnonymously();
-  if (error || !data.session) return { ok: false as const, error: error?.message || "No pude iniciar sesión" };
+  if (error || !data.session) {
+    const msg = (error?.message || "No pude iniciar sesión").toString();
+    if (msg.toLowerCase().includes("anonymous sign-ins are disabled")) {
+      return {
+        ok: false as const,
+        error:
+          "Tu Supabase tiene desactivado el inicio de sesión anónimo. Actívalo en Supabase: Authentication → Providers → Anonymous → Enable. Luego recarga la app.",
+      };
+    }
+    return { ok: false as const, error: msg };
+  }
   return { ok: true as const, session: data.session };
 }
 
