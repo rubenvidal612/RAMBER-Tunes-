@@ -74,7 +74,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               <Check className="w-5 h-5 text-teal-500" /> Crear canciones (A/B)
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
-              <Check className="w-5 h-5 text-teal-500" /> No incluye descargas
+              <span className="text-red-500 font-bold text-lg">✗</span> Descarga de canciones
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-teal-500" /> No incluye Karaoke / STEMS
@@ -121,6 +121,12 @@ export function PricingView({ onClose }: PricingViewProps) {
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-blue-500" /> Crear canciones (A/B)
             </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Incluye Karaoke
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Licencia Comercial de tus Canciones
+            </div>
           </div>
 
           <button className="w-full bg-blue-500 hover:bg-blue-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
@@ -166,6 +172,9 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-indigo-400" /> Separación de instrumentos (STEMS)
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Licencia Comercial de tus Canciones
             </div>
           </div>
 

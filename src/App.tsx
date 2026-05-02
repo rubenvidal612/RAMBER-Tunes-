@@ -13,6 +13,11 @@ import { store } from './lib/store';
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
 export default function App() {
   const [currentTab, setCurrentTab] = useState<ViewTab>('inicio');
   const [canciones, setCanciones] = useState<SongItem[]>([]);
@@ -23,6 +28,9 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const { credits, consumeCredits } = useUserCredits();
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showIosHelp, setShowIosHelp] = useState(false);
 
   useEffect(() => {
     store.getData().then(data => {
@@ -30,6 +38,50 @@ export default function App() {
       setVibes(data.vibes || []);
     });
   }, []);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia?.('(display-mode: standalone)')?.matches ||
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+    const isMobile = window.matchMedia?.('(max-width: 768px)')?.matches ?? false;
+
+    if (isMobile && !isStandalone) {
+      setShowInstallBanner(true);
+    }
+
+    const onBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPromptEvent(e as BeforeInstallPromptEvent);
+      setShowInstallBanner(true);
+    };
+
+    const onAppInstalled = () => {
+      setShowInstallBanner(false);
+      setInstallPromptEvent(null);
+      setShowIosHelp(false);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt as EventListener);
+    window.addEventListener('appinstalled', onAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt as EventListener);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  const onInstallClick = async () => {
+    if (installPromptEvent) {
+      await installPromptEvent.prompt();
+      const choice = await installPromptEvent.userChoice;
+      setInstallPromptEvent(null);
+      if (choice.outcome === 'accepted') {
+        setShowInstallBanner(false);
+      }
+      return;
+    }
+    setShowIosHelp(true);
+  };
 
   const addVibe = async (vibe: VibeItem) => {
     const updatedVibes = [vibe, ...vibes];
@@ -89,6 +141,32 @@ export default function App() {
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
       <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={credits} />
+      {showInstallBanner && (
+        <div className="md:hidden px-3 pt-3">
+          <div className="bg-gradient-to-r from-emerald-700/40 to-teal-600/20 border border-emerald-400/15 rounded-2xl px-3 py-3 flex items-center gap-3">
+            <button
+              onClick={() => setShowInstallBanner(false)}
+              className="shrink-0 w-8 h-8 rounded-full bg-black/30 border border-white/10 text-slate-200 flex items-center justify-center"
+              aria-label="Cerrar"
+            >
+              ✕
+            </button>
+            <div className="shrink-0 w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center font-extrabold text-white">
+              R
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-white leading-tight">RAMBER Tunes</div>
+              <div className="text-xs text-slate-200/90 leading-tight">Ponla como app en tu celular</div>
+            </div>
+            <button
+              onClick={onInstallClick}
+              className="shrink-0 bg-white text-black px-4 py-2 rounded-full text-xs font-extrabold"
+            >
+              VER
+            </button>
+          </div>
+        </div>
+      )}
       <Banner />
       
       <main className="flex-1 overflow-hidden flex w-full h-full relative">
@@ -148,6 +226,33 @@ export default function App() {
       />
 
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} />}
+      {showIosHelp && (
+        <div className="fixed inset-0 z-[300] bg-black/70 flex items-end md:hidden">
+          <div className="w-full bg-[#0a0a0a] rounded-t-3xl p-5 border-t border-white/10">
+            <div className="flex items-center justify-between">
+              <div className="text-base font-bold text-white">Instalar como app</div>
+              <button
+                onClick={() => setShowIosHelp(false)}
+                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 text-slate-200 flex items-center justify-center"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-3 text-sm text-slate-300 space-y-2">
+              <div>1) Toca el botón Compartir (cuadrado con flecha)</div>
+              <div>2) Elige “Agregar a pantalla de inicio”</div>
+              <div>3) Confirma “Agregar”</div>
+            </div>
+            <button
+              onClick={() => setShowIosHelp(false)}
+              className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors"
+            >
+              Listo
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
