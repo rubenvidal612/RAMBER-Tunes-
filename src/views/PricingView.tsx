@@ -8,16 +8,18 @@ interface PricingViewProps {
 
 export function PricingView({ onClose }: PricingViewProps) {
   return (
-    <div className="flex flex-col h-full w-full bg-[#0a0a0a] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300 z-[200] fixed inset-0 pb-safe text-white">
-      {/* Header */}
-      <div className="flex items-center p-4 sticky top-0 bg-[#0a0a0a] z-10 border-b border-white/5">
-        <button onClick={onClose} className="p-2 text-slate-300 hover:text-white glass-card rounded-full mr-2">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M15 18l-6-6 6-6"></path></svg>
-        </button>
-        <h2 className="text-xl font-bold flex-1 text-center pr-10">Planes de Recarga</h2>
-      </div>
+    <div className="flex flex-col h-full w-full bg-[#0a0a0a] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300 z-[200] fixed inset-0 pb-safe text-white md:bg-black/80 md:backdrop-blur-sm md:items-center md:justify-center md:p-8">
+      
+      <div className="w-full h-full flex flex-col md:h-[90vh] md:max-w-4xl md:bg-[#0a0a0a] md:border md:border-white/10 md:rounded-3xl md:overflow-hidden md:shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center p-4 sticky top-0 bg-[#0a0a0a] z-10 border-b border-white/5">
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-white glass-card rounded-full mr-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M15 18l-6-6 6-6"></path></svg>
+          </button>
+          <h2 className="text-xl font-bold flex-1 text-center pr-10">Planes de Recarga</h2>
+        </div>
 
-      <div className="p-6 space-y-6 pb-32 max-w-2xl mx-auto w-full">
+        <div className="p-6 space-y-6 pb-32 max-w-2xl mx-auto w-full overflow-y-auto">
         
         <p className="text-slate-300 text-[15px]">
           Compra canciones para poder descargar y seguir creando.
@@ -210,6 +212,7 @@ export function PricingView({ onClose }: PricingViewProps) {
           </div>
         </div>
 
+      </div>
       </div>
     </div>
   );
