@@ -187,19 +187,15 @@ async function handleList(req: any, res: any) {
   if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
   const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
-  const cleaned = await cleanupFreeUser(auth.admin, auth.supabaseUrl, auth.user.id);
   const r = await listSongs(auth.admin, auth.user.id, deleted);
   if (!r.ok) return send(res, 500, { error: "Error cargando canciones", detail: r.error });
-  return send(res, 200, { songs: r.songs, cleanup_deleted: cleaned });
+  return send(res, 200, { songs: r.songs, cleanup_deleted: 0 });
 }
 
 async function handleCreate(req: any, res: any) {
   if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
   const auth = await requireUser(req);
   if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-  await cleanupFreeUser(auth.admin, auth.supabaseUrl, auth.user.id);
-  const lim = await enforceLimit100(auth.admin, auth.supabaseUrl, auth.user.id);
 
   const body = parseJsonBody(req);
   if (!body) return send(res, 400, { error: "Body inválido" });
@@ -233,10 +229,10 @@ async function handleCreate(req: any, res: any) {
 
   return send(res, 200, {
     song: data,
-    deleted_oldest: lim.deleted,
-    deleted_id: (lim as any).deleted_id || null,
-    deleted_count: (lim as any).deleted_count || 0,
-    deleted_titles: (lim as any).deleted_titles || [],
+    deleted_oldest: false,
+    deleted_id: null,
+    deleted_count: 0,
+    deleted_titles: [],
   });
 }
 
@@ -264,9 +260,6 @@ async function handleRestore(req: any, res: any) {
   const auth = await requireUser(req);
   if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
-  await cleanupFreeUser(auth.admin, auth.supabaseUrl, auth.user.id);
-  const lim = await enforceLimit100(auth.admin, auth.supabaseUrl, auth.user.id);
-
   const body = parseJsonBody(req);
   if (!body) return send(res, 400, { error: "Body inválido" });
   const id = typeof body?.id === "string" ? body.id.trim() : "";
@@ -282,10 +275,10 @@ async function handleRestore(req: any, res: any) {
 
   return send(res, 200, {
     ok: true,
-    deleted_oldest: lim.deleted,
-    deleted_id: (lim as any).deleted_id || null,
-    deleted_count: (lim as any).deleted_count || 0,
-    deleted_titles: (lim as any).deleted_titles || [],
+    deleted_oldest: false,
+    deleted_id: null,
+    deleted_count: 0,
+    deleted_titles: [],
   });
 }
 

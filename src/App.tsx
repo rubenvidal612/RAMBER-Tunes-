@@ -210,13 +210,6 @@ export default function App() {
       }
       refreshCredits().catch(() => {});
       refreshProviderCredits().catch(() => {});
-      if (out?.deleted_oldest) {
-        const names = Array.isArray(out?.deleted_titles) ? out.deleted_titles.filter((x: any) => typeof x === 'string' && x.trim()).slice(0, 2) : [];
-        const extra = Number(out?.deleted_count || 0) > 1 ? ` (+${Number(out?.deleted_count || 0) - 1})` : '';
-        const detail = names.length > 0 ? ` (${names.join(', ')}${extra})` : '';
-        showToast(`Se movió a Papelera una canción vieja para mantener máximo 100${detail}.`);
-        await refreshLibrary();
-      }
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error guardando en biblioteca');
     }
@@ -269,9 +262,6 @@ export default function App() {
       }
       await refreshLibrary();
       refreshCredits().catch(() => {});
-      if (out?.deleted_oldest) {
-        showToast('Se movió a Papelera una canción vieja para mantener máximo 100.');
-      }
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error recuperando');
     }
