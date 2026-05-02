@@ -2,24 +2,27 @@ import { useState } from 'react';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
 import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2 } from 'lucide-react';
-import { getAccessToken } from '@/lib/supabaseBrowser';
+import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 interface LibraryViewProps {
   canciones: SongItem[];
+  cancionesEliminadas?: SongItem[];
   vibes: VibeItem[];
   onAddVibe: (v: VibeItem) => void;
   onPlaySong: (s: SongItem) => void;
   onDeleteSong?: (id: string) => void;
-  onOpenPersonaPicker?: () => void;
+  onRestoreSong?: (id: string) => void;
+  onRefreshSongs?: () => void;
   activeSongId?: string;
   isPlaying?: boolean;
 }
 
-export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteSong, onOpenPersonaPicker, activeSongId, isPlaying }: LibraryViewProps) {
+export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onDeleteSong, onRestoreSong, onRefreshSongs, activeSongId, isPlaying }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
+  const [showTrash, setShowTrash] = useState(false);
   
   const tabs: {id: LibraryTab, label: string}[] = [
     { id: 'canciones', label: 'Canciones' },
@@ -42,6 +45,18 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteS
             </button>
             <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2">
               <Settings2 className="w-4 h-4" /> Filtros
+            </button>
+            <button
+              onClick={() => {
+                setShowTrash((v) => !v);
+                onRefreshSongs?.();
+              }}
+              className={cn(
+                "flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2",
+                showTrash ? "border-red-400/40 text-red-200" : ""
+              )}
+            >
+              <Trash2 className="w-4 h-4" /> {showTrash ? "Biblioteca" : "Papelera"}
             </button>
           </div>
         )}
@@ -123,66 +138,94 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteS
                />
             </div>
 
-            {canciones.length === 0 ? (
-              <div className="p-6 text-center text-slate-500 text-sm mt-10">No hay canciones</div>
-            ) : (
-              canciones.map(song => (
-                <div key={song.id} className="flex items-start gap-4 p-2 rounded-xl hover:bg-white/5 transition-colors group">
-                  {/* Thumbnail */}
-                  <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-800 shrink-0 cursor-pointer" onClick={() => onPlaySong(song)}>
-                     <img src={`https://picsum.photos/seed/${song.id}/150/150`} alt="Cover" className="w-full h-full object-cover" />
-                     <div className="absolute bottom-1 right-1 bg-black/60 px-1 text-[10px] rounded font-medium">4:22</div>
-                     <div className="absolute top-1 left-1 bg-white/10 px-1 rounded text-[8px] font-bold">AI</div>
-                     
-                     <div className={cn(
-                        "absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity",
-                        activeSongId === song.id && isPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                     )}>
-                        {activeSongId === song.id && isPlaying ? (
-                          <Pause className="w-6 h-6 text-white" />
+            {(() => {
+              const list = showTrash ? (cancionesEliminadas || []) : canciones;
+              const fmt = (iso?: string) => {
+                if (!iso) return '';
+                const d = new Date(iso);
+                if (Number.isNaN(d.getTime())) return '';
+                return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+              };
+
+              if (list.length === 0) {
+                return (
+                  <div className="p-6 text-center text-slate-500 text-sm mt-10">
+                    {showTrash ? 'No hay canciones eliminadas' : 'No hay canciones'}
+                  </div>
+                );
+              }
+              return (
+                list.map(song => (
+                  <div key={song.id} className="flex items-start gap-4 p-2 rounded-xl hover:bg-white/5 transition-colors group">
+                    {/* Thumbnail */}
+                    <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-800 shrink-0 cursor-pointer" onClick={() => !showTrash && onPlaySong(song)}>
+                      <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
+                      <div className="absolute bottom-1 right-1 bg-black/60 px-1 text-[10px] rounded font-medium">4:22</div>
+                      <div className="absolute top-1 left-1 bg-white/10 px-1 rounded text-[8px] font-bold">{song.isCover ? 'COVER' : 'AI'}</div>
+                      {!showTrash && (
+                        <div className={cn(
+                          "absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity",
+                          activeSongId === song.id && isPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        )}>
+                          {activeSongId === song.id && isPlaying ? (
+                            <Pause className="w-6 h-6 text-white" />
+                          ) : (
+                            <Play className="w-6 h-6 text-white ml-1" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Info */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-sm font-bold truncate">{song.title}</h3>
+                        <span className="shrink-0 bg-green-500/20 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded">V5</span>
+                        <span className="shrink-0 bg-white/10 text-slate-300 text-[9px] font-medium px-1.5 py-0.5 rounded">{song.isCover ? 'Cover' : 'Canción'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-slate-400 truncate">{song.genre || ' '} </p>
+                        {!showTrash ? (
+                          <p className="text-[11px] text-slate-500 shrink-0">{song.createdAt ? `Creada ${fmt(song.createdAt)}` : ''}</p>
                         ) : (
-                          <Play className="w-6 h-6 text-white ml-1" />
+                          <div className="shrink-0 text-right leading-tight">
+                            <div className="text-[11px] text-slate-500">{song.createdAt ? `Creada ${fmt(song.createdAt)}` : ''}</div>
+                            <div className="text-[11px] text-red-300/80">{song.deletedAt ? `Eliminada ${fmt(song.deletedAt)}` : ''}</div>
+                          </div>
                         )}
-                     </div>
+                      </div>
+                      
+                      {/* Actions */}
+                      {!showTrash && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <button className="bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded-full text-xs text-slate-200 transition-colors">
+                            Publicar
+                          </button>
+                          <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
+                            <ThumbsUp className="w-3.5 h-3.5 text-slate-300" />
+                          </button>
+                          <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
+                            <Share2 className="w-3.5 h-3.5 text-slate-300" />
+                          </button>
+                          <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
+                            <Download className="w-3.5 h-3.5 text-slate-300" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Options Menu */}
+                    <button
+                      onClick={() => setMenuSong(song)}
+                      className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors shrink-0"
+                      aria-label="Opciones"
+                    >
+                      <MoreVertical className="w-4 h-4 text-slate-400" />
+                    </button>
                   </div>
-                  
-                  {/* Info */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-center">
-                     <div className="flex items-center gap-2 mb-1">
-                       <h3 className="text-sm font-bold truncate">{song.title}</h3>
-                       <span className="shrink-0 bg-green-500/20 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded">V3.0</span>
-                       <span className="shrink-0 bg-white/10 text-slate-300 text-[9px] font-medium px-1.5 py-0.5 rounded">Cover</span>
-                     </div>
-                     <p className="text-xs text-slate-400 mb-2 truncate">{song.genre || 'norteño'}</p>
-                     
-                     {/* Actions */}
-                     <div className="flex items-center gap-2">
-                       <button className="bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded-full text-xs text-slate-200 transition-colors">
-                         Publicar
-                       </button>
-                       <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
-                         <ThumbsUp className="w-3.5 h-3.5 text-slate-300" />
-                       </button>
-                       <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
-                         <Share2 className="w-3.5 h-3.5 text-slate-300" />
-                       </button>
-                       <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
-                         <Download className="w-3.5 h-3.5 text-slate-300" />
-                       </button>
-                     </div>
-                  </div>
-                  
-                  {/* Options Menu */}
-                  <button
-                    onClick={() => setMenuSong(song)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors shrink-0"
-                    aria-label="Opciones"
-                  >
-                    <MoreVertical className="w-4 h-4 text-slate-400" />
-                  </button>
-                </div>
-              ))
-            )}
+                ))
+              );
+            })()}
           </div>
         )}
         {activeTab === 'listas' && (
@@ -217,10 +260,12 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteS
         <SongOptionsSheet
           song={menuSong}
           onClose={() => setMenuSong(null)}
+          isDeleted={showTrash}
           onPlay={() => onPlaySong(menuSong)}
-          onUsePersona={() => {
+          onRestore={() => {
+            const id = menuSong.id;
             setMenuSong(null);
-            onOpenPersonaPicker?.();
+            onRestoreSong?.(id);
           }}
           onDelete={() => {
             const id = menuSong.id;
@@ -236,18 +281,29 @@ export function LibraryView({ canciones, vibes, onAddVibe, onPlaySong, onDeleteS
 function SongOptionsSheet({
   song,
   onClose,
+  isDeleted,
   onPlay,
-  onUsePersona,
+  onRestore,
   onDelete,
 }: {
   song: SongItem;
   onClose: () => void;
+  isDeleted: boolean;
   onPlay: () => void;
-  onUsePersona: () => void;
+  onRestore: () => void;
   onDelete: () => void;
 }) {
   const [isBusy, setIsBusy] = useState(false);
   const [published, setPublished] = useState(false);
+  const [showPersonaSave, setShowPersonaSave] = useState(false);
+  const [personaName, setPersonaName] = useState('');
+  const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
+  const fmt = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+  };
 
   const share = async () => {
     const url = (song.audioUrl || '').toString();
@@ -303,6 +359,102 @@ function SongOptionsSheet({
     }
   };
 
+  const compressImage = async (file: File) => {
+    const bitmap = await createImageBitmap(file);
+    const max = 256;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No pude procesar la imagen');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No pude convertir imagen'))), 'image/webp', 0.78);
+    });
+    return blob;
+  };
+
+  const savePersona = async () => {
+    if (!song.sunoTaskId || !song.sunoAudioId) {
+      alert('Esta canción no tiene datos de Suno (taskId/audioId) para crear Persona.');
+      return;
+    }
+    const name = personaName.trim();
+    if (!name) {
+      alert('Ponle un nombre a la Persona.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/generate-persona', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({
+          taskId: song.sunoTaskId,
+          audioId: song.sunoAudioId,
+          name,
+          description: (song.title || name).toString().slice(0, 2000),
+          style: (song.description || '').toString().slice(0, 200),
+          saveToLibrary: true,
+          coverUrl: song.coverUrl || null,
+          audioUrl: song.audioUrl || null,
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No se pudo crear la Persona.');
+        return;
+      }
+      const personaId = (out?.personaId || '').toString();
+      if (!personaId) {
+        alert('No recibí personaId.');
+        return;
+      }
+
+      if (personaPhoto && supabaseBrowser) {
+        const s = await ensureAnonSession();
+        if (s.ok) {
+          const { data } = await supabaseBrowser.auth.getUser();
+          const user = data?.user;
+          if (user?.id) {
+            const blob = await compressImage(personaPhoto);
+            const path = `personas/${user.id}/${personaId}.webp`;
+            const up = await supabaseBrowser.storage.from('ramber-tunes').upload(path, blob, {
+              upsert: true,
+              contentType: 'image/webp',
+              cacheControl: '31536000',
+            });
+            if (!up.error) {
+              const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
+              const url = (pub?.publicUrl || '').toString();
+              if (url) {
+                await supabaseBrowser.from('suno_personas').update({ photo_url: url }).eq('persona_id', personaId).eq('user_id', user.id);
+              }
+            }
+          }
+        }
+      }
+
+      alert('Persona guardada.');
+      setShowPersonaSave(false);
+      setPersonaName('');
+      setPersonaPhoto(null);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[120] flex items-end md:items-center justify-center bg-black/60">
       <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
@@ -314,11 +466,12 @@ function SongOptionsSheet({
         <div className="px-5 pb-4">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-              <img src={`https://picsum.photos/seed/${song.id}/200/200`} alt="Cover" className="w-full h-full object-cover" />
+              <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/200/200`).toString()} alt="Cover" className="w-full h-full object-cover" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
               <div className="text-slate-400 text-sm truncate">Ruben</div>
+              <div className="text-slate-500 text-xs mt-1">{isDeleted ? `Eliminada: ${fmt(song.deletedAt || undefined)}` : `Creada: ${fmt(song.createdAt || undefined)}`}</div>
             </div>
             <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10" onClick={onClose}>
               ✕
@@ -371,8 +524,12 @@ function SongOptionsSheet({
               <Music2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Samplear esta canción</span>
               <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">NUEVO</span>
             </button>
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={onUsePersona}>
-              <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Persona (Usar Voz)</span>
+            <button
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+              onClick={() => setShowPersonaSave(true)}
+              disabled={isBusy || isDeleted}
+            >
+              <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Persona</span>
             </button>
           </div>
 
@@ -380,31 +537,45 @@ function SongOptionsSheet({
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={download} disabled={isBusy}>
-              <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
-            </button>
+            {!isDeleted && (
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={download} disabled={isBusy}>
+                <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
+              </button>
+            )}
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
               <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
             </button>
-            <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => setPublished(!published)} disabled={isBusy}>
+            {!isDeleted && (
+              <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => setPublished(!published)} disabled={isBusy}>
               <div className="flex items-center gap-3">
                 <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Publicar</span>
               </div>
               <div className={cn("w-12 h-7 rounded-full p-1 transition-colors", published ? "bg-emerald-500" : "bg-white/10")}>
                 <div className={cn("w-5 h-5 rounded-full bg-white transition-transform", published ? "translate-x-5" : "translate-x-0")} />
               </div>
-            </button>
+              </button>
+            )}
           </div>
 
-          <button
-            className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"
-            onClick={() => {
-              if (confirm('¿Eliminar esta canción?')) onDelete();
-            }}
-            disabled={isBusy}
-          >
-            <Trash2 className="w-5 h-5" /> <span className="font-extrabold">Eliminar</span>
-          </button>
+          {isDeleted ? (
+            <button
+              className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+              onClick={() => onRestore()}
+              disabled={isBusy}
+            >
+              <Repeat2 className="w-5 h-5" /> <span className="font-extrabold">Recuperar</span>
+            </button>
+          ) : (
+            <button
+              className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"
+              onClick={() => {
+                if (confirm('¿Seguro que quieres eliminar esta canción?')) onDelete();
+              }}
+              disabled={isBusy}
+            >
+              <Trash2 className="w-5 h-5" /> <span className="font-extrabold">Eliminar</span>
+            </button>
+          )}
 
           <button
             className="w-full mt-3 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
@@ -415,6 +586,53 @@ function SongOptionsSheet({
           </button>
         </div>
       </div>
+
+      {showPersonaSave && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowPersonaSave(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Guardar Persona</div>
+              <button
+                onClick={() => setShowPersonaSave(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Ponle nombre a la voz</div>
+              <input
+                value={personaName}
+                onChange={(e) => setPersonaName(e.target.value)}
+                placeholder="Ej: Voz Ruben"
+                className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
+              />
+              <div className="text-slate-300 text-sm">Foto (opcional)</div>
+              <label className="w-full glass-card rounded-xl p-3 text-sm text-slate-200 border border-white/10 flex items-center justify-between cursor-pointer hover:bg-white/10">
+                <span className="truncate">{personaPhoto ? personaPhoto.name : 'Seleccionar foto'}</span>
+                <span className="text-slate-400">Opcional</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setPersonaPhoto(f);
+                  }}
+                />
+              </label>
+              <button
+                onClick={() => savePersona().catch(() => {})}
+                disabled={isBusy}
+                className="w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

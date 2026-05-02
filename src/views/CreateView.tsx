@@ -29,8 +29,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
 
   const [isPersonaPickerOpen, setIsPersonaPickerOpen] = useState(false);
-  const [personas, setPersonas] = useState<Array<{ persona_id: string; name: string }>>([]);
-  const [selectedPersona, setSelectedPersona] = useState<{ persona_id: string; name: string } | null>(null);
+  const [personas, setPersonas] = useState<Array<{ persona_id: string; name: string; photo_url?: string }>>([]);
+  const [selectedPersona, setSelectedPersona] = useState<{ persona_id: string; name: string; photo_url?: string } | null>(null);
 
   const audioInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -91,16 +91,28 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
         if (!user) return;
         const { data: rows } = await supabaseBrowser
           .from('suno_personas')
-          .select('persona_id, name')
+          .select('persona_id, name, photo_url')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(50);
         const list = Array.isArray(rows)
           ? rows
-              .map((r: any) => ({ persona_id: String(r?.persona_id || '').trim(), name: String(r?.name || '').trim() }))
+              .map((r: any) => ({
+                persona_id: String(r?.persona_id || '').trim(),
+                name: String(r?.name || '').trim(),
+                photo_url: typeof r?.photo_url === 'string' ? r.photo_url : '',
+              }))
               .filter((x: any) => x.persona_id)
           : [];
         setPersonas(list);
+        setSelectedPersona((prev) => {
+          if (!prev?.persona_id) return prev;
+          const match = list.find((p) => p.persona_id === prev.persona_id);
+          if (!match) return prev;
+          if (prev.photo_url) return prev;
+          if (!match.photo_url) return prev;
+          return { ...prev, photo_url: match.photo_url };
+        });
       })
       .catch(() => {});
   }, [isPersonaPickerOpen]);
@@ -235,6 +247,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
             lyrics: lyrics || undefined,
             genre: gender,
             audioUrl,
+            coverUrl: (track?.image_url || track?.imageUrl || '').toString() || undefined,
+            sunoTaskId: taskId,
+            sunoAudioId: audioId || null,
+            isCover: true,
           });
           clearAudio();
           alert('Cover creado y guardado en Biblioteca.');
@@ -342,6 +358,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
             lyrics: mode === 'personalizado' ? lyrics : undefined,
             genre: gender,
             audioUrl,
+            coverUrl: (track?.image_url || track?.imageUrl || '').toString() || undefined,
+            sunoTaskId: taskId,
+            sunoAudioId: audioId || null,
+            isCover: Boolean(audioFile || audioUploadUrl),
           });
 
           setAudioFile(null);
@@ -494,9 +514,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
                       }}
                       className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
-                        <User className="w-5 h-5" />
-                      </div>
+                      {p.photo_url ? (
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                          <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                          <User className="w-5 h-5" />
+                        </div>
+                      )}
                       <div className="flex-1 text-left min-w-0">
                         <div className="text-white font-bold truncate">{p.name || 'Persona'}</div>
                         <div className="text-slate-500 text-xs truncate">Voz guardada</div>
@@ -644,9 +670,15 @@ function CustomForm({
       {selectedPersona?.persona_id && (
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
-              <User className="w-5 h-5" />
-            </div>
+            {selectedPersona.photo_url ? (
+              <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                <img src={selectedPersona.photo_url} alt="" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                <User className="w-5 h-5" />
+              </div>
+            )}
             <div className="min-w-0">
               <div className="text-white font-bold truncate">{selectedPersona.name || 'Persona'}</div>
               <div className="text-slate-500 text-xs">Usando voz</div>

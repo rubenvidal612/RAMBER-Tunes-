@@ -9,7 +9,7 @@ import { SettingsView } from './views/SettingsView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
-import { ensureAnonSession } from './lib/supabaseBrowser';
+import { ensureAnonSession, getAccessToken } from './lib/supabaseBrowser';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
@@ -22,9 +22,12 @@ type BeforeInstallPromptEvent = Event & {
 export default function App() {
   const [currentTab, setCurrentTab] = useState<ViewTab>('inicio');
   const [canciones, setCanciones] = useState<SongItem[]>([]);
+  const [cancionesEliminadas, setCancionesEliminadas] = useState<SongItem[]>([]);
   const [vibes, setVibes] = useState<VibeItem[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [personaPickerNonce, setPersonaPickerNonce] = useState(0);
+  const [toast, setToast] = useState<string>('');
+  const toastTimerRef = useRef<number | null>(null);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -36,13 +39,67 @@ export default function App() {
 
   useEffect(() => {
     store.getData().then(data => {
-      setCanciones(data.canciones || []);
       setVibes(data.vibes || []);
     });
   }, []);
 
   useEffect(() => {
     ensureAnonSession().catch(() => {});
+  }, []);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const mapSongRow = (row: any): SongItem => ({
+    id: String(row?.id || ''),
+    title: String(row?.title || 'Pista sin título'),
+    description: typeof row?.description === 'string' ? row.description : undefined,
+    lyrics: typeof row?.lyrics === 'string' ? row.lyrics : undefined,
+    genre: typeof row?.gender === 'string' ? row.gender : undefined,
+    audioUrl: typeof row?.audio_url === 'string' ? row.audio_url : undefined,
+    coverUrl: typeof row?.cover_url === 'string' ? row.cover_url : undefined,
+    createdAt: typeof row?.created_at === 'string' ? row.created_at : undefined,
+    deletedAt: typeof row?.deleted_at === 'string' ? row.deleted_at : row?.deleted_at ?? null,
+    deletedReason: typeof row?.deleted_reason === 'string' ? row.deleted_reason : row?.deleted_reason ?? null,
+    sunoTaskId: typeof row?.suno_task_id === 'string' ? row.suno_task_id : row?.suno_task_id ?? null,
+    sunoAudioId: typeof row?.suno_audio_id === 'string' ? row.suno_audio_id : row?.suno_audio_id ?? null,
+    isCover: Boolean(row?.is_cover),
+  });
+
+  const loadSongs = async (deleted: boolean) => {
+    const t = await getAccessToken();
+    if (!t.ok) return { ok: false as const, error: t.error };
+    const r = await fetch(`/api/library/list?deleted=${deleted ? '1' : '0'}`, {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false as const, error: out?.error || 'No pude cargar tu biblioteca.' };
+    const list = Array.isArray(out?.songs) ? out.songs : [];
+    const songs = list.map(mapSongRow).filter((s: SongItem) => s.id);
+    return { ok: true as const, songs, cleanupDeleted: Number(out?.cleanup_deleted || 0) };
+  };
+
+  const refreshLibrary = async () => {
+    const a = await loadSongs(false);
+    if (a.ok) setCanciones(a.songs);
+    const d = await loadSongs(true);
+    if (d.ok) setCancionesEliminadas(d.songs);
+    if (a.ok && a.cleanupDeleted && a.cleanupDeleted > 0) {
+      showToast(`Se eliminaron automáticamente ${a.cleanupDeleted} canciones (plan gratis: 15 días).`);
+    }
+  };
+
+  useEffect(() => {
+    refreshLibrary().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -100,24 +157,101 @@ export default function App() {
     setPersonaPickerNonce((n) => n + 1);
   };
 
-  const addCancion = async (cancion: SongItem, audioBlob?: Blob) => {
-    const updatedCanciones = [cancion, ...canciones];
-    setCanciones(updatedCanciones);
-    await store.saveData({ canciones: updatedCanciones, vibes });
-    if (audioBlob) {
-      await store.saveAudio(cancion.id, audioBlob);
+  const addCancion = async (cancion: SongItem) => {
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/create', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          title: cancion.title,
+          description: cancion.description || '',
+          lyrics: cancion.lyrics || null,
+          gender: cancion.genre || null,
+          audioUrl: cancion.audioUrl || null,
+          coverUrl: cancion.coverUrl || null,
+          sunoTaskId: cancion.sunoTaskId || null,
+          sunoAudioId: cancion.sunoAudioId || null,
+          isCover: Boolean(cancion.isCover),
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude guardar en tu biblioteca.');
+        return;
+      }
+      const row = out?.song;
+      const saved = mapSongRow(row);
+      if (saved.id) {
+        setCanciones((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
+      }
+      if (out?.deleted_oldest) {
+        const names = Array.isArray(out?.deleted_titles) ? out.deleted_titles.filter((x: any) => typeof x === 'string' && x.trim()).slice(0, 2) : [];
+        const extra = Number(out?.deleted_count || 0) > 1 ? ` (+${Number(out?.deleted_count || 0) - 1})` : '';
+        const detail = names.length > 0 ? ` (${names.join(', ')}${extra})` : '';
+        showToast(`Se movió a Papelera una canción vieja para mantener máximo 100${detail}.`);
+        await refreshLibrary();
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error guardando en biblioteca');
     }
   };
 
   const deleteCancion = async (songId: string) => {
-    const updatedCanciones = canciones.filter((c) => c.id !== songId);
-    setCanciones(updatedCanciones);
-    await store.saveData({ canciones: updatedCanciones, vibes });
-    await store.deleteAudio(songId).catch(() => {});
-    if (activeSong?.id === songId) {
-      setActiveSong(null);
-      setIsPlaying(false);
-      if (audioRef.current) audioRef.current.src = '';
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id: songId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude eliminar.');
+        return;
+      }
+      await refreshLibrary();
+      if (activeSong?.id === songId) {
+        setActiveSong(null);
+        setIsPlaying(false);
+        if (audioRef.current) audioRef.current.src = '';
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error eliminando');
+    }
+  };
+
+  const restoreCancion = async (songId: string) => {
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/restore', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id: songId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude recuperar.');
+        return;
+      }
+      await refreshLibrary();
+      if (out?.deleted_oldest) {
+        showToast('Se movió a Papelera una canción vieja para mantener máximo 100.');
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error recuperando');
     }
   };
 
@@ -136,19 +270,7 @@ export default function App() {
       return;
     }
 
-    try {
-      const blob = await store.getAudio(song.id);
-      if (blob && audioRef.current) {
-        audioRef.current.src = URL.createObjectURL(blob);
-        audioRef.current.play();
-        setIsPlaying(true);
-      }
-    } catch {
-      // Audio not found
-      if (audioRef.current) {
-        audioRef.current.src = '';
-      }
-    }
+    if (audioRef.current) audioRef.current.src = '';
   };
 
   const togglePlay = () => {
@@ -197,7 +319,7 @@ export default function App() {
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} />}
-           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onOpenPersonaPicker={openPersonaPicker} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
            {/* Placeholders */}
@@ -223,7 +345,7 @@ export default function App() {
 
                {/* Library / Results View (Right) */}
                <div className="flex-1 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
-                {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onOpenPersonaPicker={openPersonaPicker} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+                {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
                </div>
              </>
            )}
@@ -237,6 +359,13 @@ export default function App() {
         onClose={() => setActiveSong(null)}
         placement={currentTab === 'studio' ? 'aboveCreate' : 'default'}
       />
+      {toast && (
+        <div className="fixed left-0 right-0 bottom-[92px] md:bottom-6 z-[260] flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto max-w-[520px] w-full bg-[#0b0f16] border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
+            {toast}
+          </div>
+        </div>
+      )}
       <div className="md:hidden">
         <BottomNav currentTab={currentTab} onChange={setCurrentTab} />
       </div>

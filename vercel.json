@@ -27,6 +27,10 @@
     {
       "src": "api/admin.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/library.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -44,6 +48,10 @@
     {
       "src": "/api/admin/(.*)",
       "dest": "/api/admin?action=$1"
+    },
+    {
+      "src": "/api/library/(.*)",
+      "dest": "/api/library?action=$1"
     },
     {
       "src": "/api/(.*)",

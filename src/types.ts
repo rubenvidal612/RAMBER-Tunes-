@@ -17,5 +17,12 @@ export interface SongItem {
   lyrics?: string;
   style?: string[];
   genre?: string;
-  audioUrl?: string; // Object URL for blob
+  audioUrl?: string;
+  coverUrl?: string;
+  createdAt?: string;
+  deletedAt?: string | null;
+  deletedReason?: string | null;
+  sunoTaskId?: string | null;
+  sunoAudioId?: string | null;
+  isCover?: boolean;
 }
