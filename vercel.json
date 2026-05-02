@@ -42,6 +42,10 @@
       "dest": "/api/account/balance"
     },
     {
+      "src": "/api/suno/credits/?",
+      "dest": "/api/suno?action=credits"
+    },
+    {
       "src": "/api/suno/(.*)",
       "dest": "/api/suno?action=$1"
     },
