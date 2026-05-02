@@ -38,6 +38,10 @@
       "handle": "filesystem"
     },
     {
+      "src": "/api/account/balance/?",
+      "dest": "/api/account/balance.ts"
+    },
+    {
       "src": "/api/suno/(.*)",
       "dest": "/api/suno?action=$1"
     },

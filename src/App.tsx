@@ -61,7 +61,7 @@ export default function App() {
   }, []);
 
   const refreshProviderCredits = async () => {
-    const r = await fetch('/api/account/balance?source=provider');
+    const r = await fetch('/api/suno/credits');
     const out = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = (out?.error || 'No pude consultar créditos.').toString();

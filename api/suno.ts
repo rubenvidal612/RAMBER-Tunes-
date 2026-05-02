@@ -32,6 +32,21 @@ function sunoErrorMessage(data: any, fallback: string) {
   return String(msg);
 }
 
+function parseCreditsValue(raw: any) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const cleaned = raw
+      .trim()
+      .replaceAll("Credits", "")
+      .replaceAll("credits", "")
+      .replaceAll(" ", "")
+      .replaceAll(",", ".");
+    const n = Number(cleaned);
+    if (Number.isFinite(n)) return n;
+  }
+  return NaN;
+}
+
 async function sunoFetchJson(path: string, init?: RequestInit) {
   const base = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
   if (!base) throw new Error("Falta SUNO_API_BASE_URL en variables de entorno");
@@ -777,6 +792,42 @@ async function handleTimestampedLyrics(req: any, res: any) {
   }
 }
 
+async function handleCredits(req: any, res: any) {
+  if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+  try {
+    const paths = [
+      "/api/v1/get-credits",
+      "/api/v1/generate/credit",
+      "/api/v1/suno/get-credits",
+      "/api/v1/suno/generate/credit",
+      "/api/v1/suno/credits",
+      "/api/v1/suno/credit",
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      const r = await sunoFetchJson(p, { method: "GET" });
+      last = r;
+      if (r.res.status !== 404) break;
+    }
+    const r = last;
+    if (!r?.res?.ok) {
+      const msg = sunoErrorMessage(r?.data, r?.text || `HTTP ${r?.res?.status || 0}`);
+      return send(res, 502, { error: "Error consultando créditos", code: r?.res?.status || 0, detail: String(msg).slice(0, 1200) });
+    }
+    const code = Number(r.data?.code);
+    if (code && code !== 200) {
+      const msg = sunoErrorMessage(r.data, "Error del proveedor");
+      return send(res, 502, { error: "Error consultando créditos", code, detail: String(msg).slice(0, 1200) });
+    }
+    const raw = r.data?.data?.credits ?? r.data?.data;
+    const parsed = parseCreditsValue(raw);
+    const credits = Number.isFinite(parsed) ? parsed : 0;
+    return send(res, 200, { credits });
+  } catch (e) {
+    return send(res, 502, { error: "Error consultando créditos", detail: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 export default async function handler(req: any, res: any) {
   const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
   const fallback = (() => {
@@ -796,6 +847,7 @@ export default async function handler(req: any, res: any) {
   if (a === "mp4") return handleMp4(req, res);
   if (a === "task") return handleTask(req, res);
   if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
+  if (a === "credits") return handleCredits(req, res);
 
   return send(res, 404, { error: "Ruta no encontrada", action: a || null });
 }

@@ -77,7 +77,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   }, []);
 
   useEffect(() => {
-    fetch('/api/account/balance?source=provider')
+    fetch('/api/suno/credits')
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
         if (!ok) return;
