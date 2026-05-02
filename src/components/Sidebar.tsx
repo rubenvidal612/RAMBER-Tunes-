@@ -1,4 +1,4 @@
-import { Home, Sparkles, Video, Music, Image as ImageIcon, ListMusic, Coins, HelpCircle } from 'lucide-react';
+import { Home, Sparkles, Video, Music, ListMusic, Coins, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -60,10 +60,6 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
           <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors mb-1">
             <ListMusic className="w-5 h-5" />
             <span className="text-sm font-medium">Canciones</span>
-          </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors mb-1">
-            <ImageIcon className="w-5 h-5" />
-            <span className="text-sm font-medium">Vibes</span>
           </button>
           <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors mb-1">
             <ListMusic className="w-5 h-5" />
