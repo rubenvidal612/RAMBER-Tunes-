@@ -6,6 +6,7 @@ import { CreateView } from './views/CreateView';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
+import { PricingView } from './views/PricingView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -29,6 +30,7 @@ export default function App() {
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -299,7 +301,12 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
-      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={displayCredits} />
+      <TopBar
+        className="flex-shrink-0"
+        onMenuClick={() => setIsSettingsOpen(true)}
+        onCreditsClick={() => setIsPricingOpen(true)}
+        credits={displayCredits}
+      />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
           <div className="bg-gradient-to-r from-emerald-700/40 to-teal-600/20 border border-emerald-400/15 rounded-2xl px-3 py-3 flex items-center gap-3">
@@ -393,6 +400,7 @@ export default function App() {
       />
 
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} />}
+      {isPricingOpen && <PricingView onClose={() => setIsPricingOpen(false)} />}
       {showIosHelp && (
         <div className="fixed inset-0 z-[300] bg-black/70 flex items-end md:hidden">
           <div className="w-full bg-[#0a0a0a] rounded-t-3xl p-5 border-t border-white/10">

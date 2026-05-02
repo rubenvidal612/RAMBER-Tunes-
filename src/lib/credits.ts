@@ -53,9 +53,9 @@ export function toCounts(credits: number): CreditCounts {
 } 
 
 export function creditsFromProfile(profile: any): number { 
-  const ramber = 
-    typeof profile?.ramber_credits === "number" && Number.isFinite(profile.ramber_credits) ? Number(profile.ramber_credits) : null; 
-  if (ramber !== null) return Math.max(0, ramber); 
+  const zingy = 
+    typeof profile?.zingy_credits === "number" && Number.isFinite(profile.zingy_credits) ? Number(profile.zingy_credits) : null; 
+  if (zingy !== null) return Math.max(0, zingy); 
 
   const songBal = 
     typeof profile?.song_balance === "number" && Number.isFinite(profile.song_balance) ? Number(profile.song_balance) : 0; 
@@ -70,7 +70,7 @@ export async function adjustUserCredits(admin: any, userId: string, deltaCredits
   for (let i = 0; i < 4; i++) { 
     const { data: profile, error: readErr } = await admin 
       .from("profiles") 
-      .select("id, song_balance, ramber_credits") 
+      .select("id, song_balance, zingy_credits") 
       .eq("id", userId) 
       .maybeSingle(); 
     if (readErr) return { ok: false as const, error: readErr.message }; 
@@ -80,7 +80,7 @@ export async function adjustUserCredits(admin: any, userId: string, deltaCredits
 
     const { error: updErr } = await admin 
       .from("profiles") 
-      .update({ ramber_credits: next }) 
+      .update({ zingy_credits: next }) 
       .eq("id", userId); 
 
     if (!updErr) return { ok: true as const, credits: next }; 
@@ -96,7 +96,7 @@ export async function consumeUserCredits(admin: any, userId: string, costCredits
   for (let i = 0; i < 4; i++) { 
     const { data: profile, error: readErr } = await admin 
       .from("profiles") 
-      .select("id, song_balance, ramber_credits") 
+      .select("id, song_balance, zingy_credits") 
       .eq("id", userId) 
       .maybeSingle(); 
     if (readErr) return { ok: false as const, error: readErr.message }; 
@@ -108,7 +108,7 @@ export async function consumeUserCredits(admin: any, userId: string, costCredits
 
     const { error: updErr } = await admin 
       .from("profiles") 
-      .update({ ramber_credits: next }) 
+      .update({ zingy_credits: next }) 
       .eq("id", userId); 
 
     if (!updErr) return { ok: true as const, credits: next }; 

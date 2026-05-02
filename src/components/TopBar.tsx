@@ -4,10 +4,11 @@ import { cn } from '@/lib/utils';
 interface TopBarProps {
   className?: string;
   onMenuClick?: () => void;
+  onCreditsClick?: () => void;
   credits?: number;
 }
 
-export function TopBar({ className, onMenuClick, credits }: TopBarProps) {
+export function TopBar({ className, onMenuClick, onCreditsClick, credits }: TopBarProps) {
   return (
     <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/50 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
@@ -26,10 +27,14 @@ export function TopBar({ className, onMenuClick, credits }: TopBarProps) {
            <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" />
         </button>
         
-        <div className="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+        <button
+          type="button"
+          onClick={onCreditsClick}
+          className="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-full px-3 py-1.5 border border-white/10 transition-colors"
+        >
           <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
           <span className="text-sm font-semibold text-slate-200">{credits || 0} Créditos</span>
-        </div>
+        </button>
         
         <button className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-sm shadow-inner overflow-hidden">
           R
