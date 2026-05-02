@@ -23,6 +23,10 @@
     {
       "src": "api/webhooks/suno.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/admin.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -36,6 +40,10 @@
     {
       "src": "/api/mercadopago/(.*)",
       "dest": "/api/mercadopago?action=$1"
+    },
+    {
+      "src": "/api/admin/(.*)",
+      "dest": "/api/admin?action=$1"
     },
     {
       "src": "/api/(.*)",
