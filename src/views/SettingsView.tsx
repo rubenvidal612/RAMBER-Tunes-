@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
 import { PricingView } from './PricingView';
+import { useUserCredits } from '@/hooks/useUserCredits';
 
 export function SettingsView({ onClose }: { onClose: () => void }) {
   const [showPricing, setShowPricing] = useState(false);
+  const { credits } = useUserCredits();
 
   if (showPricing) {
     return <PricingView onClose={() => setShowPricing(false)} />;
@@ -28,7 +30,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
-            <span className="font-semibold text-slate-200">5100 Créditos</span>
+            <span className="font-semibold text-slate-200">{credits} Créditos</span>
             <HelpCircle className="w-4 h-4 text-slate-500" />
           </div>
           <button 

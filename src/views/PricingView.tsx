@@ -1,12 +1,80 @@
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { ShieldCheck, Check, Sparkles } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
+import { useUserCredits } from '@/hooks/useUserCredits';
+import { getAccessToken } from '@/lib/supabaseBrowser';
+import { CREDIT_COSTS } from '@/lib/credits';
 
 interface PricingViewProps {
   onClose: () => void;
 }
 
 export function PricingView({ onClose }: PricingViewProps) {
+  const { credits, refreshCredits } = useUserCredits();
+  const [isBusy, setIsBusy] = useState(false);
+
+  const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
+  const versions = songs * 2;
+
+  const buy = async (packKey: 'inicio' | 'productor') => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+
+      const r = await fetch('/api/mercadopago/create-preference', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({ packKey }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No se pudo iniciar el pago.');
+        return;
+      }
+
+      const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
+      if (!initPoint) {
+        alert('No recibí link de pago.');
+        return;
+      }
+      window.location.href = initPoint;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const claimFree = async () => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/mercadopago/claim-free', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${t.token}`,
+        },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No se pudo activar.');
+        return;
+      }
+      await refreshCredits();
+      alert(out?.already ? 'Ya habías activado el plan gratis.' : 'Listo: se activó el plan gratis.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full w-full bg-[#0a0a0a] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300 z-[200] fixed inset-0 pb-safe text-white md:bg-black/80 md:backdrop-blur-sm md:items-center md:justify-center md:p-8">
       
@@ -31,11 +99,15 @@ export function PricingView({ onClose }: PricingViewProps) {
 
         {/* Saldo actual */}
         <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-5 mt-4">
-          <h3 className="text-lg font-bold text-white mb-1">Te quedan 57 canciones disponibles</h3>
+          <h3 className="text-lg font-bold text-white mb-1">Te quedan {songs} canciones disponibles</h3>
           <p className="text-slate-400 text-sm mb-4">
             Se descuenta 1 canción solo cuando la música se genera con éxito.
           </p>
-          <button className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-full text-sm font-bold transition-colors">
+          <button
+            onClick={() => refreshCredits()}
+            className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-full text-sm font-bold transition-colors disabled:opacity-60"
+            disabled={isBusy}
+          >
             Actualizar saldo
           </button>
         </div>
@@ -81,7 +153,11 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
           </div>
 
-          <button className="w-full bg-teal-500 hover:bg-teal-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
+          <button
+            onClick={claimFree}
+            disabled={isBusy}
+            className="w-full bg-teal-500 hover:bg-teal-400 text-white h-[48px] rounded-full font-bold text-base transition-colors disabled:opacity-60"
+          >
             Activar gratis
           </button>
         </div>
@@ -129,7 +205,11 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
           </div>
 
-          <button className="w-full bg-blue-500 hover:bg-blue-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
+          <button
+            onClick={() => buy('inicio')}
+            disabled={isBusy}
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white h-[48px] rounded-full font-bold text-base transition-colors disabled:opacity-60"
+          >
             Comprar ahora
           </button>
         </div>
@@ -178,7 +258,11 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
           </div>
 
-          <button className="w-full bg-indigo-500 hover:bg-indigo-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
+          <button
+            onClick={() => buy('productor')}
+            disabled={isBusy}
+            className="w-full bg-indigo-500 hover:bg-indigo-400 text-white h-[48px] rounded-full font-bold text-base transition-colors disabled:opacity-60"
+          >
             Comprar ahora
           </button>
         </div>
@@ -212,10 +296,14 @@ export function PricingView({ onClose }: PricingViewProps) {
 
           <div className="mt-8 bg-white text-black p-5 rounded-2xl flex justify-between items-center shadow-lg">
             <div>
-              <p className="font-bold text-base">Te quedan 57 canciones</p>
-              <p className="text-slate-600 text-sm">≈ 114 versiones (A y B)</p>
+              <p className="font-bold text-base">Te quedan {songs} canciones</p>
+              <p className="text-slate-600 text-sm">≈ {versions} versiones (A y B)</p>
             </div>
-            <button className="border border-slate-300 hover:bg-slate-100 text-black px-4 py-2 rounded-full font-bold text-sm transition-colors">
+            <button
+              onClick={() => refreshCredits()}
+              disabled={isBusy}
+              className="border border-slate-300 hover:bg-slate-100 text-black px-4 py-2 rounded-full font-bold text-sm transition-colors disabled:opacity-60"
+            >
               Actualizar
             </button>
           </div>
