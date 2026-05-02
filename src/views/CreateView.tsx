@@ -29,6 +29,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioAction, setAudioAction] = useState<'cover' | 'extend' | 'library'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
+  const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
 
@@ -142,6 +143,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioAction('cover');
     setUploadProgress(0);
     setIsAudioModalOpen(false);
+    setAudioUploadError(null);
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
@@ -165,20 +167,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const uploadAudio = async (file: File) => {
     if (!supabaseBrowser) {
+      setAudioUploadError('Supabase no está configurado.');
       alert('Supabase no está configurado.');
       return;
     }
+    setAudioUploadError(null);
     setIsUploadingAudio(true);
     setAudioUploadUrl('');
     try {
       const s = await ensureAnonSession();
       if (!s.ok) {
+        setAudioUploadError(s.error || 'No se pudo iniciar sesión.');
         alert(s.error || 'No se pudo iniciar sesión.');
         return;
       }
       const { data } = await supabaseBrowser.auth.getUser();
       const user = data?.user;
       if (!user) {
+        setAudioUploadError('No se pudo identificar tu usuario.');
         alert('No se pudo identificar tu usuario.');
         return;
       }
@@ -193,16 +199,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         cacheControl: '31536000',
       });
       if (error) {
+        setAudioUploadError(error.message || 'No se pudo subir el audio.');
         alert(error.message || 'No se pudo subir el audio.');
         return;
       }
       const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
       const url = (pub?.publicUrl || '').toString();
       if (!url) {
+        setAudioUploadError('No pude obtener el link del audio subido.');
         alert('No pude obtener el link del audio subido.');
         return;
       }
       setAudioUploadUrl(url);
+      setAudioUploadError(null);
     } finally {
       setIsUploadingAudio(false);
     }
@@ -214,6 +223,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioAction('cover');
     setUploadProgress(1);
     setIsAudioModalOpen(true);
+    setAudioUploadError(null);
     uploadAudio(file).catch(() => {});
   };
 
@@ -661,17 +671,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             </div>
 
             <div className="p-4">
+              {(() => {
+                const hot = Number(uploadProgress || 0) >= 87;
+                const deg = Math.max(0, Math.min(100, Number(uploadProgress || 0))) * 3.6;
+                const ringColor = hot ? '#ef4444' : '#22c55e';
+                const pctText = `${Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))))}%`;
+                return (
+                  <>
               <div className="flex items-center gap-4">
                 <div
                   className="w-14 h-14 rounded-full p-[2px] shrink-0"
                   style={{
-                    background: `conic-gradient(#22c55e ${Math.max(0, Math.min(100, Number(uploadProgress || 0))) * 3.6}deg, rgba(255,255,255,0.10) 0deg)`,
+                    background: `conic-gradient(${ringColor} ${deg}deg, rgba(255,255,255,0.10) 0deg)`,
                   }}
                 >
                   <div className="w-full h-full rounded-full bg-[#0b0f16] border border-white/10 flex items-center justify-center">
-                    <div className={cn("text-xs font-extrabold", Number(uploadProgress || 0) >= 87 ? "text-red-300" : "text-slate-100")}>
-                      {Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))))}%
-                    </div>
+                    <div className={cn("text-xs font-extrabold", hot ? "text-red-400" : "text-slate-100")}>{pctText}</div>
                   </div>
                 </div>
                 <div className="min-w-0">
@@ -680,7 +695,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </div>
               </div>
 
+              {audioUploadError && (
+                <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                  {audioUploadError}
+                </div>
+              )}
+
               <div className="mt-4 text-slate-300 text-sm">Elige qué quieres hacer</div>
+                  </>
+                );
+              })()}
 
               <div className="grid grid-cols-3 gap-3 mt-3">
                 <button
@@ -694,7 +718,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
                     <AudioLines className="w-5 h-5" />
                   </div>
-                  <div className="mt-3 text-white font-bold">Versión</div>
+                  <div className="mt-3 text-white font-bold">Cover</div>
                 </button>
 
                 <button
@@ -739,6 +763,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[52px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
                 Continuar
+              </button>
+
+              <button
+                onClick={() => {
+                  if (audioFile) {
+                    uploadAudio(audioFile).catch(() => {});
+                    return;
+                  }
+                }}
+                disabled={isUploadingAudio || !audioFile}
+                className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+              >
+                Reintentar subida
               </button>
 
               <button
