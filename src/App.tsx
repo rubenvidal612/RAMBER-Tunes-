@@ -9,6 +9,7 @@ import { SettingsView } from './views/SettingsView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
+import { ensureAnonSession } from './lib/supabaseBrowser';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
@@ -37,6 +38,10 @@ export default function App() {
       setCanciones(data.canciones || []);
       setVibes(data.vibes || []);
     });
+  }, []);
+
+  useEffect(() => {
+    ensureAnonSession().catch(() => {});
   }, []);
 
   useEffect(() => {

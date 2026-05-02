@@ -22,6 +22,9 @@ export async function sunoFetchJson(req: Request, path: string, init?: RequestIn
 
   const headers = new Headers(init?.headers);
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
+  const apiKey =
+    (typeof process !== "undefined" && process?.env && (process.env.SUNO_API_KEY || process.env.SUNO_KEY)) || "";
+  if (apiKey && !headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
 
   const res = await fetch(url, {
     ...init,
@@ -38,4 +41,3 @@ export async function sunoFetchJson(req: Request, path: string, init?: RequestIn
 
   return { res, data, text };
 }
-
