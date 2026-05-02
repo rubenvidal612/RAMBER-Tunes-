@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User } from 'lucide-react';
+import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { GoogleGenAI } from "@google/genai";
@@ -9,9 +9,10 @@ interface CreateViewProps {
   onSongCreated?: (song: SongItem, audioBlob?: Blob) => void;
   credits?: number;
   openPersonaPickerSignal?: number;
+  onGoLibrary?: () => void;
 }
 
-export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: CreateViewProps) {
+export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary }: CreateViewProps) {
   const [mode, setMode] = useState<CreateMode>('personalizado');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
@@ -25,6 +26,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
+  const [audioAction, setAudioAction] = useState<'cover' | 'extend' | 'library'>('cover');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
 
@@ -121,8 +125,29 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
     setAudioFile(null);
     setAudioUploadUrl('');
     setIsUploadingAudio(false);
+    setIsAudioModalOpen(false);
+    setAudioAction('cover');
+    setUploadProgress(0);
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
+
+  useEffect(() => {
+    if (!isUploadingAudio) return;
+    setUploadProgress((p) => (p > 0 ? p : 1));
+    const id = window.setInterval(() => {
+      setUploadProgress((p) => {
+        const next = p <= 0 ? 1 : p + 3;
+        return Math.min(next, 95);
+      });
+    }, 400);
+    return () => window.clearInterval(id);
+  }, [isUploadingAudio]);
+
+  useEffect(() => {
+    if (!audioUploadUrl) return;
+    if (!audioFile) return;
+    setUploadProgress((p) => (p >= 95 ? 100 : Math.max(p, 100)));
+  }, [audioUploadUrl, audioFile]);
 
   const uploadAudio = async (file: File) => {
     if (!supabaseBrowser) {
@@ -167,6 +192,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
     } finally {
       setIsUploadingAudio(false);
     }
+  };
+
+  const pickAudio = async (file: File) => {
+    setAudioFile(file);
+    setAudioUploadUrl('');
+    setAudioAction('cover');
+    setUploadProgress(1);
+    setIsAudioModalOpen(true);
+    uploadAudio(file).catch(() => {});
   };
 
   const handleCoverFromAudio = async () => {
@@ -465,6 +499,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
             onClearAudio={clearAudio}
             onCoverFromAudio={handleCoverFromAudio}
             onOpenPersonaPicker={() => setIsPersonaPickerOpen(true)}
+            onPickAudio={pickAudio}
             selectedPersona={selectedPersona}
             onClearPersona={() => setSelectedPersona(null)}
           />
@@ -547,6 +582,104 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal }: 
           </div>
         </div>
       )}
+
+      {isAudioModalOpen && audioFile && (
+        <div className="fixed inset-0 z-[130] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsAudioModalOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Crear desde tu audio</div>
+              <button
+                onClick={() => setIsAudioModalOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                  <div className="text-sm font-extrabold text-slate-100">{Math.max(0, Math.min(100, Math.round(uploadProgress)))}%</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-white font-extrabold truncate">{audioFile.name}</div>
+                  <div className="text-slate-400 text-sm">{isUploadingAudio ? 'Subiendo…' : audioUploadUrl ? 'Listo' : 'Preparando…'}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 text-slate-300 text-sm">Elige qué quieres hacer</div>
+
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <button
+                  onClick={() => setAudioAction('cover')}
+                  className={cn(
+                    "rounded-2xl p-4 border transition-colors text-left",
+                    audioAction === 'cover' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  )}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
+                    <AudioLines className="w-5 h-5" />
+                  </div>
+                  <div className="mt-3 text-white font-bold">Versión</div>
+                </button>
+
+                <button
+                  onClick={() => setAudioAction('extend')}
+                  className={cn(
+                    "rounded-2xl p-4 border transition-colors text-left",
+                    audioAction === 'extend' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  )}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
+                    <Pencil className="w-5 h-5" />
+                  </div>
+                  <div className="mt-3 text-white font-bold">Extender</div>
+                </button>
+
+                <button
+                  onClick={() => setAudioAction('library')}
+                  className={cn(
+                    "rounded-2xl p-4 border transition-colors text-left",
+                    audioAction === 'library' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  )}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
+                    <Library className="w-5 h-5" />
+                  </div>
+                  <div className="mt-3 text-white font-bold">Biblioteca</div>
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (audioAction === 'library') {
+                    setIsAudioModalOpen(false);
+                    onGoLibrary?.();
+                    return;
+                  }
+                  if (audioAction === 'extend') {
+                    alert('Extender: Próximamente');
+                    return;
+                  }
+                  handleCoverFromAudio().catch(() => {});
+                }}
+                disabled={isUploadingAudio || (audioAction === 'cover' && !audioUploadUrl)}
+                className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[52px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+              >
+                Continuar
+              </button>
+
+              <button
+                onClick={clearAudio}
+                className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+              >
+                Cambiar audio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -614,6 +747,7 @@ function CustomForm({
   onClearAudio,
   onCoverFromAudio,
   onOpenPersonaPicker,
+  onPickAudio,
   selectedPersona,
   onClearPersona,
 }: any) {
@@ -654,7 +788,7 @@ function CustomForm({
               if (e.target.files && e.target.files.length > 0) {
                 const f = e.target.files[0];
                 setAudioFile(f);
-                onUploadAudio(f);
+                onPickAudio(f);
               }
             }}
           />
@@ -686,50 +820,6 @@ function CustomForm({
           </div>
           <button onClick={onClearPersona} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
             <X className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-
-      {audioFile && (
-        <div className="glass-card rounded-3xl p-5 border border-white/10">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-white font-extrabold truncate">{audioFile.name}</div>
-              <div className="text-slate-400 text-sm">{isUploadingAudio ? 'Subiendo...' : audioUploadUrl ? 'Listo para Cover' : 'Preparando...'}</div>
-              <div className="text-slate-300 text-sm mt-3">Crear desde tu audio</div>
-              <div className="grid grid-cols-3 gap-3 mt-3">
-                <button
-                  onClick={onCoverFromAudio}
-                  disabled={isUploadingAudio || !audioUploadUrl}
-                  className="glass-card rounded-2xl p-4 text-slate-100 font-bold hover:bg-white/10 transition-colors disabled:opacity-60"
-                >
-                  Cover
-                </button>
-                <button
-                  onClick={() => alert('Extender: Próximamente')}
-                  disabled={isUploadingAudio || !audioUploadUrl}
-                  className="glass-card rounded-2xl p-4 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
-                >
-                  Extender
-                </button>
-                <button
-                  onClick={() => alert('Abre Biblioteca abajo')}
-                  className="glass-card rounded-2xl p-4 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
-                >
-                  Biblioteca
-                </button>
-              </div>
-            </div>
-            <button onClick={onClearAudio} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <button
-            onClick={onCoverFromAudio}
-            disabled={isUploadingAudio || !audioUploadUrl}
-            className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
-          >
-            Continuar
           </button>
         </div>
       )}

@@ -38,7 +38,22 @@ export function useUserCredits() {
   };
 
   useEffect(() => {
+    if (!supabaseBrowser) return;
+
     refreshCredits().catch(() => {});
+
+    const { data } = supabaseBrowser.auth.onAuthStateChange(() => {
+      refreshCredits().catch(() => {});
+    });
+
+    const interval = window.setInterval(() => {
+      refreshCredits().catch(() => {});
+    }, 30000);
+
+    return () => {
+      data?.subscription?.unsubscribe();
+      window.clearInterval(interval);
+    };
   }, []);
 
   return {

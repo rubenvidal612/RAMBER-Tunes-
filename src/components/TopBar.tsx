@@ -5,9 +5,10 @@ interface TopBarProps {
   className?: string;
   onMenuClick?: () => void;
   credits?: number;
+  providerCredits?: number | null;
 }
 
-export function TopBar({ className, onMenuClick, credits }: TopBarProps) {
+export function TopBar({ className, onMenuClick, credits, providerCredits }: TopBarProps) {
   return (
     <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/50 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
@@ -26,6 +27,13 @@ export function TopBar({ className, onMenuClick, credits }: TopBarProps) {
            <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" />
         </button>
         
+        {typeof providerCredits === 'number' && Number.isFinite(providerCredits) && (
+          <div className="hidden lg:flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+            <span className="text-xs font-semibold text-slate-300">Suno</span>
+            <span className="text-sm font-extrabold text-slate-100">{providerCredits}</span>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
           <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
           <span className="text-sm font-semibold text-slate-200">{credits || 0} Créditos</span>

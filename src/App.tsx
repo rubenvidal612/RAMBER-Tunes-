@@ -9,7 +9,7 @@ import { SettingsView } from './views/SettingsView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
-import { ensureAnonSession, getAccessToken } from './lib/supabaseBrowser';
+import { ensureAnonSession, getAccessToken, supabaseBrowser } from './lib/supabaseBrowser';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
@@ -28,11 +28,13 @@ export default function App() {
   const [personaPickerNonce, setPersonaPickerNonce] = useState(0);
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
+  const [providerCredits, setProviderCredits] = useState<number | null>(null);
+  const [isAdminUser, setIsAdminUser] = useState(false);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const { credits } = useUserCredits();
+  const { credits, refreshCredits } = useUserCredits();
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -58,6 +60,34 @@ export default function App() {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!supabaseBrowser) return;
+    supabaseBrowser.auth.getUser().then(({ data }) => {
+      const email = (data?.user?.email || '').toString().trim().toLowerCase();
+      setIsAdminUser(email === 'rubenvfiverr612@gmail.com');
+    }).catch(() => {});
+  }, []);
+
+  const refreshProviderCredits = async () => {
+    if (!isAdminUser) return;
+    const t = await getAccessToken();
+    if (!t.ok) return;
+    const r = await fetch('/api/account/balance?source=provider', {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return;
+    const c = Number(out?.credits);
+    if (Number.isFinite(c)) setProviderCredits(c);
+  };
+
+  useEffect(() => {
+    if (!isAdminUser) return;
+    refreshProviderCredits().catch(() => {});
+    const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 45000);
+    return () => window.clearInterval(interval);
+  }, [isAdminUser]);
 
   const mapSongRow = (row: any): SongItem => ({
     id: String(row?.id || ''),
@@ -189,6 +219,8 @@ export default function App() {
       if (saved.id) {
         setCanciones((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
       }
+      refreshCredits().catch(() => {});
+      refreshProviderCredits().catch(() => {});
       if (out?.deleted_oldest) {
         const names = Array.isArray(out?.deleted_titles) ? out.deleted_titles.filter((x: any) => typeof x === 'string' && x.trim()).slice(0, 2) : [];
         const extra = Number(out?.deleted_count || 0) > 1 ? ` (+${Number(out?.deleted_count || 0) - 1})` : '';
@@ -247,6 +279,7 @@ export default function App() {
         return;
       }
       await refreshLibrary();
+      refreshCredits().catch(() => {});
       if (out?.deleted_oldest) {
         showToast('Se movió a Papelera una canción vieja para mantener máximo 100.');
       }
@@ -285,7 +318,7 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
-      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={credits} />
+      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={credits} providerCredits={providerCredits} />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
           <div className="bg-gradient-to-r from-emerald-700/40 to-teal-600/20 border border-emerald-400/15 rounded-2xl px-3 py-3 flex items-center gap-3">
@@ -318,7 +351,7 @@ export default function App() {
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
-           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} />}
+           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
@@ -340,7 +373,7 @@ export default function App() {
              <>
                {/* Create View (Middle) */}
                <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                 <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} />
+                 <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />
                </div>
 
                {/* Library / Results View (Right) */}
