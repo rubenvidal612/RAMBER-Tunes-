@@ -39,7 +39,7 @@
     },
     {
       "src": "/api/account/balance/?",
-      "dest": "/api/account/balance.ts"
+      "dest": "/api/account/balance"
     },
     {
       "src": "/api/suno/(.*)",

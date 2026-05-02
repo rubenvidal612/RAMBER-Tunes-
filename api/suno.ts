@@ -829,25 +829,29 @@ async function handleCredits(req: any, res: any) {
 }
 
 export default async function handler(req: any, res: any) {
-  const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
-  const fallback = (() => {
-    const pathname = new URL(req.url, "http://localhost").pathname;
-    const parts = pathname.split("/").filter(Boolean);
-    const i = parts.findIndex((p) => p === "suno");
-    const next = i >= 0 ? parts[i + 1] : "";
-    return (next || "").toLowerCase();
-  })();
-  const a = action || fallback;
+  try {
+    const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
+    const fallback = (() => {
+      const pathname = new URL(req.url, "http://localhost").pathname;
+      const parts = pathname.split("/").filter(Boolean);
+      const i = parts.findIndex((p) => p === "suno");
+      const next = i >= 0 ? parts[i + 1] : "";
+      return (next || "").toLowerCase();
+    })();
+    const a = action || fallback;
 
-  if (a === "generate") return handleGenerate(req, res);
-  if (a === "extend") return handleExtend(req, res);
-  if (a === "upload-cover") return handleUploadCover(req, res);
-  if (a === "separate") return handleSeparate(req, res);
-  if (a === "generate-persona") return handleGeneratePersona(req, res);
-  if (a === "mp4") return handleMp4(req, res);
-  if (a === "task") return handleTask(req, res);
-  if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
-  if (a === "credits") return handleCredits(req, res);
+    if (a === "generate") return handleGenerate(req, res);
+    if (a === "extend") return handleExtend(req, res);
+    if (a === "upload-cover") return handleUploadCover(req, res);
+    if (a === "separate") return handleSeparate(req, res);
+    if (a === "generate-persona") return handleGeneratePersona(req, res);
+    if (a === "mp4") return handleMp4(req, res);
+    if (a === "task") return handleTask(req, res);
+    if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
+    if (a === "credits") return handleCredits(req, res);
 
-  return send(res, 404, { error: "Ruta no encontrada", action: a || null });
+    return send(res, 404, { error: "Ruta no encontrada", action: a || null });
+  } catch (e) {
+    return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+  }
 }
