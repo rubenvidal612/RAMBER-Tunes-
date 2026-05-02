@@ -1,6 +1,14 @@
+import { useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
+import { PricingView } from './PricingView';
 
 export function SettingsView({ onClose }: { onClose: () => void }) {
+  const [showPricing, setShowPricing] = useState(false);
+
+  if (showPricing) {
+    return <PricingView onClose={() => setShowPricing(false)} />;
+  }
+
   return (
     <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-black/90 backdrop-blur-3xl fixed inset-0 pb-safe">
       <div className="flex items-center gap-4 p-4 sticky top-0 bg-transparent z-10 backdrop-blur-xl border-b border-white/5">
@@ -23,7 +31,10 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             <span className="font-semibold text-slate-200">5100 Créditos</span>
             <HelpCircle className="w-4 h-4 text-slate-500" />
           </div>
-          <button className="bg-green-500 hover:bg-green-400 text-[#020617] font-semibold text-xs px-4 py-2 rounded-full transition-colors">
+          <button 
+            onClick={() => setShowPricing(true)}
+            className="bg-green-500 hover:bg-green-400 text-[#020617] font-semibold text-xs px-4 py-2 rounded-full transition-colors"
+          >
             Obtener más canciones
           </button>
         </div>

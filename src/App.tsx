@@ -6,6 +6,7 @@ import { CreateView } from './views/CreateView';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
+import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
 
@@ -17,10 +18,11 @@ export default function App() {
   const [canciones, setCanciones] = useState<SongItem[]>([]);
   const [vibes, setVibes] = useState<VibeItem[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const { credits } = useUserCredits(); // Hook de créditos
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const { credits, consumeCredits } = useUserCredits(); // Hook de créditos
 
   useEffect(() => {
     store.getData().then(data => {
@@ -36,6 +38,12 @@ export default function App() {
   };
 
   const addCancion = async (cancion: SongItem, audioBlob?: Blob) => {
+    // Consumir 12 créditos por cada canción creada
+    if (!consumeCredits(12)) {
+      alert('Créditos insuficientes. Necesitas 12 créditos para crear una canción.');
+      return;
+    }
+    
     const updatedCanciones = [cancion, ...canciones];
     setCanciones(updatedCanciones);
     await store.saveData({ canciones: updatedCanciones, vibes });
@@ -80,16 +88,16 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
-      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} />
+      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={credits} />
       <Banner />
       
       <main className="flex-1 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
-           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} />}
+           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={credits} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
-           {currentTab === 'perfil' && <ProfileView />}
+           {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
            {/* Placeholders */}
            {currentTab === 'mv' && <div className="flex-1 flex items-center justify-center text-slate-500">Music Videos (Próximamente)</div>}

@@ -1,0 +1,216 @@
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { ShieldCheck, Check, Sparkles } from 'lucide-react';
+
+interface PricingViewProps {
+  onClose: () => void;
+}
+
+export function PricingView({ onClose }: PricingViewProps) {
+  return (
+    <div className="flex flex-col h-full w-full bg-[#0a0a0a] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300 z-[200] fixed inset-0 pb-safe text-white">
+      {/* Header */}
+      <div className="flex items-center p-4 sticky top-0 bg-[#0a0a0a] z-10 border-b border-white/5">
+        <button onClick={onClose} className="p-2 text-slate-300 hover:text-white glass-card rounded-full mr-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M15 18l-6-6 6-6"></path></svg>
+        </button>
+        <h2 className="text-xl font-bold flex-1 text-center pr-10">Planes de Recarga</h2>
+      </div>
+
+      <div className="p-6 space-y-6 pb-32 max-w-2xl mx-auto w-full">
+        
+        <p className="text-slate-300 text-[15px]">
+          Compra canciones para poder descargar y seguir creando.
+        </p>
+
+        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 flex items-center gap-2 text-indigo-300 font-medium text-sm">
+          <Sparkles className="w-4 h-4" /> Cada canción crea 2 versiones (A y B)
+        </div>
+
+        {/* Saldo actual */}
+        <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-5 mt-4">
+          <h3 className="text-lg font-bold text-white mb-1">Te quedan 57 canciones disponibles</h3>
+          <p className="text-slate-400 text-sm mb-4">
+            Se descuenta 1 canción solo cuando la música se genera con éxito.
+          </p>
+          <button className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-full text-sm font-bold transition-colors">
+            Actualizar saldo
+          </button>
+        </div>
+
+        {/* Plan Gratis */}
+        <div className="bg-gradient-to-b from-teal-900/40 to-transparent border border-teal-500/20 rounded-3xl p-6 relative overflow-hidden">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <h3 className="text-xl font-bold text-white">Plan Gratis (Prueba)</h3>
+              <p className="text-slate-300 text-sm mt-1">5 canciones • 60 créditos</p>
+              <p className="text-slate-400 text-sm mt-1">Incluye 5 canciones (10 versiones A y B)</p>
+            </div>
+            <span className="bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold">Gratis</span>
+          </div>
+
+          <div className="flex items-end gap-2 mt-4 mb-6">
+            <span className="text-4xl font-bold text-white">Gratis</span>
+            <span className="bg-teal-500/20 text-teal-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">10 versiones</span>
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500" /> Incluye 5 canciones
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500" /> Total: 60 créditos
+            </div>
+            <div className="flex items-start gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500 shrink-0 mt-0.5" /> 
+              <span>Cada generación entrega 2 canciones<br/>(Versión A y B)</span>
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500" /> Total: 10 versiones
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500" /> Crear canciones (A/B)
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500" /> No incluye descargas
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500" /> No incluye Karaoke / STEMS
+            </div>
+          </div>
+
+          <button className="w-full bg-teal-500 hover:bg-teal-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
+            Activar gratis
+          </button>
+        </div>
+
+        {/* Pack Inicio */}
+        <div className="bg-gradient-to-b from-blue-900/30 to-transparent border border-blue-500/20 rounded-3xl p-6 relative overflow-hidden mt-6">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <h3 className="text-xl font-bold text-white">Pack Inicio</h3>
+              <p className="text-slate-300 text-sm mt-1">100 canciones • 1200 créditos</p>
+              <p className="text-slate-400 text-sm mt-1">Ideal para empezar</p>
+            </div>
+          </div>
+
+          <div className="flex items-end gap-2 mt-4 mb-6">
+            <span className="text-4xl font-bold text-white">$275 MXN</span>
+            <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">200 versiones</span>
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Incluye 100 canciones
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Total: 1200 créditos
+            </div>
+            <div className="flex items-start gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" /> 
+              <span>Cada generación entrega 2 canciones<br/>(Versión A y B)</span>
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Total: 200 versiones
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Descargas activas
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500" /> Crear canciones (A/B)
+            </div>
+          </div>
+
+          <button className="w-full bg-blue-500 hover:bg-blue-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
+            Comprar ahora
+          </button>
+        </div>
+
+        {/* Pack Productor */}
+        <div className="bg-gradient-to-b from-indigo-900/30 to-transparent border border-indigo-500/30 rounded-3xl p-6 relative overflow-hidden mt-6 shadow-[0_0_30px_rgba(99,102,241,0.1)]">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <h3 className="text-xl font-bold text-white">Pack Productor</h3>
+              <p className="text-slate-300 text-sm mt-1">250 canciones • 3000 créditos</p>
+              <p className="text-slate-400 text-sm mt-1">Para productores y artistas</p>
+            </div>
+            <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-xs font-bold">Mejor valor</span>
+          </div>
+
+          <div className="flex items-end gap-2 mt-4 mb-6">
+            <span className="text-4xl font-bold text-white">$545 MXN</span>
+            <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">500 versiones</span>
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Incluye 250 canciones
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Total: 3000 créditos
+            </div>
+            <div className="flex items-start gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" /> 
+              <span>Cada generación entrega 2 canciones<br/>(Versión A y B)</span>
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Total: 500 versiones
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Descargas activas
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Karaoke (quitar voz)
+            </div>
+            <div className="flex items-center gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400" /> Separación de instrumentos (STEMS)
+            </div>
+          </div>
+
+          <button className="w-full bg-indigo-500 hover:bg-indigo-400 text-white h-[48px] rounded-full font-bold text-base transition-colors">
+            Comprar ahora
+          </button>
+        </div>
+
+        {/* Costos por acción */}
+        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 mt-8">
+          <h3 className="text-lg font-bold text-white mb-2">Costos por acción (en créditos)</h3>
+          <p className="text-slate-400 text-sm mb-6">
+            Estos son los créditos que se descuentan cuando usas cada herramienta.
+          </p>
+
+          <div className="space-y-3">
+            {[
+              { name: 'Crear canción (genera A y B)', cost: '12 créditos' },
+              { name: 'Extender canción', cost: '12 créditos' },
+              { name: 'Karaoke (quitar voz)', cost: '10 créditos' },
+              { name: 'Separación de instrumentos (STEMS)', cost: '50 créditos' },
+              { name: 'Video musical', cost: '2 créditos' },
+              { name: 'Reemplazar sección', cost: '5 créditos' },
+              { name: 'Generar WAV', cost: '0.4 créditos' },
+              { name: 'Letras', cost: '0.4 créditos' },
+              { name: 'Letras con tiempo', cost: '0.5 créditos' },
+              { name: 'Mejorar estilo', cost: '0.4 créditos' },
+            ].map((item, i) => (
+              <div key={i} className="flex justify-between items-center p-4 bg-white/5 border border-white/5 rounded-2xl">
+                <span className="text-slate-200 font-medium">{item.name}</span>
+                <span className="text-white font-bold">{item.cost}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 bg-white text-black p-5 rounded-2xl flex justify-between items-center shadow-lg">
+            <div>
+              <p className="font-bold text-base">Te quedan 57 canciones</p>
+              <p className="text-slate-600 text-sm">≈ 114 versiones (A y B)</p>
+            </div>
+            <button className="border border-slate-300 hover:bg-slate-100 text-black px-4 py-2 rounded-full font-bold text-sm transition-colors">
+              Actualizar
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

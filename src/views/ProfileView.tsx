@@ -4,7 +4,7 @@ import { Edit2, Forward, Settings, ChevronRight, Share, HelpCircle, MessageSquar
 import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
 
-export function ProfileView() {
+export function ProfileView({ credits }: { credits?: number }) {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -35,8 +35,8 @@ export function ProfileView() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-2 px-6 mb-6 text-center">
         <div className="flex flex-col items-center">
-          <span className="text-lg font-bold text-slate-100">0</span>
-          <span className="text-xs text-slate-400">Escuchas</span>
+          <span className="text-lg font-bold text-slate-100">{credits || 0}</span>
+          <span className="text-xs text-slate-400">Créditos</span>
         </div>
         <div className="flex flex-col items-center">
           <span className="text-lg font-bold text-slate-100">0</span>

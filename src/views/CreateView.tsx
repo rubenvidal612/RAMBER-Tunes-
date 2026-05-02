@@ -6,9 +6,10 @@ import { GoogleGenAI } from "@google/genai";
 
 interface CreateViewProps {
   onSongCreated?: (song: SongItem, audioBlob?: Blob) => void;
+  credits?: number;
 }
 
-export function CreateView({ onSongCreated }: CreateViewProps) {
+export function CreateView({ onSongCreated, credits }: CreateViewProps) {
   const [mode, setMode] = useState<CreateMode>('simple');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
@@ -73,6 +74,11 @@ export function CreateView({ onSongCreated }: CreateViewProps) {
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </div>
+        </div>
+        
+        <div className="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+          <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
+          <span className="text-sm font-semibold text-slate-200">{credits || 0}</span>
         </div>
       </div>
 
