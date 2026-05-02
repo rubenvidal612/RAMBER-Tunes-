@@ -87,7 +87,7 @@ export default async function handler(req: any, res: any) {
       return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
     });
 
-  const useProvider = isAdminEmail(user.email) && (pickQuery(req, "source") || "").toLowerCase() === "provider";
+  const useProvider = (pickQuery(req, "source") || "").toLowerCase() === "provider";
 
   if (useProvider) {
     try {
@@ -114,15 +114,21 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  const { data: profile, error: profErr } = await admin
+  let { data: profile, error: profErr } = await admin
     .from("profiles")
     .select("id, song_balance, ramber_credits, zingy_credits")
     .eq("id", user.id)
     .maybeSingle();
   if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
 
+  if (!profile) {
+    const { error: insErr } = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
+    if (insErr) return send(res, 500, { error: "Error creando perfil", detail: insErr.message });
+    const r2 = await admin.from("profiles").select("id, song_balance, ramber_credits, zingy_credits").eq("id", user.id).maybeSingle();
+    profile = r2.data ?? null;
+  }
+
   const credits = round2(creditsFromProfile(profile));
   const counts = toCounts(credits);
   return send(res, 200, { credits, song_balance: counts.songs, counts, downloads_allowed, free_claimed, source: "local" });
 }
-

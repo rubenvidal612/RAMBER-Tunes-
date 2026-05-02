@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { creditsFromProfile } from '@/lib/credits';
-import { supabaseBrowser, ensureAnonSession } from '@/lib/supabaseBrowser';
+import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 // Hook personalizado para manejar los créditos del usuario
 export function useUserCredits() {
@@ -8,16 +7,17 @@ export function useUserCredits() {
   const [loading, setLoading] = useState(false);
 
   const refreshCredits = async () => {
-    if (!supabaseBrowser) return;
     setLoading(true);
     try {
-      const s = await ensureAnonSession();
-      if (!s.ok) return;
-      const { data } = await supabaseBrowser.auth.getUser();
-      const user = data?.user;
-      if (!user) return;
-      const { data: profile } = await supabaseBrowser.from('profiles').select('id, song_balance, ramber_credits').eq('id', user.id).maybeSingle();
-      if (profile) setCredits(creditsFromProfile(profile));
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) return;
+      const c = Number(out?.credits);
+      if (Number.isFinite(c)) setCredits(c);
     } finally {
       setLoading(false);
     }
@@ -38,13 +38,11 @@ export function useUserCredits() {
   };
 
   useEffect(() => {
-    if (!supabaseBrowser) return;
-
     refreshCredits().catch(() => {});
 
-    const { data } = supabaseBrowser.auth.onAuthStateChange(() => {
+    const { data } = supabaseBrowser?.auth.onAuthStateChange(() => {
       refreshCredits().catch(() => {});
-    });
+    }) ?? { data: null as any };
 
     const interval = window.setInterval(() => {
       refreshCredits().catch(() => {});

@@ -29,7 +29,6 @@ export default function App() {
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
-  const [isAdminUser, setIsAdminUser] = useState(false);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -61,16 +60,7 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!supabaseBrowser) return;
-    supabaseBrowser.auth.getUser().then(({ data }) => {
-      const email = (data?.user?.email || '').toString().trim().toLowerCase();
-      setIsAdminUser(email === 'rubenvfiverr612@gmail.com');
-    }).catch(() => {});
-  }, []);
-
   const refreshProviderCredits = async () => {
-    if (!isAdminUser) return;
     const t = await getAccessToken();
     if (!t.ok) return;
     const r = await fetch('/api/account/balance?source=provider', {
@@ -83,11 +73,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!isAdminUser) return;
     refreshProviderCredits().catch(() => {});
     const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 45000);
     return () => window.clearInterval(interval);
-  }, [isAdminUser]);
+  }, []);
 
   const mapSongRow = (row: any): SongItem => ({
     id: String(row?.id || ''),
@@ -316,9 +305,11 @@ export default function App() {
     setIsPlaying(!isPlaying);
   };
 
+  const displayCredits = Number.isFinite(Number(providerCredits)) ? Number(providerCredits) : credits;
+
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
-      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={credits} providerCredits={providerCredits} />
+      <TopBar className="flex-shrink-0" onMenuClick={() => setIsSettingsOpen(true)} credits={displayCredits} />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
           <div className="bg-gradient-to-r from-emerald-700/40 to-teal-600/20 border border-emerald-400/15 rounded-2xl px-3 py-3 flex items-center gap-3">
@@ -351,7 +342,7 @@ export default function App() {
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
-           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />}
+           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
@@ -373,7 +364,7 @@ export default function App() {
              <>
                {/* Create View (Middle) */}
                <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                 <CreateView onSongCreated={addCancion} credits={credits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />
+                 <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />
                </div>
 
                {/* Library / Results View (Right) */}

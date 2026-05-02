@@ -199,8 +199,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         cacheControl: '31536000',
       });
       if (error) {
-        setAudioUploadError(error.message || 'No se pudo subir el audio.');
-        alert(error.message || 'No se pudo subir el audio.');
+        const raw = (error.message || '').toString();
+        const msg = raw.toLowerCase().includes('bucket not found')
+          ? 'No existe el bucket "ramber-tunes" en Supabase Storage. Crea el bucket y vuelve a intentar.'
+          : raw || 'No se pudo subir el audio.';
+        setAudioUploadError(msg);
+        alert(msg);
         return;
       }
       const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
@@ -691,7 +695,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </div>
                 <div className="min-w-0">
                   <div className="text-white font-extrabold truncate">{audioFile.name}</div>
-                  <div className="text-slate-400 text-sm">{isUploadingAudio ? 'Subiendo…' : audioUploadUrl ? 'Listo' : 'Preparando…'}</div>
+                  <div className={cn("text-sm", Number(uploadProgress || 0) >= 87 ? "text-red-300" : "text-slate-400")}>
+                    {isUploadingAudio ? 'Subiendo…' : audioUploadUrl ? 'Listo' : 'Preparando…'}
+                  </div>
                 </div>
               </div>
 
