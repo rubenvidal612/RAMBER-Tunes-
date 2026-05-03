@@ -456,21 +456,25 @@ function SongOptionsSheet({
   };
 
   const share = async () => {
-    const url = (song.audioUrl || '').toString();
     const title = (song.title || 'Canción').toString();
+    const shareUrl = song.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
     try {
       if (navigator.share) {
-        await navigator.share({ title, text: title, url: url || undefined });
+        await navigator.share({
+          title: `RAMBER Tunes - ${title}`,
+          text: `Escucha "${title}" en RAMBER Tunes`,
+          url: shareUrl || undefined,
+        });
         return;
       }
     } catch {
     }
-    if (url) {
+    if (shareUrl) {
       try {
-        await navigator.clipboard.writeText(url);
+        await navigator.clipboard.writeText(shareUrl);
         alert('Copiado al portapapeles.');
       } catch {
-        alert(url);
+        alert(shareUrl);
       }
       return;
     }

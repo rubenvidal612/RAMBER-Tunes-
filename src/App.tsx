@@ -49,6 +49,32 @@ export default function App() {
   };
 
   useEffect(() => {
+    const p = (window.location?.pathname || '').toString();
+    const m = p.match(/^\/(share|s)\/([^/?#]+)/i);
+    if (!m) return;
+    const rawId = m[2] || '';
+    const id = decodeURIComponent(rawId).trim();
+    if (!id) return;
+    fetch(`/api/share/song?id=${encodeURIComponent(id)}`, { method: 'GET' })
+      .then((r) => r.json().catch(() => ({})).then((out) => ({ r, out })))
+      .then(({ r, out }) => {
+        if (!r.ok) {
+          showToast((out?.error || 'No pude abrir el link compartido.').toString());
+          return;
+        }
+        const url = (out?.audioUrl || out?.audio_url || '').toString().trim();
+        if (!url) {
+          showToast('Este link no tiene audio.');
+          return;
+        }
+        window.location.replace(url);
+      })
+      .catch(() => {
+        showToast('No pude abrir el link compartido.');
+      });
+  }, []);
+
+  useEffect(() => {
     store.getData().then(data => {
       setVibes(data.vibes || []);
     });

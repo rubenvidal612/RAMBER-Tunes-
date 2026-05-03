@@ -2715,6 +2715,54 @@ const sunoWebhookHandler = (() => {
   };
 })();
 
+const shareHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const { data, error } = await admin
+        .from("library_items")
+        .select("id, title, audio_url, cover_url, deleted_at, type")
+        .eq("id", id.slice(0, 200))
+        .eq("type", "song")
+        .maybeSingle();
+      if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (!data || data.deleted_at) return send(res, 404, { error: "No encontrada" });
+
+      const audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
+      const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
+      const coverUrl = typeof (data as any).cover_url === "string" ? (data as any).cover_url.trim() : "";
+      if (!audioUrl) return send(res, 404, { error: "No hay audio para compartir" });
+
+      return send(res, 200, { id: String((data as any).id || ""), title, audioUrl, coverUrl });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -2733,6 +2781,7 @@ export default async function handler(req: any, res: any) {
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
+    if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
 
