@@ -25,6 +25,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [hasPendingTask, setHasPendingTask] = useState(false);
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
   const pendingLegacyKey = 'ramber.pendingSunoTask';
+  const [isBoostingStyle, setIsBoostingStyle] = useState(false);
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
@@ -492,6 +493,40 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
   };
 
+  const handleBoostStyle = async () => {
+    const content = (instructions || '').trim();
+    if (!content) {
+      alert('Escribe algo en "Instrucciones" primero.');
+      return;
+    }
+    setIsBoostingStyle(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/boost-style', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ content }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.detail || out?.error || 'No se pudo optimizar el estilo.').toString());
+        return;
+      }
+      const result = (out?.result || out?.data?.result || '').toString().trim();
+      if (!result) {
+        alert('No recibí resultado del estilo.');
+        return;
+      }
+      setInstructions(result);
+    } finally {
+      setIsBoostingStyle(false);
+    }
+  };
+
   const handleAddInstrumentalFromAudio = async () => {
     if (!onSongCreated) return;
     if (!audioUploadUrl) {
@@ -860,6 +895,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             setTitle={setTitle}
             instructions={instructions}
             setInstructions={setInstructions}
+            isBoostingStyle={isBoostingStyle}
+            onBoostStyle={handleBoostStyle}
             showMoreOptions={showMoreOptions}
             setShowMoreOptions={setShowMoreOptions}
             weirdness={weirdness}
@@ -1203,6 +1240,8 @@ function CustomForm({
   setTitle,
   instructions,
   setInstructions,
+  isBoostingStyle,
+  onBoostStyle,
   showMoreOptions,
   setShowMoreOptions,
   weirdness,
@@ -1526,8 +1565,14 @@ function CustomForm({
           <button className="flex-shrink-0 bg-white/5 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 border border-white/5">
             <List className="w-4 h-4" />
           </button>
-          <button className="flex-shrink-0 bg-white/5 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 border border-white/5">
-            <RefreshCw className="w-4 h-4" />
+          <button
+            onClick={() => onBoostStyle?.()}
+            disabled={Boolean(isBoostingStyle)}
+            className="flex-shrink-0 bg-white/5 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 border border-white/5 disabled:opacity-60"
+            aria-label="Optimizar estilo"
+            title="Optimizar estilo"
+          >
+            <RefreshCw className={cn("w-4 h-4", isBoostingStyle ? "animate-spin" : "")} />
           </button>
           <span className="flex-shrink-0 bg-white/5 text-slate-300 px-4 py-2 rounded-full text-sm font-medium border border-white/5 truncate max-w-[200px]">
             raspy female vocals

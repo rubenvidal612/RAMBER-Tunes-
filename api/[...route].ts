@@ -1110,6 +1110,63 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleBoostStyle(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const content = typeof payload?.content === "string" ? payload.content.trim() : "";
+    if (!content) return send(res, 400, { error: "Falta content" });
+    if (content.length > 5000) return send(res, 400, { error: "El content máximo es 5,000 caracteres." });
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.boost_style;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const paths = ["/api/v1/style/generate", "/api/v1/suno/style/generate"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify({ content }) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error optimizando estilo", detail: "No pude contactar al proveedor" });
+      }
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error optimizando estilo", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error optimizando estilo", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const result = typeof data?.data?.result === "string" ? data.data.result.trim() : "";
+      return send(res, 200, { result, data: data?.data ?? null });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error optimizando estilo", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleCredits(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
 
@@ -1173,6 +1230,7 @@ const sunoHandler = (() => {
       if (a === "mp4") return handleMp4(req, res);
       if (a === "task") return handleTask(req, res);
       if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
+      if (a === "boost-style") return handleBoostStyle(req, res);
       if (a === "credits") return handleCredits(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
