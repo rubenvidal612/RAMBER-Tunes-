@@ -66,6 +66,43 @@ function pickWritableCreditsColumn(profile: any): "zingy_credits" | "ramber_cred
   return null;
 }
 
+function parseProviderCreditsValue(raw: any) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const cleaned = raw
+      .trim()
+      .replaceAll("Credits", "")
+      .replaceAll("credits", "")
+      .replaceAll(" ", "")
+      .replaceAll(",", ".");
+    const n = Number(cleaned);
+    if (Number.isFinite(n)) return n;
+  }
+  return NaN;
+}
+
+async function providerFetchJson(path: string, init?: RequestInit) {
+  const base = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+  if (!base) throw new Error("Falta SUNO_API_BASE_URL en variables de entorno");
+
+  const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has("content-type")) headers.set("content-type", "application/json");
+  if (apiKey && !headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
+
+  const url = new URL(path, base).toString();
+  const res = await fetch(url, { ...init, headers });
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  return { res, data, text };
+}
+
 async function adjustUserCredits(admin: any, userId: string, deltaCredits: number) {
   const delta = Number(deltaCredits);
   if (!Number.isFinite(delta) || !delta) return { ok: true as const };
@@ -91,23 +128,24 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   const cost = round2(Number(costCredits));
   if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
 
-  for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
-    if (readErr) return { ok: false as const, error: readErr.message };
+  try {
+    const { res, data, text } = await providerFetchJson("/api/v1/generate/credit", { method: "GET" });
+    if (!res.ok) {
+      const detail = text || `HTTP ${res.status}`;
+      return { ok: false as const, error: `No pude consultar créditos del proveedor (${detail}).` };
+    }
+    const code = Number(data?.code);
+    if (code && code !== 200) return { ok: false as const, error: "No pude consultar créditos del proveedor." };
 
-    const current = creditsFromProfile(profile);
+    const providerCredits = parseProviderCreditsValue(data?.data ?? data?.credits ?? data?.balance);
+    const current = Number.isFinite(providerCredits) ? round2(providerCredits) : NaN;
+    if (!Number.isFinite(current)) return { ok: false as const, error: "No pude leer tus créditos reales del proveedor." };
+
     if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
-
-    const next = round2(Math.max(0, current - cost));
-    const col = pickWritableCreditsColumn(profile);
-    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
-
-    const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
-
-    if (!updErr) return { ok: true as const, credits: next };
+    return { ok: true as const, credits: current };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
   }
-
-  return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
 }
 
 function isAdminEmail(email?: string | null) {
