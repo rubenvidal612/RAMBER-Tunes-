@@ -317,6 +317,23 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    const pendingKey = 'ramber.pendingSunoTask';
+    const id = window.setInterval(() => {
+      if (currentTab !== 'studio') return;
+      try {
+        const raw = window.localStorage.getItem(pendingKey);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId.trim() : '';
+        if (!taskId) return;
+        setCurrentTab('biblioteca');
+      } catch {
+      }
+    }, 800);
+    return () => window.clearInterval(id);
+  }, [currentTab]);
+
   const deleteCancion = async (songId: string) => {
     try {
       const t = await getAccessToken();

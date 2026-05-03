@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
 import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText } from 'lucide-react';
@@ -23,6 +23,28 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  const [pendingTask, setPendingTask] = useState<null | { taskId: string; kind: string; startedAt: number }>(null);
+
+  useEffect(() => {
+    const pendingKey = 'ramber.pendingSunoTask';
+    const read = () => {
+      try {
+        const raw = window.localStorage.getItem(pendingKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId.trim() : '';
+        if (!taskId) return null;
+        const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim() : 'generate';
+        const startedAt = Number(parsed?.startedAt || 0);
+        return { taskId, kind, startedAt: Number.isFinite(startedAt) ? startedAt : 0 };
+      } catch {
+        return null;
+      }
+    };
+    setPendingTask(read());
+    const id = window.setInterval(() => setPendingTask(read()), 1200);
+    return () => window.clearInterval(id);
+  }, []);
   
   const tabs: {id: LibraryTab, label: string}[] = [
     { id: 'canciones', label: 'Canciones' },
@@ -137,6 +159,23 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                  className="w-full bg-white/5 border border-white/5 rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
                />
             </div>
+
+            {pendingTask && !showTrash && (
+              <div className="glass-card rounded-2xl p-4 border border-white/10">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white font-bold truncate">Generando tu canción…</div>
+                    <div className="text-slate-400 text-xs">Quédate aquí; aparecerá cuando termine.</div>
+                  </div>
+                  <button
+                    onClick={() => onRefreshSongs?.()}
+                    className="shrink-0 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                  >
+                    Actualizar
+                  </button>
+                </div>
+              </div>
+            )}
 
             {(() => {
               const list = showTrash ? (cancionesEliminadas || []) : canciones;

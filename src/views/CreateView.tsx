@@ -61,6 +61,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (typeof d?.description === 'string') setDescription(d.description);
       if (typeof d?.instructions === 'string') setInstructions(d.instructions);
       if (typeof d?.title === 'string') setTitle(d.title);
+      if (typeof d?.lyrics === 'string') setLyrics(d.lyrics);
       const g = typeof d?.gender === 'string' ? d.gender : '';
       if (g === 'Masculino' || g === 'Femenino') setGender(g);
       const w = Number(d?.weirdness);
@@ -72,14 +73,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const pid = typeof d?.persona_id === 'string' ? d.persona_id : '';
       const pn = typeof d?.persona_name === 'string' ? d.persona_name : '';
       if (pid) setSelectedPersona({ persona_id: pid, name: pn || 'Persona' });
-
-      if (typeof d?.lyrics === 'string') {
-        try {
-          const { lyrics: _oldLyrics, ...rest } = d;
-          localStorage.setItem('ramber_create_draft_v1', JSON.stringify(rest));
-        } catch {
-        }
-      }
     } catch {
     }
   }, []);
@@ -94,6 +87,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           description,
           instructions,
           title,
+          lyrics: (lyrics || '').toString().slice(0, 20000),
           gender,
           weirdness,
           styleInfluence,
@@ -104,7 +98,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       );
     } catch {
     }
-  }, [mode, instrumental, description, instructions, title, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence]);
+  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence]);
 
   useEffect(() => {
     if (!openPersonaPickerSignal) return;
@@ -406,21 +400,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert('No recibí taskId del servidor.');
         return;
       }
-      window.localStorage.setItem(
-        pendingKey,
-        JSON.stringify({
-          taskId,
-          kind: 'upload-cover',
-          startedAt: Date.now(),
-          draft: {
-            title: (title || 'Cover').toString(),
-            description: (instructions || 'Cover').toString(),
-            lyrics: (lyrics || '').toString() || null,
-            genre: gender,
-            isCover: true,
-          },
-        })
-      );
+      try {
+        window.localStorage.setItem(
+          pendingKey,
+          JSON.stringify({
+            taskId,
+            kind: 'upload-cover',
+            startedAt: Date.now(),
+            draft: {
+              title: (title || 'Cover').toString(),
+              description: (instructions || 'Cover').toString(),
+              lyrics: (lyrics || '').toString() || null,
+              genre: gender,
+              isCover: true,
+            },
+          })
+        );
+      } catch {
+      }
       onGoLibrary?.();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error haciendo cover');
@@ -485,21 +482,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert('No recibí taskId del servidor.');
         return;
       }
-      window.localStorage.setItem(
-        pendingKey,
-        JSON.stringify({
-          taskId,
-          kind: 'generate',
-          startedAt: Date.now(),
-          draft: {
-            title: (title || 'Nueva Canción').toString(),
-            description: (mode === 'simple' ? description : instructions).toString(),
-            lyrics: mode === 'personalizado' ? (lyrics || '').toString() || null : null,
-            genre: gender,
-            isCover: Boolean(audioFile || audioUploadUrl),
-          },
-        })
-      );
+      try {
+        window.localStorage.setItem(
+          pendingKey,
+          JSON.stringify({
+            taskId,
+            kind: 'generate',
+            startedAt: Date.now(),
+            draft: {
+              title: (title || 'Nueva Canción').toString(),
+              description: (mode === 'simple' ? description : instructions).toString(),
+              lyrics: mode === 'personalizado' ? (lyrics || '').toString() || null : null,
+              genre: gender,
+              isCover: Boolean(audioFile || audioUploadUrl),
+            },
+          })
+        );
+      } catch {
+      }
       onGoLibrary?.();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error creando la canción');
