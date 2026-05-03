@@ -40,9 +40,30 @@ function toCounts(credits: number) {
 }
 
 function creditsFromProfile(profile: any): number {
-  const zingy = typeof profile?.zingy_credits === "number" && Number.isFinite(profile.zingy_credits) ? Number(profile.zingy_credits) : null;
-  if (zingy !== null) return Math.max(0, zingy);
+  const p = profile ?? {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
+
+  for (const k of ["zingy_credits", "ramber_credits", "credits"]) {
+    if (!has(k)) continue;
+    const v = (p as any)[k];
+    if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Number(v));
+  }
+
+  if (has("song_balance")) {
+    const songBal = typeof p?.song_balance === "number" && Number.isFinite(p.song_balance) ? Number(p.song_balance) : 0;
+    if (songBal > 0) return Math.max(0, songBal) * CREDIT_COSTS.generate_music;
+  }
+
   return 0;
+}
+
+function pickWritableCreditsColumn(profile: any): "zingy_credits" | "ramber_credits" | "credits" | null {
+  const p = profile ?? {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
+  if (has("zingy_credits")) return "zingy_credits";
+  if (has("ramber_credits")) return "ramber_credits";
+  if (has("credits")) return "credits";
+  return null;
 }
 
 async function adjustUserCredits(admin: any, userId: string, deltaCredits: number) {
@@ -50,13 +71,15 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
   if (!Number.isFinite(delta) || !delta) return { ok: true as const };
 
   for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("id, zingy_credits").eq("id", userId).maybeSingle();
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
 
     const current = creditsFromProfile(profile);
     const next = round2(Math.max(0, current + delta));
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
 
-    const { error: updErr } = await admin.from("profiles").update({ zingy_credits: next }).eq("id", userId);
+    const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
 
     if (!updErr) return { ok: true as const, credits: next };
   }
@@ -69,15 +92,17 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
 
   for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("id, zingy_credits").eq("id", userId).maybeSingle();
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
 
     const current = creditsFromProfile(profile);
     if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
 
     const next = round2(Math.max(0, current - cost));
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
 
-    const { error: updErr } = await admin.from("profiles").update({ zingy_credits: next }).eq("id", userId);
+    const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
 
     if (!updErr) return { ok: true as const, credits: next };
   }
@@ -1464,13 +1489,13 @@ const balanceHandler = (() => {
         return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
       });
 
-    let { data: profile, error: profErr } = await admin.from("profiles").select("id, zingy_credits").eq("id", user.id).maybeSingle();
+    let { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
 
     if (!profile) {
       const { error: insErr } = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
       if (insErr) return send(res, 500, { error: "Error creando perfil", detail: insErr.message });
-      const r2 = await admin.from("profiles").select("id, zingy_credits").eq("id", user.id).maybeSingle();
+      const r2 = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
       profile = r2.data ?? null;
     }
 
