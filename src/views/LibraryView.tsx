@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
 import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText, Video } from 'lucide-react';
@@ -384,6 +384,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onClose={() => setMenuSong(null)}
           isDeleted={showTrash}
           onPlay={() => onPlaySong(menuSong)}
+          onRefreshSongs={onRefreshSongs}
           onRestore={() => {
             const id = menuSong.id;
             setMenuSong(null);
@@ -407,6 +408,7 @@ function SongOptionsSheet({
   onPlay,
   onRestore,
   onDelete,
+  onRefreshSongs,
 }: {
   song: SongItem;
   onClose: () => void;
@@ -414,6 +416,7 @@ function SongOptionsSheet({
   onPlay: () => void;
   onRestore: () => void;
   onDelete: () => void;
+  onRefreshSongs?: () => void;
 }) {
   const [isBusy, setIsBusy] = useState(false);
   const [published, setPublished] = useState(false);
@@ -429,6 +432,7 @@ function SongOptionsSheet({
   const [personaVocalStart, setPersonaVocalStart] = useState(0);
   const [personaVocalEnd, setPersonaVocalEnd] = useState(30);
   const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
+  const coverPhotoInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!showPersonaSave) return;
     setPersonaVocalStart(0);
@@ -1083,7 +1087,7 @@ function SongOptionsSheet({
 
   const compressImage = async (file: File) => {
     const bitmap = await createImageBitmap(file);
-    const max = 256;
+    const max = 512;
     const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(1, Math.round(bitmap.width * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
@@ -1094,9 +1098,83 @@ function SongOptionsSheet({
     if (!ctx) throw new Error('No pude procesar la imagen');
     ctx.drawImage(bitmap, 0, 0, w, h);
     const blob: Blob = await new Promise((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No pude convertir imagen'))), 'image/webp', 0.78);
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No pude convertir imagen'))), 'image/webp', 0.85);
     });
     return blob;
+  };
+
+  const compressCoverToDataUrl = async (file: File) => {
+    const bitmap = await createImageBitmap(file);
+    const max = 1024;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No pude procesar la imagen');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+
+    const blobToDataUrl = async (blob: Blob) => {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('No pude leer la imagen'));
+        reader.readAsDataURL(blob);
+      });
+      return dataUrl;
+    };
+
+    const tryEncode = async (type: string, quality: number) => {
+      const blob: Blob | null = await new Promise((resolve) => {
+        try {
+          canvas.toBlob((b) => resolve(b), type, quality);
+        } catch {
+          resolve(null);
+        }
+      });
+      if (!blob) return null;
+      const dataUrl = await blobToDataUrl(blob);
+      return { dataUrl, size: blob.size };
+    };
+
+    const targetBytes = 900_000;
+    const type = 'image/jpeg';
+    for (const q of [0.9, 0.86, 0.82, 0.78]) {
+      const out = await tryEncode(type, q);
+      if (!out) continue;
+      if (out.size <= targetBytes) return out.dataUrl;
+      if (q === 0.78) return out.dataUrl;
+    }
+    throw new Error('No pude convertir la imagen');
+  };
+
+  const uploadCoverPhoto = async (file: File) => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const dataUrl = await compressCoverToDataUrl(file);
+      const r = await fetch('/api/library/set-cover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id: song.id, base64Data: dataUrl, fileName: file.name }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.hint ? `${out?.error || 'No se pudo guardar la portada.'}\n\n${out.hint}` : (out?.error || 'No se pudo guardar la portada.'));
+        return;
+      }
+      onRefreshSongs?.();
+      alert('Listo. Tu portada se guardó y ya no se perderá.');
+      onClose();
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const savePersona = async () => {
@@ -1251,6 +1329,29 @@ function SongOptionsSheet({
               </div>
               <div className="text-slate-400 text-sm">AI</div>
             </button>
+            {!isDeleted && (
+              <>
+                <button
+                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                  onClick={() => coverPhotoInputRef.current?.click()}
+                  disabled={isBusy}
+                >
+                  <ImageIcon className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Subir foto de portada</span>
+                </button>
+                <input
+                  ref={coverPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    e.currentTarget.value = '';
+                    if (!f) return;
+                    uploadCoverPhoto(f).catch(() => {});
+                  }}
+                />
+              </>
+            )}
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Extender: Próximamente')}>
               <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Extender</span>
             </button>

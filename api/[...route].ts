@@ -1936,6 +1936,7 @@ const libraryHandler = (() => {
   const TABLE = "library_items";
   const ITEM_TYPE = "song";
   const BUCKET = "ramber-tunes";
+  const COVERS_BUCKET = "covers";
 
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -2153,6 +2154,157 @@ const libraryHandler = (() => {
     });
   }
 
+  function safeFileBase(nameRaw: string) {
+    const name = (nameRaw || "").toString().trim() || "cover";
+    const base = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
+    const cleaned = base.replaceAll(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60);
+    return cleaned || "cover";
+  }
+
+  function parseBase64Data(raw: string) {
+    const s = (raw || "").toString().trim();
+    if (!s) return null;
+    if (s.startsWith("data:")) {
+      const comma = s.indexOf(",");
+      if (comma < 0) return null;
+      const meta = s.slice(5, comma);
+      const b64 = s.slice(comma + 1);
+      const mime = meta.split(";")[0] || "";
+      return { base64: b64, mime: mime || "" };
+    }
+    return { base64: s, mime: "" };
+  }
+
+  async function ensureCoversBucket(admin: any) {
+    try {
+      if (!admin?.storage) return;
+      const getBucket = (admin.storage as any).getBucket;
+      const createBucket = (admin.storage as any).createBucket;
+      if (typeof getBucket === "function") {
+        const r = await getBucket.call(admin.storage, COVERS_BUCKET);
+        if (!r?.error) return;
+      }
+      if (typeof createBucket === "function") {
+        await createBucket.call(admin.storage, COVERS_BUCKET, { public: true });
+      }
+    } catch {
+    }
+  }
+
+  async function handleSetCover(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    const base64DataRaw = typeof body?.base64Data === "string" ? body.base64Data : "";
+    const fileName = typeof body?.fileName === "string" ? body.fileName.trim() : "cover.jpg";
+    if (!id) return send(res, 400, { error: "Falta id" });
+    if (!base64DataRaw) return send(res, 400, { error: "Falta base64Data" });
+
+    const { data: row, error: rowErr } = await auth.admin
+      .from(TABLE)
+      .select("id, user_id, type, deleted_at")
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .eq("type", ITEM_TYPE)
+      .maybeSingle();
+    if (rowErr) return send(res, 500, { error: "No pude validar la canción", detail: rowErr.message });
+    if (!row || row.deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+
+    const base64Parsed = parseBase64Data(base64DataRaw);
+    if (!base64Parsed) return send(res, 400, { error: "base64Data inválido" });
+
+    const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+    if (!apiKey) return send(res, 500, { error: "Falta SUNO_API_KEY en variables de entorno" });
+
+    const uploadPath = `covers/${auth.user.id}/${id}`.slice(0, 200);
+    const tempBody = {
+      base64Data: base64DataRaw,
+      uploadPath,
+      fileName: `${safeFileBase(fileName)}.png`,
+    };
+
+    let downloadUrl = "";
+    let mimeType = "";
+    try {
+      const r = await fetch("https://sunoapiorg.redpandaai.co/api/file-base64-upload", {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify(tempBody),
+      });
+      const text = await r.text();
+      const data = text ? JSON.parse(text) : null;
+      if (r.ok && data?.success && Number(data?.code) === 200) {
+        downloadUrl = String(data?.data?.downloadUrl || "").trim();
+        mimeType = String(data?.data?.mimeType || "").trim();
+      }
+    } catch {
+    }
+
+    let buf: Buffer | null = null;
+    let contentType = mimeType || base64Parsed.mime || "";
+
+    if (downloadUrl) {
+      try {
+        const r = await fetch(downloadUrl, { method: "GET" });
+        if (r.ok) {
+          const ct = (r.headers.get("content-type") || "").toString();
+          const b = Buffer.from(await r.arrayBuffer());
+          if (b && b.length > 0) {
+            buf = b;
+            if (ct) contentType = ct;
+          }
+        }
+      } catch {
+      }
+    }
+
+    if (!buf) {
+      try {
+        const b = Buffer.from(base64Parsed.base64, "base64");
+        if (b && b.length > 0) buf = b;
+      } catch {
+        buf = null;
+      }
+    }
+
+    if (!buf || buf.length === 0) return send(res, 400, { error: "No pude procesar la imagen" });
+    if (buf.length > 6_000_000) return send(res, 413, { error: "La imagen está muy pesada. Usa una foto más pequeña." });
+
+    await ensureCoversBucket(auth.admin);
+
+    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+    const finalCt = contentType || (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
+    const path = `${auth.user.id}/${id}/${Date.now()}_${safeFileBase(fileName)}.${ext}`.slice(0, 500);
+
+    const up = await auth.admin.storage.from(COVERS_BUCKET).upload(path, buf, {
+      upsert: true,
+      contentType: finalCt,
+      cacheControl: "31536000",
+    });
+    if (up.error) {
+      return send(res, 500, {
+        error: "No pude guardar la portada",
+        detail: up.error.message,
+        hint: "Verifica que exista el bucket 'covers' en Supabase Storage y esté en modo Public.",
+      });
+    }
+
+    const pub = auth.admin.storage.from(COVERS_BUCKET).getPublicUrl(path);
+    const publicUrl = (pub?.data as any)?.publicUrl || "";
+    const coverUrl = typeof publicUrl === "string" ? publicUrl.trim().slice(0, 2000) : "";
+    if (!coverUrl) return send(res, 500, { error: "No pude obtener URL pública de la portada" });
+
+    const { error: updErr } = await auth.admin.from(TABLE).update({ cover_url: coverUrl }).eq("id", id).eq("user_id", auth.user.id).eq("type", ITEM_TYPE);
+    if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
+
+    return send(res, 200, { ok: true, coverUrl });
+  }
+
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
     const fallback = (() => {
@@ -2168,6 +2320,7 @@ const libraryHandler = (() => {
     if (a === "create") return handleCreate(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);
+    if (a === "set-cover") return handleSetCover(req, res);
 
     return send(res, 404, { error: "Ruta no encontrada", action: a || null });
   };
