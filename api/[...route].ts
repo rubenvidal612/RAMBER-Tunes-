@@ -861,7 +861,23 @@ const sunoHandler = (() => {
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/separate", { method: "POST", body: JSON.stringify(body) });
+      const paths = [
+        "/api/v1/vocal-removal/generate",
+        "/api/v1/suno/vocal-removal/generate",
+        "/api/v1/separate",
+        "/api/v1/suno/separate",
+      ];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error separando", detail: "No pude contactar al proveedor" });
+      }
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
@@ -882,7 +898,7 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: type, cost, consumed: true });
+      await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
       return send(res, 200, { taskId: outTaskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -1049,6 +1065,11 @@ const sunoHandler = (() => {
           ? [
               `/api/v1/lyrics/record-info?taskId=${enc}`,
               `/api/v1/suno/lyrics/record-info?taskId=${enc}`,
+            ]
+          : kind === "vocal-removal" || kind === "separate" || kind === "separate_vocal" || kind === "split_stem"
+          ? [
+              `/api/v1/vocal-removal/record-info?taskId=${enc}`,
+              `/api/v1/suno/vocal-removal/record-info?taskId=${enc}`,
             ]
           : kind === "wav"
           ? [

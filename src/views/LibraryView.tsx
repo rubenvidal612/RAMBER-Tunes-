@@ -579,6 +579,117 @@ function SongOptionsSheet({
     }
   };
 
+  const separateStems = async (type: 'separate_vocal' | 'split_stem') => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Tu plan no incluye descargas.');
+        return;
+      }
+      if (!song.sunoTaskId || !song.sunoAudioId) {
+        alert('Esta canción no tiene taskId/audioId para separar voces.');
+        return;
+      }
+
+      const start = await fetch('/api/suno/separate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: song.sunoTaskId, audioId: song.sunoAudioId, type }),
+      });
+      const startedOut = await start.json().catch(() => ({}));
+      if (!start.ok) {
+        alert((startedOut?.detail || startedOut?.error || 'No pude iniciar la separación.').toString());
+        return;
+      }
+      const sepTaskId = String(startedOut?.taskId || '').trim();
+      if (!sepTaskId) {
+        alert('No recibí taskId de separación.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(sepTaskId);
+        alert(`Listo. Ya empecé.\n\nTaskId (copiado):\n${sepTaskId}\n\nNo lo compartas.`);
+      } catch {
+        alert(`Listo. Ya empecé.\n\nTaskId:\n${sepTaskId}\n\nNo lo compartas.`);
+      }
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 240_000) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const tr = await fetch(`/api/suno/task?kind=vocal-removal&taskId=${encodeURIComponent(sepTaskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+
+        const provider = tout?.data;
+        const status = String(
+          provider?.data?.successFlag ||
+            provider?.data?.status ||
+            provider?.data?.data?.successFlag ||
+            provider?.data?.data?.status ||
+            ''
+        ).toUpperCase();
+
+        if (
+          status === 'FAILED' ||
+          status === 'CREATE_TASK_FAILED' ||
+          status === 'GENERATE_AUDIO_FAILED' ||
+          status === 'CALLBACK_EXCEPTION'
+        ) {
+          alert('No se pudo separar la canción.');
+          return;
+        }
+        if (status !== 'SUCCESS') continue;
+
+        const root = provider?.data || {};
+        const info = root?.response || root?.data?.response || root?.vocal_removal_info || root?.vocalRemovalInfo || {};
+        const vocalInfo = root?.vocal_removal_info || root?.vocalRemovalInfo || root?.response?.vocal_removal_info || root?.response?.vocalRemovalInfo || info || {};
+
+        const entries = Object.entries(vocalInfo || {})
+          .filter(([k, v]) => k.endsWith('_url') && typeof v === 'string' && v.trim().startsWith('http'))
+          .map(([k, v]) => [k, String(v).trim()] as const);
+
+        if (entries.length === 0) {
+          alert('Terminó, pero no recibí links de stems.');
+          return;
+        }
+
+        const text = entries.map(([k, v]) => `${k}: ${v}`).join('\n');
+        try {
+          await navigator.clipboard.writeText(text);
+          alert(`Listo. Copié ${entries.length} links.\n\nAhora puedes pegarlos donde quieras para descargarlos.`);
+        } catch {
+          alert(text);
+        }
+
+        const quick = [
+          entries.find(([k]) => k === 'instrumental_url')?.[1],
+          entries.find(([k]) => k === 'vocal_url')?.[1],
+        ].filter(Boolean) as string[];
+        quick.forEach((u) => window.open(u, '_blank'));
+        return;
+      }
+
+      alert('Está tardando la separación. Intenta de nuevo en unos segundos.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const generateCoverImage = async () => {
     if (!song.sunoTaskId) {
       alert('Esta canción no tiene taskId para generar portada.');
@@ -819,6 +930,16 @@ function SongOptionsSheet({
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar WAV</span>
+              </button>
+            )}
+            {!isDeleted && (
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
+                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Karaoke (sin voz)</span>
+              </button>
+            )}
+            {!isDeleted && (
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
+                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Stems (12 pistas)</span>
               </button>
             )}
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
