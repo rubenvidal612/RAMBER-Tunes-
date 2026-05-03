@@ -43,7 +43,7 @@ function creditsFromProfile(profile: any): number {
   const p = profile ?? {};
   const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
 
-  for (const k of ["zingy_credits", "ramber_credits", "credits"]) {
+  for (const k of ["ramber_credits", "zingy_credits", "credits"]) {
     if (!has(k)) continue;
     const v = (p as any)[k];
     if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Number(v));
@@ -60,8 +60,8 @@ function creditsFromProfile(profile: any): number {
 function pickWritableCreditsColumn(profile: any): "zingy_credits" | "ramber_credits" | "credits" | null {
   const p = profile ?? {};
   const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
-  if (has("zingy_credits")) return "zingy_credits";
   if (has("ramber_credits")) return "ramber_credits";
+  if (has("zingy_credits")) return "zingy_credits";
   if (has("credits")) return "credits";
   return null;
 }
