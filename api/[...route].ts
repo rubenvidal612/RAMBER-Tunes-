@@ -1167,6 +1167,74 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleMusicCover(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
+    if (!taskId) return send(res, 400, { error: "Falta taskId" });
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const body = { taskId, callBackUrl };
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.music_cover;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const paths = ["/api/v1/suno/cover/generate", "/api/v1/cover/generate", "/api/v1/suno/cover-suno", "/api/v1/suno/cover"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando portada", detail: "No pude contactar al proveedor" });
+      }
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando portada", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (code === 200) {
+        if (!outTaskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `music-cover:${taskId.slice(0, 120)}`, cost, consumed: true });
+        return send(res, 200, { taskId: outTaskId });
+      }
+
+      if (code === 400 && outTaskId) {
+        await auth.admin
+          .from("suno_tasks")
+          .insert({ task_id: outTaskId, user_id: user.id, kind: `music-cover:${taskId.slice(0, 120)}`, cost, consumed: true });
+        return send(res, 200, { taskId: outTaskId, already: true });
+      }
+
+      const msg = sunoErrorMessage(data, "Error del proveedor");
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error generando portada", code, detail: String(msg).slice(0, 1200) });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error generando portada", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleCredits(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
 
@@ -1231,6 +1299,7 @@ const sunoHandler = (() => {
       if (a === "task") return handleTask(req, res);
       if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
       if (a === "boost-style") return handleBoostStyle(req, res);
+      if (a === "music-cover") return handleMusicCover(req, res);
       if (a === "credits") return handleCredits(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
@@ -1921,6 +1990,7 @@ const sunoWebhookHandler = (() => {
     const callbackType = String(data?.callbackType || data?.callback_type || "").toLowerCase();
     const taskId = String(data?.task_id || data?.taskId || body?.taskId || "").trim();
     const tracks = Array.isArray(data?.data) ? data.data : [];
+    const coverImages = Array.isArray(data?.images) ? data.images : [];
 
     try {
       const createClient = await getSupabaseCreateClient();
@@ -1932,8 +2002,30 @@ const sunoWebhookHandler = (() => {
         const userId = String(taskRow?.user_id || "").trim();
         const kind = String(taskRow?.kind || "").trim().toLowerCase();
         const isCover = kind.includes("cover");
+        const isMusicCover = kind.startsWith("music-cover:");
 
-        if (code === 200 && (callbackType === "first" || callbackType === "complete") && userId) {
+        if (isMusicCover && userId) {
+          const originalTaskId = kind.split("music-cover:").slice(1).join("music-cover:").trim();
+          if (code === 200 && coverImages.length > 0 && originalTaskId) {
+            const url = String(coverImages[0] || "").trim();
+            if (url) {
+              await admin
+                .from("library_items")
+                .update({ cover_url: url.slice(0, 2000) })
+                .eq("user_id", userId)
+                .eq("type", "song")
+                .eq("suno_task_id", originalTaskId.slice(0, 200))
+                .is("deleted_at", null);
+            }
+          } else if (Number.isFinite(code) && code !== 200) {
+            const cost = Number(taskRow?.cost ?? 0);
+            const consumed = Boolean(taskRow?.consumed);
+            if (consumed && Number.isFinite(cost) && cost > 0) {
+              await adjustUserCredits(admin, userId, cost);
+              await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId);
+            }
+          }
+        } else if (code === 200 && (callbackType === "first" || callbackType === "complete") && userId) {
           const normalized = tracks
             .map((t: any) => ({
               sunoAudioId: String(t?.id || "").trim(),

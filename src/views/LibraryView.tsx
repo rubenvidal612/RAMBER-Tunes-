@@ -482,6 +482,34 @@ function SongOptionsSheet({
     }
   };
 
+  const generateCoverImage = async () => {
+    if (!song.sunoTaskId) {
+      alert('Esta canción no tiene taskId para generar portada.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/music-cover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: song.sunoTaskId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No se pudo generar portada.');
+        return;
+      }
+      alert('Listo. Se está generando tu portada. En unos momentos se actualiza en Biblioteca.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const compressImage = async (file: File) => {
     const bitmap = await createImageBitmap(file);
     const max = 256;
@@ -627,11 +655,11 @@ function SongOptionsSheet({
 
         <div className="px-5 pb-5">
           <div className="glass-card rounded-2xl overflow-hidden">
-            <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={() => alert('Cover: Próximamente')}>
+            <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={generateCoverImage} disabled={isBusy || isDeleted}>
               <div className="flex items-center gap-3 text-slate-200 font-semibold">
-                <AudioLines className="w-5 h-5 text-slate-300" /> Cover
+                <ImageIcon className="w-5 h-5 text-slate-300" /> Portada
               </div>
-              <div className="text-slate-400 text-sm">V3.0</div>
+              <div className="text-slate-400 text-sm">AI</div>
             </button>
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Extender: Próximamente')}>
               <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Extender</span>
