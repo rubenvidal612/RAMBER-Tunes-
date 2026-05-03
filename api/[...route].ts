@@ -787,7 +787,22 @@ const sunoHandler = (() => {
     const kind = (pickQuery(req, "kind") || "").trim().toLowerCase() || "generate";
 
     try {
-      const { res: r, data, text } = await sunoFetchJson(`/api/v1/task/${encodeURIComponent(taskId)}`, { method: "GET" });
+      const enc = encodeURIComponent(taskId);
+      const paths = [
+        `/api/v1/generate/record-info?taskId=${enc}`,
+        `/api/v1/suno/generate/record-info?taskId=${enc}`,
+        `/api/v1/task/${enc}`,
+        `/api/v1/suno/task/${enc}`,
+      ];
+
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "GET" });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) return send(res, 502, { error: "Error consultando task", detail: "No pude contactar al proveedor" });
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
@@ -800,7 +815,7 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Error consultando task", code, detail: String(msg).slice(0, 1200) });
       }
 
-      const status = String(data?.data?.status || data?.data?.successFlag || "").toUpperCase();
+      const status = String(data?.data?.status || data?.data?.successFlag || data?.data?.data?.status || data?.data?.data?.successFlag || "").toUpperCase();
       const user = auth.user;
       const isAdmin = isAdminEmail(user.email);
 
