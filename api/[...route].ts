@@ -728,6 +728,111 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleAddVocals(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
+    const uploadBucket = firstString(payload, ["uploadBucket", "upload_bucket"]) || "ramber-tunes";
+    const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
+    const prompt = firstString(payload, ["prompt", "lyrics", "text"]) || " ";
+    const style = firstString(payload, ["style", "tags"]) || "General";
+    const title = firstString(payload, ["title"]) || "Voces";
+    const negativeTags = firstString(payload, ["negativeTags", "negative_tags"]) || "None";
+
+    const modelRaw = firstString(payload, ["model", "mv"]);
+    const normalized = normalizeModel(modelRaw);
+    const model = normalized === "V5" || normalized === "V5_5" ? normalized : "V4_5PLUS";
+
+    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
+    if (!prompt.trim()) return send(res, 400, { error: "Falta prompt" });
+    if (!style.trim()) return send(res, 400, { error: "Falta style" });
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const body: any = {
+      uploadUrl,
+      prompt: prompt.slice(0, 5000),
+      style: style.slice(0, 1000),
+      title: title.slice(0, 100),
+      negativeTags: negativeTags.slice(0, 1000),
+      callBackUrl,
+      model,
+    };
+
+    if (uploadPath) {
+      try {
+        const signed = await auth.admin.storage.from(uploadBucket).createSignedUrl(uploadPath, 60 * 60 * 2);
+        const signedUrl = (signed?.data as any)?.signedUrl || (signed?.data as any)?.signedURL || "";
+        if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
+      } catch {
+      }
+    }
+
+    const vocalGender = firstString(payload, ["vocalGender", "vocal_gender"]).toLowerCase();
+    if (vocalGender === "m" || vocalGender === "f") body.vocalGender = vocalGender;
+
+    const styleWeight = Number(payload?.styleWeight);
+    if (Number.isFinite(styleWeight)) body.styleWeight = clamp01(styleWeight);
+    const weirdnessConstraint = Number(payload?.weirdnessConstraint);
+    if (Number.isFinite(weirdnessConstraint)) body.weirdnessConstraint = clamp01(weirdnessConstraint);
+    const audioWeight = Number(payload?.audioWeight);
+    if (Number.isFinite(audioWeight)) body.audioWeight = clamp01(audioWeight);
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.add_vocals;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const paths = ["/api/v1/generate/add-vocals", "/api/v1/suno/generate/add-vocals"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error agregando voces", detail: "No pude contactar al proveedor" });
+      }
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error agregando voces", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error agregando voces", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (!taskId) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      }
+
+      await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "add-vocals", cost, consumed: true });
+      return send(res, 200, { taskId });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error agregando voces", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleSeparate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -1044,6 +1149,7 @@ const sunoHandler = (() => {
       if (a === "extend") return handleExtend(req, res);
       if (a === "upload-cover") return handleUploadCover(req, res);
       if (a === "add-instrumental") return handleAddInstrumental(req, res);
+      if (a === "add-vocals") return handleAddVocals(req, res);
       if (a === "separate") return handleSeparate(req, res);
       if (a === "generate-persona") return handleGeneratePersona(req, res);
       if (a === "mp4") return handleMp4(req, res);
