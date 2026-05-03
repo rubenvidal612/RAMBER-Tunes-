@@ -161,19 +161,60 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             </div>
 
             {pendingTask && !showTrash && (
-              <div className="glass-card rounded-2xl p-4 border border-white/10">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-white font-bold truncate">Generando tu canción…</div>
-                    <div className="text-slate-400 text-xs">Quédate aquí; aparecerá cuando termine.</div>
+              <div className="space-y-3">
+                <div className="glass-card rounded-2xl p-4 border border-white/10">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-white font-bold truncate">Se están generando 2 canciones…</div>
+                      <div className="text-slate-400 text-xs">Puedes salir de Biblioteca si quieres; esto seguirá en segundo plano.</div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        onClick={() => onRefreshSongs?.()}
+                        className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                      >
+                        Actualizar
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            window.localStorage.removeItem('ramber.pendingSunoTask');
+                          } catch {
+                          }
+                          setPendingTask(null);
+                        }}
+                        className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => onRefreshSongs?.()}
-                    className="shrink-0 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
-                  >
-                    Actualizar
-                  </button>
                 </div>
+
+                {(() => {
+                  const base = Math.max(0, Number(pendingTask.startedAt || 0));
+                  const now = Date.now();
+                  const step = Math.max(0, Math.floor((now - base) / 3500));
+                  const pctBase = Math.min(95, Math.max(3, 3 + step * 2));
+                  const ring = (pct: number) => `conic-gradient(#22c55e ${pct * 3.6}deg, rgba(255,255,255,0.10) 0deg)`;
+                  const row = (k: number) => {
+                    const pct = Math.min(95, pctBase + k);
+                    return (
+                      <div key={k} className="flex items-start gap-4 p-2 rounded-xl hover:bg-white/5 transition-colors">
+                        <div className="w-16 h-16 rounded-full p-[3px] shrink-0" style={{ background: ring(pct) }}>
+                          <div className="w-full h-full rounded-full bg-[#0b0f16] border border-white/10 flex items-center justify-center">
+                            <div className="text-sm font-extrabold text-slate-100">{pct}%</div>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0 pt-1">
+                          <div className="h-3 w-[70%] bg-white/10 rounded-full animate-pulse" />
+                          <div className="h-3 w-[90%] bg-white/10 rounded-full mt-3 animate-pulse" />
+                        </div>
+                      </div>
+                    );
+                  };
+                  return <>{[0, 1].map(row)}</>;
+                })()}
               </div>
             )}
 

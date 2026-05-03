@@ -21,12 +21,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [title, setTitle] = useState('');
   const [lyrics, setLyrics] = useState('');
   const [gender, setGender] = useState<'Masculino' | 'Femenino'>('Masculino');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasPendingTask, setHasPendingTask] = useState(false);
   const pendingKey = 'ramber.pendingSunoTask';
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
   const [audioUploadPath, setAudioUploadPath] = useState<string>('');
+  const [audioDurationSec, setAudioDurationSec] = useState<number>(0);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [audioAction, setAudioAction] = useState<'cover' | 'extend' | 'library'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -164,6 +166,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioFile(null);
     setAudioUploadUrl('');
     setAudioUploadPath('');
+    setAudioDurationSec(0);
     setIsUploadingAudio(false);
     setAudioAction('cover');
     setUploadProgress(0);
@@ -182,8 +185,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       } catch {}
       return false;
     };
-    setIsGenerating(readPending());
-    const id = window.setInterval(() => setIsGenerating(readPending()), 1500);
+    setHasPendingTask(readPending());
+    const id = window.setInterval(() => setHasPendingTask(readPending()), 1500);
     return () => window.clearInterval(id);
   }, []);
 
@@ -202,6 +205,31 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue1} 80% 55%)"/><stop offset="1" stop-color="hsl(${hue2} 80% 45%)"/></linearGradient></defs><rect width="512" height="512" rx="48" fill="url(#g)"/><rect x="0" y="0" width="512" height="512" rx="48" fill="rgba(0,0,0,0.25)"/><g fill="rgba(255,255,255,0.95)"><path d="M214 174c0-10 8-18 18-18h48c10 0 18 8 18 18v140c0 29-24 52-52 52s-52-23-52-52 24-52 52-52c12 0 23 4 32 10V174h-44v0z"/></g><text x="36" y="470" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="44" font-weight="800" fill="rgba(255,255,255,0.9)">RAMBER</text></svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   };
+
+  const getAudioDurationSeconds = (file: File) =>
+    new Promise<number>((resolve) => {
+      try {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('audio');
+        a.preload = 'metadata';
+        a.onloadedmetadata = () => {
+          const d = Number(a.duration || 0);
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+          resolve(Number.isFinite(d) ? d : 0);
+        };
+        a.onerror = () => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+          resolve(0);
+        };
+        a.src = url;
+      } catch {
+        resolve(0);
+      }
+    });
 
   const uploadAudio = async (file: File) => {
     if (!supabaseBrowser) {
@@ -312,6 +340,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setUploadProgress(0);
     setIsAudioModalOpen(true);
     setAudioUploadError(null);
+    getAudioDurationSeconds(file).then((d) => setAudioDurationSec(d)).catch(() => {});
     uploadAudio(file).catch(() => {});
   };
 
@@ -350,11 +379,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const handleCoverFromAudio = async () => {
     if (!onSongCreated) return;
+    if (hasPendingTask) {
+      onGoLibrary?.();
+      return;
+    }
     if (!audioUploadUrl) {
       alert('Primero sube tu audio.');
       return;
     }
-    setIsGenerating(true);
+    const dur = Number(audioDurationSec || 0);
+    if (Number.isFinite(dur) && dur > 0) {
+      if (dur > 60 * 8) {
+        alert('Tu audio dura más de 8 minutos. El cover solo permite hasta 8 minutos.');
+        return;
+      }
+      if (model === 'V4_5ALL' && dur > 60) {
+        alert('Con el modelo V4.5 ALL el audio debe durar máximo 1 minuto. Cambia de modelo o usa un audio más corto.');
+        return;
+      }
+    }
+    setIsSubmitting(true);
     try {
       const t = await getAccessToken();
       if (!t.ok) {
@@ -422,12 +466,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error haciendo cover');
     } finally {
-      setIsGenerating(true);
+      setIsSubmitting(false);
     }
   };
 
   const handleCreate = async () => {
     if (!onSongCreated) return;
+    if (hasPendingTask) {
+      onGoLibrary?.();
+      return;
+    }
 
     const prompt = (mode === 'simple' ? description : (lyrics || description)).trim();
     if (!prompt) {
@@ -435,7 +483,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       return;
     }
 
-    setIsGenerating(true);
+    setIsSubmitting(true);
     try {
       const t = await getAccessToken();
       if (!t.ok) {
@@ -504,7 +552,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error creando la canción');
     } finally {
-      setIsGenerating(true);
+      setIsSubmitting(false);
     }
   };
 
@@ -642,16 +690,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {/* Action Buttons & Sticky Create */}
       <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
         <button 
-          onClick={handleCreate}
-          disabled={isGenerating}
+          onClick={() => {
+            if (hasPendingTask) {
+              onGoLibrary?.();
+              return;
+            }
+            handleCreate().catch(() => {});
+          }}
+          disabled={isSubmitting}
           className="w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[48px] rounded-full font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70"
         >
-          {isGenerating ? (
+          {isSubmitting ? (
             <RefreshCw className="w-5 h-5 animate-spin" />
           ) : (
             <Music className="w-5 h-5" strokeWidth={2} />
           )}
-          <span>Crear</span>
+          <span>{isSubmitting ? 'Creando…' : hasPendingTask ? 'Ver en Biblioteca' : 'Crear'}</span>
         </button>
       </div>
 

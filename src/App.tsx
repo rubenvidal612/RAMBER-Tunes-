@@ -241,10 +241,13 @@ export default function App() {
 
     const extractTracks = (payload: any) => {
       const d = payload?.data || payload?.data?.data || payload;
-      const list =
-        (Array.isArray(d?.response?.data) && d.response.data) ||
-        (Array.isArray(d?.response?.sunoData) && d.response.sunoData) ||
-        [];
+      const candidates: any[] = [];
+      if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+      if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+      if (Array.isArray(d?.response)) candidates.push(d.response);
+      if (Array.isArray(d?.data)) candidates.push(d.data);
+      if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+      const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
       return (Array.isArray(list) ? list : []).map((track: any) => {
         const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
         const audioId = (track?.id || '').toString();
@@ -316,23 +319,6 @@ export default function App() {
     tick().catch(() => {});
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    const pendingKey = 'ramber.pendingSunoTask';
-    const id = window.setInterval(() => {
-      if (currentTab !== 'studio') return;
-      try {
-        const raw = window.localStorage.getItem(pendingKey);
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId.trim() : '';
-        if (!taskId) return;
-        setCurrentTab('biblioteca');
-      } catch {
-      }
-    }, 800);
-    return () => window.clearInterval(id);
-  }, [currentTab]);
 
   const deleteCancion = async (songId: string) => {
     try {
