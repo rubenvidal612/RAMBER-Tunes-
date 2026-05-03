@@ -420,7 +420,7 @@ function SongOptionsSheet({
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showStems, setShowStems] = useState(false);
-  const [stemsItems, setStemsItems] = useState<Array<{ key: string; label: string; url: string }>>([]);
+  const [stemsItems, setStemsItems] = useState<Array<{ key: string; label: string; url: string; audioId?: string }>>([]);
   const [stemsMeta, setStemsMeta] = useState<{ taskId: string; type: 'separate_vocal' | 'split_stem' } | null>(null);
   const [personaName, setPersonaName] = useState('');
   const [personaVocalStart, setPersonaVocalStart] = useState(0);
@@ -726,18 +726,61 @@ function SongOptionsSheet({
           })
           .map(([k, v]) => [normalizeKey(String(k)), cleanUrl(v)] as const);
 
-        const originDataEntries = Array.isArray(resp?.originData)
-          ? resp.originData
-              .map((row: any) => {
-                const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim();
-                const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
-                if (!label || !url.startsWith('http')) return null;
-                return [`${label}Url`, url] as const;
-              })
-              .filter(Boolean)
-          : [];
+        const keyFromGroup = (label: string) => {
+          const raw = (label || '').trim();
+          const norm = raw.replaceAll(/[^a-zA-Z0-9 ]/g, ' ').replaceAll(/\s+/g, ' ').trim();
+          const lower = norm.toLowerCase();
+          const fixed: Record<string, string> = {
+            vocals: 'vocalUrl',
+            vocal: 'vocalUrl',
+            instrumental: 'instrumentalUrl',
+            'backing vocals': 'backingVocalsUrl',
+            drums: 'drumsUrl',
+            bass: 'bassUrl',
+            guitar: 'guitarUrl',
+            keyboard: 'keyboardUrl',
+            percussion: 'percussionUrl',
+            strings: 'stringsUrl',
+            synth: 'synthUrl',
+            fx: 'fxUrl',
+            brass: 'brassUrl',
+            woodwinds: 'woodwindsUrl',
+            original: 'originUrl',
+          };
+          if (fixed[lower]) return fixed[lower];
+          const words = norm.split(' ').filter(Boolean);
+          if (words.length === 0) return '';
+          const camel = words
+            .map((w, i) => {
+              const x = w.toLowerCase();
+              if (i === 0) return x;
+              return x.slice(0, 1).toUpperCase() + x.slice(1);
+            })
+            .join('');
+          return camel ? `${camel}Url` : '';
+        };
 
-        const entries = Array.from(new Map([...originDataEntries, ...directUrlEntries]).entries()) as Array<[string, string]>;
+        const map = new Map<string, { url: string; audioId?: string }>();
+
+        if (Array.isArray(resp?.originData)) {
+          for (const row of resp.originData) {
+            const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim();
+            const key = keyFromGroup(label) || `${label}Url`;
+            const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
+            const audioId = String(row?.id || '').trim();
+            if (!key || !url.startsWith('http')) continue;
+            map.set(normalizeKey(key), { url, audioId: audioId || undefined });
+          }
+        }
+
+        for (const [k, v] of directUrlEntries) {
+          const prev = map.get(k);
+          map.set(k, { url: v, audioId: prev?.audioId });
+        }
+
+        const entries = Array.from(map.entries())
+          .filter(([_, v]) => typeof v?.url === 'string' && v.url.trim().startsWith('http'))
+          .map(([k, v]) => [k, v.url, v.audioId] as const);
 
         if (entries.length === 0) {
           alert('Terminó, pero no recibí links de stems.');
@@ -765,7 +808,7 @@ function SongOptionsSheet({
           return i >= 0 ? i : 999;
         };
         const items = entries
-          .map(([k, v]) => ({ key: normalizeKey(k), label: labelForKey(k), url: v }))
+          .map(([k, v, audioId]) => ({ key: normalizeKey(k), label: labelForKey(k), url: v, audioId: audioId || undefined }))
           .sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
         setStemsItems(items);
         setStemsMeta({ taskId: sepTaskId, type });
@@ -774,6 +817,99 @@ function SongOptionsSheet({
       }
 
       alert('Está tardando la separación. Intenta de nuevo en unos segundos.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const generateMidi = async (audioId?: string, label?: string) => {
+    if (!stemsMeta?.taskId) {
+      alert('Primero genera Karaoke/Stems para poder sacar el MIDI.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Tu plan no incluye esta función.');
+        return;
+      }
+
+      const start = await fetch('/api/suno/midi', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: stemsMeta.taskId, audioId }),
+      });
+      const startedOut = await start.json().catch(() => ({}));
+      if (!start.ok) {
+        alert((startedOut?.detail || startedOut?.error || 'No pude iniciar el MIDI.').toString());
+        return;
+      }
+      const midiTaskId = String(startedOut?.taskId || '').trim();
+      if (!midiTaskId) {
+        alert('No recibí taskId del MIDI.');
+        return;
+      }
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 240_000) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const tr = await fetch(`/api/suno/task?kind=midi&taskId=${encodeURIComponent(midiTaskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+
+        const provider = tout?.data;
+        const rawFlag = provider?.data?.data?.successFlag ?? provider?.data?.successFlag ?? provider?.data?.data?.data?.successFlag;
+        const flag = typeof rawFlag === 'number' ? rawFlag : Number(String(rawFlag || '').trim());
+
+        if (flag === 2 || flag === 3) {
+          alert('No se pudo generar el MIDI.');
+          return;
+        }
+        if (flag !== 1) continue;
+
+        const midiData = provider?.data?.data?.midiData ?? provider?.data?.data?.data?.midiData ?? provider?.data?.midiData ?? null;
+        const instruments = Array.isArray(midiData?.instruments) ? midiData.instruments : [];
+        const notes = instruments.reduce((acc: number, it: any) => acc + (Array.isArray(it?.notes) ? it.notes.length : 0), 0);
+
+        const json = JSON.stringify(midiData ?? {}, null, 2);
+        try {
+          await navigator.clipboard.writeText(json);
+        } catch {
+        }
+        try {
+          const blob = new Blob([json], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const safe = (label || 'track').toString().replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+          a.href = url;
+          a.download = `midi_${midiTaskId}_${safe}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch {
+        }
+
+        alert(`MIDI listo.\n\nInstrumentos: ${instruments.length}\nNotas: ${notes}\n\nSe descargó como JSON y también se copió (si el navegador lo permitió).`);
+        return;
+      }
+
+      alert('El MIDI está tardando. Intenta de nuevo en unos segundos.');
     } finally {
       setIsBusy(false);
     }
@@ -1231,6 +1367,13 @@ function SongOptionsSheet({
                 >
                   Abrir todo
                 </button>
+                <button
+                  className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                  disabled={stemsItems.length === 0 || isBusy}
+                  onClick={() => generateMidi(undefined, stemsMeta?.type === 'split_stem' ? 'stems' : 'karaoke').catch(() => {})}
+                >
+                  Generar MIDI (todo)
+                </button>
               </div>
 
               {stemsItems.length === 0 ? (
@@ -1238,17 +1381,33 @@ function SongOptionsSheet({
               ) : (
                 <div className="mt-4 space-y-2">
                   {stemsItems.map((it) => (
-                    <button
+                    <div
                       key={`${it.key}:${it.url}`}
-                      className="w-full glass-card rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-white/10 transition-colors text-left"
-                      onClick={() => window.open(it.url, '_blank')}
+                      className="w-full glass-card rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-white/10 transition-colors"
                     >
                       <div className="min-w-0">
                         <div className="text-white font-bold truncate">{it.label}</div>
                         <div className="text-slate-500 text-xs truncate">{it.url}</div>
                       </div>
-                      <div className="shrink-0 text-slate-300 text-sm">Abrir</div>
-                    </button>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <button
+                          className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-50"
+                          onClick={() => window.open(it.url, '_blank')}
+                          disabled={isBusy}
+                        >
+                          Abrir
+                        </button>
+                        {it.audioId ? (
+                          <button
+                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-50"
+                            onClick={() => generateMidi(it.audioId, it.label).catch(() => {})}
+                            disabled={isBusy}
+                          >
+                            MIDI
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}

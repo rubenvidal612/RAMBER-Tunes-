@@ -14,6 +14,7 @@ const CREDIT_COSTS = {
   lyrics: 0.4,
   timestamped_lyrics: 0.5,
   boost_style: 0.4,
+  midi: 0,
   generate_persona: 0,
   music_cover: 0,
 } as const;
@@ -36,6 +37,7 @@ function toCounts(credits: number) {
     lyrics: safeFloor(CREDIT_COSTS.lyrics),
     timestamped_lyrics: safeFloor(CREDIT_COSTS.timestamped_lyrics),
     boost_style: safeFloor(CREDIT_COSTS.boost_style),
+    midi: safeFloor(CREDIT_COSTS.midi),
   };
 }
 
@@ -1066,6 +1068,11 @@ const sunoHandler = (() => {
               `/api/v1/lyrics/record-info?taskId=${enc}`,
               `/api/v1/suno/lyrics/record-info?taskId=${enc}`,
             ]
+          : kind === "midi"
+          ? [
+              `/api/v1/midi/record-info?taskId=${enc}`,
+              `/api/v1/suno/midi/record-info?taskId=${enc}`,
+            ]
           : kind === "vocal-removal" || kind === "separate" || kind === "separate_vocal" || kind === "split_stem"
           ? [
               `/api/v1/vocal-removal/record-info?taskId=${enc}`,
@@ -1103,7 +1110,18 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Error consultando task", code, detail: String(msg).slice(0, 1200) });
       }
 
-      const status = String(data?.data?.status || data?.data?.successFlag || data?.data?.data?.status || data?.data?.data?.successFlag || "").toUpperCase();
+      const statusRaw = data?.data?.status ?? data?.data?.successFlag ?? data?.data?.data?.status ?? data?.data?.data?.successFlag ?? "";
+      const status =
+        kind === "midi"
+          ? (() => {
+              const n = typeof statusRaw === "number" ? statusRaw : Number(String(statusRaw || "").trim());
+              if (n === 0) return "PENDING";
+              if (n === 1) return "SUCCESS";
+              if (n === 2) return "CREATE_TASK_FAILED";
+              if (n === 3) return "GENERATE_MIDI_FAILED";
+              return String(statusRaw || "").toUpperCase();
+            })()
+          : String(statusRaw || "").toUpperCase();
       const user = auth.user;
       const isAdmin = isAdminEmail(user.email);
 
@@ -1112,6 +1130,7 @@ const sunoHandler = (() => {
         status === "CREATE_TASK_FAILED" ||
         status === "GENERATE_AUDIO_FAILED" ||
         status === "GENERATE_LYRICS_FAILED" ||
+        status === "GENERATE_MIDI_FAILED" ||
         status === "CALLBACK_EXCEPTION" ||
         status === "SENSITIVE_WORD_ERROR"
       ) {
@@ -1333,6 +1352,80 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleMidi(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const taskId = firstString(payload, ["taskId", "task_id"]);
+    const audioId = firstString(payload, ["audioId", "audio_id"]);
+    if (!taskId) return send(res, 400, { error: "Falta taskId" });
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const body: any = { taskId, callBackUrl };
+    if (audioId) body.audioId = audioId;
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.midi;
+
+    try {
+      if (!isAdmin && cost > 0) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const paths = ["/api/v1/midi/generate", "/api/v1/suno/midi/generate"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin && cost > 0) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando MIDI", detail: "No pude contactar al proveedor" });
+      }
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (!isAdmin && cost > 0) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando MIDI", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        if (!isAdmin && cost > 0) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando MIDI", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (!outTaskId) {
+        if (!isAdmin && cost > 0) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      }
+
+      await auth.admin.from("suno_tasks").insert({
+        task_id: outTaskId,
+        user_id: user.id,
+        kind: `midi:${taskId.slice(0, 120)}:${audioId ? audioId.slice(0, 120) : ""}`,
+        cost,
+        consumed: cost > 0,
+      });
+
+      return send(res, 200, { taskId: outTaskId });
+    } catch (e) {
+      if (!isAdmin && cost > 0) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error generando MIDI", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleBoostStyle(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -1523,6 +1616,7 @@ const sunoHandler = (() => {
       if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
       if (a === "lyrics") return handleLyrics(req, res);
       if (a === "wav") return handleWav(req, res);
+      if (a === "midi") return handleMidi(req, res);
       if (a === "boost-style") return handleBoostStyle(req, res);
       if (a === "music-cover") return handleMusicCover(req, res);
       if (a === "credits") return handleCredits(req, res);
