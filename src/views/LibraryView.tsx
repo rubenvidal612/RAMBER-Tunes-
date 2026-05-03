@@ -905,6 +905,13 @@ function SongOptionsSheet({
         } catch {
         }
 
+        if (!midiData || instruments.length === 0 || notes === 0) {
+          alert(
+            `El proveedor regresó MIDI vacío.\n\nPasa a veces (especialmente con split_stem).\n\nPrueba esto:\n1) En la lista de pistas, toca el botón “MIDI” de una pista específica (Voz, Drums, etc.).\n2) Si sigue vacío, intenta con otra canción o un audio más limpio.\n\nYa se descargó el JSON (y se copió si el navegador lo permitió).`
+          );
+          return;
+        }
+
         alert(`MIDI listo.\n\nInstrumentos: ${instruments.length}\nNotas: ${notes}\n\nSe descargó como JSON y también se copió (si el navegador lo permitió).`);
         return;
       }
