@@ -40,6 +40,12 @@ export default function App() {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
 
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
+  };
+
   useEffect(() => {
     store.getData().then(data => {
       setVibes(data.vibes || []);
@@ -47,14 +53,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    ensureAnonSession().catch(() => {});
+    ensureAnonSession()
+      .then((r) => {
+        if (!r.ok) showToast(r.error);
+      })
+      .catch(() => {});
   }, []);
-
-  const showToast = (message: string) => {
-    setToast(message);
-    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
-  };
 
   useEffect(() => {
     return () => {
