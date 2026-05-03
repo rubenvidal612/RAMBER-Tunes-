@@ -2007,11 +2007,44 @@ const sunoWebhookHandler = (() => {
         if (isMusicCover && userId) {
           const originalTaskId = kind.split("music-cover:").slice(1).join("music-cover:").trim();
           if (code === 200 && coverImages.length > 0 && originalTaskId) {
-            const url = String(coverImages[0] || "").trim();
-            if (url) {
+            const bucket = "ramber-tunes";
+            const tryDownloadAndStore = async (urlRaw: any, index: number) => {
+              const url = String(urlRaw || "").trim();
+              if (!url) return "";
+              try {
+                const r = await fetch(url, { method: "GET" });
+                if (!r.ok) return "";
+                const ct = (r.headers.get("content-type") || "").toString();
+                const buf = Buffer.from(await r.arrayBuffer());
+                if (!buf || buf.length === 0) return "";
+                const ext = ct.includes("jpeg") ? "jpg" : ct.includes("webp") ? "webp" : "png";
+                const path = `covers/${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
+                const up = await admin.storage.from(bucket).upload(path, buf, {
+                  upsert: true,
+                  contentType: ct || `image/${ext}`,
+                  cacheControl: "31536000",
+                });
+                if (up.error) return "";
+                const pub = admin.storage.from(bucket).getPublicUrl(path);
+                const publicUrl = (pub?.data as any)?.publicUrl || "";
+                return typeof publicUrl === "string" ? publicUrl.trim() : "";
+              } catch {
+                return "";
+              }
+            };
+
+            let chosen = "";
+            for (let i = 0; i < coverImages.length; i++) {
+              chosen = await tryDownloadAndStore(coverImages[i], i);
+              if (chosen) break;
+            }
+
+            const fallbackUrl = String(coverImages[0] || "").trim();
+            const finalUrl = (chosen || fallbackUrl).slice(0, 2000);
+            if (finalUrl) {
               await admin
                 .from("library_items")
-                .update({ cover_url: url.slice(0, 2000) })
+                .update({ cover_url: finalUrl })
                 .eq("user_id", userId)
                 .eq("type", "song")
                 .eq("suno_task_id", originalTaskId.slice(0, 200))
