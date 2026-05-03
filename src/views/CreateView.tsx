@@ -395,13 +395,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const continueFromAudio = async () => {
     if (audioAction === 'library') return saveUploadedAudioToLibrary();
-    if (audioAction === 'instrumental') return handleAddInstrumentalFromAudio();
-    if (audioAction === 'vocals') return handleAddVocalsFromAudio();
-    if (audioAction === 'extend') {
-      alert('Extender: Próximamente');
-      return;
-    }
-    return handleCoverFromAudio();
+    setIsAudioModalOpen(false);
   };
 
   const handleAddVocalsFromAudio = async () => {
@@ -704,6 +698,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const handleCreate = async () => {
     if (!onSongCreated) return;
+
+    if (audioUploadUrl) {
+      if (audioAction === 'cover') return handleCoverFromAudio();
+      if (audioAction === 'instrumental') return handleAddInstrumentalFromAudio();
+      if (audioAction === 'vocals') return handleAddVocalsFromAudio();
+      if (audioAction === 'extend') {
+        alert('Extender: Próximamente');
+        return;
+      }
+    }
 
     const prompt = (mode === 'simple' ? description : (lyrics || description)).trim();
     if (!prompt) {
@@ -1134,19 +1138,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
               <button
                 onClick={() => {
-                  setIsAudioModalOpen(false);
                   continueFromAudio().catch(() => {});
                 }}
                 disabled={
-                  isUploadingAudio ||
-                  (audioAction === 'cover' && !audioUploadUrl) ||
-                  (audioAction === 'instrumental' && !audioUploadUrl) ||
-                  (audioAction === 'vocals' && !audioUploadUrl) ||
-                  (audioAction === 'library' && !audioUploadUrl)
+                  (audioAction === 'library' && (!audioUploadUrl || isUploadingAudio))
                 }
                 className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[52px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
-                Continuar
+                Listo
               </button>
 
               <button
