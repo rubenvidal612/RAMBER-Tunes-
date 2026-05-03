@@ -35,7 +35,6 @@ export default function App() {
   const [balanceData, setBalanceData] = useState<any>(null);
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string>('');
-  const [authReady, setAuthReady] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
@@ -55,27 +54,21 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!supabaseBrowser) {
-      setAuthReady(true);
-      return;
-    }
+    if (!supabaseBrowser) return;
     let alive = true;
-    const setFromSession = async (session: any) => {
+    const setFromSession = (session: any) => {
       const email = (session?.user?.email || '').toString().trim().toLowerCase();
       const ok = email && (email.endsWith('@gmail.com') || email.endsWith('@googlemail.com'));
       if (!ok) {
         try {
-          await supabaseBrowser.auth.signOut();
-        } catch {
-        }
+          supabaseBrowser.auth.signOut().catch(() => {});
+        } catch {}
         if (!alive) return;
         setAuthEmail('');
-        setAuthReady(true);
         return;
       }
       if (!alive) return;
       setAuthEmail(email);
-      setAuthReady(true);
     };
     supabaseBrowser.auth
       .getSession()
@@ -83,10 +76,9 @@ export default function App() {
       .catch(() => {
         if (!alive) return;
         setAuthEmail('');
-        setAuthReady(true);
       });
     const { data: sub } = supabaseBrowser.auth.onAuthStateChange((_evt, session) => {
-      setFromSession(session).catch(() => {});
+      setFromSession(session);
     });
     return () => {
       alive = false;
@@ -595,14 +587,6 @@ export default function App() {
   };
 
   const displayCredits = Number.isFinite(Number(providerCredits)) ? Number(providerCredits) : credits;
-
-  if (!authReady) {
-    return (
-      <div className="h-[100dvh] w-full bg-black text-white flex items-center justify-center">
-        <div className="text-slate-300 text-sm">Cargando…</div>
-      </div>
-    );
-  }
 
   if (!isAuthed) {
     return (
