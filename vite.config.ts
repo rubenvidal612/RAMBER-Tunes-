@@ -4,7 +4,8 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+  const fileEnv = loadEnv(mode, '.', '');
+  const env = { ...(process.env || {}), ...(fileEnv || {}) } as Record<string, string | undefined>;
   return {
     plugins: [react(), tailwindcss()],
     define: {
