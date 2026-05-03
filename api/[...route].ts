@@ -1017,14 +1017,31 @@ const sunoHandler = (() => {
     const cost = CREDIT_COSTS.music_video;
 
     try {
+      let hasProductor = false;
+      try {
+        const { data: tx } = await auth.admin
+          .from("mp_transactions")
+          .select("pack_key")
+          .eq("user_id", user.id)
+          .eq("kind", "songs")
+          .limit(200);
+        hasProductor = Array.isArray(tx) && tx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
+      } catch {
+        hasProductor = false;
+      }
+
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
       const body: any = { taskId, audioId, callBackUrl };
-      if (author) body.author = author.slice(0, 120);
-      if (domainName) body.domainName = domainName.slice(0, 200);
+      if (author) body.author = author.slice(0, 50);
+      if (hasProductor) {
+        if (domainName) body.domainName = domainName.slice(0, 50);
+      } else {
+        body.domainName = "RAMBER Tunes";
+      }
 
       const paths = ["/api/v1/mp4/generate", "/api/v1/suno/mp4/generate", "/api/v1/mp4", "/api/v1/suno/mp4"];
       let last: any = null;
@@ -2288,6 +2305,9 @@ const balanceHandler = (() => {
         const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
         return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
       });
+    const hasInicio = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
+    const hasProductor = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
+    const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
 
     let { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
@@ -2301,7 +2321,16 @@ const balanceHandler = (() => {
 
     const credits = round2(creditsFromProfile(profile));
     const counts = toCounts(credits);
-    return send(res, 200, { credits, song_balance: counts.songs, counts, downloads_allowed, free_claimed, source: "local" });
+    return send(res, 200, {
+      credits,
+      song_balance: counts.songs,
+      counts,
+      downloads_allowed,
+      free_claimed,
+      plan_key,
+      mp4_watermark_disabled: hasProductor,
+      source: "local",
+    });
   };
 })();
 

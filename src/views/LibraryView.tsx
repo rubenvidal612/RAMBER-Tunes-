@@ -420,6 +420,9 @@ function SongOptionsSheet({
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showStems, setShowStems] = useState(false);
+  const [showMp4, setShowMp4] = useState(false);
+  const [mp4Author, setMp4Author] = useState('');
+  const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
   const [stemsItems, setStemsItems] = useState<Array<{ key: string; label: string; url: string; audioId?: string }>>([]);
   const [stemsMeta, setStemsMeta] = useState<{ taskId: string; type: 'separate_vocal' | 'split_stem' } | null>(null);
   const [personaName, setPersonaName] = useState('');
@@ -431,6 +434,10 @@ function SongOptionsSheet({
     setPersonaVocalStart(0);
     setPersonaVocalEnd(30);
   }, [showPersonaSave]);
+  useEffect(() => {
+    if (!showMp4) return;
+    setMp4Author('');
+  }, [showMp4]);
   const fmt = (iso?: string) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -582,7 +589,34 @@ function SongOptionsSheet({
     }
   };
 
-  const createMp4 = async () => {
+  const openMp4Modal = async () => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Tu plan no incluye esta función.');
+        return;
+      }
+      setMp4WatermarkDisabled(Boolean(out?.mp4_watermark_disabled));
+      setShowMp4(true);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const createMp4 = async (authorName: string) => {
     setIsBusy(true);
     try {
       const t = await getAccessToken();
@@ -610,7 +644,11 @@ function SongOptionsSheet({
       const start = await fetch('/api/suno/mp4', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ taskId: song.sunoTaskId, audioId: song.sunoAudioId }),
+        body: JSON.stringify({
+          taskId: song.sunoTaskId,
+          audioId: song.sunoAudioId,
+          author: (authorName || '').toString().trim().slice(0, 50),
+        }),
       });
       const startedOut = await start.json().catch(() => ({}));
       if (!start.ok) {
@@ -1258,7 +1296,7 @@ function SongOptionsSheet({
               </button>
             )}
             {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => createMp4().catch(() => {})} disabled={isBusy}>
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
                 <Video className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Video (MP4)</span>
               </button>
             )}
@@ -1518,6 +1556,48 @@ function SongOptionsSheet({
               )}
 
               <div className="mt-4 text-[11px] text-slate-500">Los links pueden expirar. Descárgalos pronto si los vas a guardar.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMp4 && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowMp4(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold">Video (MP4)</div>
+              <button
+                onClick={() => setShowMp4(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-3">
+              <div className="text-slate-300 text-sm">Autor (opcional)</div>
+              <input
+                value={mp4Author}
+                onChange={(e) => setMp4Author(e.target.value)}
+                placeholder="Ej: Ruben Vidal"
+                maxLength={50}
+                className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
+              />
+              <div className="text-slate-400 text-xs">
+                {mp4WatermarkDisabled ? 'Marca de agua: sin RAMBER Tunes (Plan Productor).' : 'Marca de agua: RAMBER Tunes.'}
+              </div>
+              <button
+                onClick={() => {
+                  const a = mp4Author;
+                  setShowMp4(false);
+                  createMp4(a).catch(() => {});
+                }}
+                disabled={isBusy}
+                className="w-full bg-white text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+              >
+                Crear video
+              </button>
+              <div className="text-[11px] text-slate-500">El video se guarda 15 días en el proveedor.</div>
             </div>
           </div>
         </div>

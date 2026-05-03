@@ -151,6 +151,10 @@ export function PricingView({ onClose }: PricingViewProps) {
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-teal-500" /> Incluye Karaoke / STEMS
             </div>
+            <div className="flex items-start gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-teal-500 shrink-0 mt-0.5" />
+              <span>Video MP4 con autor (opcional)<br/>Marca de agua: RAMBER Tunes</span>
+            </div>
           </div>
 
           <button
@@ -199,6 +203,10 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-blue-500" /> Incluye Karaoke
+            </div>
+            <div className="flex items-start gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+              <span>Video MP4 con autor (opcional)<br/>Marca de agua: RAMBER Tunes</span>
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-blue-500" /> Licencia Comercial de tus Canciones
@@ -252,6 +260,10 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-indigo-400" /> Separación de instrumentos (STEMS)
+            </div>
+            <div className="flex items-start gap-3 text-slate-300 text-sm">
+              <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+              <span>Video MP4 con autor (opcional)<br/>Sin marca de agua RAMBER Tunes</span>
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
               <Check className="w-5 h-5 text-indigo-400" /> Licencia Comercial de tus Canciones
