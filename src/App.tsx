@@ -90,6 +90,7 @@ export default function App() {
   }, []);
 
   const isAuthed = Boolean(authEmail);
+  const didBootstrapRef = useRef(false);
 
   useEffect(() => {
     const p = (window.location?.pathname || '').toString();
@@ -231,6 +232,21 @@ export default function App() {
   useEffect(() => {
     if (!isAuthed) return;
     refreshLibrary().catch(() => {});
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    if (didBootstrapRef.current) return;
+    didBootstrapRef.current = true;
+    getAccessToken()
+      .then(async (t) => {
+        if (!t.ok) return;
+        await fetch('/api/account/bootstrap-profile', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${t.token}` },
+        }).catch(() => {});
+      })
+      .catch(() => {});
   }, [isAuthed]);
 
   useEffect(() => {

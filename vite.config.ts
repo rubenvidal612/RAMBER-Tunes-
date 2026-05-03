@@ -14,6 +14,7 @@ export default defineConfig(({mode}) => {
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(
         env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY
       ),
+      'process.env.NEXT_PUBLIC_SITE_URL': JSON.stringify(env.NEXT_PUBLIC_SITE_URL || env.VITE_SITE_URL || env.NEXT_PUBLIC_VERCEL_URL),
     },
     resolve: {
       alias: {

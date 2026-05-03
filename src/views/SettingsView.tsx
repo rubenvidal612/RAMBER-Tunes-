@@ -9,6 +9,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const { credits, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch('/api/suno/credits')
@@ -19,6 +20,18 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         if (Number.isFinite(c)) setProviderCredits(c);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseBrowser) return;
+    supabaseBrowser.auth.getSession().then(async ({ data }) => {
+      const token = data?.session?.access_token;
+      if (!token) return;
+      const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${token}` } }).catch(() => null as any);
+      if (!r?.ok) return;
+      const out = await r.json().catch(() => ({}));
+      setIsAdmin(Boolean(out?.is_admin));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -96,6 +109,20 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>
         </div>
+
+        {isAdmin && (
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+              onClick={() => alert('Oficina (solo admin): Próximamente')}
+            >
+              <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
+                <Shield className="w-5 h-5 text-slate-400" /> Oficina (Admin)
+              </div>
+              <ChevronRight className="w-5 h-5 text-slate-500" />
+            </button>
+          </div>
+        )}
 
         <div className="glass-card rounded-2xl overflow-hidden">
           <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5">

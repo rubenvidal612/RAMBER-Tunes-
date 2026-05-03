@@ -160,7 +160,9 @@ function isAdminEmail(email?: string | null) {
     .map((v) => v.trim().toLowerCase())
     .filter(Boolean);
 
-  if (list.length === 0) return false;
+  if (list.length === 0) {
+    return e === "rubenfiverr612@gmail.com";
+  }
   return list.includes(e);
 }
 
@@ -2493,6 +2495,7 @@ const balanceHandler = (() => {
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
     if (userErr || !user) return send(res, 401, { error: "No autorizado" });
+    const is_admin = isAdminEmail(user.email);
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
@@ -2514,8 +2517,15 @@ const balanceHandler = (() => {
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
 
     if (!profile) {
-      const { error: insErr } = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
-      if (insErr) return send(res, 500, { error: "Error creando perfil", detail: insErr.message });
+      const base: any = { id: user.id };
+      base.ramber_credits = 0;
+      const { error: insErr } = await admin.from("profiles").upsert(base, { onConflict: "id" });
+      if (insErr && String(insErr.message || "").toLowerCase().includes("column")) {
+        const { error: insErr2 } = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
+        if (insErr2) return send(res, 500, { error: "Error creando perfil", detail: insErr2.message });
+      } else if (insErr) {
+        return send(res, 500, { error: "Error creando perfil", detail: insErr.message });
+      }
       const r2 = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
       profile = r2.data ?? null;
     }
@@ -2530,8 +2540,59 @@ const balanceHandler = (() => {
       free_claimed,
       plan_key,
       mp4_watermark_disabled: hasProductor,
+      is_admin,
       source: "local",
     });
+  };
+})();
+
+const bootstrapProfileHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    const authHeader = (req.headers.authorization || "").toString();
+    const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+    if (!token) return send(res, 401, { error: "No autorizado" });
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+      const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+      const user = userData?.user;
+      if (userErr || !user) return send(res, 401, { error: "No autorizado" });
+
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const payloadBase: any = { id: user.id };
+      payloadBase.ramber_credits = 0;
+
+      const up = await admin.from("profiles").upsert(payloadBase, { onConflict: "id" });
+      if (up.error) {
+        const msg = String(up.error.message || "");
+        if (msg.toLowerCase().includes("column")) {
+          const up2 = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
+          if (up2.error) return send(res, 500, { error: "No pude crear perfil", detail: up2.error.message });
+          return send(res, 200, { ok: true, created: true });
+        }
+        return send(res, 500, { error: "No pude crear perfil", detail: up.error.message });
+      }
+
+      return send(res, 200, { ok: true, created: true });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
   };
 })();
 
@@ -2789,6 +2850,7 @@ export default async function handler(req: any, res: any) {
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
+    if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
 
