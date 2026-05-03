@@ -82,7 +82,7 @@ export default async function handler(req: any, res: any) {
     const raw = r.data?.data?.credits ?? r.data?.data;
     const parsed = parseCreditsValue(raw);
     const credits = Number.isFinite(parsed) ? parsed : 0;
-    return send(res, 200, { credits });
+    return send(res, 200, { credits, data: credits }); // Enviamos ambos para mayor compatibilidad
   } catch (e) {
     return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
   }

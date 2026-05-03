@@ -70,7 +70,7 @@ export default function App() {
       if (msg) showToast(msg);
       return;
     }
-    const c = Number(out?.credits);
+    const c = Number(out?.credits ?? out?.data);
     if (Number.isFinite(c)) setProviderCredits(c);
   };
 

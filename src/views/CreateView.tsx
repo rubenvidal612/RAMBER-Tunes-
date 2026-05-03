@@ -601,11 +601,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             </div>
           )}
         </div>
-        
-        <div className="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
-          <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
-          <span className="text-sm font-semibold text-slate-200">{credits || 0}</span>
-        </div>
       </div>
 
       <div className="px-4 space-y-4 pb-[220px] md:pb-32">

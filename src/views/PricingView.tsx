@@ -146,10 +146,10 @@ export function PricingView({ onClose }: PricingViewProps) {
               <Check className="w-5 h-5 text-teal-500" /> Crear canciones (A/B)
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
-              <span className="text-red-500 font-bold text-lg">✗</span> Descarga de canciones
+              <Check className="w-5 h-5 text-teal-500" /> Descarga de canciones
             </div>
             <div className="flex items-center gap-3 text-slate-300 text-sm">
-              <Check className="w-5 h-5 text-teal-500" /> No incluye Karaoke / STEMS
+              <Check className="w-5 h-5 text-teal-500" /> Incluye Karaoke / STEMS
             </div>
           </div>
 

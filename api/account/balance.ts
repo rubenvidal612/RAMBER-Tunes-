@@ -97,7 +97,7 @@ export default async function handler(req: any, res: any) {
       const parsed = parseCreditsValue(raw);
       const credits = round2(Number.isFinite(parsed) ? parsed : 0);
       const counts = toCounts(credits);
-      return send(res, 200, { credits, song_balance: counts.songs, counts, downloads_allowed: false, free_claimed: false, source: "provider" });
+      return send(res, 200, { credits, song_balance: counts.songs, counts, downloads_allowed: true, free_claimed: false, source: "provider" });
     } catch (e) {
       return send(res, 502, { error: "Error consultando saldo", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -121,14 +121,7 @@ export default async function handler(req: any, res: any) {
 
   const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-  const { data: paidTx } = await admin
-    .from("mp_transactions")
-    .select("payment_id")
-    .eq("user_id", user.id)
-    .eq("kind", "songs")
-    .gt("amount_mxn", 0)
-    .limit(1);
-  const downloads_allowed = Array.isArray(paidTx) && paidTx.length > 0;
+  const downloads_allowed = true; // El usuario pidió dar acceso a todos
 
   const { data: freeTx } = await admin
     .from("mp_transactions")
