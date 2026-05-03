@@ -56,10 +56,6 @@ export function creditsFromProfile(profile: any): number {
   const zingy = 
     typeof profile?.zingy_credits === "number" && Number.isFinite(profile.zingy_credits) ? Number(profile.zingy_credits) : null; 
   if (zingy !== null) return Math.max(0, zingy); 
-
-  const songBal = 
-    typeof profile?.song_balance === "number" && Number.isFinite(profile.song_balance) ? Number(profile.song_balance) : 0; 
-  if (songBal > 0) return Math.max(0, songBal) * CREDIT_COSTS.generate_music; 
   return 0; 
 } 
 
@@ -70,7 +66,7 @@ export async function adjustUserCredits(admin: any, userId: string, deltaCredits
   for (let i = 0; i < 4; i++) { 
     const { data: profile, error: readErr } = await admin 
       .from("profiles") 
-      .select("id, song_balance, zingy_credits") 
+      .select("id, zingy_credits") 
       .eq("id", userId) 
       .maybeSingle(); 
     if (readErr) return { ok: false as const, error: readErr.message }; 
@@ -96,7 +92,7 @@ export async function consumeUserCredits(admin: any, userId: string, costCredits
   for (let i = 0; i < 4; i++) { 
     const { data: profile, error: readErr } = await admin 
       .from("profiles") 
-      .select("id, song_balance, zingy_credits") 
+      .select("id, zingy_credits") 
       .eq("id", userId) 
       .maybeSingle(); 
     if (readErr) return { ok: false as const, error: readErr.message }; 

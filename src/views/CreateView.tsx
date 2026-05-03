@@ -1028,35 +1028,32 @@ function CustomForm({
   return (
     <>
       <div className="flex gap-4">
-        <button
-          type="button"
-          onClick={() => {
-            if (audioFile) {
-              onOpenAudioModal?.();
-              return;
-            }
-            audioInputRef?.current?.click?.();
-          }}
-          className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
-        >
-          <Plus className="w-5 h-5 text-slate-400" /> 
-          {audioFile ? 'Audio cargado' : 'Audio'}
-          {audioFile && (
+        <div className="flex-1 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (audioFile) {
+                onOpenAudioModal?.();
+                return;
+              }
+              audioInputRef?.current?.click?.();
+            }}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
+          >
+            <Plus className="w-5 h-5 text-slate-400" /> {audioFile ? 'Audio cargado' : 'Audio'}
+          </button>
+          {!!audioUploadUrl && (
             <button
               type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onClearAudio?.();
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-black/40"
+              onClick={() => onClearAudio?.()}
+              className="w-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-slate-200"
               aria-label="Eliminar audio"
               title="Eliminar audio"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-5 h-5" />
             </button>
           )}
-        </button>
+        </div>
         <input 
           type="file" 
           accept="audio/*" 
