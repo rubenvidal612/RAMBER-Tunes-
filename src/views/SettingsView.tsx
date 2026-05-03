@@ -143,7 +143,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
 
         <div className="py-4 text-center">
            <button
-             onClick={() => signInWithGoogle().catch(() => {})}
+             onClick={() => {
+               signInWithGoogle()
+                 .then((r) => {
+                   if (!r.ok) alert(r.error);
+                 })
+                 .catch(() => alert('No pude iniciar sesión con Google.'));
+             }}
              className="mb-5 text-slate-200 text-sm font-semibold hover:text-white transition-colors underline underline-offset-4"
            >
              Entrar con Google
