@@ -518,6 +518,8 @@ const sunoHandler = (() => {
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
+    const uploadBucket = firstString(payload, ["uploadBucket", "upload_bucket"]) || "ramber-tunes";
+    const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const instrumental = Boolean(payload?.instrumental);
     const prompt = firstString(payload, ["prompt", "lyrics", "text"]) || " ";
     const style = firstString(payload, ["style", "tags", "genre"]) || "General";
@@ -525,7 +527,7 @@ const sunoHandler = (() => {
     const mv = firstString(payload, ["mv"]);
     const modelRaw = firstString(payload, ["model"]);
     const model = normalizeModel(modelRaw || mv);
-    if (!uploadUrl) return send(res, 400, { error: "Falta uploadUrl" });
+    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
     const body: any = {
@@ -538,6 +540,15 @@ const sunoHandler = (() => {
       instrumental,
       customMode: true,
     };
+
+    if (uploadPath) {
+      try {
+        const signed = await auth.admin.storage.from(uploadBucket).createSignedUrl(uploadPath, 60 * 60 * 2);
+        const signedUrl = (signed?.data as any)?.signedUrl || (signed?.data as any)?.signedURL || "";
+        if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
+      } catch {
+      }
+    }
 
     const styleWeight = Number(payload?.styleWeight);
     if (Number.isFinite(styleWeight)) body.styleWeight = clamp01(styleWeight);

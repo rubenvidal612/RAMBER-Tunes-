@@ -39,6 +39,7 @@ export default function App() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
+  const pendingKey = 'ramber.pendingSunoTask';
 
   const showToast = (message: string) => {
     setToast(message);
@@ -220,6 +221,96 @@ export default function App() {
       alert(e instanceof Error ? e.message : 'Error guardando en biblioteca');
     }
   };
+
+  useEffect(() => {
+    let busy = false;
+    const readPending = () => {
+      try {
+        const raw = window.localStorage.getItem(pendingKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId.trim() : '';
+        if (!taskId) return null;
+        const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim() : 'generate';
+        const draft = parsed?.draft ?? null;
+        return { taskId, kind, draft };
+      } catch {
+        return null;
+      }
+    };
+
+    const extractTrack = (payload: any) => {
+      const d = payload?.data || payload?.data?.data || payload;
+      const list =
+        (Array.isArray(d?.response?.data) && d.response.data) ||
+        (Array.isArray(d?.response?.sunoData) && d.response.sunoData) ||
+        [];
+      const track = list[0] || null;
+      const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
+      const audioId = (track?.id || '').toString();
+      const title = (track?.title || '').toString();
+      const coverUrl = (track?.image_url || track?.imageUrl || '').toString();
+      return { audioUrl, audioId, title, coverUrl };
+    };
+
+    const tick = async () => {
+      if (busy) return;
+      const pending = readPending();
+      if (!pending) return;
+      busy = true;
+      try {
+        const t = await getAccessToken();
+        if (!t.ok) return;
+        const r = await fetch(`/api/suno/task?taskId=${encodeURIComponent(pending.taskId)}&kind=${encodeURIComponent(pending.kind || "generate")}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const out = await r.json().catch(() => ({}));
+        const data = out?.data || out?.data?.data || out?.data;
+        const status = String(data?.data?.status || data?.data?.successFlag || data?.status || data?.successFlag || '').toUpperCase();
+
+        if (status === 'SUCCESS') {
+          const track = extractTrack(data);
+          if (!track.audioUrl) {
+            showToast('Se generó, pero no recibí el audio.');
+            window.localStorage.removeItem(pendingKey);
+            return;
+          }
+          const draft = pending.draft ?? {};
+          await addCancion({
+            id: track.audioId || pending.taskId,
+            title: track.title || String(draft?.title || 'Canción'),
+            description: String(draft?.description || ''),
+            lyrics: typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? draft.lyrics : undefined,
+            genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
+            audioUrl: track.audioUrl,
+            coverUrl: track.coverUrl || undefined,
+            sunoTaskId: pending.taskId,
+            sunoAudioId: track.audioId || null,
+            isCover: Boolean(draft?.isCover),
+          });
+          window.localStorage.removeItem(pendingKey);
+          showToast('Listo: se guardó en tu Biblioteca.');
+          return;
+        }
+
+        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED') {
+          const msg =
+            (data?.data?.errorMessage || data?.data?.error_message || data?.errorMessage || data?.error_message || 'Error en la generación').toString();
+          window.localStorage.removeItem(pendingKey);
+          showToast(msg);
+          return;
+        }
+      } finally {
+        busy = false;
+      }
+    };
+
+    const id = window.setInterval(() => {
+      tick().catch(() => {});
+    }, 4000);
+    tick().catch(() => {});
+    return () => window.clearInterval(id);
+  }, []);
 
   const deleteCancion = async (songId: string) => {
     try {

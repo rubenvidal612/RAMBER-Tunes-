@@ -22,9 +22,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [lyrics, setLyrics] = useState('');
   const [gender, setGender] = useState<'Masculino' | 'Femenino'>('Masculino');
   const [isGenerating, setIsGenerating] = useState(false);
+  const pendingKey = 'ramber.pendingSunoTask';
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
+  const [audioUploadPath, setAudioUploadPath] = useState<string>('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [audioAction, setAudioAction] = useState<'cover' | 'extend' | 'library'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -162,6 +164,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const clearAudio = () => {
     setAudioFile(null);
     setAudioUploadUrl('');
+    setAudioUploadPath('');
     setIsUploadingAudio(false);
     setAudioAction('cover');
     setUploadProgress(0);
@@ -169,6 +172,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioUploadError(null);
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
+
+  useEffect(() => {
+    const readPending = () => {
+      try {
+        const raw = window.localStorage.getItem(pendingKey);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.taskId === 'string' && parsed.taskId.trim()) return true;
+      } catch {}
+      return false;
+    };
+    setIsGenerating(readPending());
+    const id = window.setInterval(() => setIsGenerating(readPending()), 1500);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!isUploadingAudio) return;
@@ -238,6 +256,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
       setAudioUploadUrl(url);
+      setAudioUploadPath(path);
       setAudioUploadError(null);
     } finally {
       setIsUploadingAudio(false);
@@ -304,6 +323,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const prompt = (lyrics || description || ' ').trim() || ' ';
       const payload: any = {
         uploadUrl: audioUploadUrl,
+        uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
+        uploadPath: audioUploadPath || undefined,
         instrumental,
         prompt,
         style: (instructions || 'General').trim(),
@@ -328,7 +349,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert(out?.error || 'No se pudo hacer el cover.');
+        const msg = (out?.detail || out?.error || 'No se pudo hacer el cover.').toString();
+        alert(msg);
         return;
       }
       const taskId = typeof out?.taskId === 'string' ? out.taskId : '';
@@ -336,59 +358,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert('No recibí taskId del servidor.');
         return;
       }
-
-      let lastStatus = '';
-      for (let i = 0; i < 60; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const s = await fetch(`/api/suno/task?taskId=${encodeURIComponent(taskId)}&kind=generate`, {
-          headers: { authorization: `Bearer ${t.token}` },
-        });
-        const st = await s.json().catch(() => ({}));
-        const data = st?.data || st?.data?.data || st?.data;
-        const status = String(data?.status || data?.successFlag || '').toUpperCase();
-        lastStatus = status || lastStatus;
-
-        if (status === 'SUCCESS') {
-          const list =
-            (Array.isArray(data?.response?.data) && data.response.data) ||
-            (Array.isArray(data?.response?.sunoData) && data.response.sunoData) ||
-            [];
-          const track = list[0] || null;
-          const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
-          const audioId = (track?.id || '').toString();
-          const tTitle = (track?.title || title || 'Cover').toString();
-          if (!audioUrl) {
-            alert('El cover se generó, pero no recibí el audio.');
-            return;
-          }
-          onSongCreated({
-            id: audioId || taskId,
-            title: tTitle,
-            description: instructions || 'Cover',
-            lyrics: lyrics || undefined,
+      window.localStorage.setItem(
+        pendingKey,
+        JSON.stringify({
+          taskId,
+          kind: 'upload-cover',
+          startedAt: Date.now(),
+          draft: {
+            title: (title || 'Cover').toString(),
+            description: (instructions || 'Cover').toString(),
+            lyrics: (lyrics || '').toString() || null,
             genre: gender,
-            audioUrl,
-            coverUrl: (track?.image_url || track?.imageUrl || '').toString() || undefined,
-            sunoTaskId: taskId,
-            sunoAudioId: audioId || null,
             isCover: true,
-          });
-          clearAudio();
-          alert('Cover creado y guardado en Biblioteca.');
-          return;
-        }
-
-        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED') {
-          const msg = data?.errorMessage || data?.error_message || 'Error en el cover';
-          alert(String(msg));
-          return;
-        }
-      }
-      alert(`Sigue generándose... estado: ${lastStatus || 'PENDIENTE'}`);
+          },
+        })
+      );
+      alert('Cover en proceso. Puedes cambiar de pestaña; se guardará en Biblioteca cuando termine.');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error haciendo cover');
     } finally {
-      setIsGenerating(false);
+      setIsGenerating(true);
     }
   };
 
@@ -438,7 +427,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert(out?.error || 'No se pudo crear la canción.');
+        const msg = (out?.detail || out?.error || 'No se pudo crear la canción.').toString();
+        alert(msg);
         return;
       }
 
@@ -447,69 +437,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert('No recibí taskId del servidor.');
         return;
       }
-
-      let lastStatus = '';
-      for (let i = 0; i < 60; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const s = await fetch(`/api/suno/task?taskId=${encodeURIComponent(taskId)}&kind=generate`, {
-          headers: {
-            authorization: `Bearer ${t.token}`,
-          },
-        });
-        const st = await s.json().catch(() => ({}));
-        const data = st?.data || st?.data?.data || st?.data;
-        const status = String(data?.status || data?.successFlag || '').toUpperCase();
-        lastStatus = status || lastStatus;
-
-        if (status === 'SUCCESS') {
-          const list =
-            (Array.isArray(data?.response?.data) && data.response.data) ||
-            (Array.isArray(data?.response?.sunoData) && data.response.sunoData) ||
-            [];
-          const track = list[0] || null;
-          const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
-          const audioId = (track?.id || '').toString();
-          const tTitle = (track?.title || title || 'Nueva Canción').toString();
-          if (!audioUrl) {
-            alert('La canción se generó, pero no recibí el audio.');
-            return;
-          }
-
-          onSongCreated({
-            id: audioId || taskId,
-            title: tTitle,
-            description: mode === 'simple' ? description : instructions,
-            lyrics: mode === 'personalizado' ? lyrics : undefined,
+      window.localStorage.setItem(
+        pendingKey,
+        JSON.stringify({
+          taskId,
+          kind: 'generate',
+          startedAt: Date.now(),
+          draft: {
+            title: (title || 'Nueva Canción').toString(),
+            description: (mode === 'simple' ? description : instructions).toString(),
+            lyrics: mode === 'personalizado' ? (lyrics || '').toString() || null : null,
             genre: gender,
-            audioUrl,
-            coverUrl: (track?.image_url || track?.imageUrl || '').toString() || undefined,
-            sunoTaskId: taskId,
-            sunoAudioId: audioId || null,
             isCover: Boolean(audioFile || audioUploadUrl),
-          });
-
-          setAudioFile(null);
-          setTitle('');
-          setLyrics('');
-          setDescription('');
-          setInstructions('');
-          setAudioUploadUrl('');
-          alert('Canción creada y guardada en Biblioteca.');
-          return;
-        }
-
-        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED') {
-          const msg = data?.errorMessage || data?.error_message || 'Error en la generación';
-          alert(String(msg));
-          return;
-        }
-      }
-
-      alert(`Sigue generándose... estado: ${lastStatus || 'PENDIENTE'}`);
+          },
+        })
+      );
+      alert('Canción en proceso. Puedes cambiar de pestaña; se guardará en Biblioteca cuando termine.');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error creando la canción');
     } finally {
-      setIsGenerating(false);
+      setIsGenerating(true);
     }
   };
 
