@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
-import { ensureAnonSession, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; onOpenPricing?: () => void }) {
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const { credits, refreshCredits } = useUserCredits();
+  const [userName, setUserName] = useState('Usuario');
+  const [userInitial, setUserInitial] = useState('U');
 
   useEffect(() => {
     fetch('/api/suno/credits')
@@ -19,12 +21,27 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!supabaseBrowser) return;
+    supabaseBrowser.auth
+      .getUser()
+      .then(({ data }) => {
+        const user = data?.user;
+        const email = (user?.email || '').toString().trim();
+        const meta: any = user?.user_metadata || {};
+        const name = (meta?.full_name || meta?.name || '').toString().trim();
+        const display = (name || email || 'Usuario').toString().trim();
+        setUserName(display);
+        setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
+      })
+      .catch(() => {});
+  }, []);
+
   const signOut = async () => {
     if (!supabaseBrowser) return;
     setIsAuthBusy(true);
     try {
       await supabaseBrowser.auth.signOut().catch(() => {});
-      await ensureAnonSession();
       await refreshCredits();
       alert('Sesión cerrada.');
     } finally {
@@ -42,10 +59,10 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
 
       <div className="p-6 space-y-6 max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-4 mb-2">
-          <div className="w-16 h-16 rounded-full bg-teal-600 border border-teal-500/30 flex items-center justify-center text-2xl font-bold text-white shadow-inner">
-            R
+          <div className="w-16 h-16 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-2xl font-extrabold text-white shadow-inner">
+            {userInitial}
           </div>
-          <h2 className="text-2xl font-bold text-white">Ruben</h2>
+          <h2 className="text-2xl font-bold text-white">{userName}</h2>
         </div>
 
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
@@ -125,6 +142,12 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         </div>
 
         <div className="py-4 text-center">
+           <button
+             onClick={() => signInWithGoogle().catch(() => {})}
+             className="mb-5 text-slate-200 text-sm font-semibold hover:text-white transition-colors underline underline-offset-4"
+           >
+             Entrar con Google
+           </button>
            <button
              onClick={() => signOut().catch(() => {})}
              disabled={isAuthBusy}

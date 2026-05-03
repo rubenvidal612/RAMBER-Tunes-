@@ -4,6 +4,46 @@ import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
+function normalizeLyricsTags(t: string) {
+  const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
+  const mapped = lines.map((line) => {
+    const s = line.trim();
+    if (!s) return '';
+    const lower = s.toLowerCase();
+    const isTag =
+      lower === 'coro' ||
+      lower.startsWith('coro ') ||
+      lower === 'chorus' ||
+      lower.startsWith('chorus ') ||
+      lower.startsWith('verso') ||
+      lower.startsWith('verse') ||
+      lower.startsWith('pre-coro') ||
+      lower.startsWith('pre coro') ||
+      lower.startsWith('bridge') ||
+      lower.startsWith('puente') ||
+      lower.startsWith('outro') ||
+      lower.startsWith('intro');
+    if (isTag && !s.startsWith('[')) return `[${s.replaceAll(':', '').trim()}]`;
+    if (s.startsWith('[') && s.endsWith(']')) return s;
+    if (s.endsWith(':') && s.length < 20) return `[${s.slice(0, -1).trim()}]`;
+    return line;
+  });
+  return mapped.join('\n').replaceAll(/\n{3,}/g, '\n\n').trim();
+}
+
+function stripTitleFromLyrics(title: string, lyrics: string) {
+  const t = (title || '').toString().trim().toLowerCase();
+  if (!t) return lyrics;
+  const lines = (lyrics || '').toString().replaceAll('\r\n', '\n').split('\n');
+  const first = (lines[0] || '').trim();
+  const firstLower = first.toLowerCase();
+  if (!first) return lyrics;
+  if (firstLower === t) return lines.slice(1).join('\n').trim();
+  if (firstLower === `titulo: ${t}` || firstLower === `título: ${t}`) return lines.slice(1).join('\n').trim();
+  if (firstLower.startsWith(`${t} -`) || firstLower.startsWith(`${t}:`)) return lines.slice(1).join('\n').trim();
+  return lyrics;
+}
+
 interface CreateViewProps {
   onSongCreated?: (song: SongItem, audioBlob?: Blob) => void;
   credits?: number;
@@ -35,6 +75,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+  const savedUploadsKey = 'ramber.saved_uploads_v1';
+  const [savedUploadKey, setSavedUploadKey] = useState<string>('');
 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
@@ -221,6 +263,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setUploadProgress(100);
   }, [audioUploadUrl, audioFile]);
 
+  useEffect(() => {
+    if (!onSongCreated) return;
+    if (!audioFile) return;
+    if (!audioUploadUrl) return;
+    const key = (audioUploadPath || audioUploadUrl).toString().trim();
+    if (!key) return;
+    if (savedUploadKey && savedUploadKey === key) return;
+    try {
+      const raw = window.localStorage.getItem(savedUploadsKey);
+      const list = raw ? JSON.parse(raw) : [];
+      const arr = Array.isArray(list) ? list : [];
+      if (arr.includes(key)) {
+        setSavedUploadKey(key);
+        return;
+      }
+      const titleFromFile = (audioFile.name || 'Audio').toString().slice(0, 120);
+      onSongCreated({
+        id: `upload_${Date.now()}`,
+        title: titleFromFile,
+        description: 'Audio subido',
+        lyrics: undefined,
+        genre: gender,
+        audioUrl: audioUploadUrl,
+        coverUrl: makeAudioCoverSvgUrl(titleFromFile),
+        sunoTaskId: null,
+        sunoAudioId: null,
+        isCover: false,
+      });
+      const next = [...arr, key].slice(-80);
+      window.localStorage.setItem(savedUploadsKey, JSON.stringify(next));
+      setSavedUploadKey(key);
+    } catch {
+    }
+  }, [audioUploadUrl, audioUploadPath, audioFile, gender, onSongCreated, savedUploadKey]);
+
   const makeAudioCoverSvgUrl = (seed: string) => {
     const s = (seed || 'audio').toString().slice(0, 80);
     let h = 0;
@@ -404,7 +481,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       alert('Primero sube tu audio.');
       return;
     }
-    const prompt = (lyrics || description || ' ').trim();
+    const baseLyrics = normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
+    const prompt = (baseLyrics || description || ' ').trim();
     if (!prompt) {
       alert('Escribe una descripción o letras para guiar las voces.');
       return;
@@ -627,7 +705,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
 
-      const prompt = (lyrics || description || ' ').trim() || ' ';
+      const baseLyrics = normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
+      const prompt = (baseLyrics || description || ' ').trim() || ' ';
       const payload: any = {
         uploadUrl: audioUploadUrl,
         uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
@@ -676,7 +755,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           draft: {
             title: (title || 'Cover').toString(),
             description: (instructions || 'Cover').toString(),
-            lyrics: (lyrics || '').toString() || null,
+            lyrics: (baseLyrics || '').toString() || null,
             genre: gender,
             isCover: true,
           },
@@ -709,7 +788,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
 
-    const prompt = (mode === 'simple' ? description : (lyrics || description)).trim();
+    const baseLyrics = normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
+    const prompt = (mode === 'simple' ? description : (baseLyrics || description)).trim();
     if (!prompt) {
       alert('Escribe una descripción o letra para crear la canción.');
       return;
@@ -773,7 +853,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           draft: {
             title: (title || 'Nueva Canción').toString(),
             description: (mode === 'simple' ? description : instructions).toString(),
-            lyrics: mode === 'personalizado' ? (lyrics || '').toString() || null : null,
+            lyrics: mode === 'personalizado' ? (baseLyrics || '').toString() || null : null,
             genre: gender,
             isCover: Boolean(audioFile || audioUploadUrl),
           },
@@ -1412,7 +1492,8 @@ function CustomForm({
           variants.find((v: any) => String(v?.text || '').trim()) ||
           null;
         const textRaw = best ? String(best?.text || '').trim() : '';
-        const text = normalizeLyrics(textRaw);
+        const inferredTitle = (contextTitle || (best && typeof (best as any)?.title === 'string' ? String((best as any).title).trim() : '')).toString();
+        const text = stripTitleFromLyrics(inferredTitle, normalizeLyrics(textRaw));
         if (text) {
           setLyricsWithUndo(text);
           if (!contextTitle && typeof best?.title === 'string' && best.title.trim()) setTitle(best.title.trim().slice(0, 100));

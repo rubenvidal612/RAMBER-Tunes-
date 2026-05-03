@@ -10,7 +10,7 @@ import { PricingView } from './views/PricingView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
-import { ensureAnonSession, getAccessToken, supabaseBrowser } from './lib/supabaseBrowser';
+import { getAccessToken, signInWithGoogle, supabaseBrowser } from './lib/supabaseBrowser';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
@@ -31,8 +31,8 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
-  const [userInitial, setUserInitial] = useState<string>('U');
+  const [authReady, setAuthReady] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -49,6 +49,51 @@ export default function App() {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
+
+  useEffect(() => {
+    if (!supabaseBrowser) {
+      setAuthReady(true);
+      return;
+    }
+    let alive = true;
+    const setFromSession = async (session: any) => {
+      const email = (session?.user?.email || '').toString().trim().toLowerCase();
+      const ok = email && (email.endsWith('@gmail.com') || email.endsWith('@googlemail.com'));
+      if (!ok) {
+        try {
+          await supabaseBrowser.auth.signOut();
+        } catch {
+        }
+        if (!alive) return;
+        setAuthEmail('');
+        setAuthReady(true);
+        return;
+      }
+      if (!alive) return;
+      setAuthEmail(email);
+      setAuthReady(true);
+    };
+    supabaseBrowser.auth
+      .getSession()
+      .then(({ data }) => setFromSession(data?.session))
+      .catch(() => {
+        if (!alive) return;
+        setAuthEmail('');
+        setAuthReady(true);
+      });
+    const { data: sub } = supabaseBrowser.auth.onAuthStateChange((_evt, session) => {
+      setFromSession(session).catch(() => {});
+    });
+    return () => {
+      alive = false;
+      try {
+        sub?.subscription?.unsubscribe?.();
+      } catch {
+      }
+    };
+  }, []);
+
+  const isAuthed = Boolean(authEmail);
 
   useEffect(() => {
     const p = (window.location?.pathname || '').toString();
@@ -83,31 +128,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    ensureAnonSession()
-      .then((r) => {
-        if (!r.ok) showToast(r.error);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!supabaseBrowser) return;
-    ensureAnonSession()
-      .then(async () => {
-        const { data } = await supabaseBrowser.auth.getUser();
-        const user = data?.user;
-        const email = (user?.email || '').toString().trim();
-        const meta: any = user?.user_metadata || {};
-        const avatar = (meta?.avatar_url || meta?.picture || '').toString().trim();
-        const name = (meta?.full_name || meta?.name || '').toString().trim();
-        const initial = (name || email || 'U').toString().trim().slice(0, 1).toUpperCase() || 'U';
-        setUserInitial(initial);
-        setUserAvatarUrl(avatar);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
@@ -126,10 +146,11 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isAuthed) return;
     refreshProviderCredits().catch(() => {});
     const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 20000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [isAuthed]);
 
   const mapSongRow = (row: any): SongItem => ({
     id: String(row?.id || ''),
@@ -171,8 +192,9 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isAuthed) return;
     refreshLibrary().catch(() => {});
-  }, []);
+  }, [isAuthed]);
 
   useEffect(() => {
     const isStandalone =
@@ -269,6 +291,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isAuthed) return;
     let busy = false;
     const readList = () => {
       try {
@@ -396,9 +419,18 @@ export default function App() {
           const baseTitle = String(draft?.title || 'Canción');
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
+            const suffix =
+              tracks.length === 2 ? (i === 0 ? 'A' : i === 1 ? 'B' : String(i + 1)) : tracks.length > 1 ? String(i + 1) : '';
+            const finalTitle = (() => {
+              const providerTitle = (track.title || '').toString().trim();
+              const chosen = providerTitle || baseTitle;
+              if (!suffix) return chosen;
+              const hasSuffix = new RegExp(`\\s${suffix}$`, 'i').test(chosen);
+              return hasSuffix ? chosen : `${chosen} ${suffix}`;
+            })();
             await addCancion({
               id: track.audioId || `${pending.taskId}_${i + 1}`,
-              title: track.title || (tracks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle),
+              title: finalTitle,
               description: String(draft?.description || ''),
               lyrics: typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? draft.lyrics : undefined,
               genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
@@ -435,7 +467,7 @@ export default function App() {
     }, 4000);
     tick().catch(() => {});
     return () => window.clearInterval(id);
-  }, []);
+  }, [isAuthed]);
 
   const deleteCancion = async (songId: string) => {
     try {
@@ -519,6 +551,32 @@ export default function App() {
 
   const displayCredits = Number.isFinite(Number(providerCredits)) ? Number(providerCredits) : credits;
 
+  if (!authReady) {
+    return (
+      <div className="h-[100dvh] w-full bg-black text-white flex items-center justify-center">
+        <div className="text-slate-300 text-sm">Cargando…</div>
+      </div>
+    );
+  }
+
+  if (!isAuthed) {
+    return (
+      <div className="h-[100dvh] w-full bg-black text-white flex flex-col items-center justify-center px-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
+          R
+        </div>
+        <div className="mt-4 text-xl font-extrabold">RAMBER Tunes</div>
+        <div className="mt-2 text-sm text-slate-300">Para usar la app necesitas entrar con tu cuenta Gmail.</div>
+        <button
+          onClick={() => signInWithGoogle().catch(() => {})}
+          className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm"
+        >
+          Entrar con Google
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
       <TopBar
@@ -526,8 +584,6 @@ export default function App() {
         onMenuClick={() => setIsSettingsOpen(true)}
         onCreditsClick={() => setIsPricingOpen(true)}
         credits={displayCredits}
-        userAvatarUrl={userAvatarUrl}
-        userInitial={userInitial}
       />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">

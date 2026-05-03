@@ -2657,7 +2657,8 @@ const sunoWebhookHandler = (() => {
           }
         } else if (code === 200 && (callbackType === "first" || callbackType === "complete") && userId) {
           const normalized = tracks
-            .map((t: any) => ({
+            .map((t: any, idx: number) => ({
+              idx,
               sunoAudioId: String(t?.id || "").trim(),
               audioUrl: String(t?.audio_url || t?.audioUrl || t?.stream_audio_url || t?.streamAudioUrl || "").trim(),
               coverUrl: String(t?.image_url || t?.imageUrl || "").trim(),
@@ -2684,7 +2685,13 @@ const sunoWebhookHandler = (() => {
               .map((x: any) => ({
                 user_id: userId,
                 type: "song",
-                title: (x.title || "Canción").slice(0, 120),
+                title: (() => {
+                  const base = (x.title || "Canción").toString().trim();
+                  const suffix = normalized.length === 2 ? (x.idx === 0 ? "A" : x.idx === 1 ? "B" : String(x.idx + 1)) : normalized.length > 1 ? String(x.idx + 1) : "";
+                  if (!suffix) return base.slice(0, 120);
+                  const hasSuffix = new RegExp(`\\s${suffix}$`, "i").test(base);
+                  return (hasSuffix ? base : `${base} ${suffix}`).slice(0, 120);
+                })(),
                 description: x.tags ? x.tags.slice(0, 2000) : null,
                 lyrics: null,
                 gender: null,

@@ -283,7 +283,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-800 shrink-0 cursor-pointer" onClick={() => !showTrash && onPlaySong(song)}>
                       <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
                       <div className="absolute bottom-1 right-1 bg-black/60 px-1 text-[10px] rounded font-medium">4:22</div>
-                      <div className="absolute top-1 left-1 bg-white/10 px-1 rounded text-[8px] font-bold">{song.isCover ? 'COVER' : 'AI'}</div>
+                      {song.isCover && (
+                        <div className="absolute top-1 left-1 bg-white/10 px-1 rounded text-[8px] font-bold">COVER</div>
+                      )}
                       {!showTrash && (
                         <div className={cn(
                           "absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity",
@@ -1373,7 +1375,6 @@ function SongOptionsSheet({
               <div className="flex items-center gap-3 text-slate-200 font-semibold">
                 <ImageIcon className="w-5 h-5 text-slate-300" /> Portada
               </div>
-              <div className="text-slate-400 text-sm">AI</div>
             </button>
             {!isDeleted && (
               <>
