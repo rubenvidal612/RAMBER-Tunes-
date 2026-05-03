@@ -239,18 +239,19 @@ export default function App() {
       }
     };
 
-    const extractTrack = (payload: any) => {
+    const extractTracks = (payload: any) => {
       const d = payload?.data || payload?.data?.data || payload;
       const list =
         (Array.isArray(d?.response?.data) && d.response.data) ||
         (Array.isArray(d?.response?.sunoData) && d.response.sunoData) ||
         [];
-      const track = list[0] || null;
-      const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
-      const audioId = (track?.id || '').toString();
-      const title = (track?.title || '').toString();
-      const coverUrl = (track?.image_url || track?.imageUrl || '').toString();
-      return { audioUrl, audioId, title, coverUrl };
+      return (Array.isArray(list) ? list : []).map((track: any) => {
+        const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
+        const audioId = (track?.id || '').toString();
+        const title = (track?.title || '').toString();
+        const coverUrl = (track?.image_url || track?.imageUrl || '').toString();
+        return { audioUrl, audioId, title, coverUrl };
+      });
     };
 
     const tick = async () => {
@@ -269,27 +270,31 @@ export default function App() {
         const status = String(data?.data?.status || data?.data?.successFlag || data?.status || data?.successFlag || '').toUpperCase();
 
         if (status === 'SUCCESS') {
-          const track = extractTrack(data);
-          if (!track.audioUrl) {
+          const tracks = extractTracks(data).filter((x) => x && x.audioUrl);
+          if (tracks.length === 0) {
             showToast('Se generó, pero no recibí el audio.');
             window.localStorage.removeItem(pendingKey);
             return;
           }
           const draft = pending.draft ?? {};
-          await addCancion({
-            id: track.audioId || pending.taskId,
-            title: track.title || String(draft?.title || 'Canción'),
-            description: String(draft?.description || ''),
-            lyrics: typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? draft.lyrics : undefined,
-            genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
-            audioUrl: track.audioUrl,
-            coverUrl: track.coverUrl || undefined,
-            sunoTaskId: pending.taskId,
-            sunoAudioId: track.audioId || null,
-            isCover: Boolean(draft?.isCover),
-          });
+          const baseTitle = String(draft?.title || 'Canción');
+          for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            await addCancion({
+              id: track.audioId || `${pending.taskId}_${i + 1}`,
+              title: track.title || (tracks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle),
+              description: String(draft?.description || ''),
+              lyrics: typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? draft.lyrics : undefined,
+              genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
+              audioUrl: track.audioUrl,
+              coverUrl: track.coverUrl || undefined,
+              sunoTaskId: pending.taskId,
+              sunoAudioId: track.audioId || null,
+              isCover: Boolean(draft?.isCover),
+            });
+          }
           window.localStorage.removeItem(pendingKey);
-          showToast('Listo: se guardó en tu Biblioteca.');
+          showToast(tracks.length > 1 ? `Listo: se guardaron ${tracks.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
           return;
         }
 

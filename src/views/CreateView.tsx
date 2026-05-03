@@ -48,6 +48,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [selectedPersona, setSelectedPersona] = useState<{ persona_id: string; name: string; photo_url?: string } | null>(null);
 
   const audioInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadXhrRef = useRef<XMLHttpRequest | null>(null);
 
   useEffect(() => {
     try {
@@ -162,6 +163,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   }, [isModelMenuOpen]);
 
   const clearAudio = () => {
+    try {
+      uploadXhrRef.current?.abort();
+    } catch {}
+    uploadXhrRef.current = null;
     setAudioFile(null);
     setAudioUploadUrl('');
     setAudioUploadPath('');
@@ -189,22 +194,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   }, []);
 
   useEffect(() => {
-    if (!isUploadingAudio) return;
-    setUploadProgress((p) => (p > 0 ? p : 1));
-    const id = window.setInterval(() => {
-      setUploadProgress((p) => {
-        const next = p <= 0 ? 1 : p + 3;
-        return Math.min(next, 95);
-      });
-    }, 400);
-    return () => window.clearInterval(id);
-  }, [isUploadingAudio]);
-
-  useEffect(() => {
     if (!audioUploadUrl) return;
     if (!audioFile) return;
-    setUploadProgress((p) => (p >= 95 ? 100 : 100));
+    setUploadProgress(100);
   }, [audioUploadUrl, audioFile]);
+
+  const makeAudioCoverSvgUrl = (seed: string) => {
+    const s = (seed || 'audio').toString().slice(0, 80);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    const hue1 = h % 360;
+    const hue2 = (hue1 + 50) % 360;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue1} 80% 55%)"/><stop offset="1" stop-color="hsl(${hue2} 80% 45%)"/></linearGradient></defs><rect width="512" height="512" rx="48" fill="url(#g)"/><rect x="0" y="0" width="512" height="512" rx="48" fill="rgba(0,0,0,0.25)"/><g fill="rgba(255,255,255,0.95)"><path d="M214 174c0-10 8-18 18-18h48c10 0 18 8 18 18v140c0 29-24 52-52 52s-52-23-52-52 24-52 52-52c12 0 23 4 32 10V174h-44v0z"/></g><text x="36" y="470" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="44" font-weight="800" fill="rgba(255,255,255,0.9)">RAMBER</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  };
 
   const uploadAudio = async (file: File) => {
     if (!supabaseBrowser) {
@@ -215,11 +218,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioUploadError(null);
     setIsUploadingAudio(true);
     setAudioUploadUrl('');
+    setAudioUploadPath('');
+    setUploadProgress(0);
     try {
       const s = await ensureAnonSession();
       if (!s.ok) {
         setAudioUploadError(s.error || 'No se pudo iniciar sesión.');
         alert(s.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setAudioUploadError(t.error || 'No se pudo iniciar sesión.');
+        alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
       const { data } = await supabaseBrowser.auth.getUser();
@@ -234,20 +245,56 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         .replaceAll(/[^a-zA-Z0-9._-]+/g, '_')
         .slice(0, 80);
       const path = `uploads/${user.id}/${Date.now()}_${safeName}`;
-      const { error } = await supabaseBrowser.storage.from('ramber-tunes').upload(path, file, {
-        upsert: true,
-        contentType: file.type || undefined,
-        cacheControl: '31536000',
-      });
-      if (error) {
-        const raw = (error.message || '').toString();
-        const msg = raw.toLowerCase().includes('bucket not found')
-          ? 'No existe el bucket "ramber-tunes" en Supabase Storage. Crea el bucket y vuelve a intentar.'
-          : raw || 'No se pudo subir el audio.';
-        setAudioUploadError(msg);
-        alert(msg);
-        return;
+
+      const supabaseUrl = ((process.env.SUPABASE_URL as any) || '').toString().trim();
+      const supabaseAnonKey = ((process.env.SUPABASE_ANON_KEY as any) || '').toString().trim();
+
+      const tryXhr = Boolean(supabaseUrl && supabaseAnonKey);
+      if (tryXhr) {
+        await new Promise<void>((resolve, reject) => {
+          try {
+            const xhr = new XMLHttpRequest();
+            uploadXhrRef.current = xhr;
+            const url = `${supabaseUrl.replace(/\/+$/g, '')}/storage/v1/object/ramber-tunes/${encodeURI(path)}`;
+            xhr.open('POST', url);
+            xhr.setRequestHeader('authorization', `Bearer ${t.token}`);
+            xhr.setRequestHeader('apikey', supabaseAnonKey);
+            xhr.setRequestHeader('x-upsert', 'true');
+            xhr.setRequestHeader('cache-control', '31536000');
+            xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+            xhr.upload.onprogress = (e) => {
+              if (!e.lengthComputable) return;
+              const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
+              setUploadProgress(pct);
+            };
+            xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) return resolve();
+              const txt = (xhr.responseText || '').toString();
+              reject(new Error(txt || `HTTP ${xhr.status}`));
+            };
+            xhr.send(file);
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
+          }
+        });
+      } else {
+        const { error } = await supabaseBrowser.storage.from('ramber-tunes').upload(path, file, {
+          upsert: true,
+          contentType: file.type || undefined,
+          cacheControl: '31536000',
+        });
+        if (error) {
+          const raw = (error.message || '').toString();
+          const msg = raw.toLowerCase().includes('bucket not found')
+            ? 'No existe el bucket "ramber-tunes" en Supabase Storage. Crea el bucket y vuelve a intentar.'
+            : raw || 'No se pudo subir el audio.';
+          setAudioUploadError(msg);
+          alert(msg);
+          return;
+        }
       }
+
       const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
       const url = (pub?.publicUrl || '').toString();
       if (!url) {
@@ -260,6 +307,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setAudioUploadError(null);
     } finally {
       setIsUploadingAudio(false);
+      uploadXhrRef.current = null;
     }
   };
 
@@ -267,7 +315,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioFile(file);
     setAudioUploadUrl('');
     setAudioAction('cover');
-    setUploadProgress(1);
+    setUploadProgress(0);
     setIsAudioModalOpen(true);
     setAudioUploadError(null);
     uploadAudio(file).catch(() => {});
@@ -288,7 +336,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       lyrics: lyrics || undefined,
       genre: gender,
       audioUrl: audioUploadUrl,
-      coverUrl: undefined,
+      coverUrl: makeAudioCoverSvgUrl(titleFromFile),
       sunoTaskId: null,
       sunoAudioId: null,
       isCover: false,
@@ -373,7 +421,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           },
         })
       );
-      alert('Cover en proceso. Puedes cambiar de pestaña; se guardará en Biblioteca cuando termine.');
+      onGoLibrary?.();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error haciendo cover');
     } finally {
@@ -452,7 +500,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           },
         })
       );
-      alert('Canción en proceso. Puedes cambiar de pestaña; se guardará en Biblioteca cuando termine.');
+      onGoLibrary?.();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error creando la canción');
     } finally {
@@ -701,6 +749,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   <div className="w-full h-full rounded-full bg-[#0b0f16] border border-white/10 flex items-center justify-center">
                     <div className={cn("text-xs font-extrabold", hot ? "text-red-400" : "text-slate-100")}>{pctText}</div>
                   </div>
+                </div>
+                <div className="w-14 h-14 rounded-2xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                  <img
+                    src={makeAudioCoverSvgUrl((audioFile?.name || 'audio').toString())}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div className="min-w-0">
                   <div className="text-white font-extrabold truncate">{audioFile.name}</div>
