@@ -489,6 +489,96 @@ function SongOptionsSheet({
     }
   };
 
+  const downloadWav = async () => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Tu plan no incluye descargas.');
+        return;
+      }
+      if (!song.sunoTaskId || !song.sunoAudioId) {
+        alert('Esta canción no tiene taskId/audioId para convertir a WAV.');
+        return;
+      }
+
+      const start = await fetch('/api/suno/wav', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: song.sunoTaskId, audioId: song.sunoAudioId }),
+      });
+      const startedOut = await start.json().catch(() => ({}));
+      if (!start.ok) {
+        alert((startedOut?.detail || startedOut?.error || 'No pude iniciar la conversión a WAV.').toString());
+        return;
+      }
+      const wavTaskId = String(startedOut?.taskId || '').trim();
+      if (!wavTaskId) {
+        alert('No recibí taskId de conversión WAV.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(wavTaskId);
+        alert(`Listo. Ya empecé la conversión.\n\nTaskId del WAV (copiado):\n${wavTaskId}\n\nNo lo compartas.`);
+      } catch {
+        alert(`Listo. Ya empecé la conversión.\n\nTaskId del WAV:\n${wavTaskId}\n\nNo lo compartas.`);
+      }
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 180_000) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const tr = await fetch(`/api/suno/task?kind=wav&taskId=${encodeURIComponent(wavTaskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+
+        const provider = tout?.data;
+        const status = String(provider?.data?.successFlag || provider?.data?.status || '').toUpperCase();
+
+        if (
+          status === 'FAILED' ||
+          status === 'CREATE_TASK_FAILED' ||
+          status === 'GENERATE_WAV_FAILED' ||
+          status === 'CALLBACK_EXCEPTION'
+        ) {
+          alert('No se pudo convertir a WAV.');
+          return;
+        }
+        if (status !== 'SUCCESS') continue;
+
+        const wavUrl = String(
+          provider?.data?.response?.audioWavUrl ||
+            provider?.data?.data?.response?.audioWavUrl ||
+            provider?.data?.response?.audio_wav_url ||
+            ''
+        ).trim();
+        if (!wavUrl) {
+          alert('La conversión terminó, pero no recibí el link del WAV.');
+          return;
+        }
+        window.open(wavUrl, '_blank');
+        return;
+      }
+
+      alert('El WAV está tardando. Intenta de nuevo en unos segundos.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const generateCoverImage = async () => {
     if (!song.sunoTaskId) {
       alert('Esta canción no tiene taskId para generar portada.');
@@ -634,11 +724,12 @@ function SongOptionsSheet({
   return (
     <div className="fixed inset-0 z-[120] flex items-end md:items-center justify-center bg-black/60">
       <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
-      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-        <div className="flex justify-center py-3">
+      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
+        <div className="flex justify-center py-3 shrink-0">
           <div className="w-12 h-1 bg-white/20 rounded-full" />
         </div>
 
+        <div className="flex-1 overflow-y-auto overscroll-contain pb-6">
         <div className="px-5 pb-4">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
@@ -725,6 +816,11 @@ function SongOptionsSheet({
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
               </button>
             )}
+            {!isDeleted && (
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
+                <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar WAV</span>
+              </button>
+            )}
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
               <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
             </button>
@@ -767,6 +863,7 @@ function SongOptionsSheet({
           >
             Reproducir
           </button>
+        </div>
         </div>
       </div>
 

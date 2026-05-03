@@ -1044,12 +1044,23 @@ const sunoHandler = (() => {
 
     try {
       const enc = encodeURIComponent(taskId);
-      const paths = [
-        `/api/v1/generate/record-info?taskId=${enc}`,
-        `/api/v1/suno/generate/record-info?taskId=${enc}`,
-        `/api/v1/task/${enc}`,
-        `/api/v1/suno/task/${enc}`,
-      ];
+      const paths =
+        kind === "lyrics"
+          ? [
+              `/api/v1/lyrics/record-info?taskId=${enc}`,
+              `/api/v1/suno/lyrics/record-info?taskId=${enc}`,
+            ]
+          : kind === "wav"
+          ? [
+              `/api/v1/wav/record-info?taskId=${enc}`,
+              `/api/v1/suno/wav/record-info?taskId=${enc}`,
+            ]
+          : [
+              `/api/v1/generate/record-info?taskId=${enc}`,
+              `/api/v1/suno/generate/record-info?taskId=${enc}`,
+              `/api/v1/task/${enc}`,
+              `/api/v1/suno/task/${enc}`,
+            ];
 
       let last: any = null;
       for (const p of paths) {
@@ -1079,6 +1090,7 @@ const sunoHandler = (() => {
         status === "FAILED" ||
         status === "CREATE_TASK_FAILED" ||
         status === "GENERATE_AUDIO_FAILED" ||
+        status === "GENERATE_LYRICS_FAILED" ||
         status === "CALLBACK_EXCEPTION" ||
         status === "SENSITIVE_WORD_ERROR"
       ) {
@@ -1157,6 +1169,146 @@ const sunoHandler = (() => {
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
       return send(res, 502, { error: "Error creando letras", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleLyrics(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
+    if (!prompt) return send(res, 400, { error: "Falta prompt" });
+    if (prompt.length > 200) return send(res, 400, { error: "El prompt máximo para letras es 200 caracteres." });
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const body = { prompt, callBackUrl };
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.lyrics;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const paths = ["/api/v1/lyrics", "/api/v1/suno/lyrics"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando letra", detail: "No pude contactar al proveedor" });
+      }
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando letra", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error generando letra", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (!taskId) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      }
+
+      await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "lyrics", cost, consumed: true });
+      return send(res, 200, { taskId });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error generando letra", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleWav(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const taskId = firstString(payload, ["taskId", "task_id"]);
+    const audioId = firstString(payload, ["audioId", "audio_id"]);
+    if (!taskId) return send(res, 400, { error: "Falta taskId" });
+    if (!audioId) return send(res, 400, { error: "Falta audioId" });
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const body = { taskId, audioId, callBackUrl };
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.wav;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const paths = ["/api/v1/wav/generate", "/api/v1/suno/wav/generate"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error convirtiendo a WAV", detail: "No pude contactar al proveedor" });
+      }
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error convirtiendo a WAV", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+
+      if (code !== 200 && code !== 409) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error convirtiendo a WAV", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      if (!outTaskId) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      }
+
+      await auth.admin.from("suno_tasks").insert({
+        task_id: outTaskId,
+        user_id: user.id,
+        kind: `wav:${taskId.slice(0, 120)}:${audioId.slice(0, 120)}`,
+        cost,
+        consumed: true,
+      });
+      return send(res, 200, { taskId: outTaskId, already: code === 409 });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error convirtiendo a WAV", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -1348,6 +1500,8 @@ const sunoHandler = (() => {
       if (a === "mp4") return handleMp4(req, res);
       if (a === "task") return handleTask(req, res);
       if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
+      if (a === "lyrics") return handleLyrics(req, res);
+      if (a === "wav") return handleWav(req, res);
       if (a === "boost-style") return handleBoostStyle(req, res);
       if (a === "music-cover") return handleMusicCover(req, res);
       if (a === "credits") return handleCredits(req, res);
@@ -2041,6 +2195,7 @@ const sunoWebhookHandler = (() => {
     const taskId = String(data?.task_id || data?.taskId || body?.taskId || "").trim();
     const tracks = Array.isArray(data?.data) ? data.data : [];
     const coverImages = Array.isArray(data?.images) ? data.images : [];
+    const audioWavUrl = String(data?.audioWavUrl || data?.audio_wav_url || "").trim();
 
     try {
       const createClient = await getSupabaseCreateClient();
@@ -2053,8 +2208,18 @@ const sunoWebhookHandler = (() => {
         const kind = String(taskRow?.kind || "").trim().toLowerCase();
         const isCover = kind.includes("cover");
         const isMusicCover = kind.startsWith("music-cover:");
+        const isWav = kind.startsWith("wav:");
 
-        if (isMusicCover && userId) {
+        if (isWav && userId) {
+          if (Number.isFinite(code) && code !== 200) {
+            const cost = Number(taskRow?.cost ?? 0);
+            const consumed = Boolean(taskRow?.consumed);
+            if (consumed && Number.isFinite(cost) && cost > 0) {
+              await adjustUserCredits(admin, userId, cost);
+              await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId);
+            }
+          }
+        } else if (isMusicCover && userId) {
           const originalTaskId = kind.split("music-cover:").slice(1).join("music-cover:").trim();
           if (code === 200 && coverImages.length > 0 && originalTaskId) {
             const bucket = "ramber-tunes";

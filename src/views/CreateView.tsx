@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
-import { GoogleGenAI } from "@google/genai";
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 interface CreateViewProps {
@@ -887,6 +886,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           <CustomForm 
             instrumental={instrumental} 
             setInstrumental={setInstrumental}
+            description={description}
             lyrics={lyrics}
             setLyrics={setLyrics}
             gender={gender}
@@ -1232,6 +1232,7 @@ function SimpleForm({ instrumental, setInstrumental, description, setDescription
 function CustomForm({
   instrumental,
   setInstrumental,
+  description,
   lyrics,
   setLyrics,
   gender,
@@ -1305,43 +1306,110 @@ function CustomForm({
   };
 
   const handleGenerateLyrics = async (auto?: boolean) => {
-    if (!process.env.GEMINI_API_KEY) {
-      if (!auto) alert("La clave de Gemini no está configurada. Agrégala en Vercel (GEMINI_API_KEY).");
+    if (instrumental) {
+      if (!auto) alert('En modo instrumental no se generan letras.');
       return;
     }
     setIsGeneratingLyrics(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const t = await getAccessToken();
+      if (!t.ok) {
+        if (!auto) alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+
       const contextTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '';
       const contextStyle = (typeof instructions === 'string' && instructions.trim()) ? instructions.trim() : '';
-      const prompt = [
-        'Actúa como un compositor profesional.',
-        'Escribe una letra en español.',
-        'Requisitos:',
-        '- Usa etiquetas de sección siempre entre corchetes, por ejemplo: [Verso 1], [Pre-Coro], [Coro], [Verso 2], [Puente], [Outro].',
-        '- No escribas explicaciones, solo la letra.',
-        contextTitle ? `Título (opcional): ${contextTitle}` : '',
-        contextStyle ? `Instrucciones/estilo: ${contextStyle}` : '',
-      ].filter(Boolean).join('\n');
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
-      const text = normalizeLyrics(response.text || '');
-      if (text) setLyricsWithUndo(text);
-    } catch (e) {
-      if (!auto) alert("Error al generar letra.");
-    }
-    setIsGeneratingLyrics(false);
-  };
+      const contextIdea =
+        (typeof lyrics === 'string' && lyrics.trim()) ? lyrics.trim() :
+        (typeof description === 'string' && description.trim()) ? description.trim() :
+        '';
 
-  useEffect(() => {
-    if (!audioFile) return;
-    if (instrumental) return;
-    const hasLyrics = (lyrics || '').toString().trim().length > 0;
-    if (hasLyrics) return;
-    handleGenerateLyrics(true).catch(() => {});
-  }, [audioFile, instrumental]);
+      if (!contextIdea) {
+        if (!auto) alert('Escribe un tema o idea en la caja de "Letras" para generar letra.');
+        return;
+      }
+
+      const joined = [
+        'Letra en español.',
+        contextTitle ? `Título: ${contextTitle}.` : '',
+        contextStyle ? `Estilo: ${contextStyle}.` : '',
+        `Idea: ${contextIdea}.`,
+      ].filter(Boolean).join(' ');
+
+      const prompt = joined.slice(0, 200);
+
+      const r = await fetch('/api/suno/lyrics', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ prompt }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (!auto) alert((out?.detail || out?.error || 'No se pudo generar letra.').toString());
+        return;
+      }
+      const taskId = (out?.taskId || '').toString();
+      if (!taskId) {
+        if (!auto) alert('No recibí taskId para la letra.');
+        return;
+      }
+
+      const started = Date.now();
+      while (Date.now() - started < 180_000) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const tr = await fetch(`/api/suno/task?kind=lyrics&taskId=${encodeURIComponent(taskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+
+        const provider = tout?.data;
+        const status = String(
+          provider?.data?.status ||
+            provider?.data?.successFlag ||
+            provider?.data?.data?.status ||
+            provider?.data?.data?.successFlag ||
+            ''
+        ).toUpperCase();
+
+        if (
+          status === 'FAILED' ||
+          status === 'CREATE_TASK_FAILED' ||
+          status === 'GENERATE_LYRICS_FAILED' ||
+          status === 'CALLBACK_EXCEPTION' ||
+          status === 'SENSITIVE_WORD_ERROR'
+        ) {
+          if (!auto) alert('No se pudo generar letra.');
+          return;
+        }
+
+        if (status !== 'SUCCESS') continue;
+
+        const root = provider?.data || {};
+        const resp = root?.response || {};
+        const variants = Array.isArray(resp?.data) ? resp.data : Array.isArray(root?.data) ? root.data : [];
+
+        const best =
+          variants.find((v: any) => String(v?.status || '').toLowerCase() === 'complete' && String(v?.text || '').trim()) ||
+          variants.find((v: any) => String(v?.text || '').trim()) ||
+          null;
+        const textRaw = best ? String(best?.text || '').trim() : '';
+        const text = normalizeLyrics(textRaw);
+        if (text) {
+          setLyricsWithUndo(text);
+          if (!contextTitle && typeof best?.title === 'string' && best.title.trim()) setTitle(best.title.trim().slice(0, 100));
+          return;
+        }
+      }
+
+      if (!auto) alert('La letra está tardando. Intenta de nuevo en unos segundos.');
+    } catch (e) {
+      if (!auto) alert(e instanceof Error ? e.message : 'Error al generar letra.');
+    } finally {
+      setIsGeneratingLyrics(false);
+    }
+  };
 
   return (
     <>
