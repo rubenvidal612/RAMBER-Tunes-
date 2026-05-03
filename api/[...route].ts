@@ -536,6 +536,7 @@ const sunoHandler = (() => {
       uploadUrl,
       prompt: (prompt || " ").slice(0, 5000),
       title: title.slice(0, 100),
+      style: style.slice(0, 1000),
       tags: style.slice(0, 1000),
       instrumental,
       customMode: true,
@@ -557,6 +558,11 @@ const sunoHandler = (() => {
     const audioWeight = Number(payload?.audioWeight);
     if (Number.isFinite(audioWeight)) body.audioWeight = clamp01(audioWeight);
 
+    const negativeTags = firstString(payload, ["negativeTags", "negative_tags"]);
+    if (negativeTags) body.negativeTags = negativeTags.slice(0, 1000);
+    const vocalGender = firstString(payload, ["vocalGender", "vocal_gender"]);
+    if (vocalGender) body.vocalGender = vocalGender.slice(0, 10);
+
     const personaId = firstString(payload, ["personaId", "persona_id"]);
     if (personaId) {
       if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
@@ -575,10 +581,24 @@ const sunoHandler = (() => {
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/upload-cover", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const paths = [
+        "/api/v1/generate/upload-cover",
+        "/api/v1/upload-cover",
+        "/api/v1/suno/generate/upload-cover",
+        "/api/v1/suno/upload-cover",
+      ];
+
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "No se pudo hacer el cover.", detail: "No pude contactar al proveedor" });
+      }
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
