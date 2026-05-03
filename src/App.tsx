@@ -21,7 +21,7 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<ViewTab>('inicio');
+  const [currentTab, setCurrentTab] = useState<ViewTab>('studio');
   const [canciones, setCanciones] = useState<SongItem[]>([]);
   const [cancionesEliminadas, setCancionesEliminadas] = useState<SongItem[]>([]);
   const [vibes, setVibes] = useState<VibeItem[]>([]);
