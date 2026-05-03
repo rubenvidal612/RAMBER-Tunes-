@@ -420,7 +420,14 @@ function SongOptionsSheet({
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [personaName, setPersonaName] = useState('');
+  const [personaVocalStart, setPersonaVocalStart] = useState(0);
+  const [personaVocalEnd, setPersonaVocalEnd] = useState(30);
   const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
+  useEffect(() => {
+    if (!showPersonaSave) return;
+    setPersonaVocalStart(0);
+    setPersonaVocalEnd(30);
+  }, [showPersonaSave]);
   const fmt = (iso?: string) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -557,6 +564,8 @@ function SongOptionsSheet({
           name,
           description: (song.title || name).toString().slice(0, 2000),
           style: (song.description || '').toString().slice(0, 200),
+          vocalStart: personaVocalStart,
+          vocalEnd: personaVocalEnd,
           saveToLibrary: true,
           coverUrl: song.coverUrl || null,
           audioUrl: song.audioUrl || null,
@@ -571,6 +580,22 @@ function SongOptionsSheet({
       if (!personaId) {
         alert('No recibí personaId.');
         return;
+      }
+
+      if (supabaseBrowser) {
+        const s = await ensureAnonSession();
+        if (s.ok) {
+          const { data } = await supabaseBrowser.auth.getUser();
+          const user = data?.user;
+          if (user?.id) {
+            await supabaseBrowser
+              .from('suno_personas')
+              .upsert(
+                { user_id: user.id, persona_id: personaId, name: name.slice(0, 120) },
+                { onConflict: 'persona_id' },
+              );
+          }
+        }
       }
 
       if (personaPhoto && supabaseBrowser) {
@@ -766,6 +791,50 @@ function SongOptionsSheet({
                 placeholder="Ej: Voz Ruben"
                 className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
               />
+              <div className="text-slate-300 text-sm">Segmento de voz para analizar</div>
+              <div className="glass-card rounded-2xl p-3 border border-white/10">
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span>{personaVocalStart}s</span>
+                  <span>{personaVocalEnd}s</span>
+                </div>
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <div className="text-[11px] text-slate-400 mb-1">Inicio</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={300}
+                      value={personaVocalStart}
+                      onChange={(e) => {
+                        const nextStart = Math.max(0, Math.min(300, Math.round(Number(e.target.value) || 0)));
+                        let nextEnd = personaVocalEnd;
+                        if (nextEnd < nextStart + 10) nextEnd = nextStart + 10;
+                        if (nextEnd > nextStart + 30) nextEnd = nextStart + 30;
+                        setPersonaVocalStart(nextStart);
+                        setPersonaVocalEnd(Math.max(0, Math.min(330, Math.round(nextEnd))));
+                      }}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-slate-400 mb-1">Fin</div>
+                    <input
+                      type="range"
+                      min={personaVocalStart + 10}
+                      max={personaVocalStart + 30}
+                      value={personaVocalEnd}
+                      onChange={(e) => {
+                        const min = personaVocalStart + 10;
+                        const max = personaVocalStart + 30;
+                        const nextEnd = Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min)));
+                        setPersonaVocalEnd(nextEnd);
+                      }}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">Debe durar entre 10 y 30 segundos.</div>
+              </div>
               <div className="text-slate-300 text-sm">Foto (opcional)</div>
               <label className="w-full glass-card rounded-xl p-3 text-sm text-slate-200 border border-white/10 flex items-center justify-between cursor-pointer hover:bg-white/10">
                 <span className="truncate">{personaPhoto ? personaPhoto.name : 'Seleccionar foto'}</span>

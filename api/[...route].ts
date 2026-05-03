@@ -902,13 +902,58 @@ const sunoHandler = (() => {
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
     const personaName = typeof payload?.name === "string" ? payload.name.trim() : "";
+    const description = typeof payload?.description === "string" ? payload.description.trim() : "";
+    const style = typeof payload?.style === "string" ? payload.style.trim() : "";
+    const vocalStart = Number(payload?.vocalStart);
+    const vocalEnd = Number(payload?.vocalEnd);
     if (!taskId || !audioId || !personaName) return send(res, 400, { error: "Falta taskId, audioId o name" });
 
     try {
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/generate-persona", {
-        method: "POST",
-        body: JSON.stringify({ taskId, audioId, name: personaName.slice(0, 80) }),
-      });
+      try {
+        const enc = encodeURIComponent(taskId);
+        const { res: sr, data: sd } = await sunoFetchJson(`/api/v1/generate/record-info?taskId=${enc}`, { method: "GET" });
+        if (sr?.ok) {
+          const statusRaw = sd?.data?.status ?? sd?.data?.data?.status ?? "";
+          const status = String(statusRaw || "").toUpperCase();
+          if (status && status !== "SUCCESS") {
+            return send(res, 409, { error: "La canción aún no termina. Espera a que esté lista y vuelve a intentar." });
+          }
+        }
+      } catch {
+      }
+
+      const body: any = {
+        taskId,
+        audioId,
+        name: personaName.slice(0, 80),
+        description: (description || personaName).slice(0, 2000),
+      };
+      if (style) body.style = style.slice(0, 200);
+      if (Number.isFinite(vocalStart) && Number.isFinite(vocalEnd)) {
+        const start = Math.max(0, vocalStart);
+        const end = Math.max(0, vocalEnd);
+        const len = end - start;
+        if (len >= 10 && len <= 30) {
+          body.vocalStart = start;
+          body.vocalEnd = end;
+        } else {
+          return send(res, 400, { error: "El segmento de voz debe durar entre 10 y 30 segundos." });
+        }
+      }
+
+      const paths = [
+        "/api/v1/generate/generate-persona",
+        "/api/v1/suno/generate/generate-persona",
+        "/api/v1/generate-persona",
+        "/api/v1/suno/generate-persona",
+      ];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
@@ -921,7 +966,12 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Error creando Persona", code, detail: String(msg).slice(0, 1200) });
       }
 
-      return send(res, 200, { ok: true, data: data?.data ?? null });
+      const personaId = typeof data?.data?.personaId === "string" ? data.data.personaId.trim() : "";
+      return send(res, 200, {
+        ok: true,
+        personaId,
+        data: data?.data ?? null,
+      });
     } catch (e) {
       return send(res, 502, { error: "Error creando Persona", detail: e instanceof Error ? e.message : String(e) });
     }
