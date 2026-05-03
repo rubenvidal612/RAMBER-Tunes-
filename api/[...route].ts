@@ -1358,6 +1358,27 @@ const libraryHandler = (() => {
     const sunoAudioId = typeof body?.sunoAudioId === "string" ? body.sunoAudioId.trim().slice(0, 200) : null;
     const isCover = Boolean(body?.isCover);
 
+    if (sunoAudioId) {
+      const { data: existing } = await auth.admin
+        .from(TABLE)
+        .select("*")
+        .eq("user_id", auth.user.id)
+        .eq("type", ITEM_TYPE)
+        .eq("suno_audio_id", sunoAudioId)
+        .is("deleted_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        return send(res, 200, {
+          song: existing,
+          deleted_oldest: false,
+          deleted_id: null,
+          deleted_count: 0,
+          deleted_titles: [],
+        });
+      }
+    }
+
     const insertRow: any = {
       user_id: auth.user.id,
       type: ITEM_TYPE,
@@ -1598,7 +1619,93 @@ const sunoWebhookHandler = (() => {
 
   return async function handler(req: any, res: any) {
     if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
-    return send(res, 200, { ok: true });
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return send(res, 200, { ok: true });
+
+    let body: any = null;
+    try {
+      if (typeof req.body === "string") body = JSON.parse(req.body);
+      else body = req.body ?? null;
+    } catch {
+      body = null;
+    }
+
+    const code = Number(body?.code);
+    const msg = String(body?.msg || "");
+    const data = body?.data ?? {};
+    const callbackType = String(data?.callbackType || data?.callback_type || "").toLowerCase();
+    const taskId = String(data?.task_id || data?.taskId || body?.taskId || "").trim();
+    const tracks = Array.isArray(data?.data) ? data.data : [];
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService);
+
+      if (taskId) {
+        const { data: taskRows } = await admin.from("suno_tasks").select("user_id, kind, cost, consumed").eq("task_id", taskId).limit(1);
+        const taskRow = Array.isArray(taskRows) ? taskRows[0] : null;
+        const userId = String(taskRow?.user_id || "").trim();
+        const kind = String(taskRow?.kind || "").trim().toLowerCase();
+        const isCover = kind.includes("cover");
+
+        if (code === 200 && (callbackType === "first" || callbackType === "complete") && userId) {
+          const normalized = tracks
+            .map((t: any) => ({
+              sunoAudioId: String(t?.id || "").trim(),
+              audioUrl: String(t?.audio_url || t?.audioUrl || t?.stream_audio_url || t?.streamAudioUrl || "").trim(),
+              coverUrl: String(t?.image_url || t?.imageUrl || "").trim(),
+              title: String(t?.title || "").trim(),
+              tags: String(t?.tags || "").trim(),
+            }))
+            .filter((t: any) => t.sunoAudioId && t.audioUrl);
+
+          const ids = Array.from(new Set(normalized.map((x: any) => x.sunoAudioId)));
+          if (ids.length > 0) {
+            const { data: existing } = await admin
+              .from("library_items")
+              .select("suno_audio_id")
+              .eq("user_id", userId)
+              .eq("type", "song")
+              .in("suno_audio_id", ids)
+              .is("deleted_at", null);
+            const existingIds = new Set(
+              (Array.isArray(existing) ? existing : []).map((r: any) => String(r?.suno_audio_id || "").trim()).filter(Boolean)
+            );
+
+            const inserts = normalized
+              .filter((x: any) => !existingIds.has(x.sunoAudioId))
+              .map((x: any) => ({
+                user_id: userId,
+                type: "song",
+                title: (x.title || "Canción").slice(0, 120),
+                description: x.tags ? x.tags.slice(0, 2000) : null,
+                lyrics: null,
+                gender: null,
+                audio_url: x.audioUrl.slice(0, 2000),
+                cover_url: x.coverUrl ? x.coverUrl.slice(0, 2000) : null,
+                suno_task_id: taskId.slice(0, 200),
+                suno_audio_id: x.sunoAudioId.slice(0, 200),
+                is_cover: Boolean(isCover),
+              }));
+
+            if (inserts.length > 0) {
+              await admin.from("library_items").insert(inserts);
+            }
+          }
+        } else if (userId && (callbackType === "error" || (Number.isFinite(code) && code !== 200))) {
+          const cost = Number(taskRow?.cost ?? 0);
+          const consumed = Boolean(taskRow?.consumed);
+          if (consumed && Number.isFinite(cost) && cost > 0) {
+            await adjustUserCredits(admin, userId, cost);
+            await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId);
+          }
+        }
+      }
+    } catch {
+    }
+
+    return send(res, 200, { ok: true, received: true, code: Number.isFinite(code) ? code : null, msg: msg ? msg.slice(0, 120) : null });
   };
 })();
 
