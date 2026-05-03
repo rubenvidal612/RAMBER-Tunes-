@@ -1,6 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import { CREDIT_COSTS, adjustUserCredits, consumeUserCredits, creditsFromProfile, round2, toCounts } from "../src/lib/credits";
 import { isAdminEmail } from "../src/lib/authz";
+
+async function getSupabaseCreateClient() {
+  const mod = await import("@supabase/supabase-js");
+  return mod.createClient;
+}
 
 const sunoHandler = (() => {
   function send(res: any, status: number, body: any) {
@@ -97,6 +101,7 @@ const sunoHandler = (() => {
     const token = getAuthToken(req);
     if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
 
+    const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
@@ -789,6 +794,7 @@ const mercadoPagoHandler = (() => {
     const token = getAuthToken(req);
     if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
 
+    const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
@@ -938,6 +944,7 @@ const mercadoPagoHandler = (() => {
     const userId = (meta?.user_id || meta?.userId || "").toString();
     if (!userId) return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
 
+    const createClient = await getSupabaseCreateClient();
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
     const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
@@ -1049,6 +1056,7 @@ const libraryHandler = (() => {
     const token = getAuthToken(req);
     if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
 
+    const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
@@ -1339,6 +1347,7 @@ const balanceHandler = (() => {
     const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
     if (!token) return send(res, 401, { error: "No autorizado" });
 
+    const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
@@ -1407,4 +1416,3 @@ export default async function handler(req: any, res: any) {
 
   return sendNotFound(res);
 }
-
