@@ -31,6 +31,8 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
+  const [userInitial, setUserInitial] = useState<string>('U');
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -84,6 +86,23 @@ export default function App() {
     ensureAnonSession()
       .then((r) => {
         if (!r.ok) showToast(r.error);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseBrowser) return;
+    ensureAnonSession()
+      .then(async () => {
+        const { data } = await supabaseBrowser.auth.getUser();
+        const user = data?.user;
+        const email = (user?.email || '').toString().trim();
+        const meta: any = user?.user_metadata || {};
+        const avatar = (meta?.avatar_url || meta?.picture || '').toString().trim();
+        const name = (meta?.full_name || meta?.name || '').toString().trim();
+        const initial = (name || email || 'U').toString().trim().slice(0, 1).toUpperCase() || 'U';
+        setUserInitial(initial);
+        setUserAvatarUrl(avatar);
       })
       .catch(() => {});
   }, []);
@@ -507,6 +526,8 @@ export default function App() {
         onMenuClick={() => setIsSettingsOpen(true)}
         onCreditsClick={() => setIsPricingOpen(true)}
         credits={displayCredits}
+        userAvatarUrl={userAvatarUrl}
+        userInitial={userInitial}
       />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
