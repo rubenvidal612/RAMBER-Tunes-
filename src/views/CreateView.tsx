@@ -737,10 +737,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
             <div className="p-4">
               {(() => {
-                const hot = Number(uploadProgress || 0) >= 87;
+                const pct = Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))));
+                const hot = pct >= 87 && pct < 100;
                 const deg = Math.max(0, Math.min(100, Number(uploadProgress || 0))) * 3.6;
-                const ringColor = hot ? '#ef4444' : '#22c55e';
-                const pctText = `${Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))))}%`;
+                const ringColor = pct >= 100 ? '#3b82f6' : hot ? '#ef4444' : '#22c55e';
+                const pctText = `${pct}%`;
                 return (
                   <>
               <div className="flex items-center gap-4">
@@ -756,7 +757,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </div>
                 <div className="min-w-0">
                   <div className="text-white font-extrabold truncate">{audioFile.name}</div>
-                  <div className={cn("text-sm", Number(uploadProgress || 0) >= 87 ? "text-red-300" : "text-slate-400")}>
+                  <div className={cn("text-sm", pct >= 100 ? "text-blue-300" : hot ? "text-red-300" : "text-slate-400")}>
                     {isUploadingAudio ? 'Subiendo…' : audioUploadUrl ? 'Listo' : 'Preparando…'}
                   </div>
                 </div>

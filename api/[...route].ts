@@ -42,9 +42,6 @@ function toCounts(credits: number) {
 function creditsFromProfile(profile: any): number {
   const zingy = typeof profile?.zingy_credits === "number" && Number.isFinite(profile.zingy_credits) ? Number(profile.zingy_credits) : null;
   if (zingy !== null) return Math.max(0, zingy);
-
-  const songBal = typeof profile?.song_balance === "number" && Number.isFinite(profile.song_balance) ? Number(profile.song_balance) : 0;
-  if (songBal > 0) return Math.max(0, songBal) * CREDIT_COSTS.generate_music;
   return 0;
 }
 
@@ -53,7 +50,7 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
   if (!Number.isFinite(delta) || !delta) return { ok: true as const };
 
   for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("id, song_balance, zingy_credits").eq("id", userId).maybeSingle();
+    const { data: profile, error: readErr } = await admin.from("profiles").select("id, zingy_credits").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
 
     const current = creditsFromProfile(profile);
@@ -72,7 +69,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
 
   for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("id, song_balance, zingy_credits").eq("id", userId).maybeSingle();
+    const { data: profile, error: readErr } = await admin.from("profiles").select("id, zingy_credits").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
 
     const current = creditsFromProfile(profile);
@@ -1467,13 +1464,13 @@ const balanceHandler = (() => {
         return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
       });
 
-    let { data: profile, error: profErr } = await admin.from("profiles").select("id, song_balance, ramber_credits, zingy_credits").eq("id", user.id).maybeSingle();
+    let { data: profile, error: profErr } = await admin.from("profiles").select("id, zingy_credits").eq("id", user.id).maybeSingle();
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
 
     if (!profile) {
       const { error: insErr } = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
       if (insErr) return send(res, 500, { error: "Error creando perfil", detail: insErr.message });
-      const r2 = await admin.from("profiles").select("id, song_balance, ramber_credits, zingy_credits").eq("id", user.id).maybeSingle();
+      const r2 = await admin.from("profiles").select("id, zingy_credits").eq("id", user.id).maybeSingle();
       profile = r2.data ?? null;
     }
 
