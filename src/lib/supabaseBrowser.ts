@@ -1,24 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
-function readEnv(key: string) {
-  const pe = (process.env as any) || {};
-  const ime = (import.meta as any)?.env || {};
-  return (
-    (pe?.[key] as string | undefined) ||
-    (ime?.[key] as string | undefined) ||
-    ""
-  );
-}
-
-const supabaseUrl =
-  readEnv("SUPABASE_URL") ||
-  readEnv("VITE_SUPABASE_URL") ||
-  readEnv("NEXT_PUBLIC_SUPABASE_URL");
-
-const supabaseAnonKey =
-  readEnv("SUPABASE_ANON_KEY") ||
-  readEnv("VITE_SUPABASE_ANON_KEY") ||
-  readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const supabaseUrl = (process.env.SUPABASE_URL as string | undefined) || "";
+const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY as string | undefined) || "";
+const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL as string | undefined) || "";
 
 export const supabaseBrowser = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
@@ -46,10 +30,12 @@ export async function getAccessToken() {
 
 export async function signInWithGoogle() {
   if (!supabaseBrowser) return { ok: false as const, error: "Falta SUPABASE_URL o SUPABASE_ANON_KEY" };
-  const configured = readEnv("NEXT_PUBLIC_SITE_URL") || readEnv("VITE_SITE_URL");
-  const base = (configured || window.location.origin).toString().trim() || window.location.origin;
+  const baseRaw = (siteUrl || window.location.origin).toString().trim() || window.location.origin;
+  const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : `https://${baseRaw.replace(/^\/+/, "")}`;
   const redirectTo = base.endsWith("/") ? base : `${base}/`;
-  const { error } = await supabaseBrowser.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+  const { data, error } = await supabaseBrowser.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
   if (error) return { ok: false as const, error: (error.message || "No pude iniciar sesión con Google").toString() };
+  const url = (data as any)?.url ? String((data as any).url).trim() : "";
+  if (url) window.location.href = url;
   return { ok: true as const };
 }
