@@ -1402,17 +1402,24 @@ function sendNotFound(res: any) {
 }
 
 export default async function handler(req: any, res: any) {
-  const pathname = new URL(req.url, "http://localhost").pathname;
-  const parts = pathname.split("/").filter(Boolean);
-  const apiIndex = parts.indexOf("api");
-  const head = apiIndex >= 0 ? parts[apiIndex + 1] : parts[0];
-  const next = apiIndex >= 0 ? parts[apiIndex + 2] : parts[1];
+  try {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
 
-  if (head === "suno") return sunoHandler(req, res);
-  if (head === "mercadopago") return mercadoPagoHandler(req, res);
-  if (head === "library") return libraryHandler(req, res);
-  if (head === "account" && next === "balance") return balanceHandler(req, res);
-  if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
 
-  return sendNotFound(res);
+    if (head === "suno") return sunoHandler(req, res);
+    if (head === "mercadopago") return mercadoPagoHandler(req, res);
+    if (head === "library") return libraryHandler(req, res);
+    if (head === "account" && next === "balance") return balanceHandler(req, res);
+    if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
+
+    return sendNotFound(res);
+  } catch (e) {
+    res.statusCode = 500;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ error: "Error interno", detail: e instanceof Error ? e.message : String(e) }));
+  }
 }
