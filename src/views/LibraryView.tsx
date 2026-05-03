@@ -655,13 +655,36 @@ function SongOptionsSheet({
         }
         if (status !== 'SUCCESS') continue;
 
-        const root = provider?.data || {};
-        const info = root?.response || root?.data?.response || root?.vocal_removal_info || root?.vocalRemovalInfo || {};
-        const vocalInfo = root?.vocal_removal_info || root?.vocalRemovalInfo || root?.response?.vocal_removal_info || root?.response?.vocalRemovalInfo || info || {};
+        const cleanUrl = (raw: any) =>
+          String(raw || '')
+            .trim()
+            .replaceAll('`', '')
+            .trim();
 
-        const entries = Object.entries(vocalInfo || {})
-          .filter(([k, v]) => k.endsWith('_url') && typeof v === 'string' && v.trim().startsWith('http'))
-          .map(([k, v]) => [k, String(v).trim()] as const);
+        const root = provider?.data || {};
+        const resp = root?.response || root?.data?.response || {};
+
+        const directUrlEntries = Object.entries(resp || {})
+          .filter(([k, v]) => {
+            const kk = String(k || '');
+            const vv = cleanUrl(v);
+            if (!vv.startsWith('http')) return false;
+            return kk.endsWith('Url') || kk.endsWith('_url') || kk.endsWith('url');
+          })
+          .map(([k, v]) => [String(k), cleanUrl(v)] as const);
+
+        const originDataEntries = Array.isArray(resp?.originData)
+          ? resp.originData
+              .map((row: any) => {
+                const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim();
+                const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
+                if (!label || !url.startsWith('http')) return null;
+                return [`${label}_url`, url] as const;
+              })
+              .filter(Boolean)
+          : [];
+
+        const entries = Array.from(new Map([...originDataEntries, ...directUrlEntries]).entries());
 
         if (entries.length === 0) {
           alert('Terminó, pero no recibí links de stems.');
@@ -677,8 +700,8 @@ function SongOptionsSheet({
         }
 
         const quick = [
-          entries.find(([k]) => k === 'instrumental_url')?.[1],
-          entries.find(([k]) => k === 'vocal_url')?.[1],
+          entries.find(([k]) => k === 'instrumental_url' || k === 'instrumentalUrl')?.[1],
+          entries.find(([k]) => k === 'vocal_url' || k === 'vocalUrl')?.[1],
         ].filter(Boolean) as string[];
         quick.forEach((u) => window.open(u, '_blank'));
         return;
