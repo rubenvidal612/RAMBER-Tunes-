@@ -267,6 +267,21 @@ export default function App() {
       }
     };
 
+    const patchTask = (taskId: string, patch: any) => {
+      try {
+        const list = migrateLegacyIfNeeded();
+        const next = Array.isArray(list)
+          ? list.map((x: any) => {
+              const id = typeof x?.taskId === 'string' ? x.taskId.trim() : '';
+              if (!id || id !== taskId) return x;
+              return { ...x, ...patch };
+            })
+          : [];
+        writeList(next);
+      } catch {
+      }
+    };
+
     const readNextPending = () => {
       const list = migrateLegacyIfNeeded();
       const item = Array.isArray(list) && list.length > 0 ? list[0] : null;
@@ -311,6 +326,22 @@ export default function App() {
         const data = out?.data || out?.data?.data || out?.data;
         const status = String(data?.data?.status || data?.data?.successFlag || data?.status || data?.successFlag || '').toUpperCase();
 
+        if (status) {
+          const pct =
+            status === 'SUCCESS'
+              ? 100
+              : status === 'FIRST_SUCCESS'
+                ? 70
+                : status === 'TEXT_SUCCESS'
+                  ? 35
+                  : status === 'GENERATING'
+                    ? 25
+                    : status === 'PENDING'
+                      ? 3
+                      : null;
+          patchTask(pending.taskId, { providerStatus: status, progressPct: typeof pct === 'number' ? pct : undefined });
+        }
+
         if (status === 'SUCCESS') {
           const tracks = extractTracks(data).filter((x) => x && x.audioUrl);
           if (tracks.length === 0) {
@@ -340,7 +371,7 @@ export default function App() {
           return;
         }
 
-        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED') {
+        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED' || status === 'CALLBACK_EXCEPTION' || status === 'SENSITIVE_WORD_ERROR') {
           const msg =
             (data?.data?.errorMessage || data?.data?.error_message || data?.errorMessage || data?.error_message || 'Error en la generación').toString();
           const list = migrateLegacyIfNeeded();

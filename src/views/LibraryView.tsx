@@ -23,7 +23,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
-  const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number }>>([]);
+  const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
 
   useEffect(() => {
     const pendingListKey = 'ramber.pendingSunoTasks_v1';
@@ -39,6 +39,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               taskId: typeof x?.taskId === 'string' ? x.taskId.trim() : '',
               kind: typeof x?.kind === 'string' ? x.kind.trim() : 'generate',
               startedAt: Number.isFinite(Number(x?.startedAt || 0)) ? Number(x.startedAt || 0) : 0,
+              providerStatus: typeof x?.providerStatus === 'string' ? x.providerStatus.trim() : undefined,
+              progressPct: Number.isFinite(Number(x?.progressPct)) ? Number(x.progressPct) : undefined,
             }))
             .filter((x: any) => x.taskId);
         }
@@ -65,6 +67,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const id = window.setInterval(() => setPendingTasks(read()), 1200);
     return () => window.clearInterval(id);
   }, []);
+
+  const expectedTracksForKind = (kind: string) => {
+    const k = (kind || '').toLowerCase();
+    if (k === 'generate') return 2;
+    return 1;
+  };
   
   const tabs: {id: LibraryTab, label: string}[] = [
     { id: 'canciones', label: 'Canciones' },
@@ -185,7 +193,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 <div className="glass-card rounded-2xl p-4 border border-white/10">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-white font-bold truncate">Se están generando 2 canciones…</div>
+                      <div className="text-white font-bold truncate">
+                        {(() => {
+                          const first = pendingTasks[0];
+                          const n = expectedTracksForKind(first?.kind || 'generate');
+                          return n > 1 ? `Se están generando ${n} canciones…` : 'Se está generando tu canción…';
+                        })()}
+                      </div>
                       <div className="text-slate-400 text-xs">
                         {pendingTasks.length > 1 ? `Tareas en cola: ${pendingTasks.length}.` : ' '}
                         {' '}Puedes salir de Biblioteca si quieres; esto seguirá en segundo plano.
@@ -220,7 +234,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   const base = Math.max(0, Number(first?.startedAt || 0));
                   const now = Date.now();
                   const step = Math.max(0, Math.floor((now - base) / 3500));
-                  const pctBase = Math.min(95, Math.max(3, 3 + step * 2));
+                  const simulated = Math.min(95, Math.max(3, 3 + step * 2));
+                  const pctFromProvider = Number.isFinite(Number(first?.progressPct)) ? Number(first?.progressPct) : null;
+                  const pctBase = pctFromProvider !== null ? Math.max(3, Math.min(99, pctFromProvider)) : simulated;
                   const ring = (pct: number) => `conic-gradient(#22c55e ${pct * 3.6}deg, rgba(255,255,255,0.10) 0deg)`;
                   const row = (k: number) => {
                     const pct = Math.min(95, pctBase + k);
@@ -238,7 +254,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       </div>
                     );
                   };
-                  return <>{[0, 1].map(row)}</>;
+                  const n = expectedTracksForKind(first?.kind || 'generate');
+                  return <>{Array.from({ length: n }, (_, i) => i).map(row)}</>;
                 })()}
               </div>
             )}

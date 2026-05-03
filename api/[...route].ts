@@ -1025,7 +1025,13 @@ const sunoHandler = (() => {
       const user = auth.user;
       const isAdmin = isAdminEmail(user.email);
 
-      if (status === "FAILED" || status === "CREATE_TASK_FAILED" || status === "GENERATE_AUDIO_FAILED") {
+      if (
+        status === "FAILED" ||
+        status === "CREATE_TASK_FAILED" ||
+        status === "GENERATE_AUDIO_FAILED" ||
+        status === "CALLBACK_EXCEPTION" ||
+        status === "SENSITIVE_WORD_ERROR"
+      ) {
         if (!isAdmin) {
           const { data: rows } = await auth.admin.from("suno_tasks").select("cost, consumed").eq("task_id", taskId).limit(1);
           const row = Array.isArray(rows) ? rows[0] : null;
@@ -1067,10 +1073,22 @@ const sunoHandler = (() => {
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/timestamped-lyrics", {
-        method: "POST",
-        body: JSON.stringify({ taskId, audioId }),
-      });
+      const paths = [
+        "/api/v1/generate/get-timestamped-lyrics",
+        "/api/v1/suno/generate/get-timestamped-lyrics",
+        "/api/v1/get-timestamped-lyrics",
+        "/api/v1/suno/get-timestamped-lyrics",
+        "/api/v1/timestamped-lyrics",
+        "/api/v1/suno/timestamped-lyrics",
+      ];
+
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify({ taskId, audioId }) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
