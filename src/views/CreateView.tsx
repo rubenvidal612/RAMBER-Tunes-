@@ -23,7 +23,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [gender, setGender] = useState<'Masculino' | 'Femenino'>('Masculino');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasPendingTask, setHasPendingTask] = useState(false);
-  const pendingKey = 'ramber.pendingSunoTask';
+  const pendingListKey = 'ramber.pendingSunoTasks_v1';
+  const pendingLegacyKey = 'ramber.pendingSunoTask';
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
@@ -176,17 +177,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   useEffect(() => {
-    const readPending = () => {
+    const readList = () => {
       try {
-        const raw = window.localStorage.getItem(pendingKey);
-        if (!raw) return false;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.taskId === 'string' && parsed.taskId.trim()) return true;
-      } catch {}
-      return false;
+        const raw = window.localStorage.getItem(pendingListKey);
+        const arr = raw ? JSON.parse(raw) : null;
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
     };
-    setHasPendingTask(readPending());
-    const id = window.setInterval(() => setHasPendingTask(readPending()), 1500);
+    const migrateLegacyIfNeeded = () => {
+      try {
+        const existing = readList();
+        if (existing.length > 0) return existing;
+        const legacyRaw = window.localStorage.getItem(pendingLegacyKey);
+        if (!legacyRaw) return existing;
+        const legacy = JSON.parse(legacyRaw);
+        const taskId = typeof legacy?.taskId === 'string' ? legacy.taskId.trim() : '';
+        if (!taskId) return existing;
+        const kind = typeof legacy?.kind === 'string' ? legacy.kind.trim() : 'generate';
+        const startedAt = Number(legacy?.startedAt || 0);
+        const draft = legacy?.draft ?? null;
+        const next = [{ taskId, kind, startedAt: Number.isFinite(startedAt) ? startedAt : Date.now(), draft }];
+        window.localStorage.setItem(pendingListKey, JSON.stringify(next));
+        window.localStorage.removeItem(pendingLegacyKey);
+        return next;
+      } catch {
+        return readList();
+      }
+    };
+    const tick = () => {
+      const list = migrateLegacyIfNeeded();
+      setHasPendingTask(Array.isArray(list) && list.length > 0);
+    };
+    tick();
+    const id = window.setInterval(tick, 1500);
     return () => window.clearInterval(id);
   }, []);
 
@@ -379,10 +404,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const handleCoverFromAudio = async () => {
     if (!onSongCreated) return;
-    if (hasPendingTask) {
-      onGoLibrary?.();
-      return;
-    }
     if (!audioUploadUrl) {
       alert('Primero sube tu audio.');
       return;
@@ -445,21 +466,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
       try {
-        window.localStorage.setItem(
-          pendingKey,
-          JSON.stringify({
-            taskId,
-            kind: 'upload-cover',
-            startedAt: Date.now(),
-            draft: {
-              title: (title || 'Cover').toString(),
-              description: (instructions || 'Cover').toString(),
-              lyrics: (lyrics || '').toString() || null,
-              genre: gender,
-              isCover: true,
-            },
-          })
-        );
+        const raw = window.localStorage.getItem(pendingListKey);
+        const arr = raw ? JSON.parse(raw) : [];
+        const list = Array.isArray(arr) ? arr : [];
+        list.push({
+          taskId,
+          kind: 'upload-cover',
+          startedAt: Date.now(),
+          draft: {
+            title: (title || 'Cover').toString(),
+            description: (instructions || 'Cover').toString(),
+            lyrics: (lyrics || '').toString() || null,
+            genre: gender,
+            isCover: true,
+          },
+        });
+        window.localStorage.setItem(pendingListKey, JSON.stringify(list));
+        try {
+          window.localStorage.removeItem(pendingLegacyKey);
+        } catch {
+        }
       } catch {
       }
       onGoLibrary?.();
@@ -472,10 +498,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const handleCreate = async () => {
     if (!onSongCreated) return;
-    if (hasPendingTask) {
-      onGoLibrary?.();
-      return;
-    }
 
     const prompt = (mode === 'simple' ? description : (lyrics || description)).trim();
     if (!prompt) {
@@ -531,21 +553,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
       try {
-        window.localStorage.setItem(
-          pendingKey,
-          JSON.stringify({
-            taskId,
-            kind: 'generate',
-            startedAt: Date.now(),
-            draft: {
-              title: (title || 'Nueva Canción').toString(),
-              description: (mode === 'simple' ? description : instructions).toString(),
-              lyrics: mode === 'personalizado' ? (lyrics || '').toString() || null : null,
-              genre: gender,
-              isCover: Boolean(audioFile || audioUploadUrl),
-            },
-          })
-        );
+        const raw = window.localStorage.getItem(pendingListKey);
+        const arr = raw ? JSON.parse(raw) : [];
+        const list = Array.isArray(arr) ? arr : [];
+        list.push({
+          taskId,
+          kind: 'generate',
+          startedAt: Date.now(),
+          draft: {
+            title: (title || 'Nueva Canción').toString(),
+            description: (mode === 'simple' ? description : instructions).toString(),
+            lyrics: mode === 'personalizado' ? (lyrics || '').toString() || null : null,
+            genre: gender,
+            isCover: Boolean(audioFile || audioUploadUrl),
+          },
+        });
+        window.localStorage.setItem(pendingListKey, JSON.stringify(list));
+        try {
+          window.localStorage.removeItem(pendingLegacyKey);
+        } catch {
+        }
       } catch {
       }
       onGoLibrary?.();
@@ -690,13 +717,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {/* Action Buttons & Sticky Create */}
       <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
         <button 
-          onClick={() => {
-            if (hasPendingTask) {
-              onGoLibrary?.();
-              return;
-            }
-            handleCreate().catch(() => {});
-          }}
+          onClick={() => handleCreate().catch(() => {})}
           disabled={isSubmitting}
           className="w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[48px] rounded-full font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70"
         >
@@ -705,7 +726,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           ) : (
             <Music className="w-5 h-5" strokeWidth={2} />
           )}
-          <span>{isSubmitting ? 'Creando…' : hasPendingTask ? 'Ver en Biblioteca' : 'Crear'}</span>
+          <span>{isSubmitting ? 'Creando…' : 'Crear'}</span>
         </button>
       </div>
 

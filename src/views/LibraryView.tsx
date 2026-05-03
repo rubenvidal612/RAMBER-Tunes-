@@ -23,26 +23,46 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
-  const [pendingTask, setPendingTask] = useState<null | { taskId: string; kind: string; startedAt: number }>(null);
+  const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number }>>([]);
 
   useEffect(() => {
-    const pendingKey = 'ramber.pendingSunoTask';
+    const pendingListKey = 'ramber.pendingSunoTasks_v1';
+    const pendingLegacyKey = 'ramber.pendingSunoTask';
     const read = () => {
       try {
-        const raw = window.localStorage.getItem(pendingKey);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId.trim() : '';
-        if (!taskId) return null;
-        const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim() : 'generate';
-        const startedAt = Number(parsed?.startedAt || 0);
-        return { taskId, kind, startedAt: Number.isFinite(startedAt) ? startedAt : 0 };
+        const raw = window.localStorage.getItem(pendingListKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const list = Array.isArray(parsed) ? parsed : [];
+        if (list.length > 0) {
+          return list
+            .map((x: any) => ({
+              taskId: typeof x?.taskId === 'string' ? x.taskId.trim() : '',
+              kind: typeof x?.kind === 'string' ? x.kind.trim() : 'generate',
+              startedAt: Number.isFinite(Number(x?.startedAt || 0)) ? Number(x.startedAt || 0) : 0,
+            }))
+            .filter((x: any) => x.taskId);
+        }
+
+        const legacyRaw = window.localStorage.getItem(pendingLegacyKey);
+        if (!legacyRaw) return [];
+        const legacy = JSON.parse(legacyRaw);
+        const taskId = typeof legacy?.taskId === 'string' ? legacy.taskId.trim() : '';
+        if (!taskId) return [];
+        const kind = typeof legacy?.kind === 'string' ? legacy.kind.trim() : 'generate';
+        const startedAt = Number(legacy?.startedAt || 0);
+        const migrated = [{ taskId, kind, startedAt: Number.isFinite(startedAt) ? startedAt : Date.now() }];
+        try {
+          window.localStorage.setItem(pendingListKey, JSON.stringify(migrated));
+          window.localStorage.removeItem(pendingLegacyKey);
+        } catch {
+        }
+        return migrated;
       } catch {
-        return null;
+        return [];
       }
     };
-    setPendingTask(read());
-    const id = window.setInterval(() => setPendingTask(read()), 1200);
+    setPendingTasks(read());
+    const id = window.setInterval(() => setPendingTasks(read()), 1200);
     return () => window.clearInterval(id);
   }, []);
   
@@ -160,13 +180,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                />
             </div>
 
-            {pendingTask && !showTrash && (
+            {pendingTasks.length > 0 && !showTrash && (
               <div className="space-y-3">
                 <div className="glass-card rounded-2xl p-4 border border-white/10">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-white font-bold truncate">Se están generando 2 canciones…</div>
-                      <div className="text-slate-400 text-xs">Puedes salir de Biblioteca si quieres; esto seguirá en segundo plano.</div>
+                      <div className="text-slate-400 text-xs">
+                        {pendingTasks.length > 1 ? `Tareas en cola: ${pendingTasks.length}.` : ' '}
+                        {' '}Puedes salir de Biblioteca si quieres; esto seguirá en segundo plano.
+                      </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
                       <button
@@ -178,10 +201,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       <button
                         onClick={() => {
                           try {
+                            window.localStorage.removeItem('ramber.pendingSunoTasks_v1');
                             window.localStorage.removeItem('ramber.pendingSunoTask');
                           } catch {
                           }
-                          setPendingTask(null);
+                          setPendingTasks([]);
                         }}
                         className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                       >
@@ -192,7 +216,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 </div>
 
                 {(() => {
-                  const base = Math.max(0, Number(pendingTask.startedAt || 0));
+                  const first = pendingTasks[0];
+                  const base = Math.max(0, Number(first?.startedAt || 0));
                   const now = Date.now();
                   const step = Math.max(0, Math.floor((now - base) / 3500));
                   const pctBase = Math.min(95, Math.max(3, 3 + step * 2));

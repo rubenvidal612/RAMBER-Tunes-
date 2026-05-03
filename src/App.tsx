@@ -39,7 +39,8 @@ export default function App() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
-  const pendingKey = 'ramber.pendingSunoTask';
+  const pendingListKey = 'ramber.pendingSunoTasks_v1';
+  const pendingLegacyKey = 'ramber.pendingSunoTask';
 
   const showToast = (message: string) => {
     setToast(message);
@@ -224,19 +225,57 @@ export default function App() {
 
   useEffect(() => {
     let busy = false;
-    const readPending = () => {
+    const readList = () => {
       try {
-        const raw = window.localStorage.getItem(pendingKey);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId.trim() : '';
-        if (!taskId) return null;
-        const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim() : 'generate';
-        const draft = parsed?.draft ?? null;
-        return { taskId, kind, draft };
+        const raw = window.localStorage.getItem(pendingListKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return Array.isArray(parsed) ? parsed : [];
       } catch {
-        return null;
+        return [];
       }
+    };
+
+    const migrateLegacyIfNeeded = () => {
+      try {
+        const existing = readList();
+        if (existing.length > 0) return existing;
+        const legacyRaw = window.localStorage.getItem(pendingLegacyKey);
+        if (!legacyRaw) return existing;
+        const legacy = JSON.parse(legacyRaw);
+        const taskId = typeof legacy?.taskId === 'string' ? legacy.taskId.trim() : '';
+        if (!taskId) return existing;
+        const kind = typeof legacy?.kind === 'string' ? legacy.kind.trim() : 'generate';
+        const startedAt = Number(legacy?.startedAt || 0);
+        const draft = legacy?.draft ?? null;
+        const next = [{ taskId, kind, startedAt: Number.isFinite(startedAt) ? startedAt : Date.now(), draft }];
+        window.localStorage.setItem(pendingListKey, JSON.stringify(next));
+        window.localStorage.removeItem(pendingLegacyKey);
+        return next;
+      } catch {
+        return readList();
+      }
+    };
+
+    const writeList = (list: any[]) => {
+      try {
+        if (!Array.isArray(list) || list.length === 0) {
+          window.localStorage.removeItem(pendingListKey);
+          return;
+        }
+        window.localStorage.setItem(pendingListKey, JSON.stringify(list));
+      } catch {
+      }
+    };
+
+    const readNextPending = () => {
+      const list = migrateLegacyIfNeeded();
+      const item = Array.isArray(list) && list.length > 0 ? list[0] : null;
+      if (!item) return null;
+      const taskId = typeof item?.taskId === 'string' ? item.taskId.trim() : '';
+      if (!taskId) return null;
+      const kind = typeof item?.kind === 'string' ? item.kind.trim() : 'generate';
+      const draft = item?.draft ?? null;
+      return { taskId, kind, draft };
     };
 
     const extractTracks = (payload: any) => {
@@ -259,7 +298,7 @@ export default function App() {
 
     const tick = async () => {
       if (busy) return;
-      const pending = readPending();
+      const pending = readNextPending();
       if (!pending) return;
       busy = true;
       try {
@@ -275,8 +314,6 @@ export default function App() {
         if (status === 'SUCCESS') {
           const tracks = extractTracks(data).filter((x) => x && x.audioUrl);
           if (tracks.length === 0) {
-            showToast('Se generó, pero no recibí el audio.');
-            window.localStorage.removeItem(pendingKey);
             return;
           }
           const draft = pending.draft ?? {};
@@ -296,7 +333,9 @@ export default function App() {
               isCover: Boolean(draft?.isCover),
             });
           }
-          window.localStorage.removeItem(pendingKey);
+          const list = migrateLegacyIfNeeded();
+          const rest = Array.isArray(list) ? list.slice(1) : [];
+          writeList(rest);
           showToast(tracks.length > 1 ? `Listo: se guardaron ${tracks.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
           return;
         }
@@ -304,7 +343,9 @@ export default function App() {
         if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED') {
           const msg =
             (data?.data?.errorMessage || data?.data?.error_message || data?.errorMessage || data?.error_message || 'Error en la generación').toString();
-          window.localStorage.removeItem(pendingKey);
+          const list = migrateLegacyIfNeeded();
+          const rest = Array.isArray(list) ? list.slice(1) : [];
+          writeList(rest);
           showToast(msg);
           return;
         }
