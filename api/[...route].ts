@@ -2307,7 +2307,7 @@ const sunoWebhookHandler = (() => {
     const msg = String(body?.msg || "");
     const data = body?.data ?? {};
     const callbackType = String(data?.callbackType || data?.callback_type || "").toLowerCase();
-    const taskId = String(data?.task_id || data?.taskId || body?.taskId || "").trim();
+    const taskId = String(data?.task_id || data?.taskId || body?.taskId || body?.task_id || "").trim();
     const tracks = Array.isArray(data?.data) ? data.data : [];
     const coverImages = Array.isArray(data?.images) ? data.images : [];
     const audioWavUrl = String(data?.audioWavUrl || data?.audio_wav_url || "").trim();
