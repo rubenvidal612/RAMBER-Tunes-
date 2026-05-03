@@ -49,9 +49,10 @@ interface CreateViewProps {
   credits?: number;
   openPersonaPickerSignal?: number;
   onGoLibrary?: () => void;
+  onOpenBalance?: () => void;
 }
 
-export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary }: CreateViewProps) {
+export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance }: CreateViewProps) {
   const [mode, setMode] = useState<CreateMode>('personalizado');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
@@ -998,6 +999,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onUploadAudio={uploadAudio}
             onClearAudio={clearAudio}
             onCoverFromAudio={handleCoverFromAudio}
+            onOpenBalance={onOpenBalance}
+            credits={credits}
             onOpenPersonaPicker={() => setIsPersonaPickerOpen(true)}
             onPickAudio={pickAudio}
             uploadProgress={uploadProgress}
@@ -1356,6 +1359,8 @@ function CustomForm({
   onUploadAudio,
   onClearAudio,
   onCoverFromAudio,
+  onOpenBalance,
+  credits,
   onOpenPersonaPicker,
   onPickAudio,
   uploadProgress,
@@ -1826,6 +1831,14 @@ function CustomForm({
           />
           <span className="text-slate-500 text-sm">{title.length}/80</span>
         </div>
+        <button
+          type="button"
+          onClick={() => onOpenBalance?.()}
+          className="mt-4 w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between hover:bg-white/10 transition-colors"
+        >
+          <div className="text-slate-200 font-extrabold">Saldo</div>
+          <div className="text-slate-300 text-sm font-semibold">Créditos: {Number(credits || 0)}</div>
+        </button>
       </div>
     </>
   );

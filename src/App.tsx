@@ -31,6 +31,10 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [isBalanceOpen, setIsBalanceOpen] = useState(false);
+  const [balanceData, setBalanceData] = useState<any>(null);
+  const [isBalanceLoading, setIsBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string>('');
   const [authReady, setAuthReady] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   
@@ -145,12 +149,53 @@ export default function App() {
     if (Number.isFinite(c)) setProviderCredits(c);
   };
 
+  const refreshBalance = async () => {
+    setIsBalanceLoading(true);
+    setBalanceError('');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setBalanceError(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setBalanceError((out?.error || 'No pude consultar tu saldo.').toString());
+        return;
+      }
+      setBalanceData(out);
+    } finally {
+      setIsBalanceLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthed) return;
     refreshProviderCredits().catch(() => {});
     const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 20000);
     return () => window.clearInterval(interval);
   }, [isAuthed]);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return;
+      refreshCredits().catch(() => {});
+      refreshProviderCredits().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onVis);
+    };
+  }, [isAuthed, refreshCredits]);
+
+  useEffect(() => {
+    if (!isBalanceOpen) return;
+    refreshBalance().catch(() => {});
+  }, [isBalanceOpen]);
 
   const mapSongRow = (row: any): SongItem => ({
     id: String(row?.id || ''),
@@ -582,7 +627,7 @@ export default function App() {
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
-        onCreditsClick={() => setIsPricingOpen(true)}
+        onCreditsClick={() => setIsBalanceOpen(true)}
         credits={displayCredits}
       />
       {showInstallBanner && (
@@ -617,7 +662,7 @@ export default function App() {
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
-           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />}
+           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
@@ -639,7 +684,7 @@ export default function App() {
              <>
                {/* Create View (Middle) */}
                <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                 <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} />
+                 <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} />
                </div>
 
                {/* Library / Results View (Right) */}
@@ -679,6 +724,68 @@ export default function App() {
 
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} />}
       {isPricingOpen && <PricingView onClose={() => setIsPricingOpen(false)} />}
+      {isBalanceOpen && (
+        <div className="fixed inset-0 z-[280] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsBalanceOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[620px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div className="text-white font-extrabold">Saldo</div>
+              <button
+                onClick={() => setIsBalanceOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="text-slate-300 text-sm">Créditos: <span className="text-white font-extrabold">{Number(balanceData?.credits ?? displayCredits).toString()}</span></div>
+              {balanceError && (
+                <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                  {balanceError}
+                </div>
+              )}
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="text-slate-300 text-sm font-semibold">Canciones</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.songs ?? 0)}</div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="text-slate-300 text-sm font-semibold">Quitar voz</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.voice_separate ?? 0)}</div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="text-slate-300 text-sm font-semibold">Videos</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.music_video ?? 0)}</div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="text-slate-300 text-sm font-semibold">STEMS</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.split_stem ?? 0)}</div>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <div className="text-slate-400 text-sm">Se descuenta según la acción.</div>
+                <button
+                  onClick={() => {
+                    setIsBalanceOpen(false);
+                    setIsPricingOpen(true);
+                  }}
+                  className="bg-white text-black px-5 py-2.5 rounded-full font-extrabold text-sm"
+                >
+                  Obtener créditos
+                </button>
+              </div>
+              <button
+                onClick={() => refreshBalance().catch(() => {})}
+                disabled={isBalanceLoading}
+                className="mt-4 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+              >
+                {isBalanceLoading ? 'Actualizando…' : 'Actualizar saldo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showIosHelp && (
         <div className="fixed inset-0 z-[300] bg-black/70 flex items-end md:hidden">
           <div className="w-full bg-[#0a0a0a] rounded-t-3xl p-5 border-t border-white/10">
