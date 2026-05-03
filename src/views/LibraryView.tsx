@@ -433,6 +433,8 @@ function SongOptionsSheet({
   const [personaVocalEnd, setPersonaVocalEnd] = useState(30);
   const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
   const coverPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const [showCoverUrl, setShowCoverUrl] = useState(false);
+  const [coverUrlInput, setCoverUrlInput] = useState('');
   useEffect(() => {
     if (!showPersonaSave) return;
     setPersonaVocalStart(0);
@@ -442,6 +444,10 @@ function SongOptionsSheet({
     if (!showMp4) return;
     setMp4Author('');
   }, [showMp4]);
+  useEffect(() => {
+    if (!showCoverUrl) return;
+    setCoverUrlInput('');
+  }, [showCoverUrl]);
   const fmt = (iso?: string) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -1177,6 +1183,42 @@ function SongOptionsSheet({
     }
   };
 
+  const uploadCoverFromUrl = async (urlRaw: string) => {
+    const url = (urlRaw || '').toString().trim();
+    if (!url) {
+      alert('Pega un link primero.');
+      return;
+    }
+    if (!(url.startsWith('https://') || url.startsWith('http://'))) {
+      alert('El link debe empezar con http:// o https://');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/set-cover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id: song.id, fileUrl: url }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.hint ? `${out?.error || 'No se pudo guardar la portada.'}\n\n${out.hint}` : (out?.error || 'No se pudo guardar la portada.'));
+        return;
+      }
+      onRefreshSongs?.();
+      alert('Listo. Tu portada se guardó y ya no se perderá.');
+      setShowCoverUrl(false);
+      onClose();
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const savePersona = async () => {
     if (!song.sunoTaskId || !song.sunoAudioId) {
       alert('Esta canción no tiene datos de Suno (taskId/audioId) para crear Persona.');
@@ -1337,6 +1379,13 @@ function SongOptionsSheet({
                   disabled={isBusy}
                 >
                   <ImageIcon className="w-5 h-5 text-amber-300" /> <span className="text-slate-200 font-extrabold">Subir foto de portada</span>
+                </button>
+                <button
+                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                  onClick={() => setShowCoverUrl(true)}
+                  disabled={isBusy}
+                >
+                  <ImageIcon className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Pegar link (URL)</span>
                 </button>
                 <input
                   ref={coverPhotoInputRef}
@@ -1699,6 +1748,42 @@ function SongOptionsSheet({
                 Crear video
               </button>
               <div className="text-[11px] text-slate-500">El video se guarda 15 días en el proveedor.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCoverUrl && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowCoverUrl(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold">Pegar link de portada</div>
+              <button
+                onClick={() => setShowCoverUrl(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-3">
+              <div className="text-slate-300 text-sm">Link (URL)</div>
+              <input
+                value={coverUrlInput}
+                onChange={(e) => setCoverUrlInput(e.target.value)}
+                placeholder="https://..."
+                className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
+              />
+              <button
+                onClick={() => uploadCoverFromUrl(coverUrlInput).catch(() => {})}
+                disabled={isBusy}
+                className="w-full bg-white text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+              >
+                Guardar portada
+              </button>
+              <div className="text-[11px] text-slate-500">
+                El link debe ser público. La app guardará la imagen permanente en RAMBER Tunes (bucket covers).
+              </div>
             </div>
           </div>
         </div>
