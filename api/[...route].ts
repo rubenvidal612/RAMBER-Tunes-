@@ -1006,7 +1006,11 @@ const sunoHandler = (() => {
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
+    const author = typeof payload?.author === "string" ? payload.author.trim() : "";
+    const domainName = typeof payload?.domainName === "string" ? payload.domainName.trim() : "";
     if (!taskId && !audioId) return send(res, 400, { error: "Falta taskId o audioId" });
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
@@ -1018,10 +1022,22 @@ const sunoHandler = (() => {
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/mp4", {
-        method: "POST",
-        body: JSON.stringify({ taskId, audioId }),
-      });
+      const body: any = { taskId, audioId, callBackUrl };
+      if (author) body.author = author.slice(0, 120);
+      if (domainName) body.domainName = domainName.slice(0, 200);
+
+      const paths = ["/api/v1/mp4/generate", "/api/v1/suno/mp4/generate", "/api/v1/mp4", "/api/v1/suno/mp4"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error creando video", detail: "No pude contactar al proveedor" });
+      }
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
@@ -1072,6 +1088,11 @@ const sunoHandler = (() => {
           ? [
               `/api/v1/midi/record-info?taskId=${enc}`,
               `/api/v1/suno/midi/record-info?taskId=${enc}`,
+            ]
+          : kind === "mp4" || kind === "video" || kind === "music-video"
+          ? [
+              `/api/v1/mp4/record-info?taskId=${enc}`,
+              `/api/v1/suno/mp4/record-info?taskId=${enc}`,
             ]
           : kind === "vocal-removal" || kind === "separate" || kind === "separate_vocal" || kind === "split_stem"
           ? [
@@ -1131,6 +1152,8 @@ const sunoHandler = (() => {
         status === "GENERATE_AUDIO_FAILED" ||
         status === "GENERATE_LYRICS_FAILED" ||
         status === "GENERATE_MIDI_FAILED" ||
+        status === "GENERATE_MP4_FAILED" ||
+        status === "GENERATE_WAV_FAILED" ||
         status === "CALLBACK_EXCEPTION" ||
         status === "SENSITIVE_WORD_ERROR"
       ) {

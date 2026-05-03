@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText, Video } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 interface LibraryViewProps {
@@ -577,6 +577,99 @@ function SongOptionsSheet({
       }
 
       alert('El WAV está tardando. Intenta de nuevo en unos segundos.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const createMp4 = async () => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Tu plan no incluye esta función.');
+        return;
+      }
+      if (!song.sunoTaskId || !song.sunoAudioId) {
+        alert('Esta canción no tiene taskId/audioId para crear video.');
+        return;
+      }
+
+      const start = await fetch('/api/suno/mp4', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: song.sunoTaskId, audioId: song.sunoAudioId }),
+      });
+      const startedOut = await start.json().catch(() => ({}));
+      if (!start.ok) {
+        alert((startedOut?.detail || startedOut?.error || 'No pude iniciar el video.').toString());
+        return;
+      }
+      const mp4TaskId = String(startedOut?.taskId || '').trim();
+      if (!mp4TaskId) {
+        alert('No recibí taskId del video.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(mp4TaskId);
+        alert(`Listo. Ya empecé el video.\n\nTaskId (copiado):\n${mp4TaskId}\n\nNo lo compartas.`);
+      } catch {
+        alert(`Listo. Ya empecé el video.\n\nTaskId:\n${mp4TaskId}\n\nNo lo compartas.`);
+      }
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 240_000) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const tr = await fetch(`/api/suno/task?kind=mp4&taskId=${encodeURIComponent(mp4TaskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+
+        const provider = tout?.data;
+        const status = String(
+          provider?.data?.successFlag ||
+            provider?.data?.status ||
+            provider?.data?.data?.successFlag ||
+            provider?.data?.data?.status ||
+            ''
+        ).toUpperCase();
+
+        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_MP4_FAILED' || status === 'CALLBACK_EXCEPTION') {
+          alert('No se pudo generar el video.');
+          return;
+        }
+        if (status !== 'SUCCESS') continue;
+
+        const videoUrl = String(
+          provider?.data?.response?.videoUrl ||
+            provider?.data?.data?.response?.videoUrl ||
+            provider?.data?.response?.video_url ||
+            provider?.data?.data?.response?.video_url ||
+            ''
+        ).trim();
+
+        if (!videoUrl) {
+          alert('El video terminó, pero no recibí el link.');
+          return;
+        }
+        window.open(videoUrl, '_blank');
+        return;
+      }
+
+      alert('El video está tardando. Intenta de nuevo en unos segundos.');
     } finally {
       setIsBusy(false);
     }
@@ -1162,6 +1255,11 @@ function SongOptionsSheet({
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar WAV</span>
+              </button>
+            )}
+            {!isDeleted && (
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => createMp4().catch(() => {})} disabled={isBusy}>
+                <Video className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Video (MP4)</span>
               </button>
             )}
             {!isDeleted && (
