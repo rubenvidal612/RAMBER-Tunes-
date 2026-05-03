@@ -850,7 +850,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 onClick={clearAudio}
                 className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
               >
-                Cambiar audio
+                Eliminar audio
+              </button>
+
+              <button
+                onClick={() => {
+                  clearAudio();
+                  window.setTimeout(() => audioInputRef.current?.click(), 0);
+                }}
+                className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+              >
+                Subir otro audio
               </button>
             </div>
           </div>
@@ -1031,6 +1041,21 @@ function CustomForm({
         >
           <Plus className="w-5 h-5 text-slate-400" /> 
           {audioFile ? 'Audio cargado' : 'Audio'}
+          {audioFile && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClearAudio?.();
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-black/40"
+              aria-label="Eliminar audio"
+              title="Eliminar audio"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </button>
         <input 
           type="file" 
@@ -1132,15 +1157,17 @@ function CustomForm({
             placeholder="Agrega tu propia letra o ingresa un tema para generar"
             className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
           />
-          <button
-            className="absolute top-0 right-0 text-slate-400 hover:text-white"
-            onClick={() => setIsLyricsExpanded(true)}
-            type="button"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
           
-          <div className="flex justify-end mt-2">
+          <div className="flex justify-end items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setIsLyricsExpanded(true)}
+              className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 w-10 h-10 rounded-full text-sm font-semibold transition-colors flex items-center justify-center"
+              aria-label="Expandir letras"
+              title="Expandir letras"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
             <button 
               onClick={() => handleGenerateLyrics(false).catch(() => {})}
               disabled={isGeneratingLyrics}
@@ -1303,6 +1330,7 @@ function SliderRow({
   onChange: (n: number) => void;
 }) {
   const v = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  const hot = v >= 87;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -1315,7 +1343,7 @@ function SliderRow({
         max={100}
         value={v}
         onChange={(e) => onChange(Math.max(0, Math.min(100, Number(e.target.value))))}
-        className="w-full accent-emerald-500"
+        className={cn("w-full", hot ? "accent-red-500" : "accent-emerald-500")}
       />
     </div>
   );
