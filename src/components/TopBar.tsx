@@ -14,7 +14,7 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits }: TopB
       <div className="flex items-center gap-2">
         <span className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
           {/* Logo mock replacing SVG */}
-          <div className="w-8 h-8 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center font-serif italic text-lg shadow-[0_0_15px_rgba(74,222,128,0.2)]">
+          <div className="w-9 h-9 rounded-full bg-yellow-400 text-black flex items-center justify-center font-light text-2xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
             R
           </div>
           <span className="text-base font-bold text-slate-100">RAMBER Tunes</span>
@@ -36,7 +36,7 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits }: TopB
           <span className="text-sm font-semibold text-slate-200">{credits || 0} Créditos</span>
         </button>
         
-        <button className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-sm shadow-inner overflow-hidden">
+        <button className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-black font-light text-2xl shadow-[0_0_18px_rgba(250,204,21,0.35)] overflow-hidden">
           R
         </button>
 

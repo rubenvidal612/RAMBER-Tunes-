@@ -484,7 +484,7 @@ export default function App() {
       />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
-          <div className="bg-gradient-to-r from-emerald-700/40 to-teal-600/20 border border-emerald-400/15 rounded-2xl px-3 py-3 flex items-center gap-3">
+          <div className="bg-gradient-to-r from-yellow-500/25 to-yellow-400/10 border border-yellow-400/20 rounded-2xl px-3 py-3 flex items-center gap-3">
             <button
               onClick={() => setShowInstallBanner(false)}
               className="shrink-0 w-8 h-8 rounded-full bg-black/30 border border-white/10 text-slate-200 flex items-center justify-center"
@@ -492,7 +492,7 @@ export default function App() {
             >
               ✕
             </button>
-            <div className="shrink-0 w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center font-extrabold text-white">
+            <div className="shrink-0 w-11 h-11 rounded-xl bg-yellow-400 border border-yellow-300/40 flex items-center justify-center font-light text-3xl text-black shadow-[0_0_18px_rgba(250,204,21,0.35)]">
               R
             </div>
             <div className="flex-1 min-w-0">
