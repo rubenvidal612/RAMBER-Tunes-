@@ -2222,31 +2222,49 @@ const libraryHandler = (() => {
     if (!apiKey) return send(res, 500, { error: "Falta SUNO_API_KEY en variables de entorno" });
 
     const uploadPath = `covers/${auth.user.id}/${id}`.slice(0, 200);
-    const tempBody = {
-      base64Data: base64DataRaw,
-      uploadPath,
-      fileName: `${safeFileBase(fileName)}.png`,
-    };
+
+    let buf: Buffer | null = null;
+    let contentType = base64Parsed.mime || "";
+
+    if (!buf) {
+      try {
+        const b = Buffer.from(base64Parsed.base64, "base64");
+        if (b && b.length > 0) buf = b;
+      } catch {
+        buf = null;
+      }
+    }
+
+    if (!buf || buf.length === 0) return send(res, 400, { error: "No pude procesar la imagen" });
+    if (buf.length > 12_000_000) return send(res, 413, { error: "La imagen está muy pesada. Usa una foto más pequeña." });
+
+    await ensureCoversBucket(auth.admin);
+
+    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+    const finalCt = contentType || (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
+    const path = `${auth.user.id}/${id}/${Date.now()}_${safeFileBase(fileName)}.${ext}`.slice(0, 500);
 
     let downloadUrl = "";
-    let mimeType = "";
     try {
-      const r = await fetch("https://sunoapiorg.redpandaai.co/api/file-base64-upload", {
+      const fileBlob = new Blob([buf], { type: finalCt });
+      const form = new FormData();
+      form.append("file", fileBlob, `${safeFileBase(fileName)}.${ext}`);
+      form.append("uploadPath", uploadPath);
+      form.append("fileName", `${safeFileBase(fileName)}.${ext}`);
+
+      const r = await fetch("https://sunoapiorg.redpandaai.co/api/file-stream-upload", {
         method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify(tempBody),
+        headers: { authorization: `Bearer ${apiKey}` },
+        body: form as any,
       });
       const text = await r.text();
       const data = text ? JSON.parse(text) : null;
       if (r.ok && data?.success && Number(data?.code) === 200) {
         downloadUrl = String(data?.data?.downloadUrl || "").trim();
-        mimeType = String(data?.data?.mimeType || "").trim();
       }
     } catch {
+      downloadUrl = "";
     }
-
-    let buf: Buffer | null = null;
-    let contentType = mimeType || base64Parsed.mime || "";
 
     if (downloadUrl) {
       try {
@@ -2262,24 +2280,6 @@ const libraryHandler = (() => {
       } catch {
       }
     }
-
-    if (!buf) {
-      try {
-        const b = Buffer.from(base64Parsed.base64, "base64");
-        if (b && b.length > 0) buf = b;
-      } catch {
-        buf = null;
-      }
-    }
-
-    if (!buf || buf.length === 0) return send(res, 400, { error: "No pude procesar la imagen" });
-    if (buf.length > 6_000_000) return send(res, 413, { error: "La imagen está muy pesada. Usa una foto más pequeña." });
-
-    await ensureCoversBucket(auth.admin);
-
-    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
-    const finalCt = contentType || (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
-    const path = `${auth.user.id}/${id}/${Date.now()}_${safeFileBase(fileName)}.${ext}`.slice(0, 500);
 
     const up = await auth.admin.storage.from(COVERS_BUCKET).upload(path, buf, {
       upsert: true,
@@ -2520,6 +2520,20 @@ const sunoWebhookHandler = (() => {
     try {
       const createClient = await getSupabaseCreateClient();
       const admin = createClient(supabaseUrl, supabaseService);
+      const ensureCoversBucket = async () => {
+        try {
+          const getBucket = (admin.storage as any)?.getBucket;
+          const createBucket = (admin.storage as any)?.createBucket;
+          if (typeof getBucket === "function") {
+            const r = await getBucket.call(admin.storage, "covers");
+            if (!r?.error) return;
+          }
+          if (typeof createBucket === "function") {
+            await createBucket.call(admin.storage, "covers", { public: true });
+          }
+        } catch {
+        }
+      };
 
       if (taskId) {
         const { data: taskRows } = await admin.from("suno_tasks").select("user_id, kind, cost, consumed").eq("task_id", taskId).limit(1);
@@ -2542,7 +2556,8 @@ const sunoWebhookHandler = (() => {
         } else if (isMusicCover && userId) {
           const originalTaskId = kind.split("music-cover:").slice(1).join("music-cover:").trim();
           if (code === 200 && coverImages.length > 0 && originalTaskId) {
-            const bucket = "ramber-tunes";
+            await ensureCoversBucket();
+            const bucket = "covers";
             const tryDownloadAndStore = async (urlRaw: any, index: number) => {
               const url = String(urlRaw || "").trim();
               if (!url) return "";
@@ -2553,7 +2568,7 @@ const sunoWebhookHandler = (() => {
                 const buf = Buffer.from(await r.arrayBuffer());
                 if (!buf || buf.length === 0) return "";
                 const ext = ct.includes("jpeg") ? "jpg" : ct.includes("webp") ? "webp" : "png";
-                const path = `covers/${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
+                const path = `${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
                 const up = await admin.storage.from(bucket).upload(path, buf, {
                   upsert: true,
                   contentType: ct || `image/${ext}`,
@@ -2574,8 +2589,7 @@ const sunoWebhookHandler = (() => {
               if (chosen) break;
             }
 
-            const fallbackUrl = String(coverImages[0] || "").trim();
-            const finalUrl = (chosen || fallbackUrl).slice(0, 2000);
+            const finalUrl = chosen.slice(0, 2000);
             if (finalUrl) {
               await admin
                 .from("library_items")
