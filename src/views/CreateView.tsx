@@ -31,7 +31,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioUploadPath, setAudioUploadPath] = useState<string>('');
   const [audioDurationSec, setAudioDurationSec] = useState<number>(0);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-  const [audioAction, setAudioAction] = useState<'cover' | 'extend' | 'library'>('cover');
+  const [audioAction, setAudioAction] = useState<'cover' | 'instrumental' | 'extend' | 'library'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
@@ -395,11 +395,94 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const continueFromAudio = async () => {
     if (audioAction === 'library') return saveUploadedAudioToLibrary();
+    if (audioAction === 'instrumental') return handleAddInstrumentalFromAudio();
     if (audioAction === 'extend') {
       alert('Extender: Próximamente');
       return;
     }
     return handleCoverFromAudio();
+  };
+
+  const handleAddInstrumentalFromAudio = async () => {
+    if (!onSongCreated) return;
+    if (!audioUploadUrl) {
+      alert('Primero sube tu audio.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+
+      const titleFromFile = (audioFile?.name || title || 'Instrumental').toString().slice(0, 100);
+      const tags = (instructions || 'Instrumental').trim() || 'Instrumental';
+      const payload: any = {
+        uploadUrl: audioUploadUrl,
+        uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
+        uploadPath: audioUploadPath || undefined,
+        title: titleFromFile,
+        tags,
+        negativeTags: 'None',
+        vocalGender: gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined,
+        model,
+        weirdnessConstraint: weirdness / 100,
+        styleWeight: styleInfluence / 100,
+        audioWeight: audioInfluence / 100,
+      };
+
+      const r = await fetch('/api/suno/add-instrumental', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = (out?.detail || out?.error || 'No se pudo generar el instrumental.').toString();
+        alert(msg);
+        return;
+      }
+
+      const taskId = (out?.taskId || '').toString();
+      if (!taskId) {
+        alert('No recibí taskId del proveedor.');
+        return;
+      }
+
+      const pendingRaw = window.localStorage.getItem(pendingListKey);
+      const pending = (() => {
+        try {
+          return JSON.parse(pendingRaw || '[]');
+        } catch {
+          return [];
+        }
+      })();
+      const next = Array.isArray(pending) ? pending : [];
+      next.push({
+        taskId,
+        kind: 'add-instrumental',
+        startedAt: Date.now(),
+        draft: {
+          title: titleFromFile,
+          description: tags,
+          lyrics: '',
+          genre: gender,
+          isCover: false,
+        },
+      });
+      window.localStorage.setItem(pendingListKey, JSON.stringify(next.slice(-10)));
+
+      setIsAudioModalOpen(false);
+      onGoLibrary?.();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCoverFromAudio = async () => {
@@ -851,7 +934,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 );
               })()}
 
-              <div className="grid grid-cols-3 gap-3 mt-3">
+              <div className="grid grid-cols-2 gap-3 mt-3">
                 <button
                   onClick={() => setAudioAction('cover')}
                   className={cn(
@@ -864,6 +947,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     <AudioLines className="w-5 h-5" />
                   </div>
                   <div className="mt-3 text-white font-bold">Cover</div>
+                </button>
+
+                <button
+                  onClick={() => setAudioAction('instrumental')}
+                  className={cn(
+                    "rounded-2xl p-4 border transition-colors text-left",
+                    audioAction === 'instrumental' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  )}
+                  disabled={isUploadingAudio}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
+                    <Music className="w-5 h-5" />
+                  </div>
+                  <div className="mt-3 text-white font-bold">Instrumental</div>
                 </button>
 
                 <button
@@ -903,6 +1000,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 disabled={
                   isUploadingAudio ||
                   (audioAction === 'cover' && !audioUploadUrl) ||
+                  (audioAction === 'instrumental' && !audioUploadUrl) ||
                   (audioAction === 'library' && !audioUploadUrl)
                 }
                 className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[52px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
