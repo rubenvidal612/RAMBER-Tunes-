@@ -419,6 +419,9 @@ function SongOptionsSheet({
   const [published, setPublished] = useState(false);
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showStems, setShowStems] = useState(false);
+  const [stemsItems, setStemsItems] = useState<Array<{ key: string; label: string; url: string }>>([]);
+  const [stemsMeta, setStemsMeta] = useState<{ taskId: string; type: 'separate_vocal' | 'split_stem' } | null>(null);
   const [personaName, setPersonaName] = useState('');
   const [personaVocalStart, setPersonaVocalStart] = useState(0);
   const [personaVocalEnd, setPersonaVocalEnd] = useState(30);
@@ -661,6 +664,56 @@ function SongOptionsSheet({
             .replaceAll('`', '')
             .trim();
 
+        const normalizeKey = (k: string) => {
+          const kk = (k || '').trim();
+          if (!kk) return '';
+          if (kk.endsWith('_url')) return kk.slice(0, -4) + 'Url';
+          return kk;
+        };
+
+        const labelForKey = (k: string) => {
+          const kk = normalizeKey(k);
+          const map: Record<string, string> = {
+            originUrl: 'Original',
+            instrumentalUrl: 'Instrumental (Karaoke)',
+            vocalUrl: 'Voz',
+            backingVocalsUrl: 'Coros',
+            drumsUrl: 'Batería',
+            bassUrl: 'Bajo',
+            guitarUrl: 'Guitarra',
+            keyboardUrl: 'Teclado',
+            percussionUrl: 'Percusión',
+            stringsUrl: 'Cuerdas',
+            synthUrl: 'Synth',
+            fxUrl: 'FX',
+            brassUrl: 'Metales',
+            woodwindsUrl: 'Vientos',
+          };
+          if (map[kk]) return map[kk];
+          const base = kk
+            .replaceAll(/Url$/g, '')
+            .replaceAll(/([a-z])([A-Z])/g, '$1 $2')
+            .trim();
+          const map2: Record<string, string> = {
+            'Vocals': 'Voz',
+            'Instrumental': 'Instrumental (Karaoke)',
+            'Backing Vocals': 'Coros',
+            'Drums': 'Batería',
+            'Bass': 'Bajo',
+            'Guitar': 'Guitarra',
+            'Keyboard': 'Teclado',
+            'Percussion': 'Percusión',
+            'Strings': 'Cuerdas',
+            'Synth': 'Synth',
+            'FX': 'FX',
+            'Brass': 'Metales',
+            'Woodwinds': 'Vientos',
+            'Original': 'Original',
+          };
+          if (map2[base]) return map2[base];
+          return base || 'Pista';
+        };
+
         const root = provider?.data || {};
         const resp = root?.response || root?.data?.response || {};
 
@@ -671,7 +724,7 @@ function SongOptionsSheet({
             if (!vv.startsWith('http')) return false;
             return kk.endsWith('Url') || kk.endsWith('_url') || kk.endsWith('url');
           })
-          .map(([k, v]) => [String(k), cleanUrl(v)] as const);
+          .map(([k, v]) => [normalizeKey(String(k)), cleanUrl(v)] as const);
 
         const originDataEntries = Array.isArray(resp?.originData)
           ? resp.originData
@@ -679,31 +732,44 @@ function SongOptionsSheet({
                 const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim();
                 const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
                 if (!label || !url.startsWith('http')) return null;
-                return [`${label}_url`, url] as const;
+                return [`${label}Url`, url] as const;
               })
               .filter(Boolean)
           : [];
 
-        const entries = Array.from(new Map([...originDataEntries, ...directUrlEntries]).entries());
+        const entries = Array.from(new Map([...originDataEntries, ...directUrlEntries]).entries()) as Array<[string, string]>;
 
         if (entries.length === 0) {
           alert('Terminó, pero no recibí links de stems.');
           return;
         }
 
-        const text = entries.map(([k, v]) => `${k}: ${v}`).join('\n');
-        try {
-          await navigator.clipboard.writeText(text);
-          alert(`Listo. Copié ${entries.length} links.\n\nAhora puedes pegarlos donde quieras para descargarlos.`);
-        } catch {
-          alert(text);
-        }
-
-        const quick = [
-          entries.find(([k]) => k === 'instrumental_url' || k === 'instrumentalUrl')?.[1],
-          entries.find(([k]) => k === 'vocal_url' || k === 'vocalUrl')?.[1],
-        ].filter(Boolean) as string[];
-        quick.forEach((u) => window.open(u, '_blank'));
+        const order = [
+          'instrumentalUrl',
+          'vocalUrl',
+          'backingVocalsUrl',
+          'drumsUrl',
+          'bassUrl',
+          'guitarUrl',
+          'keyboardUrl',
+          'percussionUrl',
+          'stringsUrl',
+          'synthUrl',
+          'fxUrl',
+          'brassUrl',
+          'woodwindsUrl',
+          'originUrl',
+        ];
+        const rank = (k: string) => {
+          const i = order.indexOf(normalizeKey(k));
+          return i >= 0 ? i : 999;
+        };
+        const items = entries
+          .map(([k, v]) => ({ key: normalizeKey(k), label: labelForKey(k), url: v }))
+          .sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
+        setStemsItems(items);
+        setStemsMeta({ taskId: sepTaskId, type });
+        setShowStems(true);
         return;
       }
 
@@ -1119,6 +1185,75 @@ function SongOptionsSheet({
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
                 {song.lyrics ? song.lyrics : 'Esta canción no tiene letra guardada.'}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStems && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowStems(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold">
+                {stemsMeta?.type === 'split_stem' ? 'Stems (12 pistas)' : 'Karaoke (sin voz)'}
+              </div>
+              <button
+                onClick={() => setShowStems(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-y-auto overscroll-contain">
+              <div className="text-slate-400 text-xs">{stemsMeta?.taskId ? `TaskId: ${stemsMeta.taskId}` : ' '}</div>
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <button
+                  className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                  disabled={stemsItems.length === 0}
+                  onClick={async () => {
+                    const text = stemsItems.map((x) => `${x.label}: ${x.url}`).join('\n');
+                    try {
+                      await navigator.clipboard.writeText(text);
+                      alert('Copiado al portapapeles.');
+                    } catch {
+                      alert(text);
+                    }
+                  }}
+                >
+                  Copiar links
+                </button>
+                <button
+                  className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                  disabled={stemsItems.length === 0}
+                  onClick={() => stemsItems.forEach((x) => window.open(x.url, '_blank'))}
+                >
+                  Abrir todo
+                </button>
+              </div>
+
+              {stemsItems.length === 0 ? (
+                <div className="mt-6 text-slate-400 text-sm">No hay pistas para mostrar.</div>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {stemsItems.map((it) => (
+                    <button
+                      key={`${it.key}:${it.url}`}
+                      className="w-full glass-card rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-white/10 transition-colors text-left"
+                      onClick={() => window.open(it.url, '_blank')}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-white font-bold truncate">{it.label}</div>
+                        <div className="text-slate-500 text-xs truncate">{it.url}</div>
+                      </div>
+                      <div className="shrink-0 text-slate-300 text-sm">Abrir</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 text-[11px] text-slate-500">Los links pueden expirar. Descárgalos pronto si los vas a guardar.</div>
             </div>
           </div>
         </div>
