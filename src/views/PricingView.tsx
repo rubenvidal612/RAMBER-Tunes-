@@ -130,23 +130,23 @@ export function PricingView({ onClose, autoClaimFree, onClaimed }: PricingViewPr
             <div className="flex justify-between items-start mb-2">
               <div>
                 <h3 className="text-xl font-bold text-white">Plan Gratis (Prueba)</h3>
-                <p className="text-slate-300 text-sm mt-1">10 canciones • 120 créditos</p>
-                <p className="text-slate-400 text-sm mt-1">Incluye 10 canciones (20 versiones A y B)</p>
+                <p className="text-slate-300 text-sm mt-1">5 canciones • 60 créditos</p>
+                <p className="text-slate-400 text-sm mt-1">Incluye 5 canciones (10 versiones A y B)</p>
               </div>
               <span className="bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold">Gratis</span>
             </div>
 
             <div className="flex items-end gap-2 mt-4 mb-6">
               <span className="text-4xl font-bold text-white">Gratis</span>
-              <span className="bg-teal-500/20 text-teal-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">20 versiones</span>
+              <span className="bg-teal-500/20 text-teal-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">10 versiones</span>
             </div>
 
             <div className="space-y-3 mb-6">
               <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500" /> Incluye 10 canciones
+                <Check className="w-5 h-5 text-teal-500" /> Incluye 5 canciones
               </div>
               <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500" /> Total: 120 créditos
+                <Check className="w-5 h-5 text-teal-500" /> Total: 60 créditos
               </div>
               <div className="flex items-start gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-teal-500 shrink-0 mt-0.5" />

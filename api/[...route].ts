@@ -1929,7 +1929,7 @@ const mercadoPagoHandler = (() => {
     const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
     if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, already: true });
 
-    const credits = CREDIT_COSTS.generate_music * 10;
+    const credits = CREDIT_COSTS.generate_music * 5;
     const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
     if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
 

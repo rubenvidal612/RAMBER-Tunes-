@@ -799,9 +799,9 @@ export default function App() {
               <div className="inline-flex items-center gap-2 text-xs font-extrabold px-3 py-1 rounded-full bg-yellow-400 text-black">
                 REGALO
               </div>
-              <div className="mt-3 text-2xl font-extrabold text-white">10 canciones GRATIS</div>
+              <div className="mt-3 text-2xl font-extrabold text-white">5 canciones GRATIS</div>
               <div className="mt-2 text-slate-200 text-sm leading-relaxed">
-                Tienes un regalo de bienvenida: <span className="font-bold text-white">10 canciones</span> (20 versiones A y B).
+                Tienes un regalo de bienvenida: <span className="font-bold text-white">5 canciones</span> (10 versiones A y B).
               </div>
 
               <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
