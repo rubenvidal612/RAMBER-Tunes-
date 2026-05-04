@@ -100,7 +100,17 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         balance = { error: 'No pude consultar saldo.' };
       }
 
-      setOfficeData({ ...out, balance });
+      let diag: any = null;
+      try {
+        const rd = await fetch('/api/admin/diag', { headers: { authorization: `Bearer ${token}` } });
+        const od = await rd.json().catch(() => ({}));
+        if (rd.ok) diag = od;
+        else diag = { error: od?.error || 'No pude diagnosticar.' };
+      } catch {
+        diag = { error: 'No pude diagnosticar.' };
+      }
+
+      setOfficeData({ ...out, balance, diag });
     } finally {
       setOfficeLoading(false);
     }
@@ -148,6 +158,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     const payments = officeData?.payments || {};
     const daily = Array.isArray(payments?.daily_7d) ? payments.daily_7d : [];
     const balance = officeData?.balance || {};
+    const diag = officeData?.diag || {};
     return (
       <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
         <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
@@ -277,6 +288,37 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             {balance?.provider_error ? (
               <div className="mt-3 text-[11px] text-slate-400">
                 Proveedor: {(balance?.provider_error || '').toString()}
+              </div>
+            ) : null}
+            {diag?.error ? (
+              <div className="mt-3 text-[11px] text-slate-400">
+                Diagnóstico: {(diag?.error || '').toString()}
+              </div>
+            ) : diag?.provider || diag?.env ? (
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                  <div className="text-xs text-slate-300 font-semibold">Variables (Vercel)</div>
+                  <div className="mt-2 space-y-1 text-[11px] text-slate-300">
+                    <div>SUPABASE_URL: {diag?.env?.has_supabase_url ? 'OK' : 'FALTA'}</div>
+                    <div>SUPABASE_ANON_KEY: {diag?.env?.has_supabase_anon ? 'OK' : 'FALTA'}</div>
+                    <div>SUPABASE_SERVICE_ROLE_KEY: {diag?.env?.has_supabase_service ? 'OK' : 'FALTA'}</div>
+                    <div>SUNO_API_BASE_URL: {diag?.env?.has_suno_base ? 'OK' : 'FALTA'}</div>
+                    <div>SUNO_API_KEY: {diag?.env?.has_suno_key ? 'OK' : 'FALTA'}</div>
+                  </div>
+                </div>
+                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                  <div className="text-xs text-slate-300 font-semibold">Prueba proveedor</div>
+                  <div className="mt-2 text-[11px] text-slate-300">
+                    <div>HTTP: {Number(diag?.provider?.status ?? 0).toString() || '—'}</div>
+                    <div>code: {diag?.provider?.code == null ? '—' : Number(diag?.provider?.code ?? 0).toString()}</div>
+                    <div>credits: {diag?.provider?.credits == null ? '—' : Number(diag?.provider?.credits ?? 0).toString()}</div>
+                  </div>
+                  {diag?.provider?.error ? (
+                    <div className="mt-2 text-[11px] text-red-200">{String(diag?.provider?.error || '').slice(0, 200)}</div>
+                  ) : diag?.provider?.text ? (
+                    <div className="mt-2 text-[11px] text-slate-400 break-words">{String(diag?.provider?.text || '').slice(0, 240)}</div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>

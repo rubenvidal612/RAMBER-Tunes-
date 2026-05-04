@@ -3101,6 +3101,39 @@ const adminHandler = (() => {
     });
   }
 
+  async function handleDiag(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const env = {
+      has_supabase_url: Boolean(process.env.SUPABASE_URL),
+      has_supabase_anon: Boolean(process.env.SUPABASE_ANON_KEY),
+      has_supabase_service: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      has_suno_base: Boolean(process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL),
+      has_suno_key: Boolean(process.env.SUNO_API_KEY || process.env.SUNO_KEY),
+    };
+
+    let provider: any = null;
+    try {
+      const r = await providerFetchJson("/api/v1/generate/credit", { method: "GET" });
+      const code = Number(r?.data?.code);
+      const raw = r?.data?.data?.credits ?? r?.data?.data;
+      const parsed = parseProviderCreditsValue(raw);
+      provider = {
+        ok: Boolean(r?.res?.ok),
+        status: Number(r?.res?.status || 0),
+        code: Number.isFinite(code) ? code : null,
+        credits: Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null,
+        text: String(r?.text || "").slice(0, 300),
+      };
+    } catch (e) {
+      provider = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+
+    return send(res, 200, { ok: true, env, provider });
+  }
+
   async function handleGrantCredits(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireAdmin(req);
@@ -3150,6 +3183,7 @@ const adminHandler = (() => {
     const a = action || fallback;
 
     if (a === "stats") return handleStats(req, res);
+    if (a === "diag") return handleDiag(req, res);
     if (a === "grant-credits") return handleGrantCredits(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
