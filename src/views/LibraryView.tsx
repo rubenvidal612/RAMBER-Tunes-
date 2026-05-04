@@ -459,6 +459,9 @@ function SongOptionsSheet({
   const [licenseContactEmail, setLicenseContactEmail] = useState('');
   const [licenseAccountEmail, setLicenseAccountEmail] = useState('');
   const [isLicenseBusy, setIsLicenseBusy] = useState(false);
+  const [licensePdfUrl, setLicensePdfUrl] = useState('');
+  const [licensePdfName, setLicensePdfName] = useState('');
+  const [licensePdfError, setLicensePdfError] = useState('');
   const [stemsItems, setStemsItems] = useState<Array<{ key: string; label: string; url: string; audioId?: string }>>([]);
   const [stemsMeta, setStemsMeta] = useState<{ taskId: string; type: 'separate_vocal' | 'split_stem' } | null>(null);
   const [personaName, setPersonaName] = useState('');
@@ -483,6 +486,10 @@ function SongOptionsSheet({
   }, [showCoverUrl]);
   useEffect(() => {
     if (!showLicense) return;
+    if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
+    setLicensePdfUrl('');
+    setLicensePdfName('');
+    setLicensePdfError('');
     if (!supabaseBrowser) return;
     supabaseBrowser.auth
       .getUser()
@@ -513,6 +520,13 @@ function SongOptionsSheet({
   };
 
   const sanitizeFileName = (s: string) => (s || '').toString().replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const closeLicenseModal = () => {
+    if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
+    setLicensePdfUrl('');
+    setLicensePdfName('');
+    setLicensePdfError('');
+    setShowLicense(false);
+  };
 
   const generateCommercialLicensePdf = async () => {
     const name = licenseLegalName.trim();
@@ -528,6 +542,11 @@ function SongOptionsSheet({
     }
     setIsLicenseBusy(true);
     try {
+      setLicensePdfError('');
+      if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
+      setLicensePdfUrl('');
+      setLicensePdfName('');
+
       const now = new Date();
       const dateStr = fmtLong(now);
       const songTitle = (song.title || 'Canción').toString().trim();
@@ -650,8 +669,18 @@ function SongOptionsSheet({
       doc.text('Villahermosa, Tabasco, México.', margin + 14, y + 72);
 
       const file = `Licencia_RAMBER_${sanitizeFileName(songTitle) || 'Cancion'}.pdf`;
-      doc.save(file);
-      setShowLicense(false);
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      setLicensePdfName(file);
+      setLicensePdfUrl(url);
+    } catch (e: any) {
+      const msg = 'No se pudo generar el PDF. Intenta de nuevo.';
+      setLicensePdfError(msg);
+      try {
+        console.error(e);
+      } catch {
+      }
+      alert(msg);
     } finally {
       setIsLicenseBusy(false);
     }
@@ -1854,7 +1883,7 @@ function SongOptionsSheet({
 
       {showLicense && (
         <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setShowLicense(false)} aria-label="Cerrar" />
+          <button className="absolute inset-0 w-full h-full" onClick={closeLicenseModal} aria-label="Cerrar" />
           <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
             <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
               <div className="min-w-0">
@@ -1862,7 +1891,7 @@ function SongOptionsSheet({
                 <div className="text-[11px] text-slate-400">Sistema de Certificación de Licencia Comercial</div>
               </div>
               <button
-                onClick={() => setShowLicense(false)}
+                onClick={closeLicenseModal}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
                 ✕
@@ -1870,54 +1899,103 @@ function SongOptionsSheet({
             </div>
 
             <div className="p-5 flex-1 overflow-y-auto">
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-slate-200 font-extrabold">
-                  <Shield className="w-5 h-5 text-slate-200" /> Generar Certificado de Licencia
-                </div>
-                <div className="mt-2 text-[11px] text-slate-400">
-                  Al generar este documento, confirmas que la letra es de tu autoría y que posees una suscripción activa para el uso comercial de esta obra.
-                </div>
-              </div>
+              {!licensePdfUrl ? (
+                <>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="flex items-center gap-2 text-slate-200 font-extrabold">
+                      <Shield className="w-5 h-5 text-slate-200" /> Generar Certificado de Licencia
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-400">
+                      Al generar este documento, confirmas que la letra es de tu autoría y que posees una suscripción activa para el uso comercial de esta obra.
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-500">
+                      El PDF se genera sin campos editables. Si alguien lo altera, deja de ser válido.
+                    </div>
+                  </div>
 
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[11px] text-slate-400 font-semibold">Nombre Legal Completo</div>
-                  <input
-                    value={licenseLegalName}
-                    onChange={(e) => setLicenseLegalName(e.target.value)}
-                    placeholder="Ej: Ruben Vidal Hernandez"
-                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                  />
-                </div>
-                <div>
-                  <div className="text-[11px] text-slate-400 font-semibold">Correo Electrónico de Contacto</div>
-                  <input
-                    value={licenseContactEmail}
-                    onChange={(e) => setLicenseContactEmail(e.target.value)}
-                    placeholder="correo@gmail.com"
-                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                  />
-                </div>
-              </div>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[11px] text-slate-400 font-semibold">Nombre Legal Completo</div>
+                      <input
+                        value={licenseLegalName}
+                        onChange={(e) => setLicenseLegalName(e.target.value)}
+                        placeholder="Ej: Ruben Vidal Hernandez"
+                        className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                      />
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-400 font-semibold">Correo Electrónico de Contacto</div>
+                      <input
+                        value={licenseContactEmail}
+                        onChange={(e) => setLicenseContactEmail(e.target.value)}
+                        placeholder="correo@gmail.com"
+                        className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                      />
+                    </div>
+                  </div>
 
-              <div className="mt-4 bg-black/20 border border-white/10 rounded-2xl p-4">
-                <div className="text-[11px] text-slate-400 font-semibold">Confirmación de Obra</div>
-                <div className="mt-2 text-sm text-slate-200 font-extrabold truncate">{(song.title || '').toString() || 'Pista sin título'}</div>
-                <div className="mt-1 text-[11px] text-slate-500 break-words">ID: {(song.id || '').toString()}</div>
-                {licenseAccountEmail ? (
-                  <div className="mt-2 text-[11px] text-slate-500 break-words">Cuenta de usuario: {licenseAccountEmail}</div>
-                ) : null}
-              </div>
+                  <div className="mt-4 bg-black/20 border border-white/10 rounded-2xl p-4">
+                    <div className="text-[11px] text-slate-400 font-semibold">Confirmación de Obra</div>
+                    <div className="mt-2 text-sm text-slate-200 font-extrabold truncate">{(song.title || '').toString() || 'Pista sin título'}</div>
+                    <div className="mt-1 text-[11px] text-slate-500 break-words">ID: {(song.id || '').toString()}</div>
+                    {licenseAccountEmail ? (
+                      <div className="mt-2 text-[11px] text-slate-500 break-words">Cuenta de usuario: {licenseAccountEmail}</div>
+                    ) : null}
+                  </div>
+
+                  {licensePdfError ? (
+                    <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                      {licensePdfError}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="text-slate-200 font-extrabold">Vista previa del certificado</div>
+                    <div className="mt-1 text-[11px] text-slate-500 break-words">{licensePdfName || 'Licencia_RAMBER.pdf'}</div>
+                  </div>
+                  <div className="mt-4 bg-black/20 border border-white/10 rounded-2xl overflow-hidden">
+                    <iframe title="Certificado RAMBER Tunes" src={licensePdfUrl} className="w-full h-[62vh] bg-black" />
+                  </div>
+                  <div className="mt-3 text-[11px] text-slate-500">
+                    Si no ves la vista previa, usa el botón de descargar.
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="p-5 border-t border-white/10 shrink-0">
-              <button
-                onClick={() => generateCommercialLicensePdf().catch(() => {})}
-                disabled={isLicenseBusy}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {isLicenseBusy ? 'Generando…' : 'Confirmar y Generar'}
-              </button>
+              {!licensePdfUrl ? (
+                <button
+                  onClick={() => generateCommercialLicensePdf()}
+                  disabled={isLicenseBusy}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {isLicenseBusy ? 'Generando…' : 'Confirmar y Generar'}
+                </button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <a
+                    href={licensePdfUrl}
+                    download={licensePdfName || undefined}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors flex items-center justify-center"
+                  >
+                    Descargar PDF
+                  </a>
+                  <button
+                    onClick={() => {
+                      if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
+                      setLicensePdfUrl('');
+                      setLicensePdfName('');
+                      setLicensePdfError('');
+                    }}
+                    className="w-[140px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[48px] rounded-full font-extrabold text-sm transition-colors"
+                  >
+                    Editar
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
