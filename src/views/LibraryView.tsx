@@ -455,6 +455,7 @@ function SongOptionsSheet({
   const [mp4Author, setMp4Author] = useState('');
   const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
+  const [showLicenseBlocked, setShowLicenseBlocked] = useState(false);
   const [licenseLegalName, setLicenseLegalName] = useState('');
   const [licenseContactEmail, setLicenseContactEmail] = useState('');
   const [licenseAccountEmail, setLicenseAccountEmail] = useState('');
@@ -526,6 +527,36 @@ function SongOptionsSheet({
     setLicensePdfName('');
     setLicensePdfError('');
     setShowLicense(false);
+  };
+
+  const ensureCommercialPlanOrWarn = async () => {
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return false;
+      }
+      const r = await fetch('/api/account/balance', {
+        method: 'GET',
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude verificar tu plan.');
+        return false;
+      }
+      const isAdmin = Boolean(out?.is_admin);
+      const planKey = String(out?.plan_key || '').toLowerCase();
+      const ok = isAdmin || planKey === 'inicio' || planKey === 'productor';
+      if (!ok) {
+        setShowLicenseBlocked(true);
+        return false;
+      }
+      return true;
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const generateCommercialLicensePdf = async () => {
@@ -1685,7 +1716,7 @@ function SongOptionsSheet({
           {!isDeleted && (
             <button
               className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
-              onClick={() => setShowLicense(true)}
+              onClick={() => ensureCommercialPlanOrWarn().then((ok) => ok && setShowLicense(true))}
               disabled={isBusy}
             >
               <div className="flex items-center gap-3">
@@ -1875,6 +1906,57 @@ function SongOptionsSheet({
             <div className="p-4">
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
                 {song.lyrics ? song.lyrics : 'Esta canción no tiene letra guardada.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLicenseBlocked && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowLicenseBlocked(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold truncate">Licencia Comercial</div>
+                <div className="text-[11px] text-slate-400">Acceso disponible solo con plan</div>
+              </div>
+              <button
+                onClick={() => setShowLicenseBlocked(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="flex items-center gap-2 text-slate-200 font-extrabold">
+                  <Shield className="w-5 h-5 text-slate-200" /> Necesitas un plan activo
+                </div>
+                <div className="mt-2 text-sm text-slate-300">
+                  Para generar el certificado de licencia comercial, necesitas tener un plan activo (Inicio o Productor).
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">
+                  Cuando compres tu plan, vuelve a intentar y podrás descargar tu certificado.
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowLicenseBlocked(false);
+                    onClose();
+                    window.dispatchEvent(new Event('ramber:openPricing'));
+                  }}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors"
+                >
+                  Ver planes
+                </button>
+                <button
+                  onClick={() => setShowLicenseBlocked(false)}
+                  className="w-[140px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[46px] rounded-full font-extrabold text-sm transition-colors"
+                >
+                  Cerrar
+                </button>
               </div>
             </div>
           </div>

@@ -295,6 +295,15 @@ export default function App() {
   };
 
   useEffect(() => {
+    const onOpenPricing = () => {
+      setPricingAutoClaimFree(false);
+      setIsPricingOpen(true);
+    };
+    window.addEventListener('ramber:openPricing', onOpenPricing as any);
+    return () => window.removeEventListener('ramber:openPricing', onOpenPricing as any);
+  }, []);
+
+  useEffect(() => {
     const msg = (creditsError || '').toString();
     if (!msg) {
       lastCreditsErrorRef.current = '';
