@@ -15,7 +15,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, ChevronDown, ChevronUp, Download, Music2, Rocket, Shield, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Download, Music2, Rocket, Shield, Sparkles, Wand2 } from 'lucide-react';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -267,7 +267,6 @@ export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [pricingAutoClaimFree, setPricingAutoClaimFree] = useState(false);
   const [isBalanceOpen, setIsBalanceOpen] = useState(false);
-  const [isBalanceBreakdownOpen, setIsBalanceBreakdownOpen] = useState(false);
   const [balanceData, setBalanceData] = useState<any>(null);
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string>('');
@@ -436,7 +435,6 @@ export default function App() {
 
   useEffect(() => {
     if (!isBalanceOpen) return;
-    setIsBalanceBreakdownOpen(false);
     refreshBalance().catch(() => {});
   }, [isBalanceOpen]);
 
@@ -1181,47 +1179,51 @@ export default function App() {
                   {balanceError}
                 </div>
               )}
-              <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsBalanceBreakdownOpen((v) => !v)}
-                  className="w-full px-4 py-4 flex items-center justify-between hover:bg-white/5 transition-colors"
-                >
-                  <div className="min-w-0 text-left">
-                    <div className="text-slate-200 font-extrabold">Te alcanza para…</div>
-                    <div className="text-[11px] text-slate-400 mt-1 truncate">
-                      {Number(balanceData?.counts?.songs ?? 0)} canciones · {Number(balanceData?.counts?.music_video ?? 0)} videos · {Number(balanceData?.counts?.voice_separate ?? 0)} quitar voz
-                    </div>
-                  </div>
-                  <div className="shrink-0 w-10 h-10 rounded-full bg-black/20 border border-white/10 flex items-center justify-center text-slate-200">
-                    {isBalanceBreakdownOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                  </div>
-                </button>
-                {isBalanceBreakdownOpen && (
-                  <div className="px-4 pb-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {(() => {
-                        const counts = balanceData?.counts || {};
-                        const items: Array<{ k: string; label: string; costText: string }> = [
-                          { k: 'songs', label: 'Canciones (A/B)', costText: `${CREDIT_COSTS.generate_music} cr c/u` },
-                          { k: 'music_video', label: 'Videos', costText: `${CREDIT_COSTS.music_video} cr c/u` },
-                          { k: 'voice_separate', label: 'Quitar voz (Karaoke)', costText: `${CREDIT_COSTS.separate_vocal} cr c/u` },
-                          { k: 'split_stem', label: 'Instrumentos y voces (Stems)', costText: `${CREDIT_COSTS.split_stem} cr c/u` },
-                          { k: 'wav', label: 'Convertir a WAV', costText: `${CREDIT_COSTS.wav} cr c/u` },
-                          { k: 'lyrics', label: 'Generar letra', costText: `${CREDIT_COSTS.lyrics} cr c/u` },
-                        ];
-                        return items.map((it) => (
-                          <div key={it.k} className="flex items-center justify-between bg-black/20 border border-white/10 rounded-xl px-3 py-2">
-                            <div className="text-xs text-slate-200 font-semibold">{it.label}</div>
-                            <div className="text-xs text-white font-extrabold">
-                              {Number((counts as any)?.[it.k] ?? 0)} <span className="text-slate-400 font-semibold">· {it.costText}</span>
-                            </div>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </div>
-                )}
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="bg-gradient-to-br from-emerald-500/15 to-transparent border border-emerald-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Canciones (A/B)</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.songs ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.generate_music} cr c/u • 2 versiones</div>
+                </div>
+                <div className="bg-gradient-to-br from-rose-500/15 to-transparent border border-rose-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Quitar voz</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.voice_separate ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.separate_vocal} cr c/u</div>
+                </div>
+                <div className="bg-gradient-to-br from-cyan-500/15 to-transparent border border-cyan-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Videos</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.music_video ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.music_video} cr c/u</div>
+                </div>
+                <div className="bg-gradient-to-br from-violet-500/15 to-transparent border border-violet-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">STEMS</div>
+                  <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.split_stem ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.split_stem} cr c/u</div>
+                </div>
+              </div>
+              <div className="mt-3 bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-slate-200 text-sm font-extrabold">Más acciones</div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(() => {
+                    const counts = balanceData?.counts || {};
+                    const items: Array<{ k: string; label: string; cost: number }> = [
+                      { k: 'sounds', label: 'Sounds', cost: CREDIT_COSTS.sounds },
+                      { k: 'replace_section', label: 'Reemplazar sección', cost: CREDIT_COSTS.replace_section },
+                      { k: 'wav', label: 'Convertir a WAV', cost: CREDIT_COSTS.wav },
+                      { k: 'lyrics', label: 'Generar letra', cost: CREDIT_COSTS.lyrics },
+                      { k: 'timestamped_lyrics', label: 'Letra con tiempo', cost: CREDIT_COSTS.timestamped_lyrics },
+                      { k: 'boost_style', label: 'Boost estilo', cost: CREDIT_COSTS.boost_style },
+                    ];
+                    return items.map((it) => (
+                      <div key={it.k} className="flex items-center justify-between bg-black/20 border border-white/10 rounded-xl px-3 py-2">
+                        <div className="text-xs text-slate-200 font-semibold">{it.label}</div>
+                        <div className="text-xs text-white font-extrabold">
+                          {Number((counts as any)?.[it.k] ?? 0)} <span className="text-slate-400 font-semibold">· {it.cost} cr</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
               </div>
               <div className="mt-4 flex items-center justify-between gap-3">
                 <div className="text-slate-400 text-sm">Se descuenta al usar cada opción.</div>
