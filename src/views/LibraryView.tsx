@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText, Video } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText, Video, BadgeCheck, Shield } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { jsPDF } from 'jspdf';
 
 interface LibraryViewProps {
   canciones: SongItem[];
@@ -453,6 +454,11 @@ function SongOptionsSheet({
   const [showMp4, setShowMp4] = useState(false);
   const [mp4Author, setMp4Author] = useState('');
   const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
+  const [showLicense, setShowLicense] = useState(false);
+  const [licenseLegalName, setLicenseLegalName] = useState('');
+  const [licenseContactEmail, setLicenseContactEmail] = useState('');
+  const [licenseAccountEmail, setLicenseAccountEmail] = useState('');
+  const [isLicenseBusy, setIsLicenseBusy] = useState(false);
   const [stemsItems, setStemsItems] = useState<Array<{ key: string; label: string; url: string; audioId?: string }>>([]);
   const [stemsMeta, setStemsMeta] = useState<{ taskId: string; type: 'separate_vocal' | 'split_stem' } | null>(null);
   const [personaName, setPersonaName] = useState('');
@@ -475,11 +481,180 @@ function SongOptionsSheet({
     if (!showCoverUrl) return;
     setCoverUrlInput('');
   }, [showCoverUrl]);
+  useEffect(() => {
+    if (!showLicense) return;
+    if (!supabaseBrowser) return;
+    supabaseBrowser.auth
+      .getUser()
+      .then(({ data }) => {
+        const user = data?.user;
+        const email = (user?.email || '').toString().trim();
+        const meta: any = user?.user_metadata || {};
+        const name = (meta?.full_name || meta?.name || meta?.legal_name || '').toString().trim();
+        setLicenseAccountEmail(email);
+        setLicenseContactEmail((prev) => (prev ? prev : email));
+        setLicenseLegalName((prev) => (prev ? prev : name));
+      })
+      .catch(() => {});
+  }, [showLicense]);
   const fmt = (iso?: string) => {
     if (!iso) return '';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+  };
+
+  const fmtLong = (d: Date) => {
+    try {
+      return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: '2-digit' });
+    } catch {
+      return d.toISOString().slice(0, 10);
+    }
+  };
+
+  const sanitizeFileName = (s: string) => (s || '').toString().replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
+
+  const generateCommercialLicensePdf = async () => {
+    const name = licenseLegalName.trim();
+    const contactEmail = licenseContactEmail.trim();
+    const accountEmail = (licenseAccountEmail || '').trim();
+    if (!name) {
+      alert('Pon tu Nombre Legal Completo.');
+      return;
+    }
+    if (!contactEmail) {
+      alert('Pon tu Correo Electrónico de Contacto.');
+      return;
+    }
+    setIsLicenseBusy(true);
+    try {
+      const now = new Date();
+      const dateStr = fmtLong(now);
+      const songTitle = (song.title || 'Canción').toString().trim();
+      const songId = (song.id || '').toString().trim();
+
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 44;
+      const boxW = pageW - margin * 2;
+      let y = 64;
+
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(1);
+      doc.rect(margin, margin, boxW, pageH - margin * 2);
+
+      doc.setFillColor(250, 204, 21);
+      doc.roundedRect(margin + 14, margin + 14, 40, 40, 10, 10, 'F');
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text('R', margin + 34, margin + 44, { align: 'center' });
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('RAMBER Tunes', margin + 64, margin + 36);
+      doc.setFontSize(10);
+      doc.setTextColor(160, 160, 160);
+      doc.text('Commercial License Certificate', margin + 64, margin + 52);
+
+      y = margin + 78;
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('CERTIFICADO DE LICENCIA COMERCIAL - RAMBER TUNES AI MUSIC', margin + 14, y);
+
+      y += 18;
+      doc.setDrawColor(80, 80, 80);
+      doc.setLineWidth(0.5);
+      doc.line(margin + 14, y, margin + 14 + boxW - 28, y);
+
+      y += 20;
+      const kv = (label: string, value: string) => {
+        doc.setTextColor(180, 180, 180);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(label, margin + 14, y);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        const lines = doc.splitTextToSize(value || '—', boxW - 28);
+        doc.text(lines, margin + 170, y);
+        y += 16 + (lines.length - 1) * 12;
+      };
+
+      kv('Nombre Legal:', name);
+      kv('Email contacto:', contactEmail);
+      kv('Cuenta usuario:', accountEmail || contactEmail);
+      kv('Título canción:', songTitle);
+      kv('ID único obra:', songId || '—');
+      kv('Fecha emisión:', dateStr);
+
+      y += 6;
+      const paragraphs = [
+        'I. CONCESIÓN DE LICENCIA',
+        'RAMBER Tunes AI Music, en su calidad de Licenciante, otorga al Licenciatario arriba mencionado una licencia comercial mundial, perpetua, no exclusiva e intransferible para utilizar el Contenido Generado (Audio) descrito en este documento. Esta licencia permite la reproducción, distribución, streaming, sincronización y monetización de la obra en todas las plataformas digitales y medios físicos.',
+        'II. PROPIEDAD Y DERECHOS DE AUTOR',
+        'Letras: El Licenciatario conserva el 100% de la propiedad y los derechos de autor de cualquier letra original proporcionada para la creación de la obra.',
+        'Composición de Audio: La composición musical y el archivo de audio generado se otorgan bajo licencia comercial ilimitada, respaldada por la suscripción profesional de RAMBER Tunes ante sus proveedores tecnológicos (Suno AI).',
+        'III. VALIDEZ Y PERMANENCIA',
+        'Esta licencia es legalmente vinculante siempre que el Licenciatario haya mantenido una suscripción activa (Plan Creador, Pro o similar) en la plataforma RAMBER Tunes al momento de la creación de la obra. Los derechos comerciales aquí otorgados son permanentes y no expiran aunque el usuario decida cancelar su suscripción en el futuro.',
+        'IV. LIMITACIONES',
+        'El Licenciatario reconoce que el contenido es generado por Inteligencia Artificial y que RAMBER Tunes no garantiza la exclusividad absoluta de las secuencias melódicas ante registros de propiedad intelectual de terceros, aunque se otorga el derecho de uso comercial total sobre el archivo específico generado.',
+        'V. FIRMA DIGITAL',
+        'Este documento ha sido generado electrónicamente y es válido sin firma manuscrita. Los registros de esta transacción y la validez de la membresía están archivados en los sistemas digitales de RAMBER Tunes.',
+      ];
+
+      const writePara = (text: string, bold?: boolean) => {
+        const isHeading = Boolean(bold);
+        doc.setFont('helvetica', isHeading ? 'bold' : 'normal');
+        doc.setFontSize(isHeading ? 11 : 10.5);
+        doc.setTextColor(isHeading ? 255 : 220, isHeading ? 255 : 220, isHeading ? 255 : 220);
+        const lines = doc.splitTextToSize(text, boxW - 28);
+        for (const line of lines) {
+          if (y > pageH - margin - 70) {
+            doc.addPage();
+            doc.setDrawColor(200, 200, 200);
+            doc.setLineWidth(1);
+            doc.rect(margin, margin, boxW, pageH - margin * 2);
+            y = margin + 40;
+          }
+          doc.text(line, margin + 14, y);
+          y += isHeading ? 14 : 13;
+        }
+        y += 6;
+      };
+
+      for (const p of paragraphs) {
+        const isHeading = /^[IVX]+\.\s/.test(p);
+        writePara(p, isHeading);
+      }
+
+      if (y > pageH - margin - 90) {
+        doc.addPage();
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(1);
+        doc.rect(margin, margin, boxW, pageH - margin * 2);
+        y = margin + 60;
+      }
+
+      doc.setDrawColor(120, 120, 120);
+      doc.setLineWidth(0.8);
+      doc.line(margin + 14, y + 24, margin + 250, y + 24);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(200, 200, 200);
+      doc.text('Authorized by RAMBER Tunes Digital Signature.', margin + 14, y + 40);
+      doc.text('Documento generado electrónicamente por RAMBER Tunes AI Music', margin + 14, y + 56);
+      doc.text('Villahermosa, Tabasco, México.', margin + 14, y + 72);
+
+      const file = `Licencia_RAMBER_${sanitizeFileName(songTitle) || 'Cancion'}.pdf`;
+      doc.save(file);
+      setShowLicense(false);
+    } finally {
+      setIsLicenseBusy(false);
+    }
   };
 
   const share = async () => {
@@ -1478,6 +1653,18 @@ function SongOptionsSheet({
             >
               <FileText className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Letra</span>
             </button>
+          {!isDeleted && (
+            <button
+              className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+              onClick={() => setShowLicense(true)}
+              disabled={isBusy}
+            >
+              <div className="flex items-center gap-3">
+                <BadgeCheck className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Licencia Comercial</span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
+            </button>
+          )}
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
@@ -1660,6 +1847,77 @@ function SongOptionsSheet({
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
                 {song.lyrics ? song.lyrics : 'Esta canción no tiene letra guardada.'}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLicense && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowLicense(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold truncate">Certificación de Derechos Comerciales</div>
+                <div className="text-[11px] text-slate-400">Sistema de Certificación de Licencia Comercial</div>
+              </div>
+              <button
+                onClick={() => setShowLicense(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 flex-1 overflow-y-auto">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="flex items-center gap-2 text-slate-200 font-extrabold">
+                  <Shield className="w-5 h-5 text-slate-200" /> Generar Certificado de Licencia
+                </div>
+                <div className="mt-2 text-[11px] text-slate-400">
+                  Al generar este documento, confirmas que la letra es de tu autoría y que posees una suscripción activa para el uso comercial de esta obra.
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[11px] text-slate-400 font-semibold">Nombre Legal Completo</div>
+                  <input
+                    value={licenseLegalName}
+                    onChange={(e) => setLicenseLegalName(e.target.value)}
+                    placeholder="Ej: Ruben Vidal Hernandez"
+                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400 font-semibold">Correo Electrónico de Contacto</div>
+                  <input
+                    value={licenseContactEmail}
+                    onChange={(e) => setLicenseContactEmail(e.target.value)}
+                    placeholder="correo@gmail.com"
+                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 bg-black/20 border border-white/10 rounded-2xl p-4">
+                <div className="text-[11px] text-slate-400 font-semibold">Confirmación de Obra</div>
+                <div className="mt-2 text-sm text-slate-200 font-extrabold truncate">{(song.title || '').toString() || 'Pista sin título'}</div>
+                <div className="mt-1 text-[11px] text-slate-500 break-words">ID: {(song.id || '').toString()}</div>
+                {licenseAccountEmail ? (
+                  <div className="mt-2 text-[11px] text-slate-500 break-words">Cuenta de usuario: {licenseAccountEmail}</div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-white/10 shrink-0">
+              <button
+                onClick={() => generateCommercialLicensePdf().catch(() => {})}
+                disabled={isLicenseBusy}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {isLicenseBusy ? 'Generando…' : 'Confirmar y Generar'}
+              </button>
             </div>
           </div>
         </div>
