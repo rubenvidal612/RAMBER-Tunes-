@@ -36,7 +36,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${token}` } }).catch(() => null as any);
         if (!r?.ok) return;
         const out = await r.json().catch(() => ({}));
-        setIsAdmin(Boolean(out?.is_admin));
+        setIsAdmin((prev) => prev || Boolean(out?.is_admin));
       })
       .catch(() => {});
   }, []);
