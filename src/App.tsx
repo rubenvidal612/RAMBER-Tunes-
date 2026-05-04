@@ -671,7 +671,7 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-white leading-tight">RAMBER Tunes</div>
-              <div className="text-xs text-slate-200/90 leading-tight">Ponla en tu App en tu Celular</div>
+              <div className="text-xs text-slate-200/90 leading-tight">Descarga tu App en tu Celular</div>
             </div>
             <button
               onClick={onInstallClick}

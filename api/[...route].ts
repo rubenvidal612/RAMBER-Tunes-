@@ -2560,19 +2560,59 @@ const balanceHandler = (() => {
       profile = r2.data ?? null;
     }
 
-    let credits = round2(creditsFromProfile(profile));
-    if (is_admin && (!Number.isFinite(credits) || credits <= 0)) {
+    const internal_credits = round2(creditsFromProfile(profile));
+    let provider_credits: number | null = null;
+    let provider_error = "";
+
+    if (is_admin) {
+      try {
+        const paths = [
+          "/api/v1/generate/credit",
+          "/api/v1/get-credits",
+          "/api/v1/generate/credit",
+          "/api/v1/suno/get-credits",
+          "/api/v1/suno/generate/credit",
+          "/api/v1/suno/credits",
+          "/api/v1/suno/credit",
+        ];
+        let last: any = null;
+        for (const p of paths) {
+          const r = await sunoFetchJson(p);
+          last = r;
+          if (r.res.status !== 404) break;
+        }
+        const r = last;
+        if (r?.res?.ok) {
+          const code = Number(r.data?.code);
+          if (!code || code === 200) {
+            const raw = r.data?.data?.credits ?? r.data?.data;
+            const parsed = parseCreditsValue(raw);
+            const v = round2(Number.isFinite(parsed) ? parsed : 0);
+            if (Number.isFinite(v) && v >= 0) provider_credits = v;
+          } else {
+            provider_error = "Error del proveedor";
+          }
+        } else {
+          provider_error = "No pude consultar créditos del proveedor";
+        }
+      } catch (e) {
+        provider_error = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    let credits = is_admin && typeof provider_credits === "number" ? provider_credits : internal_credits;
+    if (is_admin && (typeof provider_credits !== "number" || !Number.isFinite(credits) || credits <= 0)) {
       const adminDefault = 5000;
       try {
         const col = pickWritableCreditsColumn(profile);
         if (col) {
           await admin.from("profiles").update({ [col]: adminDefault }).eq("id", user.id);
-          credits = adminDefault;
         }
       } catch {
-        credits = adminDefault;
       }
+      credits = adminDefault;
     }
+
     const counts = toCounts(credits);
     return send(res, 200, {
       credits,
@@ -2584,7 +2624,10 @@ const balanceHandler = (() => {
       plan_key,
       mp4_watermark_disabled: hasProductor,
       is_admin,
-      source: "local",
+      internal_credits,
+      provider_credits,
+      provider_error: provider_error || null,
+      source: is_admin && typeof provider_credits === "number" ? "provider_admin" : "local",
     });
   };
 })();
