@@ -1932,11 +1932,6 @@ function SongOptionsSheet({
                 <ListMusic className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Mover a carpeta</span>
               </button>
             )}
-            <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={generateCoverImage} disabled={isBusy || isDeleted}>
-              <div className="flex items-center gap-3 text-slate-200 font-semibold">
-                <ImageIcon className="w-5 h-5 text-slate-300" /> Portada
-              </div>
-            </button>
             {!isDeleted && (
               <>
                 <button
@@ -1970,9 +1965,6 @@ function SongOptionsSheet({
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Extender: Próximamente')}>
               <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Extender</span>
             </button>
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reutilizar: Próximamente')}>
-              <Repeat2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reutilizar</span>
-            </button>
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Próximamente')}>
               <Sparkle className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Usar como inspiración</span>
               <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">NUEVO</span>
@@ -1988,16 +1980,6 @@ function SongOptionsSheet({
             >
               <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Persona</span>
             </button>
-          </div>
-
-          <div className="glass-card rounded-2xl overflow-hidden mt-4">
-            <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors"
-              onClick={() => setShowLyrics(true)}
-              disabled={isBusy}
-            >
-              <FileText className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Letra</span>
-            </button>
           {!isDeleted && (
             <button
               className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
@@ -2010,6 +1992,16 @@ function SongOptionsSheet({
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
             </button>
           )}
+          </div>
+
+          <div className="glass-card rounded-2xl overflow-hidden mt-4">
+            <button
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors"
+              onClick={() => setShowLyrics(true)}
+              disabled={isBusy}
+            >
+              <FileText className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Letra</span>
+            </button>
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
