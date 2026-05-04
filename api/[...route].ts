@@ -3284,6 +3284,7 @@ const aiHandler = (() => {
 
     const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
     const baseModels = [
+      "gemini-3-flash-preview",
       "gemini-2.5-flash",
       "gemini-2.5-flash-lite",
       "gemini-flash-latest",
@@ -3301,7 +3302,7 @@ const aiHandler = (() => {
           try {
             r = await ai.models.generateContent({
               model,
-              config: { systemInstruction },
+              systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
               contents: [
                 {
                   role: "user",
