@@ -590,39 +590,29 @@ function SongOptionsSheet({
       const boxW = pageW - margin * 2;
       let y = 64;
 
-      const gold = { r: 180, g: 120, b: 10 };
+      const accent = { r: 18, g: 74, b: 160 };
       const ink = { r: 0, g: 0, b: 0 };
       const muted = { r: 55, g: 55, b: 55 };
-      const border = { r: 175, g: 175, b: 175 };
+      const border = { r: 205, g: 205, b: 205 };
 
-      doc.setDrawColor(border.r, border.g, border.b);
-      doc.setLineWidth(1);
-      doc.rect(margin, margin, boxW, pageH - margin * 2);
-
-      doc.setFillColor(gold.r, gold.g, gold.b);
-      doc.roundedRect(margin + 14, margin + 14, 40, 40, 10, 10, 'F');
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(accent.r, accent.g, accent.b);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text('R', margin + 34, margin + 44, { align: 'center' });
-
-      doc.setTextColor(ink.r, ink.g, ink.b);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text('RAMBER Tunes', margin + 64, margin + 36);
+      doc.setFontSize(18);
+      doc.text('RAMBER Tunes', margin + 14, margin + 32);
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(muted.r, muted.g, muted.b);
-      doc.text('Commercial License Certificate', margin + 64, margin + 52);
+      doc.text('Commercial License Certificate', margin + 14, margin + 48);
 
-      y = margin + 86;
-      doc.setTextColor(gold.r, gold.g, gold.b);
+      y = margin + 84;
+      doc.setTextColor(accent.r, accent.g, accent.b);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
+      doc.setFontSize(13.5);
       doc.text('CERTIFICADO DE LICENCIA COMERCIAL - RAMBER TUNES AI MUSIC', margin + 14, y);
 
-      y += 14;
+      y += 12;
       doc.setDrawColor(border.r, border.g, border.b);
-      doc.setLineWidth(1);
+      doc.setLineWidth(0.8);
       doc.line(margin + 14, y, margin + 14 + boxW - 28, y);
 
       y += 20;
@@ -666,14 +656,11 @@ function SongOptionsSheet({
         doc.setFont('helvetica', isHeading ? 'bold' : 'normal');
         doc.setFontSize(isHeading ? 11.5 : 10.5);
         doc.setTextColor(isHeading ? ink.r : ink.r, isHeading ? ink.g : ink.g, isHeading ? ink.b : ink.b);
-        if (isHeading) doc.setTextColor(gold.r, gold.g, gold.b);
+        if (isHeading) doc.setTextColor(accent.r, accent.g, accent.b);
         const lines = doc.splitTextToSize(text, boxW - 28);
         for (const line of lines) {
           if (y > pageH - margin - 70) {
             doc.addPage();
-            doc.setDrawColor(border.r, border.g, border.b);
-            doc.setLineWidth(1);
-            doc.rect(margin, margin, boxW, pageH - margin * 2);
             y = margin + 40;
           }
           doc.text(line, margin + 14, y);
@@ -689,19 +676,16 @@ function SongOptionsSheet({
 
       if (y > pageH - margin - 170) {
         doc.addPage();
-        doc.setDrawColor(border.r, border.g, border.b);
-        doc.setLineWidth(1);
-        doc.rect(margin, margin, boxW, pageH - margin * 2);
         y = margin + 54;
       }
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
-      doc.setTextColor(gold.r, gold.g, gold.b);
+      doc.setTextColor(accent.r, accent.g, accent.b);
       doc.text('VII. Firma y Aceptación', margin + 14, y);
       y += 14;
       doc.setDrawColor(border.r, border.g, border.b);
-      doc.setLineWidth(1);
+      doc.setLineWidth(0.8);
       doc.line(margin + 14, y, margin + 14 + boxW - 28, y);
       y += 16;
 
@@ -736,46 +720,42 @@ function SongOptionsSheet({
       doc.line(rightX, signLineY, tableX + tableW - 12, signLineY);
 
       const drawSignature = (x0: number, y0: number) => {
-        doc.setDrawColor(40, 40, 40);
-        doc.setLineWidth(1.4);
+        const blue = { r: 18, g: 74, b: 160 };
+        doc.setDrawColor(blue.r, blue.g, blue.b);
+        doc.setTextColor(blue.r, blue.g, blue.b);
+
+        doc.setLineWidth(2.2);
+        doc.ellipse(x0 + 20, y0 - 6, 18, 22, 'S');
+        doc.line(x0 + 28, y0 - 30, x0 + 30, y0 + 24);
+        doc.setLineWidth(1.7);
         doc.lines(
           [
-            [16, -12],
+            [12, -14],
             [18, 18],
-            [22, -20],
-            [26, 26],
-            [22, -16],
-            [30, 10],
-            [26, -8],
-            [34, 14],
-            [24, -10],
-            [30, 6],
-          ],
-          x0,
-          y0,
-          [1, 1],
-          'S',
-          false
-        );
-        doc.setLineWidth(1.1);
-        doc.lines(
-          [
-            [24, -6],
+            [20, -16],
+            [18, 20],
+            [18, -10],
             [18, 8],
-            [24, -10],
-            [22, 12],
-            [26, -8],
           ],
-          x0 + 130,
-          y0 - 6,
+          x0 + 34,
+          y0 - 2,
           [1, 1],
           'S',
           false
         );
+
         doc.setFont('times', 'italic');
-        doc.setFontSize(16);
-        doc.setTextColor(30, 30, 30);
-        doc.text('RAMBER', x0 + 214, y0 + 6);
+        doc.setFontSize(34);
+        doc.text('AMBER', x0 + 60, y0 + 10, { angle: -7 });
+        doc.setFontSize(32);
+        doc.text('Tunes', x0 + 200, y0 + 10, { angle: -7 });
+
+        doc.setLineWidth(2.4);
+        doc.line(x0 + 222, y0 - 22, x0 + 346, y0 - 30);
+        doc.setLineWidth(1.6);
+        doc.line(x0 + 270, y0 - 28, x0 + 266, y0 + 18);
+        doc.setLineWidth(2.0);
+        doc.line(x0 + 262, y0 + 18, x0 + 356, y0 + 10);
       };
 
       drawSignature(leftX + 6, y + 72);
