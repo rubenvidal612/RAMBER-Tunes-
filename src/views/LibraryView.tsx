@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 
@@ -27,6 +27,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  type Folder = { id: string; name: string; createdAt: number };
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [songFolderId, setSongFolderId] = useState<Record<string, string>>({});
+  const [activeFolderId, setActiveFolderId] = useState('');
+  const [moveFolderSong, setMoveFolderSong] = useState<SongItem | null>(null);
 
   useEffect(() => {
     const pendingListKey = 'ramber.pendingSunoTasks_v1';
@@ -71,6 +81,60 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('ramber.libraryFilters_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') {
+        const from = typeof parsed.from === 'string' ? parsed.from : '';
+        const to = typeof parsed.to === 'string' ? parsed.to : '';
+        const s = typeof parsed.sort === 'string' ? parsed.sort : '';
+        setFilterFrom(from);
+        setFilterTo(to);
+        setSortOrder(s === 'oldest' ? 'oldest' : 'newest');
+      }
+    } catch {
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ramber.libraryFilters_v1', JSON.stringify({ from: filterFrom, to: filterTo, sort: sortOrder }));
+    } catch {
+    }
+  }, [filterFrom, filterTo, sortOrder]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('ramber.libraryFolders_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed?.folders) ? parsed.folders : [];
+      const mapped = list
+        .map((x: any) => ({
+          id: typeof x?.id === 'string' ? x.id : '',
+          name: typeof x?.name === 'string' ? x.name : '',
+          createdAt: Number.isFinite(Number(x?.createdAt)) ? Number(x.createdAt) : Date.now(),
+        }))
+        .filter((x: any) => x.id && x.name);
+      const map = parsed?.songFolderId && typeof parsed.songFolderId === 'object' ? parsed.songFolderId : {};
+      const safeMap: Record<string, string> = {};
+      for (const k of Object.keys(map || {})) {
+        const v = (map as any)[k];
+        if (typeof v === 'string') safeMap[String(k)] = v;
+      }
+      setFolders(mapped);
+      setSongFolderId(safeMap);
+    } catch {
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ramber.libraryFolders_v1', JSON.stringify({ folders, songFolderId }));
+    } catch {
+    }
+  }, [folders, songFolderId]);
+
   const expectedTracksForKind = (kind: string) => {
     const k = (kind || '').toLowerCase();
     if (k === 'generate') return 2;
@@ -81,7 +145,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     { id: 'canciones', label: 'Canciones' },
     { id: 'video', label: 'Video' },
     { id: 'vibes', label: 'Vibes' },
-    { id: 'listas', label: 'Listas' },
+    { id: 'listas', label: 'Carpetas' },
   ];
 
   return (
@@ -96,7 +160,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors">
               Publicado
             </button>
-            <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2">
+            <button
+              onClick={() => setIsFiltersOpen(true)}
+              className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
+            >
               <Settings2 className="w-4 h-4" /> Filtros
             </button>
             <button
@@ -264,13 +331,37 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             )}
 
             {(() => {
-              const list = showTrash ? (cancionesEliminadas || []) : canciones;
+              const baseList = showTrash ? (cancionesEliminadas || []) : canciones;
               const fmt = (iso?: string) => {
                 if (!iso) return '';
                 const d = new Date(iso);
                 if (Number.isNaN(d.getTime())) return '';
                 return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
               };
+              const parseMs = (iso?: string) => {
+                if (!iso) return null;
+                const d = new Date(iso);
+                const ms = d.getTime();
+                return Number.isNaN(ms) ? null : ms;
+              };
+              const fromMs = filterFrom ? new Date(`${filterFrom}T00:00:00`).getTime() : null;
+              const toMs = filterTo ? new Date(`${filterTo}T23:59:59.999`).getTime() : null;
+              const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
+              const list = baseList
+                .filter((song) => {
+                  if (!filterFrom && !filterTo) return true;
+                  const ms = parseMs(song.createdAt);
+                  if (fromMs !== null && (ms === null || ms < fromMs)) return false;
+                  if (toMs !== null && (ms === null || ms > toMs)) return false;
+                  return true;
+                })
+                .slice()
+                .sort((a, b) => {
+                  const am = parseMs(a.createdAt) ?? 0;
+                  const bm = parseMs(b.createdAt) ?? 0;
+                  if (am !== bm) return sortOrder === 'oldest' ? am - bm : bm - am;
+                  return String(a.title || '').localeCompare(String(b.title || ''), 'es');
+                });
 
               if (list.length === 0) {
                 return (
@@ -329,6 +420,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         <h3 className="text-sm font-bold truncate">{song.title}</h3>
                         <span className="shrink-0 bg-green-500/20 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded">V5</span>
                         <span className="shrink-0 bg-white/10 text-slate-300 text-[9px] font-medium px-1.5 py-0.5 rounded">{song.isCover ? 'Cover' : 'Canción'}</span>
+                        {(() => {
+                          const fid = songFolderId[song.id] || '';
+                          const name = fid ? folderNameById.get(fid) : '';
+                          if (!name) return null;
+                          return <span className="shrink-0 bg-white/5 border border-white/10 text-slate-200 text-[9px] font-semibold px-1.5 py-0.5 rounded">📁 {name}</span>;
+                        })()}
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs text-slate-400 truncate">{song.genre || ' '} </p>
@@ -377,20 +474,107 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         )}
         {activeTab === 'listas' && (
           <div className="p-4 space-y-4">
-            <button className="glass-card rounded-full px-4 py-2 flex items-center gap-2 text-sm text-slate-200 hover:bg-white/10 transition-colors w-max">
-              <ThumbsUp className="w-4 h-4" /> Me gusta
-            </button>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div 
-                onClick={() => setIsCreateListOpen(true)}
-                className="w-full aspect-square border border-dashed border-white/20 rounded-2xl flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors glass-card"
-              >
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                  <Plus className="w-5 h-5 text-slate-300" />
+            {activeFolderId ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => setActiveFolderId('')}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors"
+                  >
+                    ← Carpetas
+                  </button>
+                  <button
+                    onClick={() => setIsCreateListOpen(true)}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors flex items-center gap-2"
+                  >
+                    <FolderPlus className="w-4 h-4" /> Nueva carpeta
+                  </button>
                 </div>
-              </div>
-            </div>
+
+                <div className="text-white font-extrabold text-lg">
+                  {folders.find((f) => f.id === activeFolderId)?.name || 'Carpeta'}
+                </div>
+
+                {(() => {
+                  const list = canciones.filter((s) => (songFolderId[s.id] || '') === activeFolderId);
+                  if (list.length === 0) {
+                    return <div className="text-slate-400 text-sm">Esta carpeta está vacía.</div>;
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {list.map((song) => (
+                        <button
+                          key={song.id}
+                          onClick={() => onPlaySong(song)}
+                          className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors text-left"
+                        >
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                            <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-white font-bold truncate">{song.title || 'Pista sin título'}</div>
+                            <div className="text-slate-400 text-xs truncate">{song.genre || ' '}</div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setMenuSong(song);
+                            }}
+                            className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
+                            aria-label="Opciones"
+                          >
+                            <MoreVertical className="w-4 h-4 text-slate-300" />
+                          </button>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-white font-extrabold text-lg">Carpetas</div>
+                  <button
+                    onClick={() => setIsCreateListOpen(true)}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors flex items-center gap-2"
+                  >
+                    <FolderPlus className="w-4 h-4" /> Nueva carpeta
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setIsCreateListOpen(true)}
+                    className="w-full aspect-square border border-dashed border-white/20 rounded-2xl flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors glass-card"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                      <Plus className="w-5 h-5 text-slate-300" />
+                    </div>
+                  </button>
+                  {folders.map((f) => {
+                    const n = canciones.filter((s) => (songFolderId[s.id] || '') === f.id).length;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setActiveFolderId(f.id)}
+                        className="w-full aspect-square glass-card rounded-2xl p-4 flex flex-col items-start justify-between text-left hover:bg-white/10 transition-colors"
+                      >
+                        <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                          <ListMusic className="w-5 h-5 text-slate-200" />
+                        </div>
+                        <div className="w-full">
+                          <div className="text-white font-extrabold truncate">{f.name}</div>
+                          <div className="text-slate-400 text-xs">{n} {n === 1 ? 'canción' : 'canciones'}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="text-[11px] text-slate-500">Tus canciones siguen en “Canciones”. Las carpetas solo ayudan a ordenar.</div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -400,7 +584,65 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       )}
       
       {isCreateListOpen && (
-        <CreateListModal onClose={() => setIsCreateListOpen(false)} />
+        <CreateListModal
+          onClose={() => setIsCreateListOpen(false)}
+          onCreate={(name) => {
+            const clean = (name || '').toString().trim();
+            if (!clean) return;
+            const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            setFolders((prev) => [{ id, name: clean.slice(0, 60), createdAt: Date.now() }, ...prev]);
+            setIsCreateListOpen(false);
+          }}
+        />
+      )}
+
+      {isFiltersOpen && (
+        <FiltersModal
+          from={filterFrom}
+          to={filterTo}
+          sort={sortOrder}
+          onClose={() => setIsFiltersOpen(false)}
+          onApply={(next) => {
+            setFilterFrom(next.from);
+            setFilterTo(next.to);
+            setSortOrder(next.sort);
+            setIsFiltersOpen(false);
+          }}
+          onClear={() => {
+            setFilterFrom('');
+            setFilterTo('');
+            setSortOrder('newest');
+            setIsFiltersOpen(false);
+          }}
+        />
+      )}
+
+      {moveFolderSong && (
+        <FolderPickerModal
+          songTitle={moveFolderSong.title || 'Pista sin título'}
+          folders={folders}
+          currentFolderId={songFolderId[moveFolderSong.id] || ''}
+          onClose={() => setMoveFolderSong(null)}
+          onPick={(folderId) => {
+            const sid = moveFolderSong.id;
+            setSongFolderId((prev) => {
+              const next = { ...prev };
+              if (!folderId) delete next[sid];
+              else next[sid] = folderId;
+              return next;
+            });
+            setMoveFolderSong(null);
+          }}
+          onCreateAndPick={(name) => {
+            const clean = (name || '').toString().trim();
+            if (!clean) return;
+            const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            setFolders((prev) => [{ id, name: clean.slice(0, 60), createdAt: Date.now() }, ...prev]);
+            const sid = moveFolderSong.id;
+            setSongFolderId((prev) => ({ ...prev, [sid]: id }));
+            setMoveFolderSong(null);
+          }}
+        />
       )}
 
       {menuSong && (
@@ -411,6 +653,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onPlay={() => onPlaySong(menuSong)}
           onStartCover={() => onStartCover?.(menuSong)}
           onOpenLists={() => setActiveTab('listas')}
+          onMoveToFolder={() => {
+            setMoveFolderSong(menuSong);
+            setMenuSong(null);
+          }}
           onRefreshSongs={onRefreshSongs}
           onRestore={() => {
             const id = menuSong.id;
@@ -435,6 +681,7 @@ function SongOptionsSheet({
   onPlay,
   onStartCover,
   onOpenLists,
+  onMoveToFolder,
   onRestore,
   onDelete,
   onRefreshSongs,
@@ -445,6 +692,7 @@ function SongOptionsSheet({
   onPlay: () => void;
   onStartCover?: () => void;
   onOpenLists?: () => void;
+  onMoveToFolder?: () => void;
   onRestore: () => void;
   onDelete: () => void;
   onRefreshSongs?: () => void;
@@ -1675,6 +1923,15 @@ function SongOptionsSheet({
                 <Music2 className="w-5 h-5 text-emerald-300" /> <span className="text-slate-200 font-extrabold">Cover (nueva versión)</span>
               </button>
             )}
+            {!isDeleted && (
+              <button
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5"
+                onClick={() => onMoveToFolder?.()}
+                disabled={isBusy}
+              >
+                <ListMusic className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Mover a carpeta</span>
+              </button>
+            )}
             <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={generateCoverImage} disabled={isBusy || isDeleted}>
               <div className="flex items-center gap-3 text-slate-200 font-semibold">
                 <ImageIcon className="w-5 h-5 text-slate-300" /> Portada
@@ -2384,76 +2641,216 @@ function CreateVibeModal({ onClose, canciones, onAddVibe }: { onClose: () => voi
   );
 }
 
-function CreateListModal({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  
-  return (
-    <div className="absolute inset-x-0 bottom-0 top-10 glass-panel border-t border-white/10 rounded-t-[2rem] overflow-y-auto z-50 animate-in slide-in-from-bottom-full duration-300 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] flex flex-col pb-safe">
-      <div className="flex justify-center py-4 sticky top-0 bg-transparent z-10 backdrop-blur-xl border-b border-white/5">
-        <div className="w-12 h-1 bg-white/20 rounded-full" />
-      </div>
-      
-      <div className="p-6 flex-1 flex flex-col gap-6">
-        <h2 className="text-2xl font-bold text-white mb-2">Crear lista de reproducción</h2>
+function FiltersModal({
+  from,
+  to,
+  sort,
+  onClose,
+  onApply,
+  onClear,
+}: {
+  from: string;
+  to: string;
+  sort: 'newest' | 'oldest';
+  onClose: () => void;
+  onApply: (next: { from: string; to: string; sort: 'newest' | 'oldest' }) => void;
+  onClear: () => void;
+}) {
+  const [localFrom, setLocalFrom] = useState(from);
+  const [localTo, setLocalTo] = useState(to);
+  const [localSort, setLocalSort] = useState<'newest' | 'oldest'>(sort);
 
-        <div className="space-y-3">
-          <label className="text-sm font-bold text-slate-200 block uppercase tracking-wider">Nombre</label>
-          <div className="relative">
-            <input 
-              type="text"
+  return (
+    <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+      <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
+      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="text-white font-extrabold">Filtros</div>
+          <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
+            ✕
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <div className="text-[11px] text-slate-400 font-semibold">Desde</div>
+              <input
+                type="date"
+                value={localFrom}
+                onChange={(e) => setLocalFrom(e.target.value)}
+                className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              />
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-400 font-semibold">Hasta</div>
+              <input
+                type="date"
+                value={localTo}
+                onChange={(e) => setLocalTo(e.target.value)}
+                className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] text-slate-400 font-semibold">Orden</div>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={() => setLocalSort('newest')}
+                className={cn(
+                  'flex-1 h-[46px] rounded-2xl border border-white/10 font-extrabold text-sm',
+                  localSort === 'newest' ? 'bg-white text-black' : 'bg-white/5 text-slate-200 hover:bg-white/10'
+                )}
+              >
+                Más nuevo
+              </button>
+              <button
+                onClick={() => setLocalSort('oldest')}
+                className={cn(
+                  'flex-1 h-[46px] rounded-2xl border border-white/10 font-extrabold text-sm',
+                  localSort === 'oldest' ? 'bg-white text-black' : 'bg-white/5 text-slate-200 hover:bg-white/10'
+                )}
+              >
+                Más antiguo
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="p-5 border-t border-white/10 flex items-center gap-3">
+          <button
+            onClick={onClear}
+            className="w-[140px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[48px] rounded-full font-extrabold text-sm transition-colors"
+          >
+            Limpiar
+          </button>
+          <button
+            onClick={() => onApply({ from: localFrom, to: localTo, sort: localSort })}
+            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors"
+          >
+            Aplicar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FolderPickerModal({
+  songTitle,
+  folders,
+  currentFolderId,
+  onClose,
+  onPick,
+  onCreateAndPick,
+}: {
+  songTitle: string;
+  folders: Array<{ id: string; name: string }>;
+  currentFolderId: string;
+  onClose: () => void;
+  onPick: (folderId: string) => void;
+  onCreateAndPick: (name: string) => void;
+}) {
+  const [name, setName] = useState('');
+  return (
+    <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+      <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
+      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="min-w-0">
+            <div className="text-white font-extrabold truncate">Mover a carpeta</div>
+            <div className="text-[11px] text-slate-400 truncate">{songTitle}</div>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
+            ✕
+          </button>
+        </div>
+        <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+          <button
+            onClick={() => onPick('')}
+            className={cn(
+              'w-full flex items-center justify-between p-4 rounded-2xl border transition-colors',
+              !currentFolderId ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+            )}
+          >
+            <div className="font-extrabold">Sin carpeta</div>
+            {!currentFolderId ? <div className="text-xs font-extrabold">ACTUAL</div> : null}
+          </button>
+
+          {folders.length === 0 ? <div className="text-slate-400 text-sm px-1">No tienes carpetas todavía.</div> : null}
+
+          {folders.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => onPick(f.id)}
+              className={cn(
+                'w-full flex items-center justify-between p-4 rounded-2xl border transition-colors',
+                currentFolderId === f.id ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+              )}
+            >
+              <div className="font-extrabold truncate">{f.name}</div>
+              {currentFolderId === f.id ? <div className="text-xs font-extrabold">ACTUAL</div> : null}
+            </button>
+          ))}
+
+          <div className="mt-4 bg-black/20 border border-white/10 rounded-2xl p-4">
+            <div className="text-[11px] text-slate-400 font-semibold">Crear carpeta</div>
+            <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ingresa el nombre de tu lista de reprodu..."
-              className="w-full glass-card rounded-xl px-4 py-4 text-sm text-white placeholder:text-slate-500 outline-none focus:border-indigo-500/50 transition-colors"
+              placeholder="Nombre de la carpeta"
+              className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
             />
-            <div className="text-right mt-1 text-xs text-slate-400">{name.length}/50</div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <label className="text-sm font-bold text-slate-200 block uppercase tracking-wider">Imagen</label>
-          <div className="flex items-center gap-4">
-            <div className="w-24 h-24 rounded-2xl glass-card flex flex-col items-center justify-center gap-1 relative overflow-hidden group cursor-pointer hover:bg-white/10 transition-colors">
-              <ImageIcon className="w-6 h-6 text-indigo-400" />
-              <div className="absolute bottom-1.5 right-1.5 bg-black/50 p-1.5 rounded-full backdrop-blur">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-white"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 max-w-[200px] leading-relaxed">
-              (Mejor tamaño 175*175 px, máx. 500 KB)
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <label className="text-sm font-bold text-slate-200 block uppercase tracking-wider">Descripción</label>
-          <div className="relative">
-            <textarea 
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="Ingresa la descripción de tu lista de reproducción..."
-              className="w-full glass-card rounded-xl p-4 text-sm text-white placeholder:text-slate-500 outline-none min-h-[140px] resize-none focus:border-indigo-500/50 transition-colors"
-            />
-            <div className="absolute bottom-4 right-4 text-xs text-slate-400">{desc.length} / 200</div>
+            <button
+              onClick={() => onCreateAndPick(name)}
+              disabled={!name.trim()}
+              className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              <FolderPlus className="w-4 h-4" /> Crear y mover
+            </button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="p-6 flex gap-4 pb-12">
-        <button 
-          onClick={onClose}
-          className="flex-1 py-4 rounded-full glass-card text-white font-semibold flex items-center justify-center transition-colors hover:bg-white/10"
-        >
-          Cancelar
-        </button>
-        <button 
-          onClick={onClose}
-          disabled={!name}
-          className="flex-1 py-4 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 text-white hover:opacity-90 font-bold flex items-center justify-center transition-all disabled:opacity-50 disabled:from-slate-700 disabled:to-slate-800 disabled:shadow-none"
-        >
-          Crear
-        </button>
+function CreateListModal({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => void }) {
+  const [name, setName] = useState('');
+
+  return (
+    <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+      <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
+      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="text-white font-extrabold">Nueva carpeta</div>
+          <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
+            ✕
+          </button>
+        </div>
+        <div className="p-5">
+          <div className="text-[11px] text-slate-400 font-semibold">Nombre</div>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ej: Mis corridos"
+            className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+          />
+        </div>
+        <div className="p-5 border-t border-white/10 flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="w-[140px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[48px] rounded-full font-extrabold text-sm transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onCreate(name)}
+            disabled={!name.trim()}
+            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+          >
+            Crear
+          </button>
+        </div>
       </div>
     </div>
   );

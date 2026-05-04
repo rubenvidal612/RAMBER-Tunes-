@@ -393,6 +393,15 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             </div>
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>
+          <button
+            className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5"
+            onClick={() => window.open('https://t.me/+sgw5bsAX9utmZDEx', '_blank')}
+          >
+            <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
+              <MessageSquare className="w-5 h-5 text-slate-400" /> Grupo de Telegram
+            </div>
+            <ChevronRight className="w-5 h-5 text-slate-500" />
+          </button>
           <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
               <span className="text-lg">⭐</span> Ayúdanos a mejorar
