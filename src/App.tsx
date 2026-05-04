@@ -613,6 +613,7 @@ export default function App() {
         </div>
         <div className="mt-4 text-xl font-extrabold">RAMBER Tunes</div>
         <div className="mt-2 text-sm text-slate-300">Para usar la app necesitas entrar con tu cuenta Gmail.</div>
+        <div className="mt-2 text-xs text-slate-500">Supabase: {supabaseBrowser ? 'conectado' : 'no configurado'}</div>
         <button
           onClick={() => {
             if (isStartingLogin) return;
@@ -624,11 +625,12 @@ export default function App() {
               .catch(() => alert('No pude iniciar sesión con Google.'))
               .finally(() => setIsStartingLogin(false));
           }}
-          disabled={isStartingLogin}
+          disabled={isStartingLogin || !supabaseBrowser}
           className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
         >
           {isStartingLogin ? 'Abriendo Google…' : 'Entrar con Google'}
         </button>
+        {!supabaseBrowser && <div className="mt-3 text-xs text-red-200">Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY en Vercel (y redeploy).</div>}
       </div>
     );
   }

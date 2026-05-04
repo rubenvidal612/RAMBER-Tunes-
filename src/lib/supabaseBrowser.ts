@@ -39,7 +39,11 @@ export async function signInWithGoogle() {
   });
   if (error) return { ok: false as const, error: (error.message || "No pude iniciar sesión con Google").toString() };
   const url = (data as any)?.url ? String((data as any).url).trim() : "";
-  if (!url) return { ok: false as const, error: "No recibí el link de inicio de sesión. Revisa Redirect URLs en Supabase." };
-  window.location.href = url;
+  if (url) {
+    window.location.href = url;
+    return { ok: true as const };
+  }
+  const r2 = await supabaseBrowser.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+  if (r2.error) return { ok: false as const, error: (r2.error.message || "No pude iniciar sesión con Google").toString() };
   return { ok: true as const };
 }
