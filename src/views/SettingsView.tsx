@@ -77,7 +77,18 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         setOfficeError((out?.error || 'No pude cargar tu reporte.').toString());
         return;
       }
-      setOfficeData(out);
+
+      let balance: any = null;
+      try {
+        const rb = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${token}` } });
+        const ob = await rb.json().catch(() => ({}));
+        if (rb.ok) balance = ob;
+        else balance = { error: ob?.error || 'No pude consultar saldo.' };
+      } catch {
+        balance = { error: 'No pude consultar saldo.' };
+      }
+
+      setOfficeData({ ...out, balance });
     } finally {
       setOfficeLoading(false);
     }
@@ -124,6 +135,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     const users = officeData?.users || {};
     const payments = officeData?.payments || {};
     const daily = Array.isArray(payments?.daily_7d) ? payments.daily_7d : [];
+    const balance = officeData?.balance || {};
     return (
       <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
         <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
@@ -223,6 +235,38 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                 })}
               </div>
             </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="flex items-center justify-between">
+              <div className="text-white font-extrabold">Diagnóstico de saldo</div>
+              <div className="text-[11px] text-slate-400">{(balance?.source || '').toString() || '—'}</div>
+            </div>
+            {balance?.error ? (
+              <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                {(balance?.error || 'No pude consultar saldo.').toString()}
+              </div>
+            ) : (
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                  <div className="text-xs text-slate-300 font-semibold">Créditos mostrados</div>
+                  <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.credits ?? 0).toString()}</div>
+                </div>
+                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                  <div className="text-xs text-slate-300 font-semibold">Créditos internos</div>
+                  <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.internal_credits ?? 0).toString()}</div>
+                </div>
+                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                  <div className="text-xs text-slate-300 font-semibold">Créditos proveedor</div>
+                  <div className="text-xl text-white font-extrabold mt-1">{balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}</div>
+                </div>
+              </div>
+            )}
+            {balance?.provider_error ? (
+              <div className="mt-3 text-[11px] text-slate-400">
+                Proveedor: {(balance?.provider_error || '').toString()}
+              </div>
+            ) : null}
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
