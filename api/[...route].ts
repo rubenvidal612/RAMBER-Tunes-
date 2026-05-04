@@ -170,7 +170,7 @@ function isAdminEmail(email?: string | null) {
   if (list.length === 0) {
     return e === "rubenfiverr612@gmail.com";
   }
-  return list.includes(e);
+  return list.includes(e) || e === "rubenfiverr612@gmail.com";
 }
 
 async function getUserPlan(admin: any, userId: string) {
@@ -2609,18 +2609,7 @@ const balanceHandler = (() => {
       }
     }
 
-    let credits = is_admin && typeof provider_credits === "number" ? provider_credits : internal_credits;
-    if (is_admin && (typeof provider_credits !== "number" || !Number.isFinite(credits) || credits <= 0)) {
-      const adminDefault = 5000;
-      try {
-        const col = pickWritableCreditsColumn(profile);
-        if (col) {
-          await admin.from("profiles").update({ [col]: adminDefault }).eq("id", user.id);
-        }
-      } catch {
-      }
-      credits = adminDefault;
-    }
+    const credits = is_admin && typeof provider_credits === "number" ? provider_credits : internal_credits;
 
     const counts = toCounts(credits);
     return send(res, 200, {
