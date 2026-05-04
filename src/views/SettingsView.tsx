@@ -20,14 +20,25 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
 
   useEffect(() => {
     if (!supabaseBrowser) return;
-    supabaseBrowser.auth.getSession().then(async ({ data }) => {
-      const token = data?.session?.access_token;
-      if (!token) return;
-      const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${token}` } }).catch(() => null as any);
-      if (!r?.ok) return;
-      const out = await r.json().catch(() => ({}));
-      setIsAdmin(Boolean(out?.is_admin));
-    }).catch(() => {});
+    supabaseBrowser.auth
+      .getUser()
+      .then(({ data }) => {
+        const email = (data?.user?.email || '').toString().trim().toLowerCase();
+        if (email === 'rubenfiverr612@gmail.com') setIsAdmin(true);
+      })
+      .catch(() => {});
+
+    supabaseBrowser.auth
+      .getSession()
+      .then(async ({ data }) => {
+        const token = data?.session?.access_token;
+        if (!token) return;
+        const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${token}` } }).catch(() => null as any);
+        if (!r?.ok) return;
+        const out = await r.json().catch(() => ({}));
+        setIsAdmin(Boolean(out?.is_admin));
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -37,6 +48,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       .then(({ data }) => {
         const user = data?.user;
         const email = (user?.email || '').toString().trim();
+        if (email.toLowerCase() === 'rubenfiverr612@gmail.com') setIsAdmin(true);
         const meta: any = user?.user_metadata || {};
         const name = (meta?.full_name || meta?.name || '').toString().trim();
         const display = (name || email || 'Usuario').toString().trim();
