@@ -3284,12 +3284,16 @@ const aiHandler = (() => {
 
     const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
     const baseModels = [
+      "gemini-flash-latest",
       "gemini-3-flash-preview",
+      "gemini-3.1-flash-lite-preview",
+      "gemini-flash-lite-latest",
       "gemini-2.5-flash",
       "gemini-2.5-flash-lite",
-      "gemini-flash-latest",
       "gemini-1.5-flash",
       "gemini-1.5-flash-8b",
+      "gemini-pro-latest",
+      "gemini-3.1-pro-preview",
     ];
 
     let lastErr: any = null;
