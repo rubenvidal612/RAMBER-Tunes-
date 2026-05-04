@@ -1503,21 +1503,20 @@ function SongOptionsSheet({
             )}
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
-                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Stems (12 pistas)</span>
                 <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Instrumentos y voces (Stems)</span>
+              </button>
             )}
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
               <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
             </button>
             {!isDeleted && (
               <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => setPublished(!published)} disabled={isBusy}>
-              <div className="flex items-center gap-3">
-                <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Publicar</span>
-              </div>
-              <div className={cn("w-12 h-7 rounded-full p-1 transition-colors", published ? "bg-emerald-500" : "bg-white/10")}>
-                <div className={cn("w-5 h-5 rounded-full bg-white transition-transform", published ? "translate-x-5" : "translate-x-0")} />
-              </div>
+                <div className="flex items-center gap-3">
+                  <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Publicar</span>
+                </div>
+                <div className={cn("w-12 h-7 rounded-full p-1 transition-colors", published ? "bg-emerald-500" : "bg-white/10")}>
+                  <div className={cn("w-5 h-5 rounded-full bg-white transition-transform", published ? "translate-x-5" : "translate-x-0")} />
+                </div>
               </button>
             )}
           </div>
