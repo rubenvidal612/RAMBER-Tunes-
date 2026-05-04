@@ -125,6 +125,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const pid = typeof d?.persona_id === 'string' ? d.persona_id : '';
       const pn = typeof d?.persona_name === 'string' ? d.persona_name : '';
       if (pid) setSelectedPersona({ persona_id: pid, name: pn || 'Persona' });
+      const draftAudioUrl = typeof d?.audioUploadUrl === 'string' ? d.audioUploadUrl : '';
+      const draftAudioPath = typeof d?.audioUploadPath === 'string' ? d.audioUploadPath : '';
+      const draftAudioLabel = typeof d?.audioLabel === 'string' ? d.audioLabel : '';
+      const draftAudioAction = typeof d?.audioAction === 'string' ? d.audioAction : '';
+      const draftAudioDuration = Number(d?.audioDurationSec ?? 0);
+      if (!audioUploadUrl && !audioFile && draftAudioUrl.trim()) {
+        setAudioUploadUrl(draftAudioUrl.trim());
+        setAudioUploadPath(draftAudioPath.trim());
+        setExternalAudioLabel(draftAudioLabel.trim());
+        if (draftAudioAction === 'cover' || draftAudioAction === 'instrumental' || draftAudioAction === 'vocals' || draftAudioAction === 'extend' || draftAudioAction === 'library') {
+          setAudioAction(draftAudioAction);
+        }
+        if (Number.isFinite(draftAudioDuration) && draftAudioDuration > 0) setAudioDurationSec(draftAudioDuration);
+      }
     } catch {
     }
   }, []);
@@ -146,11 +160,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           audioInfluence,
           persona_id: selectedPersona?.persona_id || '',
           persona_name: selectedPersona?.name || '',
+          audioUploadUrl: (audioUploadUrl || '').toString(),
+          audioUploadPath: (audioUploadPath || '').toString(),
+          audioLabel: (audioFile?.name || externalAudioLabel || '').toString().slice(0, 200),
+          audioAction: (audioAction || '').toString(),
+          audioDurationSec: Number.isFinite(audioDurationSec) ? audioDurationSec : 0,
         }),
       );
     } catch {
     }
-  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence]);
+  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence, audioUploadUrl, audioUploadPath, externalAudioLabel, audioAction, audioDurationSec, audioFile]);
 
   useEffect(() => {
     if (!openPersonaPickerSignal) return;
@@ -1483,6 +1502,7 @@ function CustomForm({
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
 
   const normalizeLyrics = (t: string) => {
     const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
@@ -1519,7 +1539,7 @@ function CustomForm({
     setLyrics(n);
   };
 
-  const handleGenerateLyrics = async (auto?: boolean) => {
+  const handleGenerateLyrics = async (auto?: boolean, forceNew?: boolean) => {
     if (instrumental) {
       if (!auto) alert('En modo instrumental no se generan letras.');
       return;
@@ -1535,12 +1555,14 @@ function CustomForm({
       const contextTitle = (typeof title === 'string' && title.trim()) ? title.trim() : '';
       const contextStyle = (typeof instructions === 'string' && instructions.trim()) ? instructions.trim() : '';
       const contextIdea =
-        (typeof lyrics === 'string' && lyrics.trim()) ? lyrics.trim() :
+        (!forceNew && typeof lyrics === 'string' && lyrics.trim()) ? lyrics.trim() :
         (typeof description === 'string' && description.trim()) ? description.trim() :
         '';
 
-      if (!contextIdea) {
-        if (!auto) alert('Escribe un tema o idea en la caja de "Letras" para generar letra.');
+      const fallbackIdea = (contextStyle || contextTitle).trim();
+      const finalIdea = (contextIdea || fallbackIdea).trim();
+      if (!finalIdea) {
+        if (!auto) alert('Escribe un tema o idea en la caja de "Letras" o en "Instrucciones" para generar letra.');
         return;
       }
 
@@ -1548,7 +1570,8 @@ function CustomForm({
         'Letra en español.',
         contextTitle ? `Título: ${contextTitle}.` : '',
         contextStyle ? `Estilo: ${contextStyle}.` : '',
-        `Idea: ${contextIdea}.`,
+        forceNew ? 'No reutilices frases exactas de letras anteriores.' : '',
+        `Idea: ${finalIdea}.`,
       ].filter(Boolean).join(' ');
 
       const prompt = joined.slice(0, 200);
@@ -1828,7 +1851,14 @@ function CustomForm({
               <Maximize2 className="w-4 h-4" />
             </button>
             <button 
-              onClick={() => handleGenerateLyrics(false).catch(() => {})}
+              onClick={() => {
+                const hasAudioTranscribed = Boolean(audioUploadUrl && (lyrics || '').toString().trim());
+                if (hasAudioTranscribed) {
+                  setShowRegenerateConfirm(true);
+                  return;
+                }
+                handleGenerateLyrics(false).catch(() => {});
+              }}
               disabled={isGeneratingLyrics}
               className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
             >
@@ -1838,6 +1868,56 @@ function CustomForm({
           </div>
         </div>
       </div>
+
+      {showRegenerateConfirm && (
+        <div className="fixed inset-0 z-[160] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowRegenerateConfirm(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold truncate">Generar letra nueva</div>
+                <div className="text-[11px] text-slate-400">Confirmación</div>
+              </div>
+              <button
+                onClick={() => setShowRegenerateConfirm(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-200">
+                ¿Estás seguro de que quieres eliminar la letra original para producir una diferente?
+              </div>
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowRegenerateConfirm(false);
+                    const current = (lyrics || '').toString();
+                    if (current.trim()) {
+                      setPrevLyrics(current);
+                      setLyrics('');
+                    }
+                    handleGenerateLyrics(false, true).catch(() => {});
+                  }}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors"
+                >
+                  Sí, generar
+                </button>
+                <button
+                  onClick={() => setShowRegenerateConfirm(false)}
+                  className="w-[160px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[46px] rounded-full font-extrabold text-sm transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+              <div className="mt-3 text-[11px] text-slate-500">
+                Si te equivocas, usa el botón de regresar letra para recuperar la anterior.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLyricsExpanded && (
         <div className="fixed inset-0 z-[140] bg-black/70 flex items-end md:items-center justify-center">
