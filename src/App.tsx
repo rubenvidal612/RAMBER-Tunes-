@@ -112,22 +112,22 @@ function InicioLanding({
               Genera canciones con 2 versiones (A y B), guarda todo en tu biblioteca y mejora resultados con letras,
               instrucciones y estilos. En el plan gratis puedes crear, pero las descargas se habilitan al comprar plan.
             </p>
-            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-3">
               <button
                 onClick={onGoStudio}
-                className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-95 active:scale-[0.99] transition-all text-white font-extrabold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+                className="shrink-0 sm:min-w-[220px] bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-95 active:scale-[0.99] transition-all text-white font-extrabold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
               >
                 <Rocket className="w-4 h-4" strokeWidth={2} /> Empezar a crear <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={onOpenPlans}
-                className="bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2"
+                className="shrink-0 sm:min-w-[170px] bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2"
               >
                 Ver planes <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={onGoLibrary}
-                className="bg-black/30 hover:bg-black/40 border border-white/10 text-slate-100 font-bold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2"
+                className="shrink-0 sm:min-w-[190px] bg-black/30 hover:bg-black/40 border border-white/10 text-slate-100 font-bold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2"
               >
                 Ir a biblioteca <Music2 className="w-4 h-4" />
               </button>
