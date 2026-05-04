@@ -176,18 +176,33 @@ function isAdminEmail(email?: string | null) {
 }
 
 async function getUserPlan(admin: any, userId: string) {
-  const { data: tx } = await admin.from("mp_transactions").select("payment_id, pack_key, kind").eq("user_id", userId).eq("kind", "songs").limit(200);
+  const { data: tx } = await admin
+    .from("mp_transactions")
+    .select("payment_id, pack_key, kind, created_at")
+    .eq("user_id", userId)
+    .eq("kind", "songs")
+    .order("created_at", { ascending: false })
+    .limit(200);
   const rows = Array.isArray(tx) ? tx : [];
 
-  const free_claimed = rows.some((t: any) => {
+  const override = rows.find((t: any) => {
+    const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
+    return pid.startsWith("admin_plan:");
+  });
+  const overrideKey = String(override?.pack_key || "").trim().toLowerCase();
+  const overridePlan =
+    overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "gratis" || overrideKey === "ninguno" ? overrideKey : "";
+
+  const free_claimed_from_rows = rows.some((t: any) => {
     const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
     const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
     return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
   });
   const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
   const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
-  const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
+  const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed_from_rows ? "gratis" : "ninguno");
   const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
+  const free_claimed = overridePlan ? overridePlan === "gratis" : free_claimed_from_rows;
 
   return { plan_key, downloads_allowed, free_claimed };
 }
@@ -2548,17 +2563,27 @@ const balanceHandler = (() => {
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-    const { data: freeTx } = await admin.from("mp_transactions").select("payment_id, pack_key").eq("user_id", user.id).eq("kind", "songs").limit(50);
-    const free_claimed =
-      Array.isArray(freeTx) &&
-      freeTx.some((t: any) => {
-        const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
-        const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
-        return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
-      });
-    const hasInicio = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
-    const hasProductor = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
-    const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
+    const { data: freeTx } = await admin
+      .from("mp_transactions")
+      .select("payment_id, pack_key, created_at")
+      .eq("user_id", user.id)
+      .eq("kind", "songs")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    const rows = Array.isArray(freeTx) ? freeTx : [];
+    const override = rows.find((t: any) => String(t?.payment_id || "").startsWith("admin_plan:"));
+    const overrideKey = String(override?.pack_key || "").trim().toLowerCase();
+    const overridePlan =
+      overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "gratis" || overrideKey === "ninguno" ? overrideKey : "";
+    const free_claimed_from_rows = rows.some((t: any) => {
+      const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
+      const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
+      return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
+    });
+    const free_claimed = overridePlan ? overridePlan === "gratis" : free_claimed_from_rows;
+    const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
+    const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
+    const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno");
     const downloads_allowed = is_admin ? true : plan_key === "inicio" || plan_key === "productor";
     const show_free_claim_popup = !is_admin && plan_key === "ninguno" && !free_claimed;
 
@@ -2925,6 +2950,82 @@ const shareHandler = (() => {
   };
 })();
 
+const supportHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "support" || next !== "feedback") return send(res, 404, { error: "Ruta no encontrada" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return send(res, 401, { error: "No autorizado" });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const name = (payload?.name || "").toString().trim().slice(0, 120);
+    const whatsapp = (payload?.whatsapp || "").toString().trim().slice(0, 80);
+    const message = (payload?.message || "").toString().trim().slice(0, 4000);
+    if (!name) return send(res, 400, { error: "Falta nombre" });
+    if (!whatsapp) return send(res, 400, { error: "Falta WhatsApp" });
+    if (!message) return send(res, 400, { error: "Falta mensaje" });
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return send(res, 401, { error: "No autorizado" });
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    const { data, error } = await admin
+      .from("support_feedback")
+      .insert({
+        user_id: user.id,
+        user_email: user.email || null,
+        name,
+        whatsapp,
+        message,
+        is_read: false,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) return send(res, 500, { error: error.message });
+    return send(res, 200, { ok: true, id: data?.id || null });
+  };
+})();
+
 const adminHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -3170,6 +3271,125 @@ const adminHandler = (() => {
     return send(res, 200, { ok: true, user_id: userId, credited: credits, new_credits: upd.credits ?? null });
   }
 
+  async function setUserCreditsAbsolute(admin: any, userId: string, nextCredits: number) {
+    const next = round2(Math.max(0, Number(nextCredits)));
+    if (!Number.isFinite(next)) return { ok: false as const, error: "Créditos inválidos" };
+
+    for (let i = 0; i < 4; i++) {
+      const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+      if (readErr) return { ok: false as const, error: readErr.message };
+      const col = pickWritableCreditsColumn(profile);
+      if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
+      const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
+      if (!updErr) return { ok: true as const, credits: next };
+    }
+
+    return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
+  }
+
+  async function handleSetPlan(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const email = (body?.email || "").toString().trim().toLowerCase();
+    const plan_key = (body?.plan_key || "").toString().trim().toLowerCase();
+    const credits_mode = (body?.credits_mode || "none").toString().trim().toLowerCase();
+    const credits = Number(body?.credits ?? 0);
+
+    if (!email) return send(res, 400, { error: "Falta email" });
+    if (!(plan_key === "ninguno" || plan_key === "gratis" || plan_key === "inicio" || plan_key === "productor")) {
+      return send(res, 400, { error: "Plan inválido" });
+    }
+    if (!(credits_mode === "none" || credits_mode === "default" || credits_mode === "set")) {
+      return send(res, 400, { error: "Modo de créditos inválido" });
+    }
+
+    const admin = auth.admin;
+    let userId = "";
+    try {
+      const r = await (admin as any).auth?.admin?.getUserByEmail?.(email);
+      userId = String(r?.data?.user?.id || "").trim();
+    } catch {
+      userId = "";
+    }
+    if (!userId) return send(res, 404, { error: "No encontré ese usuario por correo." });
+
+    const payment_id = `admin_plan:${auth.user.id}:${userId}:${Date.now()}`;
+    await admin.from("mp_transactions").insert({
+      user_id: userId,
+      kind: "songs",
+      pack_key: plan_key,
+      amount_mxn: 0,
+      payment_id,
+    });
+
+    if (credits_mode === "default") {
+      let add = 0;
+      if (plan_key === "inicio") add = 1200;
+      if (plan_key === "productor") add = 3000;
+      if (plan_key === "gratis") add = CREDIT_COSTS.generate_music * 5;
+      if (add > 0) {
+        const upd = await adjustUserCredits(admin, userId, add);
+        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      }
+    } else if (credits_mode === "set") {
+      if (!Number.isFinite(credits) || credits < 0) return send(res, 400, { error: "Créditos inválidos" });
+      const upd = await setUserCreditsAbsolute(admin, userId, credits);
+      if (!upd.ok) return send(res, 500, { error: upd.error || "No pude fijar créditos" });
+    }
+
+    return send(res, 200, { ok: true, user_id: userId, plan_key, credits_mode });
+  }
+
+  async function handleFeedback(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const mode = (pickQuery(req, "mode") || "").toString().trim().toLowerCase();
+    const admin = auth.admin;
+    try {
+      let unread_count = 0;
+      try {
+        const r = await admin.from("support_feedback").select("id", { count: "exact", head: true }).eq("is_read", false);
+        if (!r.error) unread_count = Number(r.count || 0);
+      } catch {
+        unread_count = 0;
+      }
+      if (mode === "count") return send(res, 200, { unread_count });
+
+      const { data, error } = await admin
+        .from("support_feedback")
+        .select("id, user_id, user_email, name, whatsapp, message, created_at, is_read, read_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) return send(res, 500, { error: error.message });
+      const items = Array.isArray(data) ? data : [];
+      return send(res, 200, { unread_count, items });
+    } catch (e) {
+      return send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFeedbackMarkRead(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const id = (body?.id || "").toString().trim();
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const admin = auth.admin;
+    const { error } = await admin.from("support_feedback").update({ is_read: true, read_at: new Date().toISOString() }).eq("id", id);
+    if (error) return send(res, 500, { error: error.message });
+    return send(res, 200, { ok: true });
+  }
+
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
     const fallback = (() => {
@@ -3184,6 +3404,9 @@ const adminHandler = (() => {
     if (a === "stats") return handleStats(req, res);
     if (a === "diag") return handleDiag(req, res);
     if (a === "grant-credits") return handleGrantCredits(req, res);
+    if (a === "set-plan") return handleSetPlan(req, res);
+    if (a === "feedback") return handleFeedback(req, res);
+    if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
@@ -3459,6 +3682,7 @@ export default async function handler(req: any, res: any) {
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
     if (head === "admin") return adminHandler(req, res);
+    if (head === "support") return supportHandler(req, res);
     if (head === "ai") return aiHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);

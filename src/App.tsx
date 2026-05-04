@@ -17,6 +17,11 @@ import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
 import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2 } from 'lucide-react';
 
+const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
+  { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
+  { date: '2026-05-04', title: 'Compartir canciones', detail: 'Los links compartidos ahora abren un reproductor dentro de RAMBER Tunes.' },
+];
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
@@ -286,12 +291,31 @@ export default function App() {
   const [showIosHelp, setShowIosHelp] = useState(false);
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
   const pendingLegacyKey = 'ramber.pendingSunoTask';
+  const [isUpdatesOpen, setIsUpdatesOpen] = useState(false);
+  const [updatesSeenKey, setUpdatesSeenKey] = useState(() => {
+    try {
+      return (window.localStorage.getItem('ramber.updates_seen_v1') || '').toString();
+    } catch {
+      return '';
+    }
+  });
 
   const showToast = (message: string) => {
     setToast(message);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
+
+  const updatesSorted = APP_UPDATES.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const latestUpdateKey = updatesSorted.length ? `${updatesSorted[0].date}::${updatesSorted[0].title}` : '';
+  const unreadUpdatesCount = (() => {
+    if (!updatesSorted.length) return 0;
+    const seen = (updatesSeenKey || '').toString().trim();
+    if (!seen) return updatesSorted.length;
+    const idx = updatesSorted.findIndex((u) => `${u.date}::${u.title}` === seen);
+    if (idx < 0) return updatesSorted.length;
+    return idx;
+  })();
 
   useEffect(() => {
     const onOpenPricing = () => {
@@ -916,8 +940,19 @@ export default function App() {
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
+        onBellClick={() => {
+          if (latestUpdateKey) {
+            try {
+              window.localStorage.setItem('ramber.updates_seen_v1', latestUpdateKey);
+            } catch {
+            }
+            setUpdatesSeenKey(latestUpdateKey);
+          }
+          setIsUpdatesOpen(true);
+        }}
         onCreditsClick={() => setIsBalanceOpen(true)}
         credits={displayCredits}
+        notificationsCount={unreadUpdatesCount}
       />
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
@@ -1029,6 +1064,41 @@ export default function App() {
           setPlayerTime(next);
         }}
       />
+      {isUpdatesOpen && (
+        <div className="fixed inset-0 z-[275] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsUpdatesOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold">Actualizaciones</div>
+              <button
+                onClick={() => setIsUpdatesOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 flex-1 overflow-y-auto">
+              {updatesSorted.length === 0 ? (
+                <div className="text-slate-400 text-sm">Aún no hay actualizaciones.</div>
+              ) : (
+                <div className="space-y-3">
+                  {updatesSorted.map((u) => {
+                    const d = new Date(`${u.date}T00:00:00`);
+                    const ds = Number.isNaN(d.getTime()) ? u.date : d.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: '2-digit' });
+                    return (
+                      <div key={`${u.date}::${u.title}`} className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <div className="text-[11px] text-slate-400 font-semibold">{ds}</div>
+                        <div className="mt-1 text-white font-extrabold">{u.title}</div>
+                        <div className="mt-2 text-sm text-slate-200 whitespace-pre-wrap">{u.detail}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className="fixed left-0 right-0 bottom-[92px] md:bottom-6 z-[260] flex justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto max-w-[520px] w-full bg-[#0b0f16] border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">

@@ -4,11 +4,14 @@ import { cn } from '@/lib/utils';
 interface TopBarProps {
   className?: string;
   onMenuClick?: () => void;
+  onBellClick?: () => void;
   onCreditsClick?: () => void;
   credits?: number;
+  notificationsCount?: number;
 }
 
-export function TopBar({ className, onMenuClick, onCreditsClick, credits }: TopBarProps) {
+export function TopBar({ className, onMenuClick, onBellClick, onCreditsClick, credits, notificationsCount }: TopBarProps) {
+  const hasNotif = Number(notificationsCount || 0) > 0;
   return (
     <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-[#070a12] via-indigo-950/50 to-black/60 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
@@ -22,9 +25,12 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits }: TopB
       </div>
       
       <div className="flex items-center gap-3">
-        <button className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 transition-colors relative">
+        <button
+          onClick={onBellClick}
+          className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 transition-colors relative"
+        >
            <Bell className="w-4 h-4" />
-           <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" />
+           {hasNotif ? <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" /> : null}
         </button>
         
         <button

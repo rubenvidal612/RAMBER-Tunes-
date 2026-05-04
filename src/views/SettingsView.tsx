@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { cn } from '@/lib/utils';
 
 export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; onOpenPricing?: () => void }) {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
@@ -17,6 +18,17 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [grantEmail, setGrantEmail] = useState('');
   const [grantCredits, setGrantCredits] = useState('50');
   const [grantBusy, setGrantBusy] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackName, setFeedbackName] = useState('');
+  const [feedbackWhatsapp, setFeedbackWhatsapp] = useState('');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [adminUnreadFeedback, setAdminUnreadFeedback] = useState(0);
+  const [planEmail, setPlanEmail] = useState('');
+  const [planKey, setPlanKey] = useState<'ninguno' | 'gratis' | 'inicio' | 'productor'>('inicio');
+  const [planCreditsMode, setPlanCreditsMode] = useState<'none' | 'default' | 'set'>('none');
+  const [planCreditsManual, setPlanCreditsManual] = useState('0');
+  const [planBusy, setPlanBusy] = useState(false);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -57,6 +69,31 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!supabaseBrowser) return;
+    if (!isAdmin) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const { data } = await supabaseBrowser.auth.getSession();
+        const token = data?.session?.access_token;
+        if (!token) return;
+        const r = await fetch('/api/admin/feedback?mode=count', { headers: { authorization: `Bearer ${token}` } }).catch(() => null as any);
+        if (!r?.ok) return;
+        const out = await r.json().catch(() => ({}));
+        if (!alive) return;
+        setAdminUnreadFeedback(Number(out?.unread_count ?? 0) || 0);
+      } catch {
+      }
+    };
+    load().catch(() => {});
+    const id = window.setInterval(() => load().catch(() => {}), 15000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [isAdmin]);
 
   const signOut = async () => {
     if (!supabaseBrowser) return;
@@ -110,7 +147,19 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         diag = { error: 'No pude diagnosticar.' };
       }
 
-      setOfficeData({ ...out, balance, diag });
+      let feedback: any = null;
+      try {
+        const rf = await fetch('/api/admin/feedback', { headers: { authorization: `Bearer ${token}` } });
+        const of = await rf.json().catch(() => ({}));
+        if (rf.ok) feedback = of;
+        else feedback = { error: of?.error || 'No pude cargar mensajes.' };
+      } catch {
+        feedback = { error: 'No pude cargar mensajes.' };
+      }
+
+      const unread = Number(feedback?.unread_count ?? 0) || 0;
+      setAdminUnreadFeedback(unread);
+      setOfficeData({ ...out, balance, diag, feedback });
     } finally {
       setOfficeLoading(false);
     }
@@ -153,12 +202,117 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     }
   };
 
+  const submitFeedback = async () => {
+    if (!supabaseBrowser) return;
+    const name = feedbackName.trim();
+    const whatsapp = feedbackWhatsapp.trim();
+    const text = feedbackText.trim();
+    if (!name) {
+      alert('Pon tu nombre.');
+      return;
+    }
+    if (!whatsapp) {
+      alert('Pon tu WhatsApp.');
+      return;
+    }
+    if (!text) {
+      alert('Escribe tu mensaje.');
+      return;
+    }
+    setFeedbackBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/support/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, whatsapp, message: text }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.error || 'No pude enviar tu mensaje.').toString());
+        return;
+      }
+      alert('Listo. Recibimos tu mensaje.');
+      setIsFeedbackOpen(false);
+      setFeedbackText('');
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
+
+  const setPlan = async () => {
+    if (!supabaseBrowser) return;
+    const email = planEmail.trim().toLowerCase();
+    if (!email) {
+      alert('Pon el correo del usuario.');
+      return;
+    }
+    const manual = Number(planCreditsManual);
+    if (planCreditsMode === 'set' && (!Number.isFinite(manual) || manual < 0)) {
+      alert('Créditos manuales inválidos.');
+      return;
+    }
+    setPlanBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/set-plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          email,
+          plan_key: planKey,
+          credits_mode: planCreditsMode,
+          credits: planCreditsMode === 'set' ? manual : undefined,
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.error || 'No pude cambiar el plan.').toString());
+        return;
+      }
+      alert('Listo. Se actualizó el plan.');
+      openOffice().catch(() => {});
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
+  const markFeedbackRead = async (id: string) => {
+    if (!supabaseBrowser) return;
+    const clean = (id || '').toString().trim();
+    if (!clean) return;
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) return;
+      await fetch('/api/admin/feedback-mark-read', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: clean }),
+      }).catch(() => null as any);
+      openOffice().catch(() => {});
+    } catch {
+    }
+  };
+
   if (isOfficeOpen) {
     const users = officeData?.users || {};
     const payments = officeData?.payments || {};
     const daily = Array.isArray(payments?.daily_7d) ? payments.daily_7d : [];
     const balance = officeData?.balance || {};
     const diag = officeData?.diag || {};
+    const feedback = officeData?.feedback || {};
+    const feedbackItems = Array.isArray(feedback?.items) ? feedback.items : [];
     return (
       <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
         <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
@@ -324,6 +478,57 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="flex items-center justify-between">
+              <div className="text-white font-extrabold">Mensajes</div>
+              <div className="text-[11px] text-slate-400">{Number(feedback?.unread_count ?? 0) ? `${Number(feedback?.unread_count ?? 0)} sin leer` : '—'}</div>
+            </div>
+            {feedback?.error ? (
+              <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                {(feedback?.error || 'No pude cargar mensajes.').toString()}
+              </div>
+            ) : feedbackItems.length === 0 ? (
+              <div className="mt-3 text-sm text-slate-400">Aún no hay mensajes.</div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {feedbackItems.slice(0, 30).map((m: any) => {
+                  const id = String(m?.id || '');
+                  const name = String(m?.name || 'Usuario');
+                  const whatsapp = String(m?.whatsapp || '');
+                  const msg = String(m?.message || '');
+                  const isRead = Boolean(m?.is_read);
+                  const createdAt = String(m?.created_at || '');
+                  let dateLabel = createdAt;
+                  try {
+                    const d = new Date(createdAt);
+                    if (!Number.isNaN(d.getTime())) dateLabel = d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                  } catch {
+                  }
+                  return (
+                    <div key={id} className={cn('bg-black/20 border border-white/10 rounded-2xl p-4', !isRead ? 'ring-1 ring-emerald-500/30' : '')}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-white font-extrabold truncate">{name}</div>
+                          <div className="text-[11px] text-slate-400 truncate">{whatsapp ? `WhatsApp: ${whatsapp}` : '—'}</div>
+                        </div>
+                        <div className="text-[11px] text-slate-400 shrink-0">{dateLabel}</div>
+                      </div>
+                      <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap break-words">{msg}</div>
+                      {!isRead && id ? (
+                        <button
+                          onClick={() => markFeedbackRead(id)}
+                          className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold transition-colors"
+                        >
+                          Marcar como leído
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
             <div className="text-white font-extrabold">Enviar créditos</div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
               <input
@@ -347,6 +552,65 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               </button>
             </div>
             <div className="mt-3 text-[11px] text-slate-400">Solo admin. Se suma al saldo del usuario.</div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="text-white font-extrabold">Cambiar plan</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                value={planEmail}
+                onChange={(e) => setPlanEmail(e.target.value)}
+                placeholder="correo@gmail.com"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 md:col-span-2"
+              />
+              <select
+                value={planKey}
+                onChange={(e) => setPlanKey(e.target.value as any)}
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              >
+                <option value="ninguno">Sin plan</option>
+                <option value="gratis">Gratis</option>
+                <option value="inicio">Inicio</option>
+                <option value="productor">Productor</option>
+              </select>
+              <select
+                value={planCreditsMode}
+                onChange={(e) => setPlanCreditsMode(e.target.value as any)}
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              >
+                <option value="none">No tocar créditos</option>
+                <option value="default">Créditos del plan</option>
+                <option value="set">Créditos manuales</option>
+              </select>
+            </div>
+            {planCreditsMode === 'set' ? (
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input
+                  value={planCreditsManual}
+                  onChange={(e) => setPlanCreditsManual(e.target.value)}
+                  placeholder="Créditos (ej: 500)"
+                  className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                />
+                <button
+                  onClick={() => setPlan().catch(() => {})}
+                  disabled={planBusy}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 md:col-span-2"
+                >
+                  {planBusy ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setPlan().catch(() => {})}
+                disabled={planBusy}
+                className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+              >
+                {planBusy ? 'Guardando…' : 'Guardar'}
+              </button>
+            )}
+            <div className="mt-3 text-[11px] text-slate-400">
+              Esto cambia el plan sin obligar a regalar créditos extra (si eliges “No tocar créditos”). Si eliges “Créditos del plan”, se suman los créditos del paquete.
+            </div>
           </div>
         </div>
       </div>
@@ -402,7 +666,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             </div>
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>
-          <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+          <button
+            className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+            onClick={() => {
+              setFeedbackName((prev) => prev || userName);
+              setIsFeedbackOpen(true);
+            }}
+          >
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
               <span className="text-lg">⭐</span> Ayúdanos a mejorar
             </div>
@@ -417,7 +687,11 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               onClick={() => openOffice().catch(() => {})}
             >
               <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
-                <Shield className="w-5 h-5 text-yellow-300" /> OFICINA
+                <div className="relative">
+                  <Shield className="w-5 h-5 text-yellow-300" />
+                  {adminUnreadFeedback > 0 ? <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" /> : null}
+                </div>
+                OFICINA
               </div>
               <ChevronRight className="w-5 h-5 text-slate-500" />
             </button>
@@ -425,12 +699,6 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         )}
 
         <div className="glass-card rounded-2xl overflow-hidden">
-          <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5">
-            <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
-              <MessageSquare className="w-5 h-5 text-slate-400" /> Contáctanos
-            </div>
-            <ChevronRight className="w-5 h-5 text-slate-500" />
-          </button>
           <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5">
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
               <HelpCircle className="w-5 h-5 text-slate-400" /> Preguntas frecuentes
@@ -456,6 +724,65 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>
         </div>
+
+        {isFeedbackOpen && (
+          <div className="fixed inset-0 z-[200] bg-black/70 flex items-end md:items-center justify-center">
+            <button className="absolute inset-0 w-full h-full" onClick={() => setIsFeedbackOpen(false)} aria-label="Cerrar" />
+            <div className="relative w-full md:max-w-[560px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                <div className="text-white font-extrabold">Ayúdanos a mejorar</div>
+                <button onClick={() => setIsFeedbackOpen(false)} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
+                  ✕
+                </button>
+              </div>
+              <div className="p-5 space-y-3">
+                <div>
+                  <div className="text-[11px] text-slate-400 font-semibold">Nombre</div>
+                  <input
+                    value={feedbackName}
+                    onChange={(e) => setFeedbackName(e.target.value)}
+                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                    placeholder="Tu nombre"
+                  />
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400 font-semibold">WhatsApp</div>
+                  <input
+                    value={feedbackWhatsapp}
+                    onChange={(e) => setFeedbackWhatsapp(e.target.value)}
+                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                    placeholder="Ej: +52 999 000 0000"
+                  />
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400 font-semibold">Mensaje</div>
+                  <textarea
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 min-h-[140px] resize-none"
+                    placeholder="Cuéntanos qué mejorar o qué error viste…"
+                  />
+                </div>
+              </div>
+              <div className="p-5 border-t border-white/10 flex items-center gap-3">
+                <button
+                  onClick={() => setIsFeedbackOpen(false)}
+                  className="w-[140px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[48px] rounded-full font-extrabold text-sm transition-colors"
+                  disabled={feedbackBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => submitFeedback().catch(() => {})}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  disabled={feedbackBusy}
+                >
+                  {feedbackBusy ? 'Enviando…' : 'Enviar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="glass-card rounded-2xl p-4">
           <p className="text-sm font-medium text-slate-200 mb-4">Síguenos</p>
