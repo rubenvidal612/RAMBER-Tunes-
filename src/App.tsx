@@ -57,10 +57,18 @@ export default function App() {
   useEffect(() => {
     if (!supabaseBrowser) return;
     let alive = true;
+    let signingOut = false;
     const setFromSession = (session: any) => {
+      if (!session) {
+        if (!alive) return;
+        setAuthEmail('');
+        return;
+      }
       const email = (session?.user?.email || '').toString().trim().toLowerCase();
       const ok = email && (email.endsWith('@gmail.com') || email.endsWith('@googlemail.com'));
       if (!ok) {
+        if (signingOut) return;
+        signingOut = true;
         try {
           supabaseBrowser.auth.signOut().catch(() => {});
         } catch {}
