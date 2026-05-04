@@ -5,19 +5,27 @@ import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 export function useUserCredits() {
   const [credits, setCredits] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const refreshCredits = async () => {
     setLoading(true);
     try {
       const t = await getAccessToken();
-      if (!t.ok) return;
+      if (!t.ok) {
+        setError(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
       const r = await fetch('/api/account/balance', {
         headers: { authorization: `Bearer ${t.token}` },
       });
       const out = await r.json().catch(() => ({}));
-      if (!r.ok) return;
+      if (!r.ok) {
+        setError((out?.error || 'No pude consultar el saldo.').toString());
+        return;
+      }
       const c = Number(out?.credits);
       if (Number.isFinite(c)) setCredits(c);
+      setError('');
     } finally {
       setLoading(false);
     }
@@ -57,6 +65,7 @@ export function useUserCredits() {
   return {
     credits,
     loading,
+    error,
     refreshCredits,
     consumeCredits,
     addCredits

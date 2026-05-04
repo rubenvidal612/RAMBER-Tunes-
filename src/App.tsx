@@ -45,7 +45,8 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
-  const { credits, refreshCredits } = useUserCredits();
+  const { credits, refreshCredits, error: creditsError } = useUserCredits();
+  const lastCreditsErrorRef = useRef<string>('');
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -58,6 +59,16 @@ export default function App() {
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
 
+  useEffect(() => {
+    const msg = (creditsError || '').toString();
+    if (!msg) {
+      lastCreditsErrorRef.current = '';
+      return;
+    }
+    if (lastCreditsErrorRef.current === msg) return;
+    lastCreditsErrorRef.current = msg;
+    showToast(msg);
+  }, [creditsError]);
   useEffect(() => {
     if (!supabaseBrowser) return;
     let alive = true;
@@ -863,6 +874,22 @@ export default function App() {
                 Créditos:{' '}
                 <span className="text-white font-extrabold">{Number(balanceData?.credits ?? displayCredits ?? 0).toString()}</span>
               </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Fuente: {(balanceData?.source || '—').toString()}
+                {balanceData?.provider_error ? ` · Proveedor: ${(balanceData?.provider_error || '').toString()}` : ''}
+              </div>
+              {balanceData?.provider_credits != null || balanceData?.internal_credits != null ? (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="bg-black/20 border border-white/10 rounded-xl px-3 py-2">
+                    <div className="text-[10px] text-slate-400 font-semibold">Proveedor</div>
+                    <div className="text-xs text-white font-extrabold">{balanceData?.provider_credits == null ? '—' : Number(balanceData?.provider_credits ?? 0).toString()}</div>
+                  </div>
+                  <div className="bg-black/20 border border-white/10 rounded-xl px-3 py-2">
+                    <div className="text-[10px] text-slate-400 font-semibold">Interno</div>
+                    <div className="text-xs text-white font-extrabold">{balanceData?.internal_credits == null ? '—' : Number(balanceData?.internal_credits ?? 0).toString()}</div>
+                  </div>
+                </div>
+              ) : null}
               <div className="mt-2 text-xs text-slate-500">Se descuenta automáticamente según la acción.</div>
               {balanceError && (
                 <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
