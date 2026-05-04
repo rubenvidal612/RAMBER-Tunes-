@@ -65,6 +65,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [gender, setGender] = useState<'Masculino' | 'Femenino'>('Masculino');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTranscribingAudioLyrics, setIsTranscribingAudioLyrics] = useState(false);
+  const [audioLyricsStatus, setAudioLyricsStatus] = useState<string>('');
   const lastTranscribedKeyRef = useRef<string>('');
   const [hasPendingTask, setHasPendingTask] = useState(false);
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
@@ -248,6 +249,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setUploadProgress(0);
     setIsAudioModalOpen(false);
     setAudioUploadError(null);
+    setAudioLyricsStatus('');
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
@@ -258,10 +260,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
     if (isTranscribingAudioLyrics) return;
     setIsTranscribingAudioLyrics(true);
+    if (auto) setAudioLyricsStatus('Transcribiendo letra…');
     try {
       const t = await getAccessToken();
       if (!t.ok) {
         if (!auto) alert(t.error || 'No se pudo iniciar sesión.');
+        if (auto) setAudioLyricsStatus('No pude transcribir la letra automáticamente.');
         return;
       }
       const guessMimeType = (u: string) => {
@@ -284,21 +288,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const out = await r.json().catch(() => ({}));
       if (!r.ok || out?.ok === false) {
         if (!auto) alert((out?.message || out?.detail || out?.error || 'No se pudo transcribir la letra.').toString());
+        if (auto) setAudioLyricsStatus((out?.message || 'No pude transcribir la letra automáticamente.').toString());
         return;
       }
       const status = (out?.status || '').toString().trim().toUpperCase();
       if (status === 'ILEGIBLE' || status === 'SIN_LETRA') {
         if (!auto) alert((out?.message || 'No se pudo transcribir la letra.').toString());
+        if (auto) setAudioLyricsStatus((out?.message || 'No pude transcribir la letra automáticamente.').toString());
         return;
       }
       const text = (out?.lyrics || '').toString().trim();
       if (!text) {
         if (!auto) alert('No detecté letra en ese audio.');
+        if (auto) setAudioLyricsStatus('No pude detectar letra en ese audio.');
         return;
       }
       setLyrics(text);
+      if (auto) setAudioLyricsStatus('');
     } catch (e) {
       if (!auto) alert(e instanceof Error ? e.message : 'Error transcribiendo la letra.');
+      if (auto) setAudioLyricsStatus('No pude transcribir la letra automáticamente.');
     } finally {
       setIsTranscribingAudioLyrics(false);
     }
@@ -1091,6 +1100,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             audioInputRef={audioInputRef}
             audioUploadUrl={audioUploadUrl}
             externalAudioLabel={externalAudioLabel}
+            audioLyricsStatus={audioLyricsStatus}
             isUploadingAudio={isUploadingAudio}
             onUploadAudio={uploadAudio}
             onClearAudio={clearAudio}
@@ -1454,6 +1464,7 @@ function CustomForm({
   audioInputRef,
   audioUploadUrl,
   externalAudioLabel,
+  audioLyricsStatus,
   isUploadingAudio,
   onUploadAudio,
   onClearAudio,
@@ -1795,6 +1806,11 @@ function CustomForm({
             placeholder="Agrega tu propia letra o ingresa un tema para generar"
             className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
           />
+          {!!audioLyricsStatus && (
+            <div className="mt-2 text-[12px] text-slate-400">
+              {audioLyricsStatus}
+            </div>
+          )}
           
           <div className="flex justify-end items-center gap-2 mt-2">
             <button

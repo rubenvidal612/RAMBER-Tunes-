@@ -3276,39 +3276,56 @@ const aiHandler = (() => {
       "Si NO hay voz/canto, responde exactamente: SIN_LETRA. " +
       "Si el audio es de plano ilegible y no se puede transcribir, responde exactamente: ILEGIBLE.";
 
-    try {
-      const r = await ai.models.generateContent({
-        model: "gemini-1.5-flash-latest",
-        systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              { inlineData: { mimeType: normalizeAudioMimeType(mimeType) || "audio/mpeg", data: toBase64(audioBuf) } },
-            ],
-          },
-        ],
-      });
+    const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
+    const models = ["gemini-1.5-flash-8b-latest", "gemini-1.5-flash-latest", "gemini-1.5-flash-8b", "gemini-1.5-flash"];
 
-      const text = String(r?.text || "").trim();
-      if (!text) return { ok: false as const, error: "Gemini no devolvió texto", userMessage: "No pude transcribir la letra. Intenta con un audio más claro o más corto." };
-      const upper = text.toUpperCase();
-      if (upper === "SIN_LETRA") return { ok: true as const, lyrics: "", status: "SIN_LETRA" as const };
-      if (upper === "ILEGIBLE") return { ok: true as const, lyrics: "", status: "ILEGIBLE" as const };
-      return { ok: true as const, lyrics: text, status: "OK" as const };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      const lower = msg.toLowerCase();
-      const is404 = lower.includes("404") || lower.includes("not found");
-      const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
-      const userMessage = is404
-        ? "La transcripción está en mantenimiento. Intenta de nuevo en unos minutos."
-        : is429
+    let lastErr: any = null;
+    for (const model of models) {
+      try {
+        const r = await ai.models.generateContent({
+          model,
+          systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: toBase64(audioBuf) } }],
+            },
+          ],
+        });
+
+        const text = String(r?.text || "").trim();
+        if (!text) {
+          return {
+            ok: false as const,
+            error: "Gemini no devolvió texto",
+            userMessage: "No pude transcribir la letra. Intenta con un audio más claro o más corto.",
+          };
+        }
+        const upper = text.toUpperCase();
+        if (upper === "SIN_LETRA") return { ok: true as const, lyrics: "", status: "SIN_LETRA" as const };
+        if (upper === "ILEGIBLE") return { ok: true as const, lyrics: "", status: "ILEGIBLE" as const };
+        return { ok: true as const, lyrics: text, status: "OK" as const };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        lastErr = msg;
+        const lower = msg.toLowerCase();
+        const is404 = lower.includes("404") || lower.includes("not found");
+        if (is404) {
+          continue;
+        }
+        const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
+        const userMessage = is429
           ? "La transcripción está saturada en este momento. Intenta de nuevo en unos minutos."
           : "No pude transcribir la letra. Intenta con un audio más claro o más corto.";
-      return { ok: false as const, error: msg, userMessage };
+        return { ok: false as const, error: msg, userMessage };
+      }
     }
+
+    return {
+      ok: false as const,
+      error: String(lastErr || "Modelo no disponible"),
+      userMessage: "La transcripción está en mantenimiento. Intenta de nuevo en unos minutos.",
+    };
   }
 
   async function handleTranscribeLyrics(req: any, res: any) {
