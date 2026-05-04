@@ -2560,7 +2560,19 @@ const balanceHandler = (() => {
       profile = r2.data ?? null;
     }
 
-    const credits = round2(creditsFromProfile(profile));
+    let credits = round2(creditsFromProfile(profile));
+    if (is_admin && (!Number.isFinite(credits) || credits <= 0)) {
+      const adminDefault = 5000;
+      try {
+        const col = pickWritableCreditsColumn(profile);
+        if (col) {
+          await admin.from("profiles").update({ [col]: adminDefault }).eq("id", user.id);
+          credits = adminDefault;
+        }
+      } catch {
+        credits = adminDefault;
+      }
+    }
     const counts = toCounts(credits);
     return send(res, 200, {
       credits,
