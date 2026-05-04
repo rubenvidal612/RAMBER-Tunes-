@@ -212,11 +212,6 @@ const sunoHandler = (() => {
     return new URL(pathname, originFromReq(req)).toString();
   }
 
-  function pickQuery(req: any, key: string) {
-    const url = new URL(req.url, "http://localhost");
-    return url.searchParams.get(key) || "";
-  }
-
   function sunoErrorMessage(data: any, fallback: string) {
     const msg =
       (typeof data?.message === "string" && data.message) ||
@@ -277,6 +272,15 @@ const sunoHandler = (() => {
   function getAuthToken(req: any) {
     const authHeader = (req.headers.authorization || "").toString();
     return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  function pickQuery(req: any, key: string) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      return (u.searchParams.get(key) || "").toString();
+    } catch {
+      return "";
+    }
   }
 
   async function requireUser(req: any) {
@@ -1722,11 +1726,6 @@ const mercadoPagoHandler = (() => {
     return `${proto}://${host}`;
   }
 
-  function pickQuery(req: any, key: string) {
-    const url = new URL(req.url, "http://localhost");
-    return url.searchParams.get(key) || "";
-  }
-
   function parseJsonBody(req: any) {
     if (typeof req.body === "string") {
       try {
@@ -1741,6 +1740,15 @@ const mercadoPagoHandler = (() => {
   function getAuthToken(req: any) {
     const authHeader = (req.headers.authorization || "").toString();
     return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  function pickQuery(req: any, key: string) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      return (u.searchParams.get(key) || "").toString();
+    } catch {
+      return "";
+    }
   }
 
   async function requireUser(req: any) {
@@ -3178,6 +3186,151 @@ const adminHandler = (() => {
   };
 })();
 
+const aiHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  const toBase64 = (buf: ArrayBuffer) => Buffer.from(buf).toString("base64");
+
+  const safeUrl = (u: string) => {
+    try {
+      const url = new URL(u);
+      if (!(url.protocol === "https:" || url.protocol === "http:")) return null;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  };
+
+  async function transcribeLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string) {
+    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    if (!apiKey) return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
+
+    const mod: any = await import("@google/genai");
+    const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
+    if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
+
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt =
+      "Transcribe únicamente la letra cantada en este audio. " +
+      "Respeta saltos de línea. " +
+      "Si identificas estructura, usa etiquetas como [Verso], [Coro], [Puente]. " +
+      "Si NO hay voz/canto, responde exactamente: SIN_LETRA";
+
+    const r = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: mimeType || "audio/mpeg", data: toBase64(audioBuf) } },
+          ],
+        },
+      ],
+    });
+
+    const text = String(r?.text || "").trim();
+    if (!text) return { ok: false as const, error: "Gemini no devolvió texto" };
+    if (text.toUpperCase() === "SIN_LETRA") return { ok: true as const, lyrics: "" };
+    return { ok: true as const, lyrics: text };
+  }
+
+  async function handleTranscribeLyrics(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
+    const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
+    const url = safeUrl(uploadUrl);
+    if (!url) return send(res, 400, { error: "uploadUrl inválido" });
+
+    try {
+      const fr = await fetch(url);
+      if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
+
+      const contentType = (fr.headers.get("content-type") || "").toString();
+      const mimeType = (mimeTypeHint || contentType || "audio/mpeg").split(";")[0].trim();
+      const ab = await fr.arrayBuffer();
+      const size = ab.byteLength || 0;
+      if (size <= 0) return send(res, 400, { error: "El audio está vacío" });
+      if (size > 15 * 1024 * 1024) return send(res, 413, { error: "Audio muy pesado para transcribir. Sube un fragmento más corto." });
+
+      const out = await transcribeLyricsWithGemini(ab, mimeType);
+      if (!out.ok) return send(res, 502, { error: out.error || "No pude transcribir" });
+
+      return send(res, 200, { ok: true, lyrics: out.lyrics || "" });
+    } catch (e) {
+      return send(res, 502, { error: "Error transcribiendo", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "ai") return send(res, 404, { error: "Ruta no encontrada" });
+
+    let action = "";
+    try {
+      action = (new URL(req.url, "http://localhost").searchParams.get("action") || "").toString();
+    } catch {
+      action = "";
+    }
+    action = action.trim().toLowerCase();
+    const a = action || (next || "").toLowerCase();
+    if (a === "transcribe-lyrics") return handleTranscribeLyrics(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -3197,6 +3350,7 @@ export default async function handler(req: any, res: any) {
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
     if (head === "admin") return adminHandler(req, res);
+    if (head === "ai") return aiHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);

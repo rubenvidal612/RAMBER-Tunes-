@@ -95,7 +95,7 @@ function InicioLanding({
     );
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#050505]">
+    <div className="h-full overflow-y-auto bg-[#050505]">
       <div className="max-w-6xl mx-auto px-4 md:px-8 pt-6 md:pt-10 pb-24 md:pb-10">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10 items-center">
           <div>
@@ -956,7 +956,7 @@ export default function App() {
            </div>
 
            {currentTab === 'inicio' ? (
-             <div className="flex-1 overflow-hidden">
+             <div className="flex-1 bg-[#050505]">
                <InicioLanding
                  email={authEmail}
                  onGoStudio={() => setCurrentTab('studio')}

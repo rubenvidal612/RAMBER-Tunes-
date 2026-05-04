@@ -62,6 +62,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [lyrics, setLyrics] = useState('');
   const [gender, setGender] = useState<'Masculino' | 'Femenino'>('Masculino');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTranscribingAudioLyrics, setIsTranscribingAudioLyrics] = useState(false);
+  const lastTranscribedKeyRef = useRef<string>('');
   const [hasPendingTask, setHasPendingTask] = useState(false);
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
   const pendingLegacyKey = 'ramber.pendingSunoTask';
@@ -219,6 +221,46 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
+  const transcribeLyricsFromAudio = async (auto?: boolean) => {
+    if (instrumental) {
+      if (!auto) alert('En modo instrumental no se transcribe letra.');
+      return;
+    }
+    if (!audioUploadUrl) {
+      if (!auto) alert('Primero sube tu audio.');
+      return;
+    }
+    if (isTranscribingAudioLyrics) return;
+    setIsTranscribingAudioLyrics(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        if (!auto) alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/ai/transcribe-lyrics', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType: (audioFile?.type || '').toString() }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (!auto) alert((out?.detail || out?.error || 'No se pudo transcribir la letra.').toString());
+        return;
+      }
+      const text = (out?.lyrics || '').toString().trim();
+      if (!text) {
+        if (!auto) alert('No detecté letra en ese audio.');
+        return;
+      }
+      setLyrics(text);
+    } catch (e) {
+      if (!auto) alert(e instanceof Error ? e.message : 'Error transcribiendo la letra.');
+    } finally {
+      setIsTranscribingAudioLyrics(false);
+    }
+  };
+
   useEffect(() => {
     const readList = () => {
       try {
@@ -263,6 +305,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (!audioFile) return;
     setUploadProgress(100);
   }, [audioUploadUrl, audioFile]);
+
+  useEffect(() => {
+    if (!audioUploadUrl) return;
+    if (!audioFile) return;
+    if (instrumental) return;
+    const key = (audioUploadPath || audioUploadUrl).toString().trim();
+    if (!key) return;
+    if (lastTranscribedKeyRef.current === key) return;
+    const existing = (lyrics || '').toString().trim();
+    if (existing) {
+      lastTranscribedKeyRef.current = key;
+      return;
+    }
+    lastTranscribedKeyRef.current = key;
+    transcribeLyricsFromAudio(true).catch(() => {});
+  }, [audioUploadUrl, audioUploadPath, audioFile, instrumental]);
 
   useEffect(() => {
     if (!onSongCreated) return;
@@ -1007,6 +1065,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onOpenAudioModal={() => setIsAudioModalOpen(true)}
             selectedPersona={selectedPersona}
             onClearPersona={() => setSelectedPersona(null)}
+            isTranscribingAudioLyrics={isTranscribingAudioLyrics}
+            onTranscribeAudioLyrics={transcribeLyricsFromAudio}
           />
         )}
       </div>
@@ -1367,6 +1427,8 @@ function CustomForm({
   onOpenAudioModal,
   selectedPersona,
   onClearPersona,
+  isTranscribingAudioLyrics,
+  onTranscribeAudioLyrics,
 }: any) {
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
@@ -1699,6 +1761,16 @@ function CustomForm({
             >
               <Maximize2 className="w-4 h-4" />
             </button>
+            {!!audioUploadUrl && (
+              <button
+                onClick={() => onTranscribeAudioLyrics?.(false)}
+                disabled={Boolean(isTranscribingAudioLyrics)}
+                className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isTranscribingAudioLyrics && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Letra del audio
+              </button>
+            )}
             <button 
               onClick={() => handleGenerateLyrics(false).catch(() => {})}
               disabled={isGeneratingLyrics}
