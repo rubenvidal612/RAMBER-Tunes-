@@ -1203,7 +1203,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       )}
 
       {isAudioModalOpen && audioFile && (
-        <div className="fixed inset-0 z-[130] bg-black/70 flex items-end md:items-center justify-center">
+        <div className="fixed inset-0 md:absolute md:inset-0 z-[130] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsAudioModalOpen(false)} aria-label="Cerrar" />
           <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
@@ -1806,16 +1806,6 @@ function CustomForm({
             >
               <Maximize2 className="w-4 h-4" />
             </button>
-            {!!audioUploadUrl && (
-              <button
-                onClick={() => onTranscribeAudioLyrics?.(false)}
-                disabled={Boolean(isTranscribingAudioLyrics)}
-                className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {isTranscribingAudioLyrics && <RefreshCw className="w-4 h-4 animate-spin" />}
-                Letra del audio
-              </button>
-            )}
             <button 
               onClick={() => handleGenerateLyrics(false).catch(() => {})}
               disabled={isGeneratingLyrics}
