@@ -15,11 +15,243 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
+import { ArrowRight, BadgeCheck, Download, Music2, Rocket, Shield, Sparkles, Wand2 } from 'lucide-react';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
+
+function InicioLanding({
+  email,
+  onGoStudio,
+  onGoLibrary,
+  onOpenPlans,
+}: {
+  email: string;
+  onGoStudio: () => void;
+  onGoLibrary: () => void;
+  onOpenPlans: () => void;
+}) {
+  const name = (email || '').split('@')[0] || 'aquí';
+  const heroImage =
+    'data:image/svg+xml;utf8,' +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#22d3ee" stop-opacity="0.35"/>
+            <stop offset="0.5" stop-color="#6366f1" stop-opacity="0.35"/>
+            <stop offset="1" stop-color="#a855f7" stop-opacity="0.35"/>
+          </linearGradient>
+          <linearGradient id="w" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#22d3ee"/>
+            <stop offset="0.5" stop-color="#6366f1"/>
+            <stop offset="1" stop-color="#a855f7"/>
+          </linearGradient>
+        </defs>
+        <rect width="1200" height="720" fill="#070a12"/>
+        <rect x="48" y="48" width="1104" height="624" rx="40" fill="url(#g)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+        <g opacity="0.9">
+          <circle cx="260" cy="230" r="90" fill="rgba(34,211,238,0.14)"/>
+          <circle cx="900" cy="220" r="130" fill="rgba(168,85,247,0.12)"/>
+          <circle cx="760" cy="520" r="120" fill="rgba(99,102,241,0.12)"/>
+        </g>
+        <g transform="translate(140,305)" opacity="0.95">
+          <rect x="0" y="-90" width="520" height="190" rx="26" fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.14)"/>
+          <text x="26" y="-34" fill="rgba(255,255,255,0.92)" font-family="ui-sans-serif,system-ui" font-size="28" font-weight="800">RAMBER Tunes</text>
+          <text x="26" y="6" fill="rgba(226,232,240,0.9)" font-family="ui-sans-serif,system-ui" font-size="16">Crea canciones con IA en segundos</text>
+          <g transform="translate(26,48)">
+            <rect width="468" height="10" rx="6" fill="rgba(255,255,255,0.10)"/>
+            <rect width="312" height="10" rx="6" fill="url(#w)"/>
+          </g>
+          <g transform="translate(26,78)" fill="rgba(255,255,255,0.5)">
+            <rect x="0" y="0" width="16" height="34" rx="8"/>
+            <rect x="24" y="-10" width="16" height="54" rx="8"/>
+            <rect x="48" y="6" width="16" height="28" rx="8"/>
+            <rect x="72" y="-14" width="16" height="62" rx="8"/>
+            <rect x="96" y="2" width="16" height="34" rx="8"/>
+            <rect x="120" y="-8" width="16" height="50" rx="8"/>
+            <rect x="144" y="8" width="16" height="24" rx="8"/>
+            <rect x="168" y="-12" width="16" height="58" rx="8"/>
+            <rect x="192" y="0" width="16" height="36" rx="8"/>
+            <rect x="216" y="-16" width="16" height="66" rx="8"/>
+            <rect x="240" y="6" width="16" height="28" rx="8"/>
+            <rect x="264" y="-10" width="16" height="54" rx="8"/>
+            <rect x="288" y="2" width="16" height="34" rx="8"/>
+            <rect x="312" y="-14" width="16" height="62" rx="8"/>
+          </g>
+        </g>
+        <g transform="translate(720,290)" opacity="0.95">
+          <rect x="0" y="-120" width="340" height="420" rx="28" fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.14)"/>
+          <text x="24" y="-72" fill="rgba(255,255,255,0.9)" font-family="ui-sans-serif,system-ui" font-size="18" font-weight="800">Música IA</text>
+          <rect x="24" y="-48" width="292" height="56" rx="18" fill="rgba(255,255,255,0.08)"/>
+          <rect x="24" y="22" width="292" height="56" rx="18" fill="rgba(255,255,255,0.08)"/>
+          <rect x="24" y="92" width="292" height="56" rx="18" fill="rgba(255,255,255,0.08)"/>
+          <rect x="24" y="172" width="292" height="56" rx="18" fill="url(#w)" opacity="0.9"/>
+          <text x="142" y="208" fill="#0b1224" font-family="ui-sans-serif,system-ui" font-size="16" font-weight="800">CREAR</text>
+        </g>
+      </svg>`
+    );
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-[#050505]">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 pt-6 md:pt-10 pb-24 md:pb-10">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10 items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1.5 text-xs text-slate-200">
+              <Sparkles className="w-4 h-4 text-indigo-300" strokeWidth={2} />
+              <span className="font-semibold">Bienvenido, {name}</span>
+              <span className="text-slate-400">•</span>
+              <span className="text-slate-300">Crea en segundos</span>
+            </div>
+            <h1 className="mt-4 text-3xl md:text-5xl font-black tracking-tight leading-tight">
+              Crea música con IA para tus ideas, tu negocio o tus clientes
+            </h1>
+            <p className="mt-4 text-slate-300 text-sm md:text-base leading-relaxed max-w-xl">
+              Genera canciones con 2 versiones (A y B), guarda todo en tu biblioteca y mejora resultados con letras,
+              instrucciones y estilos. En el plan gratis puedes crear, pero las descargas se habilitan al comprar plan.
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={onGoStudio}
+                className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-95 active:scale-[0.99] transition-all text-white font-extrabold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+              >
+                <Rocket className="w-4 h-4" strokeWidth={2} /> Empezar a crear <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onOpenPlans}
+                className="bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2"
+              >
+                Ver planes <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onGoLibrary}
+                className="bg-black/30 hover:bg-black/40 border border-white/10 text-slate-100 font-bold text-sm px-6 py-3.5 rounded-2xl flex items-center justify-center gap-2"
+              >
+                Ir a biblioteca <Music2 className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Plan gratis</div>
+                <div className="mt-1 text-white font-extrabold">5 canciones</div>
+                <div className="mt-1 text-[11px] text-slate-400">10 versiones A/B</div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Rápido</div>
+                <div className="mt-1 text-white font-extrabold">1 click</div>
+                <div className="mt-1 text-[11px] text-slate-400">Crear y guardar</div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Descargas</div>
+                <div className="mt-1 text-white font-extrabold">Con plan</div>
+                <div className="mt-1 text-[11px] text-slate-400">WAV / MP4</div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Control</div>
+                <div className="mt-1 text-white font-extrabold">Créditos</div>
+                <div className="mt-1 text-[11px] text-slate-400">Saldo y costos</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-6 bg-gradient-to-br from-cyan-400/10 via-indigo-500/10 to-purple-500/10 blur-2xl rounded-[48px]" />
+            <div className="relative bg-white/5 border border-white/10 rounded-[32px] overflow-hidden shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
+              <img src={heroImage} alt="RAMBER Tunes" className="w-full h-auto block" />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 md:mt-14">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-white font-extrabold text-lg md:text-xl">Cómo funciona</div>
+            <div className="text-xs text-slate-400">Diseñado para crear rápido y bonito</div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="bg-gradient-to-br from-indigo-500/15 to-purple-500/10 border border-white/10 rounded-3xl p-5">
+              <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Wand2 className="w-5 h-5 text-indigo-200" />
+              </div>
+              <div className="mt-3 text-white font-extrabold">1) Escribe</div>
+              <div className="mt-1 text-sm text-slate-300">Pon tu idea o letra. Simple o Personalizado.</div>
+            </div>
+            <div className="bg-gradient-to-br from-cyan-500/10 to-indigo-500/10 border border-white/10 rounded-3xl p-5">
+              <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Music2 className="w-5 h-5 text-cyan-200" />
+              </div>
+              <div className="mt-3 text-white font-extrabold">2) Ajusta</div>
+              <div className="mt-1 text-sm text-slate-300">Elige vibe, estilo, instrumental y más.</div>
+            </div>
+            <div className="bg-gradient-to-br from-purple-500/10 to-fuchsia-500/10 border border-white/10 rounded-3xl p-5">
+              <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Rocket className="w-5 h-5 text-purple-200" />
+              </div>
+              <div className="mt-3 text-white font-extrabold">3) Crea</div>
+              <div className="mt-1 text-sm text-slate-300">Genera 2 versiones (A y B) y guarda en biblioteca.</div>
+            </div>
+            <div className="bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-white/10 rounded-3xl p-5">
+              <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Download className="w-5 h-5 text-emerald-200" />
+              </div>
+              <div className="mt-3 text-white font-extrabold">4) Entrega</div>
+              <div className="mt-1 text-sm text-slate-300">Con plan puedes descargar WAV/MP4 y entregar.</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 md:mt-14 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-3xl p-6">
+            <div className="flex items-center gap-2">
+              <BadgeCheck className="w-5 h-5 text-indigo-300" />
+              <div className="text-white font-extrabold">Hecho para vender y producir</div>
+            </div>
+            <div className="mt-2 text-slate-300 text-sm leading-relaxed">
+              Perfecto para creadores, agencias y negocios: crea demos, jingles, ideas para canciones completas, covers y más.
+              Mantén todo ordenado en tu biblioteca y controla los costos por acción con tu saldo.
+            </div>
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-black/25 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Biblioteca</div>
+                <div className="mt-1 text-white font-extrabold">Todo guardado</div>
+              </div>
+              <div className="bg-black/25 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Acciones</div>
+                <div className="mt-1 text-white font-extrabold">Voz / stems</div>
+              </div>
+              <div className="bg-black/25 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 font-semibold">Entrega</div>
+                <div className="mt-1 text-white font-extrabold">WAV / MP4</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-gradient-to-b from-indigo-500/12 via-purple-500/10 to-black/20 border border-white/10 rounded-3xl p-6">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-slate-200" />
+              <div className="text-white font-extrabold">Gratis y sin riesgo</div>
+            </div>
+            <div className="mt-2 text-slate-300 text-sm">
+              Empieza con 5 canciones. Cuando necesites descargar, compra un plan y listo.
+            </div>
+            <button
+              onClick={onOpenPlans}
+              className="mt-5 w-full bg-white text-black px-5 py-3 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2"
+            >
+              Ver planes <ArrowRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onGoStudio}
+              className="mt-3 w-full bg-white/5 border border-white/10 text-white px-5 py-3 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 hover:bg-white/10"
+            >
+              Crear ahora <Sparkles className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<ViewTab>('studio');
@@ -698,7 +930,17 @@ export default function App() {
       <main className="flex-1 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
-           {currentTab === 'inicio' && <div className="flex-1 flex items-center justify-center text-slate-500">Inicio (Próximamente)</div>}
+           {currentTab === 'inicio' && (
+             <InicioLanding
+               email={authEmail}
+               onGoStudio={() => setCurrentTab('studio')}
+               onGoLibrary={() => setCurrentTab('biblioteca')}
+               onOpenPlans={() => {
+                 setPricingAutoClaimFree(false);
+                 setIsPricingOpen(true);
+               }}
+             />
+           )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
@@ -714,8 +956,16 @@ export default function App() {
            </div>
 
            {currentTab === 'inicio' ? (
-             <div className="flex-1 flex items-center justify-center text-slate-500 bg-[#050505]">
-               Inicio (Próximamente)
+             <div className="flex-1 overflow-hidden">
+               <InicioLanding
+                 email={authEmail}
+                 onGoStudio={() => setCurrentTab('studio')}
+                 onGoLibrary={() => setCurrentTab('biblioteca')}
+                 onOpenPlans={() => {
+                   setPricingAutoClaimFree(false);
+                   setIsPricingOpen(true);
+                 }}
+               />
              </div>
            ) : (
              <>
