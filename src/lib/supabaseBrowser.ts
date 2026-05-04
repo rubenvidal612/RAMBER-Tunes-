@@ -33,9 +33,13 @@ export async function signInWithGoogle() {
   const baseRaw = (siteUrl || window.location.origin).toString().trim() || window.location.origin;
   const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : `https://${baseRaw.replace(/^\/+/, "")}`;
   const redirectTo = base.endsWith("/") ? base : `${base}/`;
-  const { data, error } = await supabaseBrowser.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+  const { data, error } = await supabaseBrowser.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo, skipBrowserRedirect: true },
+  });
   if (error) return { ok: false as const, error: (error.message || "No pude iniciar sesión con Google").toString() };
   const url = (data as any)?.url ? String((data as any).url).trim() : "";
-  if (url) window.location.href = url;
+  if (!url) return { ok: false as const, error: "No recibí el link de inicio de sesión. Revisa Redirect URLs en Supabase." };
+  window.location.href = url;
   return { ok: true as const };
 }

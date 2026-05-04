@@ -10,6 +10,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isStartingLogin, setIsStartingLogin] = useState(false);
 
   useEffect(() => {
     fetch('/api/suno/credits')
@@ -171,15 +172,19 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         <div className="py-4 text-center">
            <button
              onClick={() => {
+               if (isStartingLogin) return;
+               setIsStartingLogin(true);
                signInWithGoogle()
                  .then((r) => {
                    if (!r.ok) alert(r.error);
                  })
-                 .catch(() => alert('No pude iniciar sesión con Google.'));
+                 .catch(() => alert('No pude iniciar sesión con Google.'))
+                 .finally(() => setIsStartingLogin(false));
              }}
-             className="mb-5 text-slate-200 text-sm font-semibold hover:text-white transition-colors underline underline-offset-4"
+             disabled={isStartingLogin}
+             className="mb-5 text-slate-200 text-sm font-semibold hover:text-white transition-colors underline underline-offset-4 disabled:opacity-60"
            >
-             Entrar con Google
+             {isStartingLogin ? 'Abriendo Google…' : 'Entrar con Google'}
            </button>
            <button
              onClick={() => signOut().catch(() => {})}

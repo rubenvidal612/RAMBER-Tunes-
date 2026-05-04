@@ -35,6 +35,7 @@ export default function App() {
   const [balanceData, setBalanceData] = useState<any>(null);
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string>('');
+  const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
@@ -614,15 +615,19 @@ export default function App() {
         <div className="mt-2 text-sm text-slate-300">Para usar la app necesitas entrar con tu cuenta Gmail.</div>
         <button
           onClick={() => {
+            if (isStartingLogin) return;
+            setIsStartingLogin(true);
             signInWithGoogle()
               .then((r) => {
                 if (!r.ok) alert(r.error);
               })
-              .catch(() => alert('No pude iniciar sesión con Google.'));
+              .catch(() => alert('No pude iniciar sesión con Google.'))
+              .finally(() => setIsStartingLogin(false));
           }}
-          className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm"
+          disabled={isStartingLogin}
+          className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
         >
-          Entrar con Google
+          {isStartingLogin ? 'Abriendo Google…' : 'Entrar con Google'}
         </button>
       </div>
     );
