@@ -30,18 +30,21 @@ export default function App() {
   const [personaPickerNonce, setPersonaPickerNonce] = useState(0);
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
-  const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [pricingAutoClaimFree, setPricingAutoClaimFree] = useState(false);
   const [isBalanceOpen, setIsBalanceOpen] = useState(false);
   const [balanceData, setBalanceData] = useState<any>(null);
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string>('');
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
+  const [isFreeGiftOpen, setIsFreeGiftOpen] = useState(false);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [playerDuration, setPlayerDuration] = useState(0);
   const { credits, refreshCredits } = useUserCredits();
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -140,18 +143,6 @@ export default function App() {
     };
   }, []);
 
-  const refreshProviderCredits = async () => {
-    const r = await fetch('/api/suno/credits');
-    const out = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const msg = (out?.error || 'No pude consultar créditos.').toString();
-      if (msg) showToast(msg);
-      return;
-    }
-    const c = Number(out?.credits ?? out?.data);
-    if (Number.isFinite(c)) setProviderCredits(c);
-  };
-
   const refreshBalance = async () => {
     setIsBalanceLoading(true);
     setBalanceError('');
@@ -159,17 +150,16 @@ export default function App() {
       const t = await getAccessToken();
       if (!t.ok) {
         setBalanceError(t.error || 'No se pudo iniciar sesión.');
-        return;
+        return null;
       }
-      const r = await fetch('/api/account/balance?source=provider', { headers: { authorization: `Bearer ${t.token}` } });
+      const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${t.token}` } });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
         setBalanceError((out?.error || 'No pude consultar tu saldo.').toString());
-        return;
+        return null;
       }
       setBalanceData(out);
-      const c = Number(out?.credits);
-      if (Number.isFinite(c)) setProviderCredits(c);
+      return out;
     } finally {
       setIsBalanceLoading(false);
     }
@@ -177,17 +167,9 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthed) return;
-    refreshProviderCredits().catch(() => {});
-    const interval = window.setInterval(() => refreshProviderCredits().catch(() => {}), 20000);
-    return () => window.clearInterval(interval);
-  }, [isAuthed]);
-
-  useEffect(() => {
-    if (!isAuthed) return;
     const onVis = () => {
       if (document.visibilityState !== 'visible') return;
       refreshCredits().catch(() => {});
-      refreshProviderCredits().catch(() => {});
     };
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onVis);
@@ -201,6 +183,24 @@ export default function App() {
     if (!isBalanceOpen) return;
     refreshBalance().catch(() => {});
   }, [isBalanceOpen]);
+
+  useEffect(() => {
+    if (!isAuthed) {
+      setIsFreeGiftOpen(false);
+      setPricingAutoClaimFree(false);
+      return;
+    }
+    refreshBalance()
+      .then((out) => {
+        if (out?.show_free_claim_popup) setIsFreeGiftOpen(true);
+      })
+      .catch(() => {});
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    if (balanceData && !balanceData?.show_free_claim_popup) setIsFreeGiftOpen(false);
+  }, [balanceData, isAuthed]);
 
   const mapSongRow = (row: any): SongItem => ({
     id: String(row?.id || ''),
@@ -350,7 +350,6 @@ export default function App() {
         setCanciones((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
       }
       refreshCredits().catch(() => {});
-      refreshProviderCredits().catch(() => {});
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error guardando en biblioteca');
     }
@@ -594,6 +593,8 @@ export default function App() {
     }
     setActiveSong(song);
     setIsPlaying(false);
+    setPlayerTime(0);
+    setPlayerDuration(0);
     
     if (song.audioUrl && audioRef.current) {
       audioRef.current.src = song.audioUrl;
@@ -615,7 +616,7 @@ export default function App() {
     setIsPlaying(!isPlaying);
   };
 
-  const displayCredits = Number.isFinite(Number(providerCredits)) ? Number(providerCredits) : credits;
+  const displayCredits = credits;
 
   if (!isAuthed) {
     return (
@@ -725,8 +726,27 @@ export default function App() {
         song={activeSong} 
         isPlaying={isPlaying} 
         onPlayPause={togglePlay}
-        onClose={() => setActiveSong(null)}
+        onClose={() => {
+          setActiveSong(null);
+          setIsPlaying(false);
+          setPlayerTime(0);
+          setPlayerDuration(0);
+          if (audioRef.current) {
+            try {
+              audioRef.current.pause();
+            } catch {}
+            audioRef.current.src = '';
+          }
+        }}
         placement={currentTab === 'studio' ? 'aboveCreate' : 'default'}
+        currentTime={playerTime}
+        duration={playerDuration}
+        onSeek={(t) => {
+          if (!audioRef.current) return;
+          const next = Math.max(0, Math.min(Number.isFinite(t) ? t : 0, Number.isFinite(audioRef.current.duration) ? audioRef.current.duration : 0));
+          audioRef.current.currentTime = next;
+          setPlayerTime(next);
+        }}
       />
       {toast && (
         <div className="fixed left-0 right-0 bottom-[92px] md:bottom-6 z-[260] flex justify-center px-4 pointer-events-none">
@@ -744,11 +764,80 @@ export default function App() {
         onEnded={() => setIsPlaying(false)} 
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
+        onTimeUpdate={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const t = Number(a.currentTime);
+          if (Number.isFinite(t)) setPlayerTime(t);
+        }}
+        onLoadedMetadata={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        onDurationChange={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
         className="hidden" 
       />
 
+      {isFreeGiftOpen && (
+        <div className="fixed inset-0 z-[270] bg-black/70 flex items-end md:items-center justify-center">
+          <div className="relative w-full md:max-w-[560px] bg-gradient-to-b from-indigo-950 via-[#0b0f16] to-[#070a12] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-6">
+              <div className="inline-flex items-center gap-2 text-xs font-extrabold px-3 py-1 rounded-full bg-yellow-400 text-black">
+                REGALO
+              </div>
+              <div className="mt-3 text-2xl font-extrabold text-white">10 canciones GRATIS</div>
+              <div className="mt-2 text-slate-200 text-sm leading-relaxed">
+                Tienes un regalo de bienvenida: <span className="font-bold text-white">10 canciones</span> (20 versiones A y B).
+                Este aviso se quita cuando reclamas el regalo o compras cualquier plan.
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    setPricingAutoClaimFree(true);
+                    setIsPricingOpen(true);
+                  }}
+                  className="h-[48px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold transition-colors"
+                >
+                  Reclamar ahora
+                </button>
+                <button
+                  onClick={() => {
+                    setPricingAutoClaimFree(false);
+                    setIsPricingOpen(true);
+                  }}
+                  className="h-[48px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-extrabold transition-colors"
+                >
+                  Ver planes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} />}
-      {isPricingOpen && <PricingView onClose={() => setIsPricingOpen(false)} />}
+      {isPricingOpen && (
+        <PricingView
+          onClose={() => {
+            setIsPricingOpen(false);
+            setPricingAutoClaimFree(false);
+          }}
+          autoClaimFree={pricingAutoClaimFree}
+          onClaimed={() => {
+            setIsFreeGiftOpen(false);
+            setPricingAutoClaimFree(false);
+            refreshBalance().catch(() => {});
+          }}
+        />
+      )}
       {isBalanceOpen && (
         <div className="fixed inset-0 z-[280] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsBalanceOpen(false)} aria-label="Cerrar" />

@@ -130,24 +130,22 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   const cost = round2(Number(costCredits));
   if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
 
-  try {
-    const { res, data, text } = await providerFetchJson("/api/v1/generate/credit", { method: "GET" });
-    if (!res.ok) {
-      const detail = text || `HTTP ${res.status}`;
-      return { ok: false as const, error: `No pude consultar créditos del proveedor (${detail}).` };
-    }
-    const code = Number(data?.code);
-    if (code && code !== 200) return { ok: false as const, error: "No pude consultar créditos del proveedor." };
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
 
-    const providerCredits = parseProviderCreditsValue(data?.data ?? data?.credits ?? data?.balance);
-    const current = Number.isFinite(providerCredits) ? round2(providerCredits) : NaN;
-    if (!Number.isFinite(current)) return { ok: false as const, error: "No pude leer tus créditos reales del proveedor." };
-
+    const current = creditsFromProfile(profile);
     if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
-    return { ok: true as const, credits: current };
-  } catch (e) {
-    return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+
+    const next = round2(Math.max(0, current - cost));
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
+
+    const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
+    if (!updErr) return { ok: true as const, credits: next };
   }
+
+  return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
 }
 
 function isAdminEmail(email?: string | null) {
@@ -164,6 +162,23 @@ function isAdminEmail(email?: string | null) {
     return e === "rubenfiverr612@gmail.com";
   }
   return list.includes(e);
+}
+
+async function getUserPlan(admin: any, userId: string) {
+  const { data: tx } = await admin.from("mp_transactions").select("payment_id, pack_key, kind").eq("user_id", userId).eq("kind", "songs").limit(200);
+  const rows = Array.isArray(tx) ? tx : [];
+
+  const free_claimed = rows.some((t: any) => {
+    const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
+    const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
+    return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
+  });
+  const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
+  const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
+  const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
+  const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
+
+  return { plan_key, downloads_allowed, free_claimed };
 }
 
 async function getSupabaseCreateClient() {
@@ -1019,6 +1034,11 @@ const sunoHandler = (() => {
     const cost = CREDIT_COSTS.music_video;
 
     try {
+      if (!isAdmin) {
+        const plan = await getUserPlan(auth.admin, user.id).catch(() => ({ downloads_allowed: false }));
+        if (!plan.downloads_allowed) return send(res, 403, { error: "Tu plan no incluye descargas. Compra un plan para poder descargar." });
+      }
+
       let hasProductor = false;
       try {
         const { data: tx } = await auth.admin
@@ -1343,6 +1363,11 @@ const sunoHandler = (() => {
 
     try {
       if (!isAdmin) {
+        const plan = await getUserPlan(auth.admin, user.id).catch(() => ({ downloads_allowed: false }));
+        if (!plan.downloads_allowed) return send(res, 403, { error: "Tu plan no incluye descargas. Compra un plan para poder descargar." });
+      }
+
+      if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
@@ -1416,6 +1441,11 @@ const sunoHandler = (() => {
     const cost = CREDIT_COSTS.midi;
 
     try {
+      if (!isAdmin) {
+        const plan = await getUserPlan(auth.admin, user.id).catch(() => ({ downloads_allowed: false }));
+        if (!plan.downloads_allowed) return send(res, 403, { error: "Tu plan no incluye descargas. Compra un plan para poder descargar." });
+      }
+
       if (!isAdmin && cost > 0) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
@@ -1899,7 +1929,7 @@ const mercadoPagoHandler = (() => {
     const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
     if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, already: true });
 
-    const credits = CREDIT_COSTS.generate_music * 5;
+    const credits = CREDIT_COSTS.generate_music * 10;
     const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
     if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
 
@@ -2499,8 +2529,6 @@ const balanceHandler = (() => {
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-    const downloads_allowed = true;
-
     const { data: freeTx } = await admin.from("mp_transactions").select("payment_id, pack_key").eq("user_id", user.id).eq("kind", "songs").limit(50);
     const free_claimed =
       Array.isArray(freeTx) &&
@@ -2512,6 +2540,8 @@ const balanceHandler = (() => {
     const hasInicio = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
     const hasProductor = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
     const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
+    const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
+    const show_free_claim_popup = plan_key === "ninguno" && !free_claimed;
 
     let { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
@@ -2538,6 +2568,7 @@ const balanceHandler = (() => {
       counts,
       downloads_allowed,
       free_claimed,
+      show_free_claim_popup,
       plan_key,
       mp4_watermark_disabled: hasProductor,
       is_admin,
@@ -2831,6 +2862,235 @@ const shareHandler = (() => {
   };
 })();
 
+const adminHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireAdmin(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (!isAdminEmail(user.email)) return { ok: false as const, status: 403, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function sumPayments(admin: any, sinceIso: string | null) {
+    let q = admin.from("mp_transactions").select("amount_mxn, created_at").eq("kind", "songs").gt("amount_mxn", 0);
+    if (sinceIso) q = q.gte("created_at", sinceIso);
+    const { data, error } = await q.limit(10000);
+    if (error) return { ok: false as const, error: error.message, count: 0, mxn: 0 };
+    const rows = Array.isArray(data) ? data : [];
+    const mxn = rows.reduce((acc: number, r: any) => acc + (Number(r?.amount_mxn) || 0), 0);
+    return { ok: true as const, count: rows.length, mxn };
+  }
+
+  async function handleStats(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const now = new Date();
+    const startToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const startWeek = new Date(startToday);
+    startWeek.setUTCDate(startWeek.getUTCDate() - 7);
+    const startMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const start30d = new Date(startToday);
+    start30d.setUTCDate(start30d.getUTCDate() - 30);
+    const startDaily7d = new Date(startToday);
+    startDaily7d.setUTCDate(startDaily7d.getUTCDate() - 6);
+
+    const admin = auth.admin;
+
+    const { data: sampleProfiles } = await admin.from("profiles").select("*").limit(1);
+    const sample = Array.isArray(sampleProfiles) ? sampleProfiles[0] : null;
+    const createdCol = sample && typeof sample?.created_at === "string" ? "created_at" : "created_at";
+    const activeCol =
+      sample && typeof sample?.last_seen_at === "string"
+        ? "last_seen_at"
+        : sample && typeof sample?.updated_at === "string"
+          ? "updated_at"
+          : sample && typeof sample?.created_at === "string"
+            ? "created_at"
+            : "updated_at";
+
+    let totalCount = 0;
+    try {
+      const r = await admin.from("profiles").select("id", { count: "exact", head: true });
+      if (!r.error) totalCount = Number(r.count || 0);
+    } catch {
+      totalCount = 0;
+    }
+
+    let active30dCount = 0;
+    try {
+      const r = await admin.from("profiles").select("id", { count: "exact", head: true }).gte(activeCol, start30d.toISOString());
+      if (!r.error) active30dCount = Number(r.count || 0);
+    } catch {
+      active30dCount = 0;
+    }
+
+    let new7dCount = 0;
+    try {
+      const r = await admin.from("profiles").select("id", { count: "exact", head: true }).gte(createdCol, startWeek.toISOString());
+      if (!r.error) new7dCount = Number(r.count || 0);
+    } catch {
+      new7dCount = 0;
+    }
+
+    const [today, week, month, all] = await Promise.all([
+      sumPayments(admin, startToday.toISOString()),
+      sumPayments(admin, startWeek.toISOString()),
+      sumPayments(admin, startMonth.toISOString()),
+      sumPayments(admin, null),
+    ]);
+
+    const dailyMap = new Map<string, { mxn: number; count: number }>();
+    try {
+      const { data, error } = await admin
+        .from("mp_transactions")
+        .select("amount_mxn, created_at")
+        .eq("kind", "songs")
+        .gt("amount_mxn", 0)
+        .gte("created_at", startDaily7d.toISOString())
+        .limit(20000);
+      if (!error) {
+        const rows = Array.isArray(data) ? data : [];
+        for (const r of rows) {
+          const createdAt = typeof (r as any)?.created_at === "string" ? (r as any).created_at : "";
+          let key = "";
+          try {
+            const d = new Date(createdAt);
+            if (Number.isFinite(d.getTime())) key = d.toISOString().slice(0, 10);
+          } catch {
+            key = "";
+          }
+          if (!key) continue;
+          const amt = Number((r as any)?.amount_mxn ?? 0) || 0;
+          const prev = dailyMap.get(key) || { mxn: 0, count: 0 };
+          dailyMap.set(key, { mxn: prev.mxn + amt, count: prev.count + 1 });
+        }
+      }
+    } catch {
+    }
+
+    const daily_7d: any[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDaily7d);
+      d.setUTCDate(d.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const v = dailyMap.get(key) || { mxn: 0, count: 0 };
+      daily_7d.push({ day: key, mxn: Math.round((v.mxn || 0) * 100) / 100, count: v.count || 0 });
+    }
+
+    return send(res, 200, {
+      users: {
+        total: totalCount,
+        active30d: active30dCount,
+        new7d: new7dCount,
+      },
+      payments: {
+        today: { mxn: today.ok ? today.mxn : 0, count: today.ok ? today.count : 0 },
+        week: { mxn: week.ok ? week.mxn : 0, count: week.ok ? week.count : 0 },
+        month: { mxn: month.ok ? month.mxn : 0, count: month.ok ? month.count : 0 },
+        all: { mxn: all.ok ? all.mxn : 0, count: all.ok ? all.count : 0 },
+        daily_7d,
+      },
+      generated_at: now.toISOString(),
+    });
+  }
+
+  async function handleGrantCredits(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const email = (body?.email || "").toString().trim().toLowerCase();
+    const credits = Number(body?.credits ?? 0);
+    if (!email) return send(res, 400, { error: "Falta email" });
+    if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
+
+    const admin = auth.admin;
+    let userId = "";
+    try {
+      const r = await (admin as any).auth?.admin?.getUserByEmail?.(email);
+      userId = String(r?.data?.user?.id || "").trim();
+    } catch {
+      userId = "";
+    }
+
+    if (!userId) return send(res, 404, { error: "No encontré ese usuario por correo." });
+
+    const upd = await adjustUserCredits(admin, userId, credits);
+    if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+
+    await admin.from("mp_transactions").insert({
+      user_id: userId,
+      kind: "admin_grant",
+      pack_key: "admin",
+      amount_mxn: 0,
+      payment_id: `admin_grant:${auth.user.id}:${Date.now()}`,
+    });
+
+    return send(res, 200, { ok: true, user_id: userId, credited: credits, new_credits: upd.credits ?? null });
+  }
+
+  return async function handler(req: any, res: any) {
+    const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
+    const fallback = (() => {
+      const pathname = new URL(req.url, "http://localhost").pathname;
+      const parts = pathname.split("/").filter(Boolean);
+      const i = parts.findIndex((p) => p === "admin");
+      const next = i >= 0 ? parts[i + 1] : "";
+      return (next || "").toLowerCase();
+    })();
+    const a = action || fallback;
+
+    if (a === "stats") return handleStats(req, res);
+    if (a === "grant-credits") return handleGrantCredits(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -2849,6 +3109,7 @@ export default async function handler(req: any, res: any) {
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
+    if (head === "admin") return adminHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);

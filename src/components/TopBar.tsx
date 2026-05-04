@@ -10,7 +10,7 @@ interface TopBarProps {
 
 export function TopBar({ className, onMenuClick, onCreditsClick, credits }: TopBarProps) {
   return (
-    <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/5 bg-black/50 backdrop-blur-xl z-20', className)}>
+    <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-[#070a12] via-indigo-950/50 to-black/60 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
         <span className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
           {/* Logo mock replacing SVG */}

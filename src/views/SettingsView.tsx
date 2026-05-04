@@ -4,24 +4,19 @@ import { useUserCredits } from '@/hooks/useUserCredits';
 import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
 
 export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; onOpenPricing?: () => void }) {
-  const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const { credits, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/suno/credits')
-      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
-      .then(({ ok, j }) => {
-        if (!ok) return;
-        const c = Number(j?.credits);
-        if (Number.isFinite(c)) setProviderCredits(c);
-      })
-      .catch(() => {});
-  }, []);
+  const [isOfficeOpen, setIsOfficeOpen] = useState(false);
+  const [officeLoading, setOfficeLoading] = useState(false);
+  const [officeError, setOfficeError] = useState('');
+  const [officeData, setOfficeData] = useState<any>(null);
+  const [grantEmail, setGrantEmail] = useState('');
+  const [grantCredits, setGrantCredits] = useState('50');
+  const [grantBusy, setGrantBusy] = useState(false);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -63,9 +58,206 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     }
   };
 
+  const openOffice = async () => {
+    if (!supabaseBrowser) return;
+    setIsOfficeOpen(true);
+    setOfficeError('');
+    setOfficeData(null);
+    setOfficeLoading(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        setOfficeError('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/stats', { headers: { authorization: `Bearer ${token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setOfficeError((out?.error || 'No pude cargar tu reporte.').toString());
+        return;
+      }
+      setOfficeData(out);
+    } finally {
+      setOfficeLoading(false);
+    }
+  };
+
+  const grant = async () => {
+    if (!supabaseBrowser) return;
+    const email = (grantEmail || '').toString().trim().toLowerCase();
+    const n = Number((grantCredits || '').toString().trim().replaceAll(',', '.'));
+    if (!email) {
+      alert('Pon el correo del usuario.');
+      return;
+    }
+    if (!Number.isFinite(n) || n <= 0) {
+      alert('Pon una cantidad válida de créditos.');
+      return;
+    }
+    setGrantBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/grant-credits', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, credits: n }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.error || 'No pude enviar créditos.').toString());
+        return;
+      }
+      alert(`Listo. Se enviaron ${n} créditos a ${email}.`);
+      openOffice().catch(() => {});
+    } finally {
+      setGrantBusy(false);
+    }
+  };
+
+  if (isOfficeOpen) {
+    const users = officeData?.users || {};
+    const payments = officeData?.payments || {};
+    const daily = Array.isArray(payments?.daily_7d) ? payments.daily_7d : [];
+    return (
+      <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
+        <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
+          <button onClick={() => setIsOfficeOpen(false)} className="p-2 text-slate-300 hover:text-white glass-card rounded-full">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M15 18l-6-6 6-6"></path></svg>
+          </button>
+          <div className="text-white font-extrabold">OFICINA</div>
+        </div>
+
+        <div className="p-6 space-y-6 max-w-3xl mx-auto w-full">
+          {officeError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-200">
+              {officeError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-400/15 rounded-2xl p-4">
+              <div className="text-xs text-slate-200/80 font-semibold">Usuarios</div>
+              <div className="text-2xl font-extrabold text-white mt-1">{Number(users?.total ?? 0)}</div>
+              <div className="text-[11px] text-slate-300/80 mt-1">Activos 30d: {Number(users?.active30d ?? 0)}</div>
+            </div>
+            <div className="bg-gradient-to-br from-cyan-500/20 to-transparent border border-cyan-400/15 rounded-2xl p-4">
+              <div className="text-xs text-slate-200/80 font-semibold">Registros</div>
+              <div className="text-2xl font-extrabold text-white mt-1">{Number(users?.new7d ?? 0)}</div>
+              <div className="text-[11px] text-slate-300/80 mt-1">Últimos 7 días</div>
+            </div>
+            <div className="bg-gradient-to-br from-yellow-500/25 to-transparent border border-yellow-400/15 rounded-2xl p-4">
+              <div className="text-xs text-slate-200/80 font-semibold">Ventas (hoy)</div>
+              <div className="text-2xl font-extrabold text-white mt-1">${Number(payments?.today?.mxn ?? 0).toFixed(0)}</div>
+              <div className="text-[11px] text-slate-300/80 mt-1">{Number(payments?.today?.count ?? 0)} pagos</div>
+            </div>
+            <div className="bg-gradient-to-br from-violet-500/20 to-transparent border border-violet-400/15 rounded-2xl p-4">
+              <div className="text-xs text-slate-200/80 font-semibold">Mes</div>
+              <div className="text-2xl font-extrabold text-white mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
+              <div className="text-[11px] text-slate-300/80 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="text-white font-extrabold">Reporte</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-300 font-semibold">Semana</div>
+                <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.week?.mxn ?? 0).toFixed(0)}</div>
+                <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.week?.count ?? 0)} pagos</div>
+              </div>
+              <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-300 font-semibold">Mes</div>
+                <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
+                <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
+              </div>
+              <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                <div className="text-xs text-slate-300 font-semibold">Total</div>
+                <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.all?.mxn ?? 0).toFixed(0)}</div>
+                <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.all?.count ?? 0)} pagos</div>
+              </div>
+            </div>
+            <button
+              onClick={() => openOffice().catch(() => {})}
+              disabled={officeLoading}
+              className="mt-4 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+            >
+              {officeLoading ? 'Actualizando…' : 'Actualizar'}
+            </button>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="flex items-center justify-between">
+              <div className="text-white font-extrabold">Ventas por día</div>
+              <div className="text-[11px] text-slate-400">Últimos 7 días</div>
+            </div>
+            <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+              <div className="grid grid-cols-3 bg-black/30 px-4 py-2 text-[11px] text-slate-300 font-semibold">
+                <div>Día</div>
+                <div className="text-center">Pagos</div>
+                <div className="text-right">MXN</div>
+              </div>
+              <div className="divide-y divide-white/5">
+                {(daily.length ? daily : new Array(7).fill(null)).map((row: any, idx: number) => {
+                  const day = (row?.day || '').toString();
+                  const count = Number(row?.count ?? 0);
+                  const mxn = Number(row?.mxn ?? 0);
+                  const bg =
+                    idx % 3 === 0
+                      ? 'from-emerald-500/10'
+                      : idx % 3 === 1
+                        ? 'from-cyan-500/10'
+                        : 'from-violet-500/10';
+                  return (
+                    <div key={day || idx} className={`grid grid-cols-3 px-4 py-3 text-sm bg-gradient-to-r ${bg} to-transparent`}>
+                      <div className="text-slate-200 font-semibold">{day || '—'}</div>
+                      <div className="text-center text-slate-300">{Number.isFinite(count) ? count : 0}</div>
+                      <div className="text-right text-white font-extrabold">${Number.isFinite(mxn) ? mxn.toFixed(0) : '0'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="text-white font-extrabold">Enviar créditos</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                value={grantEmail}
+                onChange={(e) => setGrantEmail(e.target.value)}
+                placeholder="correo@gmail.com"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+              />
+              <input
+                value={grantCredits}
+                onChange={(e) => setGrantCredits(e.target.value)}
+                placeholder="Créditos"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+              />
+              <button
+                onClick={() => grant().catch(() => {})}
+                disabled={grantBusy}
+                className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+              >
+                {grantBusy ? 'Enviando…' : 'Enviar'}
+              </button>
+            </div>
+            <div className="mt-3 text-[11px] text-slate-400">Solo admin. Se suma al saldo del usuario.</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-black/90 backdrop-blur-3xl fixed inset-0 pb-safe">
-      <div className="flex items-center gap-4 p-4 sticky top-0 bg-transparent z-10 backdrop-blur-xl border-b border-white/5">
+    <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
+      <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
         <button onClick={onClose} className="p-2 text-slate-300 hover:text-white glass-card rounded-full">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M15 18l-6-6 6-6"></path></svg>
         </button>
@@ -79,10 +271,10 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           <h2 className="text-2xl font-bold text-white">{userName}</h2>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-yellow-500/20 to-transparent border border-yellow-400/20 rounded-2xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
-            <span className="font-semibold text-slate-200">{typeof providerCredits === 'number' ? providerCredits : credits} Créditos</span>
+            <span className="font-semibold text-slate-200">{credits} Créditos</span>
             <HelpCircle className="w-4 h-4 text-slate-500" />
           </div>
           <button 
@@ -90,7 +282,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               onOpenPricing?.();
               onClose();
             }}
-            className="bg-green-500 hover:bg-green-400 text-[#020617] font-semibold text-xs px-4 py-2 rounded-full transition-colors"
+            className="bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs px-4 py-2 rounded-full transition-colors"
           >
             Obtener más canciones
           </button>
@@ -115,10 +307,10 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           <div className="glass-card rounded-2xl overflow-hidden">
             <button
               className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
-              onClick={() => alert('Oficina (solo admin): Próximamente')}
+              onClick={() => openOffice().catch(() => {})}
             >
               <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
-                <Shield className="w-5 h-5 text-slate-400" /> Oficina (Admin)
+                <Shield className="w-5 h-5 text-yellow-300" /> OFICINA
               </div>
               <ChevronRight className="w-5 h-5 text-slate-500" />
             </button>

@@ -183,7 +183,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                <input 
                  type="text" 
-                 placeholder="Buscar por nombre de canci" 
+                 placeholder="Buscar" 
                  className="w-full bg-white/5 border border-white/5 rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
                />
             </div>
