@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
 import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText, Video } from 'lucide-react';
@@ -15,9 +16,10 @@ interface LibraryViewProps {
   onRefreshSongs?: () => void;
   activeSongId?: string;
   isPlaying?: boolean;
+  onStartCover?: (song: SongItem) => void;
 }
 
-export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onDeleteSong, onRestoreSong, onRefreshSongs, activeSongId, isPlaying }: LibraryViewProps) {
+export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onDeleteSong, onRestoreSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -406,6 +408,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onClose={() => setMenuSong(null)}
           isDeleted={showTrash}
           onPlay={() => onPlaySong(menuSong)}
+          onStartCover={() => onStartCover?.(menuSong)}
           onRefreshSongs={onRefreshSongs}
           onRestore={() => {
             const id = menuSong.id;
@@ -428,6 +431,7 @@ function SongOptionsSheet({
   onClose,
   isDeleted,
   onPlay,
+  onStartCover,
   onRestore,
   onDelete,
   onRefreshSongs,
@@ -436,6 +440,7 @@ function SongOptionsSheet({
   onClose: () => void;
   isDeleted: boolean;
   onPlay: () => void;
+  onStartCover?: () => void;
   onRestore: () => void;
   onDelete: () => void;
   onRefreshSongs?: () => void;
@@ -1341,8 +1346,8 @@ function SongOptionsSheet({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-end md:items-center justify-center bg-black/60">
+  const sheet = (
+    <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/60">
       <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
       <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
         <div className="flex justify-center py-3 shrink-0">
@@ -1391,6 +1396,22 @@ function SongOptionsSheet({
 
         <div className="px-5 pb-5">
           <div className="glass-card rounded-2xl overflow-hidden">
+            {!isDeleted && (
+              <button
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5 bg-gradient-to-r from-emerald-500/10 to-transparent"
+                onClick={() => {
+                  if (!song.audioUrl) {
+                    alert('Esta canción no tiene audio para hacer cover.');
+                    return;
+                  }
+                  onClose();
+                  onStartCover?.();
+                }}
+                disabled={isBusy}
+              >
+                <Music2 className="w-5 h-5 text-emerald-300" /> <span className="text-slate-200 font-extrabold">Cover (nueva versión)</span>
+              </button>
+            )}
             <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors" onClick={generateCoverImage} disabled={isBusy || isDeleted}>
               <div className="flex items-center gap-3 text-slate-200 font-semibold">
                 <ImageIcon className="w-5 h-5 text-slate-300" /> Portada
@@ -1477,14 +1498,15 @@ function SongOptionsSheet({
             )}
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
-                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Karaoke (sin voz)</span>
+                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Eliminar voz (Karaoke)</span>
               </button>
             )}
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
                 <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Stems (12 pistas)</span>
-              </button>
+                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Instrumentos y voces (Stems)</span>
             )}
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
               <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
             </button>
@@ -1815,6 +1837,9 @@ function SongOptionsSheet({
       )}
     </div>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(sheet, document.body);
 }
 
 function CreateVibeModal({ onClose, canciones, onAddVibe }: { onClose: () => void, canciones: SongItem[], onAddVibe: (v: VibeItem) => void }) {

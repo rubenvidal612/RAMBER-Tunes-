@@ -50,9 +50,11 @@ interface CreateViewProps {
   openPersonaPickerSignal?: number;
   onGoLibrary?: () => void;
   onOpenBalance?: () => void;
+  prefill?: { type: 'cover'; song: SongItem };
+  prefillNonce?: number;
 }
 
-export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance }: CreateViewProps) {
+export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance, prefill, prefillNonce }: CreateViewProps) {
   const [mode, setMode] = useState<CreateMode>('personalizado');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
@@ -72,6 +74,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
   const [audioUploadPath, setAudioUploadPath] = useState<string>('');
+  const [externalAudioLabel, setExternalAudioLabel] = useState<string>('');
   const [audioDurationSec, setAudioDurationSec] = useState<number>(0);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [audioAction, setAudioAction] = useState<'cover' | 'instrumental' | 'vocals' | 'extend' | 'library'>('cover');
@@ -154,6 +157,32 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   }, [openPersonaPickerSignal]);
 
   useEffect(() => {
+    if (!prefillNonce) return;
+    if (!prefill) return;
+    if (prefill.type !== 'cover') return;
+    const song = prefill.song;
+    const url = (song?.audioUrl || '').toString().trim();
+    if (!url) return;
+    setMode('personalizado');
+    setAudioAction('cover');
+    setInstrumental(false);
+    setAudioFile(null);
+    setAudioUploadUrl(url);
+    setAudioUploadPath('');
+    setIsUploadingAudio(false);
+    setUploadProgress(100);
+    setExternalAudioLabel(song?.title ? `Cover de: ${song.title}` : 'Cover desde Biblioteca');
+    setTitle((song?.title || 'Cover').toString().slice(0, 100));
+    if (typeof song?.description === 'string') {
+      setInstructions(song.description);
+      setDescription(song.description);
+    }
+    if (typeof song?.lyrics === 'string') {
+      setLyrics(song.lyrics);
+    }
+  }, [prefillNonce, prefill]);
+
+  useEffect(() => {
     if (!isPersonaPickerOpen) return;
     if (!supabaseBrowser) return;
     ensureAnonSession()
@@ -212,6 +241,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioFile(null);
     setAudioUploadUrl('');
     setAudioUploadPath('');
+    setExternalAudioLabel('');
     setAudioDurationSec(0);
     setIsUploadingAudio(false);
     setAudioAction('cover');
@@ -1053,6 +1083,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             setAudioFile={setAudioFile}
             audioInputRef={audioInputRef}
             audioUploadUrl={audioUploadUrl}
+            externalAudioLabel={externalAudioLabel}
             isUploadingAudio={isUploadingAudio}
             onUploadAudio={uploadAudio}
             onClearAudio={clearAudio}
@@ -1415,6 +1446,7 @@ function CustomForm({
   setAudioFile,
   audioInputRef,
   audioUploadUrl,
+  externalAudioLabel,
   isUploadingAudio,
   onUploadAudio,
   onClearAudio,
@@ -1591,7 +1623,7 @@ function CustomForm({
             }}
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
           >
-            <Plus className="w-5 h-5 text-slate-400" /> {audioFile ? 'Audio cargado' : 'Audio'}
+            <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
           </button>
           {!!audioUploadUrl && (
             <button
@@ -1626,11 +1658,11 @@ function CustomForm({
         </button>
       </div>
 
-      {!!audioFile && (
+      {!!audioUploadUrl && (
         <div className="glass-card rounded-2xl p-4 border border-white/10 mt-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-white font-bold truncate">{audioFile.name}</div>
+              <div className="text-white font-bold truncate">{audioFile ? audioFile.name : (externalAudioLabel || 'Audio listo')}</div>
               <div className="text-xs text-slate-400">
                 {isUploadingAudio || !audioUploadUrl
                   ? `Subiendo… ${Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))))}%`
@@ -1656,7 +1688,13 @@ function CustomForm({
             </div>
             <button
               type="button"
-              onClick={() => onOpenAudioModal?.()}
+              onClick={() => {
+                if (audioFile) {
+                  onOpenAudioModal?.();
+                  return;
+                }
+                audioInputRef?.current?.click?.();
+              }}
               className="shrink-0 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 transition-colors"
             >
               Cambiar

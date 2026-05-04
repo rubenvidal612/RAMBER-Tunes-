@@ -260,6 +260,8 @@ export default function App() {
   const [vibes, setVibes] = useState<VibeItem[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [personaPickerNonce, setPersonaPickerNonce] = useState(0);
+  const [studioPrefillNonce, setStudioPrefillNonce] = useState(0);
+  const [studioPrefill, setStudioPrefill] = useState<null | { type: 'cover'; song: SongItem }>(null);
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -598,6 +600,17 @@ export default function App() {
     }
   };
 
+  const startCoverFromSong = (song: SongItem) => {
+    const url = (song?.audioUrl || '').toString().trim();
+    if (!url) {
+      alert('Esta canción no tiene audio para hacer cover.');
+      return;
+    }
+    setStudioPrefill({ type: 'cover', song });
+    setStudioPrefillNonce((n) => n + 1);
+    setCurrentTab('studio');
+  };
+
   useEffect(() => {
     if (!isAuthed) return;
     let busy = false;
@@ -678,12 +691,22 @@ export default function App() {
       if (Array.isArray(d?.data)) candidates.push(d.data);
       if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
       const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+      const pickLyrics = (track: any) => {
+        const direct =
+          (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
+          (typeof track?.lyric === 'string' ? track.lyric : '') ||
+          (typeof track?.text === 'string' ? track.text : '') ||
+          (typeof track?.prompt === 'string' ? track.prompt : '');
+        const s = (direct || '').toString().trim();
+        return s || undefined;
+      };
       return (Array.isArray(list) ? list : []).map((track: any) => {
         const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
         const audioId = (track?.id || '').toString();
         const title = (track?.title || '').toString();
         const coverUrl = (track?.image_url || track?.imageUrl || '').toString();
-        return { audioUrl, audioId, title, coverUrl };
+        const lyrics = pickLyrics(track);
+        return { audioUrl, audioId, title, coverUrl, lyrics };
       });
     };
 
@@ -725,6 +748,7 @@ export default function App() {
           }
           const draft = pending.draft ?? {};
           const baseTitle = String(draft?.title || 'Canción');
+          const draftLyrics = typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? String(draft.lyrics) : '';
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             const suffix =
@@ -740,7 +764,7 @@ export default function App() {
               id: track.audioId || `${pending.taskId}_${i + 1}`,
               title: finalTitle,
               description: String(draft?.description || ''),
-              lyrics: typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? draft.lyrics : undefined,
+              lyrics: draftLyrics ? draftLyrics : (typeof track?.lyrics === 'string' && track.lyrics.trim() ? track.lyrics : undefined),
               genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
               audioUrl: track.audioUrl,
               coverUrl: track.coverUrl || undefined,
@@ -941,8 +965,8 @@ export default function App() {
                }}
              />
            )}
-           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} />}
-           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
+           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
            {/* Placeholders */}
@@ -971,12 +995,12 @@ export default function App() {
              <>
                {/* Create View (Middle) */}
                <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                 <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} />
+                 <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                </div>
 
                {/* Library / Results View (Right) */}
                <div className="flex-1 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
-                {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} />}
+                {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
                </div>
              </>
            )}
