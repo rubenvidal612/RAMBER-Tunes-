@@ -947,7 +947,7 @@ export default function App() {
       )}
       <Banner />
       
-      <main className="flex-1 overflow-hidden flex w-full h-full relative">
+      <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && (
@@ -969,7 +969,7 @@ export default function App() {
            {currentTab === 'mv' && <div className="flex-1 flex items-center justify-center text-slate-500">Music Videos (Próximamente)</div>}
         </div>
         {/* Desktop 3-column layout */}
-        <div className="hidden md:flex flex-1 overflow-hidden">
+        <div className="hidden md:flex flex-1 min-h-0 overflow-hidden">
            {/* Sidebar */}
            <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/5 bg-black flex flex-col">
              <Sidebar currentTab={currentTab} onChange={setCurrentTab} />
@@ -995,7 +995,7 @@ export default function App() {
                </div>
 
                {/* Library / Results View (Right) */}
-               <div className="flex-1 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
+               <div className="flex-1 min-h-0 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
                 {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
                </div>
              </>

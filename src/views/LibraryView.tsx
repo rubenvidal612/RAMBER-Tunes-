@@ -149,7 +149,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   ];
 
   return (
-    <div className="flex-1 flex flex-col pt-2 relative">
+    <div className="flex-1 min-h-0 flex flex-col pt-2 relative">
       <div className="p-4 space-y-4">
         {/* Top Filters (Me gusta, Publicado, Filtros) */}
         {activeTab === 'canciones' && (
@@ -201,7 +201,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {activeTab === 'video' && (
           <div className="h-full flex flex-col items-center justify-center p-6 text-center mt-[-40px]">
             <div className="w-24 h-24 mb-6 text-slate-500 opacity-50 relative flex items-center justify-center">
