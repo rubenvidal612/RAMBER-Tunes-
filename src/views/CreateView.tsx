@@ -252,10 +252,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const transcribeLyricsFromAudio = async (auto?: boolean) => {
-    if (instrumental) {
-      if (!auto) alert('En modo instrumental no se transcribe letra.');
-      return;
-    }
     if (!audioUploadUrl) {
       if (!auto) alert('Primero sube tu audio.');
       return;
@@ -339,18 +335,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   useEffect(() => {
     if (!audioUploadUrl) return;
     if (!audioFile) return;
-    if (instrumental) return;
     const key = (audioUploadPath || audioUploadUrl).toString().trim();
     if (!key) return;
     if (lastTranscribedKeyRef.current === key) return;
-    const existing = (lyrics || '').toString().trim();
-    if (existing) {
-      lastTranscribedKeyRef.current = key;
-      return;
-    }
     lastTranscribedKeyRef.current = key;
     transcribeLyricsFromAudio(true).catch(() => {});
-  }, [audioUploadUrl, audioUploadPath, audioFile, instrumental]);
+  }, [audioUploadUrl, audioUploadPath, audioFile]);
 
   useEffect(() => {
     if (!onSongCreated) return;

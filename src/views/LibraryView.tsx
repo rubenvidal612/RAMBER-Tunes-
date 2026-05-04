@@ -1347,7 +1347,7 @@ function SongOptionsSheet({
   };
 
   const sheet = (
-    <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-[2147483647] flex items-end md:items-center justify-center bg-black/60" style={{ zIndex: 2147483647 }}>
       <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
       <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
         <div className="flex justify-center py-3 shrink-0">
