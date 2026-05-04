@@ -590,10 +590,10 @@ function SongOptionsSheet({
       const boxW = pageW - margin * 2;
       let y = 64;
 
-      const gold = { r: 194, g: 146, b: 28 };
-      const ink = { r: 18, g: 18, b: 18 };
-      const muted = { r: 95, g: 95, b: 95 };
-      const border = { r: 210, g: 210, b: 210 };
+      const gold = { r: 180, g: 120, b: 10 };
+      const ink = { r: 0, g: 0, b: 0 };
+      const muted = { r: 55, g: 55, b: 55 };
+      const border = { r: 175, g: 175, b: 175 };
 
       doc.setDrawColor(border.r, border.g, border.b);
       doc.setLineWidth(1);
