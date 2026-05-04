@@ -670,13 +670,13 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-white leading-tight">RAMBER Tunes</div>
-              <div className="text-xs text-slate-200/90 leading-tight">Ponla como app en tu celular</div>
+              <div className="text-xs text-slate-200/90 leading-tight">Ponla en tu App en tu Celular</div>
             </div>
             <button
               onClick={onInstallClick}
               className="shrink-0 bg-white text-black px-4 py-2 rounded-full text-xs font-extrabold"
             >
-              VER
+              DESCARGAR
             </button>
           </div>
         </div>
@@ -752,8 +752,8 @@ export default function App() {
       {isBalanceOpen && (
         <div className="fixed inset-0 z-[280] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsBalanceOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[620px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="relative w-full md:max-w-[620px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0">
               <div className="text-white font-extrabold">Saldo</div>
               <button
                 onClick={() => setIsBalanceOpen(false)}
@@ -763,7 +763,7 @@ export default function App() {
                 ✕
               </button>
             </div>
-            <div className="p-5">
+            <div className="p-5 flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+24px)]">
               <div className="text-slate-300 text-sm">
                 Créditos:{' '}
                 <span className="text-white font-extrabold">{Number(balanceData?.credits ?? displayCredits ?? 0).toString()}</span>
@@ -775,25 +775,25 @@ export default function App() {
                 </div>
               )}
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-slate-300 text-sm font-semibold">Canciones (A/B)</div>
+                <div className="bg-gradient-to-br from-emerald-500/15 to-transparent border border-emerald-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Canciones (A/B)</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.songs ?? 0)}</div>
-                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.generate_music} cr c/u • 2 versiones</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.generate_music} cr c/u • 2 versiones</div>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-slate-300 text-sm font-semibold">Quitar voz</div>
+                <div className="bg-gradient-to-br from-rose-500/15 to-transparent border border-rose-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Quitar voz</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.voice_separate ?? 0)}</div>
-                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.separate_vocal} cr c/u</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.separate_vocal} cr c/u</div>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-slate-300 text-sm font-semibold">Videos</div>
+                <div className="bg-gradient-to-br from-cyan-500/15 to-transparent border border-cyan-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Videos</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.music_video ?? 0)}</div>
-                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.music_video} cr c/u</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.music_video} cr c/u</div>
                 </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-slate-300 text-sm font-semibold">STEMS</div>
+                <div className="bg-gradient-to-br from-violet-500/15 to-transparent border border-violet-400/15 rounded-2xl p-4">
+                  <div className="text-slate-200 text-sm font-semibold">Separar Instrumentos y Voces</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.split_stem ?? 0)}</div>
-                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.split_stem} cr c/u</div>
+                  <div className="mt-1 text-xs text-slate-300/80">{CREDIT_COSTS.split_stem} cr c/u</div>
                 </div>
               </div>
               <div className="mt-3 bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -811,9 +811,9 @@ export default function App() {
                     ];
                     return items.map((it) => (
                       <div key={it.k} className="flex items-center justify-between bg-black/20 border border-white/10 rounded-xl px-3 py-2">
-                        <div className="text-xs text-slate-300 font-semibold">{it.label}</div>
-                        <div className="text-xs text-slate-200 font-extrabold">
-                          {Number((counts as any)?.[it.k] ?? 0)} <span className="text-slate-500 font-semibold">· {it.cost} cr</span>
+                        <div className="text-xs text-slate-200 font-semibold">{it.label}</div>
+                        <div className="text-xs text-white font-extrabold">
+                          {Number((counts as any)?.[it.k] ?? 0)} <span className="text-slate-400 font-semibold">· {it.cost} cr</span>
                         </div>
                       </div>
                     ));

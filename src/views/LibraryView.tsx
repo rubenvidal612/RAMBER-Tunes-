@@ -291,9 +291,21 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-800 shrink-0 cursor-pointer" onClick={() => !showTrash && onPlaySong(song)}>
                       <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
                       <div className="absolute bottom-1 right-1 bg-black/60 px-1 text-[10px] rounded font-medium">4:22</div>
-                      {song.isCover && (
-                        <div className="absolute top-1 left-1 bg-white/10 px-1 rounded text-[8px] font-bold">COVER</div>
-                      )}
+                      {(() => {
+                        const isUploaded =
+                          !song.isCover &&
+                          !song.sunoTaskId &&
+                          !song.sunoAudioId &&
+                          Boolean(song.audioUrl) &&
+                          String(song.coverUrl || '').startsWith('data:image/svg+xml');
+                        if (song.isCover) {
+                          return <div className="absolute top-1 left-1 bg-white/10 px-1 rounded text-[8px] font-bold">COVER</div>;
+                        }
+                        if (isUploaded) {
+                          return <div className="absolute top-1 left-1 bg-emerald-500/20 border border-emerald-400/20 px-1 rounded text-[8px] font-bold text-emerald-200">SUBIDO</div>;
+                        }
+                        return null;
+                      })()}
                       {!showTrash && (
                         <div className={cn(
                           "absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity",
