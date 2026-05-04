@@ -691,74 +691,27 @@ function SongOptionsSheet({
 
       const tableX = margin + 14;
       const tableW = boxW - 28;
-      const rowH = 120;
+      const rowH = 100;
       doc.setDrawColor(border.r, border.g, border.b);
       doc.setLineWidth(1);
       doc.rect(tableX, y, tableW, rowH);
-      doc.line(tableX + tableW / 2, y, tableX + tableW / 2, y + rowH);
-
-      const leftX = tableX + 12;
-      const rightX = tableX + tableW / 2 + 12;
+      const padX = tableX + 12;
       const topY = y + 18;
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
       doc.setTextColor(ink.r, ink.g, ink.b);
-      doc.text('Por el Licenciante:', leftX, topY);
-      doc.text('Por el Licenciatario:', rightX, topY);
+      doc.text('Firma del dueño de la canción (Licenciatario):', padX, topY);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(muted.r, muted.g, muted.b);
-      doc.text('RAMBER Tunes AI Music', leftX, topY + 14);
-      doc.text('Usuario registrado en la plataforma', rightX, topY + 14);
+      doc.text(`Nombre: ${name}`, padX, topY + 14);
 
-      const signLineY = y + rowH - 34;
+      const signLineY = y + rowH - 28;
       doc.setDrawColor(border.r, border.g, border.b);
-      doc.setLineWidth(0.8);
-      doc.line(leftX, signLineY, tableX + tableW / 2 - 12, signLineY);
-      doc.line(rightX, signLineY, tableX + tableW - 12, signLineY);
-
-      const drawSignature = (x0: number, y0: number) => {
-        const blue = { r: 18, g: 74, b: 160 };
-        doc.setDrawColor(blue.r, blue.g, blue.b);
-        doc.setTextColor(blue.r, blue.g, blue.b);
-
-        doc.setLineWidth(2.2);
-        doc.ellipse(x0 + 20, y0 - 6, 18, 22, 'S');
-        doc.line(x0 + 28, y0 - 30, x0 + 30, y0 + 24);
-        doc.setLineWidth(1.7);
-        doc.lines(
-          [
-            [12, -14],
-            [18, 18],
-            [20, -16],
-            [18, 20],
-            [18, -10],
-            [18, 8],
-          ],
-          x0 + 34,
-          y0 - 2,
-          [1, 1],
-          'S',
-          false
-        );
-
-        doc.setFont('times', 'italic');
-        doc.setFontSize(34);
-        doc.text('AMBER', x0 + 60, y0 + 10, { angle: -7 });
-        doc.setFontSize(32);
-        doc.text('Tunes', x0 + 200, y0 + 10, { angle: -7 });
-
-        doc.setLineWidth(2.4);
-        doc.line(x0 + 222, y0 - 22, x0 + 346, y0 - 30);
-        doc.setLineWidth(1.6);
-        doc.line(x0 + 270, y0 - 28, x0 + 266, y0 + 18);
-        doc.setLineWidth(2.0);
-        doc.line(x0 + 262, y0 + 18, x0 + 356, y0 + 10);
-      };
-
-      drawSignature(leftX + 6, y + 72);
+      doc.setLineWidth(0.9);
+      doc.line(padX, signLineY, tableX + tableW - 12, signLineY);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
