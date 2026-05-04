@@ -11,6 +11,7 @@ import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
 import { getAccessToken, signInWithGoogle, supabaseBrowser } from './lib/supabaseBrowser';
+import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
@@ -160,13 +161,15 @@ export default function App() {
         setBalanceError(t.error || 'No se pudo iniciar sesión.');
         return;
       }
-      const r = await fetch('/api/account/balance', { headers: { authorization: `Bearer ${t.token}` } });
+      const r = await fetch('/api/account/balance?source=provider', { headers: { authorization: `Bearer ${t.token}` } });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
         setBalanceError((out?.error || 'No pude consultar tu saldo.').toString());
         return;
       }
       setBalanceData(out);
+      const c = Number(out?.credits);
+      if (Number.isFinite(c)) setProviderCredits(c);
     } finally {
       setIsBalanceLoading(false);
     }
@@ -761,7 +764,11 @@ export default function App() {
               </button>
             </div>
             <div className="p-5">
-              <div className="text-slate-300 text-sm">Créditos: <span className="text-white font-extrabold">{Number(balanceData?.credits ?? displayCredits).toString()}</span></div>
+              <div className="text-slate-300 text-sm">
+                Créditos:{' '}
+                <span className="text-white font-extrabold">{Number(balanceData?.credits ?? displayCredits ?? 0).toString()}</span>
+              </div>
+              <div className="mt-2 text-xs text-slate-500">Se descuenta automáticamente según la acción.</div>
               {balanceError && (
                 <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
                   {balanceError}
@@ -769,24 +776,52 @@ export default function App() {
               )}
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                  <div className="text-slate-300 text-sm font-semibold">Canciones</div>
+                  <div className="text-slate-300 text-sm font-semibold">Canciones (A/B)</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.songs ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.generate_music} cr c/u • 2 versiones</div>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                   <div className="text-slate-300 text-sm font-semibold">Quitar voz</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.voice_separate ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.separate_vocal} cr c/u</div>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                   <div className="text-slate-300 text-sm font-semibold">Videos</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.music_video ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.music_video} cr c/u</div>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                   <div className="text-slate-300 text-sm font-semibold">STEMS</div>
                   <div className="text-white text-3xl font-extrabold mt-1">{Number(balanceData?.counts?.split_stem ?? 0)}</div>
+                  <div className="mt-1 text-xs text-slate-500">{CREDIT_COSTS.split_stem} cr c/u</div>
+                </div>
+              </div>
+              <div className="mt-3 bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-slate-200 text-sm font-extrabold">Más acciones</div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(() => {
+                    const counts = balanceData?.counts || {};
+                    const items: Array<{ k: string; label: string; cost: number }> = [
+                      { k: 'sounds', label: 'Sounds', cost: CREDIT_COSTS.sounds },
+                      { k: 'replace_section', label: 'Reemplazar sección', cost: CREDIT_COSTS.replace_section },
+                      { k: 'wav', label: 'Convertir a WAV', cost: CREDIT_COSTS.wav },
+                      { k: 'lyrics', label: 'Generar letra', cost: CREDIT_COSTS.lyrics },
+                      { k: 'timestamped_lyrics', label: 'Letra con tiempo', cost: CREDIT_COSTS.timestamped_lyrics },
+                      { k: 'boost_style', label: 'Boost estilo', cost: CREDIT_COSTS.boost_style },
+                    ];
+                    return items.map((it) => (
+                      <div key={it.k} className="flex items-center justify-between bg-black/20 border border-white/10 rounded-xl px-3 py-2">
+                        <div className="text-xs text-slate-300 font-semibold">{it.label}</div>
+                        <div className="text-xs text-slate-200 font-extrabold">
+                          {Number((counts as any)?.[it.k] ?? 0)} <span className="text-slate-500 font-semibold">· {it.cost} cr</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
               <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-slate-400 text-sm">Se descuenta según la acción.</div>
+                <div className="text-slate-400 text-sm">Se descuenta al usar cada opción.</div>
                 <button
                   onClick={() => {
                     setIsBalanceOpen(false);
