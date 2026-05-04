@@ -161,6 +161,8 @@ function isAdminEmail(email?: string | null) {
   const e = (email || "").trim().toLowerCase();
   if (!e) return false;
 
+  const hardcoded = ["rubenfiverr612@gmail.com", "rubenvidal612@gmail.com"];
+
   const raw = (typeof process !== "undefined" && (process as any)?.env && ((process as any).env.ADMIN_EMAILS || (process as any).env.ADMIN_EMAIL)) || "";
   const list = String(raw)
     .split(/[,\s]+/g)
@@ -168,9 +170,9 @@ function isAdminEmail(email?: string | null) {
     .filter(Boolean);
 
   if (list.length === 0) {
-    return e === "rubenfiverr612@gmail.com";
+    return hardcoded.includes(e);
   }
-  return list.includes(e) || e === "rubenfiverr612@gmail.com";
+  return list.includes(e) || hardcoded.includes(e);
 }
 
 async function getUserPlan(admin: any, userId: string) {
@@ -2557,7 +2559,7 @@ const balanceHandler = (() => {
     const hasInicio = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
     const hasProductor = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
     const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
-    const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
+    const downloads_allowed = is_admin ? true : plan_key === "inicio" || plan_key === "productor";
     const show_free_claim_popup = !is_admin && plan_key === "ninguno" && !free_claimed;
 
     let { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
@@ -2628,7 +2630,7 @@ const balanceHandler = (() => {
       free_claimed,
       show_free_claim_popup,
       plan_key,
-      mp4_watermark_disabled: hasProductor,
+      mp4_watermark_disabled: is_admin ? true : hasProductor,
       is_admin,
       internal_credits,
       provider_credits,
