@@ -83,9 +83,18 @@ function parseProviderCreditsValue(raw: any) {
   return NaN;
 }
 
+function normalizeSunoBaseUrl(rawBase: string) {
+  let base = (rawBase || "").toString().trim();
+  if (!base) return "";
+  while (base.endsWith("/")) base = base.slice(0, -1);
+  if (base.toLowerCase().endsWith("/api/v1")) base = base.slice(0, -"/api/v1".length);
+  while (base.endsWith("/")) base = base.slice(0, -1);
+  return base;
+}
+
 async function providerFetchJson(path: string, init?: RequestInit) {
-  const base = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
-  if (!base) throw new Error("Falta SUNO_API_BASE_URL en variables de entorno");
+  const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+  const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
 
   const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
 
@@ -233,8 +242,8 @@ const sunoHandler = (() => {
   }
 
   async function sunoFetchJson(path: string, init?: RequestInit) {
-    const base = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
-    if (!base) throw new Error("Falta SUNO_API_BASE_URL en variables de entorno");
+    const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+    const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
 
     const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
 
@@ -2444,8 +2453,8 @@ const balanceHandler = (() => {
   }
 
   async function sunoFetchJson(path: string) {
-    const base = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
-    if (!base) throw new Error("Falta SUNO_API_BASE_URL en variables de entorno");
+    const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+    const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
 
     const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
     if (!apiKey) throw new Error("Falta SUNO_API_KEY en variables de entorno");
