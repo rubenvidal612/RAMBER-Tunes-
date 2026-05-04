@@ -272,7 +272,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               if (list.length === 0) {
                 return (
                   <div className="p-6 text-center text-slate-500 text-sm mt-10">
-                    {showTrash ? 'No hay canciones eliminadas' : 'No hay canciones'}
+                    <div>{showTrash ? 'No hay canciones eliminadas' : 'No hay canciones'}</div>
+                    {!showTrash && (
+                      <button
+                        onClick={() => onRefreshSongs?.()}
+                        className="mt-4 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-xs text-slate-200 transition-colors"
+                      >
+                        Actualizar
+                      </button>
+                    )}
                   </div>
                 );
               }

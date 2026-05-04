@@ -231,6 +231,7 @@ export default function App() {
   const refreshLibrary = async () => {
     const a = await loadSongs(false);
     if (a.ok) setCanciones(a.songs);
+    else showToast((a.error || 'No pude cargar tu biblioteca.').toString());
     const d = await loadSongs(true);
     if (d.ok) setCancionesEliminadas(d.songs);
     if (a.ok && a.cleanupDeleted && a.cleanupDeleted > 0) {
