@@ -15,7 +15,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, Download, Music2, Rocket, Shield, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2 } from 'lucide-react';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -359,31 +359,14 @@ export default function App() {
   const isAuthed = Boolean(authEmail);
   const didBootstrapRef = useRef(false);
 
-  useEffect(() => {
+  const [shareRouteId] = useState(() => {
     const p = (window.location?.pathname || '').toString();
     const m = p.match(/^\/(share|s)\/([^/?#]+)/i);
-    if (!m) return;
+    if (!m) return '';
     const rawId = m[2] || '';
     const id = decodeURIComponent(rawId).trim();
-    if (!id) return;
-    fetch(`/api/share/song?id=${encodeURIComponent(id)}`, { method: 'GET' })
-      .then((r) => r.json().catch(() => ({})).then((out) => ({ r, out })))
-      .then(({ r, out }) => {
-        if (!r.ok) {
-          showToast((out?.error || 'No pude abrir el link compartido.').toString());
-          return;
-        }
-        const url = (out?.audioUrl || out?.audio_url || '').toString().trim();
-        if (!url) {
-          showToast('Este link no tiene audio.');
-          return;
-        }
-        window.location.replace(url);
-      })
-      .catch(() => {
-        showToast('No pude abrir el link compartido.');
-      });
-  }, []);
+    return id;
+  });
 
   useEffect(() => {
     store.getData().then(data => {
@@ -894,6 +877,10 @@ export default function App() {
 
   const displayCredits = credits;
 
+  if (shareRouteId) {
+    return <SharedSongPage shareId={shareRouteId} />;
+  }
+
   if (!isAuthed) {
     return (
       <div className="h-[100dvh] w-full bg-black text-white flex flex-col items-center justify-center px-6 text-center">
@@ -1275,6 +1262,144 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SharedSongPage({ shareId }: { shareId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<{ id: string; title: string; audioUrl: string; coverUrl?: string } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError('');
+    setData(null);
+    fetch(`/api/share/song?id=${encodeURIComponent(shareId)}`, { method: 'GET' })
+      .then((r) => r.json().catch(() => ({})).then((out) => ({ r, out })))
+      .then(({ r, out }) => {
+        if (!alive) return;
+        if (!r.ok) {
+          setError((out?.error || 'Este link no existe o ya no está disponible.').toString());
+          return;
+        }
+        const title = (out?.title || 'Canción').toString();
+        const audioUrl = (out?.audioUrl || out?.audio_url || '').toString().trim();
+        const coverUrl = (out?.coverUrl || out?.cover_url || '').toString().trim();
+        if (!audioUrl) {
+          setError('Este link no tiene audio para reproducir.');
+          return;
+        }
+        setData({ id: (out?.id || shareId).toString(), title, audioUrl, coverUrl: coverUrl || undefined });
+      })
+      .catch(() => {
+        if (!alive) return;
+        setError('No pude cargar la canción.');
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [shareId]);
+
+  const shareThis = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: data?.title ? `RAMBER Tunes - ${data.title}` : 'RAMBER Tunes', url });
+        return;
+      }
+    } catch {
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Link copiado al portapapeles.');
+    } catch {
+      alert(url);
+    }
+  };
+
+  return (
+    <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
+      <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
+        <a href="/" className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">R</div>
+          <div className="min-w-0">
+            <div className="font-extrabold leading-tight truncate">RAMBER Tunes</div>
+            <div className="text-[11px] text-slate-400 leading-tight truncate">Reproductor oficial</div>
+          </div>
+        </a>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => shareThis().catch(() => {})}
+            className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
+          >
+            <Share2 className="w-4 h-4" /> Compartir
+          </button>
+          <a href="/" className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-sm flex items-center justify-center">
+            Abrir app
+          </a>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="p-6 text-slate-300">Cargando…</div>
+        ) : error ? (
+          <div className="p-6">
+            <div className="text-xl font-extrabold">No se pudo abrir</div>
+            <div className="mt-2 text-slate-300">{error}</div>
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm"
+              >
+                Reintentar
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(shareId);
+                    alert('ID copiado.');
+                  } catch {
+                    alert(shareId);
+                  }
+                }}
+                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
+              >
+                <Copy className="w-4 h-4" /> Copiar ID
+              </button>
+            </div>
+          </div>
+        ) : data ? (
+          <div className="p-5 max-w-[980px] mx-auto w-full">
+            <div className="flex flex-col md:flex-row gap-5">
+              <div className="w-full md:w-[360px] shrink-0">
+                <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-white/5 aspect-square">
+                  {data.coverUrl ? (
+                    <img src={data.coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400">Sin portada</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-2xl md:text-3xl font-extrabold break-words">{data.title}</div>
+                <div className="mt-1 text-sm text-slate-400">Disponible en RAMBER Tunes</div>
+
+                <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
+                  <audio controls preload="metadata" src={data.audioUrl} className="w-full" />
+                  <div className="mt-3 text-[11px] text-slate-500 break-words">ID: {data.id}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

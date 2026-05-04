@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, AppWindow, Music2, FileText, Video, BadgeCheck, Shield } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 
@@ -410,6 +410,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           isDeleted={showTrash}
           onPlay={() => onPlaySong(menuSong)}
           onStartCover={() => onStartCover?.(menuSong)}
+          onOpenLists={() => setActiveTab('listas')}
           onRefreshSongs={onRefreshSongs}
           onRestore={() => {
             const id = menuSong.id;
@@ -433,6 +434,7 @@ function SongOptionsSheet({
   isDeleted,
   onPlay,
   onStartCover,
+  onOpenLists,
   onRestore,
   onDelete,
   onRefreshSongs,
@@ -442,6 +444,7 @@ function SongOptionsSheet({
   isDeleted: boolean;
   onPlay: () => void;
   onStartCover?: () => void;
+  onOpenLists?: () => void;
   onRestore: () => void;
   onDelete: () => void;
   onRefreshSongs?: () => void;
@@ -741,11 +744,10 @@ function SongOptionsSheet({
     const title = (song.title || 'Canción').toString();
     const shareUrl = song.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
     try {
-      if (navigator.share) {
+      if (navigator.share && shareUrl) {
         await navigator.share({
           title: `RAMBER Tunes - ${title}`,
-          text: `Escucha "${title}" en RAMBER Tunes`,
-          url: shareUrl || undefined,
+          url: shareUrl,
         });
         return;
       }
@@ -1628,16 +1630,22 @@ function SongOptionsSheet({
 
         <div className="px-5 pb-4">
           <div className="grid grid-cols-3 gap-3">
-            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
+            <button
+              className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors"
+              onClick={() => {
+                onClose();
+                onOpenLists?.();
+              }}
+            >
               <div className="flex items-center gap-3">
-                <AppWindow className="w-5 h-5 text-slate-200" />
-                <div className="text-slate-200 font-semibold text-sm">Agregar a apps</div>
+                <ListMusic className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-200 font-semibold text-sm">Agregar a lista</div>
               </div>
             </button>
-            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
+            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => share().catch(() => {})}>
               <div className="flex items-center gap-3">
-                <ThumbsUp className="w-5 h-5 text-slate-200" />
-                <div className="text-slate-200 font-semibold text-sm">Me gusta</div>
+                <Share2 className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-200 font-semibold text-sm">Compartir</div>
               </div>
             </button>
             <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
@@ -2078,6 +2086,14 @@ function SongOptionsSheet({
                 </button>
               ) : (
                 <div className="flex items-center gap-3">
+                  <a
+                    href={licensePdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[48px] rounded-full font-extrabold text-sm transition-colors flex items-center justify-center"
+                  >
+                    Abrir
+                  </a>
                   <a
                     href={licensePdfUrl}
                     download={licensePdfName || undefined}
