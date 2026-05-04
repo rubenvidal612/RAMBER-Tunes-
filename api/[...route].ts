@@ -2541,7 +2541,7 @@ const balanceHandler = (() => {
     const hasProductor = Array.isArray(freeTx) && freeTx.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
     const plan_key = hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno";
     const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
-    const show_free_claim_popup = plan_key === "ninguno" && !free_claimed;
+    const show_free_claim_popup = !is_admin && plan_key === "ninguno" && !free_claimed;
 
     let { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });

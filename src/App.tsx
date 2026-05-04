@@ -192,7 +192,7 @@ export default function App() {
     }
     refreshBalance()
       .then((out) => {
-        if (out?.show_free_claim_popup) setIsFreeGiftOpen(true);
+        if (out?.show_free_claim_popup && !out?.is_admin) setIsFreeGiftOpen(true);
       })
       .catch(() => {});
   }, [isAuthed]);
@@ -789,13 +789,19 @@ export default function App() {
         <div className="fixed inset-0 z-[270] bg-black/70 flex items-end md:items-center justify-center">
           <div className="relative w-full md:max-w-[560px] bg-gradient-to-b from-indigo-950 via-[#0b0f16] to-[#070a12] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
             <div className="p-6">
+              <button
+                onClick={() => setIsFreeGiftOpen(false)}
+                className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/5 border border-white/10 text-slate-200 flex items-center justify-center hover:bg-white/10"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
               <div className="inline-flex items-center gap-2 text-xs font-extrabold px-3 py-1 rounded-full bg-yellow-400 text-black">
                 REGALO
               </div>
               <div className="mt-3 text-2xl font-extrabold text-white">10 canciones GRATIS</div>
               <div className="mt-2 text-slate-200 text-sm leading-relaxed">
                 Tienes un regalo de bienvenida: <span className="font-bold text-white">10 canciones</span> (20 versiones A y B).
-                Este aviso se quita cuando reclamas el regalo o compras cualquier plan.
               </div>
 
               <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
