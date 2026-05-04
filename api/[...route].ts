@@ -3257,7 +3257,13 @@ const aiHandler = (() => {
 
   async function transcribeLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string) {
     const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
-    if (!apiKey) return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
+    if (!apiKey) {
+      return {
+        ok: false as const,
+        error: "Falta GEMINI_API_KEY en Vercel",
+        userMessage: "La transcripción no está configurada. Falta GEMINI_API_KEY en Vercel.",
+      };
+    }
 
     const mod: any = await import("@google/genai");
     const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
@@ -3277,21 +3283,53 @@ const aiHandler = (() => {
       "Si el audio es de plano ilegible y no se puede transcribir, responde exactamente: ILEGIBLE.";
 
     const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
-    const models = ["gemini-1.5-flash-8b-latest", "gemini-1.5-flash-latest", "gemini-1.5-flash-8b", "gemini-1.5-flash"];
+    const baseModels = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-flash-latest",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-8b",
+    ];
 
     let lastErr: any = null;
-    for (const model of models) {
+    for (const base of baseModels) {
+      const modelsToTry = base.startsWith("models/") ? [base] : [base, `models/${base}`];
       try {
-        const r = await ai.models.generateContent({
-          model,
-          systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: toBase64(audioBuf) } }],
-            },
-          ],
-        });
+        let r: any = null;
+        let ok = false;
+        for (const model of modelsToTry) {
+          try {
+            r = await ai.models.generateContent({
+              model,
+              config: { systemInstruction },
+              contents: [
+                {
+                  role: "user",
+                  parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: toBase64(audioBuf) } }],
+                },
+              ],
+            });
+            ok = true;
+            break;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            lastErr = msg;
+            const lower = msg.toLowerCase();
+            const is404 = lower.includes("404") || lower.includes("not found");
+            if (is404) continue;
+            throw e;
+          }
+        }
+        if (!ok) {
+          const msg = String(lastErr || "Modelo no disponible");
+          return {
+            ok: false as const,
+            error: msg,
+            userMessage:
+              "No pude encontrar un modelo de transcripción disponible (404). " +
+              "Esto puede pasar si el modelo cambió o tu API Key no tiene acceso. Intenta de nuevo en unos minutos.",
+          };
+        }
 
         const text = String(r?.text || "").trim();
         if (!text) {
@@ -3313,10 +3351,14 @@ const aiHandler = (() => {
         if (is404) {
           continue;
         }
+        const is401 = lower.includes("401") || lower.includes("unauthorized");
+        const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
         const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
         const userMessage = is429
           ? "La transcripción está saturada en este momento. Intenta de nuevo en unos minutos."
-          : "No pude transcribir la letra. Intenta con un audio más claro o más corto.";
+          : is401 || is403
+            ? "La transcripción no está disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
+            : "No pude transcribir la letra. Intenta con un audio más claro o más corto.";
         return { ok: false as const, error: msg, userMessage };
       }
     }
@@ -3324,7 +3366,9 @@ const aiHandler = (() => {
     return {
       ok: false as const,
       error: String(lastErr || "Modelo no disponible"),
-      userMessage: "La transcripción está en mantenimiento. Intenta de nuevo en unos minutos.",
+      userMessage:
+        "La transcripción no está disponible en este momento. " +
+        "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
     };
   }
 

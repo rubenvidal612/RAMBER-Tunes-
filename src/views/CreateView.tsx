@@ -1724,6 +1724,11 @@ function CustomForm({
               style={{ width: `${Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))))}%` }}
             />
           </div>
+          {!!audioUploadUrl && !isUploadingAudio && (
+            <div className="mt-3">
+              <audio controls preload="metadata" src={audioUploadUrl} className="w-full" />
+            </div>
+          )}
         </div>
       )}
 
