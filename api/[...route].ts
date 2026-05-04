@@ -3242,6 +3242,19 @@ const aiHandler = (() => {
     }
   };
 
+  const normalizeAudioMimeType = (raw: string) => {
+    const s = (raw || "").toString().trim().toLowerCase();
+    if (!s) return "";
+    const mime = s.split(";")[0].trim();
+    if (!mime) return "";
+    if (mime === "audio/mp3") return "audio/mpeg";
+    if (mime === "audio/x-m4a") return "audio/mp4";
+    if (mime === "audio/m4a") return "audio/mp4";
+    if (mime === "video/mp4") return "audio/mp4";
+    if (mime.startsWith("audio/")) return mime;
+    return "";
+  };
+
   async function transcribeLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string) {
     const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
     if (!apiKey) return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
@@ -3251,29 +3264,51 @@ const aiHandler = (() => {
     if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
 
     const ai = new GoogleGenAI({ apiKey });
+    const systemInstruction =
+      "Eres un experto en transcripción de audio difícil (con ruido, eco, baja calidad y voces mezcladas). " +
+      "Debes limpiar el ruido mentalmente y enfocarte en la coherencia de las frases. " +
+      "No inventes contenido: si una palabra no se entiende, usa [inaudible]. " +
+      "Entrega únicamente la letra, sin explicaciones.";
     const prompt =
       "Transcribe únicamente la letra cantada en este audio. " +
       "Respeta saltos de línea. " +
       "Si identificas estructura, usa etiquetas como [Verso], [Coro], [Puente]. " +
-      "Si NO hay voz/canto, responde exactamente: SIN_LETRA";
+      "Si NO hay voz/canto, responde exactamente: SIN_LETRA. " +
+      "Si el audio es de plano ilegible y no se puede transcribir, responde exactamente: ILEGIBLE.";
 
-    const r = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType: mimeType || "audio/mpeg", data: toBase64(audioBuf) } },
-          ],
-        },
-      ],
-    });
+    try {
+      const r = await ai.models.generateContent({
+        model: "gemini-1.5-flash-latest",
+        systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType: normalizeAudioMimeType(mimeType) || "audio/mpeg", data: toBase64(audioBuf) } },
+            ],
+          },
+        ],
+      });
 
-    const text = String(r?.text || "").trim();
-    if (!text) return { ok: false as const, error: "Gemini no devolvió texto" };
-    if (text.toUpperCase() === "SIN_LETRA") return { ok: true as const, lyrics: "" };
-    return { ok: true as const, lyrics: text };
+      const text = String(r?.text || "").trim();
+      if (!text) return { ok: false as const, error: "Gemini no devolvió texto", userMessage: "No pude transcribir la letra. Intenta con un audio más claro o más corto." };
+      const upper = text.toUpperCase();
+      if (upper === "SIN_LETRA") return { ok: true as const, lyrics: "", status: "SIN_LETRA" as const };
+      if (upper === "ILEGIBLE") return { ok: true as const, lyrics: "", status: "ILEGIBLE" as const };
+      return { ok: true as const, lyrics: text, status: "OK" as const };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const lower = msg.toLowerCase();
+      const is404 = lower.includes("404") || lower.includes("not found");
+      const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
+      const userMessage = is404
+        ? "La transcripción está en mantenimiento. Intenta de nuevo en unos minutos."
+        : is429
+          ? "La transcripción está saturada en este momento. Intenta de nuevo en unos minutos."
+          : "No pude transcribir la letra. Intenta con un audio más claro o más corto.";
+      return { ok: false as const, error: msg, userMessage };
+    }
   }
 
   async function handleTranscribeLyrics(req: any, res: any) {
@@ -3295,18 +3330,24 @@ const aiHandler = (() => {
       if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
 
       const contentType = (fr.headers.get("content-type") || "").toString();
-      const mimeType = (mimeTypeHint || contentType || "audio/mpeg").split(";")[0].trim();
+      const mimeType = normalizeAudioMimeType(mimeTypeHint) || normalizeAudioMimeType(contentType) || "audio/mpeg";
       const ab = await fr.arrayBuffer();
       const size = ab.byteLength || 0;
       if (size <= 0) return send(res, 400, { error: "El audio está vacío" });
       if (size > 15 * 1024 * 1024) return send(res, 413, { error: "Audio muy pesado para transcribir. Sube un fragmento más corto." });
 
       const out = await transcribeLyricsWithGemini(ab, mimeType);
-      if (!out.ok) return send(res, 502, { error: out.error || "No pude transcribir" });
-
-      return send(res, 200, { ok: true, lyrics: out.lyrics || "" });
+      if (!out.ok) return send(res, 200, { ok: false, error: out.error || "No pude transcribir", message: (out as any).userMessage || "No pude transcribir la letra." });
+      if ((out as any).status === "ILEGIBLE") return send(res, 200, { ok: true, lyrics: "", status: "ILEGIBLE", message: "No pude entender la letra con este audio. Prueba con un fragmento más corto o con menos ruido." });
+      if ((out as any).status === "SIN_LETRA") return send(res, 200, { ok: true, lyrics: "", status: "SIN_LETRA", message: "No detecté voz/canto en ese audio." });
+      return send(res, 200, { ok: true, lyrics: out.lyrics || "", status: "OK" });
     } catch (e) {
-      return send(res, 502, { error: "Error transcribiendo", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 200, {
+        ok: false,
+        error: "Error transcribiendo",
+        message: "No pude transcribir la letra. Intenta con un audio más claro o más corto.",
+        detail: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 

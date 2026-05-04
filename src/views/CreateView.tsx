@@ -264,14 +264,31 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (!auto) alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
+      const guessMimeType = (u: string) => {
+        const s = (u || '').toString().trim().toLowerCase();
+        const q = s.split('?')[0].split('#')[0];
+        if (q.endsWith('.mp3')) return 'audio/mpeg';
+        if (q.endsWith('.wav')) return 'audio/wav';
+        if (q.endsWith('.m4a')) return 'audio/mp4';
+        if (q.endsWith('.mp4')) return 'audio/mp4';
+        if (q.endsWith('.ogg')) return 'audio/ogg';
+        if (q.endsWith('.webm')) return 'audio/webm';
+        return '';
+      };
+      const mimeType = ((audioFile?.type || '').toString().trim() || guessMimeType(audioUploadUrl)).trim();
       const r = await fetch('/api/ai/transcribe-lyrics', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType: (audioFile?.type || '').toString() }),
+        body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType }),
       });
       const out = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        if (!auto) alert((out?.detail || out?.error || 'No se pudo transcribir la letra.').toString());
+      if (!r.ok || out?.ok === false) {
+        if (!auto) alert((out?.message || out?.detail || out?.error || 'No se pudo transcribir la letra.').toString());
+        return;
+      }
+      const status = (out?.status || '').toString().trim().toUpperCase();
+      if (status === 'ILEGIBLE' || status === 'SIN_LETRA') {
+        if (!auto) alert((out?.message || 'No se pudo transcribir la letra.').toString());
         return;
       }
       const text = (out?.lyrics || '').toString().trim();
