@@ -1,13 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Edit2, Forward, Settings, ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
+import { Edit2, Forward, Settings } from 'lucide-react';
 import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
+import { supabaseBrowser } from '@/lib/supabaseBrowser';
 
 export function ProfileView({ credits }: { credits?: number }) {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [userName, setUserName] = useState('Usuario');
+  const [userInitial, setUserInitial] = useState('U');
+  const [userEmail, setUserEmail] = useState('');
+
+  useEffect(() => {
+    if (!supabaseBrowser) return;
+    supabaseBrowser.auth
+      .getUser()
+      .then(({ data }) => {
+        const user = data?.user;
+        const email = (user?.email || '').toString().trim();
+        const meta: any = user?.user_metadata || {};
+        const name = (meta?.full_name || meta?.name || '').toString().trim();
+        const display = (name || email || 'Usuario').toString().trim();
+        setUserName(display);
+        setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
+        setUserEmail(email);
+      })
+      .catch(() => {});
+  }, []);
 
   if (showSettings) {
     return <SettingsView onClose={() => setShowSettings(false)} />;
@@ -23,9 +44,12 @@ export function ProfileView({ credits }: { credits?: number }) {
       <div className="flex items-center justify-between px-6 mb-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300">
-            R
+            {userInitial}
           </div>
-          <h2 className="text-2xl font-bold text-white">Ruben</h2>
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
+            {userEmail ? <div className="text-xs text-slate-400 truncate">{userEmail}</div> : null}
+          </div>
         </div>
         <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white transition-colors glass-card rounded-full">
           <Settings className="w-5 h-5" />

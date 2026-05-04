@@ -3390,6 +3390,50 @@ const adminHandler = (() => {
     return send(res, 200, { ok: true });
   }
 
+  async function handleUsers(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const searchRaw = (pickQuery(req, "search") || pickQuery(req, "q") || "").toString().trim().toLowerCase();
+    const limitRaw = Number(pickQuery(req, "limit") || 200);
+    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 200, 500));
+
+    const admin = auth.admin as any;
+    const listUsers = admin?.auth?.admin?.listUsers;
+    if (typeof listUsers !== "function") return send(res, 500, { error: "Supabase Auth Admin no disponible (listUsers)" });
+
+    const items: any[] = [];
+    let total: number | null = null;
+    const perPage = 200;
+    const maxPages = 10;
+
+    for (let page = 1; page <= maxPages && items.length < limit; page++) {
+      const r = await listUsers({ page, perPage });
+      if (r?.error) return send(res, 500, { error: String(r.error?.message || r.error) });
+      const data = r?.data || {};
+      if (typeof data?.total === "number" && Number.isFinite(data.total)) total = data.total;
+      const users = Array.isArray(data?.users) ? data.users : [];
+      if (!users.length) break;
+
+      for (const u of users) {
+        const email = (u?.email || "").toString().trim();
+        if (!email) continue;
+        const lower = email.toLowerCase();
+        if (searchRaw && !lower.includes(searchRaw)) continue;
+        items.push({
+          id: String(u?.id || ""),
+          email,
+          created_at: String(u?.created_at || ""),
+          last_sign_in_at: String(u?.last_sign_in_at || ""),
+        });
+        if (items.length >= limit) break;
+      }
+    }
+
+    return send(res, 200, { ok: true, total: total ?? null, count: items.length, items });
+  }
+
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
     const fallback = (() => {
@@ -3407,6 +3451,7 @@ const adminHandler = (() => {
     if (a === "set-plan") return handleSetPlan(req, res);
     if (a === "feedback") return handleFeedback(req, res);
     if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
+    if (a === "users") return handleUsers(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();

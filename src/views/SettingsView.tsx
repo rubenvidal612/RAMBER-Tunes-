@@ -29,6 +29,12 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [planCreditsMode, setPlanCreditsMode] = useState<'none' | 'default' | 'set'>('none');
   const [planCreditsManual, setPlanCreditsManual] = useState('0');
   const [planBusy, setPlanBusy] = useState(false);
+  const [isUsersOpen, setIsUsersOpen] = useState(false);
+  const [usersSearch, setUsersSearch] = useState('');
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState('');
+  const [usersList, setUsersList] = useState<Array<{ id: string; email: string; created_at: string }>>([]);
+  const [usersTotal, setUsersTotal] = useState<number | null>(null);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -305,6 +311,40 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     }
   };
 
+  const loadUsers = async (search: string) => {
+    if (!supabaseBrowser) return;
+    setUsersLoading(true);
+    setUsersError('');
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        setUsersError('No se pudo iniciar sesión.');
+        return;
+      }
+      const url = `/api/admin/users?limit=200&search=${encodeURIComponent((search || '').toString())}`;
+      const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setUsersError((out?.error || 'No pude cargar usuarios.').toString());
+        return;
+      }
+      const items = Array.isArray(out?.items) ? out.items : [];
+      setUsersTotal(typeof out?.total === 'number' ? out.total : null);
+      setUsersList(
+        items
+          .map((x: any) => ({
+            id: String(x?.id || ''),
+            email: String(x?.email || ''),
+            created_at: String(x?.created_at || ''),
+          }))
+          .filter((x: any) => x.email)
+      );
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
   if (isOfficeOpen) {
     const users = officeData?.users || {};
     const payments = officeData?.payments || {};
@@ -350,6 +390,82 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               <div className="text-2xl font-extrabold text-white mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
               <div className="text-[11px] text-slate-300/80 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
             </div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <button
+              onClick={() => {
+                setIsUsersOpen((v) => {
+                  const next = !v;
+                  if (!v && usersList.length === 0 && !usersLoading) loadUsers(usersSearch).catch(() => {});
+                  return next;
+                });
+              }}
+              className="w-full flex items-center justify-between"
+            >
+              <div>
+                <div className="text-white font-extrabold">Correos de usuarios</div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Registros: {Number(users?.total ?? 0)}
+                  {usersTotal != null ? ` (Auth: ${usersTotal})` : ''}
+                </div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {isUsersOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
+
+            {isUsersOpen ? (
+              <div className="mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input
+                    value={usersSearch}
+                    onChange={(e) => setUsersSearch(e.target.value)}
+                    placeholder="Buscar correo…"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 md:col-span-2"
+                  />
+                  <button
+                    onClick={() => loadUsers(usersSearch).catch(() => {})}
+                    disabled={usersLoading}
+                    className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  >
+                    {usersLoading ? 'Buscando…' : 'Buscar'}
+                  </button>
+                </div>
+
+                {usersError ? (
+                  <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{usersError}</div>
+                ) : null}
+
+                <div className="mt-3 text-[11px] text-slate-400">Mostrando: {usersList.length} correos</div>
+
+                <div className="mt-3 max-h-[320px] overflow-y-auto rounded-2xl border border-white/10">
+                  <div className="grid grid-cols-1 divide-y divide-white/5">
+                    {usersList.length === 0 ? (
+                      <div className="p-4 text-sm text-slate-400">{usersLoading ? 'Cargando…' : 'No encontré usuarios con esa búsqueda.'}</div>
+                    ) : (
+                      usersList.map((u) => {
+                        let dateLabel = '';
+                        try {
+                          const d = new Date(u.created_at);
+                          if (!Number.isNaN(d.getTime())) dateLabel = d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' });
+                        } catch {
+                          dateLabel = '';
+                        }
+                        return (
+                          <div key={u.id || u.email} className="p-4 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-slate-100 font-semibold truncate">{u.email}</div>
+                              <div className="text-[11px] text-slate-500 truncate">{dateLabel ? `Registro: ${dateLabel}` : '—'}</div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
