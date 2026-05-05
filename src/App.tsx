@@ -304,6 +304,8 @@ export default function App() {
   const pullStartYRef = useRef(0);
   const pullTrackingRef = useRef(false);
   const pullLastRefreshAtRef = useRef(0);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState('');
   const [updatesSeenKey, setUpdatesSeenKey] = useState(() => {
     try {
       return (window.localStorage.getItem('ramber.updates_seen_v1') || '').toString();
@@ -531,6 +533,51 @@ export default function App() {
     }
   };
 
+  const refreshAppVersion = async () => {
+    try {
+      const r = await fetch('/api/app/version', { method: 'GET' });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) return null;
+      const v = (out?.version || '').toString().trim();
+      return v || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const forceReload = () => {
+    try {
+      if (updateVersion) window.localStorage.setItem('ramber.app_version_v1', updateVersion);
+    } catch {}
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set('__refresh', String(Date.now()));
+      window.location.href = u.toString();
+      return;
+    } catch {}
+    try {
+      window.location.reload();
+    } catch {}
+  };
+
+  useEffect(() => {
+    refreshAppVersion().then((v) => {
+      if (!v) return;
+      try {
+        const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
+        if (!prev) {
+          window.localStorage.setItem('ramber.app_version_v1', v);
+          return;
+        }
+        if (prev !== v) {
+          setUpdateAvailable(true);
+          setUpdateVersion(v);
+        }
+      } catch {
+      }
+    });
+  }, []);
+
   useEffect(() => {
     if (!isAuthed) return;
     const el = appRootRef.current;
@@ -582,9 +629,23 @@ export default function App() {
       pullLastRefreshAtRef.current = now;
       setIsPullRefreshing(true);
       pullRefreshingRef.current = true;
-      Promise.allSettled([refreshLibrary(), refreshCredits(), refreshBalance()]).then(() => {
+      Promise.allSettled([refreshLibrary(), refreshCredits(), refreshBalance(), refreshAppVersion()]).then((results) => {
         pullRefreshingRef.current = false;
         setIsPullRefreshing(false);
+        const v = results.length ? (results[results.length - 1] as any)?.value : null;
+        if (typeof v === 'string' && v.trim()) {
+          try {
+            const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
+            if (prev && prev !== v.trim()) {
+              setUpdateAvailable(true);
+              setUpdateVersion(v.trim());
+              showToast('Hay una actualización. Toca “Actualizar app”.');
+              return;
+            }
+            if (!prev) window.localStorage.setItem('ramber.app_version_v1', v.trim());
+          } catch {
+          }
+        }
         showToast('Actualizado.');
       });
     };
@@ -1202,6 +1263,22 @@ export default function App() {
         showBank={false}
         notificationsCount={unreadUpdatesCount}
       />
+      {updateAvailable ? (
+        <div className="md:hidden px-3 pt-3">
+          <div className="bg-gradient-to-r from-emerald-500/20 via-white/5 to-transparent border border-emerald-400/20 rounded-2xl px-3 py-3 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-extrabold text-white leading-tight">Hay una actualización</div>
+              <div className="text-[11px] text-slate-200/90 leading-tight">Tócala para ver los cambios nuevos.</div>
+            </div>
+            <button
+              onClick={() => forceReload()}
+              className="shrink-0 bg-emerald-400 hover:bg-emerald-300 text-black px-4 py-2 rounded-full text-xs font-extrabold"
+            >
+              Actualizar app
+            </button>
+          </div>
+        </div>
+      ) : null}
       {pullDistance > 0 || isPullRefreshing ? (
         <div className="md:hidden absolute left-0 right-0 top-14 z-[60] flex justify-center pointer-events-none">
           <div className="bg-black/40 border border-white/10 backdrop-blur-xl rounded-full px-4 py-2 text-[11px] font-extrabold text-slate-100">

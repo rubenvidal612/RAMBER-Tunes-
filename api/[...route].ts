@@ -4414,6 +4414,51 @@ const aiHandler = (() => {
   };
 })();
 
+const appHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "app") return send(res, 404, { error: "Ruta no encontrada" });
+
+    let action = "";
+    try {
+      action = (pickQuery(req, "action") || "").toString();
+    } catch {
+      action = "";
+    }
+    action = action.trim().toLowerCase();
+    const a = action || (next || "").toLowerCase();
+
+    if (a === "version") {
+      if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+      const versionRaw =
+        (process.env.VERCEL_GIT_COMMIT_SHA || "").toString().trim() ||
+        (process.env.VERCEL_DEPLOYMENT_ID || "").toString().trim() ||
+        (process.env.GITHUB_SHA || "").toString().trim() ||
+        "local";
+      const version = versionRaw.slice(0, 80);
+      const deployedAt = (process.env.VERCEL_DEPLOYMENT_ID || "").toString().trim().slice(0, 120) || null;
+      return send(res, 200, { ok: true, version, deployed_at: deployedAt });
+    }
+
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -4436,6 +4481,7 @@ export default async function handler(req: any, res: any) {
     if (head === "admin") return adminHandler(req, res);
     if (head === "support") return supportHandler(req, res);
     if (head === "ai") return aiHandler(req, res);
+    if (head === "app") return appHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
