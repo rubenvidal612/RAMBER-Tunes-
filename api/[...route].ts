@@ -3492,18 +3492,58 @@ const adminHandler = (() => {
     const searchRaw = (pickQuery(req, "search") || pickQuery(req, "q") || "").toString().trim().toLowerCase();
     const limitRaw = Number(pickQuery(req, "limit") || 200);
     const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 200, 500));
+    const mode = (pickQuery(req, "mode") || "real").toString().trim().toLowerCase(); // real | all
+    const onlyReal = mode !== "all";
 
     const supabaseUrl = String((auth as any)?.supabaseUrl || "").trim();
     const supabaseService = String((auth as any)?.supabaseService || "").trim();
     if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase Auth" });
 
+    let activeUserIds: Set<string> | null = null;
+    if (onlyReal) {
+      activeUserIds = new Set<string>();
+      try {
+        const admin = (auth as any).admin;
+        const { data: songs } = await admin
+          .from("library_items")
+          .select("user_id")
+          .eq("type", "song")
+          .is("deleted_at", null)
+          .limit(20000);
+        const rows = Array.isArray(songs) ? songs : [];
+        for (const r of rows) {
+          const uid = String((r as any)?.user_id || "").trim();
+          if (uid) activeUserIds.add(uid);
+        }
+      } catch {
+      }
+      try {
+        const admin = (auth as any).admin;
+        const { data: tx } = await admin.from("mp_transactions").select("user_id, kind, pack_key, payment_id").limit(20000);
+        const rows = Array.isArray(tx) ? tx : [];
+        for (const r of rows) {
+          const uid = String((r as any)?.user_id || "").trim();
+          if (!uid) continue;
+          const kind = String((r as any)?.kind || "").trim().toLowerCase();
+          const pack = String((r as any)?.pack_key || "").trim().toLowerCase();
+          const pid = String((r as any)?.payment_id || "").trim().toLowerCase();
+          const isPlan = pack === "inicio" || pack === "productor";
+          const isClaim = pid.startsWith("claim:");
+          const isAdminGrant = kind === "admin_grant";
+          if (isPlan || isClaim || isAdminGrant) activeUserIds.add(uid);
+        }
+      } catch {
+      }
+    }
+
     const items: any[] = [];
     let total: number | null = null;
     let adminSeen = 0;
+    let total_filtered = 0;
     const perPage = 200;
     const maxPages = 10;
 
-    for (let page = 1; page <= maxPages && items.length < limit; page++) {
+    for (let page = 1; page <= maxPages; page++) {
       const r = await listUsersViaHttp(supabaseUrl, supabaseService, page, perPage);
       if (!r.ok) return send(res, r.status, { error: explainAuthAdminError({ message: r.error }), detail: r.detail || null });
       if (typeof r.total === "number" && Number.isFinite(r.total)) total = r.total;
@@ -3518,19 +3558,31 @@ const adminHandler = (() => {
           adminSeen += 1;
           continue;
         }
+        const uid = String(u?.id || "").trim();
+        if (onlyReal && activeUserIds && uid && !activeUserIds.has(uid)) continue;
         if (searchRaw && !lower.includes(searchRaw)) continue;
+        total_filtered += 1;
         items.push({
-          id: String(u?.id || ""),
+          id: uid,
           email,
           created_at: String(u?.created_at || ""),
           last_sign_in_at: String(u?.last_sign_in_at || ""),
         });
         if (items.length >= limit) break;
       }
+      if (items.length >= limit && !searchRaw && total != null && total <= perPage * page) break;
     }
 
     const total_non_admin = total == null ? null : Math.max(0, Number(total || 0) - Number(adminSeen || 0));
-    return send(res, 200, { ok: true, total: total ?? null, total_non_admin, count: items.length, items });
+    return send(res, 200, {
+      ok: true,
+      mode: onlyReal ? "real" : "all",
+      total: total ?? null,
+      total_non_admin,
+      total_filtered,
+      count: items.length,
+      items,
+    });
   }
 
   return async function handler(req: any, res: any) {

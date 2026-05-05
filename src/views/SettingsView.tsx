@@ -35,6 +35,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [usersError, setUsersError] = useState('');
   const [usersList, setUsersList] = useState<Array<{ id: string; email: string; created_at: string }>>([]);
   const [usersTotal, setUsersTotal] = useState<number | null>(null);
+  const [usersMode, setUsersMode] = useState<'real' | 'all'>('real');
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -315,7 +316,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     }
   };
 
-  const loadUsers = async (search: string) => {
+  const loadUsers = async (search: string, mode: 'real' | 'all' = usersMode) => {
     if (!supabaseBrowser) return;
     setUsersLoading(true);
     setUsersError('');
@@ -326,7 +327,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         setUsersError('No se pudo iniciar sesión.');
         return;
       }
-      const url = `/api/admin/users?limit=200&search=${encodeURIComponent((search || '').toString())}`;
+      const url = `/api/admin/users?limit=200&mode=${encodeURIComponent(mode)}&search=${encodeURIComponent((search || '').toString())}`;
       const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
       const text = await r.text().catch(() => '');
       let out: any = {};
@@ -343,7 +344,8 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         return;
       }
       const items = Array.isArray(out?.items) ? out.items : [];
-      if (typeof out?.total_non_admin === 'number') setUsersTotal(out.total_non_admin);
+      if (typeof out?.total_filtered === 'number') setUsersTotal(out.total_filtered);
+      else if (typeof out?.total_non_admin === 'number') setUsersTotal(out.total_non_admin);
       else setUsersTotal(typeof out?.total === 'number' ? out.total : null);
       setUsersList(
         items
@@ -418,7 +420,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               onClick={() => {
                 setIsUsersOpen((v) => {
                   const next = !v;
-                  if (!v && usersList.length === 0 && !usersLoading) loadUsers(usersSearch).catch(() => {});
+                  if (!v && usersList.length === 0 && !usersLoading) loadUsers(usersSearch, 'real').catch(() => {});
                   return next;
                 });
               }}
@@ -427,8 +429,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               <div>
                 <div className="text-white font-extrabold">Correos de usuarios</div>
                 <div className="text-[11px] text-slate-400 mt-1">
-                  Registros (sin admin): {totalUsersNoAdmin}
-                  {usersTotal != null ? ` (Auth sin admin: ${usersTotal})` : ''}
+                  Registros (reales, sin pruebas): {usersTotal != null ? usersTotal : totalUsersNoAdmin}
                 </div>
               </div>
               <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
@@ -439,6 +440,34 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             {isUsersOpen ? (
               <div className="mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-3 flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setUsersMode('real');
+                        loadUsers(usersSearch, 'real').catch(() => {});
+                      }}
+                      className={cn(
+                        'h-[40px] px-4 rounded-full border text-xs font-extrabold transition-colors',
+                        usersMode === 'real' ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+                      )}
+                      disabled={usersLoading}
+                    >
+                      Solo reales
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUsersMode('all');
+                        loadUsers(usersSearch, 'all').catch(() => {});
+                      }}
+                      className={cn(
+                        'h-[40px] px-4 rounded-full border text-xs font-extrabold transition-colors',
+                        usersMode === 'all' ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+                      )}
+                      disabled={usersLoading}
+                    >
+                      Ver todos
+                    </button>
+                  </div>
                   <input
                     value={usersSearch}
                     onChange={(e) => setUsersSearch(e.target.value)}
@@ -458,7 +487,10 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                   <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{usersError}</div>
                 ) : null}
 
-                <div className="mt-3 text-[11px] text-slate-400">Mostrando: {usersList.length} correos</div>
+                <div className="mt-3 text-[11px] text-slate-400">
+                  Mostrando: {usersList.length} correos
+                  {usersTotal != null ? ` (Total: ${usersTotal})` : ''}
+                </div>
 
                 <div className="mt-3 max-h-[320px] overflow-y-auto rounded-2xl border border-white/10">
                   <div className="grid grid-cols-1 divide-y divide-white/5">
