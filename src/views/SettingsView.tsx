@@ -50,6 +50,35 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [userDetailError, setUserDetailError] = useState('');
   const [userDetailData, setUserDetailData] = useState<any>(null);
 
+  const TELEGRAM_GROUP_URL = 'https://t.me/+sgw5bsAX9utmZDEx';
+
+  const openExternalUrl = (url: string) => {
+    const safe = (url || '').toString().trim();
+    if (!safe) return;
+    try {
+      const w = window.open(safe, '_blank', 'noopener,noreferrer');
+      if (w) {
+        try {
+          (w as any).opener = null;
+        } catch {}
+        return;
+      }
+    } catch {}
+    try {
+      const a = document.createElement('a');
+      a.href = safe;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    } catch {}
+    try {
+      window.location.href = safe;
+    } catch {}
+  };
+
   useEffect(() => {
     if (!supabaseBrowser) return;
     supabaseBrowser.auth
@@ -1157,7 +1186,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           </button>
           <button
             className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5"
-            onClick={() => window.open('https://t.me/+sgw5bsAX9utmZDEx', '_blank')}
+            onClick={() => openExternalUrl(TELEGRAM_GROUP_URL)}
           >
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
               <MessageSquare className="w-5 h-5 text-slate-400" /> Grupo de Telegram
