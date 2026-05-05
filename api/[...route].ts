@@ -2648,7 +2648,7 @@ const balanceHandler = (() => {
       }
     }
 
-    const credits = is_admin && typeof provider_credits === "number" ? provider_credits : internal_credits;
+    const credits = internal_credits;
 
     const counts = toCounts(credits);
     return send(res, 200, {
@@ -2664,7 +2664,7 @@ const balanceHandler = (() => {
       internal_credits,
       provider_credits,
       provider_error: provider_error || null,
-      source: is_admin && typeof provider_credits === "number" ? "provider_admin" : "local",
+      source: "local",
     });
   };
 })();
