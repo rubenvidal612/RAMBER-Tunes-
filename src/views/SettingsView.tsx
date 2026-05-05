@@ -12,6 +12,12 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [isOfficeOpen, setIsOfficeOpen] = useState(false);
+  const [officeSaldoOpen, setOfficeSaldoOpen] = useState(false);
+  const [officeMensajesOpen, setOfficeMensajesOpen] = useState(false);
+  const [officeCreditosOpen, setOfficeCreditosOpen] = useState(false);
+  const [officePlanesOpen, setOfficePlanesOpen] = useState(false);
+  const [officeReporteOpen, setOfficeReporteOpen] = useState(false);
+  const [officeVentasOpen, setOfficeVentasOpen] = useState(false);
   const [officeLoading, setOfficeLoading] = useState(false);
   const [officeError, setOfficeError] = useState('');
   const [officeData, setOfficeData] = useState<any>(null);
@@ -36,8 +42,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [usersSearch, setUsersSearch] = useState('');
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState('');
-  const [usersList, setUsersList] = useState<Array<{ id: string; email: string; created_at: string }>>([]);
+  const [usersList, setUsersList] = useState<Array<{ id: string; email: string; created_at: string; full_name?: string; birthdate?: string }>>([]);
   const [usersTotal, setUsersTotal] = useState<number | null>(null);
+  const [isUserDetailOpen, setIsUserDetailOpen] = useState(false);
+  const [userDetailEmail, setUserDetailEmail] = useState('');
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
+  const [userDetailError, setUserDetailError] = useState('');
+  const [userDetailData, setUserDetailData] = useState<any>(null);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -405,11 +416,74 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             id: String(x?.id || ''),
             email: String(x?.email || ''),
             created_at: String(x?.created_at || ''),
+            full_name: String(x?.full_name || ''),
+            birthdate: String(x?.birthdate || ''),
           }))
           .filter((x: any) => x.email)
       );
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  const openUserDetail = async (email: string) => {
+    if (!supabaseBrowser) return;
+    const e = (email || '').toString().trim().toLowerCase();
+    if (!e) return;
+    setIsUserDetailOpen(true);
+    setUserDetailEmail(e);
+    setUserDetailLoading(true);
+    setUserDetailError('');
+    setUserDetailData(null);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        setUserDetailError('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch(`/api/admin/user-detail?email=${encodeURIComponent(e)}`, { headers: { authorization: `Bearer ${token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setUserDetailError((out?.detail || out?.error || 'No pude cargar el usuario.').toString());
+        return;
+      }
+      setUserDetailData(out);
+    } finally {
+      setUserDetailLoading(false);
+    }
+  };
+
+  const deleteUser = async (email: string) => {
+    if (!supabaseBrowser) return;
+    const e = (email || '').toString().trim().toLowerCase();
+    if (!e) return;
+    const ok = window.confirm(`¿Borrar el usuario?\n\n${e}\n\nEsto elimina su cuenta y datos (biblioteca, transacciones, perfil).`);
+    if (!ok) return;
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: e }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.detail || out?.error || 'No pude borrar el usuario.').toString());
+        return;
+      }
+      alert('Listo. Usuario borrado.');
+      setIsUserDetailOpen(false);
+      setUserDetailData(null);
+      loadUsers(usersSearch).catch(() => {});
+      openOffice().catch(() => {});
+    } catch {
+      alert('No pude borrar el usuario.');
     }
   };
 
@@ -543,13 +617,25 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                         } catch {
                           dateLabel = '';
                         }
+                        const nm = (u.full_name || '').toString().trim();
+                        const bd = (u.birthdate || '').toString().trim();
                         return (
-                          <div key={u.id || u.email} className="p-4 flex items-center justify-between gap-3">
+                          <button
+                            key={u.id || u.email}
+                            type="button"
+                            onClick={() => openUserDetail(u.email)}
+                            className="p-4 w-full flex items-center justify-between gap-3 hover:bg-white/5 transition-colors text-left"
+                          >
                             <div className="min-w-0">
                               <div className="text-slate-100 font-semibold truncate">{u.email}</div>
+                              <div className="text-[11px] text-slate-400 truncate">
+                                {nm ? nm : '—'}
+                                {bd ? ` • Nac: ${bd}` : ''}
+                              </div>
                               <div className="text-[11px] text-slate-500 truncate">{dateLabel ? `Registro: ${dateLabel}` : '—'}</div>
                             </div>
-                          </div>
+                            <div className="text-[11px] text-slate-400 shrink-0">Ver</div>
+                          </button>
                         );
                       })
                     )}
@@ -560,236 +646,305 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="text-white font-extrabold">Reporte</div>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                <div className="text-xs text-slate-300 font-semibold">Semana</div>
-                <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.week?.mxn ?? 0).toFixed(0)}</div>
-                <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.week?.count ?? 0)} pagos</div>
+            <button onClick={() => setOfficeReporteOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Reporte</div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Hoy: ${Number(payments?.today?.mxn ?? 0).toFixed(0)} • Mes: ${Number(payments?.month?.mxn ?? 0).toFixed(0)}
+                </div>
               </div>
-              <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                <div className="text-xs text-slate-300 font-semibold">Mes</div>
-                <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
-                <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {officeReporteOpen ? 'Ocultar' : 'Ver'}
               </div>
-              <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                <div className="text-xs text-slate-300 font-semibold">Total</div>
-                <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.all?.mxn ?? 0).toFixed(0)}</div>
-                <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.all?.count ?? 0)} pagos</div>
-              </div>
-            </div>
-            <button
-              onClick={() => openOffice().catch(() => {})}
-              disabled={officeLoading}
-              className="mt-4 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
-            >
-              {officeLoading ? 'Actualizando…' : 'Actualizar'}
             </button>
-          </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="flex items-center justify-between">
-              <div className="text-white font-extrabold">Ventas por día</div>
-              <div className="text-[11px] text-slate-400">Últimos 7 días</div>
-            </div>
-            <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
-              <div className="grid grid-cols-3 bg-black/30 px-4 py-2 text-[11px] text-slate-300 font-semibold">
-                <div>Día</div>
-                <div className="text-center">Pagos</div>
-                <div className="text-right">MXN</div>
-              </div>
-              <div className="divide-y divide-white/5">
-                {(daily.length ? daily : new Array(7).fill(null)).map((row: any, idx: number) => {
-                  const day = (row?.day || '').toString();
-                  const count = Number(row?.count ?? 0);
-                  const mxn = Number(row?.mxn ?? 0);
-                  const bg =
-                    idx % 3 === 0
-                      ? 'from-emerald-500/10'
-                      : idx % 3 === 1
-                        ? 'from-cyan-500/10'
-                        : 'from-violet-500/10';
-                  return (
-                    <div key={day || idx} className={`grid grid-cols-3 px-4 py-3 text-sm bg-gradient-to-r ${bg} to-transparent`}>
-                      <div className="text-slate-200 font-semibold">{day || '—'}</div>
-                      <div className="text-center text-slate-300">{Number.isFinite(count) ? count : 0}</div>
-                      <div className="text-right text-white font-extrabold">${Number.isFinite(mxn) ? mxn.toFixed(0) : '0'}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="flex items-center justify-between">
-              <div className="text-white font-extrabold">Diagnóstico de saldo</div>
-              <div className="text-[11px] text-slate-400">{(balance?.source || '').toString() || '—'}</div>
-            </div>
-            {balance?.error ? (
-              <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
-                {(balance?.error || 'No pude consultar saldo.').toString()}
-              </div>
-            ) : (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                  <div className="text-xs text-slate-300 font-semibold">Créditos mostrados</div>
-                  <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.credits ?? 0).toString()}</div>
-                </div>
-                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                  <div className="text-xs text-slate-300 font-semibold">Créditos internos</div>
-                  <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.internal_credits ?? 0).toString()}</div>
-                </div>
-                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                  <div className="text-xs text-slate-300 font-semibold">Créditos proveedor</div>
-                  <div className="text-xl text-white font-extrabold mt-1">{balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}</div>
-                </div>
-              </div>
-            )}
-            {balance?.provider_error ? (
-              <div className="mt-3 text-[11px] text-slate-400">
-                Proveedor: {(balance?.provider_error || '').toString()}
-              </div>
-            ) : null}
-            {diag?.error ? (
-              <div className="mt-3 text-[11px] text-slate-400">
-                Diagnóstico: {(diag?.error || '').toString()}
-              </div>
-            ) : diag?.provider || diag?.env ? (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                  <div className="text-xs text-slate-300 font-semibold">Variables (Vercel)</div>
-                  <div className="mt-2 space-y-1 text-[11px] text-slate-300">
-                    <div>SUPABASE_URL: {diag?.env?.has_supabase_url ? 'OK' : 'FALTA'}</div>
-                    <div>SUPABASE_ANON_KEY: {diag?.env?.has_supabase_anon ? 'OK' : 'FALTA'}</div>
-                    <div>SUPABASE_SERVICE_ROLE_KEY: {diag?.env?.has_supabase_service ? 'OK' : 'FALTA'}</div>
-                    <div>SUNO_API_BASE_URL: {diag?.env?.has_suno_base ? 'OK' : 'FALTA'}</div>
-                    <div>SUNO_API_KEY: {diag?.env?.has_suno_key ? 'OK' : 'FALTA'}</div>
+            {officeReporteOpen ? (
+              <>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                    <div className="text-xs text-slate-300 font-semibold">Semana</div>
+                    <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.week?.mxn ?? 0).toFixed(0)}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.week?.count ?? 0)} pagos</div>
+                  </div>
+                  <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                    <div className="text-xs text-slate-300 font-semibold">Mes</div>
+                    <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
+                  </div>
+                  <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                    <div className="text-xs text-slate-300 font-semibold">Total</div>
+                    <div className="text-xl text-white font-extrabold mt-1">${Number(payments?.all?.mxn ?? 0).toFixed(0)}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">{Number(payments?.all?.count ?? 0)} pagos</div>
                   </div>
                 </div>
-                <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                  <div className="text-xs text-slate-300 font-semibold">Prueba proveedor</div>
-                  <div className="mt-2 text-[11px] text-slate-300">
-                    <div>HTTP: {Number(diag?.provider?.status ?? 0).toString() || '—'}</div>
-                    <div>code: {diag?.provider?.code == null ? '—' : Number(diag?.provider?.code ?? 0).toString()}</div>
-                    <div>credits: {diag?.provider?.credits == null ? '—' : Number(diag?.provider?.credits ?? 0).toString()}</div>
-                  </div>
-                  {diag?.provider?.error ? (
-                    <div className="mt-2 text-[11px] text-red-200">{String(diag?.provider?.error || '').slice(0, 200)}</div>
-                  ) : diag?.provider?.text ? (
-                    <div className="mt-2 text-[11px] text-slate-400 break-words">{String(diag?.provider?.text || '').slice(0, 240)}</div>
-                  ) : null}
-                </div>
-              </div>
+                <button
+                  onClick={() => openOffice().catch(() => {})}
+                  disabled={officeLoading}
+                  className="mt-4 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                >
+                  {officeLoading ? 'Actualizando…' : 'Actualizar'}
+                </button>
+              </>
             ) : null}
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="flex items-center justify-between">
-              <div className="text-white font-extrabold">Mensajes</div>
-              <div className="text-[11px] text-slate-400">{Number(feedback?.unread_count ?? 0) ? `${Number(feedback?.unread_count ?? 0)} sin leer` : '—'}</div>
-            </div>
-            {feedback?.error ? (
-              <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
-                {(feedback?.error || 'No pude cargar mensajes.').toString()}
+            <button onClick={() => setOfficeVentasOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Ventas por día</div>
+                <div className="text-[11px] text-slate-400 mt-1">Últimos 7 días</div>
               </div>
-            ) : feedbackItems.length === 0 ? (
-              <div className="mt-3 text-sm text-slate-400">Aún no hay mensajes.</div>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {feedbackItems.slice(0, 30).map((m: any) => {
-                  const id = String(m?.id || '');
-                  const name = String(m?.name || 'Usuario');
-                  const whatsapp = String(m?.whatsapp || '');
-                  const msg = String(m?.message || '');
-                  const isRead = Boolean(m?.is_read);
-                  const createdAt = String(m?.created_at || '');
-                  let dateLabel = createdAt;
-                  try {
-                    const d = new Date(createdAt);
-                    if (!Number.isNaN(d.getTime())) dateLabel = d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-                  } catch {
-                  }
-                  return (
-                    <div key={id} className={cn('bg-black/20 border border-white/10 rounded-2xl p-4', !isRead ? 'ring-1 ring-emerald-500/30' : '')}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-white font-extrabold truncate">{name}</div>
-                          <div className="text-[11px] text-slate-400 truncate">{whatsapp ? `WhatsApp: ${whatsapp}` : '—'}</div>
-                        </div>
-                        <div className="text-[11px] text-slate-400 shrink-0">{dateLabel}</div>
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {officeVentasOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
+
+            {officeVentasOpen ? (
+              <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+                <div className="grid grid-cols-3 bg-black/30 px-4 py-2 text-[11px] text-slate-300 font-semibold">
+                  <div>Día</div>
+                  <div className="text-center">Pagos</div>
+                  <div className="text-right">MXN</div>
+                </div>
+                <div className="divide-y divide-white/5">
+                  {(daily.length ? daily : new Array(7).fill(null)).map((row: any, idx: number) => {
+                    const day = (row?.day || '').toString();
+                    const count = Number(row?.count ?? 0);
+                    const mxn = Number(row?.mxn ?? 0);
+                    const bg =
+                      idx % 3 === 0
+                        ? 'from-emerald-500/10'
+                        : idx % 3 === 1
+                          ? 'from-cyan-500/10'
+                          : 'from-violet-500/10';
+                    return (
+                      <div key={day || idx} className={`grid grid-cols-3 px-4 py-3 text-sm bg-gradient-to-r ${bg} to-transparent`}>
+                        <div className="text-slate-200 font-semibold">{day || '—'}</div>
+                        <div className="text-center text-slate-300">{Number.isFinite(count) ? count : 0}</div>
+                        <div className="text-right text-white font-extrabold">${Number.isFinite(mxn) ? mxn.toFixed(0) : '0'}</div>
                       </div>
-                      <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap break-words">{msg}</div>
-                      {!isRead && id ? (
-                        <button
-                          onClick={() => markFeedbackRead(id)}
-                          className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold transition-colors"
-                        >
-                          Marcar como leído
-                        </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <button onClick={() => setOfficeSaldoOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Saldo</div>
+                <div className="text-[11px] text-slate-400 mt-1 truncate">
+                  Proveedor (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()} • Banco (interno): {Number(balance?.internal_credits ?? 0).toString()}
+                </div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {officeSaldoOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
+
+            {officeSaldoOpen ? (
+              <>
+                <div className="mt-3 text-[11px] text-slate-400">{(balance?.source || '').toString() || '—'}</div>
+                {balance?.error ? (
+                  <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                    {(balance?.error || 'No pude consultar saldo.').toString()}
+                  </div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                      <div className="text-xs text-slate-300 font-semibold">Créditos mostrados</div>
+                      <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.credits ?? 0).toString()}</div>
+                    </div>
+                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                      <div className="text-xs text-slate-300 font-semibold">Banco (interno)</div>
+                      <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.internal_credits ?? 0).toString()}</div>
+                    </div>
+                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                      <div className="text-xs text-slate-300 font-semibold">Proveedor (Suno)</div>
+                      <div className="text-xl text-white font-extrabold mt-1">{balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}</div>
+                    </div>
+                  </div>
+                )}
+                {balance?.provider_error ? (
+                  <div className="mt-3 text-[11px] text-slate-400">
+                    Proveedor: {(balance?.provider_error || '').toString()}
+                  </div>
+                ) : null}
+                {diag?.error ? (
+                  <div className="mt-3 text-[11px] text-slate-400">
+                    Diagnóstico: {(diag?.error || '').toString()}
+                  </div>
+                ) : diag?.provider || diag?.env ? (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                      <div className="text-xs text-slate-300 font-semibold">Variables (Vercel)</div>
+                      <div className="mt-2 space-y-1 text-[11px] text-slate-300">
+                        <div>SUPABASE_URL: {diag?.env?.has_supabase_url ? 'OK' : 'FALTA'}</div>
+                        <div>SUPABASE_ANON_KEY: {diag?.env?.has_supabase_anon ? 'OK' : 'FALTA'}</div>
+                        <div>SUPABASE_SERVICE_ROLE_KEY: {diag?.env?.has_supabase_service ? 'OK' : 'FALTA'}</div>
+                        <div>SUNO_API_BASE_URL: {diag?.env?.has_suno_base ? 'OK' : 'FALTA'}</div>
+                        <div>SUNO_API_KEY: {diag?.env?.has_suno_key ? 'OK' : 'FALTA'}</div>
+                      </div>
+                    </div>
+                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                      <div className="text-xs text-slate-300 font-semibold">Prueba proveedor</div>
+                      <div className="mt-2 text-[11px] text-slate-300">
+                        <div>HTTP: {Number(diag?.provider?.status ?? 0).toString() || '—'}</div>
+                        <div>code: {diag?.provider?.code == null ? '—' : Number(diag?.provider?.code ?? 0).toString()}</div>
+                        <div>credits: {diag?.provider?.credits == null ? '—' : Number(diag?.provider?.credits ?? 0).toString()}</div>
+                      </div>
+                      {diag?.provider?.error ? (
+                        <div className="mt-2 text-[11px] text-red-200">{String(diag?.provider?.error || '').slice(0, 200)}</div>
+                      ) : diag?.provider?.text ? (
+                        <div className="mt-2 text-[11px] text-slate-400 break-words">{String(diag?.provider?.text || '').slice(0, 240)}</div>
                       ) : null}
                     </div>
-                  );
-                })}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <button onClick={() => setOfficeMensajesOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Mensajes</div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  {Number(feedback?.unread_count ?? 0) ? `${Number(feedback?.unread_count ?? 0)} sin leer` : '—'}
+                </div>
               </div>
-            )}
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {officeMensajesOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
+
+            {officeMensajesOpen ? (
+              feedback?.error ? (
+                <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
+                  {(feedback?.error || 'No pude cargar mensajes.').toString()}
+                </div>
+              ) : feedbackItems.length === 0 ? (
+                <div className="mt-3 text-sm text-slate-400">Aún no hay mensajes.</div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {feedbackItems.slice(0, 30).map((m: any) => {
+                    const id = String(m?.id || '');
+                    const name = String(m?.name || 'Usuario');
+                    const whatsapp = String(m?.whatsapp || '');
+                    const msg = String(m?.message || '');
+                    const isRead = Boolean(m?.is_read);
+                    const createdAt = String(m?.created_at || '');
+                    let dateLabel = createdAt;
+                    try {
+                      const d = new Date(createdAt);
+                      if (!Number.isNaN(d.getTime())) dateLabel = d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    } catch {
+                    }
+                    return (
+                      <div key={id} className={cn('bg-black/20 border border-white/10 rounded-2xl p-4', !isRead ? 'ring-1 ring-emerald-500/30' : '')}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-white font-extrabold truncate">{name}</div>
+                            <div className="text-[11px] text-slate-400 truncate">{whatsapp ? `WhatsApp: ${whatsapp}` : '—'}</div>
+                          </div>
+                          <div className="text-[11px] text-slate-400 shrink-0">{dateLabel}</div>
+                        </div>
+                        <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap break-words">{msg}</div>
+                        {!isRead && id ? (
+                          <button
+                            onClick={() => markFeedbackRead(id)}
+                            className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold transition-colors"
+                          >
+                            Marcar como leído
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : null}
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="text-white font-extrabold">Enviar créditos</div>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <input
-                value={grantEmail}
-                onChange={(e) => setGrantEmail(e.target.value)}
-                placeholder="correo@gmail.com"
-                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-              />
-              <input
-                value={grantCredits}
-                onChange={(e) => setGrantCredits(e.target.value)}
-                placeholder="Créditos"
-                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-              />
-              <button
-                onClick={() => grant().catch(() => {})}
-                disabled={grantBusy}
-                className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
-              >
-                {grantBusy ? 'Enviando…' : 'Enviar'}
-              </button>
-            </div>
-            <div className="mt-3 text-[11px] text-slate-400">Solo admin. Se suma al saldo del usuario.</div>
+            <button onClick={() => setOfficeCreditosOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Créditos (Banco interno)</div>
+                <div className="text-[11px] text-slate-400 mt-1">Enviar / quitar saldo a usuarios</div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {officeCreditosOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
+
+            {officeCreditosOpen ? (
+              <>
+                <div className="mt-4 text-white font-extrabold">Enviar créditos</div>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input
+                    value={grantEmail}
+                    onChange={(e) => setGrantEmail(e.target.value)}
+                    placeholder="correo@gmail.com"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                  <input
+                    value={grantCredits}
+                    onChange={(e) => setGrantCredits(e.target.value)}
+                    placeholder="Créditos"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                  <button
+                    onClick={() => grant().catch(() => {})}
+                    disabled={grantBusy}
+                    className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  >
+                    {grantBusy ? 'Enviando…' : 'Enviar'}
+                  </button>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400">Se suma al saldo interno del usuario.</div>
+
+                <div className="mt-6 text-white font-extrabold">Quitar créditos (regresármelos)</div>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input
+                    value={takeEmail}
+                    onChange={(e) => setTakeEmail(e.target.value)}
+                    placeholder="correo@gmail.com"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                  <input
+                    value={takeCredits}
+                    onChange={(e) => setTakeCredits(e.target.value)}
+                    placeholder="Créditos"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                  <button
+                    onClick={() => takeBack().catch(() => {})}
+                    disabled={takeBusy}
+                    className="bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  >
+                    {takeBusy ? 'Quitando…' : 'Quitar'}
+                  </button>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400">Se descuenta del usuario y se suma a tu banco interno. El saldo del proveedor (Suno) no cambia.</div>
+              </>
+            ) : null}
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="text-white font-extrabold">Quitar créditos (regresármelos)</div>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <input
-                value={takeEmail}
-                onChange={(e) => setTakeEmail(e.target.value)}
-                placeholder="correo@gmail.com"
-                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-              />
-              <input
-                value={takeCredits}
-                onChange={(e) => setTakeCredits(e.target.value)}
-                placeholder="Créditos"
-                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-              />
-              <button
-                onClick={() => takeBack().catch(() => {})}
-                disabled={takeBusy}
-                className="bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
-              >
-                {takeBusy ? 'Quitando…' : 'Quitar'}
-              </button>
-            </div>
-            <div className="mt-3 text-[11px] text-slate-400">Se descuenta del usuario y se suma a tu saldo. Si no tiene suficiente, no se hace.</div>
-          </div>
+            <button onClick={() => setOfficePlanesOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Planes</div>
+                <div className="text-[11px] text-slate-400 mt-1">Cambiar plan y créditos del plan</div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+                {officePlanesOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <div className="text-white font-extrabold">Cambiar plan</div>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+            {officePlanesOpen ? (
+              <>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
               <input
                 value={planEmail}
                 onChange={(e) => setPlanEmail(e.target.value)}
@@ -814,36 +969,149 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                 <option value="default">Créditos del plan</option>
                 <option value="set">Créditos manuales</option>
               </select>
-            </div>
-            {planCreditsMode === 'set' ? (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  value={planCreditsManual}
-                  onChange={(e) => setPlanCreditsManual(e.target.value)}
-                  placeholder="Créditos (ej: 500)"
-                  className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                />
-                <button
-                  onClick={() => setPlan().catch(() => {})}
-                  disabled={planBusy}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 md:col-span-2"
-                >
-                  {planBusy ? 'Guardando…' : 'Guardar'}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setPlan().catch(() => {})}
-                disabled={planBusy}
-                className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
-              >
-                {planBusy ? 'Guardando…' : 'Guardar'}
-              </button>
-            )}
-            <div className="mt-3 text-[11px] text-slate-400">
-              Esto cambia el plan sin obligar a regalar créditos extra (si eliges “No tocar créditos”). Si eliges “Créditos del plan”, se suman los créditos del paquete.
-            </div>
+                </div>
+                {planCreditsMode === 'set' ? (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input
+                      value={planCreditsManual}
+                      onChange={(e) => setPlanCreditsManual(e.target.value)}
+                      placeholder="Créditos (ej: 500)"
+                      className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                    />
+                    <button
+                      onClick={() => setPlan().catch(() => {})}
+                      disabled={planBusy}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 md:col-span-2"
+                    >
+                      {planBusy ? 'Guardando…' : 'Guardar'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setPlan().catch(() => {})}
+                    disabled={planBusy}
+                    className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  >
+                    {planBusy ? 'Guardando…' : 'Guardar'}
+                  </button>
+                )}
+                <div className="mt-3 text-[11px] text-slate-400">
+                  Esto cambia el plan sin obligar a regalar créditos extra (si eliges “No tocar créditos”). Si eliges “Créditos del plan”, se suman los créditos del paquete.
+                </div>
+              </>
+            ) : null}
           </div>
+
+          {isUserDetailOpen ? (
+            <div className="fixed inset-0 z-[200] bg-black/70 flex items-end md:items-center justify-center">
+              <button className="absolute inset-0 w-full h-full" onClick={() => setIsUserDetailOpen(false)} aria-label="Cerrar" />
+              <div className="relative w-full md:max-w-[640px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+                <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                  <div className="text-white font-extrabold">Usuario</div>
+                  <button
+                    onClick={() => setIsUserDetailOpen(false)}
+                    className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-5">
+                  {userDetailLoading ? (
+                    <div className="text-sm text-slate-300">Cargando…</div>
+                  ) : userDetailError ? (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{userDetailError}</div>
+                  ) : (
+                    (() => {
+                      const u = userDetailData?.user || {};
+                      const plan = userDetailData?.plan || {};
+                      const email = String(u?.email || userDetailEmail || '').trim();
+                      const fullName = String(u?.full_name || '').trim();
+                      const birth = String(u?.birthdate || '').trim();
+                      const createdAt = String(u?.created_at || '').trim();
+                      const lastIn = String(u?.last_sign_in_at || '').trim();
+                      const planKey = String(plan?.plan_key || 'ninguno').trim();
+                      const planActive = Boolean(plan?.plan_active);
+                      const planExp = plan?.plan_expires_at ? String(plan.plan_expires_at) : '';
+                      const bank = userDetailData?.internal_credits;
+
+                      const fmt = (iso: string) => {
+                        try {
+                          const d = new Date(iso);
+                          if (Number.isNaN(d.getTime())) return iso;
+                          return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                        } catch {
+                          return iso;
+                        }
+                      };
+
+                      return (
+                        <div className="space-y-4">
+                          <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                            <div className="text-xs text-slate-400 font-semibold">Correo</div>
+                            <div className="text-white font-extrabold break-words">{email || '—'}</div>
+                            <div className="mt-2 text-xs text-slate-400 font-semibold">Nombre</div>
+                            <div className="text-slate-200">{fullName || '—'}</div>
+                            <div className="mt-2 text-xs text-slate-400 font-semibold">Nacimiento</div>
+                            <div className="text-slate-200">{birth || '—'}</div>
+                            <div className="mt-2 text-xs text-slate-400 font-semibold">Registro</div>
+                            <div className="text-slate-200">{createdAt ? fmt(createdAt) : '—'}</div>
+                            <div className="mt-2 text-xs text-slate-400 font-semibold">Último acceso</div>
+                            <div className="text-slate-200">{lastIn ? fmt(lastIn) : '—'}</div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                              <div className="text-xs text-slate-400 font-semibold">Banco (interno)</div>
+                              <div className="text-white font-extrabold">{bank == null ? '—' : Number(bank).toString()} créditos</div>
+                            </div>
+                            <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                              <div className="text-xs text-slate-400 font-semibold">Plan</div>
+                              <div className="text-white font-extrabold">{planKey}</div>
+                              <div className="text-[11px] text-slate-400 mt-1">{planKey === 'ninguno' ? '—' : planActive ? 'Activo' : 'Vencido'}</div>
+                              {planExp ? <div className="text-[11px] text-slate-500 mt-1">Vence: {fmt(planExp)}</div> : null}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col md:flex-row gap-3">
+                            <button
+                              onClick={() => {
+                                if (!email) return;
+                                setOfficeCreditosOpen(true);
+                                setGrantEmail(email);
+                                setUserDetailEmail(email);
+                              }}
+                              className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm"
+                            >
+                              Preparar: Enviar créditos
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!email) return;
+                                setOfficeCreditosOpen(true);
+                                setTakeEmail(email);
+                                setUserDetailEmail(email);
+                              }}
+                              className="flex-1 bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm"
+                            >
+                              Preparar: Quitar créditos
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => deleteUser(email)}
+                            className="w-full bg-white/5 hover:bg-white/10 text-red-200 border border-red-500/30 rounded-2xl px-4 py-3 font-extrabold text-sm"
+                          >
+                            Borrar usuario
+                          </button>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     );

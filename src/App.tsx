@@ -276,6 +276,11 @@ export default function App() {
   const [balanceError, setBalanceError] = useState<string>('');
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
+  const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
+  const [profileFirstName, setProfileFirstName] = useState('');
+  const [profileLastName, setProfileLastName] = useState('');
+  const [profileBirthdate, setProfileBirthdate] = useState('');
+  const [profileSetupBusy, setProfileSetupBusy] = useState(false);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -302,6 +307,35 @@ export default function App() {
     setToast(message);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
+  };
+
+  const saveProfileSetup = async () => {
+    if (!supabaseBrowser) return;
+    const first = (profileFirstName || '').toString().trim();
+    const last = (profileLastName || '').toString().trim();
+    const birth = (profileBirthdate || '').toString().trim();
+    if (!first || !last) {
+      showToast('Escribe tu nombre y apellidos.');
+      return;
+    }
+    if (!birth) {
+      showToast('Selecciona tu fecha de nacimiento.');
+      return;
+    }
+    setProfileSetupBusy(true);
+    try {
+      const full_name = `${first} ${last}`.trim().slice(0, 120);
+      const r = await supabaseBrowser.auth.updateUser({ data: { full_name, birthdate: birth } }).catch(() => null as any);
+      const err = (r as any)?.error;
+      if (err) {
+        showToast('No pude guardar tu perfil.');
+        return;
+      }
+      setIsProfileSetupOpen(false);
+      showToast('Listo. Guardé tu información.');
+    } finally {
+      setProfileSetupBusy(false);
+    }
   };
 
   const updatesSorted = APP_UPDATES.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -379,6 +413,7 @@ export default function App() {
 
   const isAuthed = Boolean(authEmail);
   const didBootstrapRef = useRef(false);
+  const didProfileSetupRef = useRef(false);
 
   const [shareRouteId] = useState(() => {
     const p = (window.location?.pathname || '').toString();
@@ -517,6 +552,34 @@ export default function App() {
         }
         await refreshCredits().catch(() => {});
         await refreshBalance().catch(() => {});
+      })
+      .catch(() => {});
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (!isAuthed) {
+      didProfileSetupRef.current = false;
+      setIsProfileSetupOpen(false);
+      return;
+    }
+    if (didProfileSetupRef.current) return;
+    didProfileSetupRef.current = true;
+    if (!supabaseBrowser) return;
+    supabaseBrowser.auth
+      .getUser()
+      .then(({ data }) => {
+        const user = data?.user;
+        const meta: any = user?.user_metadata || {};
+        const full = (meta?.full_name || meta?.name || '').toString().trim();
+        const birth = (meta?.birthdate || meta?.birthday || meta?.dob || '').toString().trim();
+        if (full && birth) return;
+        const parts = full ? full.split(/\s+/g) : [];
+        const first = parts.length ? parts[0] : '';
+        const last = parts.length > 1 ? parts.slice(1).join(' ') : '';
+        setProfileFirstName(first);
+        setProfileLastName(last);
+        setProfileBirthdate(birth);
+        setIsProfileSetupOpen(true);
       })
       .catch(() => {});
   }, [isAuthed]);
@@ -951,7 +1014,7 @@ export default function App() {
         onCreditsClick={() => setIsBalanceOpen(true)}
         credits={displayCredits}
         bankCredits={internalCredits}
-        showBank={Boolean(isAdmin)}
+        showBank={false}
         notificationsCount={unreadUpdatesCount}
       />
       {showInstallBanner && (
@@ -1134,6 +1197,60 @@ export default function App() {
         className="hidden" 
       />
 
+      {isProfileSetupOpen && (
+        <div className="fixed inset-0 z-[260] bg-black/70 flex items-end md:items-center justify-center">
+          <div className="relative w-full md:max-w-[560px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Completa tu perfil</div>
+              <button
+                onClick={() => setIsProfileSetupOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <div className="text-[11px] text-slate-400 font-semibold">Nombre(s)</div>
+                <input
+                  value={profileFirstName}
+                  onChange={(e) => setProfileFirstName(e.target.value)}
+                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  placeholder="Ej: Juan"
+                />
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400 font-semibold">Apellidos</div>
+                <input
+                  value={profileLastName}
+                  onChange={(e) => setProfileLastName(e.target.value)}
+                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  placeholder="Ej: Pérez López"
+                />
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400 font-semibold">Fecha de nacimiento</div>
+                <input
+                  type="date"
+                  value={profileBirthdate}
+                  onChange={(e) => setProfileBirthdate(e.target.value)}
+                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                />
+              </div>
+              <button
+                onClick={() => saveProfileSetup().catch(() => {})}
+                disabled={profileSetupBusy}
+                className="mt-2 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+              >
+                {profileSetupBusy ? 'Guardando…' : 'Guardar'}
+              </button>
+              <div className="text-[11px] text-slate-500">Esta información le aparece solo al admin en OFICINA.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} />}
       {isPricingOpen && (
         <PricingView
@@ -1165,7 +1282,7 @@ export default function App() {
                 Fuente: {(balanceData?.source || '—').toString()}
                 {balanceData?.provider_error ? ` · Proveedor: ${(balanceData?.provider_error || '').toString()}` : ''}
               </div>
-              {balanceData?.provider_credits != null || balanceData?.internal_credits != null ? (
+              {balanceData?.is_admin ? (
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <div className="bg-black/20 border border-white/10 rounded-xl px-3 py-2">
                     <div className="text-[10px] text-slate-400 font-semibold">Proveedor</div>

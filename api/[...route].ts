@@ -223,25 +223,56 @@ function isAdminEmail(email?: string | null) {
 async function getUserPlan(admin: any, userId: string) {
   const { data: tx } = await admin
     .from("mp_transactions")
-    .select("payment_id, pack_key, kind, created_at")
+    .select("payment_id, pack_key, kind, created_at, amount_mxn")
     .eq("user_id", userId)
     .eq("kind", "songs")
     .order("created_at", { ascending: false })
     .limit(200);
   const rows = Array.isArray(tx) ? tx : [];
 
-  const override = rows.find((t: any) => {
-    const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
-    return pid.startsWith("admin_plan:");
-  });
-  const overrideKey = String(override?.pack_key || "").trim().toLowerCase();
-  const overridePlan = overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "ninguno" ? overrideKey : "";
+  const pickPlanKey = (raw: any) => {
+    const k = String(raw || "").trim().toLowerCase();
+    return k === "inicio" || k === "productor" || k === "ninguno" ? k : "";
+  };
+
+  const override = rows.find((t: any) => String(t?.payment_id || "").startsWith("admin_plan:"));
+  const overridePlan = pickPlanKey(override?.pack_key);
+
   const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
   const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
   const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : "ninguno");
-  const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
 
-  return { plan_key, downloads_allowed };
+  const planStartIso = (() => {
+    if (overridePlan && overridePlan !== "ninguno") return String(override?.created_at || "").trim() || null;
+    const paid = rows.find((t: any) => {
+      const pk = String(t?.pack_key || "").toLowerCase();
+      if (!(pk === "inicio" || pk === "productor")) return false;
+      const pid = String(t?.payment_id || "");
+      if (pid.startsWith("claim:")) return false;
+      return true;
+    });
+    const iso = String(paid?.created_at || "").trim();
+    return iso || null;
+  })();
+
+  const plan_expires_at = (() => {
+    if (!planStartIso) return null;
+    const t = new Date(planStartIso).getTime();
+    if (!Number.isFinite(t) || t <= 0) return null;
+    const ms = t + 30 * 24 * 60 * 60 * 1000;
+    return new Date(ms).toISOString();
+  })();
+
+  const plan_active = (() => {
+    if (!plan_expires_at) return false;
+    const t = new Date(plan_expires_at).getTime();
+    if (!Number.isFinite(t) || t <= 0) return false;
+    return Date.now() < t;
+  })();
+
+  const downloads_allowed = plan_active && (plan_key === "inicio" || plan_key === "productor");
+
+  return { plan_key, downloads_allowed, plan_active, plan_expires_at, hasProductor };
 }
 
 async function getSupabaseCreateClient() {
@@ -2616,21 +2647,17 @@ const balanceHandler = (() => {
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-    const { data: freeTx } = await admin
-      .from("mp_transactions")
-      .select("payment_id, pack_key, created_at")
-      .eq("user_id", user.id)
-      .eq("kind", "songs")
-      .order("created_at", { ascending: false })
-      .limit(200);
-    const rows = Array.isArray(freeTx) ? freeTx : [];
-    const override = rows.find((t: any) => String(t?.payment_id || "").startsWith("admin_plan:"));
-    const overrideKey = String(override?.pack_key || "").trim().toLowerCase();
-    const overridePlan = overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "ninguno" ? overrideKey : "";
-    const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
-    const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
-    const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : "ninguno");
-    const downloads_allowed = is_admin ? true : plan_key === "inicio" || plan_key === "productor";
+    const plan = await getUserPlan(admin, user.id).catch(() => ({
+      plan_key: "ninguno",
+      downloads_allowed: false,
+      plan_active: false,
+      plan_expires_at: null,
+      hasProductor: false,
+    }));
+    const plan_key = String((plan as any)?.plan_key || "ninguno");
+    const plan_expires_at = (plan as any)?.plan_expires_at ?? null;
+    const plan_active = is_admin ? true : Boolean((plan as any)?.plan_active);
+    const downloads_allowed = is_admin ? true : Boolean((plan as any)?.downloads_allowed);
     const free_claimed = false;
     const show_free_claim_popup = false;
 
@@ -2695,7 +2722,9 @@ const balanceHandler = (() => {
       free_claimed,
       show_free_claim_popup,
       plan_key,
-      mp4_watermark_disabled: is_admin ? true : hasProductor,
+      plan_active,
+      plan_expires_at,
+      mp4_watermark_disabled: is_admin ? true : Boolean((plan as any)?.hasProductor),
       is_admin,
       internal_credits,
       provider_credits,
@@ -3808,11 +3837,23 @@ const adminHandler = (() => {
         if (onlyReal && activeUserIds && uid && !activeUserIds.has(uid)) continue;
         if (searchRaw && !lower.includes(searchRaw)) continue;
         total_filtered += 1;
+        const meta = (u as any)?.user_metadata ?? (u as any)?.user_meta_data ?? (u as any)?.raw_user_meta_data ?? {};
+        const full_name = typeof meta?.full_name === "string" ? meta.full_name : typeof meta?.name === "string" ? meta.name : "";
+        const birthdate =
+          typeof meta?.birthdate === "string"
+            ? meta.birthdate
+            : typeof meta?.birthday === "string"
+              ? meta.birthday
+              : typeof meta?.dob === "string"
+                ? meta.dob
+                : "";
         items.push({
           id: uid,
           email,
           created_at: String(u?.created_at || ""),
           last_sign_in_at: String(u?.last_sign_in_at || ""),
+          full_name: String(full_name || "").slice(0, 120),
+          birthdate: String(birthdate || "").slice(0, 32),
         });
         if (items.length >= limit) break;
       }
@@ -3829,6 +3870,128 @@ const adminHandler = (() => {
       count: items.length,
       items,
     });
+  }
+
+  async function handleUserDetail(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const emailRaw = (pickQuery(req, "email") || "").toString().trim().toLowerCase();
+    const userIdRaw = (pickQuery(req, "user_id") || pickQuery(req, "id") || "").toString().trim();
+    if (!emailRaw && !userIdRaw) return send(res, 400, { error: "Falta email o user_id" });
+
+    const supabaseUrl = String((auth as any)?.supabaseUrl || "").trim();
+    const supabaseService = String((auth as any)?.supabaseService || "").trim();
+    if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase Auth" });
+
+    const perPage = 200;
+    const maxPages = 25;
+    let found: any = null;
+    for (let page = 1; page <= maxPages; page++) {
+      const r = await listUsersViaHttp(supabaseUrl, supabaseService, page, perPage);
+      if (!r.ok) return send(res, r.status, { error: explainAuthAdminError({ message: r.error }), detail: r.detail || null });
+      const users = Array.isArray(r.users) ? r.users : [];
+      if (!users.length) break;
+      found =
+        users.find((u: any) => (userIdRaw ? String(u?.id || "").trim() === userIdRaw : false)) ||
+        users.find((u: any) => (emailRaw ? String(u?.email || "").trim().toLowerCase() === emailRaw : false)) ||
+        null;
+      if (found) break;
+    }
+    if (!found) return send(res, 404, { error: "No encontré ese usuario." });
+    const uid = String(found?.id || "").trim();
+    if (!uid) return send(res, 404, { error: "No encontré ese usuario." });
+    if (isAdminEmail(String(found?.email || "").trim().toLowerCase())) return send(res, 403, { error: "No puedes ver este usuario." });
+
+    const meta = (found as any)?.user_metadata ?? (found as any)?.user_meta_data ?? (found as any)?.raw_user_meta_data ?? {};
+    const full_name = typeof meta?.full_name === "string" ? meta.full_name : typeof meta?.name === "string" ? meta.name : "";
+    const birthdate =
+      typeof meta?.birthdate === "string"
+        ? meta.birthdate
+        : typeof meta?.birthday === "string"
+          ? meta.birthday
+          : typeof meta?.dob === "string"
+            ? meta.dob
+            : "";
+
+    const admin = (auth as any).admin;
+    const prof = await admin.from("profiles").select("*").eq("id", uid).maybeSingle();
+    const internal_credits = prof.error ? null : round2(creditsFromProfile(prof.data));
+
+    const plan = await getUserPlan(admin, uid).catch(() => ({
+      plan_key: "ninguno",
+      downloads_allowed: false,
+      plan_active: false,
+      plan_expires_at: null,
+      hasProductor: false,
+    }));
+
+    return send(res, 200, {
+      ok: true,
+      user: {
+        id: uid,
+        email: String(found?.email || ""),
+        created_at: String(found?.created_at || ""),
+        last_sign_in_at: String(found?.last_sign_in_at || ""),
+        full_name: String(full_name || "").slice(0, 120),
+        birthdate: String(birthdate || "").slice(0, 32),
+      },
+      internal_credits,
+      plan: {
+        plan_key: String((plan as any)?.plan_key || "ninguno"),
+        plan_active: Boolean((plan as any)?.plan_active),
+        plan_expires_at: (plan as any)?.plan_expires_at ?? null,
+        downloads_allowed: Boolean((plan as any)?.downloads_allowed),
+      },
+    });
+  }
+
+  async function handleDeleteUser(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const email = (body?.email || "").toString().trim().toLowerCase();
+    if (!email) return send(res, 400, { error: "Falta email" });
+    if (isAdminEmail(email)) return send(res, 403, { error: "No puedes borrar este usuario." });
+
+    const supabaseUrl = String((auth as any)?.supabaseUrl || "").trim();
+    const supabaseService = String((auth as any)?.supabaseService || "").trim();
+    if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase Auth" });
+
+    const found = await findUserIdByEmail(auth, email);
+    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
+    const uid = found.userId;
+
+    const del = await deleteUserViaHttp(supabaseUrl, supabaseService, uid);
+    if (!del.ok) return send(res, del.status, { error: "No pude borrar el usuario", detail: del.detail || del.error || null });
+
+    const admin = (auth as any).admin;
+    try {
+      await admin.from("profiles").delete().eq("id", uid);
+    } catch {
+    }
+    try {
+      await admin.from("mp_transactions").delete().eq("user_id", uid);
+    } catch {
+    }
+    try {
+      await admin.from("library_items").delete().eq("user_id", uid);
+    } catch {
+    }
+    try {
+      await admin.from("suno_tasks").delete().eq("user_id", uid);
+    } catch {
+    }
+    try {
+      await admin.from("support_feedback").delete().eq("user_id", uid);
+    } catch {
+    }
+
+    return send(res, 200, { ok: true, user_id: uid, email });
   }
 
   async function handlePruneUsers(req: any, res: any) {
@@ -3944,6 +4107,8 @@ const adminHandler = (() => {
     if (a === "feedback") return handleFeedback(req, res);
     if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
     if (a === "users") return handleUsers(req, res);
+    if (a === "user-detail") return handleUserDetail(req, res);
+    if (a === "delete-user") return handleDeleteUser(req, res);
     if (a === "prune-users") return handlePruneUsers(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
