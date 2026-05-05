@@ -3076,6 +3076,57 @@ const adminHandler = (() => {
     return { ok: true as const, user, admin };
   }
 
+  function explainAuthAdminError(err: any) {
+    const msg = err?.message ? String(err.message) : String(err || "");
+    const lower = msg.toLowerCase();
+    const hint =
+      lower.includes("401") ||
+      lower.includes("403") ||
+      lower.includes("not authorized") ||
+      lower.includes("forbidden") ||
+      lower.includes("invalid jwt")
+        ? " Revisa SUPABASE_SERVICE_ROLE_KEY en Vercel (debe ser la service_role key, no la anon key)."
+        : "";
+    return (msg || "Error de Supabase Auth Admin") + hint;
+  }
+
+  async function findUserIdByEmail(adminClient: any, email: string) {
+    const clean = (email || "").toString().trim().toLowerCase();
+    if (!clean) return { ok: false as const, status: 400, error: "Email inválido" };
+
+    const v2 = adminClient?.auth?.admin;
+    const v1 = adminClient?.auth?.api;
+
+    const getByEmail = v2?.getUserByEmail || v1?.getUserByEmail;
+    if (typeof getByEmail === "function") {
+      const r = await getByEmail(clean);
+      const err = r?.error;
+      const uid = String(r?.data?.user?.id || "").trim();
+      if (uid) return { ok: true as const, userId: uid };
+      if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err) };
+      return { ok: false as const, status: 404, error: "No encontré ese usuario por correo." };
+    }
+
+    const listUsers = v2?.listUsers || v1?.listUsers;
+    if (typeof listUsers === "function") {
+      const perPage = 200;
+      const maxPages = 20;
+      for (let page = 1; page <= maxPages; page++) {
+        const r = await listUsers({ page, perPage });
+        const err = r?.error;
+        if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err) };
+        const users = Array.isArray(r?.data?.users) ? r.data.users : [];
+        if (!users.length) break;
+        const found = users.find((u: any) => String(u?.email || "").trim().toLowerCase() === clean);
+        const uid = String(found?.id || "").trim();
+        if (uid) return { ok: true as const, userId: uid };
+      }
+      return { ok: false as const, status: 404, error: "No encontré ese usuario por correo." };
+    }
+
+    return { ok: false as const, status: 500, error: "Supabase Auth Admin no disponible (getUserByEmail/listUsers)" };
+  }
+
   async function sumPayments(admin: any, sinceIso: string | null) {
     let q = admin.from("mp_transactions").select("amount_mxn, created_at").eq("kind", "songs").gt("amount_mxn", 0);
     if (sinceIso) q = q.gte("created_at", sinceIso);
@@ -3247,15 +3298,9 @@ const adminHandler = (() => {
     if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
 
     const admin = auth.admin;
-    let userId = "";
-    try {
-      const r = await (admin as any).auth?.admin?.getUserByEmail?.(email);
-      userId = String(r?.data?.user?.id || "").trim();
-    } catch {
-      userId = "";
-    }
-
-    if (!userId) return send(res, 404, { error: "No encontré ese usuario por correo." });
+    const found = await findUserIdByEmail(admin, email);
+    if (!found.ok) return send(res, found.status, { error: found.error });
+    const userId = found.userId;
 
     const upd = await adjustUserCredits(admin, userId, credits);
     if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
@@ -3308,14 +3353,9 @@ const adminHandler = (() => {
     }
 
     const admin = auth.admin;
-    let userId = "";
-    try {
-      const r = await (admin as any).auth?.admin?.getUserByEmail?.(email);
-      userId = String(r?.data?.user?.id || "").trim();
-    } catch {
-      userId = "";
-    }
-    if (!userId) return send(res, 404, { error: "No encontré ese usuario por correo." });
+    const found = await findUserIdByEmail(admin, email);
+    if (!found.ok) return send(res, found.status, { error: found.error });
+    const userId = found.userId;
 
     const payment_id = `admin_plan:${auth.user.id}:${userId}:${Date.now()}`;
     await admin.from("mp_transactions").insert({
@@ -3400,7 +3440,9 @@ const adminHandler = (() => {
     const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 200, 500));
 
     const admin = auth.admin as any;
-    const listUsers = admin?.auth?.admin?.listUsers;
+    const v2 = admin?.auth?.admin;
+    const v1 = admin?.auth?.api;
+    const listUsers = v2?.listUsers || v1?.listUsers;
     if (typeof listUsers !== "function") return send(res, 500, { error: "Supabase Auth Admin no disponible (listUsers)" });
 
     const items: any[] = [];
@@ -3410,7 +3452,7 @@ const adminHandler = (() => {
 
     for (let page = 1; page <= maxPages && items.length < limit; page++) {
       const r = await listUsers({ page, perPage });
-      if (r?.error) return send(res, 500, { error: String(r.error?.message || r.error) });
+      if (r?.error) return send(res, 500, { error: explainAuthAdminError(r.error) });
       const data = r?.data || {};
       if (typeof data?.total === "number" && Number.isFinite(data.total)) total = data.total;
       const users = Array.isArray(data?.users) ? data.users : [];
