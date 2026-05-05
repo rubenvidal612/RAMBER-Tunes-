@@ -4445,6 +4445,9 @@ const appHandler = (() => {
 
     if (a === "version") {
       if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+      res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+      res.setHeader("pragma", "no-cache");
+      res.setHeader("expires", "0");
       const versionRaw =
         (process.env.VERCEL_GIT_COMMIT_SHA || "").toString().trim() ||
         (process.env.VERCEL_DEPLOYMENT_ID || "").toString().trim() ||

@@ -304,6 +304,7 @@ export default function App() {
   const pullStartXRef = useRef(0);
   const pullStartYRef = useRef(0);
   const pullTrackingRef = useRef(false);
+  const pullAllowedRef = useRef(false);
   const pullLastRefreshAtRef = useRef(0);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateVersion, setUpdateVersion] = useState('');
@@ -475,6 +476,19 @@ export default function App() {
     const onVis = () => {
       if (document.visibilityState !== 'visible') return;
       refreshCredits().catch(() => {});
+      refreshAppVersion()
+        .then((v) => {
+          if (!v) return;
+          try {
+            const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
+            if (prev && prev !== v) {
+              setUpdateAvailable(true);
+              setUpdateVersion(v);
+            }
+          } catch {
+          }
+        })
+        .catch(() => {});
     };
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onVis);
@@ -483,6 +497,33 @@ export default function App() {
       window.removeEventListener('focus', onVis);
     };
   }, [isAuthed, refreshCredits]);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    let alive = true;
+    const tick = () => {
+      refreshAppVersion()
+        .then((v) => {
+          if (!alive) return;
+          if (!v) return;
+          try {
+            const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
+            if (prev && prev !== v) {
+              setUpdateAvailable(true);
+              setUpdateVersion(v);
+            }
+          } catch {
+          }
+        })
+        .catch(() => {});
+    };
+    const id = window.setInterval(tick, 25000);
+    tick();
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [isAuthed]);
 
   useEffect(() => {
     if (!isBalanceOpen) return;
@@ -536,7 +577,11 @@ export default function App() {
 
   const refreshAppVersion = async () => {
     try {
-      const r = await fetch('/api/app/version', { method: 'GET' });
+      const r = await fetch('/api/app/version', {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { 'cache-control': 'no-cache' },
+      });
       const out = await r.json().catch(() => ({}));
       if (!r.ok || out?.ok === false) return null;
       const v = (out?.version || '').toString().trim();
@@ -595,17 +640,40 @@ export default function App() {
     const el = appRootRef.current;
     if (!el) return;
 
+    const findScrollableParent = (node: any) => {
+      try {
+        let cur: HTMLElement | null = node instanceof HTMLElement ? node : null;
+        while (cur && cur !== el) {
+          const style = window.getComputedStyle(cur);
+          const oy = (style?.overflowY || '').toString();
+          const canScroll = (oy === 'auto' || oy === 'scroll') && cur.scrollHeight > cur.clientHeight + 2;
+          if (canScroll) return cur;
+          cur = cur.parentElement;
+        }
+      } catch {
+      }
+      return null;
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       if (pullRefreshingRef.current) return;
       if (!e.touches || e.touches.length !== 1) return;
       const t = e.touches[0];
       pullStartXRef.current = t.clientX;
       pullStartYRef.current = t.clientY;
-      pullTrackingRef.current = t.clientY <= 120;
+      pullTrackingRef.current = true;
+      try {
+        const scrollParent = findScrollableParent(e.target);
+        const atTop = scrollParent ? scrollParent.scrollTop <= 0 : (document.scrollingElement?.scrollTop || 0) <= 0;
+        pullAllowedRef.current = atTop && t.clientY <= 160;
+      } catch {
+        pullAllowedRef.current = t.clientY <= 160;
+      }
     };
 
     const onTouchMove = (e: TouchEvent) => {
       if (!pullTrackingRef.current) return;
+      if (!pullAllowedRef.current) return;
       if (pullRefreshingRef.current) return;
       if (!e.touches || e.touches.length !== 1) return;
       const t = e.touches[0];
@@ -631,6 +699,7 @@ export default function App() {
 
     const onTouchEnd = () => {
       pullTrackingRef.current = false;
+      pullAllowedRef.current = false;
       const dist = pullDistanceRef.current;
       pullDistanceRef.current = 0;
       setPullDistance(0);
