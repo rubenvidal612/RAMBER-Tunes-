@@ -460,6 +460,8 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     if (!e) return;
     const ok = window.confirm(`¿Borrar el usuario?\n\n${e}\n\nEsto elimina su cuenta y datos (biblioteca, transacciones, perfil).`);
     if (!ok) return;
+    const ok2 = window.confirm(`CONFIRMACIÓN FINAL:\n\n¿Seguro que quieres ELIMINAR definitivamente a:\n${e}\n\nEsta acción NO se puede deshacer.`);
+    if (!ok2) return;
     try {
       const { data } = await supabaseBrowser.auth.getSession();
       const token = data?.session?.access_token;
@@ -735,7 +737,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Saldo</div>
                 <div className="text-[11px] text-slate-400 mt-1 truncate">
-                  Proveedor (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()} • Banco (interno): {Number(balance?.internal_credits ?? 0).toString()}
+                  Proveedor (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}
                 </div>
               </div>
               <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
@@ -751,18 +753,14 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                     {(balance?.error || 'No pude consultar saldo.').toString()}
                   </div>
                 ) : (
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                      <div className="text-xs text-slate-300 font-semibold">Créditos mostrados</div>
-                      <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.credits ?? 0).toString()}</div>
-                    </div>
-                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                      <div className="text-xs text-slate-300 font-semibold">Banco (interno)</div>
-                      <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.internal_credits ?? 0).toString()}</div>
-                    </div>
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
                       <div className="text-xs text-slate-300 font-semibold">Proveedor (Suno)</div>
                       <div className="text-xl text-white font-extrabold mt-1">{balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}</div>
+                    </div>
+                    <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                      <div className="text-xs text-slate-300 font-semibold">Créditos mostrados</div>
+                      <div className="text-xl text-white font-extrabold mt-1">{Number(balance?.credits ?? 0).toString()}</div>
                     </div>
                   </div>
                 )}
@@ -870,8 +868,8 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
             <button onClick={() => setOfficeCreditosOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
-                <div className="text-white font-extrabold">Créditos (Banco interno)</div>
-                <div className="text-[11px] text-slate-400 mt-1">Enviar / quitar saldo a usuarios</div>
+                <div className="text-white font-extrabold">Créditos de usuarios</div>
+                <div className="text-[11px] text-slate-400 mt-1">Enviar / quitar créditos a usuarios</div>
               </div>
               <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
                 {officeCreditosOpen ? 'Ocultar' : 'Ver'}
@@ -926,7 +924,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                     {takeBusy ? 'Quitando…' : 'Quitar'}
                   </button>
                 </div>
-                <div className="mt-3 text-[11px] text-slate-400">Se descuenta del usuario y se suma a tu banco interno. El saldo del proveedor (Suno) no cambia.</div>
+                <div className="mt-3 text-[11px] text-slate-400">Se descuenta del usuario.</div>
               </>
             ) : null}
           </div>
@@ -1062,7 +1060,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                              <div className="text-xs text-slate-400 font-semibold">Banco (interno)</div>
+                              <div className="text-xs text-slate-400 font-semibold">Créditos del usuario</div>
                               <div className="text-white font-extrabold">{bank == null ? '—' : Number(bank).toString()} créditos</div>
                             </div>
                             <div className="bg-black/20 border border-white/10 rounded-2xl p-4">

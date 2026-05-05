@@ -1283,15 +1283,9 @@ export default function App() {
                 {balanceData?.provider_error ? ` · Proveedor: ${(balanceData?.provider_error || '').toString()}` : ''}
               </div>
               {balanceData?.is_admin ? (
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <div className="bg-black/20 border border-white/10 rounded-xl px-3 py-2">
-                    <div className="text-[10px] text-slate-400 font-semibold">Proveedor</div>
-                    <div className="text-xs text-white font-extrabold">{balanceData?.provider_credits == null ? '—' : Number(balanceData?.provider_credits ?? 0).toString()}</div>
-                  </div>
-                  <div className="bg-black/20 border border-white/10 rounded-xl px-3 py-2">
-                    <div className="text-[10px] text-slate-400 font-semibold">Interno</div>
-                    <div className="text-xs text-white font-extrabold">{balanceData?.internal_credits == null ? '—' : Number(balanceData?.internal_credits ?? 0).toString()}</div>
-                  </div>
+                <div className="mt-2 bg-black/20 border border-white/10 rounded-xl px-3 py-2">
+                  <div className="text-[10px] text-slate-400 font-semibold">Proveedor (Suno)</div>
+                  <div className="text-xs text-white font-extrabold">{balanceData?.provider_credits == null ? '—' : Number(balanceData?.provider_credits ?? 0).toString()}</div>
                 </div>
               ) : null}
               <div className="mt-2 text-xs text-slate-500">Se descuenta automáticamente según la acción.</div>
