@@ -2018,23 +2018,25 @@ function CustomForm({
       </div>
 
       {/* Género */}
-      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4 flex items-center justify-between">
-        <label className="font-bold text-white text-base">Género</label>
-        <div className="flex gap-4">
-          <button 
-            onClick={() => setGender('Masculino')}
-            className={cn("text-sm font-semibold transition-colors", gender === 'Masculino' ? "text-slate-200" : "text-slate-500")}
-          >
-            Masculino
-          </button>
-          <button 
-            onClick={() => setGender('Femenino')}
-            className={cn("text-sm font-semibold transition-colors", gender === 'Femenino' ? "text-slate-200" : "text-slate-500")}
-          >
-            Femenino
-          </button>
+      {!instrumental ? (
+        <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4 flex items-center justify-between">
+          <label className="font-bold text-white text-base">Género</label>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => setGender('Masculino')}
+              className={cn("text-sm font-semibold transition-colors", gender === 'Masculino' ? "text-slate-200" : "text-slate-500")}
+            >
+              Masculino
+            </button>
+            <button 
+              onClick={() => setGender('Femenino')}
+              className={cn("text-sm font-semibold transition-colors", gender === 'Femenino' ? "text-slate-200" : "text-slate-500")}
+            >
+              Femenino
+            </button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Título de la canción */}
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4 mb-4">
