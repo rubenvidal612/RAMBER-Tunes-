@@ -1778,7 +1778,15 @@ function CustomForm({
         </div>
       )}
 
-      {!instrumental ? (
+      {instrumental ? (
+        <div className="glass-card rounded-2xl p-4 flex items-center justify-between mt-2 border border-white/10">
+          <div className="min-w-0">
+            <div className="text-white font-extrabold">Instrumental</div>
+            <div className="text-[11px] text-slate-400 truncate">Se crea sin letra</div>
+          </div>
+          <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+        </div>
+      ) : (
         <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 flex flex-col mt-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -1821,6 +1829,10 @@ function CustomForm({
               <button className="text-slate-400 hover:text-white transition-colors" type="button">
                 <ListMusic className="w-5 h-5" />
               </button>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-300">Instrumental</span>
+                <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+              </div>
             </div>
           </div>
           
@@ -1865,7 +1877,7 @@ function CustomForm({
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
       {showRegenerateConfirm && (
         <div className="fixed inset-0 z-[160] bg-black/70 flex items-end md:items-center justify-center">
@@ -1975,13 +1987,7 @@ function CustomForm({
 
       {/* Instrucciones (Estilos) */}
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
-        <div className="flex items-center justify-between mb-4">
-          <label className="font-bold text-white text-base">Instrucciones</label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-300">Instrumental</span>
-            <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
-          </div>
-        </div>
+        <label className="font-bold text-white text-base mb-4 block">Instrucciones</label>
         <textarea
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
