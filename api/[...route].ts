@@ -2702,61 +2702,40 @@ const bootstrapProfileHandler = (() => {
 
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
       const is_admin = isAdminEmail(user.email);
-      const payloadBase: any = { id: user.id };
-      payloadBase.ramber_credits = 0;
-
-      const up = await admin.from("profiles").upsert(payloadBase, { onConflict: "id" });
-      if (up.error) {
-        const msg = String(up.error.message || "");
-        if (msg.toLowerCase().includes("column")) {
-          const up2 = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
-          if (up2.error) return send(res, 500, { error: "No pude crear perfil", detail: up2.error.message });
-          if (!is_admin) {
-            try {
-              const paymentId = `claim:${user.id}`;
-              const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-              if (!(Array.isArray(exists) && exists.length > 0)) {
-                const credits = CREDIT_COSTS.generate_music * 5;
-                await adjustUserCredits(admin, user.id, credits);
-                await admin.from("mp_transactions").insert({
-                  user_id: user.id,
-                  kind: "songs",
-                  pack_key: "gratis",
-                  amount_mxn: 0,
-                  payment_id: paymentId,
-                });
-              }
-            } catch {
-            }
-          }
-          return send(res, 200, { ok: true, created: true });
-        }
-        return send(res, 500, { error: "No pude crear perfil", detail: up.error.message });
-      }
-
-      if (!is_admin) {
+      let free_granted = false;
+      let free_error: string | null = null;
+      const grantFreeIfEligible = async () => {
+        if (is_admin) return;
         try {
           const plan = await getUserPlan(admin, user.id);
-          if (plan.plan_key === "ninguno" && !plan.free_claimed) {
-            const paymentId = `claim:${user.id}`;
-            const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-            if (!(Array.isArray(exists) && exists.length > 0)) {
-              const credits = CREDIT_COSTS.generate_music * 5;
-              await adjustUserCredits(admin, user.id, credits);
-              await admin.from("mp_transactions").insert({
-                user_id: user.id,
-                kind: "songs",
-                pack_key: "gratis",
-                amount_mxn: 0,
-                payment_id: paymentId,
-              });
-            }
+          if (plan.plan_key !== "ninguno" || plan.free_claimed) return;
+          const paymentId = `claim:${user.id}`;
+          const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
+          if (Array.isArray(exists) && exists.length > 0) return;
+          const credits = CREDIT_COSTS.generate_music * 5;
+          const upd = await adjustUserCredits(admin, user.id, credits);
+          if (!upd.ok) {
+            free_error = upd.error || "No pude acreditar créditos gratis.";
+            return;
           }
-        } catch {
+          await admin.from("mp_transactions").insert({
+            user_id: user.id,
+            kind: "songs",
+            pack_key: "gratis",
+            amount_mxn: 0,
+            payment_id: paymentId,
+          });
+          free_granted = true;
+        } catch (e) {
+          free_error = e instanceof Error ? e.message : String(e);
         }
-      }
+      };
+      const up = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
+      if (up.error) return send(res, 500, { error: "No pude crear perfil", detail: up.error.message });
 
-      return send(res, 200, { ok: true, created: true });
+      await grantFreeIfEligible();
+
+      return send(res, 200, { ok: true, created: true, free_granted, free_error });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }

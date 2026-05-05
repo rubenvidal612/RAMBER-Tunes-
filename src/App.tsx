@@ -515,10 +515,24 @@ export default function App() {
     getAccessToken()
       .then(async (t) => {
         if (!t.ok) return;
-        await fetch('/api/account/bootstrap-profile', {
+        const r = await fetch('/api/account/bootstrap-profile', {
           method: 'POST',
           headers: { authorization: `Bearer ${t.token}` },
         }).catch(() => {});
+        let out: any = null;
+        try {
+          out = r && typeof (r as any).json === 'function' ? await (r as any).json().catch(() => null) : null;
+        } catch {
+          out = null;
+        }
+        if (out?.free_granted) {
+          showToast('Listo: se activó tu saldo gratis (5 canciones).');
+        }
+        if (out?.free_error) {
+          showToast(String(out.free_error));
+        }
+        await refreshCredits().catch(() => {});
+        await refreshBalance().catch(() => {});
       })
       .catch(() => {});
   }, [isAuthed]);
