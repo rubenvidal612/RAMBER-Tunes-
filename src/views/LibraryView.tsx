@@ -32,6 +32,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [filterTo, setFilterTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [videoTasks, setVideoTasks] = useState<Array<{ taskId: string; createdAt?: string }>>([]);
+  const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState('');
 
@@ -123,13 +124,70 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         return;
       }
       const items = Array.isArray(out?.items) ? out.items : [];
-      setVideoTasks(
-        items
-          .map((x: any) => ({ taskId: String(x?.taskId || '').trim(), createdAt: String(x?.created_at || '').trim() }))
-          .filter((x: any) => x.taskId)
-      );
+      const list = items
+        .map((x: any) => ({ taskId: String(x?.taskId || '').trim(), createdAt: String(x?.created_at || '').trim() }))
+        .filter((x: any) => x.taskId);
+      setVideoTasks(list);
     } finally {
       setVideoLoading(false);
+    }
+  };
+
+  const pickFirst = (...values: any[]) => {
+    for (const v of values) {
+      const s = typeof v === 'string' ? v.trim() : '';
+      if (s) return s;
+    }
+    return '';
+  };
+
+  const pickMp4ThumbUrl = (provider: any) => {
+    const a = provider?.data?.response || {};
+    const b = provider?.data?.data?.response || {};
+    return pickFirst(
+      a?.thumbnailUrl,
+      b?.thumbnailUrl,
+      a?.thumbnail_url,
+      b?.thumbnail_url,
+      a?.posterUrl,
+      b?.posterUrl,
+      a?.poster_url,
+      b?.poster_url,
+      a?.imageUrl,
+      b?.imageUrl,
+      a?.image_url,
+      b?.image_url,
+      a?.coverUrl,
+      b?.coverUrl,
+      a?.cover_url,
+      b?.cover_url
+    );
+  };
+
+  const preloadVideoThumbs = async (tasks: Array<{ taskId: string }>) => {
+    const ids = tasks
+      .map((x) => x.taskId)
+      .filter((id) => id && !videoThumbs[id])
+      .slice(0, 12);
+    if (ids.length === 0) return;
+
+    const t = await getAccessToken();
+    if (!t.ok) return;
+
+    for (const id of ids) {
+      try {
+        const tr = await fetch(`/api/suno/task?kind=mp4&taskId=${encodeURIComponent(id)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+        const provider = tout?.data;
+        const thumbUrl = pickMp4ThumbUrl(provider);
+        if (thumbUrl) {
+          setVideoThumbs((prev) => (prev[id] ? prev : { ...prev, [id]: thumbUrl }));
+        }
+      } catch {
+      }
     }
   };
 
@@ -149,6 +207,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
 
     const provider = tout?.data;
+    const thumbUrl = pickMp4ThumbUrl(provider);
+    if (thumbUrl) setVideoThumbs((prev) => (prev[taskId] ? prev : { ...prev, [taskId]: thumbUrl }));
     const status = String(
       provider?.data?.successFlag ||
         provider?.data?.status ||
@@ -185,6 +245,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     if (activeTab !== 'video') return;
     loadVideos().catch(() => {});
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'video') return;
+    preloadVideoThumbs(videoTasks).catch(() => {});
+  }, [activeTab, videoTasks]);
 
   useEffect(() => {
     try {
@@ -332,12 +397,25 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                   })();
                   const shortId = v.taskId.length > 18 ? `${v.taskId.slice(0, 10)}…${v.taskId.slice(-6)}` : v.taskId;
+                  const thumb = (videoThumbs[v.taskId] || '').toString().trim();
                   return (
                     <div key={v.taskId} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-[84px] h-[56px] rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                          {thumb ? (
+                            <img src={thumb} alt="Miniatura" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500">
+                              <Video className="w-5 h-5" />
+                            </div>
+                          )}
+                        </div>
                         <div className="text-white font-bold truncate">Video</div>
-                        <div className="text-xs text-slate-400 truncate">TaskId: {shortId}</div>
-                        {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
+                        <div className="min-w-0">
+                          <div className="text-white font-bold truncate">Video</div>
+                          <div className="text-xs text-slate-400 truncate">TaskId: {shortId}</div>
+                          {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
+                        </div>
                       </div>
                       <div className="shrink-0 flex items-center gap-2">
                         <button
