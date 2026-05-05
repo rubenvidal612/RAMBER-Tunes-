@@ -912,7 +912,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
 
-    const baseLyrics = normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
+    const baseLyrics = instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
     const prompt = (mode === 'simple' ? description : (baseLyrics || description)).trim();
     if (!prompt) {
       alert('Escribe una descripción o letra para crear la canción.');
@@ -1778,96 +1778,94 @@ function CustomForm({
         </div>
       )}
 
-      <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 flex flex-col mt-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <label className="font-bold text-white text-base">Letras</label>
-            <button
-              type="button"
-              onClick={() => {
-                if (!prevLyrics) return;
-                const current = (lyrics || '').toString();
-                setPrevLyrics(current);
-                setLyrics(prevLyrics);
-              }}
-              disabled={!prevLyrics}
-              className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 disabled:opacity-40"
-              aria-label="Regresar letra"
-              title="Regresar letra"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const current = (lyrics || '').toString();
-                if (!current.trim()) {
-                  setLyrics('');
-                  return;
-                }
-                if (!confirm('¿Seguro que quieres eliminar la letra?')) return;
-                setPrevLyrics(current);
-                setLyrics('');
-              }}
-              className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
-              aria-label="Eliminar letra"
-              title="Eliminar letra"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <button className="text-slate-400 hover:text-white transition-colors">
-              <ListMusic className="w-5 h-5" />
-            </button>
+      {!instrumental ? (
+        <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 flex flex-col mt-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-300">Instrumental</span>
-              <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+              <label className="font-bold text-white text-base">Letras</label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!prevLyrics) return;
+                  const current = (lyrics || '').toString();
+                  setPrevLyrics(current);
+                  setLyrics(prevLyrics);
+                }}
+                disabled={!prevLyrics}
+                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 disabled:opacity-40"
+                aria-label="Regresar letra"
+                title="Regresar letra"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const current = (lyrics || '').toString();
+                  if (!current.trim()) {
+                    setLyrics('');
+                    return;
+                  }
+                  if (!confirm('¿Seguro que quieres eliminar la letra?')) return;
+                  setPrevLyrics(current);
+                  setLyrics('');
+                }}
+                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
+                aria-label="Eliminar letra"
+                title="Eliminar letra"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <button className="text-slate-400 hover:text-white transition-colors" type="button">
+                <ListMusic className="w-5 h-5" />
+              </button>
             </div>
           </div>
-        </div>
-        
-        <div className="relative flex flex-col">
-          <textarea
-            value={lyrics}
-            onChange={(e) => setLyricsWithUndo(e.target.value)}
-            placeholder="Agrega tu propia letra o ingresa un tema para generar"
-            className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
-          />
-          {!!audioLyricsStatus && (
-            <div className="mt-2 text-[12px] text-slate-400">
-              {audioLyricsStatus}
-            </div>
-          )}
           
-          <div className="flex justify-end items-center gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => setIsLyricsExpanded(true)}
-              className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 w-10 h-10 rounded-full text-sm font-semibold transition-colors flex items-center justify-center"
-              aria-label="Expandir letras"
-              title="Expandir letras"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => {
-                const hasAudioTranscribed = Boolean(audioUploadUrl && (lyrics || '').toString().trim());
-                if (hasAudioTranscribed) {
-                  setShowRegenerateConfirm(true);
-                  return;
-                }
-                handleGenerateLyrics(false).catch(() => {});
-              }}
-              disabled={isGeneratingLyrics}
-              className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {isGeneratingLyrics && <RefreshCw className="w-4 h-4 animate-spin" />}
-              Generar letra
-            </button>
+          <div className="relative flex flex-col">
+            <textarea
+              value={lyrics}
+              onChange={(e) => setLyricsWithUndo(e.target.value)}
+              placeholder="Agrega tu propia letra o ingresa un tema para generar"
+              className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[120px] text-white"
+            />
+            {!!audioLyricsStatus && (
+              <div className="mt-2 text-[12px] text-slate-400">
+                {audioLyricsStatus}
+              </div>
+            )}
+            
+            <div className="flex justify-end items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setIsLyricsExpanded(true)}
+                className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 w-10 h-10 rounded-full text-sm font-semibold transition-colors flex items-center justify-center"
+                aria-label="Expandir letras"
+                title="Expandir letras"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => {
+                  const hasAudioTranscribed = Boolean(audioUploadUrl && (lyrics || '').toString().trim());
+                  if (hasAudioTranscribed) {
+                    setShowRegenerateConfirm(true);
+                    return;
+                  }
+                  handleGenerateLyrics(false).catch(() => {});
+                }}
+                disabled={isGeneratingLyrics}
+                className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isGeneratingLyrics && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Generar letra
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {showRegenerateConfirm && (
         <div className="fixed inset-0 z-[160] bg-black/70 flex items-end md:items-center justify-center">
@@ -1977,7 +1975,13 @@ function CustomForm({
 
       {/* Instrucciones (Estilos) */}
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
-        <label className="font-bold text-white text-base mb-4 block">Instrucciones</label>
+        <div className="flex items-center justify-between mb-4">
+          <label className="font-bold text-white text-base">Instrucciones</label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-300">Instrumental</span>
+            <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+          </div>
+        </div>
         <textarea
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
@@ -2045,7 +2049,10 @@ function CustomForm({
           className="mt-4 w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between hover:bg-white/10 transition-colors"
         >
           <div className="text-slate-200 font-extrabold">Saldo</div>
-          <div className="text-slate-300 text-sm font-semibold">Créditos: {Number(credits || 0)}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-slate-300 text-sm font-semibold">Créditos: {Number(credits || 0)}</div>
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          </div>
         </button>
       </div>
     </>
