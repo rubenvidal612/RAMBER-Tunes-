@@ -3499,6 +3499,7 @@ const adminHandler = (() => {
 
     const items: any[] = [];
     let total: number | null = null;
+    let adminSeen = 0;
     const perPage = 200;
     const maxPages = 10;
 
@@ -3513,6 +3514,10 @@ const adminHandler = (() => {
         const email = (u?.email || "").toString().trim();
         if (!email) continue;
         const lower = email.toLowerCase();
+        if (isAdminEmail(lower)) {
+          adminSeen += 1;
+          continue;
+        }
         if (searchRaw && !lower.includes(searchRaw)) continue;
         items.push({
           id: String(u?.id || ""),
@@ -3524,7 +3529,8 @@ const adminHandler = (() => {
       }
     }
 
-    return send(res, 200, { ok: true, total: total ?? null, count: items.length, items });
+    const total_non_admin = total == null ? null : Math.max(0, Number(total || 0) - Number(adminSeen || 0));
+    return send(res, 200, { ok: true, total: total ?? null, total_non_admin, count: items.length, items });
   }
 
   return async function handler(req: any, res: any) {

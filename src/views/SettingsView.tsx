@@ -343,7 +343,8 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         return;
       }
       const items = Array.isArray(out?.items) ? out.items : [];
-      setUsersTotal(typeof out?.total === 'number' ? out.total : null);
+      if (typeof out?.total_non_admin === 'number') setUsersTotal(out.total_non_admin);
+      else setUsersTotal(typeof out?.total === 'number' ? out.total : null);
       setUsersList(
         items
           .map((x: any) => ({
@@ -366,6 +367,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     const diag = officeData?.diag || {};
     const feedback = officeData?.feedback || {};
     const feedbackItems = Array.isArray(feedback?.items) ? feedback.items : [];
+    const totalUsersRaw = Number(users?.total ?? 0) || 0;
+    const totalUsersNoAdmin = isAdmin ? Math.max(0, totalUsersRaw - 1) : totalUsersRaw;
+    const active30dRaw = Number(users?.active30d ?? 0) || 0;
+    const active30dNoAdmin = isAdmin ? Math.max(0, active30dRaw - 1) : active30dRaw;
+    const new7dRaw = Number(users?.new7d ?? 0) || 0;
+    const new7dNoAdmin = isAdmin ? Math.max(0, new7dRaw - 1) : new7dRaw;
+
     return (
       <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
         <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
@@ -385,12 +393,12 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-400/15 rounded-2xl p-4">
               <div className="text-xs text-slate-200/80 font-semibold">Usuarios</div>
-              <div className="text-2xl font-extrabold text-white mt-1">{Number(users?.total ?? 0)}</div>
-              <div className="text-[11px] text-slate-300/80 mt-1">Activos 30d: {Number(users?.active30d ?? 0)}</div>
+              <div className="text-2xl font-extrabold text-white mt-1">{totalUsersNoAdmin}</div>
+              <div className="text-[11px] text-slate-300/80 mt-1">Activos 30d: {active30dNoAdmin}</div>
             </div>
             <div className="bg-gradient-to-br from-cyan-500/20 to-transparent border border-cyan-400/15 rounded-2xl p-4">
               <div className="text-xs text-slate-200/80 font-semibold">Registros</div>
-              <div className="text-2xl font-extrabold text-white mt-1">{Number(users?.new7d ?? 0)}</div>
+              <div className="text-2xl font-extrabold text-white mt-1">{new7dNoAdmin}</div>
               <div className="text-[11px] text-slate-300/80 mt-1">Últimos 7 días</div>
             </div>
             <div className="bg-gradient-to-br from-yellow-500/25 to-transparent border border-yellow-400/15 rounded-2xl p-4">
@@ -419,8 +427,8 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               <div>
                 <div className="text-white font-extrabold">Correos de usuarios</div>
                 <div className="text-[11px] text-slate-400 mt-1">
-                  Registros: {Number(users?.total ?? 0)}
-                  {usersTotal != null ? ` (Auth: ${usersTotal})` : ''}
+                  Registros (sin admin): {totalUsersNoAdmin}
+                  {usersTotal != null ? ` (Auth sin admin: ${usersTotal})` : ''}
                 </div>
               </div>
               <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
