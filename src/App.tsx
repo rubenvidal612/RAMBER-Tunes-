@@ -295,6 +295,15 @@ export default function App() {
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
   const pendingLegacyKey = 'ramber.pendingSunoTask';
   const [isUpdatesOpen, setIsUpdatesOpen] = useState(false);
+  const appRootRef = useRef<HTMLDivElement | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const pullDistanceRef = useRef(0);
+  const pullRefreshingRef = useRef(false);
+  const pullStartXRef = useRef(0);
+  const pullStartYRef = useRef(0);
+  const pullTrackingRef = useRef(false);
+  const pullLastRefreshAtRef = useRef(0);
   const [updatesSeenKey, setUpdatesSeenKey] = useState(() => {
     try {
       return (window.localStorage.getItem('ramber.updates_seen_v1') || '').toString();
@@ -521,6 +530,76 @@ export default function App() {
       showToast(`Se eliminaron automáticamente ${a.cleanupDeleted} canciones (plan gratis: 15 días).`);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    const el = appRootRef.current;
+    if (!el) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (pullRefreshingRef.current) return;
+      if (!e.touches || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      pullStartXRef.current = t.clientX;
+      pullStartYRef.current = t.clientY;
+      pullTrackingRef.current = t.clientY <= 120;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pullTrackingRef.current) return;
+      if (pullRefreshingRef.current) return;
+      if (!e.touches || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - pullStartXRef.current;
+      const dy = t.clientY - pullStartYRef.current;
+      if (dy <= 0) {
+        if (pullDistanceRef.current) {
+          pullDistanceRef.current = 0;
+          setPullDistance(0);
+        }
+        return;
+      }
+      if (Math.abs(dy) < Math.abs(dx) * 1.25) return;
+      const capped = Math.max(0, Math.min(120, Math.round(dy)));
+      if (capped > 8) {
+        try {
+          e.preventDefault();
+        } catch {}
+      }
+      pullDistanceRef.current = capped;
+      setPullDistance(capped);
+    };
+
+    const onTouchEnd = () => {
+      pullTrackingRef.current = false;
+      const dist = pullDistanceRef.current;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      if (pullRefreshingRef.current) return;
+      if (dist < 70) return;
+      const now = Date.now();
+      if (now - pullLastRefreshAtRef.current < 2500) return;
+      pullLastRefreshAtRef.current = now;
+      setIsPullRefreshing(true);
+      pullRefreshingRef.current = true;
+      Promise.allSettled([refreshLibrary(), refreshCredits(), refreshBalance()]).then(() => {
+        pullRefreshingRef.current = false;
+        setIsPullRefreshing(false);
+        showToast('Actualizado.');
+      });
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart as any);
+      el.removeEventListener('touchmove', onTouchMove as any);
+      el.removeEventListener('touchend', onTouchEnd as any);
+      el.removeEventListener('touchcancel', onTouchEnd as any);
+    };
+  }, [isAuthed, refreshCredits]);
 
   useEffect(() => {
     if (!isAuthed) return;
@@ -1103,7 +1182,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
+    <div ref={appRootRef} className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
@@ -1123,6 +1202,13 @@ export default function App() {
         showBank={false}
         notificationsCount={unreadUpdatesCount}
       />
+      {pullDistance > 0 || isPullRefreshing ? (
+        <div className="md:hidden absolute left-0 right-0 top-14 z-[60] flex justify-center pointer-events-none">
+          <div className="bg-black/40 border border-white/10 backdrop-blur-xl rounded-full px-4 py-2 text-[11px] font-extrabold text-slate-100">
+            {isPullRefreshing ? 'Actualizando…' : pullDistance >= 70 ? 'Suelta para actualizar' : 'Desliza para actualizar'}
+          </div>
+        </div>
+      ) : null}
       {showInstallBanner && (
         <div className="md:hidden px-3 pt-3">
           <div className="bg-gradient-to-r from-yellow-500/25 to-yellow-400/10 border border-yellow-400/20 rounded-2xl px-3 py-3 flex items-center gap-3">
