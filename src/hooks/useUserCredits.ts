@@ -4,6 +4,10 @@ import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 // Hook personalizado para manejar los créditos del usuario
 export function useUserCredits() {
   const [credits, setCredits] = useState(0);
+  const [internalCredits, setInternalCredits] = useState<number | null>(null);
+  const [providerCredits, setProviderCredits] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [source, setSource] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,6 +29,12 @@ export function useUserCredits() {
       }
       const c = Number(out?.credits);
       if (Number.isFinite(c)) setCredits(c);
+      const ic = Number(out?.internal_credits);
+      setInternalCredits(Number.isFinite(ic) ? ic : null);
+      const pc = Number(out?.provider_credits);
+      setProviderCredits(Number.isFinite(pc) ? pc : null);
+      setIsAdmin(Boolean(out?.is_admin));
+      setSource(String(out?.source || ''));
       setError('');
     } finally {
       setLoading(false);
@@ -64,6 +74,10 @@ export function useUserCredits() {
 
   return {
     credits,
+    internalCredits,
+    providerCredits,
+    isAdmin,
+    source,
     loading,
     error,
     refreshCredits,

@@ -282,7 +282,7 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
-  const { credits, refreshCredits, error: creditsError } = useUserCredits();
+  const { credits, internalCredits, isAdmin, refreshCredits, error: creditsError } = useUserCredits();
   const lastCreditsErrorRef = useRef<string>('');
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -950,6 +950,8 @@ export default function App() {
         }}
         onCreditsClick={() => setIsBalanceOpen(true)}
         credits={displayCredits}
+        bankCredits={internalCredits}
+        showBank={Boolean(isAdmin)}
         notificationsCount={unreadUpdatesCount}
       />
       {showInstallBanner && (
