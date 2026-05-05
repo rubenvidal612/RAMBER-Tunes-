@@ -298,7 +298,6 @@ export default function App() {
   const appRootRef = useRef<HTMLDivElement | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-  const [isHeaderRefreshing, setIsHeaderRefreshing] = useState(false);
   const pullDistanceRef = useRef(0);
   const pullRefreshingRef = useRef(false);
   const pullStartXRef = useRef(0);
@@ -306,8 +305,9 @@ export default function App() {
   const pullTrackingRef = useRef(false);
   const pullAllowedRef = useRef(false);
   const pullLastRefreshAtRef = useRef(0);
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [updateVersion, setUpdateVersion] = useState('');
+  const pendingReloadRef = useRef(false);
+  const latestVersionRef = useRef('');
+  const wasHiddenRef = useRef(false);
   const [updatesSeenKey, setUpdatesSeenKey] = useState(() => {
     try {
       return (window.localStorage.getItem('ramber.updates_seen_v1') || '').toString();
@@ -474,6 +474,10 @@ export default function App() {
   useEffect(() => {
     if (!isAuthed) return;
     const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        wasHiddenRef.current = true;
+        return;
+      }
       if (document.visibilityState !== 'visible') return;
       refreshCredits().catch(() => {});
       refreshAppVersion()
@@ -482,8 +486,13 @@ export default function App() {
           try {
             const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
             if (prev && prev !== v) {
-              setUpdateAvailable(true);
-              setUpdateVersion(v);
+              pendingReloadRef.current = true;
+              latestVersionRef.current = v;
+              if (wasHiddenRef.current) {
+                wasHiddenRef.current = false;
+                forceReload(v);
+                return;
+              }
             }
           } catch {
           }
@@ -509,8 +518,8 @@ export default function App() {
           try {
             const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
             if (prev && prev !== v) {
-              setUpdateAvailable(true);
-              setUpdateVersion(v);
+              pendingReloadRef.current = true;
+              latestVersionRef.current = v;
             }
           } catch {
           }
@@ -591,9 +600,10 @@ export default function App() {
     }
   };
 
-  const forceReload = () => {
+  const forceReload = (nextVersion?: string | null) => {
     try {
-      if (updateVersion) window.localStorage.setItem('ramber.app_version_v1', updateVersion);
+      const v = (nextVersion || '').toString().trim();
+      if (v) window.localStorage.setItem('ramber.app_version_v1', v);
     } catch {}
     try {
       const u = new URL(window.location.href);
@@ -624,11 +634,12 @@ export default function App() {
         const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
         if (!prev) {
           window.localStorage.setItem('ramber.app_version_v1', v);
+          latestVersionRef.current = v;
           return;
         }
         if (prev !== v) {
-          setUpdateAvailable(true);
-          setUpdateVersion(v);
+          pendingReloadRef.current = true;
+          latestVersionRef.current = v;
         }
       } catch {
       }
@@ -718,9 +729,9 @@ export default function App() {
           try {
             const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
             if (prev && prev !== v.trim()) {
-              setUpdateAvailable(true);
-              setUpdateVersion(v.trim());
-              showToast('Hay una actualización. Toca “Actualizar app”.');
+              pendingReloadRef.current = true;
+              latestVersionRef.current = v.trim();
+              showToast('Actualización lista. Sal de la app y vuelve a entrar.');
               return;
             }
             if (!prev) window.localStorage.setItem('ramber.app_version_v1', v.trim());
@@ -1328,24 +1339,10 @@ export default function App() {
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
-        onRefreshClick={() => {
-          if (updateAvailable) {
-            forceReload();
-            return;
-          }
-          if (isHeaderRefreshing || pullRefreshingRef.current) return;
-          setIsHeaderRefreshing(true);
-          Promise.allSettled([refreshLibrary(), refreshCredits(), refreshBalance(), refreshAppVersion()]).finally(() => {
-            setIsHeaderRefreshing(false);
-            showToast('Actualizado.');
-          });
-        }}
         onCreditsClick={() => setIsBalanceOpen(true)}
         credits={displayCredits}
         bankCredits={internalCredits}
         showBank={false}
-        isUpdateAvailable={updateAvailable}
-        isRefreshing={isPullRefreshing || isHeaderRefreshing}
       />
       {pullDistance > 0 || isPullRefreshing ? (
         <div className="md:hidden absolute left-0 right-0 top-14 z-[60] flex justify-center pointer-events-none">
