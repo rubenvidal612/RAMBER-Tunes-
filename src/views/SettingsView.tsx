@@ -245,7 +245,17 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
         alert([msg, detail].filter(Boolean).join('\n'));
         return;
       }
-      alert(`Listo. Se quitaron ${n} créditos a ${email} y se regresaron a tu saldo.`);
+      const fb = Number(out?.from_credits_before ?? NaN);
+      const fa = Number(out?.from_credits_after ?? NaN);
+      const tb = Number(out?.to_credits_before ?? NaN);
+      const ta = Number(out?.to_credits_after ?? NaN);
+      const lines = [
+        `Listo.`,
+        Number.isFinite(fb) && Number.isFinite(fa) ? `Usuario (${email}): ${fb} → ${fa} créditos` : `Usuario (${email}): actualizado`,
+        Number.isFinite(tb) && Number.isFinite(ta) ? `Tu saldo interno (banco): ${tb} → ${ta} créditos` : `Tu saldo interno (banco): actualizado`,
+        `Nota: tu saldo REAL (proveedor/Suno) no cambia con esto.`,
+      ];
+      alert(lines.join('\n'));
       await refreshCredits().catch(() => {});
       openOffice().catch(() => {});
     } finally {

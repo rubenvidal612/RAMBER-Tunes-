@@ -3511,12 +3511,14 @@ const adminHandler = (() => {
 
     const fromProfile = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
     if (fromProfile.error) return send(res, 500, { error: "No pude leer el saldo del usuario.", detail: fromProfile.error.message });
-    const fromCredits = round2(creditsFromProfile(fromProfile.data));
-    if (fromCredits < credits) {
-      return send(res, 400, { error: `El usuario solo tiene ${fromCredits} créditos.` });
+    const fromCreditsBefore = round2(creditsFromProfile(fromProfile.data));
+    const toProfileBefore = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
+    const toCreditsBefore = toProfileBefore.error ? null : round2(creditsFromProfile(toProfileBefore.data));
+    if (fromCreditsBefore < credits) {
+      return send(res, 400, { error: `El usuario solo tiene ${fromCreditsBefore} créditos.` });
     }
-
     const transferId = `admin_transfer:${toUserId}:${fromUserId}:${Date.now()}`;
+
 
     const out = await consumeUserCredits(admin, fromUserId, credits);
     if (!out.ok) return send(res, 500, { error: out.error || "No pude quitar créditos." });
@@ -3532,7 +3534,22 @@ const adminHandler = (() => {
       { user_id: toUserId, kind: "admin_transfer_in", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:in` },
     ]);
 
-    return send(res, 200, { ok: true, from_user_id: fromUserId, to_user_id: toUserId, transferred: credits });
+    const fromProfileAfter = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
+    const fromCreditsAfter = fromProfileAfter.error ? null : round2(creditsFromProfile(fromProfileAfter.data));
+    const toProfileAfter = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
+    const toCreditsAfter = toProfileAfter.error ? null : round2(creditsFromProfile(toProfileAfter.data));
+
+    return send(res, 200, {
+      ok: true,
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      transferred: credits,
+      from_credits_before: fromCreditsBefore,
+      from_credits_after: fromCreditsAfter,
+      to_credits_before: toCreditsBefore,
+      to_credits_after: toCreditsAfter,
+      note: "Esto mueve el saldo interno (profiles). El saldo del proveedor (Suno) no se puede mover.",
+    });
   }
 
   async function setUserCreditsAbsolute(admin: any, userId: string, nextCredits: number) {
