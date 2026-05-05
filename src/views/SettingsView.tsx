@@ -18,6 +18,9 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [grantEmail, setGrantEmail] = useState('');
   const [grantCredits, setGrantCredits] = useState('50');
   const [grantBusy, setGrantBusy] = useState(false);
+  const [takeEmail, setTakeEmail] = useState('');
+  const [takeCredits, setTakeCredits] = useState('50');
+  const [takeBusy, setTakeBusy] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackName, setFeedbackName] = useState('');
   const [feedbackWhatsapp, setFeedbackWhatsapp] = useState('');
@@ -208,6 +211,46 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       openOffice().catch(() => {});
     } finally {
       setGrantBusy(false);
+    }
+  };
+
+  const takeBack = async () => {
+    if (!supabaseBrowser) return;
+    const email = (takeEmail || '').toString().trim().toLowerCase();
+    const n = Number((takeCredits || '').toString().trim().replaceAll(',', '.'));
+    if (!email) {
+      alert('Pon el correo del usuario.');
+      return;
+    }
+    if (!Number.isFinite(n) || n <= 0) {
+      alert('Pon una cantidad válida de créditos.');
+      return;
+    }
+    setTakeBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/transfer-credits', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, credits: n }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = (out?.error || 'No pude quitar créditos.').toString();
+        const detail = (out?.detail || '').toString();
+        alert([msg, detail].filter(Boolean).join('\n'));
+        return;
+      }
+      alert(`Listo. Se quitaron ${n} créditos a ${email} y se regresaron a tu saldo.`);
+      await refreshCredits().catch(() => {});
+      openOffice().catch(() => {});
+    } finally {
+      setTakeBusy(false);
     }
   };
 
@@ -721,6 +764,32 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
               </button>
             </div>
             <div className="mt-3 text-[11px] text-slate-400">Solo admin. Se suma al saldo del usuario.</div>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="text-white font-extrabold">Quitar créditos (regresármelos)</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                value={takeEmail}
+                onChange={(e) => setTakeEmail(e.target.value)}
+                placeholder="correo@gmail.com"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+              />
+              <input
+                value={takeCredits}
+                onChange={(e) => setTakeCredits(e.target.value)}
+                placeholder="Créditos"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+              />
+              <button
+                onClick={() => takeBack().catch(() => {})}
+                disabled={takeBusy}
+                className="bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+              >
+                {takeBusy ? 'Quitando…' : 'Quitar'}
+              </button>
+            </div>
+            <div className="mt-3 text-[11px] text-slate-400">Se descuenta del usuario y se suma a tu saldo. Si no tiene suficiente, no se hace.</div>
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">

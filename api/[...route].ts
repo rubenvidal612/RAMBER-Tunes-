@@ -3400,6 +3400,55 @@ const adminHandler = (() => {
     return send(res, 200, { ok: true, user_id: userId, credited: credits, new_credits: upd.credits ?? null });
   }
 
+  async function handleTransferCredits(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const email = (body?.email || "").toString().trim().toLowerCase();
+    const credits = round2(Number(body?.credits ?? 0));
+    if (!email) return send(res, 400, { error: "Falta email" });
+    if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
+
+    const admin = auth.admin;
+    const found = await findUserIdByEmail(auth, email);
+    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
+    const fromUserId = found.userId;
+    const toUserId = auth.user.id;
+
+    const ensureFrom = await ensureProfileExists(admin, fromUserId);
+    if (!ensureFrom.ok) return send(res, 500, { error: "No pude preparar el usuario.", detail: ensureFrom.error });
+    const ensureTo = await ensureProfileExists(admin, toUserId);
+    if (!ensureTo.ok) return send(res, 500, { error: "No pude preparar tu cuenta.", detail: ensureTo.error });
+
+    const fromProfile = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
+    if (fromProfile.error) return send(res, 500, { error: "No pude leer el saldo del usuario.", detail: fromProfile.error.message });
+    const fromCredits = round2(creditsFromProfile(fromProfile.data));
+    if (fromCredits < credits) {
+      return send(res, 400, { error: `El usuario solo tiene ${fromCredits} créditos.` });
+    }
+
+    const transferId = `admin_transfer:${toUserId}:${fromUserId}:${Date.now()}`;
+
+    const out = await consumeUserCredits(admin, fromUserId, credits);
+    if (!out.ok) return send(res, 500, { error: out.error || "No pude quitar créditos." });
+
+    const inc = await adjustUserCredits(admin, toUserId, credits);
+    if (!inc.ok) {
+      await adjustUserCredits(admin, fromUserId, credits);
+      return send(res, 500, { error: inc.error || "No pude regresarte los créditos (revertido)." });
+    }
+
+    await admin.from("mp_transactions").insert([
+      { user_id: fromUserId, kind: "admin_transfer_out", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:out` },
+      { user_id: toUserId, kind: "admin_transfer_in", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:in` },
+    ]);
+
+    return send(res, 200, { ok: true, from_user_id: fromUserId, to_user_id: toUserId, transferred: credits });
+  }
+
   async function setUserCreditsAbsolute(admin: any, userId: string, nextCredits: number) {
     const next = round2(Math.max(0, Number(nextCredits)));
     if (!Number.isFinite(next)) return { ok: false as const, error: "Créditos inválidos" };
@@ -3632,6 +3681,7 @@ const adminHandler = (() => {
     if (a === "stats") return handleStats(req, res);
     if (a === "diag") return handleDiag(req, res);
     if (a === "grant-credits") return handleGrantCredits(req, res);
+    if (a === "transfer-credits") return handleTransferCredits(req, res);
     if (a === "set-plan") return handleSetPlan(req, res);
     if (a === "feedback") return handleFeedback(req, res);
     if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
