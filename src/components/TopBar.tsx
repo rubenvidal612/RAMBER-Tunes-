@@ -1,4 +1,4 @@
-import { Menu, RefreshCw } from 'lucide-react';
+import { Menu, RefreshCw, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TopBarProps {
@@ -47,6 +47,7 @@ export function TopBar({ className, onMenuClick, onRefreshClick, onCreditsClick,
         >
           <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
           <span className="text-sm font-semibold text-slate-200">{credits || 0} Créditos</span>
+          <ChevronDown className="w-4 h-4 text-slate-400" />
         </button>
 
         {showBank ? (
