@@ -31,6 +31,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [videoTasks, setVideoTasks] = useState<Array<{ taskId: string; createdAt?: string }>>([]);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState('');
 
   type Folder = { id: string; name: string; createdAt: number };
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -104,6 +107,85 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
   }, [filterFrom, filterTo, sortOrder]);
 
+  const loadVideos = async () => {
+    setVideoLoading(true);
+    setVideoError('');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setVideoError(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/videos/list?limit=60', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setVideoError((out?.detail || out?.error || 'No pude cargar tus videos.').toString());
+        return;
+      }
+      const items = Array.isArray(out?.items) ? out.items : [];
+      setVideoTasks(
+        items
+          .map((x: any) => ({ taskId: String(x?.taskId || '').trim(), createdAt: String(x?.created_at || '').trim() }))
+          .filter((x: any) => x.taskId)
+      );
+    } finally {
+      setVideoLoading(false);
+    }
+  };
+
+  const openVideoByTaskId = async (taskId: string) => {
+    const t = await getAccessToken();
+    if (!t.ok) {
+      alert(t.error || 'No se pudo iniciar sesión.');
+      return;
+    }
+    const tr = await fetch(`/api/suno/task?kind=mp4&taskId=${encodeURIComponent(taskId)}`, {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const tout = await tr.json().catch(() => ({}));
+    if (!tr.ok) {
+      alert((tout?.detail || tout?.error || 'No pude consultar el video.').toString());
+      return;
+    }
+
+    const provider = tout?.data;
+    const status = String(
+      provider?.data?.successFlag ||
+        provider?.data?.status ||
+        provider?.data?.data?.successFlag ||
+        provider?.data?.data?.status ||
+        ''
+    ).toUpperCase();
+
+    if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_MP4_FAILED' || status === 'CALLBACK_EXCEPTION') {
+      alert('No se pudo generar el video.');
+      return;
+    }
+    if (status !== 'SUCCESS') {
+      alert('Tu video aún se está procesando. Intenta de nuevo en un rato.');
+      return;
+    }
+
+    const videoUrl = String(
+      provider?.data?.response?.videoUrl ||
+        provider?.data?.data?.response?.videoUrl ||
+        provider?.data?.response?.video_url ||
+        provider?.data?.data?.response?.video_url ||
+        ''
+    ).trim();
+
+    if (!videoUrl) {
+      alert('El video terminó, pero no recibí el link.');
+      return;
+    }
+    window.open(videoUrl, '_blank');
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'video') return;
+    loadVideos().catch(() => {});
+  }, [activeTab]);
+
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem('ramber.libraryFolders_v1');
@@ -161,6 +243,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               Publicado
             </button>
             <button
+              onClick={() => {
+                setActiveTab('video');
+                loadVideos().catch(() => {});
+              }}
+              className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
+            >
+              <Video className="w-4 h-4" /> Video
+            </button>
+            <button
               onClick={() => setIsFiltersOpen(true)}
               className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
             >
@@ -203,24 +294,75 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {activeTab === 'video' && (
-          <div className="h-full flex flex-col items-center justify-center p-6 text-center mt-[-40px]">
-            <div className="w-24 h-24 mb-6 text-slate-500 opacity-50 relative flex items-center justify-center">
-              <div className="w-16 h-12 border-2 border-current rounded-t-md border-b-0 space-y-1 p-2">
-                 <div className="w-2 h-0.5 bg-current rounded-full" />
+          <div className="p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Videos (MP4)</div>
+                <div className="text-xs text-slate-400">
+                  Aquí aparecen tus videos. Si acabas de crear uno, presiona Actualizar.
+                </div>
               </div>
-              <div className="absolute top-0 flex gap-2">
-                <div className="w-1 h-3 bg-current rounded-full rotate-[-30deg] -ml-4" />
-                <div className="w-1 h-4 bg-current rounded-full -mt-2" />
-                <div className="w-1 h-3 bg-current rounded-full rotate-[30deg] -mr-4" />
-              </div>
+              <button
+                onClick={() => loadVideos().catch(() => {})}
+                disabled={videoLoading}
+                className="shrink-0 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors disabled:opacity-60"
+              >
+                {videoLoading ? 'Actualizando…' : 'Actualizar'}
+              </button>
             </div>
-            <p className="text-slate-400 font-medium text-sm mb-6 max-w-[240px]">
-              Aún no tienes proyectos. ¡Comienza a crear tu primer MV!
-            </p>
-            <button className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90 active:scale-95 transition-all text-white font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-full flex items-center gap-2 shadow-lg shadow-indigo-500/20">
-              <Sparkles className="w-4 h-4 text-white" strokeWidth={2} />
-              Crear Ahora
-            </button>
+
+            {videoError ? (
+              <div className="glass-card rounded-2xl p-4 border border-red-500/30 text-red-200 text-sm">
+                {videoError}
+              </div>
+            ) : null}
+
+            {videoTasks.length === 0 ? (
+              <div className="glass-card rounded-2xl p-4 border border-white/10 text-slate-300 text-sm">
+                Aún no tienes videos. Para crear uno: abre una canción → 3 puntitos → Video (MP4).
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {videoTasks.map((v) => {
+                  const dt = (v.createdAt || '').toString().trim();
+                  const dateText = (() => {
+                    if (!dt) return '';
+                    const d = new Date(dt);
+                    if (Number.isNaN(d.getTime())) return '';
+                    return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                  })();
+                  const shortId = v.taskId.length > 18 ? `${v.taskId.slice(0, 10)}…${v.taskId.slice(-6)}` : v.taskId;
+                  return (
+                    <div key={v.taskId} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-white font-bold truncate">Video</div>
+                        <div className="text-xs text-slate-400 truncate">TaskId: {shortId}</div>
+                        {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard
+                              .writeText(v.taskId)
+                              .then(() => alert('TaskId copiado.'))
+                              .catch(() => alert('No pude copiar el TaskId.'));
+                          }}
+                          className="bg-white/5 border border-white/10 rounded-full px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                        >
+                          Copiar
+                        </button>
+                        <button
+                          onClick={() => openVideoByTaskId(v.taskId).catch(() => {})}
+                          className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-3 py-2 text-xs font-extrabold transition-colors"
+                        >
+                          Abrir
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

@@ -3016,6 +3016,95 @@ const shareHandler = (() => {
   };
 })();
 
+const videosHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "videos") return send(res, 404, { error: "Ruta no encontrada" });
+
+    const action = (next || "").toString().trim().toLowerCase();
+    if (action !== "list") return send(res, 404, { error: "Ruta no encontrada" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const limitRaw = Number(pickQuery(req, "limit") || 50);
+    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
+
+    try {
+      const userId = String(auth.user.id || "").trim();
+      const admin = auth.admin;
+      let rows: any[] = [];
+      const r1 = await admin
+        .from("suno_tasks")
+        .select("task_id, kind, created_at")
+        .eq("user_id", userId)
+        .eq("kind", "mp4")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (!r1.error) {
+        rows = Array.isArray(r1.data) ? r1.data : [];
+      } else {
+        const r2 = await admin.from("suno_tasks").select("task_id, kind").eq("user_id", userId).eq("kind", "mp4").limit(limit);
+        if (r2.error) return send(res, 500, { error: "No pude listar videos", detail: r2.error.message });
+        rows = Array.isArray(r2.data) ? r2.data : [];
+      }
+
+      const items = rows
+        .map((x: any) => ({
+          taskId: String(x?.task_id || "").trim(),
+          created_at: typeof x?.created_at === "string" ? x.created_at : "",
+        }))
+        .filter((x: any) => x.taskId);
+
+      return send(res, 200, { ok: true, items });
+    } catch (e) {
+      return send(res, 500, { error: "No pude listar videos", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
 const supportHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -4130,6 +4219,7 @@ export default async function handler(req: any, res: any) {
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
+    if (head === "videos") return videosHandler(req, res);
     if (head === "admin") return adminHandler(req, res);
     if (head === "support") return supportHandler(req, res);
     if (head === "ai") return aiHandler(req, res);
