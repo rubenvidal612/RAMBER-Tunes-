@@ -9,7 +9,7 @@ interface SidebarProps {
 
 export function Sidebar({ currentTab, onChange }: SidebarProps) {
   return (
-    <div className="w-[240px] flex flex-col glass-panel border-y-0 border-l-0 overflow-y-auto">
+    <div className="w-[240px] flex flex-col glass-panel border-y-0 border-l-0 overflow-y-auto bg-gradient-to-b from-indigo-500/5 via-transparent to-fuchsia-500/5">
       <div className="p-4 space-y-6">
         
         <div>

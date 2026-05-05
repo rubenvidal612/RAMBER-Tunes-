@@ -562,6 +562,13 @@ export default function App() {
       setIsProfileSetupOpen(false);
       return;
     }
+    const isAdminAccount =
+      (authEmail || '').toString().trim().toLowerCase() === 'rubenfiverr612@gmail.com' ||
+      (authEmail || '').toString().trim().toLowerCase() === 'rubenvidal612@gmail.com';
+    if (isAdminAccount) {
+      setIsProfileSetupOpen(false);
+      return;
+    }
     if (didProfileSetupRef.current) return;
     didProfileSetupRef.current = true;
     if (!supabaseBrowser) return;
@@ -968,13 +975,12 @@ export default function App() {
 
   if (!isAuthed) {
     return (
-      <div className="h-[100dvh] w-full bg-black text-white flex flex-col items-center justify-center px-6 text-center">
+      <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-center px-6 text-center bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
         <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
           R
         </div>
         <div className="mt-4 text-xl font-extrabold">RAMBER Tunes</div>
         <div className="mt-2 text-sm text-slate-300">Para usar la app necesitas entrar con tu cuenta Gmail.</div>
-        <div className="mt-2 text-xs text-slate-500">Supabase: {supabaseBrowser ? 'conectado' : 'no configurado'}</div>
         <button
           onClick={() => {
             if (isStartingLogin) return;
@@ -1063,17 +1069,24 @@ export default function App() {
            {currentTab === 'perfil' && <ProfileView credits={credits} />}
            
            {/* Placeholders */}
-           {currentTab === 'mv' && <div className="flex-1 flex items-center justify-center text-slate-500">Music Videos (Próximamente)</div>}
+           {currentTab === 'mv' && (
+             <div className="flex-1 flex items-center justify-center px-6">
+               <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
+                 <div className="text-white font-extrabold">Music Videos</div>
+                 <div className="mt-2 text-sm text-slate-300">Próximamente</div>
+               </div>
+             </div>
+           )}
         </div>
         {/* Desktop 3-column layout */}
         <div className="hidden md:flex flex-1 min-h-0 overflow-hidden">
            {/* Sidebar */}
-           <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/5 bg-black flex flex-col">
+           <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col">
              <Sidebar currentTab={currentTab} onChange={setCurrentTab} />
            </div>
 
            {currentTab === 'inicio' ? (
-             <div className="flex-1 bg-[#050505]">
+             <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
                <InicioLanding
                  email={authEmail}
                  onGoStudio={() => setCurrentTab('studio')}
@@ -1086,12 +1099,12 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-              <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/5 bg-[#0a0a0a] flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
+              <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                  <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                </div>
 
                {/* Library / Results View (Right) */}
-               <div className="flex-1 min-h-0 flex flex-col bg-[#050505] relative z-10 w-full min-w-[300px]">
+               <div className="flex-1 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30 relative z-10 w-full min-w-[300px]">
                 {currentTab === 'perfil' ? <ProfileView credits={credits} /> : <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
                </div>
              </>

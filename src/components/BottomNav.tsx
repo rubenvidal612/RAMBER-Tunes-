@@ -18,7 +18,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-2 z-30">
+    <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-2 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">
       <div className="flex items-center justify-around px-2 pb-2">
         {items.map((item) => {
           const isActive = currentTab === item.id;

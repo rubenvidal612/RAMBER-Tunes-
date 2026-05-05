@@ -543,7 +543,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             </div>
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-emerald-500/10 via-white/5 to-transparent border border-emerald-400/15 rounded-3xl p-5">
             <button
               onClick={() => {
                 setIsUsersOpen((v) => {
@@ -560,7 +560,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                   Registros (reales, sin pruebas): {usersTotal != null ? usersTotal : totalUsersReal}
                 </div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {isUsersOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -636,7 +636,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                               </div>
                               <div className="text-[11px] text-slate-500 truncate">{dateLabel ? `Registro: ${dateLabel}` : '—'}</div>
                             </div>
-                            <div className="text-[11px] text-slate-400 shrink-0">Ver</div>
+                            <div className="text-[11px] text-emerald-200 shrink-0">Ver</div>
                           </button>
                         );
                       })
@@ -647,7 +647,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             ) : null}
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-violet-500/10 via-white/5 to-transparent border border-violet-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeReporteOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Reporte</div>
@@ -655,7 +655,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                   Hoy: ${Number(payments?.today?.mxn ?? 0).toFixed(0)} • Mes: ${Number(payments?.month?.mxn ?? 0).toFixed(0)}
                 </div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {officeReporteOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -690,13 +690,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             ) : null}
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-cyan-500/10 via-white/5 to-transparent border border-cyan-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeVentasOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Ventas por día</div>
                 <div className="text-[11px] text-slate-400 mt-1">Últimos 7 días</div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-cyan-400 to-indigo-400 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {officeVentasOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -732,7 +732,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             ) : null}
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-yellow-500/10 via-white/5 to-transparent border border-yellow-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeSaldoOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Saldo</div>
@@ -740,7 +740,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                   Proveedor (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}
                 </div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {officeSaldoOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -804,7 +804,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             ) : null}
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-emerald-500/10 via-white/5 to-transparent border border-emerald-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeMensajesOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Mensajes</div>
@@ -812,7 +812,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                   {Number(feedback?.unread_count ?? 0) ? `${Number(feedback?.unread_count ?? 0)} sin leer` : '—'}
                 </div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {officeMensajesOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -865,13 +865,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             ) : null}
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-rose-500/10 via-white/5 to-transparent border border-rose-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeCreditosOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Créditos de usuarios</div>
                 <div className="text-[11px] text-slate-400 mt-1">Enviar / quitar créditos a usuarios</div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-rose-400 to-fuchsia-400 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {officeCreditosOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -929,13 +929,13 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             ) : null}
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+          <div className="bg-gradient-to-r from-indigo-500/10 via-white/5 to-transparent border border-indigo-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficePlanesOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Planes</div>
                 <div className="text-[11px] text-slate-400 mt-1">Cambiar plan y créditos del plan</div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 transition-colors">
+              <div className="bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
                 {officePlanesOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
