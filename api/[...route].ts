@@ -2684,7 +2684,7 @@ const balanceHandler = (() => {
       }
     }
 
-    const credits = internal_credits;
+    const credits = is_admin && typeof provider_credits === "number" ? provider_credits : internal_credits;
 
     const counts = toCounts(credits);
     return send(res, 200, {
@@ -2700,7 +2700,7 @@ const balanceHandler = (() => {
       internal_credits,
       provider_credits,
       provider_error: provider_error || null,
-      source: "local",
+      source: is_admin && typeof provider_credits === "number" ? "provider_admin" : "local",
     });
   };
 })();
@@ -3190,6 +3190,24 @@ const adminHandler = (() => {
     return { ok: true as const, users, total };
   }
 
+  async function deleteUserViaHttp(supabaseUrl: string, serviceKey: string, userId: string) {
+    const base = String(supabaseUrl || "").replace(/\/+$/, "");
+    const uid = String(userId || "").trim();
+    if (!uid) return { ok: false as const, status: 400, error: "user_id inválido" };
+    const url = `${base}/auth/v1/admin/users/${encodeURIComponent(uid)}`;
+    const r = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        apikey: serviceKey,
+        authorization: `Bearer ${serviceKey}`,
+        "content-type": "application/json",
+      },
+    });
+    const text = await r.text().catch(() => "");
+    if (!r.ok) return { ok: false as const, status: Number(r.status || 500) || 500, error: `HTTP ${Number(r.status || 0) || 0}`, detail: String(text || "").slice(0, 600) };
+    return { ok: true as const };
+  }
+
   async function findUserIdByEmail(authCtx: any, email: string) {
     const clean = (email || "").toString().trim().toLowerCase();
     if (!clean) return { ok: false as const, status: 400, error: "Email inválido" };
@@ -3405,7 +3423,21 @@ const adminHandler = (() => {
 
     let provider: any = null;
     try {
-      const r = await providerFetchJson("/api/v1/generate/credit", { method: "GET" });
+      const paths = [
+        "/api/v1/generate/credit",
+        "/api/v1/get-credits",
+        "/api/v1/suno/get-credits",
+        "/api/v1/suno/generate/credit",
+        "/api/v1/suno/credits",
+        "/api/v1/suno/credit",
+      ];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await providerFetchJson(p, { method: "GET" });
+        last = r;
+        if (r?.res?.status !== 404) break;
+      }
+      const r = last;
       const code = Number(r?.data?.code);
       const raw = r?.data?.data?.credits ?? r?.data?.data;
       const parsed = parseProviderCreditsValue(raw);
@@ -3693,6 +3725,100 @@ const adminHandler = (() => {
     });
   }
 
+  async function handlePruneUsers(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req) || {};
+    const mode = String(body?.mode || "dry").trim().toLowerCase(); // dry | execute
+    const days = Math.max(0, Math.min(Number(body?.days ?? 7) || 7, 365));
+    const limit = Math.max(1, Math.min(Number(body?.limit ?? 500) || 500, 5000));
+
+    const supabaseUrl = String((auth as any)?.supabaseUrl || "").trim();
+    const supabaseService = String((auth as any)?.supabaseService || "").trim();
+    if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase Auth" });
+
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - days);
+    const cutoffMs = cutoff.getTime();
+
+    const admin = (auth as any).admin;
+    const realIds = await buildRealUserIdSet(admin);
+    const safeTime = (s: any) => {
+      const v = typeof s === "string" ? s : "";
+      if (!v) return 0;
+      const t = new Date(v).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    const candidates: Array<{ id: string; email: string; created_at: string; last_sign_in_at: string }> = [];
+    const perPage = 200;
+    const maxPages = 50;
+    for (let page = 1; page <= maxPages; page++) {
+      const r = await listUsersViaHttp(supabaseUrl, supabaseService, page, perPage);
+      if (!r.ok) return send(res, r.status, { error: explainAuthAdminError({ message: r.error }), detail: r.detail || null });
+      const users = Array.isArray(r.users) ? r.users : [];
+      if (!users.length) break;
+      for (const u of users) {
+        const email = String(u?.email || "").trim();
+        if (!email) continue;
+        if (isAdminEmail(email)) continue;
+        const uid = String(u?.id || "").trim();
+        if (!uid) continue;
+        if (realIds.has(uid)) continue;
+        const createdAt = String(u?.created_at || "");
+        const lastSignInAt = String(u?.last_sign_in_at || "");
+        const createdMs = safeTime(createdAt);
+        const lastSignInMs = safeTime(lastSignInAt);
+        const isRecent = (createdMs > 0 && createdMs >= cutoffMs) || (lastSignInMs > 0 && lastSignInMs >= cutoffMs);
+        if (isRecent) continue;
+        candidates.push({ id: uid, email, created_at: createdAt, last_sign_in_at: lastSignInAt });
+        if (candidates.length >= limit && mode === "execute") break;
+      }
+      if (candidates.length >= limit && mode === "execute") break;
+      if (typeof r.total === "number" && Number.isFinite(r.total) && r.total <= perPage * page) break;
+    }
+
+    if (mode !== "execute") {
+      return send(res, 200, {
+        ok: true,
+        mode: "dry",
+        days,
+        found: candidates.length,
+        preview: candidates.slice(0, 50).map((x) => ({ email: x.email, created_at: x.created_at, last_sign_in_at: x.last_sign_in_at })),
+      });
+    }
+
+    let deleted = 0;
+    let failed = 0;
+    const failedEmails: string[] = [];
+    const did = candidates.slice(0, limit);
+    for (const c of did) {
+      const del = await deleteUserViaHttp(supabaseUrl, supabaseService, c.id);
+      if (!del.ok) {
+        failed += 1;
+        failedEmails.push(c.email);
+        continue;
+      }
+      deleted += 1;
+      try {
+        await admin.from("profiles").delete().eq("id", c.id);
+      } catch {
+      }
+      try {
+        await admin.from("mp_transactions").delete().eq("user_id", c.id);
+      } catch {
+      }
+      try {
+        await admin.from("library_items").delete().eq("user_id", c.id);
+      } catch {
+      }
+    }
+
+    return send(res, 200, { ok: true, mode: "execute", days, attempted: did.length, deleted, failed, failed_emails: failedEmails.slice(0, 20) });
+  }
+
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
     const fallback = (() => {
@@ -3712,6 +3838,7 @@ const adminHandler = (() => {
     if (a === "feedback") return handleFeedback(req, res);
     if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
     if (a === "users") return handleUsers(req, res);
+    if (a === "prune-users") return handlePruneUsers(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();

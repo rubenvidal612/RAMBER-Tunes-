@@ -21,6 +21,10 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [takeEmail, setTakeEmail] = useState('');
   const [takeCredits, setTakeCredits] = useState('50');
   const [takeBusy, setTakeBusy] = useState(false);
+  const [pruneDays, setPruneDays] = useState('7');
+  const [pruneFound, setPruneFound] = useState<number | null>(null);
+  const [prunePreview, setPrunePreview] = useState<string>('');
+  const [pruneBusy, setPruneBusy] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackName, setFeedbackName] = useState('');
   const [feedbackWhatsapp, setFeedbackWhatsapp] = useState('');
@@ -251,6 +255,81 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       openOffice().catch(() => {});
     } finally {
       setTakeBusy(false);
+    }
+  };
+
+  const pruneDry = async () => {
+    if (!supabaseBrowser) return;
+    const days = Number((pruneDays || '').toString().trim());
+    if (!Number.isFinite(days) || days < 0) {
+      alert('Días inválidos.');
+      return;
+    }
+    setPruneBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/prune-users', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mode: 'dry', days }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = (out?.error || 'No pude analizar usuarios.').toString();
+        const detail = (out?.detail || '').toString();
+        alert([msg, detail].filter(Boolean).join('\n'));
+        return;
+      }
+      const found = Number(out?.found ?? 0) || 0;
+      setPruneFound(found);
+      const preview = Array.isArray(out?.preview) ? out.preview : [];
+      setPrunePreview(preview.map((x: any) => String(x?.email || '')).filter(Boolean).slice(0, 15).join('\n'));
+      alert(`Listo. Encontré ${found} usuarios de prueba para eliminar.`);
+    } finally {
+      setPruneBusy(false);
+    }
+  };
+
+  const pruneExecute = async () => {
+    if (!supabaseBrowser) return;
+    const days = Number((pruneDays || '').toString().trim());
+    if (!Number.isFinite(days) || days < 0) {
+      alert('Días inválidos.');
+      return;
+    }
+    setPruneBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/prune-users', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mode: 'execute', days, limit: 5000 }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = (out?.error || 'No pude eliminar usuarios.').toString();
+        const detail = (out?.detail || '').toString();
+        alert([msg, detail].filter(Boolean).join('\n'));
+        return;
+      }
+      alert(`Listo. Eliminados: ${Number(out?.deleted ?? 0) || 0}. Fallidos: ${Number(out?.failed ?? 0) || 0}.`);
+      setPruneFound(null);
+      setPrunePreview('');
+      setUsersList([]);
+      setUsersTotal(null);
+      openOffice().catch(() => {});
+    } finally {
+      setPruneBusy(false);
     }
   };
 
@@ -560,6 +639,41 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                     )}
                   </div>
                 </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
+            <div className="text-white font-extrabold">Eliminar usuarios de prueba</div>
+            <div className="mt-2 text-[11px] text-slate-400">Elimina cuentas sin actividad y sin inicio de sesión reciente.</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                value={pruneDays}
+                onChange={(e) => setPruneDays(e.target.value)}
+                placeholder="Días (ej: 7)"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+              />
+              <button
+                onClick={() => pruneDry().catch(() => {})}
+                disabled={pruneBusy}
+                className="bg-white text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+              >
+                {pruneBusy ? 'Procesando…' : 'Analizar'}
+              </button>
+              <button
+                onClick={() => pruneExecute().catch(() => {})}
+                disabled={pruneBusy || !(typeof pruneFound === 'number' && pruneFound > 0)}
+                className="bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+              >
+                {pruneBusy ? 'Procesando…' : 'Eliminar'}
+              </button>
+            </div>
+            <div className="mt-3 text-[11px] text-slate-400">
+              {pruneFound == null ? 'Primero analiza para ver cuántos se van a eliminar.' : `Detectados: ${pruneFound}`}
+            </div>
+            {prunePreview ? (
+              <div className="mt-3 bg-black/20 border border-white/10 rounded-2xl p-3 text-[11px] text-slate-200 whitespace-pre-wrap break-words">
+                {prunePreview}
               </div>
             ) : null}
           </div>
