@@ -249,6 +249,42 @@ async function getSupabaseCreateClient() {
   return mod.createClient;
 }
 
+async function buildRealUserIdSet(admin: any) {
+  const ids = new Set<string>();
+  try {
+    const { data: songs } = await admin
+      .from("library_items")
+      .select("user_id")
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .limit(20000);
+    const rows = Array.isArray(songs) ? songs : [];
+    for (const r of rows) {
+      const uid = String((r as any)?.user_id || "").trim();
+      if (uid) ids.add(uid);
+    }
+  } catch {
+  }
+
+  try {
+    const { data: tx } = await admin.from("mp_transactions").select("user_id, kind, pack_key, amount_mxn").limit(20000);
+    const rows = Array.isArray(tx) ? tx : [];
+    for (const r of rows) {
+      const uid = String((r as any)?.user_id || "").trim();
+      if (!uid) continue;
+      const kind = String((r as any)?.kind || "").trim().toLowerCase();
+      const pack = String((r as any)?.pack_key || "").trim().toLowerCase();
+      const amt = Number((r as any)?.amount_mxn ?? 0) || 0;
+      const isPaidSongs = kind === "songs" && amt > 0;
+      const isPlan = kind === "songs" && (pack === "inicio" || pack === "productor");
+      if (isPaidSongs || isPlan) ids.add(uid);
+    }
+  } catch {
+  }
+
+  return ids;
+}
+
 const sunoHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -3238,40 +3274,55 @@ const adminHandler = (() => {
 
     const admin = auth.admin;
 
-    const { data: sampleProfiles } = await admin.from("profiles").select("*").limit(1);
-    const sample = Array.isArray(sampleProfiles) ? sampleProfiles[0] : null;
-    const createdCol = sample && typeof sample?.created_at === "string" ? "created_at" : "created_at";
-    const activeCol =
-      sample && typeof sample?.last_seen_at === "string"
-        ? "last_seen_at"
-        : sample && typeof sample?.updated_at === "string"
-          ? "updated_at"
-          : sample && typeof sample?.created_at === "string"
-            ? "created_at"
-            : "updated_at";
+    const supabaseUrl = String((auth as any)?.supabaseUrl || "").trim();
+    const supabaseService = String((auth as any)?.supabaseService || "").trim();
+    if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase Auth" });
+
+    const realIds = await buildRealUserIdSet(admin);
+    const safeTime = (s: any) => {
+      const v = typeof s === "string" ? s : "";
+      if (!v) return 0;
+      const t = new Date(v).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+    const isSince = (iso: any, since: Date) => {
+      const t = safeTime(iso);
+      return t > 0 && t >= since.getTime();
+    };
 
     let totalCount = 0;
-    try {
-      const r = await admin.from("profiles").select("id", { count: "exact", head: true });
-      if (!r.error) totalCount = Number(r.count || 0);
-    } catch {
-      totalCount = 0;
-    }
-
     let active30dCount = 0;
-    try {
-      const r = await admin.from("profiles").select("id", { count: "exact", head: true }).gte(activeCol, start30d.toISOString());
-      if (!r.error) active30dCount = Number(r.count || 0);
-    } catch {
-      active30dCount = 0;
-    }
-
     let new7dCount = 0;
-    try {
-      const r = await admin.from("profiles").select("id", { count: "exact", head: true }).gte(createdCol, startWeek.toISOString());
-      if (!r.error) new7dCount = Number(r.count || 0);
-    } catch {
-      new7dCount = 0;
+    let realTotal = 0;
+    let realActive30d = 0;
+    let realNew7d = 0;
+
+    const perPage = 200;
+    const maxPages = 10;
+    for (let page = 1; page <= maxPages; page++) {
+      const r = await listUsersViaHttp(supabaseUrl, supabaseService, page, perPage);
+      if (!r.ok) return send(res, r.status, { error: explainAuthAdminError({ message: r.error }), detail: r.detail || null });
+      const users = Array.isArray(r.users) ? r.users : [];
+      if (!users.length) break;
+      for (const u of users) {
+        const email = (u?.email || "").toString().trim();
+        if (!email) continue;
+        if (isAdminEmail(email)) continue;
+        totalCount += 1;
+        const createdAt = String((u as any)?.created_at || "");
+        const lastSignInAt = String((u as any)?.last_sign_in_at || "");
+        const isNew7d = isSince(createdAt, startWeek);
+        const isActive30d = isSince(lastSignInAt, start30d);
+        if (isNew7d) new7dCount += 1;
+        if (isActive30d) active30dCount += 1;
+        const uid = String((u as any)?.id || "").trim();
+        if (uid && realIds.has(uid)) {
+          realTotal += 1;
+          if (isNew7d) realNew7d += 1;
+          if (isActive30d) realActive30d += 1;
+        }
+      }
+      if (typeof r.total === "number" && Number.isFinite(r.total) && r.total <= perPage * page) break;
     }
 
     const [today, week, month, all] = await Promise.all([
@@ -3324,6 +3375,9 @@ const adminHandler = (() => {
         total: totalCount,
         active30d: active30dCount,
         new7d: new7dCount,
+        real_total: realTotal,
+        real_active30d: realActive30d,
+        real_new7d: realNew7d,
       },
       payments: {
         today: { mxn: today.ok ? today.mxn : 0, count: today.ok ? today.count : 0 },
@@ -3583,38 +3637,10 @@ const adminHandler = (() => {
 
     let activeUserIds: Set<string> | null = null;
     if (onlyReal) {
-      activeUserIds = new Set<string>();
       try {
-        const admin = (auth as any).admin;
-        const { data: songs } = await admin
-          .from("library_items")
-          .select("user_id")
-          .eq("type", "song")
-          .is("deleted_at", null)
-          .limit(20000);
-        const rows = Array.isArray(songs) ? songs : [];
-        for (const r of rows) {
-          const uid = String((r as any)?.user_id || "").trim();
-          if (uid) activeUserIds.add(uid);
-        }
+        activeUserIds = await buildRealUserIdSet((auth as any).admin);
       } catch {
-      }
-      try {
-        const admin = (auth as any).admin;
-        const { data: tx } = await admin.from("mp_transactions").select("user_id, kind, pack_key, payment_id").limit(20000);
-        const rows = Array.isArray(tx) ? tx : [];
-        for (const r of rows) {
-          const uid = String((r as any)?.user_id || "").trim();
-          if (!uid) continue;
-          const kind = String((r as any)?.kind || "").trim().toLowerCase();
-          const pack = String((r as any)?.pack_key || "").trim().toLowerCase();
-          const pid = String((r as any)?.payment_id || "").trim().toLowerCase();
-          const isPlan = pack === "inicio" || pack === "productor";
-          const isClaim = pid.startsWith("claim:");
-          const isAdminGrant = kind === "admin_grant";
-          if (isPlan || isClaim || isAdminGrant) activeUserIds.add(uid);
-        }
-      } catch {
+        activeUserIds = new Set<string>();
       }
     }
 
