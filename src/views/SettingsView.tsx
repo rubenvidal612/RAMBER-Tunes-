@@ -51,6 +51,8 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [userDetailData, setUserDetailData] = useState<any>(null);
 
   const TELEGRAM_GROUP_URL = 'https://t.me/+sgw5bsAX9utmZDEx';
+  const TELEGRAM_INVITE_HASH = 'sgw5bsAX9utmZDEx';
+  const TELEGRAM_APP_URL = `tg://join?invite=${TELEGRAM_INVITE_HASH}`;
 
   const openExternalUrl = (url: string) => {
     const safe = (url || '').toString().trim();
@@ -77,6 +79,36 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
     try {
       window.location.href = safe;
     } catch {}
+  };
+
+  const openTelegramGroup = () => {
+    const tryOpen = (url: string) => {
+      const safe = (url || '').toString().trim();
+      if (!safe) return false;
+      try {
+        const a = document.createElement('a');
+        a.href = safe;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const opened = tryOpen(TELEGRAM_APP_URL);
+    if (!opened) {
+      openExternalUrl(TELEGRAM_GROUP_URL);
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (document.hidden) return;
+      openExternalUrl(TELEGRAM_GROUP_URL);
+    }, 900);
   };
 
   useEffect(() => {
@@ -1186,7 +1218,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
           </button>
           <button
             className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5"
-            onClick={() => openExternalUrl(TELEGRAM_GROUP_URL)}
+            onClick={() => openTelegramGroup()}
           >
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
               <MessageSquare className="w-5 h-5 text-slate-400" /> Grupo de Telegram
