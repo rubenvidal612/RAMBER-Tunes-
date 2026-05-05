@@ -181,6 +181,17 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   const cost = round2(Number(costCredits));
   if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
 
+  try {
+    const plan = await getUserPlan(admin, userId);
+    const key = String((plan as any)?.plan_key || "").toLowerCase();
+    const exp = (plan as any)?.plan_expires_at;
+    const active = Boolean((plan as any)?.plan_active);
+    if ((key === "inicio" || key === "productor") && exp && !active) {
+      return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+    }
+  } catch {
+  }
+
   for (let i = 0; i < 4; i++) {
     const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
