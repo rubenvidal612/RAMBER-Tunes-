@@ -775,6 +775,24 @@ export default function App() {
       if (Array.isArray(d?.data)) candidates.push(d.data);
       if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
       const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+      const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
+      const pickUrl = (track: any) => {
+        const raw =
+          track?.audio_url ||
+          track?.audioUrl ||
+          track?.streamAudioUrl ||
+          track?.stream_audio_url ||
+          track?.stream_url ||
+          track?.url ||
+          '';
+        const s = cleanStr(raw);
+        return /^https?:\/\//i.test(s) ? s : '';
+      };
+      const pickAudioId = (track: any) => {
+        const raw = track?.id || track?.audio_id || track?.audioId || track?.audioID || '';
+        const s = cleanStr(raw);
+        return s;
+      };
       const pickLyrics = (track: any) => {
         const direct =
           (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
@@ -785,10 +803,10 @@ export default function App() {
         return s || undefined;
       };
       return (Array.isArray(list) ? list : []).map((track: any) => {
-        const audioUrl = (track?.audio_url || track?.audioUrl || track?.streamAudioUrl || '').toString();
-        const audioId = (track?.id || '').toString();
-        const title = (track?.title || '').toString();
-        const coverUrl = (track?.image_url || track?.imageUrl || '').toString();
+        const audioUrl = pickUrl(track);
+        const audioId = pickAudioId(track);
+        const title = cleanStr(track?.title || '');
+        const coverUrl = cleanStr(track?.image_url || track?.imageUrl || '');
         const lyrics = pickLyrics(track);
         return { audioUrl, audioId, title, coverUrl, lyrics };
       });
@@ -947,11 +965,93 @@ export default function App() {
     setPlayerTime(0);
     setPlayerDuration(0);
     
-    if (song.audioUrl && audioRef.current) {
-      audioRef.current.src = song.audioUrl;
-      await audioRef.current.play();
-      setIsPlaying(true);
-      return;
+    const tryPlay = async (url: string) => {
+      if (!audioRef.current) return false;
+      const nextUrl = (url || '').toString().trim();
+      if (!nextUrl) return false;
+      const a = audioRef.current;
+      try {
+        if (a.src === nextUrl) {
+          try {
+            a.currentTime = 0;
+          } catch {}
+        } else {
+          a.src = '';
+          a.src = nextUrl;
+        }
+        await a.play();
+        setIsPlaying(true);
+        return true;
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'No pude reproducir esta canción.');
+        return false;
+      }
+    };
+
+    const directUrl = (song.audioUrl || '').toString().trim();
+    if (/^https?:\/\//i.test(directUrl)) {
+      const ok = await tryPlay(directUrl);
+      if (ok) return;
+    }
+
+    if (song.sunoTaskId) {
+      try {
+        const t = await getAccessToken();
+        if (t.ok) {
+          const tr = await fetch(`/api/suno/task?kind=generate&taskId=${encodeURIComponent(song.sunoTaskId)}`, {
+            headers: { authorization: `Bearer ${t.token}` },
+          });
+          const tout = await tr.json().catch(() => ({}));
+          if (tr.ok) {
+            const provider = tout?.data || {};
+            const d = provider?.data || provider?.data?.data || provider;
+            const candidates: any[] = [];
+            if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+            if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+            if (Array.isArray(d?.response)) candidates.push(d.response);
+            if (Array.isArray(d?.data)) candidates.push(d.data);
+            if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+            const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+            const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
+            const pickUrl = (track: any) => {
+              const raw =
+                track?.audio_url ||
+                track?.audioUrl ||
+                track?.streamAudioUrl ||
+                track?.stream_audio_url ||
+                track?.stream_url ||
+                track?.url ||
+                '';
+              const s = cleanStr(raw);
+              return /^https?:\/\//i.test(s) ? s : '';
+            };
+            const pickAudioId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || '');
+            const tracks = (Array.isArray(list) ? list : [])
+              .map((track: any) => ({ audioUrl: pickUrl(track), audioId: pickAudioId(track) }))
+              .filter((x) => x.audioUrl);
+            if (tracks.length > 0) {
+              const wantsB = /\sB$/i.test((song.title || '').toString().trim());
+              const chosen = wantsB && tracks.length > 1 ? tracks[1] : tracks[0];
+              const ok = await tryPlay(chosen.audioUrl);
+              if (ok) {
+                try {
+                  await fetch('/api/library/update-audio', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                    body: JSON.stringify({
+                      id: song.id,
+                      audioUrl: chosen.audioUrl,
+                      sunoTaskId: song.sunoTaskId,
+                      sunoAudioId: chosen.audioId || song.sunoAudioId || null,
+                    }),
+                  }).catch(() => null as any);
+                } catch {}
+                return;
+              }
+            }
+          }
+        }
+      } catch {}
     }
 
     if (audioRef.current) audioRef.current.src = '';

@@ -2315,6 +2315,42 @@ const libraryHandler = (() => {
     });
   }
 
+  async function handleUpdateAudio(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    const audioUrl = typeof body?.audioUrl === "string" ? body.audioUrl.trim().slice(0, 2000) : "";
+    const sunoTaskId = typeof body?.sunoTaskId === "string" ? body.sunoTaskId.trim().slice(0, 200) : "";
+    const sunoAudioId = typeof body?.sunoAudioId === "string" ? body.sunoAudioId.trim().slice(0, 200) : "";
+
+    if (!id) return send(res, 400, { error: "Falta id" });
+    if (!audioUrl || !(audioUrl.startsWith("http://") || audioUrl.startsWith("https://"))) {
+      return send(res, 400, { error: "audioUrl inválido" });
+    }
+
+    const patch: any = { audio_url: audioUrl };
+    if (sunoTaskId) patch.suno_task_id = sunoTaskId;
+    if (sunoAudioId) patch.suno_audio_id = sunoAudioId;
+
+    const { data, error } = await auth.admin
+      .from(TABLE)
+      .update(patch)
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .eq("type", ITEM_TYPE)
+      .is("deleted_at", null)
+      .select("*")
+      .maybeSingle();
+    if (error) return send(res, 500, { error: "No pude actualizar audio", detail: error.message });
+    if (!data) return send(res, 404, { error: "Canción no encontrada" });
+    return send(res, 200, { ok: true, song: data });
+  }
+
   function safeFileBase(nameRaw: string) {
     const name = (nameRaw || "").toString().trim() || "cover";
     const base = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
@@ -2529,6 +2565,7 @@ const libraryHandler = (() => {
     if (a === "create") return handleCreate(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);
+    if (a === "update-audio") return handleUpdateAudio(req, res);
     if (a === "set-cover") return handleSetCover(req, res);
 
     return send(res, 404, { error: "Ruta no encontrada", action: a || null });

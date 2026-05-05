@@ -1499,15 +1499,15 @@ function SongOptionsSheet({
         alert('Tu plan no incluye descargas.');
         return;
       }
-      if (!song.sunoTaskId || !song.sunoAudioId) {
-        alert('Esta canción no tiene taskId/audioId para separar voces.');
+      if (!song.sunoTaskId && !song.sunoAudioId) {
+        alert('Esta canción no tiene información para separar (taskId/audioId). Si es una canción subida o muy vieja, no se puede separar.');
         return;
       }
 
       const start = await fetch('/api/suno/separate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ taskId: song.sunoTaskId, audioId: song.sunoAudioId, type }),
+        body: JSON.stringify({ taskId: song.sunoTaskId || '', audioId: song.sunoAudioId || '', type }),
       });
       const startedOut = await start.json().catch(() => ({}));
       if (!start.ok) {
