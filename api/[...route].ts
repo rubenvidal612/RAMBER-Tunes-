@@ -69,6 +69,45 @@ function pickWritableCreditsColumn(profile: any): "zingy_credits" | "ramber_cred
   return null;
 }
 
+function isMissingColumnError(err: any) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    (msg.includes("column") && msg.includes("does not exist")) ||
+    msg.includes("unknown column") ||
+    (msg.includes("columna") && msg.includes("no existe"))
+  );
+}
+
+async function ensureProfileExists(admin: any, userId: string) {
+  const r = await admin.from("profiles").upsert({ id: userId }, { onConflict: "id" });
+  if (!r?.error) return { ok: true as const };
+  return { ok: false as const, error: String(r.error?.message || "No pude crear el perfil.") };
+}
+
+async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: number) {
+  const next = round2(Math.max(0, Number(nextCredits)));
+  if (!Number.isFinite(next)) return { ok: false as const, error: "Créditos inválidos" };
+
+  const candidates: Array<"ramber_credits" | "zingy_credits" | "credits" | "song_balance"> = [
+    "ramber_credits",
+    "zingy_credits",
+    "credits",
+    "song_balance",
+  ];
+
+  for (const col of candidates) {
+    const patch: any = {};
+    if (col === "song_balance") patch[col] = toCounts(next).songs;
+    else patch[col] = next;
+    const { error } = await admin.from("profiles").update(patch).eq("id", userId);
+    if (!error) return { ok: true as const, credits: next, col };
+    if (isMissingColumnError(error)) continue;
+    return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
+  }
+
+  return { ok: false as const, error: "Falta columna de créditos en profiles." };
+}
+
 function parseProviderCreditsValue(raw: any) {
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
   if (typeof raw === "string") {
@@ -122,18 +161,17 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
   for (let i = 0; i < 4; i++) {
     const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
+    if (!profile) {
+      const created = await ensureProfileExists(admin, userId);
+      if (!created.ok) return { ok: false as const, error: created.error };
+      continue;
+    }
 
     const current = creditsFromProfile(profile);
     const next = round2(Math.max(0, current + delta));
-    const col = pickWritableCreditsColumn(profile);
-    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
-
-    const patch: any = {};
-    if (col === "song_balance") patch[col] = toCounts(next).songs;
-    else patch[col] = next;
-    const { error: updErr } = await admin.from("profiles").update(patch).eq("id", userId);
-
-    if (!updErr) return { ok: true as const, credits: next };
+    const upd = await updateCreditsAnyColumn(admin, userId, next);
+    if (upd.ok) return { ok: true as const, credits: next };
+    return { ok: false as const, error: upd.error };
   }
 
   return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
@@ -146,19 +184,19 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   for (let i = 0; i < 4; i++) {
     const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
+    if (!profile) {
+      const created = await ensureProfileExists(admin, userId);
+      if (!created.ok) return { ok: false as const, error: created.error };
+      continue;
+    }
 
     const current = creditsFromProfile(profile);
     if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
 
     const next = round2(Math.max(0, current - cost));
-    const col = pickWritableCreditsColumn(profile);
-    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
-
-    const patch: any = {};
-    if (col === "song_balance") patch[col] = toCounts(next).songs;
-    else patch[col] = next;
-    const { error: updErr } = await admin.from("profiles").update(patch).eq("id", userId);
-    if (!updErr) return { ok: true as const, credits: next };
+    const upd = await updateCreditsAnyColumn(admin, userId, next);
+    if (upd.ok) return { ok: true as const, credits: next };
+    return { ok: false as const, error: upd.error };
   }
 
   return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
@@ -197,21 +235,13 @@ async function getUserPlan(admin: any, userId: string) {
     return pid.startsWith("admin_plan:");
   });
   const overrideKey = String(override?.pack_key || "").trim().toLowerCase();
-  const overridePlan =
-    overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "gratis" || overrideKey === "ninguno" ? overrideKey : "";
-
-  const free_claimed_from_rows = rows.some((t: any) => {
-    const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
-    const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
-    return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
-  });
+  const overridePlan = overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "ninguno" ? overrideKey : "";
   const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
   const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
-  const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed_from_rows ? "gratis" : "ninguno");
+  const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : "ninguno");
   const downloads_allowed = plan_key === "inicio" || plan_key === "productor";
-  const free_claimed = overridePlan ? overridePlan === "gratis" : free_claimed_from_rows;
 
-  return { plan_key, downloads_allowed, free_claimed };
+  return { plan_key, downloads_allowed };
 }
 
 async function getSupabaseCreateClient() {
@@ -1962,27 +1992,7 @@ const mercadoPagoHandler = (() => {
 
   async function handleClaimFree(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-
-    const auth = await requireUser(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const paymentId = `claim:${auth.user.id}`;
-    const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-    if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, already: true });
-
-    const credits = CREDIT_COSTS.generate_music * 5;
-    const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
-    if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-
-    await auth.admin.from("mp_transactions").insert({
-      user_id: auth.user.id,
-      kind: "songs",
-      pack_key: "gratis",
-      amount_mxn: 0,
-      payment_id: paymentId,
-    });
-
-    return send(res, 200, { ok: true, credited: true, credits });
+    return send(res, 410, { error: "El plan gratis fue desactivado." });
   }
 
   return async function handler(req: any, res: any) {
@@ -2580,33 +2590,20 @@ const balanceHandler = (() => {
     const rows = Array.isArray(freeTx) ? freeTx : [];
     const override = rows.find((t: any) => String(t?.payment_id || "").startsWith("admin_plan:"));
     const overrideKey = String(override?.pack_key || "").trim().toLowerCase();
-    const overridePlan =
-      overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "gratis" || overrideKey === "ninguno" ? overrideKey : "";
-    const free_claimed_from_rows = rows.some((t: any) => {
-      const pid = typeof t?.payment_id === "string" ? t.payment_id : "";
-      const pk = typeof t?.pack_key === "string" ? t.pack_key : "";
-      return pid.startsWith("claim:") || pk === "gratis" || pk === "free";
-    });
-    const free_claimed = overridePlan ? overridePlan === "gratis" : free_claimed_from_rows;
+    const overridePlan = overrideKey === "inicio" || overrideKey === "productor" || overrideKey === "ninguno" ? overrideKey : "";
     const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
     const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
-    const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : free_claimed ? "gratis" : "ninguno");
+    const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : "ninguno");
     const downloads_allowed = is_admin ? true : plan_key === "inicio" || plan_key === "productor";
-    const show_free_claim_popup = !is_admin && plan_key === "ninguno" && !free_claimed;
+    const free_claimed = false;
+    const show_free_claim_popup = false;
 
     let { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (profErr) return send(res, 500, { error: "Error consultando saldo", detail: profErr.message });
 
     if (!profile) {
-      const base: any = { id: user.id };
-      base.ramber_credits = 0;
-      const { error: insErr } = await admin.from("profiles").upsert(base, { onConflict: "id" });
-      if (insErr && String(insErr.message || "").toLowerCase().includes("column")) {
-        const { error: insErr2 } = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
-        if (insErr2) return send(res, 500, { error: "Error creando perfil", detail: insErr2.message });
-      } else if (insErr) {
-        return send(res, 500, { error: "Error creando perfil", detail: insErr.message });
-      }
+      const created = await ensureProfileExists(admin, user.id);
+      if (!created.ok) return send(res, 500, { error: "Error creando perfil", detail: created.error });
       const r2 = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
       profile = r2.data ?? null;
     }
@@ -2702,40 +2699,46 @@ const bootstrapProfileHandler = (() => {
 
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
       const is_admin = isAdminEmail(user.email);
-      let free_granted = false;
-      let free_error: string | null = null;
-      const grantFreeIfEligible = async () => {
+      let welcome_granted = false;
+      let welcome_error: string | null = null;
+      const grantWelcomeIfEligible = async () => {
         if (is_admin) return;
         try {
-          const plan = await getUserPlan(admin, user.id);
-          if (plan.plan_key !== "ninguno" || plan.free_claimed) return;
-          const paymentId = `claim:${user.id}`;
+          const paymentId = `welcome:${user.id}`;
           const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
           if (Array.isArray(exists) && exists.length > 0) return;
+          const created = await ensureProfileExists(admin, user.id);
+          if (!created.ok) {
+            welcome_error = created.error || "No pude crear tu perfil.";
+            return;
+          }
+          const { data: profile } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
+          const current = creditsFromProfile(profile);
+          if (current > 0) return;
           const credits = CREDIT_COSTS.generate_music * 5;
           const upd = await adjustUserCredits(admin, user.id, credits);
           if (!upd.ok) {
-            free_error = upd.error || "No pude acreditar créditos gratis.";
+            welcome_error = upd.error || "No pude acreditar créditos de bienvenida.";
             return;
           }
           await admin.from("mp_transactions").insert({
             user_id: user.id,
-            kind: "songs",
-            pack_key: "gratis",
+            kind: "welcome",
+            pack_key: "welcome",
             amount_mxn: 0,
             payment_id: paymentId,
           });
-          free_granted = true;
+          welcome_granted = true;
         } catch (e) {
-          free_error = e instanceof Error ? e.message : String(e);
+          welcome_error = e instanceof Error ? e.message : String(e);
         }
       };
-      const up = await admin.from("profiles").upsert({ id: user.id }, { onConflict: "id" });
-      if (up.error) return send(res, 500, { error: "No pude crear perfil", detail: up.error.message });
+      const up = await ensureProfileExists(admin, user.id);
+      if (!up.ok) return send(res, 500, { error: "No pude crear perfil", detail: up.error });
 
-      await grantFreeIfEligible();
+      await grantWelcomeIfEligible();
 
-      return send(res, 200, { ok: true, created: true, free_granted, free_error });
+      return send(res, 200, { ok: true, created: true, welcome_granted, welcome_error });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -3404,13 +3407,14 @@ const adminHandler = (() => {
     for (let i = 0; i < 4; i++) {
       const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
       if (readErr) return { ok: false as const, error: readErr.message };
-      const col = pickWritableCreditsColumn(profile);
-      if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
-      const patch: any = {};
-      if (col === "song_balance") patch[col] = toCounts(next).songs;
-      else patch[col] = next;
-      const { error: updErr } = await admin.from("profiles").update(patch).eq("id", userId);
-      if (!updErr) return { ok: true as const, credits: next };
+      if (!profile) {
+        const created = await ensureProfileExists(admin, userId);
+        if (!created.ok) return { ok: false as const, error: created.error };
+        continue;
+      }
+      const upd = await updateCreditsAnyColumn(admin, userId, next);
+      if (upd.ok) return { ok: true as const, credits: next };
+      return { ok: false as const, error: upd.error };
     }
 
     return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
@@ -3429,7 +3433,7 @@ const adminHandler = (() => {
     const credits = Number(body?.credits ?? 0);
 
     if (!email) return send(res, 400, { error: "Falta email" });
-    if (!(plan_key === "ninguno" || plan_key === "gratis" || plan_key === "inicio" || plan_key === "productor")) {
+    if (!(plan_key === "ninguno" || plan_key === "inicio" || plan_key === "productor")) {
       return send(res, 400, { error: "Plan inválido" });
     }
     if (!(credits_mode === "none" || credits_mode === "default" || credits_mode === "set")) {
@@ -3454,7 +3458,6 @@ const adminHandler = (() => {
       let add = 0;
       if (plan_key === "inicio") add = 1200;
       if (plan_key === "productor") add = 3000;
-      if (plan_key === "gratis") add = CREDIT_COSTS.generate_music * 5;
       if (add > 0) {
         const upd = await adjustUserCredits(admin, userId, add);
         if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });

@@ -25,7 +25,7 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [adminUnreadFeedback, setAdminUnreadFeedback] = useState(0);
   const [planEmail, setPlanEmail] = useState('');
-  const [planKey, setPlanKey] = useState<'ninguno' | 'gratis' | 'inicio' | 'productor'>('inicio');
+  const [planKey, setPlanKey] = useState<'ninguno' | 'inicio' | 'productor'>('inicio');
   const [planCreditsMode, setPlanCreditsMode] = useState<'none' | 'default' | 'set'>('none');
   const [planCreditsManual, setPlanCreditsManual] = useState('0');
   const [planBusy, setPlanBusy] = useState(false);
@@ -738,7 +738,6 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
                 className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
               >
                 <option value="ninguno">Sin plan</option>
-                <option value="gratis">Gratis</option>
                 <option value="inicio">Inicio</option>
                 <option value="productor">Productor</option>
               </select>

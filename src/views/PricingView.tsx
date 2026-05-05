@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Check, Sparkles } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { getAccessToken } from '@/lib/supabaseBrowser';
@@ -6,14 +6,11 @@ import { CREDIT_COSTS } from '@/lib/credits';
 
 interface PricingViewProps {
   onClose: () => void;
-  autoClaimFree?: boolean;
-  onClaimed?: () => void;
 }
 
-export function PricingView({ onClose, autoClaimFree, onClaimed }: PricingViewProps) {
+export function PricingView({ onClose }: PricingViewProps) {
   const { credits, refreshCredits } = useUserCredits();
   const [isBusy, setIsBusy] = useState(false);
-  const didAutoClaimRef = useRef(false);
 
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
   const versions = songs * 2;
@@ -52,41 +49,6 @@ export function PricingView({ onClose, autoClaimFree, onClaimed }: PricingViewPr
     }
   };
 
-  const claimFree = async () => {
-    setIsBusy(true);
-    try {
-      const t = await getAccessToken();
-      if (!t.ok) {
-        alert(t.error || 'No se pudo iniciar sesión.');
-        return false;
-      }
-      const r = await fetch('/api/mercadopago/claim-free', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${t.token}`,
-        },
-      });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        alert(out?.error || 'No se pudo activar.');
-        return false;
-      }
-      await refreshCredits();
-      alert(out?.already ? 'Ya habías activado el plan gratis.' : 'Listo: se activó el plan gratis.');
-      onClaimed?.();
-      return true;
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!autoClaimFree) return;
-    if (didAutoClaimRef.current) return;
-    didAutoClaimRef.current = true;
-    claimFree().catch(() => {});
-  }, [autoClaimFree]);
-
   return (
     <div className="flex flex-col h-full w-full bg-[#0a0a0a] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300 z-[200] fixed inset-0 pb-safe text-white md:bg-black/80 md:backdrop-blur-sm md:items-center md:justify-center md:p-8">
       
@@ -124,50 +86,7 @@ export function PricingView({ onClose, autoClaimFree, onClaimed }: PricingViewPr
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Plan Gratis */}
-          <div className="bg-gradient-to-b from-teal-900/40 to-transparent border border-teal-500/20 rounded-3xl p-6 relative overflow-hidden">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h3 className="text-xl font-bold text-white">Plan Gratis (Prueba)</h3>
-                <p className="text-slate-300 text-sm mt-1">5 canciones • 60 créditos</p>
-                <p className="text-slate-400 text-sm mt-1">Incluye 5 canciones (10 versiones A y B)</p>
-              </div>
-              <span className="bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold">Gratis</span>
-            </div>
-
-            <div className="flex items-end gap-2 mt-4 mb-6">
-              <span className="text-4xl font-bold text-white">Gratis</span>
-              <span className="bg-teal-500/20 text-teal-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">10 versiones</span>
-            </div>
-
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500" /> Incluye 5 canciones
-              </div>
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500" /> Total: 60 créditos
-              </div>
-              <div className="flex items-start gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500 shrink-0 mt-0.5" />
-                <span>Cada generación entrega 2 canciones<br/>(Versión A y B)</span>
-              </div>
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500" /> Karaoke / STEMS
-              </div>
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-teal-500" /> No incluye descargas
-              </div>
-            </div>
-
-            <button
-              onClick={claimFree}
-              disabled={isBusy}
-              className="w-full bg-teal-500 hover:bg-teal-400 text-white h-[48px] rounded-full font-bold text-base transition-colors disabled:opacity-60"
-            >
-              Activar gratis
-            </button>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
           {/* Pack Inicio */}
           <div className="bg-gradient-to-b from-blue-900/30 to-transparent border border-blue-500/20 rounded-3xl p-6 relative overflow-hidden">

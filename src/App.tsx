@@ -270,14 +270,12 @@ export default function App() {
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [pricingAutoClaimFree, setPricingAutoClaimFree] = useState(false);
   const [isBalanceOpen, setIsBalanceOpen] = useState(false);
   const [balanceData, setBalanceData] = useState<any>(null);
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string>('');
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
-  const [isFreeGiftOpen, setIsFreeGiftOpen] = useState(false);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -319,7 +317,6 @@ export default function App() {
 
   useEffect(() => {
     const onOpenPricing = () => {
-      setPricingAutoClaimFree(false);
       setIsPricingOpen(true);
     };
     window.addEventListener('ramber:openPricing', onOpenPricing as any);
@@ -446,22 +443,9 @@ export default function App() {
   }, [isBalanceOpen]);
 
   useEffect(() => {
-    if (!isAuthed) {
-      setIsFreeGiftOpen(false);
-      setPricingAutoClaimFree(false);
-      return;
-    }
-    refreshBalance()
-      .then((out) => {
-        if (out?.show_free_claim_popup && !out?.is_admin) setIsFreeGiftOpen(true);
-      })
-      .catch(() => {});
-  }, [isAuthed]);
-
-  useEffect(() => {
     if (!isAuthed) return;
-    if (balanceData && !balanceData?.show_free_claim_popup) setIsFreeGiftOpen(false);
-  }, [balanceData, isAuthed]);
+    refreshBalance().catch(() => {});
+  }, [isAuthed]);
 
   const mapSongRow = (row: any): SongItem => ({
     id: String(row?.id || ''),
@@ -525,11 +509,11 @@ export default function App() {
         } catch {
           out = null;
         }
-        if (out?.free_granted) {
-          showToast('Listo: se activó tu saldo gratis (5 canciones).');
+        if (out?.welcome_granted) {
+          showToast('Listo: se activó tu saldo de bienvenida (5 canciones).');
         }
-        if (out?.free_error) {
-          showToast(String(out.free_error));
+        if (out?.welcome_error) {
+          showToast(String(out.welcome_error));
         }
         await refreshCredits().catch(() => {});
         await refreshBalance().catch(() => {});
@@ -1005,7 +989,6 @@ export default function App() {
                onGoStudio={() => setCurrentTab('studio')}
                onGoLibrary={() => setCurrentTab('biblioteca')}
                onOpenPlans={() => {
-                 setPricingAutoClaimFree(false);
                  setIsPricingOpen(true);
                }}
              />
@@ -1031,7 +1014,6 @@ export default function App() {
                  onGoStudio={() => setCurrentTab('studio')}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
                  onOpenPlans={() => {
-                   setPricingAutoClaimFree(false);
                    setIsPricingOpen(true);
                  }}
                />
@@ -1150,62 +1132,11 @@ export default function App() {
         className="hidden" 
       />
 
-      {isFreeGiftOpen && (
-        <div className="fixed inset-0 z-[270] bg-black/70 flex items-end md:items-center justify-center">
-          <div className="relative w-full md:max-w-[560px] bg-gradient-to-b from-indigo-950 via-[#0b0f16] to-[#070a12] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-            <div className="p-6">
-              <button
-                onClick={() => setIsFreeGiftOpen(false)}
-                className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/5 border border-white/10 text-slate-200 flex items-center justify-center hover:bg-white/10"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-              <div className="inline-flex items-center gap-2 text-xs font-extrabold px-3 py-1 rounded-full bg-yellow-400 text-black">
-                REGALO
-              </div>
-              <div className="mt-3 text-2xl font-extrabold text-white">5 canciones GRATIS</div>
-              <div className="mt-2 text-slate-200 text-sm leading-relaxed">
-                Tienes un regalo de bienvenida: <span className="font-bold text-white">5 canciones</span> (10 versiones A y B).
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button
-                  onClick={() => {
-                    setPricingAutoClaimFree(true);
-                    setIsPricingOpen(true);
-                  }}
-                  className="h-[48px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold transition-colors"
-                >
-                  Reclamar ahora
-                </button>
-                <button
-                  onClick={() => {
-                    setPricingAutoClaimFree(false);
-                    setIsPricingOpen(true);
-                  }}
-                  className="h-[48px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-extrabold transition-colors"
-                >
-                  Ver planes
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} />}
       {isPricingOpen && (
         <PricingView
           onClose={() => {
             setIsPricingOpen(false);
-            setPricingAutoClaimFree(false);
-          }}
-          autoClaimFree={pricingAutoClaimFree}
-          onClaimed={() => {
-            setIsFreeGiftOpen(false);
-            setPricingAutoClaimFree(false);
-            refreshBalance().catch(() => {});
           }}
         />
       )}
