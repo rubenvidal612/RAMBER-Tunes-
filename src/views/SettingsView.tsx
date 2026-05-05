@@ -198,7 +198,9 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert((out?.error || 'No pude enviar créditos.').toString());
+        const msg = (out?.error || 'No pude enviar créditos.').toString();
+        const detail = (out?.detail || '').toString();
+        alert([msg, detail].filter(Boolean).join('\n'));
         return;
       }
       alert(`Listo. Se enviaron ${n} créditos a ${email}.`);
@@ -283,7 +285,9 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert((out?.error || 'No pude cambiar el plan.').toString());
+        const msg = (out?.error || 'No pude cambiar el plan.').toString();
+        const detail = (out?.detail || '').toString();
+        alert([msg, detail].filter(Boolean).join('\n'));
         return;
       }
       alert('Listo. Se actualizó el plan.');
@@ -324,9 +328,18 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
       }
       const url = `/api/admin/users?limit=200&search=${encodeURIComponent((search || '').toString())}`;
       const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
-      const out = await r.json().catch(() => ({}));
+      const text = await r.text().catch(() => '');
+      let out: any = {};
+      try {
+        out = text ? JSON.parse(text) : {};
+      } catch {
+        out = {};
+      }
       if (!r.ok) {
-        setUsersError((out?.error || 'No pude cargar usuarios.').toString());
+        const msg = (out?.error || '').toString().trim() || `No pude cargar usuarios (HTTP ${r.status}).`;
+        const detail = (out?.detail || '').toString().trim();
+        const raw = !out?.error && !out?.detail ? text.slice(0, 200).trim() : '';
+        setUsersError([msg, detail, raw].filter(Boolean).join('\n'));
         return;
       }
       const items = Array.isArray(out?.items) ? out.items : [];

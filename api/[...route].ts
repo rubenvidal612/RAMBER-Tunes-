@@ -3073,7 +3073,7 @@ const adminHandler = (() => {
     if (!isAdminEmail(user.email)) return { ok: false as const, status: 403, error: "No autorizado" };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return { ok: true as const, user, admin };
+    return { ok: true as const, user, admin, supabaseUrl, supabaseService };
   }
 
   function explainAuthAdminError(err: any) {
@@ -3090,10 +3090,64 @@ const adminHandler = (() => {
     return (msg || "Error de Supabase Auth Admin") + hint;
   }
 
-  async function findUserIdByEmail(adminClient: any, email: string) {
+  async function listUsersViaHttp(supabaseUrl: string, serviceKey: string, page: number, perPage: number) {
+    const base = String(supabaseUrl || "").replace(/\/+$/, "");
+    const url = `${base}/auth/v1/admin/users?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`;
+    const r = await fetch(url, {
+      headers: {
+        apikey: serviceKey,
+        authorization: `Bearer ${serviceKey}`,
+        "content-type": "application/json",
+      },
+    });
+    const text = await r.text().catch(() => "");
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    if (!r.ok) {
+      const msg =
+        (data && (data?.msg || data?.message || data?.error)) ||
+        `HTTP ${Number(r.status || 0) || 0}`;
+      return { ok: false as const, status: Number(r.status || 500) || 500, error: String(msg), detail: String(text || "").slice(0, 600) };
+    }
+    const users = Array.isArray(data?.users) ? data.users : Array.isArray(data) ? data : [];
+    let total: number | null = null;
+    const cr = (r.headers.get("content-range") || r.headers.get("Content-Range") || "").toString();
+    const m = cr.match(/\/(\d+)\s*$/);
+    if (m && m[1]) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n)) total = n;
+    }
+    return { ok: true as const, users, total };
+  }
+
+  async function findUserIdByEmail(authCtx: any, email: string) {
     const clean = (email || "").toString().trim().toLowerCase();
     if (!clean) return { ok: false as const, status: 400, error: "Email inválido" };
 
+    const supabaseUrl = String(authCtx?.supabaseUrl || "").trim();
+    const supabaseService = String(authCtx?.supabaseService || "").trim();
+    if (supabaseUrl && supabaseService) {
+      const perPage = 200;
+      const maxPages = 25;
+      for (let page = 1; page <= maxPages; page++) {
+        const r = await listUsersViaHttp(supabaseUrl, supabaseService, page, perPage);
+        if (!r.ok) {
+          const hint = explainAuthAdminError({ message: r.error });
+          return { ok: false as const, status: r.status, error: hint, detail: r.detail || "" };
+        }
+        const users = Array.isArray(r.users) ? r.users : [];
+        if (!users.length) break;
+        const found = users.find((u: any) => String(u?.email || "").trim().toLowerCase() === clean);
+        const uid = String(found?.id || found?.user?.id || "").trim();
+        if (uid) return { ok: true as const, userId: uid };
+      }
+    }
+
+    const adminClient = authCtx?.admin;
     const v2 = adminClient?.auth?.admin;
     const v1 = adminClient?.auth?.api;
 
@@ -3103,7 +3157,7 @@ const adminHandler = (() => {
       const err = r?.error;
       const uid = String(r?.data?.user?.id || "").trim();
       if (uid) return { ok: true as const, userId: uid };
-      if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err) };
+      if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err), detail: String(err?.message || "").slice(0, 600) };
       return { ok: false as const, status: 404, error: "No encontré ese usuario por correo." };
     }
 
@@ -3114,7 +3168,7 @@ const adminHandler = (() => {
       for (let page = 1; page <= maxPages; page++) {
         const r = await listUsers({ page, perPage });
         const err = r?.error;
-        if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err) };
+        if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err), detail: String(err?.message || "").slice(0, 600) };
         const users = Array.isArray(r?.data?.users) ? r.data.users : [];
         if (!users.length) break;
         const found = users.find((u: any) => String(u?.email || "").trim().toLowerCase() === clean);
@@ -3298,8 +3352,8 @@ const adminHandler = (() => {
     if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
 
     const admin = auth.admin;
-    const found = await findUserIdByEmail(admin, email);
-    if (!found.ok) return send(res, found.status, { error: found.error });
+    const found = await findUserIdByEmail(auth, email);
+    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
     const userId = found.userId;
 
     const upd = await adjustUserCredits(admin, userId, credits);
@@ -3353,8 +3407,8 @@ const adminHandler = (() => {
     }
 
     const admin = auth.admin;
-    const found = await findUserIdByEmail(admin, email);
-    if (!found.ok) return send(res, found.status, { error: found.error });
+    const found = await findUserIdByEmail(auth, email);
+    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
     const userId = found.userId;
 
     const payment_id = `admin_plan:${auth.user.id}:${userId}:${Date.now()}`;
@@ -3439,11 +3493,9 @@ const adminHandler = (() => {
     const limitRaw = Number(pickQuery(req, "limit") || 200);
     const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 200, 500));
 
-    const admin = auth.admin as any;
-    const v2 = admin?.auth?.admin;
-    const v1 = admin?.auth?.api;
-    const listUsers = v2?.listUsers || v1?.listUsers;
-    if (typeof listUsers !== "function") return send(res, 500, { error: "Supabase Auth Admin no disponible (listUsers)" });
+    const supabaseUrl = String((auth as any)?.supabaseUrl || "").trim();
+    const supabaseService = String((auth as any)?.supabaseService || "").trim();
+    if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase Auth" });
 
     const items: any[] = [];
     let total: number | null = null;
@@ -3451,11 +3503,10 @@ const adminHandler = (() => {
     const maxPages = 10;
 
     for (let page = 1; page <= maxPages && items.length < limit; page++) {
-      const r = await listUsers({ page, perPage });
-      if (r?.error) return send(res, 500, { error: explainAuthAdminError(r.error) });
-      const data = r?.data || {};
-      if (typeof data?.total === "number" && Number.isFinite(data.total)) total = data.total;
-      const users = Array.isArray(data?.users) ? data.users : [];
+      const r = await listUsersViaHttp(supabaseUrl, supabaseService, page, perPage);
+      if (!r.ok) return send(res, r.status, { error: explainAuthAdminError({ message: r.error }), detail: r.detail || null });
+      if (typeof r.total === "number" && Number.isFinite(r.total)) total = r.total;
+      const users = Array.isArray(r.users) ? r.users : [];
       if (!users.length) break;
 
       for (const u of users) {
