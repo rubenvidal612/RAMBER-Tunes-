@@ -1935,6 +1935,13 @@ function SongOptionsSheet({
             {!isDeleted && (
               <>
                 <button
+                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5 bg-gradient-to-r from-indigo-500/10 to-transparent"
+                  onClick={() => generateCoverImage().catch(() => {})}
+                  disabled={isBusy || !song.sunoTaskId}
+                >
+                  <ImageIcon className="w-5 h-5 text-indigo-300" /> <span className="text-slate-200 font-extrabold">Generar portada IA</span>
+                </button>
+                <button
                   className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5 bg-gradient-to-r from-amber-500/10 to-transparent"
                   onClick={() => coverPhotoInputRef.current?.click()}
                   disabled={isBusy}
