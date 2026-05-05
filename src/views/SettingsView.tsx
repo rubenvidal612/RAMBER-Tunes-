@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, RefreshCw } from 'lucide-react';
+import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, Bell } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
-export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; onOpenPricing?: () => void }) {
+export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void }) {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const { credits, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
@@ -1276,9 +1276,15 @@ export function SettingsView({ onClose, onOpenPricing }: { onClose: () => void; 
             </div>
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>
-          <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+          <button
+            className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+            onClick={() => {
+              onOpenUpdates?.();
+              onClose();
+            }}
+          >
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
-              <RefreshCw className="w-5 h-5 text-slate-400" /> Buscar actualizaciones
+              <Bell className="w-5 h-5 text-slate-400" /> Actualizaciones
             </div>
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>

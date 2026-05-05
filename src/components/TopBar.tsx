@@ -1,19 +1,20 @@
-import { Menu, Bell } from 'lucide-react';
+import { Menu, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TopBarProps {
   className?: string;
   onMenuClick?: () => void;
-  onBellClick?: () => void;
+  onRefreshClick?: () => void;
   onCreditsClick?: () => void;
   credits?: number;
   bankCredits?: number | null;
   showBank?: boolean;
-  notificationsCount?: number;
+  isUpdateAvailable?: boolean;
+  isRefreshing?: boolean;
 }
 
-export function TopBar({ className, onMenuClick, onBellClick, onCreditsClick, credits, bankCredits, showBank, notificationsCount }: TopBarProps) {
-  const hasNotif = Number(notificationsCount || 0) > 0;
+export function TopBar({ className, onMenuClick, onRefreshClick, onCreditsClick, credits, bankCredits, showBank, isUpdateAvailable, isRefreshing }: TopBarProps) {
+  const hot = Boolean(isUpdateAvailable);
   return (
     <header className={cn('flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-[#070a12] via-indigo-950/50 to-black/60 backdrop-blur-xl z-20', className)}>
       <div className="flex items-center gap-2">
@@ -28,11 +29,15 @@ export function TopBar({ className, onMenuClick, onBellClick, onCreditsClick, cr
       
       <div className="flex items-center gap-3">
         <button
-          onClick={onBellClick}
-          className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 transition-colors relative"
+          onClick={onRefreshClick}
+          className={cn(
+            "w-9 h-9 rounded-full flex items-center justify-center transition-colors relative border",
+            hot
+              ? "bg-red-500/20 hover:bg-red-500/25 text-red-200 border-red-400/30"
+              : "bg-white/5 hover:bg-white/10 text-slate-300 border-white/10"
+          )}
         >
-           <Bell className="w-4 h-4" />
-           {hasNotif ? <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-[2px] border-black" /> : null}
+          <RefreshCw className={cn("w-4 h-4", isRefreshing ? "animate-spin" : "", hot ? "animate-pulse" : "")} />
         </button>
         
         <button

@@ -298,6 +298,7 @@ export default function App() {
   const appRootRef = useRef<HTMLDivElement | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [isHeaderRefreshing, setIsHeaderRefreshing] = useState(false);
   const pullDistanceRef = useRef(0);
   const pullRefreshingRef = useRef(false);
   const pullStartXRef = useRef(0);
@@ -558,6 +559,17 @@ export default function App() {
     try {
       window.location.reload();
     } catch {}
+  };
+
+  const openUpdates = () => {
+    if (latestUpdateKey) {
+      try {
+        window.localStorage.setItem('ramber.updates_seen_v1', latestUpdateKey);
+      } catch {
+      }
+      setUpdatesSeenKey(latestUpdateKey);
+    }
+    setIsUpdatesOpen(true);
   };
 
   useEffect(() => {
@@ -1247,38 +1259,25 @@ export default function App() {
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
-        onBellClick={() => {
-          if (latestUpdateKey) {
-            try {
-              window.localStorage.setItem('ramber.updates_seen_v1', latestUpdateKey);
-            } catch {
-            }
-            setUpdatesSeenKey(latestUpdateKey);
+        onRefreshClick={() => {
+          if (updateAvailable) {
+            forceReload();
+            return;
           }
-          setIsUpdatesOpen(true);
+          if (isHeaderRefreshing || pullRefreshingRef.current) return;
+          setIsHeaderRefreshing(true);
+          Promise.allSettled([refreshLibrary(), refreshCredits(), refreshBalance(), refreshAppVersion()]).finally(() => {
+            setIsHeaderRefreshing(false);
+            showToast('Actualizado.');
+          });
         }}
         onCreditsClick={() => setIsBalanceOpen(true)}
         credits={displayCredits}
         bankCredits={internalCredits}
         showBank={false}
-        notificationsCount={unreadUpdatesCount}
+        isUpdateAvailable={updateAvailable}
+        isRefreshing={isPullRefreshing || isHeaderRefreshing}
       />
-      {updateAvailable ? (
-        <div className="md:hidden px-3 pt-3">
-          <div className="bg-gradient-to-r from-emerald-500/20 via-white/5 to-transparent border border-emerald-400/20 rounded-2xl px-3 py-3 flex items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-extrabold text-white leading-tight">Hay una actualización</div>
-              <div className="text-[11px] text-slate-200/90 leading-tight">Tócala para ver los cambios nuevos.</div>
-            </div>
-            <button
-              onClick={() => forceReload()}
-              className="shrink-0 bg-emerald-400 hover:bg-emerald-300 text-black px-4 py-2 rounded-full text-xs font-extrabold"
-            >
-              Actualizar app
-            </button>
-          </div>
-        </div>
-      ) : null}
       {pullDistance > 0 || isPullRefreshing ? (
         <div className="md:hidden absolute left-0 right-0 top-14 z-[60] flex justify-center pointer-events-none">
           <div className="bg-black/40 border border-white/10 backdrop-blur-xl rounded-full px-4 py-2 text-[11px] font-extrabold text-slate-100">
@@ -1527,7 +1526,7 @@ export default function App() {
         </div>
       )}
 
-      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} />}
+      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} onOpenUpdates={() => openUpdates()} />}
       {isPricingOpen && (
         <PricingView
           onClose={() => {
