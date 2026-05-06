@@ -30,6 +30,26 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
       .catch(() => {});
   }, []);
 
+  const shareFromProfile = async () => {
+    const url = window.location.origin;
+    try {
+      if (navigator.share && url) {
+        await navigator.share({
+          title: 'RAMBER Tunes',
+          text: 'Haz música con IA en RAMBER Tunes',
+          url,
+        });
+        return;
+      }
+    } catch {}
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Copiado al portapapeles.');
+      return;
+    } catch {}
+    alert(url);
+  };
+
   if (showSettings) {
     return <SettingsView onClose={() => setShowSettings(false)} />;
   }
@@ -80,7 +100,10 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
         >
           <Edit2 className="w-4 h-4" /> Editar perfil
         </button>
-        <button className="flex-1 py-2.5 rounded-full glass-card border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 hover:bg-white/5 transition-colors text-sm">
+        <button
+          onClick={() => shareFromProfile().catch(() => {})}
+          className="flex-1 py-2.5 rounded-full glass-card border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 hover:bg-white/5 transition-colors text-sm"
+        >
           <Forward className="w-4 h-4" /> Compartir
         </button>
       </div>
