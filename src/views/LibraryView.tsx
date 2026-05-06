@@ -32,9 +32,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
   const [downloadsModalTaskId, setDownloadsModalTaskId] = useState('');
   const [downloadsModalKind, setDownloadsModalKind] = useState('');
+  const [downloadsModalCoverUrl, setDownloadsModalCoverUrl] = useState('');
+  const [downloadsModalSourceSongId, setDownloadsModalSourceSongId] = useState('');
   const [downloadsModalItems, setDownloadsModalItems] = useState<Array<{ key: string; label: string; url: string; audioId?: string }>>([]);
   const [downloadsModalBusy, setDownloadsModalBusy] = useState(false);
   const [downloadsModalError, setDownloadsModalError] = useState('');
+  const [downloadsModalSaving, setDownloadsModalSaving] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -173,6 +176,73 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     return '';
   };
 
+  const sanitizeFileName = (s: string) =>
+    (s || '')
+      .toString()
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120);
+
+  const downloadToDevice = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: res.headers.get('content-type') || 'application/octet-stream' });
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = obj;
+      a.download = sanitizeFileName(filename) || 'audio.mp3';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(obj);
+      return true;
+    } catch {
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        a.download = sanitizeFileName(filename) || 'audio.mp3';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  const importToLibrary = async (params: {
+    sourceUrl: string;
+    title: string;
+    description?: string;
+    coverUrl?: string;
+    externalId?: string;
+    sunoTaskId?: string;
+  }) => {
+    const t = await getAccessToken();
+    if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+    const r = await fetch('/api/library/import-audio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+      body: JSON.stringify({
+        sourceUrl: params.sourceUrl,
+        title: params.title,
+        description: params.description || '',
+        coverUrl: params.coverUrl || '',
+        externalId: params.externalId || '',
+        sunoTaskId: params.sunoTaskId || '',
+      }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude guardar en Biblioteca.').toString());
+    return out?.song ?? null;
+  };
+
   const removeCompletedDownload = (taskId: string) => {
     const completedKey = 'ramber.completedSunoDownloads_v1';
     try {
@@ -191,6 +261,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     setDownloadsModalItems([]);
     setDownloadsModalTaskId(item.taskId);
     setDownloadsModalKind(item.kind);
+    setDownloadsModalCoverUrl('');
+    setDownloadsModalSourceSongId('');
+    setDownloadsModalSaving(false);
     const title = (() => {
       const k = (item.kind || '').toLowerCase();
       const base = k === 'split_stem' ? 'Stems (Instrumentos y voz)' : k === 'separate_vocal' ? 'Karaoke (sin voz)' : 'Descarga';
@@ -221,6 +294,38 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         return;
       }
       setDownloadsModalItems(items);
+
+      const draftSongId = (item?.draft?.songId || '').toString().trim();
+      const draftCover = (item?.draft?.coverUrl || '').toString().trim();
+      const draftDesc = (item?.draft?.description || '').toString().trim();
+      const source = draftSongId ? canciones.find((s) => s.id === draftSongId) : null;
+      const coverUrl = pickFirst(draftCover, source?.coverUrl || '');
+      setDownloadsModalCoverUrl(coverUrl);
+      setDownloadsModalSourceSongId(draftSongId);
+
+      const wantKeys = new Set(['instrumentalUrl', 'vocalUrl']);
+      const pick = items.filter((x) => wantKeys.has((x.key || '').trim()));
+      if (pick.length > 0) {
+        setDownloadsModalSaving(true);
+        try {
+          for (const it of pick) {
+            const externalId = `stem_${item.taskId}_${it.key}`;
+            const baseName = ((item?.draft?.title || '').toString().trim() || 'Canción').slice(0, 100);
+            const finalTitle = `${baseName} - ${it.label}`.slice(0, 120);
+            await importToLibrary({
+              sourceUrl: it.url,
+              title: finalTitle,
+              description: draftDesc || `${title}`.slice(0, 2000),
+              coverUrl,
+              externalId,
+              sunoTaskId: item.taskId,
+            }).catch(() => null);
+          }
+          onRefreshSongs?.();
+        } finally {
+          setDownloadsModalSaving(false);
+        }
+      }
     } catch (e) {
       setDownloadsModalError(e instanceof Error ? e.message : 'Error abriendo descarga');
     } finally {
@@ -681,7 +786,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             onClick={() => openCompletedDownload(it).catch(() => {})}
                             className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                           >
-                            Abrir
+                            Ver
                           </button>
                           <button
                             onClick={() => removeCompletedDownload(it.taskId)}
@@ -1095,9 +1200,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     <button
                       className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
                       disabled={downloadsModalItems.length === 0}
-                      onClick={() => downloadsModalItems.forEach((x) => window.open(x.url, '_blank'))}
+                      onClick={() => {
+                        const base = sanitizeFileName(downloadsModalTitle || 'stems');
+                        downloadsModalItems.forEach((x) => {
+                          const name = sanitizeFileName(`${base} - ${x.label}.mp3`);
+                          downloadToDevice(x.url, name).catch(() => {});
+                        });
+                      }}
                     >
-                      Abrir todo
+                      Descargar todo
                     </button>
                     <button
                       className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
@@ -1107,6 +1218,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       Marcar como listo
                     </button>
                   </div>
+
+                  {downloadsModalSaving && <div className="mt-3 text-slate-400 text-xs">Guardando en Biblioteca…</div>}
 
                   <div className="mt-4 space-y-2">
                     {downloadsModalItems.map((it) => (
@@ -1121,9 +1234,32 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         <div className="shrink-0 flex items-center gap-2">
                           <button
                             className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
-                            onClick={() => window.open(it.url, '_blank')}
+                            onClick={() => {
+                              const id = `${downloadsModalTaskId || 'stem'}_${it.key}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+                              const title = `${downloadsModalTitle || 'Descarga'} - ${it.label}`.slice(0, 120);
+                              onPlaySong({
+                                id,
+                                title,
+                                description: downloadsModalTitle || undefined,
+                                audioUrl: it.url,
+                                coverUrl: downloadsModalCoverUrl || undefined,
+                                sunoTaskId: downloadsModalTaskId || null,
+                                sunoAudioId: it.audioId || null,
+                                isCover: false,
+                              });
+                            }}
                           >
-                            Abrir
+                            Reproducir
+                          </button>
+                          <button
+                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            onClick={() => {
+                              const base = sanitizeFileName(downloadsModalTitle || 'stems');
+                              const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
+                              downloadToDevice(it.url, name).catch(() => {});
+                            }}
+                          >
+                            Descargar
                           </button>
                         </div>
                       </div>
@@ -1929,6 +2065,8 @@ function SongOptionsSheet({
           draft: {
             title: (song?.title || '').toString(),
             songId: (song?.id || '').toString(),
+            coverUrl: (song?.coverUrl || '').toString(),
+            description: (song?.description || '').toString(),
           },
         });
         window.localStorage.setItem(pendingListKey, JSON.stringify(list));

@@ -2279,6 +2279,94 @@ const libraryHandler = (() => {
     });
   }
 
+  async function handleImportAudio(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const sourceUrl = typeof body?.sourceUrl === "string" ? body.sourceUrl.trim().slice(0, 2000) : "";
+    if (!/^https?:\/\//i.test(sourceUrl)) return send(res, 400, { error: "Falta sourceUrl (http/https)" });
+
+    const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Audio";
+    const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
+    const coverUrl = typeof body?.coverUrl === "string" ? body.coverUrl.trim().slice(0, 2000) : "";
+    const externalId = typeof body?.externalId === "string" ? body.externalId.trim().slice(0, 200) : "";
+    const sunoTaskId = typeof body?.sunoTaskId === "string" ? body.sunoTaskId.trim().slice(0, 200) : null;
+
+    if (externalId) {
+      const { data: existing } = await auth.admin
+        .from(TABLE)
+        .select("*")
+        .eq("user_id", auth.user.id)
+        .eq("type", ITEM_TYPE)
+        .eq("suno_audio_id", externalId)
+        .is("deleted_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (existing) return send(res, 200, { song: existing, already: true });
+    }
+
+    const safeBase = (externalId || title || "audio")
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .slice(0, 80);
+    const path = `imports/${auth.user.id}/${Date.now()}_${safeBase || "audio"}.mp3`;
+
+    let buf: any = null;
+    let contentType = "audio/mpeg";
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 90_000);
+      const r = await fetch(sourceUrl, { signal: ctrl.signal as any });
+      clearTimeout(timer);
+      if (!r.ok) return send(res, 502, { error: "No pude descargar el audio", detail: `HTTP ${r.status}` });
+      const ct = (r.headers.get("content-type") || "").toString().trim();
+      if (ct) contentType = ct.slice(0, 120);
+      const lenRaw = (r.headers.get("content-length") || "").toString().trim();
+      const len = lenRaw ? Number(lenRaw) : NaN;
+      if (Number.isFinite(len) && len > 35 * 1024 * 1024) return send(res, 413, { error: "El archivo es demasiado grande" });
+      const ab = await r.arrayBuffer();
+      if (ab.byteLength > 35 * 1024 * 1024) return send(res, 413, { error: "El archivo es demasiado grande" });
+      buf = Buffer.from(ab);
+    } catch (e) {
+      return send(res, 502, { error: "No pude descargar el audio", detail: e instanceof Error ? e.message : String(e) });
+    }
+
+    const up = await auth.admin.storage.from(BUCKET).upload(path, buf, { upsert: true, contentType, cacheControl: "31536000" });
+    if (up.error) {
+      return send(res, 500, {
+        error: "No pude guardar el audio",
+        detail: up.error.message,
+        hint: "Verifica que exista el bucket 'ramber-tunes' en Supabase Storage y esté en modo Public.",
+      });
+    }
+
+    const pub = auth.admin.storage.from(BUCKET).getPublicUrl(path);
+    const publicUrl = (pub?.data as any)?.publicUrl || "";
+    const audioUrl = typeof publicUrl === "string" ? publicUrl.trim().slice(0, 2000) : "";
+    if (!audioUrl) return send(res, 500, { error: "No pude obtener URL pública del audio" });
+
+    const insertRow: any = {
+      user_id: auth.user.id,
+      type: ITEM_TYPE,
+      title,
+      description: description || null,
+      lyrics: null,
+      gender: null,
+      audio_url: audioUrl,
+      cover_url: coverUrl || null,
+      suno_task_id: sunoTaskId,
+      suno_audio_id: externalId || null,
+      is_cover: false,
+    };
+    const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
+    if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+    return send(res, 200, { song: data, already: false });
+  }
+
   async function handleDelete(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -2563,6 +2651,7 @@ const libraryHandler = (() => {
 
     if (a === "list") return handleList(req, res);
     if (a === "create") return handleCreate(req, res);
+    if (a === "import-audio") return handleImportAudio(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);
     if (a === "update-audio") return handleUpdateAudio(req, res);

@@ -1073,6 +1073,43 @@ export default function App() {
       });
     };
 
+    const extractVocalRemovalUrls = (payload: any) => {
+      const d = payload?.data || payload?.data?.data || payload;
+      const root = d?.data || d || {};
+      const resp = root?.response || root?.data?.response || root?.data?.data?.response || {};
+      const cleanUrl = (raw: any) =>
+        String(raw || '')
+          .trim()
+          .replaceAll('`', '')
+          .trim();
+      const normalizeKey = (k: string) => {
+        const kk = (k || '').trim();
+        if (!kk) return '';
+        if (kk.endsWith('_url')) return kk.slice(0, -4) + 'Url';
+        return kk;
+      };
+      const direct = new Map<string, string>();
+      for (const [k, v] of Object.entries(resp || {})) {
+        const key = normalizeKey(String(k || ''));
+        const url = cleanUrl(v);
+        if (!key || !url.startsWith('http')) continue;
+        direct.set(key, url);
+      }
+      if (Array.isArray(resp?.originData)) {
+        for (const row of resp.originData) {
+          const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim().toLowerCase();
+          const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
+          if (!url.startsWith('http')) continue;
+          if (label.includes('instrumental')) direct.set('instrumentalUrl', url);
+          if (label.includes('vocal')) direct.set('vocalUrl', url);
+          if (label.includes('vocals')) direct.set('vocalUrl', url);
+        }
+      }
+      const instrumentalUrl = direct.get('instrumentalUrl') || '';
+      const vocalUrl = direct.get('vocalUrl') || '';
+      return { instrumentalUrl, vocalUrl };
+    };
+
     const tick = async () => {
       if (busy) return;
       const pending = readNextPending();
@@ -1113,10 +1150,40 @@ export default function App() {
               doneAt: Date.now(),
               draft: pending.draft ?? null,
             });
+            const draft = pending.draft ?? {};
+            const baseName = String(draft?.title || 'Canción').toString().trim().slice(0, 100);
+            const coverUrl = typeof draft?.coverUrl === 'string' ? draft.coverUrl.trim().slice(0, 2000) : '';
+            const description = typeof draft?.description === 'string' ? draft.description.trim().slice(0, 2000) : '';
+            const { instrumentalUrl, vocalUrl } = extractVocalRemovalUrls(data);
+            const toImport: Array<{ key: 'instrumentalUrl' | 'vocalUrl'; label: string; url: string }> = [];
+            if (instrumentalUrl) toImport.push({ key: 'instrumentalUrl', label: 'Instrumental (Karaoke)', url: instrumentalUrl });
+            if (vocalUrl) toImport.push({ key: 'vocalUrl', label: 'Voz', url: vocalUrl });
+            if (toImport.length > 0) {
+              for (const it of toImport) {
+                try {
+                  const externalId = `stem_${pending.taskId}_${it.key}`;
+                  const finalTitle = `${baseName} - ${it.label}`.slice(0, 120);
+                  await fetch('/api/library/import-audio', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                    body: JSON.stringify({
+                      sourceUrl: it.url,
+                      title: finalTitle,
+                      description: description || `${baseName}`.slice(0, 2000),
+                      coverUrl,
+                      externalId,
+                      sunoTaskId: pending.taskId,
+                    }),
+                  }).catch(() => null as any);
+                } catch {
+                }
+              }
+              await refreshLibrary();
+            }
             const list = migrateLegacyIfNeeded();
             const rest = Array.isArray(list) ? list.slice(1) : [];
             writeList(rest);
-            showToast(kind === 'split_stem' ? 'Listo: Stems listos para descargar.' : 'Listo: Karaoke listo para descargar.');
+            showToast(toImport.length > 0 ? `Listo: se guardaron ${toImport.length} pistas en tu Biblioteca.` : kind === 'split_stem' ? 'Listo: Stems listos para descargar.' : 'Listo: Karaoke listo para descargar.');
             return;
           }
 
