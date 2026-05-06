@@ -1815,6 +1815,46 @@ function SongOptionsSheet({
     alert('No hay link para compartir.');
   };
 
+  const sanitizeDownloadName = (s: string) =>
+    (s || '')
+      .toString()
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120);
+
+  const downloadToDevice = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: res.headers.get('content-type') || 'application/octet-stream' });
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = obj;
+      a.download = sanitizeDownloadName(filename) || 'audio';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(obj);
+      return true;
+    } catch {
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_self';
+        a.rel = 'noreferrer';
+        a.download = sanitizeDownloadName(filename) || 'audio';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
   const download = async () => {
     setIsBusy(true);
     try {
@@ -1841,7 +1881,8 @@ function SongOptionsSheet({
         alert('No hay audio para descargar.');
         return;
       }
-      window.open(url, '_blank');
+      const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
+      await downloadToDevice(url, `${base}.mp3`);
     } finally {
       setIsBusy(false);
     }
@@ -1887,13 +1928,6 @@ function SongOptionsSheet({
         alert('No recibí taskId de conversión WAV.');
         return;
       }
-      try {
-        await navigator.clipboard.writeText(wavTaskId);
-        alert(`Listo. Ya empecé la conversión.\n\nTaskId del WAV (copiado):\n${wavTaskId}\n\nNo lo compartas.`);
-      } catch {
-        alert(`Listo. Ya empecé la conversión.\n\nTaskId del WAV:\n${wavTaskId}\n\nNo lo compartas.`);
-      }
-
       const startedAt = Date.now();
       while (Date.now() - startedAt < 180_000) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -1927,7 +1961,8 @@ function SongOptionsSheet({
           alert('La conversión terminó, pero no recibí el link del WAV.');
           return;
         }
-        window.open(wavUrl, '_blank');
+        const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
+        await downloadToDevice(wavUrl, `${base}.wav`);
         return;
       }
 
