@@ -4351,14 +4351,8 @@ const aiHandler = (() => {
     const baseModels = [
       "gemini-3.1-flash-lite-preview",
       "gemini-flash-lite-latest",
-      "gemini-flash-latest",
       "gemini-3-flash-preview",
-      "gemini-2.5-flash-lite",
-      "gemini-2.5-flash",
-      "gemini-1.5-flash-8b",
       "gemini-1.5-flash",
-      "gemini-pro-latest",
-      "gemini-3.1-pro-preview",
     ];
 
     let lastErr: any = null;
