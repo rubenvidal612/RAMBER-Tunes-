@@ -1543,6 +1543,15 @@ function SongOptionsSheet({
   const [trimError, setTrimError] = useState('');
   const [trimIsPlaying, setTrimIsPlaying] = useState(false);
   const trimAudioRef = useRef<HTMLAudioElement | null>(null);
+  const trimWrapRef = useRef<HTMLDivElement | null>(null);
+  const trimCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [trimWaveSize, setTrimWaveSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [trimPeaks, setTrimPeaks] = useState<number[]>([]);
+  const [trimPeaksBusy, setTrimPeaksBusy] = useState(false);
+  const [trimPeaksError, setTrimPeaksError] = useState('');
+  const [trimDrag, setTrimDrag] = useState<'start' | 'end' | null>(null);
+  const trimDragRef = useRef<'start' | 'end' | null>(null);
+  const trimPointerIdRef = useRef<number | null>(null);
   useEffect(() => {
     setPublished(Boolean((song as any)?.isPublic));
     setPublishGenre(((song as any)?.publicGenre || '').toString());
@@ -1566,6 +1575,12 @@ function SongOptionsSheet({
     setTrimError('');
     setTrimBusy(false);
     setTrimIsPlaying(false);
+    setTrimPeaks([]);
+    setTrimPeaksBusy(false);
+    setTrimPeaksError('');
+    setTrimDrag(null);
+    trimDragRef.current = null;
+    trimPointerIdRef.current = null;
     setTrimStartSec(0);
     setTrimEndSec(0);
     setTrimDurationSec(0);
@@ -1577,6 +1592,25 @@ function SongOptionsSheet({
       } catch {}
     }
   }, [showTrim, song?.id]);
+  useEffect(() => {
+    if (!showTrim) return;
+    const el = trimWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(0, Math.floor(r.width));
+      const h = Math.max(0, Math.floor(r.height));
+      setTrimWaveSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    });
+    ro.observe(el);
+    const r = el.getBoundingClientRect();
+    setTrimWaveSize({ w: Math.max(0, Math.floor(r.width)), h: Math.max(0, Math.floor(r.height)) });
+    return () => {
+      try {
+        ro.disconnect();
+      } catch {}
+    };
+  }, [showTrim]);
   useEffect(() => {
     if (!showTrim) return;
     const a = trimAudioRef.current;
@@ -1625,6 +1659,99 @@ function SongOptionsSheet({
       a.removeEventListener('play', onPlay);
     };
   }, [showTrim, trimEndSec]);
+  useEffect(() => {
+    if (!showTrim) return;
+    const w = Number(trimWaveSize.w || 0);
+    const h = Number(trimWaveSize.h || 0);
+    const peaks = Array.isArray(trimPeaks) ? trimPeaks : [];
+    const canvas = trimCanvasRef.current;
+    if (!canvas || w <= 0 || h <= 0 || peaks.length === 0) return;
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#0b2f4f';
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = '#21f6a6';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const mid = h / 2;
+    const n = peaks.length;
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * w;
+      const amp = Math.max(0, Math.min(1, Number(peaks[i] || 0)));
+      const y = amp * (h * 0.38);
+      ctx.moveTo(x, mid - y);
+      ctx.lineTo(x, mid + y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }, [showTrim, trimPeaks, trimWaveSize.w, trimWaveSize.h]);
+  useEffect(() => {
+    if (!showTrim) return;
+    const url = (song.audioUrl || '').toString().trim();
+    const dur = Number(trimDurationSec || 0);
+    const w = Number(trimWaveSize.w || 0);
+    if (!url || !(dur > 0) || !(w > 0)) return;
+    let alive = true;
+    const ac = new AbortController();
+    const maxBars = Math.max(160, Math.min(560, w));
+    setTrimPeaksBusy(true);
+    setTrimPeaksError('');
+    setTrimPeaks([]);
+    (async () => {
+      const res = await fetch(url, { signal: ac.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      try {
+        const decoded = await ctx.decodeAudioData(buf.slice(0));
+        const data = decoded.getChannelData(0);
+        const len = data.length;
+        const step = Math.max(1, Math.floor(len / maxBars));
+        const peaks: number[] = [];
+        for (let i = 0; i < maxBars; i++) {
+          const start = i * step;
+          const end = Math.min(len, start + step);
+          let m = 0;
+          for (let j = start; j < end; j++) {
+            const v = Math.abs(data[j] ?? 0);
+            if (v > m) m = v;
+          }
+          peaks.push(m);
+        }
+        const max = peaks.reduce((a, b) => (b > a ? b : a), 0.00001);
+        const norm = peaks.map((p) => Math.max(0, Math.min(1, p / max)));
+        if (!alive) return;
+        setTrimPeaks(norm);
+      } finally {
+        try {
+          await ctx.close();
+        } catch {}
+      }
+    })()
+      .catch((e: any) => {
+        if (!alive) return;
+        const msg = e instanceof Error ? e.message : 'No pude cargar el audio para ver la onda.';
+        setTrimPeaksError(msg);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setTrimPeaksBusy(false);
+      });
+    return () => {
+      alive = false;
+      try {
+        ac.abort();
+      } catch {}
+    };
+  }, [showTrim, song?.audioUrl, trimDurationSec, trimWaveSize.w]);
   useEffect(() => {
     if (!showLicense) return;
     if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
@@ -1961,6 +2088,14 @@ function SongOptionsSheet({
     const m = Math.floor(s / 60);
     const r = s % 60;
     return `${m}:${String(r).padStart(2, '0')}`;
+  };
+  const fmtClockTenths = (sec: number) => {
+    const x = Math.max(0, Number.isFinite(sec) ? sec : 0);
+    const s = Math.floor(x);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    const t = Math.floor((x - s) * 10 + 1e-6);
+    return `${m}:${String(r).padStart(2, '0')}.${t}`;
   };
 
   const downloadBlobToDevice = async (blob: Blob, filename: string) => {
@@ -3264,84 +3399,207 @@ function SongOptionsSheet({
       {showTrim && (
         <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setShowTrim(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
-              <div className="text-white font-extrabold">Recortar canción</div>
-              <button
-                onClick={() => setShowTrim(false)}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
-              >
-                ✕
-              </button>
+          <div
+            className="relative w-full md:max-w-[920px] bg-[#061a2d] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col"
+            onPointerMove={(e) => {
+              const type = trimDragRef.current;
+              if (!type) return;
+              if (trimPointerIdRef.current != null && e.pointerId !== trimPointerIdRef.current) return;
+              const el = trimWrapRef.current;
+              if (!el) return;
+              const r = el.getBoundingClientRect();
+              const dur = Number(trimDurationSec || 0);
+              if (!(dur > 0) || !(r.width > 0)) return;
+              const x = clamp(Number(e.clientX) - r.left, 0, r.width);
+              const t = clamp((x / r.width) * dur, 0, dur);
+              const minGap = 0.25;
+              if (type === 'start') {
+                const next = clamp(t, 0, Math.max(0, Number(trimEndSec || 0) - minGap));
+                setTrimStartSec(next);
+              } else {
+                const next = clamp(t, Math.min(dur, Number(trimStartSec || 0) + minGap), dur);
+                setTrimEndSec(next);
+              }
+            }}
+            onPointerUp={(e) => {
+              if (trimPointerIdRef.current != null && e.pointerId !== trimPointerIdRef.current) return;
+              trimPointerIdRef.current = null;
+              trimDragRef.current = null;
+              setTrimDrag(null);
+            }}
+            onPointerCancel={(e) => {
+              if (trimPointerIdRef.current != null && e.pointerId !== trimPointerIdRef.current) return;
+              trimPointerIdRef.current = null;
+              trimDragRef.current = null;
+              setTrimDrag(null);
+            }}
+          >
+            <div className="p-4 md:p-5 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/5 border border-white/10 rounded-full px-4 h-11 flex items-center gap-2">
+                  <Scissors className="w-5 h-5 text-white" />
+                  <div className="text-white font-extrabold">Recortar</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dur = Number(trimDurationSec || 0);
+                    if (!(dur > 0)) return;
+                    setTrimStartSec(0);
+                    setTrimEndSec(dur);
+                    try {
+                      const a = trimAudioRef.current;
+                      if (a) {
+                        a.pause();
+                        a.currentTime = 0;
+                      }
+                    } catch {}
+                  }}
+                  className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-4 h-11 text-slate-100 font-extrabold"
+                  disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
+                >
+                  Restablecer
+                </button>
+                <button
+                  onClick={() => setShowTrim(false)}
+                  className="w-11 h-11 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white hover:bg-white/20"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
-            <div className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-4">
-              {trimError ? (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{trimError}</div>
-              ) : null}
-              <audio
-                ref={trimAudioRef}
-                src={(song.audioUrl || '').toString()}
-                preload="metadata"
-                crossOrigin="anonymous"
-                className="w-full"
-                controls
-              />
 
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <div className="flex items-center justify-between gap-3 text-xs text-slate-300 font-semibold">
-                  <div>Inicio: {fmtClock(trimStartSec)}</div>
-                  <div>Final: {fmtClock(trimEndSec)}</div>
-                  <div>Recorte: {fmtClock(Math.max(0, Number(trimEndSec || 0) - Number(trimStartSec || 0)))}</div>
+            <div className="p-4 md:p-5 flex-1 overflow-y-auto overscroll-contain">
+              <audio ref={trimAudioRef} src={(song.audioUrl || '').toString()} preload="metadata" crossOrigin="anonymous" className="hidden" />
+              {trimError ? (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200 mb-4">{trimError}</div>
+              ) : null}
+
+              <div className="rounded-3xl overflow-hidden border border-white/10 bg-[#073556]">
+                <div className="p-4 md:p-5 flex items-center justify-between">
+                  <div className="text-slate-200 font-extrabold truncate">{(song.title || 'Audio').toString()}</div>
+                  <div className="text-slate-200 font-extrabold">{fmtClockTenths(trimEndSec)}</div>
                 </div>
 
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <div className="text-[11px] text-slate-400 font-semibold">INICIO</div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={Math.max(1, Number(trimDurationSec || 0))}
-                      step={0.1}
-                      value={clamp(Number(trimStartSec || 0), 0, Math.max(1, Number(trimDurationSec || 0)))}
-                      disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                      onChange={(e) => {
-                        const max = Math.max(0, Number(trimDurationSec || 0));
-                        const v = clamp(Number(e.target.value), 0, max || 0);
-                        setTrimStartSec(v);
-                        setTrimEndSec((prev) => Math.max(v, Number(prev || 0)));
-                      }}
-                      className="w-full mt-2"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-[11px] text-slate-400 font-semibold">FINAL</div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={Math.max(1, Number(trimDurationSec || 0))}
-                      step={0.1}
-                      value={clamp(Number(trimEndSec || 0), 0, Math.max(1, Number(trimDurationSec || 0)))}
-                      disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                      onChange={(e) => {
-                        const max = Math.max(0, Number(trimDurationSec || 0));
-                        const v = clamp(Number(e.target.value), 0, max || 0);
-                        setTrimEndSec(v);
-                        setTrimStartSec((prev) => Math.min(v, Number(prev || 0)));
-                      }}
-                      className="w-full mt-2"
-                    />
+                <div className="px-4 md:px-5 pb-5">
+                  <div
+                    ref={trimWrapRef}
+                    className="relative w-full h-[170px] md:h-[210px] rounded-2xl overflow-hidden bg-[#0b2f4f]"
+                  >
+                    <canvas ref={trimCanvasRef} className="absolute inset-0 w-full h-full" />
+                    {trimPeaksBusy ? (
+                      <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-sm font-extrabold bg-black/25">
+                        Cargando onda…
+                      </div>
+                    ) : null}
+                    {!trimPeaksBusy && trimPeaksError ? (
+                      <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-sm font-extrabold bg-black/25 px-4 text-center">
+                        No pude mostrar la onda. Igual puedes recortar con los palitos.
+                      </div>
+                    ) : null}
+
+                    {(() => {
+                      const dur = Number(trimDurationSec || 0);
+                      const w = Number(trimWaveSize.w || 0);
+                      const startX = dur > 0 && w > 0 ? clamp((Number(trimStartSec || 0) / dur) * w, 0, w) : 0;
+                      const endX = dur > 0 && w > 0 ? clamp((Number(trimEndSec || 0) / dur) * w, 0, w) : 0;
+                      const left = Math.min(startX, endX);
+                      const right = Math.max(startX, endX);
+                      return (
+                        <>
+                          <div className="absolute inset-y-0 left-0 bg-black/35" style={{ width: `${left}px` }} />
+                          <div className="absolute inset-y-0 bg-black/35" style={{ left: `${right}px`, right: 0 }} />
+                          <div
+                            className="absolute inset-y-0 border-y border-white/10"
+                            style={{
+                              left: `${left}px`,
+                              width: `${Math.max(0, right - left)}px`,
+                              background: 'linear-gradient(90deg, rgba(0,208,255,0.10), rgba(33,246,166,0.08))',
+                            }}
+                          />
+
+                          <div className="absolute inset-y-0 -translate-x-1/2" style={{ left: `${left}px` }}>
+                            <div className={cn("absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-black px-3 py-1 rounded-full font-extrabold text-sm", trimDrag === 'start' ? "opacity-100" : "opacity-0 md:opacity-100")}>
+                              {fmtClockTenths(trimStartSec)}
+                            </div>
+                            <div
+                              onPointerDown={(e) => {
+                                const dur = Number(trimDurationSec || 0);
+                                if (!(dur > 0)) return;
+                                trimPointerIdRef.current = e.pointerId;
+                                trimDragRef.current = 'start';
+                                setTrimDrag('start');
+                                try {
+                                  (e.currentTarget as any).setPointerCapture(e.pointerId);
+                                } catch {}
+                                try {
+                                  const a = trimAudioRef.current;
+                                  if (a) a.pause();
+                                } catch {}
+                                e.preventDefault();
+                              }}
+                              className="h-full w-5 md:w-6 bg-cyan-300/95 shadow-[0_0_0_3px_rgba(0,208,255,0.15)] cursor-ew-resize"
+                            >
+                              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1">
+                                <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="absolute inset-y-0 -translate-x-1/2" style={{ left: `${right}px` }}>
+                            <div className={cn("absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-black px-3 py-1 rounded-full font-extrabold text-sm", trimDrag === 'end' ? "opacity-100" : "opacity-0 md:opacity-100")}>
+                              {fmtClockTenths(trimEndSec)}
+                            </div>
+                            <div
+                              onPointerDown={(e) => {
+                                const dur = Number(trimDurationSec || 0);
+                                if (!(dur > 0)) return;
+                                trimPointerIdRef.current = e.pointerId;
+                                trimDragRef.current = 'end';
+                                setTrimDrag('end');
+                                try {
+                                  (e.currentTarget as any).setPointerCapture(e.pointerId);
+                                } catch {}
+                                try {
+                                  const a = trimAudioRef.current;
+                                  if (a) a.pause();
+                                } catch {}
+                                e.preventDefault();
+                              }}
+                              className="h-full w-5 md:w-6 bg-cyan-300/95 shadow-[0_0_0_3px_rgba(0,208,255,0.15)] cursor-ew-resize"
+                            >
+                              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1">
+                                <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="absolute bottom-3 left-4 text-cyan-200 font-extrabold text-sm">{fmtClockTenths(trimStartSec)}</div>
+                          <div className="absolute bottom-3 right-4 text-cyan-200 font-extrabold text-sm">
+                            {fmtClockTenths(Number(trimDurationSec || 0))}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <button
                   onClick={() => {
                     const a = trimAudioRef.current;
                     if (!a) return;
-                    const max = Number.isFinite(a.duration) && a.duration > 0 ? a.duration : Number(trimDurationSec || 0);
-                    const start = clamp(Number(trimStartSec || 0), 0, max || 0);
-                    const end = clamp(Number(trimEndSec || 0), 0, max || 0);
+                    const dur = Number(trimDurationSec || 0);
+                    if (!(dur > 0)) return;
+                    const start = clamp(Number(trimStartSec || 0), 0, dur);
+                    const end = clamp(Number(trimEndSec || 0), 0, dur);
                     if (!(end > start)) {
                       alert('El final debe ser mayor que el inicio.');
                       return;
@@ -3360,28 +3618,28 @@ function SongOptionsSheet({
                     } catch {}
                   }}
                   disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                  className="w-full bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  className="w-full bg-white/10 hover:bg-white/15 text-white border border-white/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
                 >
-                  {trimIsPlaying ? 'Pausar' : 'Escuchar recorte'}
+                  {trimIsPlaying ? 'Pausar' : 'Escuchar'}
                 </button>
                 <button
                   onClick={() => downloadTrim().catch(() => {})}
                   disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  className="w-full bg-gradient-to-r from-yellow-300 to-amber-300 hover:opacity-95 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
                 >
                   {trimBusy ? 'Preparando…' : 'Descargar'}
                 </button>
                 <button
                   onClick={() => shareTrim().catch(() => {})}
                   disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                  className="w-full bg-indigo-500 hover:bg-indigo-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  className="w-full bg-gradient-to-r from-indigo-400 to-fuchsia-400 hover:opacity-95 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
                 >
                   {trimBusy ? 'Preparando…' : 'Compartir'}
                 </button>
               </div>
 
-              <div className="text-[11px] text-slate-500">
-                Este recorte NO se guarda en tu biblioteca. Solo se prepara para descargar o compartir y se elimina al cerrar.
+              <div className="mt-3 text-[11px] text-slate-300/70 text-center">
+                No se guarda el recorte. Solo se usa para descargar o compartir.
               </div>
             </div>
           </div>
