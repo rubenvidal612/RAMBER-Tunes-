@@ -12,6 +12,8 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [userEmail, setUserEmail] = useState('');
+  const [userAvatarUrl, setUserAvatarUrl] = useState('');
+  const [userCoverUrl, setUserCoverUrl] = useState('');
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -26,6 +28,8 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
         setUserName(display);
         setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
         setUserEmail(email);
+        setUserAvatarUrl((meta?.avatar_url || '').toString());
+        setUserCoverUrl((meta?.cover_url || '').toString());
       })
       .catch(() => {});
   }, []);
@@ -60,20 +64,26 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
-      {/* Profile Header */}
-      <div className="flex items-center justify-between px-6 mb-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300">
-            {userInitial}
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
-            {userEmail ? <div className="text-xs text-slate-400 truncate">{userEmail}</div> : null}
+      <div className="px-6 mb-6">
+        <div className="relative rounded-3xl overflow-hidden border border-white/10">
+          <div className="h-24 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
+          {userCoverUrl ? <img src={userCoverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
+          <div className="absolute inset-0 bg-black/35" />
+          <div className="relative p-4 flex items-center justify-between">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
+                {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="w-full h-full object-cover" /> : userInitial}
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
+                {userEmail ? <div className="text-xs text-slate-300/80 truncate">{userEmail}</div> : null}
+              </div>
+            </div>
+            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-200 hover:text-white transition-colors glass-card rounded-full">
+              <Settings className="w-5 h-5" />
+            </button>
           </div>
         </div>
-        <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white transition-colors glass-card rounded-full">
-          <Settings className="w-5 h-5" />
-        </button>
       </div>
 
       {/* Stats */}
