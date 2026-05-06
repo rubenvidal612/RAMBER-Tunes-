@@ -940,8 +940,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       {/* Actions */}
                       {!showTrash && (
                         <div className="flex items-center gap-2 mt-2">
-                          <button className="bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded-full text-xs text-slate-200 transition-colors">
-                            Publicar
+                          <button
+                            onClick={() => setMenuSong(song)}
+                            className={cn(
+                              "border px-3 py-1 rounded-full text-xs transition-colors",
+                              song.isPublic
+                                ? "bg-emerald-500/15 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-200"
+                                : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                            )}
+                          >
+                            {song.isPublic ? 'Público' : 'Privado'}
                           </button>
                           <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
                             <ThumbsUp className="w-3.5 h-3.5 text-slate-300" />
@@ -1500,7 +1508,9 @@ function SongOptionsSheet({
   onRefreshSongs?: () => void;
 }) {
   const [isBusy, setIsBusy] = useState(false);
-  const [published, setPublished] = useState(false);
+  const [published, setPublished] = useState(Boolean((song as any)?.isPublic));
+  const [showPublish, setShowPublish] = useState(false);
+  const [publishGenre, setPublishGenre] = useState<string>(((song as any)?.publicGenre || '').toString());
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showStems, setShowStems] = useState(false);
@@ -1525,6 +1535,11 @@ function SongOptionsSheet({
   const coverPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [showCoverUrl, setShowCoverUrl] = useState(false);
   const [coverUrlInput, setCoverUrlInput] = useState('');
+  useEffect(() => {
+    setPublished(Boolean((song as any)?.isPublic));
+    setPublishGenre(((song as any)?.publicGenre || '').toString());
+    setShowPublish(false);
+  }, [song?.id]);
   useEffect(() => {
     if (!showPersonaSave) return;
     setPersonaVocalStart(0);
@@ -1822,6 +1837,42 @@ function SongOptionsSheet({
       return;
     }
     alert('No hay link para compartir.');
+  };
+
+  const setSongPublic = async (makePublic: boolean, genre: string) => {
+    if (isDeleted) return;
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const g = (genre || '').toString().trim();
+      if (makePublic && !g) {
+        alert('Escribe el género musical primero.');
+        return;
+      }
+      const r = await fetch('/api/social/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: song.id, publish: makePublic, genre: g }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        const msg = (out?.error || out?.detail || out?.message || 'No pude cambiar la visibilidad.').toString();
+        const hint = (out?.hint || '').toString();
+        alert([msg, hint].filter(Boolean).join('\n\n'));
+        return;
+      }
+      const next = Boolean(out?.is_public);
+      setPublished(next);
+      if (next && typeof out?.public_genre === 'string') setPublishGenre(out.public_genre);
+      onRefreshSongs?.();
+      alert(next ? 'Listo. Tu canción ya es pública.' : 'Listo. Tu canción ya es privada.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const sanitizeDownloadName = (s: string) =>
@@ -2771,9 +2822,19 @@ function SongOptionsSheet({
               <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
             </button>
             {!isDeleted && (
-              <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => setPublished(!published)} disabled={isBusy}>
+              <button
+                className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                onClick={() => {
+                  if (published) {
+                    setSongPublic(false, '').catch(() => {});
+                    return;
+                  }
+                  setShowPublish(true);
+                }}
+                disabled={isBusy}
+              >
                 <div className="flex items-center gap-3">
-                  <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Publicar</span>
+                  <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">{published ? 'Público' : 'Privado'}</span>
                 </div>
                 <div className={cn("w-12 h-7 rounded-full p-1 transition-colors", published ? "bg-emerald-500" : "bg-white/10")}>
                   <div className={cn("w-5 h-5 rounded-full bg-white transition-transform", published ? "translate-x-5" : "translate-x-0")} />
@@ -2899,6 +2960,57 @@ function SongOptionsSheet({
               >
                 Guardar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPublish && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowPublish(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Publicar canción</div>
+              <button onClick={() => setShowPublish(false)} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Género musical (ej: Pop, Rap, EDM)</div>
+              <input
+                value={publishGenre}
+                onChange={(e) => setPublishGenre(e.target.value)}
+                placeholder="Ej: Pop"
+                className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
+              />
+              <div className="flex flex-wrap gap-2">
+                {['Pop', 'Rap', 'Hip Hop', 'EDM', 'Rock', 'Country', 'Reggaetón', 'Regional Mexicano', 'Cumbia'].map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setPublishGenre(g)}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-full"
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  const g = (publishGenre || '').toString().trim();
+                  if (!g) {
+                    alert('Escribe el género musical.');
+                    return;
+                  }
+                  setShowPublish(false);
+                  setSongPublic(true, g).catch(() => {});
+                }}
+                disabled={isBusy}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+              >
+                Publicar
+              </button>
+              <div className="text-[11px] text-slate-500">Por defecto, tus canciones son privadas. Solo se verán en Inicio si las publicas.</div>
             </div>
           </div>
         </div>

@@ -17,6 +17,11 @@ export interface SongItem {
   lyrics?: string;
   style?: string[];
   genre?: string;
+  isPublic?: boolean;
+  publicGenre?: string | null;
+  publishedAt?: string | null;
+  authorName?: string;
+  authorAvatarUrl?: string;
   audioUrl?: string;
   coverUrl?: string;
   createdAt?: string;

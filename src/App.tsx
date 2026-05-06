@@ -10,7 +10,8 @@ import { PricingView } from './views/PricingView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
-import { getAccessToken, signInWithGoogle, supabaseBrowser } from './lib/supabaseBrowser';
+import { cn } from './lib/utils';
+import { ensureAnonSession, getAccessToken, signInWithGoogle, supabaseBrowser } from './lib/supabaseBrowser';
 import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
@@ -258,6 +259,217 @@ function InicioLanding({
   );
 }
 
+function InicioSocial({
+  onPlaySong,
+  onGoStudio,
+}: {
+  onPlaySong: (s: SongItem) => void;
+  onGoStudio: () => void;
+}) {
+  const [tab, setTab] = useState<'canciones' | 'listas' | 'generos'>('canciones');
+  const [items, setItems] = useState<SongItem[]>([]);
+  const [genres, setGenres] = useState<Array<{ genre: string; count: number; coverUrl?: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [activeGenre, setActiveGenre] = useState('');
+
+  const loadFeed = async (mode: 'reset' | 'more') => {
+    setLoading(true);
+    setError('');
+    try {
+      const qs = new URLSearchParams();
+      qs.set('limit', '30');
+      if (activeGenre) qs.set('genre', activeGenre);
+      if (mode === 'more' && cursor) qs.set('cursor', cursor);
+      const r = await fetch(`/api/social/feed?${qs.toString()}`, { method: 'GET', cache: 'no-store' });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        setError((out?.error || out?.detail || 'No pude cargar el inicio.').toString());
+        return;
+      }
+      const list = Array.isArray(out?.items) ? out.items : [];
+      const mapped: SongItem[] = list
+        .map((x: any) => ({
+          id: String(x?.id || ''),
+          title: String(x?.title || 'Canción'),
+          audioUrl: typeof x?.audioUrl === 'string' ? x.audioUrl : undefined,
+          coverUrl: typeof x?.coverUrl === 'string' ? x.coverUrl : undefined,
+          authorName: typeof x?.authorName === 'string' ? x.authorName : undefined,
+          authorAvatarUrl: typeof x?.authorAvatarUrl === 'string' ? x.authorAvatarUrl : undefined,
+          isPublic: true,
+          publicGenre: typeof x?.publicGenre === 'string' ? x.publicGenre : x?.publicGenre ?? null,
+          publishedAt: typeof x?.publishedAt === 'string' ? x.publishedAt : x?.publishedAt ?? null,
+        }))
+        .filter((s: SongItem) => s.id && s.audioUrl);
+      const next = typeof out?.next_cursor === 'string' ? out.next_cursor : null;
+      setCursor(next);
+      setItems((prev) => (mode === 'more' ? [...prev, ...mapped] : mapped));
+    } catch {
+      setError('No pude cargar el inicio.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadGenres = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await fetch('/api/social/genres', { method: 'GET', cache: 'no-store' });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        setError((out?.error || out?.detail || 'No pude cargar géneros.').toString());
+        return;
+      }
+      const list = Array.isArray(out?.items) ? out.items : [];
+      setGenres(
+        list
+          .map((x: any) => ({
+            genre: String(x?.genre || '').trim(),
+            count: Number(x?.count || 0),
+            coverUrl: typeof x?.coverUrl === 'string' ? x.coverUrl : undefined,
+          }))
+          .filter((x: any) => x.genre)
+      );
+    } catch {
+      setError('No pude cargar géneros.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== 'canciones') return;
+    loadFeed('reset').catch(() => {});
+  }, [tab, activeGenre]);
+
+  useEffect(() => {
+    if (tab !== 'generos') return;
+    loadGenres().catch(() => {});
+  }, [tab]);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-y-auto w-full relative z-10">
+      <div className="px-4 pt-4">
+        <div className="flex items-center justify-between">
+          <div className="text-white font-extrabold text-lg">Inicio</div>
+          <button onClick={onGoStudio} className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold">
+            Crear
+          </button>
+        </div>
+        <div className="mt-4 flex items-center gap-2">
+          {[
+            { key: 'canciones', label: 'Canciones' },
+            { key: 'listas', label: 'Listas' },
+            { key: 'generos', label: 'Géneros' },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key as any)}
+              className={cn(
+                'px-4 py-2 rounded-full text-sm font-semibold border transition-colors',
+                tab === (t.key as any) ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error ? <div className="px-4 mt-4 text-sm text-red-200 bg-red-500/10 border border-red-500/20 rounded-2xl p-3">{error}</div> : null}
+
+      {tab === 'listas' ? (
+        <div className="px-4 mt-6">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-slate-200">
+            <div className="font-extrabold">Listas</div>
+            <div className="mt-1 text-sm text-slate-400">Próximamente</div>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === 'generos' ? (
+        <div className="px-4 mt-4 pb-[120px]">
+          <div className="grid grid-cols-2 gap-3">
+            {genres.map((g) => (
+              <button
+                key={g.genre}
+                onClick={() => {
+                  setActiveGenre(g.genre);
+                  setTab('canciones');
+                }}
+                className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 h-[140px] text-left"
+              >
+                {g.coverUrl ? (
+                  <img src={g.coverUrl} className="absolute inset-0 w-full h-full object-cover opacity-80" />
+                ) : null}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+                <div className="absolute left-3 top-3 bg-black/50 border border-white/10 text-white text-xs font-extrabold px-3 py-1.5 rounded-full">
+                  {g.genre}
+                </div>
+                <div className="absolute left-3 bottom-3 text-[11px] text-slate-200/90">{g.count} canciones</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {tab === 'canciones' ? (
+        <div className="px-4 mt-4 pb-[120px]">
+          {activeGenre ? (
+            <div className="mb-3 flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl p-3">
+              <div className="text-slate-200 text-sm font-extrabold truncate">{activeGenre}</div>
+              <button onClick={() => setActiveGenre('')} className="text-xs font-extrabold text-slate-200 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full">
+                Quitar
+              </button>
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            {items.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => onPlaySong(s)}
+                className="w-full flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-colors text-left"
+              >
+                <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+                  {s.coverUrl ? <img src={s.coverUrl} className="w-full h-full object-cover" /> : null}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white font-extrabold truncate">{s.title}</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-[10px] font-extrabold text-indigo-200 shrink-0">
+                      {s.authorAvatarUrl ? <img src={s.authorAvatarUrl} className="w-full h-full object-cover" /> : (s.authorName || 'U').slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="text-xs text-slate-300 truncate">{s.authorName || 'Usuario'}</div>
+                    {s.publicGenre ? (
+                      <div className="text-[10px] text-slate-200 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full truncate max-w-[140px]">
+                        {s.publicGenre}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 font-extrabold">
+                  ▶
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="mt-4 text-center text-sm text-slate-400">Cargando…</div>
+          ) : cursor ? (
+            <button onClick={() => loadFeed('more').catch(() => {})} className="mt-4 w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full py-3 text-slate-200 font-extrabold">
+              Cargar más
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function App() {
   const [currentTab, setCurrentTab] = useState<ViewTab>('studio');
   const [canciones, setCanciones] = useState<SongItem[]>([]);
@@ -281,6 +493,11 @@ export default function App() {
   const [profileLastName, setProfileLastName] = useState('');
   const [profileBirthdate, setProfileBirthdate] = useState('');
   const [profileSetupBusy, setProfileSetupBusy] = useState(false);
+  const [profileUsername, setProfileUsername] = useState('');
+  const [profileAvatarMode, setProfileAvatarMode] = useState<'male' | 'female' | 'photo'>('male');
+  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>('');
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -322,6 +539,81 @@ export default function App() {
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
 
+  const makeAvatarSvgUrl = (variant: 'male' | 'female', label: string) => {
+    const seed = (label || 'U').toString().trim().slice(0, 30);
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    const hue = h % 360;
+    const bg1 = `hsl(${hue}, 85%, 52%)`;
+    const bg2 = `hsl(${(hue + 40) % 360}, 85%, 48%)`;
+    const fg = 'rgba(255,255,255,0.95)';
+    const hair = variant === 'female' ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.85)';
+    const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="${bg1}"/>
+      <stop offset="1" stop-color="${bg2}"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="128" fill="url(#g)"/>
+  <circle cx="128" cy="104" r="44" fill="${fg}" opacity="0.95"/>
+  <path d="M52 226c10-50 44-78 76-78s66 28 76 78" fill="${fg}" opacity="0.95"/>
+  ${variant === 'female'
+    ? `<path d="M84 78c10-22 30-34 44-34s34 12 44 34c-10-6-22-10-44-10s-34 4-44 10z" fill="${hair}" opacity="0.8"/>`
+    : `<path d="M86 84c8-18 26-30 42-30s34 12 42 30c-10-5-22-8-42-8s-32 3-42 8z" fill="${hair}" opacity="0.75"/>`}
+</svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg.trim());
+  };
+
+  const compressAvatarToBlob = async (file: File) => {
+    const bitmap = await createImageBitmap(file);
+    const max = 512;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No pude procesar la imagen');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob: Blob | null = await new Promise((resolve) => {
+      try {
+        canvas.toBlob((b) => resolve(b), 'image/webp', 0.9);
+      } catch {
+        resolve(null);
+      }
+    });
+    if (blob) return blob;
+    const fallback: Blob | null = await new Promise((resolve) => {
+      try {
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9);
+      } catch {
+        resolve(null);
+      }
+    });
+    if (!fallback) throw new Error('No pude procesar la imagen');
+    return fallback;
+  };
+
+  const uploadProfileAvatar = async (file: File, userId: string) => {
+    if (!supabaseBrowser) return '';
+    const s = await ensureAnonSession();
+    if (!s.ok) return '';
+    const blob = await compressAvatarToBlob(file);
+    const path = `avatars/${userId}/avatar_${Date.now()}.webp`;
+    const up = await supabaseBrowser.storage.from('ramber-tunes').upload(path, blob, {
+      upsert: true,
+      contentType: 'image/webp',
+      cacheControl: '31536000',
+    });
+    if (up.error) return '';
+    const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
+    const url = (pub?.publicUrl || '').toString().trim();
+    return url;
+  };
+
   const saveProfileSetup = async () => {
     if (!supabaseBrowser) return;
     const first = (profileFirstName || '').toString().trim();
@@ -338,7 +630,28 @@ export default function App() {
     setProfileSetupBusy(true);
     try {
       const full_name = `${first} ${last}`.trim().slice(0, 120);
-      const r = await supabaseBrowser.auth.updateUser({ data: { full_name, birthdate: birth } }).catch(() => null as any);
+      const { data: ud } = await supabaseBrowser.auth.getUser().catch(() => ({ data: null as any }));
+      const user = ud?.user;
+      const uid = (user?.id || '').toString().trim();
+      const currentMeta: any = user?.user_metadata || {};
+      const rawUsername = (profileUsername || '').toString().trim().replace(/\s+/g, '');
+      const username =
+        (rawUsername || (currentMeta?.username || '').toString().trim() || (uid ? uid.slice(0, 8) : '') || 'usuario')
+          .slice(0, 20);
+
+      let avatar_url = profileAvatarMode === 'photo' ? '' : (profileAvatarUrl || '').toString().trim();
+      if (profileAvatarMode === 'photo' && profileAvatarFile && uid) {
+        const uploaded = await uploadProfileAvatar(profileAvatarFile, uid).catch(() => '');
+        if (uploaded) avatar_url = uploaded;
+      }
+      if (!avatar_url) {
+        const base = full_name || username || 'Usuario';
+        avatar_url = makeAvatarSvgUrl(profileAvatarMode === 'female' ? 'female' : 'male', base);
+      }
+
+      const r = await supabaseBrowser.auth
+        .updateUser({ data: { full_name, birthdate: birth, username, avatar_url, profile_ready: true } })
+        .catch(() => null as any);
       const err = (r as any)?.error;
       if (err) {
         showToast('No pude guardar tu perfil.');
@@ -550,6 +863,9 @@ export default function App() {
     description: typeof row?.description === 'string' ? row.description : undefined,
     lyrics: typeof row?.lyrics === 'string' ? row.lyrics : undefined,
     genre: typeof row?.gender === 'string' ? row.gender : undefined,
+    isPublic: Boolean(row?.is_public),
+    publicGenre: typeof row?.public_genre === 'string' ? row.public_genre : row?.public_genre ?? null,
+    publishedAt: typeof row?.published_at === 'string' ? row.published_at : row?.published_at ?? null,
     audioUrl: typeof row?.audio_url === 'string' ? row.audio_url : undefined,
     coverUrl: typeof row?.cover_url === 'string' ? row.cover_url : undefined,
     createdAt: typeof row?.created_at === 'string' ? row.created_at : undefined,
@@ -809,15 +1125,27 @@ export default function App() {
       .then(({ data }) => {
         const user = data?.user;
         const meta: any = user?.user_metadata || {};
+        const isReady = Boolean(meta?.profile_ready);
         const full = (meta?.full_name || meta?.name || '').toString().trim();
         const birth = (meta?.birthdate || meta?.birthday || meta?.dob || '').toString().trim();
-        if (full && birth) return;
+        if (isReady) return;
         const parts = full ? full.split(/\s+/g) : [];
         const first = parts.length ? parts[0] : '';
         const last = parts.length > 1 ? parts.slice(1).join(' ') : '';
         setProfileFirstName(first);
         setProfileLastName(last);
         setProfileBirthdate(birth);
+        setProfileUsername((meta?.username || '').toString().trim());
+        const existingAvatar = (meta?.avatar_url || meta?.avatarUrl || '').toString().trim();
+        if (existingAvatar) {
+          setProfileAvatarUrl(existingAvatar);
+          setProfileAvatarMode(existingAvatar.startsWith('http') ? 'photo' : 'male');
+        } else {
+          const base = full || (user?.email || '').toString().split('@')[0] || 'Usuario';
+          setProfileAvatarUrl(makeAvatarSvgUrl('male', base));
+          setProfileAvatarMode('male');
+        }
+        setProfileAvatarFile(null);
         setIsProfileSetupOpen(true);
       })
       .catch(() => {});
@@ -1494,14 +1822,18 @@ export default function App() {
         {/* Mobile View Switching */}
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && (
-             <InicioLanding
-               email={authEmail}
-               onGoStudio={() => setCurrentTab('studio')}
-               onGoLibrary={() => setCurrentTab('biblioteca')}
-               onOpenPlans={() => {
-                 setIsPricingOpen(true);
-               }}
-             />
+             isAuthed ? (
+               <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
+             ) : (
+               <InicioLanding
+                 email={authEmail}
+                 onGoStudio={() => setCurrentTab('studio')}
+                 onGoLibrary={() => setCurrentTab('biblioteca')}
+                 onOpenPlans={() => {
+                   setIsPricingOpen(true);
+                 }}
+               />
+             )
            )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
@@ -1526,14 +1858,18 @@ export default function App() {
 
            {currentTab === 'inicio' ? (
              <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
-               <InicioLanding
-                 email={authEmail}
-                 onGoStudio={() => setCurrentTab('studio')}
-                 onGoLibrary={() => setCurrentTab('biblioteca')}
-                 onOpenPlans={() => {
-                   setIsPricingOpen(true);
-                 }}
-               />
+              {isAuthed ? (
+                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
+              ) : (
+                <InicioLanding
+                  email={authEmail}
+                  onGoStudio={() => setCurrentTab('studio')}
+                  onGoLibrary={() => setCurrentTab('biblioteca')}
+                  onOpenPlans={() => {
+                    setIsPricingOpen(true);
+                  }}
+                />
+              )}
              </div>
            ) : (
              <>
@@ -1690,6 +2026,89 @@ export default function App() {
                   className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
                 />
               </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="text-[11px] text-slate-400 font-semibold">Foto / Avatar</div>
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-white font-extrabold">
+                    {profileAvatarUrl ? (
+                      <img src={profileAvatarUrl} className="w-full h-full object-cover" />
+                    ) : (
+                      'U'
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-200 font-extrabold truncate">Tu foto se verá cuando publiques</div>
+                    <div className="text-[11px] text-slate-500 truncate">Puedes subir una foto o usar un avatar.</div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-extrabold px-4 py-2 rounded-full"
+                    type="button"
+                  >
+                    Subir / Tomar foto
+                  </button>
+                  <button
+                    onClick={() => {
+                      const base = `${(profileFirstName || '').toString().trim()} ${(profileLastName || '').toString().trim()}`.trim() || 'Usuario';
+                      setProfileAvatarMode('male');
+                      setProfileAvatarFile(null);
+                      setProfileAvatarUrl(makeAvatarSvgUrl('male', base));
+                    }}
+                    className={cn(
+                      "border text-xs font-extrabold px-4 py-2 rounded-full",
+                      profileAvatarMode === 'male' ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-200" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                    )}
+                    type="button"
+                  >
+                    Avatar hombre
+                  </button>
+                  <button
+                    onClick={() => {
+                      const base = `${(profileFirstName || '').toString().trim()} ${(profileLastName || '').toString().trim()}`.trim() || 'Usuario';
+                      setProfileAvatarMode('female');
+                      setProfileAvatarFile(null);
+                      setProfileAvatarUrl(makeAvatarSvgUrl('female', base));
+                    }}
+                    className={cn(
+                      "border text-xs font-extrabold px-4 py-2 rounded-full",
+                      profileAvatarMode === 'female' ? "bg-fuchsia-500/20 border-fuchsia-500/30 text-fuchsia-200" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                    )}
+                    type="button"
+                  >
+                    Avatar mujer
+                  </button>
+                </div>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    e.currentTarget.value = '';
+                    if (!f) return;
+                    setProfileAvatarMode('photo');
+                    setProfileAvatarFile(f);
+                    try {
+                      const url = URL.createObjectURL(f);
+                      setProfileAvatarUrl(url);
+                    } catch {}
+                  }}
+                />
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400 font-semibold">Nombre de usuario (opcional)</div>
+                <input
+                  value={profileUsername}
+                  onChange={(e) => setProfileUsername(e.target.value)}
+                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  placeholder="Ej: ramberjuan"
+                />
+                <div className="mt-2 text-[11px] text-slate-500">Se usa para identificarte cuando publiques canciones.</div>
+              </div>
               <button
                 onClick={() => saveProfileSetup().catch(() => {})}
                 disabled={profileSetupBusy}
@@ -1697,7 +2116,9 @@ export default function App() {
               >
                 {profileSetupBusy ? 'Guardando…' : 'Guardar'}
               </button>
-              <div className="text-[11px] text-slate-500">Esta información le aparece solo al admin en OFICINA.</div>
+              <div className="text-[11px] text-slate-500">
+                Tu foto/nombre se usan para mostrar autor en Inicio. La fecha de nacimiento solo la ve el admin en OFICINA.
+              </div>
             </div>
           </div>
         </div>

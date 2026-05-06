@@ -2098,6 +2098,7 @@ const libraryHandler = (() => {
   const ITEM_TYPE = "song";
   const BUCKET = "ramber-tunes";
   const COVERS_BUCKET = "covers";
+  const PUBLIC_TABLE = "public_songs";
 
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -2211,7 +2212,44 @@ const libraryHandler = (() => {
     const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
     const r = await listSongs(auth.admin, auth.user.id, deleted);
     if (!r.ok) return send(res, 500, { error: "Error cargando canciones", detail: r.error });
-    return send(res, 200, { songs: r.songs, cleanup_deleted: 0 });
+    let publishedBySongId: Record<string, { genre?: string; published_at?: string }> = {};
+    try {
+      const ids = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => String(s?.id || "").trim()).filter(Boolean);
+      if (ids.length > 0) {
+        const { data: pubs, error: pubErr } = await auth.admin
+          .from(PUBLIC_TABLE)
+          .select("song_id, genre, published_at")
+          .eq("user_id", auth.user.id)
+          .in("song_id", ids)
+          .limit(500);
+        if (!pubErr && Array.isArray(pubs)) {
+          publishedBySongId = pubs.reduce((acc: any, row: any) => {
+            const sid = String(row?.song_id || "").trim();
+            if (!sid) return acc;
+            acc[sid] = {
+              genre: typeof row?.genre === "string" ? row.genre : "",
+              published_at: typeof row?.published_at === "string" ? row.published_at : "",
+            };
+            return acc;
+          }, {});
+        }
+      }
+    } catch {
+      publishedBySongId = {};
+    }
+
+    const songs = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => {
+      const sid = String(s?.id || "").trim();
+      const pub = sid ? publishedBySongId[sid] : null;
+      return {
+        ...s,
+        is_public: Boolean(pub),
+        public_genre: pub?.genre || null,
+        published_at: pub?.published_at || null,
+      };
+    });
+
+    return send(res, 200, { songs, cleanup_deleted: 0 });
   }
 
   async function handleCreate(req: any, res: any) {
@@ -3179,6 +3217,256 @@ const shareHandler = (() => {
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
+  };
+})();
+
+const socialHandler = (() => {
+  const PUBLIC_TABLE = "public_songs";
+  const LIB_TABLE = "library_items";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function getAdminOrError() {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return { ok: false as const, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" };
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, admin };
+  }
+
+  function computeDisplayName(user: any) {
+    const email = (user?.email || "").toString().trim();
+    const meta: any = user?.user_metadata || {};
+    const name = (meta?.display_name || meta?.full_name || meta?.name || "").toString().trim();
+    return (name || (email ? email.split("@")[0] : "") || "Usuario").slice(0, 60);
+  }
+
+  function computeAvatarUrl(user: any) {
+    const meta: any = user?.user_metadata || {};
+    const url = (meta?.avatar_url || meta?.avatarUrl || "").toString().trim();
+    return url.slice(0, 2000);
+  }
+
+  async function handlePublish(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const publish = Boolean(body?.publish);
+    const genre = typeof body?.genre === "string" ? body.genre.trim().slice(0, 50) : "";
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+    if (publish && !genre) return send(res, 400, { error: "Falta género" });
+
+    try {
+      const { data: song, error: songErr } = await auth.admin
+        .from(LIB_TABLE)
+        .select("id, user_id, title, audio_url, cover_url, deleted_at, type")
+        .eq("id", songId)
+        .eq("user_id", auth.user.id)
+        .eq("type", "song")
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
+      if (!song) return send(res, 404, { error: "No encontré esa canción" });
+      const title = String((song as any).title || "Canción").trim().slice(0, 120);
+      const audioUrl = String((song as any).audio_url || "").trim().slice(0, 2000);
+      const coverUrl = String((song as any).cover_url || "").trim().slice(0, 2000);
+      if (!audioUrl) return send(res, 400, { error: "Esta canción no tiene audio" });
+
+      if (!publish) {
+        const { error } = await auth.admin.from(PUBLIC_TABLE).delete().eq("song_id", songId).eq("user_id", auth.user.id);
+        if (error) {
+          const msg = error.message || "No pude quitarla de público.";
+          return send(res, 500, { error: msg });
+        }
+        return send(res, 200, { ok: true, is_public: false });
+      }
+
+      const authorName = computeDisplayName(auth.user);
+      const authorAvatarUrl = computeAvatarUrl(auth.user);
+      const publishedAt = new Date().toISOString();
+      const row: any = {
+        song_id: songId,
+        user_id: auth.user.id,
+        title,
+        audio_url: audioUrl,
+        cover_url: coverUrl || null,
+        genre,
+        author_name: authorName,
+        author_avatar_url: authorAvatarUrl || null,
+        published_at: publishedAt,
+      };
+
+      const { error } = await auth.admin.from(PUBLIC_TABLE).upsert(row, { onConflict: "song_id" });
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) {
+          return send(res, 500, {
+            error: "Falta configurar la tabla pública",
+            hint:
+              "Crea la tabla 'public_songs' en Supabase (SQL Editor). Luego intenta de nuevo.\n" +
+              "Si quieres, te paso el SQL listo para pegar.",
+            detail: error.message,
+          });
+        }
+        return send(res, 500, { error: "No pude publicar la canción", detail: error.message });
+      }
+
+      return send(res, 200, { ok: true, is_public: true, public_genre: genre, published_at: publishedAt });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFeed(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const a = await getAdminOrError();
+    if (!a.ok) return send(res, 500, { error: a.error });
+    const admin = a.admin;
+
+    const limitRaw = Number(pickQuery(req, "limit") || 30);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 30;
+    const genre = (pickQuery(req, "genre") || "").toString().trim().slice(0, 50);
+    const cursor = (pickQuery(req, "cursor") || "").toString().trim();
+
+    try {
+      const q = admin.from(PUBLIC_TABLE).select("*").order("published_at", { ascending: false }).limit(limit);
+      if (genre) q.eq("genre", genre);
+      if (cursor) q.lt("published_at", cursor);
+      const { data, error } = await q;
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) return send(res, 200, { ok: true, items: [] });
+        return send(res, 500, { error: "No pude cargar el inicio", detail: error.message });
+      }
+
+      const items = (Array.isArray(data) ? data : [])
+        .map((r: any) => ({
+          id: String(r?.song_id || "").trim(),
+          title: String(r?.title || "Canción").trim(),
+          audioUrl: String(r?.audio_url || "").trim(),
+          coverUrl: String(r?.cover_url || "").trim(),
+          publicGenre: typeof r?.genre === "string" ? r.genre : null,
+          publishedAt: typeof r?.published_at === "string" ? r.published_at : null,
+          authorName: typeof r?.author_name === "string" ? r.author_name : "Usuario",
+          authorAvatarUrl: typeof r?.author_avatar_url === "string" ? r.author_avatar_url : "",
+        }))
+        .filter((x: any) => x.id && x.audioUrl);
+
+      const nextCursor = items.length ? (items[items.length - 1].publishedAt || null) : null;
+      return send(res, 200, { ok: true, items, next_cursor: nextCursor });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleGenres(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const a = await getAdminOrError();
+    if (!a.ok) return send(res, 500, { error: a.error });
+    const admin = a.admin;
+
+    try {
+      const { data, error } = await admin.from(PUBLIC_TABLE).select("genre, cover_url").order("published_at", { ascending: false }).limit(200);
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) return send(res, 200, { ok: true, items: [] });
+        return send(res, 500, { error: "No pude cargar géneros", detail: error.message });
+      }
+
+      const map = new Map<string, { genre: string; count: number; coverUrl: string }>();
+      for (const r of Array.isArray(data) ? data : []) {
+        const g = typeof (r as any)?.genre === "string" ? (r as any).genre.trim() : "";
+        if (!g) continue;
+        const cover = typeof (r as any)?.cover_url === "string" ? (r as any).cover_url.trim() : "";
+        const prev = map.get(g);
+        if (!prev) {
+          map.set(g, { genre: g, count: 1, coverUrl: cover });
+        } else {
+          prev.count += 1;
+          if (!prev.coverUrl && cover) prev.coverUrl = cover;
+        }
+      }
+      const items = Array.from(map.values()).sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
+      return send(res, 200, { ok: true, items });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "social") return send(res, 404, { error: "Ruta no encontrada" });
+
+    let action = "";
+    try {
+      action = (new URL(req.url, "http://localhost").searchParams.get("action") || "").toString();
+    } catch {
+      action = "";
+    }
+    action = action.trim().toLowerCase();
+    const a = action || (next || "").toLowerCase();
+    if (a === "feed") return handleFeed(req, res);
+    if (a === "genres") return handleGenres(req, res);
+    if (a === "publish") return handlePublish(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
 
@@ -4568,6 +4856,7 @@ export default async function handler(req: any, res: any) {
     if (head === "support") return supportHandler(req, res);
     if (head === "ai") return aiHandler(req, res);
     if (head === "app") return appHandler(req, res);
+    if (head === "social") return socialHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
