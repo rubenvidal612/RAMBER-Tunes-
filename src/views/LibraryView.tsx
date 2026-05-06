@@ -1908,19 +1908,28 @@ function SongOptionsSheet({
         alert('Tu plan no incluye descargas.');
         return;
       }
-      if (!song.sunoTaskId || !song.sunoAudioId) {
-        alert('Esta canción no tiene taskId/audioId para convertir a WAV.');
+      const baseTaskId = (song.sunoTaskId || '').toString().trim();
+      const baseAudioId = (song.sunoAudioId || '').toString().trim();
+      const looksLikeUuid = (s: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim());
+      if (!baseTaskId || !baseAudioId || !looksLikeUuid(baseAudioId)) {
+        alert('Este audio no se puede convertir a WAV aquí. WAV solo está disponible para canciones generadas dentro de RAMBER Tunes.');
         return;
       }
 
       const start = await fetch('/api/suno/wav', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ taskId: song.sunoTaskId, audioId: song.sunoAudioId }),
+        body: JSON.stringify({ taskId: baseTaskId, audioId: baseAudioId }),
       });
       const startedOut = await start.json().catch(() => ({}));
       if (!start.ok) {
-        alert((startedOut?.detail || startedOut?.error || 'No pude iniciar la conversión a WAV.').toString());
+        const msg = (startedOut?.detail || startedOut?.error || 'No pude iniciar la conversión a WAV.').toString();
+        if (msg.toLowerCase().includes('record does not exist')) {
+          alert('Este audio no se puede convertir a WAV (el proveedor no encontró el registro). Prueba con una canción generada dentro de RAMBER Tunes.');
+        } else {
+          alert(msg);
+        }
         return;
       }
       const wavTaskId = String(startedOut?.taskId || '').trim();
