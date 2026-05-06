@@ -44,6 +44,21 @@ function stripTitleFromLyrics(title: string, lyrics: string) {
   return lyrics;
 }
 
+function toUserFriendlySunoError(out: any, fallback: string) {
+  const raw = (out?.detail || out?.error || out?.message || fallback || '').toString().trim();
+  const lower = raw.toLowerCase();
+  const looksLikeCopyright =
+    lower.includes('copyright') ||
+    lower.includes('copyrighted') ||
+    lower.includes('dmca') ||
+    lower.includes('rights') ||
+    lower.includes('infring');
+  if (looksLikeCopyright) {
+    return 'Error por Copyright.\n\nEse audio parece ser de una canción protegida. Sube un audio original o usa otro audio.';
+  }
+  return raw || fallback;
+}
+
 interface CreateViewProps {
   onSongCreated?: (song: SongItem, audioBlob?: Blob) => void;
   credits?: number;
@@ -646,8 +661,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = (out?.detail || out?.error || 'No se pudo agregar voces.').toString();
-        alert(msg);
+        alert(toUserFriendlySunoError(out, 'No se pudo agregar voces.'));
         return;
       }
 
@@ -762,8 +776,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = (out?.detail || out?.error || 'No se pudo generar el instrumental.').toString();
-        alert(msg);
+        alert(toUserFriendlySunoError(out, 'No se pudo generar el instrumental.'));
         return;
       }
 
@@ -858,8 +871,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = (out?.detail || out?.error || 'No se pudo hacer el cover.').toString();
-        alert(msg);
+        alert(toUserFriendlySunoError(out, 'No se pudo hacer el cover.'));
         return;
       }
       const taskId = typeof out?.taskId === 'string' ? out.taskId : '';
@@ -955,8 +967,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = (out?.detail || out?.error || 'No se pudo crear la canción.').toString();
-        alert(msg);
+        alert(toUserFriendlySunoError(out, 'No se pudo crear la canción.'));
         return;
       }
 

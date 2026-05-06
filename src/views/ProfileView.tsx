@@ -5,7 +5,7 @@ import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
 
-export function ProfileView() {
+export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -116,10 +116,18 @@ export function ProfileView() {
             <div className="w-1 h-3 bg-current rounded-full rotate-[30deg] -mr-4" />
           </div>
         </div>
-        <p className="text-slate-400 font-medium text-sm mb-6 max-w-[260px]">
-          No hay nada aquí, ¡es hora de hacer historia!
-        </p>
-        <button className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90 transition-all text-white font-bold text-sm px-6 py-2.5 rounded-full shadow-lg shadow-indigo-500/20">
+        <div className="mb-6 max-w-[320px]">
+          <div className="text-base font-extrabold tracking-tight leading-tight bg-gradient-to-r from-yellow-300 via-amber-200 to-fuchsia-200 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(250,204,21,0.12)]">
+            Haz que Escuchen Tus Canciones en TODO EL MUNDO!
+          </div>
+          <div className="mt-2 text-slate-300 font-semibold text-sm">
+            ¡es hora de hacer <span className="text-white font-extrabold">HISTORIA</span>!
+          </div>
+        </div>
+        <button
+          onClick={() => onGoStudio?.()}
+          className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90 transition-all text-white font-bold text-sm px-6 py-2.5 rounded-full shadow-lg shadow-indigo-500/20"
+        >
           ¡Comenzar ahora!
         </button>
       </div>
