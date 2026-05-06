@@ -1909,10 +1909,61 @@ function SongOptionsSheet({
         return;
       }
       const baseTaskId = (song.sunoTaskId || '').toString().trim();
-      const baseAudioId = (song.sunoAudioId || '').toString().trim();
+      let baseAudioId = (song.sunoAudioId || '').toString().trim();
       const looksLikeUuid = (s: string) =>
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim());
-      if (!baseTaskId || !baseAudioId || !looksLikeUuid(baseAudioId)) {
+      const resolveAudioIdFromTask = async (taskId: string) => {
+        const tr = await fetch(`/api/suno/task?kind=generate&taskId=${encodeURIComponent(taskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) return '';
+        const provider = tout?.data || {};
+        const d = provider?.data || provider?.data?.data || provider;
+        const candidates: any[] = [];
+        if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+        if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+        if (Array.isArray(d?.response)) candidates.push(d.response);
+        if (Array.isArray(d?.data)) candidates.push(d.data);
+        if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+        const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+        const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
+        const pickUrl = (track: any) => {
+          const raw =
+            track?.audio_url ||
+            track?.audioUrl ||
+            track?.streamAudioUrl ||
+            track?.stream_audio_url ||
+            track?.stream_url ||
+            track?.url ||
+            '';
+          const s = cleanStr(raw);
+          return /^https?:\/\//i.test(s) ? s : '';
+        };
+        const pickAudioId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || '');
+        const tracks = (Array.isArray(list) ? list : [])
+          .map((track: any) => ({ audioUrl: pickUrl(track), audioId: pickAudioId(track) }))
+          .filter((x) => x.audioUrl && looksLikeUuid(x.audioId));
+        if (tracks.length === 0) return '';
+        const direct = (song.audioUrl || '').toString().trim();
+        if (direct) {
+          const match = tracks.find((x) => x.audioUrl === direct);
+          if (match?.audioId) return match.audioId;
+        }
+        const wantsB = /\sB$/i.test((song.title || '').toString().trim());
+        const chosen = wantsB && tracks.length > 1 ? tracks[1] : tracks[0];
+        return chosen?.audioId || '';
+      };
+
+      if (!baseTaskId) {
+        alert('Esta canción no tiene taskId para convertir a WAV.');
+        return;
+      }
+      if (!looksLikeUuid(baseAudioId)) {
+        const resolved = await resolveAudioIdFromTask(baseTaskId);
+        baseAudioId = resolved;
+      }
+      if (!looksLikeUuid(baseAudioId)) {
         alert('Este audio no se puede convertir a WAV aquí. WAV solo está disponible para canciones generadas dentro de RAMBER Tunes.');
         return;
       }
@@ -1926,7 +1977,7 @@ function SongOptionsSheet({
       if (!start.ok) {
         const msg = (startedOut?.detail || startedOut?.error || 'No pude iniciar la conversión a WAV.').toString();
         if (msg.toLowerCase().includes('record does not exist')) {
-          alert('Este audio no se puede convertir a WAV (el proveedor no encontró el registro). Prueba con una canción generada dentro de RAMBER Tunes.');
+          alert('Este audio no se puede convertir a WAV (el proveedor no encontró el registro). Prueba con una canción generada dentro de RAMBER Tunes o una canción más reciente.');
         } else {
           alert(msg);
         }
