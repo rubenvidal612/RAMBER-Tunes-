@@ -1573,6 +1573,15 @@ function SongOptionsSheet({
     }
   };
 
+  const canShowWav = (() => {
+    if (isDeleted) return false;
+    const taskId = (song?.sunoTaskId || '').toString().trim();
+    if (!taskId) return false;
+    const audioId = (song?.sunoAudioId || '').toString().trim();
+    if (audioId.startsWith('stem_')) return false;
+    return true;
+  })();
+
   const sanitizeFileName = (s: string) => (s || '').toString().replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
   const closeLicenseModal = () => {
     if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
@@ -1964,7 +1973,12 @@ function SongOptionsSheet({
         baseAudioId = resolved;
       }
       if (!looksLikeUuid(baseAudioId)) {
-        alert('Este audio no se puede convertir a WAV aquí. WAV solo está disponible para canciones generadas dentro de RAMBER Tunes.');
+        const a = (song.sunoAudioId || '').toString().trim();
+        const derivedHint =
+          a.startsWith('stem_') || /\s-\s(voz|instrumental)/i.test((song.title || '').toString())
+            ? 'Parece que esta es una pista derivada (Voz/Instrumental). Abre la canción original y ahí sí podrás descargar WAV.'
+            : 'WAV solo está disponible para canciones generadas dentro de RAMBER Tunes.';
+        alert(`Este audio no se puede convertir a WAV aquí.\n\n${derivedHint}`);
         return;
       }
 
@@ -2733,7 +2747,7 @@ function SongOptionsSheet({
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
               </button>
             )}
-            {!isDeleted && (
+            {canShowWav && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar WAV</span>
               </button>
