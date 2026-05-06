@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 
@@ -981,12 +981,25 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   >
                     ← Carpetas
                   </button>
-                  <button
-                    onClick={() => setIsCreateListOpen(true)}
-                    className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors flex items-center gap-2"
-                  >
-                    <FolderPlus className="w-4 h-4" /> Nueva carpeta
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsCreateListOpen(true)}
+                      className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors flex items-center gap-2"
+                    >
+                      <FolderPlus className="w-4 h-4" /> Nueva carpeta
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveFolderId('');
+                        setActiveTab('canciones');
+                      }}
+                      className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors"
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="text-white font-extrabold text-lg">
@@ -1034,12 +1047,22 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               <>
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-white font-extrabold text-lg">Carpetas</div>
-                  <button
-                    onClick={() => setIsCreateListOpen(true)}
-                    className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors flex items-center gap-2"
-                  >
-                    <FolderPlus className="w-4 h-4" /> Nueva carpeta
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsCreateListOpen(true)}
+                      className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold text-slate-200 transition-colors flex items-center gap-2"
+                    >
+                      <FolderPlus className="w-4 h-4" /> Nueva carpeta
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('canciones')}
+                      className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors"
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
