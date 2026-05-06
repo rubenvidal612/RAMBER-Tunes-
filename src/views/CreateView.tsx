@@ -374,19 +374,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   useEffect(() => {
     if (!audioUploadUrl) return;
-    if (!audioFile) return;
     setUploadProgress(100);
-  }, [audioUploadUrl, audioFile]);
+  }, [audioUploadUrl]);
 
   useEffect(() => {
     if (!audioUploadUrl) return;
-    if (!audioFile) return;
     const key = (audioUploadPath || audioUploadUrl).toString().trim();
     if (!key) return;
     if (lastTranscribedKeyRef.current === key) return;
     lastTranscribedKeyRef.current = key;
     transcribeLyricsFromAudio(true).catch(() => {});
-  }, [audioUploadUrl, audioUploadPath, audioFile]);
+  }, [audioUploadUrl, audioUploadPath]);
 
   useEffect(() => {
     if (!onSongCreated) return;
