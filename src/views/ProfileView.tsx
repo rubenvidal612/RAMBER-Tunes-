@@ -5,7 +5,7 @@ import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
 
-export function ProfileView({ credits }: { credits?: number }) {
+export function ProfileView() {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -57,11 +57,7 @@ export function ProfileView({ credits }: { credits?: number }) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-2 px-6 mb-6 text-center">
-        <div className="flex flex-col items-center">
-          <span className="text-lg font-bold text-slate-100">{credits || 0}</span>
-          <span className="text-xs text-slate-400">Créditos</span>
-        </div>
+      <div className="grid grid-cols-3 gap-2 px-6 mb-6 text-center">
         <div className="flex flex-col items-center">
           <span className="text-lg font-bold text-slate-100">0</span>
           <span className="text-xs text-slate-400">Me gusta</span>
