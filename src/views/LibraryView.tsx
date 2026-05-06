@@ -27,6 +27,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
+  const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
+  const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
+  const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
+  const [downloadsModalTaskId, setDownloadsModalTaskId] = useState('');
+  const [downloadsModalKind, setDownloadsModalKind] = useState('');
+  const [downloadsModalItems, setDownloadsModalItems] = useState<Array<{ key: string; label: string; url: string; audioId?: string }>>([]);
+  const [downloadsModalBusy, setDownloadsModalBusy] = useState(false);
+  const [downloadsModalError, setDownloadsModalError] = useState('');
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -86,6 +94,30 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   }, []);
 
   useEffect(() => {
+    const completedKey = 'ramber.completedSunoDownloads_v1';
+    const read = () => {
+      try {
+        const raw = window.localStorage.getItem(completedKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const list = Array.isArray(parsed) ? parsed : [];
+        return list
+          .map((x: any) => ({
+            taskId: typeof x?.taskId === 'string' ? x.taskId.trim() : '',
+            kind: typeof x?.kind === 'string' ? x.kind.trim() : '',
+            doneAt: Number.isFinite(Number(x?.doneAt || 0)) ? Number(x.doneAt || 0) : 0,
+            draft: x?.draft ?? null,
+          }))
+          .filter((x: any) => x.taskId && x.kind);
+      } catch {
+        return [];
+      }
+    };
+    setCompletedDownloads(read());
+    const id = window.setInterval(() => setCompletedDownloads(read()), 1200);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     try {
       const raw = window.localStorage.getItem('ramber.libraryFilters_v1');
       const parsed = raw ? JSON.parse(raw) : null;
@@ -139,6 +171,61 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       if (s) return s;
     }
     return '';
+  };
+
+  const removeCompletedDownload = (taskId: string) => {
+    const completedKey = 'ramber.completedSunoDownloads_v1';
+    try {
+      const raw = window.localStorage.getItem(completedKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const next = list.filter((x: any) => String(x?.taskId || '').trim() !== taskId);
+      if (next.length === 0) window.localStorage.removeItem(completedKey);
+      else window.localStorage.setItem(completedKey, JSON.stringify(next));
+    } catch {
+    }
+  };
+
+  const openCompletedDownload = async (item: { taskId: string; kind: string; doneAt: number; draft?: any }) => {
+    setDownloadsModalError('');
+    setDownloadsModalItems([]);
+    setDownloadsModalTaskId(item.taskId);
+    setDownloadsModalKind(item.kind);
+    const title = (() => {
+      const k = (item.kind || '').toLowerCase();
+      const base = k === 'split_stem' ? 'Stems (Instrumentos y voz)' : k === 'separate_vocal' ? 'Karaoke (sin voz)' : 'Descarga';
+      const name = (item?.draft?.title || '').toString().trim();
+      return name ? `${base}: ${name}` : base;
+    })();
+    setDownloadsModalTitle(title);
+    setDownloadsModalOpen(true);
+    setDownloadsModalBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setDownloadsModalError(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch(`/api/suno/task?kind=${encodeURIComponent(item.kind)}&taskId=${encodeURIComponent(item.taskId)}`, {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setDownloadsModalError((out?.detail || out?.error || 'No pude cargar la descarga.').toString());
+        return;
+      }
+      const provider = out?.data;
+      const items = parseVocalRemovalItems(provider);
+      if (items.length === 0) {
+        setDownloadsModalError('Terminó, pero no recibí links de stems.');
+        return;
+      }
+      setDownloadsModalItems(items);
+    } catch (e) {
+      setDownloadsModalError(e instanceof Error ? e.message : 'Error abriendo descarga');
+    } finally {
+      setDownloadsModalBusy(false);
+    }
   };
 
   const pickMp4ThumbUrl = (provider: any) => {
@@ -286,6 +373,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const k = (kind || '').toLowerCase();
     if (k === 'generate') return 2;
     return 1;
+  };
+
+  const pendingTitleForKind = (kind: string) => {
+    const k = (kind || '').toLowerCase();
+    if (k === 'separate_vocal') return 'Se está eliminando la voz (Karaoke)…';
+    if (k === 'split_stem') return 'Se están separando instrumentos y voz (Stems)…';
+    const n = expectedTracksForKind(k || 'generate');
+    return n > 1 ? `Se están generando ${n} canciones…` : 'Se está generando tu canción…';
   };
   
   const tabs: {id: LibraryTab, label: string}[] = [
@@ -484,11 +579,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-white font-bold truncate">
-                        {(() => {
-                          const first = pendingTasks[0];
-                          const n = expectedTracksForKind(first?.kind || 'generate');
-                          return n > 1 ? `Se están generando ${n} canciones…` : 'Se está generando tu canción…';
-                        })()}
+                        {pendingTitleForKind(pendingTasks[0]?.kind || 'generate')}
                       </div>
                       <div className="text-slate-400 text-xs">
                         {pendingTasks.length > 1 ? `Tareas en cola: ${pendingTasks.length}.` : ' '}
@@ -547,6 +638,62 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   const n = expectedTracksForKind(first?.kind || 'generate');
                   return <>{Array.from({ length: n }, (_, i) => i).map(row)}</>;
                 })()}
+              </div>
+            )}
+
+            {completedDownloads.length > 0 && !showTrash && (
+              <div className="glass-card rounded-2xl p-4 border border-white/10">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white font-bold truncate">Listo para descargar</div>
+                    <div className="text-slate-400 text-xs">Tus procesos terminaron. Abre para ver los links.</div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        try {
+                          window.localStorage.removeItem('ramber.completedSunoDownloads_v1');
+                        } catch {
+                        }
+                        setCompletedDownloads([]);
+                      }}
+                      className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {completedDownloads.slice(0, 6).map((it) => {
+                    const k = (it.kind || '').toLowerCase();
+                    const base = k === 'split_stem' ? 'Stems' : k === 'separate_vocal' ? 'Karaoke' : 'Descarga';
+                    const name = (it?.draft?.title || '').toString().trim();
+                    const label = name ? `${base}: ${name}` : base;
+                    return (
+                      <div key={`${it.taskId}:${it.kind}`} className="w-full glass-card rounded-2xl p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-slate-200 font-semibold truncate">{label}</div>
+                          <div className="text-slate-500 text-xs truncate">{`TaskId: ${it.taskId}`}</div>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2">
+                          <button
+                            onClick={() => openCompletedDownload(it).catch(() => {})}
+                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                          >
+                            Abrir
+                          </button>
+                          <button
+                            onClick={() => removeCompletedDownload(it.taskId)}
+                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                          >
+                            Borrar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -890,8 +1037,258 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           }}
         />
       )}
+
+      {downloadsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center">
+          <button
+            className="absolute inset-0 w-full h-full"
+            onClick={() => {
+              setDownloadsModalOpen(false);
+              setDownloadsModalItems([]);
+              setDownloadsModalError('');
+            }}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold truncate">{downloadsModalTitle || 'Descarga'}</div>
+              <button
+                onClick={() => {
+                  setDownloadsModalOpen(false);
+                  setDownloadsModalItems([]);
+                  setDownloadsModalError('');
+                }}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-y-auto overscroll-contain">
+              <div className="text-slate-400 text-xs">{downloadsModalTaskId ? `TaskId: ${downloadsModalTaskId}` : ' '}</div>
+              <div className="mt-1 text-slate-500 text-xs">{downloadsModalKind ? `Tipo: ${downloadsModalKind}` : ' '}</div>
+
+              {downloadsModalBusy ? (
+                <div className="mt-6 text-slate-400 text-sm">Cargando…</div>
+              ) : downloadsModalError ? (
+                <div className="mt-6 text-red-200 text-sm">{downloadsModalError}</div>
+              ) : downloadsModalItems.length === 0 ? (
+                <div className="mt-6 text-slate-400 text-sm">No hay pistas para mostrar.</div>
+              ) : (
+                <>
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <button
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      disabled={downloadsModalItems.length === 0}
+                      onClick={async () => {
+                        const text = downloadsModalItems.map((x) => `${x.label}: ${x.url}`).join('\n');
+                        try {
+                          await navigator.clipboard.writeText(text);
+                          alert('Copiado al portapapeles.');
+                        } catch {
+                          alert(text);
+                        }
+                      }}
+                    >
+                      Copiar links
+                    </button>
+                    <button
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      disabled={downloadsModalItems.length === 0}
+                      onClick={() => downloadsModalItems.forEach((x) => window.open(x.url, '_blank'))}
+                    >
+                      Abrir todo
+                    </button>
+                    <button
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
+                      onClick={() => removeCompletedDownload(downloadsModalTaskId)}
+                      disabled={!downloadsModalTaskId}
+                    >
+                      Marcar como listo
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {downloadsModalItems.map((it) => (
+                      <div
+                        key={`${it.key}:${it.url}`}
+                        className="w-full glass-card rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-white/10 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-white font-bold truncate">{it.label}</div>
+                          <div className="text-slate-500 text-xs truncate">{it.url}</div>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2">
+                          <button
+                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            onClick={() => window.open(it.url, '_blank')}
+                          >
+                            Abrir
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 text-[11px] text-slate-500">Los links pueden expirar. Descárgalos pronto si los vas a guardar.</div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function parseVocalRemovalItems(provider: any) {
+  const cleanUrl = (raw: any) =>
+    String(raw || '')
+      .trim()
+      .replaceAll('`', '')
+      .trim();
+
+  const normalizeKey = (k: string) => {
+    const kk = (k || '').trim();
+    if (!kk) return '';
+    if (kk.endsWith('_url')) return kk.slice(0, -4) + 'Url';
+    return kk;
+  };
+
+  const labelForKey = (k: string) => {
+    const kk = normalizeKey(k);
+    const map: Record<string, string> = {
+      originUrl: 'Original',
+      instrumentalUrl: 'Instrumental (Karaoke)',
+      vocalUrl: 'Voz',
+      backingVocalsUrl: 'Coros',
+      drumsUrl: 'Batería',
+      bassUrl: 'Bajo',
+      guitarUrl: 'Guitarra',
+      keyboardUrl: 'Teclado',
+      percussionUrl: 'Percusión',
+      stringsUrl: 'Cuerdas',
+      synthUrl: 'Synth',
+      fxUrl: 'FX',
+      brassUrl: 'Metales',
+      woodwindsUrl: 'Vientos',
+    };
+    if (map[kk]) return map[kk];
+    const base = kk
+      .replaceAll(/Url$/g, '')
+      .replaceAll(/([a-z])([A-Z])/g, '$1 $2')
+      .trim();
+    const map2: Record<string, string> = {
+      Vocals: 'Voz',
+      Instrumental: 'Instrumental (Karaoke)',
+      'Backing Vocals': 'Coros',
+      Drums: 'Batería',
+      Bass: 'Bajo',
+      Guitar: 'Guitarra',
+      Keyboard: 'Teclado',
+      Percussion: 'Percusión',
+      Strings: 'Cuerdas',
+      Synth: 'Synth',
+      FX: 'FX',
+      Brass: 'Metales',
+      Woodwinds: 'Vientos',
+      Original: 'Original',
+    };
+    if (map2[base]) return map2[base];
+    return base || 'Pista';
+  };
+
+  const keyFromGroup = (label: string) => {
+    const raw = (label || '').trim();
+    const norm = raw.replaceAll(/[^a-zA-Z0-9 ]/g, ' ').replaceAll(/\s+/g, ' ').trim();
+    const lower = norm.toLowerCase();
+    const fixed: Record<string, string> = {
+      vocals: 'vocalUrl',
+      vocal: 'vocalUrl',
+      instrumental: 'instrumentalUrl',
+      'backing vocals': 'backingVocalsUrl',
+      drums: 'drumsUrl',
+      bass: 'bassUrl',
+      guitar: 'guitarUrl',
+      keyboard: 'keyboardUrl',
+      percussion: 'percussionUrl',
+      strings: 'stringsUrl',
+      synth: 'synthUrl',
+      fx: 'fxUrl',
+      brass: 'brassUrl',
+      woodwinds: 'woodwindsUrl',
+      original: 'originUrl',
+    };
+    if (fixed[lower]) return fixed[lower];
+    const words = norm.split(' ').filter(Boolean);
+    if (words.length === 0) return '';
+    const camel = words
+      .map((w, i) => {
+        const x = w.toLowerCase();
+        if (i === 0) return x;
+        return x.slice(0, 1).toUpperCase() + x.slice(1);
+      })
+      .join('');
+    return camel ? `${camel}Url` : '';
+  };
+
+  const root = provider?.data || {};
+  const resp = root?.response || root?.data?.response || {};
+  const directUrlEntries = Object.entries(resp || {})
+    .filter(([k, v]) => {
+      const kk = String(k || '');
+      const vv = cleanUrl(v);
+      if (!vv.startsWith('http')) return false;
+      return kk.endsWith('Url') || kk.endsWith('_url') || kk.endsWith('url');
+    })
+    .map(([k, v]) => [normalizeKey(String(k)), cleanUrl(v)] as const);
+
+  const map = new Map<string, { url: string; audioId?: string }>();
+
+  if (Array.isArray(resp?.originData)) {
+    for (const row of resp.originData) {
+      const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim();
+      const key = keyFromGroup(label) || `${label}Url`;
+      const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
+      const audioId = String(row?.id || '').trim();
+      if (!key || !url.startsWith('http')) continue;
+      map.set(normalizeKey(key), { url, audioId: audioId || undefined });
+    }
+  }
+
+  for (const [k, v] of directUrlEntries) {
+    const prev = map.get(k);
+    map.set(k, { url: v, audioId: prev?.audioId });
+  }
+
+  const entries = Array.from(map.entries())
+    .filter(([_, v]) => typeof v?.url === 'string' && v.url.trim().startsWith('http'))
+    .map(([k, v]) => [k, v.url, v.audioId] as const);
+
+  const order = [
+    'instrumentalUrl',
+    'vocalUrl',
+    'backingVocalsUrl',
+    'drumsUrl',
+    'bassUrl',
+    'guitarUrl',
+    'keyboardUrl',
+    'percussionUrl',
+    'stringsUrl',
+    'synthUrl',
+    'fxUrl',
+    'brassUrl',
+    'woodwindsUrl',
+    'originUrl',
+  ];
+  const rank = (k: string) => {
+    const i = order.indexOf(normalizeKey(k));
+    return i >= 0 ? i : 999;
+  };
+
+  return entries
+    .map(([k, url, audioId]) => ({ key: normalizeKey(k), label: labelForKey(k), url, audioId: audioId || undefined }))
+    .sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
 }
 
 function SongOptionsSheet({
@@ -1519,201 +1916,29 @@ function SongOptionsSheet({
         alert('No recibí taskId de separación.');
         return;
       }
+      const pendingListKey = 'ramber.pendingSunoTasks_v1';
+      const pendingLegacyKey = 'ramber.pendingSunoTask';
       try {
-        await navigator.clipboard.writeText(sepTaskId);
-        alert(`Listo. Ya empecé.\n\nTaskId (copiado):\n${sepTaskId}\n\nNo lo compartas.`);
-      } catch {
-        alert(`Listo. Ya empecé.\n\nTaskId:\n${sepTaskId}\n\nNo lo compartas.`);
-      }
-
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 240_000) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const tr = await fetch(`/api/suno/task?kind=vocal-removal&taskId=${encodeURIComponent(sepTaskId)}`, {
-          headers: { authorization: `Bearer ${t.token}` },
+        const raw = window.localStorage.getItem(pendingListKey);
+        const arr = raw ? JSON.parse(raw) : [];
+        const list = Array.isArray(arr) ? arr : [];
+        list.push({
+          taskId: sepTaskId,
+          kind: type,
+          startedAt: Date.now(),
+          draft: {
+            title: (song?.title || '').toString(),
+            songId: (song?.id || '').toString(),
+          },
         });
-        const tout = await tr.json().catch(() => ({}));
-        if (!tr.ok) continue;
-
-        const provider = tout?.data;
-        const status = String(
-          provider?.data?.successFlag ||
-            provider?.data?.status ||
-            provider?.data?.data?.successFlag ||
-            provider?.data?.data?.status ||
-            ''
-        ).toUpperCase();
-
-        if (
-          status === 'FAILED' ||
-          status === 'CREATE_TASK_FAILED' ||
-          status === 'GENERATE_AUDIO_FAILED' ||
-          status === 'CALLBACK_EXCEPTION'
-        ) {
-          alert('No se pudo separar la canción.');
-          return;
+        window.localStorage.setItem(pendingListKey, JSON.stringify(list));
+        try {
+          window.localStorage.removeItem(pendingLegacyKey);
+        } catch {
         }
-        if (status !== 'SUCCESS') continue;
-
-        const cleanUrl = (raw: any) =>
-          String(raw || '')
-            .trim()
-            .replaceAll('`', '')
-            .trim();
-
-        const normalizeKey = (k: string) => {
-          const kk = (k || '').trim();
-          if (!kk) return '';
-          if (kk.endsWith('_url')) return kk.slice(0, -4) + 'Url';
-          return kk;
-        };
-
-        const labelForKey = (k: string) => {
-          const kk = normalizeKey(k);
-          const map: Record<string, string> = {
-            originUrl: 'Original',
-            instrumentalUrl: 'Instrumental (Karaoke)',
-            vocalUrl: 'Voz',
-            backingVocalsUrl: 'Coros',
-            drumsUrl: 'Batería',
-            bassUrl: 'Bajo',
-            guitarUrl: 'Guitarra',
-            keyboardUrl: 'Teclado',
-            percussionUrl: 'Percusión',
-            stringsUrl: 'Cuerdas',
-            synthUrl: 'Synth',
-            fxUrl: 'FX',
-            brassUrl: 'Metales',
-            woodwindsUrl: 'Vientos',
-          };
-          if (map[kk]) return map[kk];
-          const base = kk
-            .replaceAll(/Url$/g, '')
-            .replaceAll(/([a-z])([A-Z])/g, '$1 $2')
-            .trim();
-          const map2: Record<string, string> = {
-            'Vocals': 'Voz',
-            'Instrumental': 'Instrumental (Karaoke)',
-            'Backing Vocals': 'Coros',
-            'Drums': 'Batería',
-            'Bass': 'Bajo',
-            'Guitar': 'Guitarra',
-            'Keyboard': 'Teclado',
-            'Percussion': 'Percusión',
-            'Strings': 'Cuerdas',
-            'Synth': 'Synth',
-            'FX': 'FX',
-            'Brass': 'Metales',
-            'Woodwinds': 'Vientos',
-            'Original': 'Original',
-          };
-          if (map2[base]) return map2[base];
-          return base || 'Pista';
-        };
-
-        const root = provider?.data || {};
-        const resp = root?.response || root?.data?.response || {};
-
-        const directUrlEntries = Object.entries(resp || {})
-          .filter(([k, v]) => {
-            const kk = String(k || '');
-            const vv = cleanUrl(v);
-            if (!vv.startsWith('http')) return false;
-            return kk.endsWith('Url') || kk.endsWith('_url') || kk.endsWith('url');
-          })
-          .map(([k, v]) => [normalizeKey(String(k)), cleanUrl(v)] as const);
-
-        const keyFromGroup = (label: string) => {
-          const raw = (label || '').trim();
-          const norm = raw.replaceAll(/[^a-zA-Z0-9 ]/g, ' ').replaceAll(/\s+/g, ' ').trim();
-          const lower = norm.toLowerCase();
-          const fixed: Record<string, string> = {
-            vocals: 'vocalUrl',
-            vocal: 'vocalUrl',
-            instrumental: 'instrumentalUrl',
-            'backing vocals': 'backingVocalsUrl',
-            drums: 'drumsUrl',
-            bass: 'bassUrl',
-            guitar: 'guitarUrl',
-            keyboard: 'keyboardUrl',
-            percussion: 'percussionUrl',
-            strings: 'stringsUrl',
-            synth: 'synthUrl',
-            fx: 'fxUrl',
-            brass: 'brassUrl',
-            woodwinds: 'woodwindsUrl',
-            original: 'originUrl',
-          };
-          if (fixed[lower]) return fixed[lower];
-          const words = norm.split(' ').filter(Boolean);
-          if (words.length === 0) return '';
-          const camel = words
-            .map((w, i) => {
-              const x = w.toLowerCase();
-              if (i === 0) return x;
-              return x.slice(0, 1).toUpperCase() + x.slice(1);
-            })
-            .join('');
-          return camel ? `${camel}Url` : '';
-        };
-
-        const map = new Map<string, { url: string; audioId?: string }>();
-
-        if (Array.isArray(resp?.originData)) {
-          for (const row of resp.originData) {
-            const label = String(row?.stem_type_group_name || row?.stemTypeGroupName || row?.name || row?.type || '').trim();
-            const key = keyFromGroup(label) || `${label}Url`;
-            const url = cleanUrl(row?.audio_url || row?.audioUrl || '');
-            const audioId = String(row?.id || '').trim();
-            if (!key || !url.startsWith('http')) continue;
-            map.set(normalizeKey(key), { url, audioId: audioId || undefined });
-          }
-        }
-
-        for (const [k, v] of directUrlEntries) {
-          const prev = map.get(k);
-          map.set(k, { url: v, audioId: prev?.audioId });
-        }
-
-        const entries = Array.from(map.entries())
-          .filter(([_, v]) => typeof v?.url === 'string' && v.url.trim().startsWith('http'))
-          .map(([k, v]) => [k, v.url, v.audioId] as const);
-
-        if (entries.length === 0) {
-          alert('Terminó, pero no recibí links de stems.');
-          return;
-        }
-
-        const order = [
-          'instrumentalUrl',
-          'vocalUrl',
-          'backingVocalsUrl',
-          'drumsUrl',
-          'bassUrl',
-          'guitarUrl',
-          'keyboardUrl',
-          'percussionUrl',
-          'stringsUrl',
-          'synthUrl',
-          'fxUrl',
-          'brassUrl',
-          'woodwindsUrl',
-          'originUrl',
-        ];
-        const rank = (k: string) => {
-          const i = order.indexOf(normalizeKey(k));
-          return i >= 0 ? i : 999;
-        };
-        const items = entries
-          .map(([k, v, audioId]) => ({ key: normalizeKey(k), label: labelForKey(k), url: v, audioId: audioId || undefined }))
-          .sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
-        setStemsItems(items);
-        setStemsMeta({ taskId: sepTaskId, type });
-        setShowStems(true);
-        return;
+      } catch {
       }
-
-      alert('Está tardando la separación. Intenta de nuevo en unos segundos.');
+      onClose();
     } finally {
       setIsBusy(false);
     }

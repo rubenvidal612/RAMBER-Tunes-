@@ -940,6 +940,35 @@ export default function App() {
       }
     };
 
+    const completedDownloadsKey = 'ramber.completedSunoDownloads_v1';
+    const readCompleted = () => {
+      try {
+        const raw = window.localStorage.getItem(completedDownloadsKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+    const writeCompleted = (list: any[]) => {
+      try {
+        if (!Array.isArray(list) || list.length === 0) {
+          window.localStorage.removeItem(completedDownloadsKey);
+          return;
+        }
+        window.localStorage.setItem(completedDownloadsKey, JSON.stringify(list));
+      } catch {
+      }
+    };
+    const pushCompleted = (item: any) => {
+      try {
+        const list = readCompleted();
+        const next = Array.isArray(list) ? [item, ...list] : [item];
+        writeCompleted(next.slice(0, 50));
+      } catch {
+      }
+    };
+
     const migrateLegacyIfNeeded = () => {
       try {
         const existing = readList();
@@ -1076,6 +1105,21 @@ export default function App() {
         }
 
         if (status === 'SUCCESS') {
+          const kind = (pending.kind || 'generate').toLowerCase();
+          if (kind === 'separate_vocal' || kind === 'split_stem') {
+            pushCompleted({
+              taskId: pending.taskId,
+              kind,
+              doneAt: Date.now(),
+              draft: pending.draft ?? null,
+            });
+            const list = migrateLegacyIfNeeded();
+            const rest = Array.isArray(list) ? list.slice(1) : [];
+            writeList(rest);
+            showToast(kind === 'split_stem' ? 'Listo: Stems listos para descargar.' : 'Listo: Karaoke listo para descargar.');
+            return;
+          }
+
           const tracks = extractTracks(data).filter((x) => x && x.audioUrl);
           if (tracks.length === 0) {
             return;
