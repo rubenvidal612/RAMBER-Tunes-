@@ -487,6 +487,23 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const n = expectedTracksForKind(k || 'generate');
     return n > 1 ? `Se están generando ${n} canciones…` : 'Se está generando tu canción…';
   };
+
+  const createFolderQuick = () => {
+    const max = folders.reduce((acc, f) => {
+      const m = String(f?.name || '')
+        .trim()
+        .match(/^carpeta\s+(\d+)$/i);
+      if (!m) return acc;
+      const n = Number(m[1]);
+      if (!Number.isFinite(n)) return acc;
+      return Math.max(acc, n);
+    }, 0);
+    const name = `Carpeta ${max + 1}`;
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    setFolders((prev) => [{ id, name, createdAt: Date.now() }, ...prev]);
+    setActiveTab('listas');
+    setActiveFolderId(id);
+  };
   
   const tabs: {id: LibraryTab, label: string}[] = [
     { id: 'canciones', label: 'Canciones' },
@@ -534,6 +551,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             >
               <Trash2 className="w-4 h-4" /> {showTrash ? "Biblioteca" : "Papelera"}
             </button>
+            {!showTrash && (
+              <button
+                onClick={() => createFolderQuick()}
+                className="flex-shrink-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/10 to-fuchsia-500/10 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
+                title="Crear carpeta"
+              >
+                <FolderPlus className="w-4 h-4" /> + Carpeta
+              </button>
+            )}
           </div>
         )}
 
@@ -784,13 +810,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         <div className="shrink-0 flex items-center gap-2">
                           <button
                             onClick={() => openCompletedDownload(it).catch(() => {})}
-                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                           >
                             Ver
                           </button>
                           <button
                             onClick={() => removeCompletedDownload(it.taskId)}
-                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            className="bg-red-500/10 hover:bg-red-500/20 text-red-100 border border-red-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                           >
                             Borrar
                           </button>
@@ -1154,8 +1180,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+          <div className="relative w-full md:max-w-[720px] glass-panel rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col shadow-[0_-20px_60px_rgba(0,0,0,0.55)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/10 to-fuchsia-500/10">
               <div className="text-white font-extrabold truncate">{downloadsModalTitle || 'Descarga'}</div>
               <button
                 onClick={() => {
@@ -1183,7 +1209,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 <>
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      className="bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-100 border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
                       disabled={downloadsModalItems.length === 0}
                       onClick={async () => {
                         const text = downloadsModalItems.map((x) => `${x.label}: ${x.url}`).join('\n');
@@ -1198,7 +1224,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       Copiar links
                     </button>
                     <button
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
                       disabled={downloadsModalItems.length === 0}
                       onClick={() => {
                         const base = sanitizeFileName(downloadsModalTitle || 'stems');
@@ -1233,7 +1259,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
                           <button
-                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                             onClick={() => {
                               const id = `${downloadsModalTaskId || 'stem'}_${it.key}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
                               const title = `${downloadsModalTitle || 'Descarga'} - ${it.label}`.slice(0, 120);
@@ -1252,7 +1278,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             Reproducir
                           </button>
                           <button
-                            className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border border-emerald-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                             onClick={() => {
                               const base = sanitizeFileName(downloadsModalTitle || 'stems');
                               const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
@@ -3402,8 +3428,8 @@ function CreateListModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   return (
     <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
       <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
-      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+      <div className="relative w-full md:max-w-[520px] glass-panel rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.55)]">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-indigo-500/20 via-purple-500/10 to-fuchsia-500/10">
           <div className="text-white font-extrabold">Nueva carpeta</div>
           <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
             ✕
