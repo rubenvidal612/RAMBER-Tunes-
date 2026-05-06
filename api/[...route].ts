@@ -4442,123 +4442,6 @@ const aiHandler = (() => {
     };
   }
 
-  async function describeAudioWithGemini(audioBuf: ArrayBuffer, mimeType: string) {
-    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
-    if (!apiKey) {
-      return {
-        ok: false as const,
-        error: "Falta GEMINI_API_KEY en Vercel",
-        userMessage: "El análisis de audio no está configurado. Falta GEMINI_API_KEY en Vercel.",
-      };
-    }
-
-    const mod: any = await import("@google/genai");
-    const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
-    if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
-
-    const ai = new GoogleGenAI({ apiKey });
-    const systemInstruction =
-      "Eres un productor musical y musicólogo. " +
-      "Analizas audio y describes género, instrumentación, ritmo y características técnicas. " +
-      "No inventes detalles: si algo no se puede inferir con certeza, di 'aprox.' u omite el dato. " +
-      "Responde SOLO en español y sin markdown.";
-    const prompt =
-      "Describe el audio musical. " +
-      "Devuelve un texto en español (máximo 900 caracteres) con este estilo: " +
-      "primero una línea corta de género/fusión, luego instrumentación y patrón rítmico, y al final tempo (BPM aprox.), compás y tonalidad si puedes. " +
-      "Si hay voz, indica tipo (masculina/femenina) y rango aproximado. " +
-      "No menciones que eres una IA y no agregues listas con viñetas.";
-
-    const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
-    const baseModels = [
-      "gemini-3.1-flash-lite-preview",
-      "gemini-flash-lite-latest",
-      "gemini-flash-latest",
-      "gemini-3-flash-preview",
-      "gemini-2.5-flash-lite",
-      "gemini-2.5-flash",
-      "gemini-1.5-flash-8b",
-      "gemini-1.5-flash",
-      "gemini-pro-latest",
-      "gemini-3.1-pro-preview",
-    ];
-
-    let lastErr: any = null;
-    for (const base of baseModels) {
-      const modelsToTry = base.startsWith("models/") ? [base] : [base, `models/${base}`];
-      try {
-        let r: any = null;
-        let ok = false;
-        for (const model of modelsToTry) {
-          try {
-            r = await ai.models.generateContent({
-              model,
-              systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
-              contents: [
-                {
-                  role: "user",
-                  parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: toBase64(audioBuf) } }],
-                },
-              ],
-            });
-            ok = true;
-            break;
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            lastErr = msg;
-            const lower = msg.toLowerCase();
-            const is404 = lower.includes("404") || lower.includes("not found");
-            if (is404) continue;
-            throw e;
-          }
-        }
-        if (!ok) {
-          const msg = String(lastErr || "Modelo no disponible");
-          return {
-            ok: false as const,
-            error: msg,
-            userMessage:
-              "No pude encontrar un modelo de análisis disponible (404). " +
-              "Esto puede pasar si el modelo cambió o tu API Key no tiene acceso. Intenta de nuevo en unos minutos.",
-          };
-        }
-
-        const text = String(r?.text || "").trim();
-        if (!text) {
-          return {
-            ok: false as const,
-            error: "Gemini no devolvió texto",
-            userMessage: "No pude analizar el audio. Intenta con un fragmento más corto o más claro.",
-          };
-        }
-        return { ok: true as const, description: text };
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        lastErr = msg;
-        const lower = msg.toLowerCase();
-        const is404 = lower.includes("404") || lower.includes("not found");
-        if (is404) continue;
-        const is401 = lower.includes("401") || lower.includes("unauthorized");
-        const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
-        const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
-        const userMessage = is429
-          ? "El análisis de audio está saturado en este momento. Intenta de nuevo en unos minutos."
-          : is401 || is403
-            ? "El análisis de audio no está disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
-            : "No pude analizar el audio. Intenta con un fragmento más corto o más claro.";
-        return { ok: false as const, error: msg, userMessage };
-      }
-    }
-
-    return {
-      ok: false as const,
-      error: String(lastErr || "Modelo no disponible"),
-      userMessage:
-        "El análisis de audio no está disponible en este momento. " +
-        "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
-    };
-  }
-
   async function handleTranscribeLyrics(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -4599,44 +4482,6 @@ const aiHandler = (() => {
     }
   }
 
-  async function handleDescribeAudio(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-
-    const auth = await requireUser(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
-
-    const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
-    const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
-    const url = safeUrl(uploadUrl);
-    if (!url) return send(res, 400, { error: "uploadUrl inválido" });
-
-    try {
-      const fr = await fetch(url);
-      if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
-
-      const contentType = (fr.headers.get("content-type") || "").toString();
-      const mimeType = normalizeAudioMimeType(mimeTypeHint) || normalizeAudioMimeType(contentType) || "audio/mpeg";
-      const ab = await fr.arrayBuffer();
-      const size = ab.byteLength || 0;
-      if (size <= 0) return send(res, 400, { error: "El audio está vacío" });
-      if (size > 15 * 1024 * 1024) return send(res, 413, { error: "Audio muy pesado para analizar. Sube un fragmento más corto." });
-
-      const out = await describeAudioWithGemini(ab, mimeType);
-      if (!out.ok) return send(res, 200, { ok: false, error: out.error || "No pude analizar", message: (out as any).userMessage || "No pude analizar el audio." });
-      return send(res, 200, { ok: true, description: (out as any).description || "" });
-    } catch (e) {
-      return send(res, 200, {
-        ok: false,
-        error: "Error analizando",
-        message: "No pude analizar el audio. Intenta con un audio más corto o más claro.",
-        detail: e instanceof Error ? e.message : String(e),
-      });
-    }
-  }
-
   return async function handler(req: any, res: any) {
     const pathname = new URL(req.url, "http://localhost").pathname;
     const parts = pathname.split("/").filter(Boolean);
@@ -4654,7 +4499,6 @@ const aiHandler = (() => {
     action = action.trim().toLowerCase();
     const a = action || (next || "").toLowerCase();
     if (a === "transcribe-lyrics") return handleTranscribeLyrics(req, res);
-    if (a === "describe-audio") return handleDescribeAudio(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();

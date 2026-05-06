@@ -67,9 +67,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [isTranscribingAudioLyrics, setIsTranscribingAudioLyrics] = useState(false);
   const [audioLyricsStatus, setAudioLyricsStatus] = useState<string>('');
   const lastTranscribedKeyRef = useRef<string>('');
-  const [isDescribingAudio, setIsDescribingAudio] = useState(false);
-  const [audioDescribeStatus, setAudioDescribeStatus] = useState<string>('');
-  const lastDescribedKeyRef = useRef<string>('');
   const [hasPendingTask, setHasPendingTask] = useState(false);
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
   const pendingLegacyKey = 'ramber.pendingSunoTask';
@@ -272,9 +269,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setIsAudioModalOpen(false);
     setAudioUploadError(null);
     setAudioLyricsStatus('');
-    setAudioDescribeStatus('');
     lastTranscribedKeyRef.current = '';
-    lastDescribedKeyRef.current = '';
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
@@ -391,16 +386,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (lastTranscribedKeyRef.current === key) return;
     lastTranscribedKeyRef.current = key;
     transcribeLyricsFromAudio(true).catch(() => {});
-  }, [audioUploadUrl, audioUploadPath, audioFile]);
-
-  useEffect(() => {
-    if (!audioUploadUrl) return;
-    if (!audioFile) return;
-    const key = (audioUploadPath || audioUploadUrl).toString().trim();
-    if (!key) return;
-    if (lastDescribedKeyRef.current === key) return;
-    lastDescribedKeyRef.current = key;
-    describeAudioFromAudio(true).catch(() => {});
   }, [audioUploadUrl, audioUploadPath, audioFile]);
 
   useEffect(() => {
@@ -584,66 +569,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioUploadError(null);
     getAudioDurationSeconds(file).then((d) => setAudioDurationSec(d)).catch(() => {});
     uploadAudio(file).catch(() => {});
-  };
-
-  const describeAudioFromAudio = async (auto?: boolean) => {
-    if (!audioUploadUrl) {
-      if (!auto) alert('Primero sube tu audio.');
-      return;
-    }
-    if (isDescribingAudio) return;
-    const hadInstructionsAtStart = Boolean((instructions || '').toString().trim());
-    setIsDescribingAudio(true);
-    if (auto) setAudioDescribeStatus('Analizando estilo del audio…');
-    try {
-      const t = await getAccessToken();
-      if (!t.ok) {
-        if (!auto) alert(t.error || 'No se pudo iniciar sesión.');
-        if (auto) setAudioDescribeStatus('No pude analizar el estilo automáticamente.');
-        return;
-      }
-      const guessMimeType = (u: string) => {
-        const s = (u || '').toString().trim().toLowerCase();
-        const q = s.split('?')[0].split('#')[0];
-        if (q.endsWith('.mp3')) return 'audio/mpeg';
-        if (q.endsWith('.wav')) return 'audio/wav';
-        if (q.endsWith('.m4a')) return 'audio/mp4';
-        if (q.endsWith('.mp4')) return 'audio/mp4';
-        if (q.endsWith('.ogg')) return 'audio/ogg';
-        if (q.endsWith('.webm')) return 'audio/webm';
-        return '';
-      };
-      const mimeType = ((audioFile?.type || '').toString().trim() || guessMimeType(audioUploadUrl)).trim();
-      const r = await fetch('/api/ai/describe-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType }),
-      });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok || out?.ok === false) {
-        if (!auto) alert((out?.message || out?.detail || out?.error || 'No se pudo analizar el audio.').toString());
-        if (auto) setAudioDescribeStatus((out?.message || 'No pude analizar el estilo automáticamente.').toString());
-        return;
-      }
-      const text = (out?.description || '').toString().trim();
-      if (!text) {
-        if (!auto) alert('No pude generar una descripción del audio.');
-        if (auto) setAudioDescribeStatus('No pude generar una descripción del audio.');
-        return;
-      }
-      if (!hadInstructionsAtStart && !((instructions || '').toString().trim())) {
-        setInstructions(text);
-      }
-      if (auto) setAudioDescribeStatus('Listo: estilo detectado.');
-    } catch {
-      if (!auto) alert('No se pudo analizar el audio.');
-      if (auto) setAudioDescribeStatus('No pude analizar el estilo automáticamente.');
-    } finally {
-      setIsDescribingAudio(false);
-      if (auto) {
-        window.setTimeout(() => setAudioDescribeStatus(''), 2500);
-      }
-    }
   };
 
   const saveUploadedAudioToLibrary = async () => {
@@ -1196,7 +1121,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             audioUploadUrl={audioUploadUrl}
             externalAudioLabel={externalAudioLabel}
             audioLyricsStatus={audioLyricsStatus}
-            audioDescribeStatus={audioDescribeStatus}
             isUploadingAudio={isUploadingAudio}
             onUploadAudio={uploadAudio}
             onClearAudio={clearAudio}
@@ -1211,7 +1135,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClearPersona={() => setSelectedPersona(null)}
             isTranscribingAudioLyrics={isTranscribingAudioLyrics}
             onTranscribeAudioLyrics={transcribeLyricsFromAudio}
-            isDescribingAudio={isDescribingAudio}
           />
         )}
       </div>
@@ -1562,7 +1485,6 @@ function CustomForm({
   audioUploadUrl,
   externalAudioLabel,
   audioLyricsStatus,
-  audioDescribeStatus,
   isUploadingAudio,
   onUploadAudio,
   onClearAudio,
@@ -1577,7 +1499,6 @@ function CustomForm({
   onClearPersona,
   isTranscribingAudioLyrics,
   onTranscribeAudioLyrics,
-  isDescribingAudio,
 }: any) {
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
@@ -2074,16 +1995,6 @@ function CustomForm({
           placeholder="Describe el estilo, el ambiente o los instrumentos de tu música"
           className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[80px] text-white"
         />
-        {!!audioUploadUrl && Boolean(isDescribingAudio) && (
-          <div className="mt-2 text-[12px] text-slate-400">
-            Analizando el estilo del audio…
-          </div>
-        )}
-        {!!audioDescribeStatus && !Boolean(isDescribingAudio) && (
-          <div className="mt-2 text-[12px] text-slate-400">
-            {audioDescribeStatus}
-          </div>
-        )}
         
         <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar mt-4">
           <button className="flex-shrink-0 bg-white/5 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 border border-white/5">
