@@ -1552,6 +1552,8 @@ function SongOptionsSheet({
   const [trimDrag, setTrimDrag] = useState<'start' | 'end' | null>(null);
   const trimDragRef = useRef<'start' | 'end' | null>(null);
   const trimPointerIdRef = useRef<number | null>(null);
+  const trimRootRef = useRef<HTMLDivElement | null>(null);
+  const trimDragOffsetSecRef = useRef<number>(0);
   useEffect(() => {
     setPublished(Boolean((song as any)?.isPublic));
     setPublishGenre(((song as any)?.publicGenre || '').toString());
@@ -1581,6 +1583,7 @@ function SongOptionsSheet({
     setTrimDrag(null);
     trimDragRef.current = null;
     trimPointerIdRef.current = null;
+            trimDragOffsetSecRef.current = 0;
     setTrimStartSec(0);
     setTrimEndSec(0);
     setTrimDurationSec(0);
@@ -3400,6 +3403,7 @@ function SongOptionsSheet({
         <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setShowTrim(false)} aria-label="Cerrar" />
           <div
+            ref={trimRootRef}
             className="relative w-full md:max-w-[920px] bg-[#061a2d] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col"
             onPointerMove={(e) => {
               const type = trimDragRef.current;
@@ -3411,7 +3415,7 @@ function SongOptionsSheet({
               const dur = Number(trimDurationSec || 0);
               if (!(dur > 0) || !(r.width > 0)) return;
               const x = clamp(Number(e.clientX) - r.left, 0, r.width);
-              const t = clamp((x / r.width) * dur, 0, dur);
+              const t = clamp((x / r.width) * dur + Number(trimDragOffsetSecRef.current || 0), 0, dur);
               const minGap = 0.25;
               if (type === 'start') {
                 const next = clamp(t, 0, Math.max(0, Number(trimEndSec || 0) - minGap));
@@ -3425,12 +3429,14 @@ function SongOptionsSheet({
               if (trimPointerIdRef.current != null && e.pointerId !== trimPointerIdRef.current) return;
               trimPointerIdRef.current = null;
               trimDragRef.current = null;
+              trimDragOffsetSecRef.current = 0;
               setTrimDrag(null);
             }}
             onPointerCancel={(e) => {
               if (trimPointerIdRef.current != null && e.pointerId !== trimPointerIdRef.current) return;
               trimPointerIdRef.current = null;
               trimDragRef.current = null;
+              trimDragOffsetSecRef.current = 0;
               setTrimDrag(null);
             }}
           >
@@ -3486,7 +3492,7 @@ function SongOptionsSheet({
                 <div className="px-4 md:px-5 pb-5">
                   <div
                     ref={trimWrapRef}
-                    className="relative w-full h-[170px] md:h-[210px] rounded-2xl overflow-hidden bg-[#0b2f4f]"
+                    className="relative w-full h-[170px] md:h-[210px] rounded-2xl overflow-hidden bg-[#0b2f4f] touch-none select-none"
                   >
                     <canvas ref={trimCanvasRef} className="absolute inset-0 w-full h-full" />
                     {trimPeaksBusy ? (
@@ -3528,11 +3534,21 @@ function SongOptionsSheet({
                               onPointerDown={(e) => {
                                 const dur = Number(trimDurationSec || 0);
                                 if (!(dur > 0)) return;
+                                const el = trimWrapRef.current;
+                                const root = trimRootRef.current;
+                                if (el) {
+                                  const r = el.getBoundingClientRect();
+                                  if (r.width > 0) {
+                                    const x = clamp(Number(e.clientX) - r.left, 0, r.width);
+                                    const t = clamp((x / r.width) * dur, 0, dur);
+                                    trimDragOffsetSecRef.current = Number(trimStartSec || 0) - t;
+                                  }
+                                }
                                 trimPointerIdRef.current = e.pointerId;
                                 trimDragRef.current = 'start';
                                 setTrimDrag('start');
                                 try {
-                                  (e.currentTarget as any).setPointerCapture(e.pointerId);
+                                  (root as any)?.setPointerCapture?.(e.pointerId);
                                 } catch {}
                                 try {
                                   const a = trimAudioRef.current;
@@ -3540,8 +3556,9 @@ function SongOptionsSheet({
                                 } catch {}
                                 e.preventDefault();
                               }}
-                              className="h-full w-5 md:w-6 bg-cyan-300/95 shadow-[0_0_0_3px_rgba(0,208,255,0.15)] cursor-ew-resize"
+                              className="h-full w-10 md:w-12 -ml-5 md:-ml-6 cursor-ew-resize touch-none"
                             >
+                              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-5 md:w-6 bg-cyan-300/95 shadow-[0_0_0_3px_rgba(0,208,255,0.15)]" />
                               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1">
                                 <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
                                 <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
@@ -3558,11 +3575,21 @@ function SongOptionsSheet({
                               onPointerDown={(e) => {
                                 const dur = Number(trimDurationSec || 0);
                                 if (!(dur > 0)) return;
+                                const el = trimWrapRef.current;
+                                const root = trimRootRef.current;
+                                if (el) {
+                                  const r = el.getBoundingClientRect();
+                                  if (r.width > 0) {
+                                    const x = clamp(Number(e.clientX) - r.left, 0, r.width);
+                                    const t = clamp((x / r.width) * dur, 0, dur);
+                                    trimDragOffsetSecRef.current = Number(trimEndSec || 0) - t;
+                                  }
+                                }
                                 trimPointerIdRef.current = e.pointerId;
                                 trimDragRef.current = 'end';
                                 setTrimDrag('end');
                                 try {
-                                  (e.currentTarget as any).setPointerCapture(e.pointerId);
+                                  (root as any)?.setPointerCapture?.(e.pointerId);
                                 } catch {}
                                 try {
                                   const a = trimAudioRef.current;
@@ -3570,8 +3597,9 @@ function SongOptionsSheet({
                                 } catch {}
                                 e.preventDefault();
                               }}
-                              className="h-full w-5 md:w-6 bg-cyan-300/95 shadow-[0_0_0_3px_rgba(0,208,255,0.15)] cursor-ew-resize"
+                              className="h-full w-10 md:w-12 -ml-5 md:-ml-6 cursor-ew-resize touch-none"
                             >
+                              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-5 md:w-6 bg-cyan-300/95 shadow-[0_0_0_3px_rgba(0,208,255,0.15)]" />
                               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1">
                                 <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
                                 <div className="w-1.5 h-1.5 rounded-full bg-white/90" />
