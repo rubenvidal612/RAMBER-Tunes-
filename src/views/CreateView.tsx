@@ -307,7 +307,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const s = (u || '').toString().trim().toLowerCase();
         const q = s.split('?')[0].split('#')[0];
         if (q.endsWith('.mp3')) return 'audio/mpeg';
-        if (q.endsWith('.mpeg') || q.endsWith('.mpg') || q.endsWith('.mpga') || q.endsWith('.mp2')) return 'audio/mpeg';
         if (q.endsWith('.wav')) return 'audio/wav';
         if (q.endsWith('.m4a')) return 'audio/mp4';
         if (q.endsWith('.mp4')) return 'audio/mp4';
@@ -315,24 +314,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (q.endsWith('.webm')) return 'audio/webm';
         return '';
       };
-      const normalizeAudioMime = (file: File | null | undefined, urlGuess?: string) => {
-        const byExt = (nameOrUrl: string) => {
-          const s = (nameOrUrl || '').toString().trim().toLowerCase();
-          const q = s.split('?')[0].split('#')[0];
-          if (q.endsWith('.mp3') || q.endsWith('.mpeg') || q.endsWith('.mpg') || q.endsWith('.mpga') || q.endsWith('.mp2')) return 'audio/mpeg';
-          if (q.endsWith('.wav')) return 'audio/wav';
-          if (q.endsWith('.m4a') || q.endsWith('.mp4')) return 'audio/mp4';
-          if (q.endsWith('.ogg')) return 'audio/ogg';
-          if (q.endsWith('.webm')) return 'audio/webm';
-          return '';
-        };
-        let t = ((file?.type || '').toString().trim().toLowerCase() || '').trim();
-        if (t === 'video/mpeg') t = 'audio/mpeg';
-        if (!t && file?.name) t = byExt(file.name);
-        if (!t && urlGuess) t = guessMimeType(urlGuess);
-        return t;
-      };
-      const mimeType = normalizeAudioMime(audioFile, audioUploadUrl);
+      const byName = (audioFile?.name || '').toString().trim().toLowerCase();
+      const mimeType = ((audioFile?.type || '').toString().trim() || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
       const r = await fetch('/api/ai/transcribe-lyrics', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
@@ -527,10 +510,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const path = `uploads/${user.id}/${Date.now()}_${safeName}`;
       const effectiveContentType = (() => {
         const raw = (file.type || '').toString().trim().toLowerCase();
-        if (raw === 'video/mpeg') return 'audio/mpeg';
         if (raw) return raw;
         const n = (file.name || '').toString().trim().toLowerCase();
-        if (n.endsWith('.mp3') || n.endsWith('.mpeg') || n.endsWith('.mpg') || n.endsWith('.mpga') || n.endsWith('.mp2')) return 'audio/mpeg';
+        if (n.endsWith('.mp3')) return 'audio/mpeg';
         if (n.endsWith('.wav')) return 'audio/wav';
         if (n.endsWith('.m4a') || n.endsWith('.mp4')) return 'audio/mp4';
         if (n.endsWith('.ogg')) return 'audio/ogg';
@@ -604,6 +586,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const pickAudio = async (file: File) => {
+    const n = (file?.name || '').toString().trim().toLowerCase();
+    if (!n.endsWith('.mp3')) {
+      setAudioUploadError('Solo se puede subir formato MP3.');
+      alert('Solo se puede subir formato MP3.');
+      try {
+        if (audioInputRef.current) audioInputRef.current.value = '';
+      } catch {}
+      return;
+    }
     setAudioFile(file);
     setAudioUploadUrl('');
     setAudioAction('cover');
@@ -1720,13 +1711,18 @@ function CustomForm({
         </div>
         <input 
           type="file" 
-          accept="audio/*,audio/mpeg,video/mpeg,.mp3,.mpeg,.mpg,.mpga,.mp2" 
+          accept=".mp3,audio/mpeg" 
           className="hidden" 
           ref={audioInputRef}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               const f = e.target.files[0];
-              setAudioFile(f);
+              e.currentTarget.value = '';
+              const n = (f?.name || '').toString().trim().toLowerCase();
+              if (!n.endsWith('.mp3')) {
+                alert('Solo se puede subir formato MP3.');
+                return;
+              }
               onPickAudio(f);
             }
           }}
