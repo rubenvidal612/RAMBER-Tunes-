@@ -307,6 +307,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const s = (u || '').toString().trim().toLowerCase();
         const q = s.split('?')[0].split('#')[0];
         if (q.endsWith('.mp3')) return 'audio/mpeg';
+        if (q.endsWith('.mpeg') || q.endsWith('.mpg') || q.endsWith('.mpga') || q.endsWith('.mp2')) return 'audio/mpeg';
         if (q.endsWith('.wav')) return 'audio/wav';
         if (q.endsWith('.m4a')) return 'audio/mp4';
         if (q.endsWith('.mp4')) return 'audio/mp4';
@@ -314,7 +315,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (q.endsWith('.webm')) return 'audio/webm';
         return '';
       };
-      const mimeType = ((audioFile?.type || '').toString().trim() || guessMimeType(audioUploadUrl)).trim();
+      const normalizeAudioMime = (file: File | null | undefined, urlGuess?: string) => {
+        const byExt = (nameOrUrl: string) => {
+          const s = (nameOrUrl || '').toString().trim().toLowerCase();
+          const q = s.split('?')[0].split('#')[0];
+          if (q.endsWith('.mp3') || q.endsWith('.mpeg') || q.endsWith('.mpg') || q.endsWith('.mpga') || q.endsWith('.mp2')) return 'audio/mpeg';
+          if (q.endsWith('.wav')) return 'audio/wav';
+          if (q.endsWith('.m4a') || q.endsWith('.mp4')) return 'audio/mp4';
+          if (q.endsWith('.ogg')) return 'audio/ogg';
+          if (q.endsWith('.webm')) return 'audio/webm';
+          return '';
+        };
+        let t = ((file?.type || '').toString().trim().toLowerCase() || '').trim();
+        if (t === 'video/mpeg') t = 'audio/mpeg';
+        if (!t && file?.name) t = byExt(file.name);
+        if (!t && urlGuess) t = guessMimeType(urlGuess);
+        return t;
+      };
+      const mimeType = normalizeAudioMime(audioFile, audioUploadUrl);
       const r = await fetch('/api/ai/transcribe-lyrics', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
@@ -507,6 +525,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         .replaceAll(/[^a-zA-Z0-9._-]+/g, '_')
         .slice(0, 80);
       const path = `uploads/${user.id}/${Date.now()}_${safeName}`;
+      const effectiveContentType = (() => {
+        const raw = (file.type || '').toString().trim().toLowerCase();
+        if (raw === 'video/mpeg') return 'audio/mpeg';
+        if (raw) return raw;
+        const n = (file.name || '').toString().trim().toLowerCase();
+        if (n.endsWith('.mp3') || n.endsWith('.mpeg') || n.endsWith('.mpg') || n.endsWith('.mpga') || n.endsWith('.mp2')) return 'audio/mpeg';
+        if (n.endsWith('.wav')) return 'audio/wav';
+        if (n.endsWith('.m4a') || n.endsWith('.mp4')) return 'audio/mp4';
+        if (n.endsWith('.ogg')) return 'audio/ogg';
+        if (n.endsWith('.webm')) return 'audio/webm';
+        return 'application/octet-stream';
+      })();
 
       const supabaseUrl = ((process.env.SUPABASE_URL as any) || '').toString().trim();
       const supabaseAnonKey = ((process.env.SUPABASE_ANON_KEY as any) || '').toString().trim();
@@ -523,7 +553,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             xhr.setRequestHeader('apikey', supabaseAnonKey);
             xhr.setRequestHeader('x-upsert', 'true');
             xhr.setRequestHeader('cache-control', '31536000');
-            xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+            xhr.setRequestHeader('content-type', effectiveContentType);
             xhr.upload.onprogress = (e) => {
               if (!e.lengthComputable) return;
               const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
@@ -543,7 +573,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       } else {
         const { error } = await supabaseBrowser.storage.from('ramber-tunes').upload(path, file, {
           upsert: true,
-          contentType: file.type || undefined,
+          contentType: effectiveContentType,
           cacheControl: '31536000',
         });
         if (error) {
@@ -1690,7 +1720,7 @@ function CustomForm({
         </div>
         <input 
           type="file" 
-          accept="audio/*" 
+          accept="audio/*,audio/mpeg,video/mpeg,.mp3,.mpeg,.mpg,.mpga,.mp2" 
           className="hidden" 
           ref={audioInputRef}
           onChange={(e) => {
