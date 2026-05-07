@@ -750,6 +750,14 @@ export default function App() {
     return id;
   });
 
+  const [profileRouteId] = useState(() => {
+    const p = (window.location?.pathname || '').toString();
+    const m = p.match(/^\/(u|perfil|profile|p)\/([^/?#]+)/i);
+    if (!m) return '';
+    const raw = m[2] || '';
+    return decodeURIComponent(raw).trim();
+  });
+
   useEffect(() => {
     store.getData().then(data => {
       setVibes(data.vibes || []);
@@ -1743,6 +1751,9 @@ export default function App() {
   if (shareRouteId) {
     return <SharedSongPage shareId={shareRouteId} />;
   }
+  if (profileRouteId) {
+    return <SharedProfilePage profileId={profileRouteId} />;
+  }
 
   if (!isAuthed) {
     return (
@@ -1837,7 +1848,7 @@ export default function App() {
            )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
-           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} />}
+          {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
            
            {/* Placeholders */}
            {currentTab === 'mv' && (
@@ -1880,7 +1891,23 @@ export default function App() {
 
                {/* Library / Results View (Right) */}
                <div className="flex-1 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30 relative z-10 w-full min-w-[300px]">
-                {currentTab === 'perfil' ? <ProfileView onGoStudio={() => setCurrentTab('studio')} /> : <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
+                {currentTab === 'perfil' ? (
+                  <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
+                ) : (
+                  <LibraryView
+                    canciones={canciones}
+                    cancionesEliminadas={cancionesEliminadas}
+                    vibes={vibes}
+                    onAddVibe={addVibe}
+                    onPlaySong={playSong}
+                    onDeleteSong={deleteCancion}
+                    onRestoreSong={restoreCancion}
+                    onRefreshSongs={refreshLibrary}
+                    activeSongId={activeSong?.id}
+                    isPlaying={isPlaying}
+                    onStartCover={startCoverFromSong}
+                  />
+                )}
                </div>
              </>
            )}
@@ -2396,6 +2423,170 @@ function SharedSongPage({ shareId }: { shareId: string }) {
                   <audio controls preload="metadata" src={data.audioUrl} className="w-full" />
                   <div className="mt-3 text-[11px] text-slate-500 break-words">ID: {data.id}</div>
                 </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SharedProfilePage({ profileId }: { profileId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<{ profile: any; songs: Array<{ id: string; title: string; audioUrl: string; coverUrl?: string | null }> } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError('');
+    setData(null);
+    fetch(`/api/share/profile?id=${encodeURIComponent(profileId)}`, { method: 'GET' })
+      .then((r) => r.json().catch(() => ({})).then((out) => ({ r, out })))
+      .then(({ r, out }) => {
+        if (!alive) return;
+        if (!r.ok || out?.ok === false) {
+          setError((out?.error || 'Este perfil no existe o no está disponible.').toString());
+          return;
+        }
+        const profile = out?.profile || {};
+        const songs = Array.isArray(out?.songs) ? out.songs : [];
+        setData({ profile, songs });
+      })
+      .catch(() => {
+        if (!alive) return;
+        setError('No pude cargar el perfil.');
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [profileId]);
+
+  const shareThis = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'RAMBER Tunes - Perfil', url });
+        return;
+      }
+    } catch {
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Link copiado al portapapeles.');
+    } catch {
+      alert(url);
+    }
+  };
+
+  return (
+    <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
+      <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
+        <a href="/" className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">R</div>
+          <div className="min-w-0">
+            <div className="font-extrabold leading-tight truncate">RAMBER Tunes</div>
+            <div className="text-[11px] text-slate-400 leading-tight truncate">Perfil público</div>
+          </div>
+        </a>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => shareThis().catch(() => {})}
+            className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
+          >
+            <Share2 className="w-4 h-4" /> Compartir
+          </button>
+          <a href="/" className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-sm flex items-center justify-center">
+            Abrir app
+          </a>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="p-6 text-slate-300">Cargando…</div>
+        ) : error ? (
+          <div className="p-6">
+            <div className="text-xl font-extrabold">No se pudo abrir</div>
+            <div className="mt-2 text-slate-300">{error}</div>
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm"
+              >
+                Reintentar
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(profileId);
+                    alert('ID copiado.');
+                  } catch {
+                    alert(profileId);
+                  }
+                }}
+                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
+              >
+                <Copy className="w-4 h-4" /> Copiar ID
+              </button>
+            </div>
+          </div>
+        ) : data ? (
+          <div className="w-full">
+            <div className="relative h-[180px] bg-gradient-to-r from-indigo-500/30 via-fuchsia-500/20 to-cyan-500/20">
+              {data.profile?.coverUrl ? <img src={data.profile.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
+              <div className="absolute inset-0 bg-black/40" />
+            </div>
+            <div className="px-5 max-w-[980px] mx-auto w-full">
+              <div className="-mt-10 flex items-end justify-between gap-4">
+                <div className="flex items-end gap-4 min-w-0">
+                  <div className="w-20 h-20 rounded-full bg-white/10 border border-white/10 overflow-hidden shrink-0">
+                    {data.profile?.avatarUrl ? (
+                      <img src={data.profile.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-2xl font-extrabold text-slate-200">
+                        {(data.profile?.name || 'U').toString().trim().slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 pb-2">
+                    <div className="text-2xl md:text-3xl font-extrabold truncate">{(data.profile?.name || 'Usuario').toString()}</div>
+                    {data.profile?.username ? <div className="text-sm text-slate-300 truncate">@{String(data.profile.username)}</div> : null}
+                  </div>
+                </div>
+              </div>
+
+              {data.profile?.bio ? <div className="mt-3 text-sm text-slate-300">{String(data.profile.bio)}</div> : null}
+
+              <div className="mt-6">
+                <div className="text-white font-extrabold">Canciones</div>
+                {data.songs.length === 0 ? (
+                  <div className="mt-2 text-slate-400 text-sm">Este perfil todavía no tiene canciones agregadas.</div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 pb-10">
+                    {data.songs.map((s) => (
+                      <div key={s.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden">
+                        <div className="flex items-center gap-3 p-4">
+                          <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+                            {s.coverUrl ? <img src={String(s.coverUrl)} alt="" className="w-full h-full object-cover" /> : null}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-white font-extrabold truncate">{s.title}</div>
+                            <div className="text-[11px] text-slate-400 truncate">RAMBER Tunes</div>
+                          </div>
+                        </div>
+                        <div className="px-4 pb-4">
+                          <audio controls preload="metadata" src={s.audioUrl} className="w-full" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

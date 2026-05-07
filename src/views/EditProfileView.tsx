@@ -14,8 +14,27 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string>('');
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string>('');
+  const [avatarCrop, setAvatarCrop] = useState<{ zoom: number; x: number; y: number }>({ zoom: 1, x: 0, y: 0 });
+  const [coverCrop, setCoverCrop] = useState<{ zoom: number; x: number; y: number }>({ zoom: 1, x: 0, y: 0 });
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropTarget, setCropTarget] = useState<'avatar' | 'cover' | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropUrl, setCropUrl] = useState('');
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropShift, setCropShift] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [cropImg, setCropImg] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const cropWrapRef = useRef<HTMLDivElement | null>(null);
+  const [cropWrapSize, setCropWrapSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const cropDragRef = useRef<{ on: boolean; x: number; y: number; sx: number; sy: number; pid: number | null }>({
+    on: false,
+    x: 0,
+    y: 0,
+    sx: 0,
+    sy: 0,
+    pid: null,
+  });
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -65,7 +84,99 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       .replace(/[^a-z0-9_]/g, '')
       .slice(0, 20);
 
-  const imageFileToWebpBlob = async (file: File, opts: { width: number; height: number; quality: number }) => {
+  const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
+  useEffect(() => {
+    if (!cropOpen) return;
+    const el = cropWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      setCropWrapSize({ w: Math.max(1, Math.floor(r.width)), h: Math.max(1, Math.floor(r.height)) });
+    });
+    ro.observe(el);
+    const r = el.getBoundingClientRect();
+    setCropWrapSize({ w: Math.max(1, Math.floor(r.width)), h: Math.max(1, Math.floor(r.height)) });
+    return () => {
+      try {
+        ro.disconnect();
+      } catch {}
+    };
+  }, [cropOpen]);
+
+  const openCrop = async (target: 'avatar' | 'cover', file: File) => {
+    try {
+      if (cropUrl) URL.revokeObjectURL(cropUrl);
+    } catch {}
+    const url = URL.createObjectURL(file);
+    setCropTarget(target);
+    setCropFile(file);
+    setCropUrl(url);
+    setCropZoom(1);
+    setCropShift({ x: 0, y: 0 });
+    setCropImg({ w: 0, h: 0 });
+    setCropOpen(true);
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        setCropImg({ w: img.naturalWidth || img.width || 0, h: img.naturalHeight || img.height || 0 });
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = url;
+    });
+  };
+
+  const closeCrop = () => {
+    const keep = false;
+    cropDragRef.current.on = false;
+    cropDragRef.current.pid = null;
+    setCropOpen(false);
+    setCropTarget(null);
+    setCropFile(null);
+    setCropZoom(1);
+    setCropShift({ x: 0, y: 0 });
+    setCropImg({ w: 0, h: 0 });
+    if (!keep) {
+      try {
+        if (cropUrl) URL.revokeObjectURL(cropUrl);
+      } catch {}
+      setCropUrl('');
+    }
+  };
+
+  const applyCrop = () => {
+    if (!cropTarget || !cropFile || !cropUrl) return;
+    if (cropTarget === 'avatar') {
+      try {
+        if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+      } catch {}
+      setAvatarFile(cropFile);
+      setAvatarPreviewUrl(cropUrl);
+      setAvatarCrop({ zoom: clamp(cropZoom, 1, 3), x: clamp(cropShift.x, -1, 1), y: clamp(cropShift.y, -1, 1) });
+    } else {
+      try {
+        if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
+      } catch {}
+      setCoverFile(cropFile);
+      setCoverPreviewUrl(cropUrl);
+      setCoverCrop({ zoom: clamp(cropZoom, 1, 3), x: clamp(cropShift.x, -1, 1), y: clamp(cropShift.y, -1, 1) });
+    }
+    cropDragRef.current.on = false;
+    cropDragRef.current.pid = null;
+    setCropOpen(false);
+    setCropTarget(null);
+    setCropFile(null);
+    setCropUrl('');
+    setCropZoom(1);
+    setCropShift({ x: 0, y: 0 });
+    setCropImg({ w: 0, h: 0 });
+  };
+
+  const imageFileToWebpBlob = async (
+    file: File,
+    opts: { width: number; height: number; quality: number; crop?: { zoom: number; x: number; y: number } }
+  ) => {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const i = new Image();
@@ -91,11 +202,18 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     const dw = canvas.width;
     const dh = canvas.height;
 
-    const scale = Math.max(dw / sw, dh / sh);
+    const crop = opts.crop || { zoom: 1, x: 0, y: 0 };
+    const zoom = clamp(Number(crop.zoom || 1), 1, 3);
+    const shiftX = clamp(Number(crop.x || 0), -1, 1);
+    const shiftY = clamp(Number(crop.y || 0), -1, 1);
+
+    const scale = Math.max(dw / sw, dh / sh) * zoom;
     const rw = sw * scale;
     const rh = sh * scale;
-    const dx = (dw - rw) / 2;
-    const dy = (dh - rh) / 2;
+    const baseDx = (dw - rw) / 2;
+    const baseDy = (dh - rh) / 2;
+    const dx = baseDx + baseDx * shiftX;
+    const dy = baseDy + baseDy * shiftY;
     ctx.drawImage(img, dx, dy, rw, rh);
 
     const blob = await new Promise<Blob>((resolve, reject) => {
@@ -153,11 +271,11 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       let nextCoverUrl = coverUrl;
 
       if (avatarFile) {
-        const blob = await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82 });
+        const blob = await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, crop: avatarCrop });
         nextAvatarUrl = await uploadWebpToStorage(userId, 'avatar', blob);
       }
       if (coverFile) {
-        const blob = await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78 });
+        const blob = await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78, crop: coverCrop });
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
@@ -224,11 +342,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 alert('La imagen debe ser menor a 10 MB.');
                 return;
               }
-              try {
-                if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
-              } catch {}
-              setCoverFile(f);
-              setCoverPreviewUrl(URL.createObjectURL(f));
+              openCrop('cover', f).catch(() => {});
             }}
           />
         </div>
@@ -269,11 +383,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 alert('La foto de perfil debe ser menor a 500 KB.');
                 return;
               }
-              try {
-                if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
-              } catch {}
-              setAvatarFile(f);
-              setAvatarPreviewUrl(URL.createObjectURL(f));
+              openCrop('avatar', f).catch(() => {});
             }}
           />
         </div>
@@ -345,6 +455,148 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
           {isSaving ? 'Guardando…' : 'Guardar'}
         </button>
       </div>
+
+      {cropOpen && (
+        <div className="fixed inset-0 z-[300] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={closeCrop} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Centrar imagen</div>
+              <button
+                onClick={closeCrop}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-4 overflow-y-auto">
+              <div className="text-[12px] text-slate-300">Mueve la imagen con el dedo y ajusta el zoom.</div>
+
+              <div
+                ref={cropWrapRef}
+                className={cropTarget === 'avatar' ? 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full h-[180px] rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
+                onPointerDown={(e) => {
+                  if (!cropUrl) return;
+                  cropDragRef.current.on = true;
+                  cropDragRef.current.pid = e.pointerId;
+                  cropDragRef.current.x = e.clientX;
+                  cropDragRef.current.y = e.clientY;
+                  cropDragRef.current.sx = cropShift.x;
+                  cropDragRef.current.sy = cropShift.y;
+                  try {
+                    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+                  } catch {}
+                  e.preventDefault();
+                }}
+                onPointerMove={(e) => {
+                  const drag = cropDragRef.current;
+                  if (!drag.on) return;
+                  if (drag.pid != null && e.pointerId !== drag.pid) return;
+                  const w = Number(cropWrapSize.w || 0);
+                  const h = Number(cropWrapSize.h || 0);
+                  const iw = Number(cropImg.w || 0);
+                  const ih = Number(cropImg.h || 0);
+                  if (!(w > 0 && h > 0 && iw > 0 && ih > 0)) return;
+                  const baseScale = Math.max(w / iw, h / ih) * clamp(cropZoom, 1, 3);
+                  const rw = iw * baseScale;
+                  const rh = ih * baseScale;
+                  const baseDx = (w - rw) / 2;
+                  const baseDy = (h - rh) / 2;
+                  const maxX = Math.abs(baseDx);
+                  const maxY = Math.abs(baseDy);
+                  const dx = Number(e.clientX) - drag.x;
+                  const dy = Number(e.clientY) - drag.y;
+                  const nx = maxX > 0.0001 ? clamp(drag.sx - dx / maxX, -1, 1) : 0;
+                  const ny = maxY > 0.0001 ? clamp(drag.sy - dy / maxY, -1, 1) : 0;
+                  setCropShift({ x: nx, y: ny });
+                }}
+                onPointerUp={(e) => {
+                  const drag = cropDragRef.current;
+                  if (drag.pid != null && e.pointerId !== drag.pid) return;
+                  cropDragRef.current.on = false;
+                  cropDragRef.current.pid = null;
+                }}
+                onPointerCancel={(e) => {
+                  const drag = cropDragRef.current;
+                  if (drag.pid != null && e.pointerId !== drag.pid) return;
+                  cropDragRef.current.on = false;
+                  cropDragRef.current.pid = null;
+                }}
+              >
+                {(() => {
+                  const w = Number(cropWrapSize.w || 0);
+                  const h = Number(cropWrapSize.h || 0);
+                  const iw = Number(cropImg.w || 0);
+                  const ih = Number(cropImg.h || 0);
+                  const zoom = clamp(cropZoom, 1, 3);
+                  if (!cropUrl || !(w > 0 && h > 0 && iw > 0 && ih > 0)) {
+                    return <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm font-semibold">Cargando…</div>;
+                  }
+                  const scale = Math.max(w / iw, h / ih) * zoom;
+                  const rw = iw * scale;
+                  const rh = ih * scale;
+                  const baseDx = (w - rw) / 2;
+                  const baseDy = (h - rh) / 2;
+                  const dx = baseDx + baseDx * clamp(cropShift.x, -1, 1);
+                  const dy = baseDy + baseDy * clamp(cropShift.y, -1, 1);
+                  return (
+                    <>
+                      <img
+                        src={cropUrl}
+                        alt=""
+                        className="absolute"
+                        style={{ left: `${dx}px`, top: `${dy}px`, width: `${rw}px`, height: `${rh}px`, willChange: 'transform,left,top' }}
+                        draggable={false}
+                      />
+                      <div className="absolute inset-0 pointer-events-none ring-2 ring-white/15 rounded-3xl" />
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                <div className="flex items-center justify-between text-xs text-slate-300 font-semibold">
+                  <div>Zoom</div>
+                  <div>{Math.round(clamp(cropZoom, 1, 3) * 100)}%</div>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.01}
+                  value={cropZoom}
+                  onChange={(e) => setCropZoom(Number(e.target.value))}
+                  className="w-full mt-3"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCropShift({ x: 0, y: 0 })}
+                  className="mt-3 w-full bg-white/10 hover:bg-white/15 border border-white/10 rounded-full h-[44px] text-white font-extrabold"
+                >
+                  Centrar
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={closeCrop}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full h-[46px] text-slate-200 font-extrabold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={applyCrop}
+                  className="w-full bg-green-500 hover:bg-green-400 rounded-full h-[46px] text-black font-extrabold"
+                >
+                  Usar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

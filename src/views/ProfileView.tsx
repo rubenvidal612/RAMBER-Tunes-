@@ -3,17 +3,29 @@ import { cn } from '@/lib/utils';
 import { Edit2, Forward, Settings } from 'lucide-react';
 import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
-import { supabaseBrowser } from '@/lib/supabaseBrowser';
+import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
+import type { SongItem } from '@/types';
 
-export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
+export function ProfileView({
+  onGoStudio,
+  songs,
+  onPlaySong,
+}: {
+  onGoStudio?: () => void;
+  songs?: SongItem[];
+  onPlaySong?: (song: SongItem) => void;
+}) {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [userEmail, setUserEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [userAvatarUrl, setUserAvatarUrl] = useState('');
   const [userCoverUrl, setUserCoverUrl] = useState('');
+  const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -21,9 +33,11 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
       .getUser()
       .then(({ data }) => {
         const user = data?.user;
+        setUserId((user?.id || '').toString());
         const email = (user?.email || '').toString().trim();
         const meta: any = user?.user_metadata || {};
         const name = (meta?.full_name || meta?.name || '').toString().trim();
+        setUsername((meta?.username || '').toString().trim());
         const display = (name || email || 'Usuario').toString().trim();
         setUserName(display);
         setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
@@ -34,13 +48,32 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/profile/pins', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) return;
+      const items = Array.isArray(out?.items) ? out.items : [];
+      const ids = items.map((x: any) => String(x?.songId || '').trim()).filter(Boolean);
+      if (!alive) return;
+      setPinnedSongIds(ids);
+    })().catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const shareFromProfile = async () => {
-    const url = window.location.origin;
+    const key = (username || userId || '').toString().trim();
+    const url = key ? `${window.location.origin}/u/${encodeURIComponent(key)}` : window.location.origin;
     try {
       if (navigator.share && url) {
         await navigator.share({
           title: 'RAMBER Tunes',
-          text: 'Haz música con IA en RAMBER Tunes',
+          text: 'Mira mi perfil en RAMBER Tunes',
           url,
         });
         return;
@@ -61,6 +94,10 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
   if (showEditProfile) {
     return <EditProfileView onClose={() => setShowEditProfile(false)} />;
   }
+
+  const allSongs = Array.isArray(songs) ? songs : [];
+  const pinnedSet = new Set(pinnedSongIds);
+  const pinnedSongs = allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
@@ -138,32 +175,69 @@ export function ProfileView({ onGoStudio }: { onGoStudio?: () => void }) {
       </div>
 
       {/* Tab Content */}
-      <div className="flex-1 px-6 flex flex-col items-center justify-center text-center pb-8 mt-[-30px]">
-        <div className="w-24 h-24 mb-6 text-slate-600 opacity-50 relative flex items-center justify-center">
-          <div className="w-16 h-12 border-2 border-current rounded-t-md border-b-0 space-y-1 p-2">
-             <div className="w-2 h-0.5 bg-current rounded-full" />
+      {activeTab === 'canciones' ? (
+        pinnedSongs.length > 0 ? (
+          <div className="px-6 pb-8 mt-[-10px]">
+            <div className="text-slate-200 font-extrabold">Canciones en tu perfil</div>
+            <div className="mt-3 space-y-2">
+              {pinnedSongs.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onPlaySong?.(s)}
+                  className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors text-left"
+                >
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                    <img
+                      src={(s.coverUrl || `https://picsum.photos/seed/${s.id}/150/150`).toString()}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white font-extrabold truncate">{s.title || 'Pista sin título'}</div>
+                    <div className="text-slate-400 text-xs truncate">{s.genre || ' '}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 text-[11px] text-slate-400">
+              Para agregar más, ve a Biblioteca → 3 puntitos → “Añadir a mi perfil”.
+            </div>
           </div>
-          <div className="absolute top-0 flex gap-2">
-            <div className="w-1 h-3 bg-current rounded-full rotate-[-30deg] -ml-4" />
-            <div className="w-1 h-4 bg-current rounded-full -mt-2" />
-            <div className="w-1 h-3 bg-current rounded-full rotate-[30deg] -mr-4" />
+        ) : (
+          <div className="flex-1 px-6 flex flex-col items-center justify-center text-center pb-8 mt-[-30px]">
+            <div className="w-24 h-24 mb-6 text-slate-600 opacity-50 relative flex items-center justify-center">
+              <div className="w-16 h-12 border-2 border-current rounded-t-md border-b-0 space-y-1 p-2">
+                <div className="w-2 h-0.5 bg-current rounded-full" />
+              </div>
+              <div className="absolute top-0 flex gap-2">
+                <div className="w-1 h-3 bg-current rounded-full rotate-[-30deg] -ml-4" />
+                <div className="w-1 h-4 bg-current rounded-full -mt-2" />
+                <div className="w-1 h-3 bg-current rounded-full rotate-[30deg] -mr-4" />
+              </div>
+            </div>
+            <div className="mb-6 max-w-[320px]">
+              <div className="text-base font-extrabold tracking-tight leading-tight bg-gradient-to-r from-yellow-300 via-amber-200 to-fuchsia-200 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(250,204,21,0.12)]">
+                Haz que Escuchen Tus Canciones en TODO EL MUNDO!
+              </div>
+              <div className="mt-2 text-slate-300 font-semibold text-sm">
+                ¡es hora de hacer <span className="text-white font-extrabold">HISTORIA</span>!
+              </div>
+            </div>
+            <button
+              onClick={() => onGoStudio?.()}
+              className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90 transition-all text-white font-bold text-sm px-6 py-2.5 rounded-full shadow-lg shadow-indigo-500/20"
+            >
+              ¡Comenzar ahora!
+            </button>
           </div>
+        )
+      ) : (
+        <div className="flex-1 px-6 flex flex-col items-center justify-center text-center pb-8 mt-[-30px]">
+          <div className="text-slate-300 font-extrabold">Playlists (próximamente)</div>
+          <div className="mt-2 text-sm text-slate-400">Aquí van a salir tus listas.</div>
         </div>
-        <div className="mb-6 max-w-[320px]">
-          <div className="text-base font-extrabold tracking-tight leading-tight bg-gradient-to-r from-yellow-300 via-amber-200 to-fuchsia-200 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(250,204,21,0.12)]">
-            Haz que Escuchen Tus Canciones en TODO EL MUNDO!
-          </div>
-          <div className="mt-2 text-slate-300 font-semibold text-sm">
-            ¡es hora de hacer <span className="text-white font-extrabold">HISTORIA</span>!
-          </div>
-        </div>
-        <button
-          onClick={() => onGoStudio?.()}
-          className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90 transition-all text-white font-bold text-sm px-6 py-2.5 rounded-full shadow-lg shadow-indigo-500/20"
-        >
-          ¡Comenzar ahora!
-        </button>
-      </div>
+      )}
     </div>
   );
 }

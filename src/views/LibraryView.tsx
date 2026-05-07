@@ -1511,6 +1511,7 @@ function SongOptionsSheet({
   const [published, setPublished] = useState(Boolean((song as any)?.isPublic));
   const [showPublish, setShowPublish] = useState(false);
   const [publishGenre, setPublishGenre] = useState<string>(((song as any)?.publicGenre || '').toString());
+  const [isPinnedToProfile, setIsPinnedToProfile] = useState(false);
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showStems, setShowStems] = useState(false);
@@ -1558,7 +1559,26 @@ function SongOptionsSheet({
     setPublished(Boolean((song as any)?.isPublic));
     setPublishGenre(((song as any)?.publicGenre || '').toString());
     setShowPublish(false);
-  }, [song?.id]);
+    setIsPinnedToProfile(false);
+    let alive = true;
+    (async () => {
+      if (isDeleted) return;
+      const sid = (song?.id || '').toString().trim();
+      if (!sid) return;
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/profile/pins', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) return;
+      const items = Array.isArray(out?.items) ? out.items : [];
+      const pinned = items.some((x: any) => String(x?.songId || x?.song_id || '').trim() === sid);
+      if (!alive) return;
+      setIsPinnedToProfile(pinned);
+    })().catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [song?.id, isDeleted]);
   useEffect(() => {
     if (!showPersonaSave) return;
     setPersonaVocalStart(0);
@@ -2039,6 +2059,37 @@ function SongOptionsSheet({
       return;
     }
     alert('No hay link para compartir.');
+  };
+
+  const togglePinToProfile = async () => {
+    if (isDeleted) return;
+    const sid = (song?.id || '').toString().trim();
+    if (!sid) return;
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const next = !isPinnedToProfile;
+      const r = await fetch('/api/profile/pin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: sid, pin: next }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        const msg = (out?.error || out?.detail || 'No pude actualizar tu perfil.').toString();
+        const hint = (out?.hint || '').toString();
+        alert([msg, hint].filter(Boolean).join('\n\n'));
+        return;
+      }
+      setIsPinnedToProfile(next);
+      alert(next ? 'Listo. Se agregó a tu perfil.' : 'Listo. Se quitó de tu perfil.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const setSongPublic = async (makePublic: boolean, genre: string) => {
@@ -3145,6 +3196,16 @@ function SongOptionsSheet({
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
+            {!isDeleted && (
+              <button
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                onClick={() => togglePinToProfile().catch(() => {})}
+                disabled={isBusy}
+              >
+                <BadgeCheck className="w-5 h-5 text-slate-300" />{' '}
+                <span className="text-slate-200 font-semibold">{isPinnedToProfile ? 'Quitar de mi perfil' : 'Añadir a mi perfil'}</span>
+              </button>
+            )}
             {!isDeleted && (
               <button
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"

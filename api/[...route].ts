@@ -108,6 +108,69 @@ async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: n
   return { ok: false as const, error: "Falta columna de créditos en profiles." };
 }
 
+async function ensureMonthlyCreditsCycle(admin: any, userId: string) {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const cycleMs = 30 * dayMs;
+
+  const insertCycle = async (atMs: number) => {
+    try {
+      await admin.from("mp_transactions").insert({
+        user_id: userId,
+        kind: "credits_cycle",
+        pack_key: "cycle",
+        amount_mxn: 0,
+        payment_id: `credits_cycle:${userId}:${atMs}`,
+      });
+    } catch {
+    }
+  };
+
+  const readStartIso = async () => {
+    try {
+      const { data } = await admin
+        .from("mp_transactions")
+        .select("created_at, payment_id")
+        .eq("user_id", userId)
+        .eq("kind", "credits_cycle")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const row = Array.isArray(data) ? data[0] : null;
+      const iso = String((row as any)?.created_at || "").trim();
+      return iso || "";
+    } catch {
+      return "";
+    }
+  };
+
+  let startIso = await readStartIso();
+  if (!startIso) {
+    await insertCycle(now);
+    startIso = new Date(now).toISOString();
+  }
+
+  let startMs = new Date(startIso).getTime();
+  if (!Number.isFinite(startMs) || startMs <= 0) startMs = now;
+  let expiresMs = startMs + cycleMs;
+
+  let didReset = false;
+  if (now >= expiresMs) {
+    didReset = true;
+    await updateCreditsAnyColumn(admin, userId, 0);
+    await insertCycle(now);
+    startMs = now;
+    expiresMs = now + cycleMs;
+  }
+
+  return {
+    ok: true as const,
+    cycle_start_at: new Date(startMs).toISOString(),
+    cycle_expires_at: new Date(expiresMs).toISOString(),
+    cycle_seconds_left: Math.max(0, Math.floor((expiresMs - now) / 1000)),
+    did_reset: didReset,
+  };
+}
+
 function parseProviderCreditsValue(raw: any) {
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
   if (typeof raw === "string") {
@@ -180,6 +243,11 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
 async function consumeUserCredits(admin: any, userId: string, costCredits: number) {
   const cost = round2(Number(costCredits));
   if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
+
+  try {
+    await ensureMonthlyCreditsCycle(admin, userId);
+  } catch {
+  }
 
   try {
     const plan = await getUserPlan(admin, userId);
@@ -2846,7 +2914,9 @@ const balanceHandler = (() => {
       profile = r2.data ?? null;
     }
 
-    const internal_credits = round2(creditsFromProfile(profile));
+    let internal_credits = round2(creditsFromProfile(profile));
+    const cycle = await ensureMonthlyCreditsCycle(admin, user.id).catch(() => null as any);
+    if (cycle?.did_reset) internal_credits = 0;
     let provider_credits: number | null = null;
     let provider_error = "";
 
@@ -2899,6 +2969,9 @@ const balanceHandler = (() => {
       plan_key,
       plan_active,
       plan_expires_at,
+      credits_cycle_start_at: cycle?.cycle_start_at ?? null,
+      credits_cycle_expires_at: cycle?.cycle_expires_at ?? null,
+      credits_cycle_seconds_left: typeof cycle?.cycle_seconds_left === "number" ? cycle.cycle_seconds_left : null,
       mp4_watermark_disabled: is_admin ? true : Boolean((plan as any)?.hasProductor),
       is_admin,
       internal_credits,
@@ -3217,6 +3290,262 @@ const shareHandler = (() => {
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
+  };
+})();
+
+const shareProfileHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function looksLikeUuid(s: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || "").trim());
+  }
+
+  async function findUserIdByUsername(admin: any, usernameRaw: string) {
+    const target = (usernameRaw || "").toString().trim().toLowerCase();
+    if (!target) return "";
+    const listUsers = (admin?.auth as any)?.admin?.listUsers;
+    if (typeof listUsers !== "function") return "";
+    for (let page = 1; page <= 20; page++) {
+      const out = await listUsers.call((admin.auth as any).admin, { page, perPage: 200 });
+      const users = Array.isArray(out?.data?.users) ? out.data.users : [];
+      for (const u of users) {
+        const meta: any = (u as any)?.user_metadata ?? (u as any)?.raw_user_meta_data ?? {};
+        const uname = String(meta?.username || "").trim().toLowerCase();
+        if (uname && uname === target) return String((u as any)?.id || "").trim();
+      }
+      if (users.length < 200) break;
+    }
+    return "";
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+      const userId = looksLikeUuid(id) ? id : await findUserIdByUsername(admin, id);
+      if (!userId) return send(res, 404, { error: "No encontrado" });
+
+      const getUserById = (admin?.auth as any)?.admin?.getUserById;
+      if (typeof getUserById !== "function") return send(res, 500, { error: "No pude leer el perfil" });
+      const uout = await getUserById.call((admin.auth as any).admin, userId);
+      const user = uout?.data?.user || null;
+      if (!user) return send(res, 404, { error: "No encontrado" });
+
+      const meta: any = (user as any)?.user_metadata ?? (user as any)?.raw_user_meta_data ?? {};
+      const fullName = String(meta?.full_name || meta?.name || meta?.display_name || "").trim();
+      const username = String(meta?.username || "").trim();
+      const avatarUrl = String(meta?.avatar_url || "").trim();
+      const coverUrl = String(meta?.cover_url || "").trim();
+      const bio = String(meta?.bio || "").trim();
+
+      const { data: pins, error: pinsErr } = await admin
+        .from("profile_pins")
+        .select("song_id, added_at")
+        .eq("user_id", userId)
+        .order("added_at", { ascending: false })
+        .limit(200);
+      if (pinsErr) {
+        const msg = String(pinsErr.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) {
+          return send(res, 500, {
+            error: "Falta configurar el perfil público",
+            hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+          });
+        }
+        return send(res, 500, { error: "No pude leer las canciones del perfil", detail: pinsErr.message });
+      }
+      const rows = Array.isArray(pins) ? pins : [];
+      const songIds = rows.map((r: any) => String(r?.song_id || "").trim()).filter(Boolean);
+
+      let songs: any[] = [];
+      if (songIds.length > 0) {
+        const { data: items, error: itemsErr } = await admin
+          .from("library_items")
+          .select("id, title, audio_url, cover_url, deleted_at, type, user_id")
+          .eq("user_id", userId)
+          .eq("type", "song")
+          .is("deleted_at", null)
+          .in("id", songIds.map((x) => x.slice(0, 200)));
+        if (itemsErr) return send(res, 500, { error: "No pude leer las canciones del perfil", detail: itemsErr.message });
+        const list = Array.isArray(items) ? items : [];
+        const byId = new Map(list.map((x: any) => [String(x?.id || ""), x]));
+        songs = songIds
+          .map((sid) => byId.get(sid))
+          .filter(Boolean)
+          .map((x: any) => ({
+            id: String(x?.id || ""),
+            title: String(x?.title || "Canción").trim(),
+            audioUrl: String(x?.audio_url || "").trim(),
+            coverUrl: String(x?.cover_url || "").trim() || null,
+          }))
+          .filter((x: any) => x.id && x.audioUrl);
+      }
+
+      return send(res, 200, {
+        ok: true,
+        profile: {
+          id: userId,
+          name: fullName || "Usuario",
+          username: username || null,
+          avatarUrl: avatarUrl || null,
+          coverUrl: coverUrl || null,
+          bio: bio || null,
+        },
+        songs,
+      });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const profileHandler = (() => {
+  const PINS_TABLE = "profile_pins";
+  const LIB_TABLE = "library_items";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function handlePins(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const { data, error } = await auth.admin
+      .from(PINS_TABLE)
+      .select("song_id, added_at")
+      .eq("user_id", auth.user.id)
+      .order("added_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar el perfil",
+          hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude leer tu perfil", detail: error.message });
+    }
+    const list = Array.isArray(data) ? data : [];
+    return send(res, 200, { ok: true, items: list.map((x: any) => ({ songId: String(x?.song_id || ""), addedAt: String(x?.added_at || "") })) });
+  }
+
+  async function handlePin(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const pin = Boolean(body?.pin ?? body?.pinned ?? true);
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    const { data: song, error: songErr } = await auth.admin
+      .from(LIB_TABLE)
+      .select("id, user_id, deleted_at, type")
+      .eq("id", songId)
+      .eq("user_id", auth.user.id)
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
+    if (!song) return send(res, 404, { error: "No encontré esa canción" });
+
+    if (!pin) {
+      const { error } = await auth.admin.from(PINS_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", songId);
+      if (error) return send(res, 500, { error: "No pude quitarla del perfil", detail: error.message });
+      return send(res, 200, { ok: true, pinned: false });
+    }
+
+    const row: any = { user_id: auth.user.id, song_id: songId, added_at: new Date().toISOString() };
+    const { error } = await auth.admin.from(PINS_TABLE).upsert(row, { onConflict: "user_id,song_id" });
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar el perfil",
+          hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude guardarla en tu perfil", detail: error.message });
+    }
+    return send(res, 200, { ok: true, pinned: true });
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const next = isApi ? parts[2] : parts[1];
+    if (next === "pins") return handlePins(req, res);
+    if (next === "pin") return handlePin(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
 
@@ -4858,6 +5187,8 @@ export default async function handler(req: any, res: any) {
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
+    if (head === "share" && next === "profile") return shareProfileHandler(req, res);
+    if (head === "profile") return profileHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
