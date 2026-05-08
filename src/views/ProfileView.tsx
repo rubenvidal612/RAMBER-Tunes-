@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Edit2, Forward, MoreVertical, Settings, Share2, XCircle } from 'lucide-react';
 import { SettingsView } from './SettingsView';
@@ -213,10 +213,8 @@ export function ProfileView({
   }
 
   const allSongs = Array.isArray(songs) ? songs : [];
-  const pinnedSongs = useMemo(() => {
-    const set = new Set(pinnedSongIds);
-    return allSongs.filter((s) => set.has(String(s?.id || '')));
-  }, [allSongs, pinnedSongIds]);
+  const pinnedSet = new Set(pinnedSongIds);
+  const pinnedSongs = allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
