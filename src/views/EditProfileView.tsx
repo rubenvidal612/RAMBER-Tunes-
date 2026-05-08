@@ -14,8 +14,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string>('');
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string>('');
-  const [avatarCrop, setAvatarCrop] = useState<{ zoom: number; x: number; y: number }>({ zoom: 1, x: 0, y: 0 });
-  const [coverCrop, setCoverCrop] = useState<{ zoom: number; x: number; y: number }>({ zoom: 1, x: 0, y: 0 });
+  const [avatarCropRect, setAvatarCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [coverCropRect, setCoverCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
@@ -156,20 +156,47 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
   const applyCrop = () => {
     if (!cropTarget || !cropFile || !cropUrl) return;
+    const wrapW = Number(cropWrapSize.w || 0);
+    const wrapH = Number(cropWrapSize.h || 0);
+    const iw = Number(cropImg.w || 0);
+    const ih = Number(cropImg.h || 0);
+    const zoom = clamp(Number(cropZoom || 1), 1, 3);
+    const shiftX = clamp(Number(cropShift.x || 0), -1, 1);
+    const shiftY = clamp(Number(cropShift.y || 0), -1, 1);
+    const computeRect = () => {
+      if (!(wrapW > 0 && wrapH > 0 && iw > 0 && ih > 0)) return null;
+      const scale = Math.max(wrapW / iw, wrapH / ih) * zoom;
+      const rw = iw * scale;
+      const rh = ih * scale;
+      const baseDx = (wrapW - rw) / 2;
+      const baseDy = (wrapH - rh) / 2;
+      const dx = baseDx + Math.abs(baseDx) * shiftX;
+      const dy = baseDy + Math.abs(baseDy) * shiftY;
+      const sx = clamp((-dx) / scale, 0, iw);
+      const sy = clamp((-dy) / scale, 0, ih);
+      const sw = clamp(wrapW / scale, 0.000001, iw);
+      const sh = clamp(wrapH / scale, 0.000001, ih);
+      const nx = clamp(sx / iw, 0, 1);
+      const ny = clamp(sy / ih, 0, 1);
+      const nw = clamp(sw / iw, 0.000001, 1);
+      const nh = clamp(sh / ih, 0.000001, 1);
+      return { x: nx, y: ny, w: nw, h: nh };
+    };
+    const rect = computeRect();
     if (cropTarget === 'avatar') {
       try {
         if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
       } catch {}
       setAvatarFile(cropFile);
       setAvatarPreviewUrl(cropUrl);
-      setAvatarCrop({ zoom: clamp(cropZoom, 1, 3), x: clamp(cropShift.x, -1, 1), y: clamp(cropShift.y, -1, 1) });
+      setAvatarCropRect(rect);
     } else {
       try {
         if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
       } catch {}
       setCoverFile(cropFile);
       setCoverPreviewUrl(cropUrl);
-      setCoverCrop({ zoom: clamp(cropZoom, 1, 3), x: clamp(cropShift.x, -1, 1), y: clamp(cropShift.y, -1, 1) });
+      setCoverCropRect(rect);
     }
     cropDragRef.current.on = false;
     cropDragRef.current.pid = null;
@@ -184,7 +211,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
   const imageFileToWebpBlob = async (
     file: File,
-    opts: { width: number; height: number; quality: number; crop?: { zoom: number; x: number; y: number } }
+    opts: { width: number; height: number; quality: number; cropRect?: { x: number; y: number; w: number; h: number } | null }
   ) => {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -206,24 +233,30 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('No pude preparar la imagen.');
 
-    const sw = img.naturalWidth || img.width;
-    const sh = img.naturalHeight || img.height;
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
     const dw = canvas.width;
     const dh = canvas.height;
 
-    const crop = opts.crop || { zoom: 1, x: 0, y: 0 };
-    const zoom = clamp(Number(crop.zoom || 1), 1, 3);
-    const shiftX = clamp(Number(crop.x || 0), -1, 1);
-    const shiftY = clamp(Number(crop.y || 0), -1, 1);
-
-    const scale = Math.max(dw / sw, dh / sh) * zoom;
-    const rw = sw * scale;
-    const rh = sh * scale;
-    const baseDx = (dw - rw) / 2;
-    const baseDy = (dh - rh) / 2;
-    const dx = baseDx + Math.abs(baseDx) * shiftX;
-    const dy = baseDy + Math.abs(baseDy) * shiftY;
-    ctx.drawImage(img, dx, dy, rw, rh);
+    const rect = opts.cropRect || null;
+    if (rect && srcW > 0 && srcH > 0) {
+      const rx = clamp(Number(rect.x || 0), 0, 1);
+      const ry = clamp(Number(rect.y || 0), 0, 1);
+      const rw = clamp(Number(rect.w || 1), 0.000001, 1);
+      const rh = clamp(Number(rect.h || 1), 0.000001, 1);
+      const sx = clamp(Math.round(rx * srcW), 0, Math.max(0, srcW - 1));
+      const sy = clamp(Math.round(ry * srcH), 0, Math.max(0, srcH - 1));
+      const sw = clamp(Math.round(rw * srcW), 1, Math.max(1, srcW - sx));
+      const sh = clamp(Math.round(rh * srcH), 1, Math.max(1, srcH - sy));
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+    } else {
+      const scale = Math.max(dw / srcW, dh / srcH);
+      const rw = srcW * scale;
+      const rh = srcH * scale;
+      const dx = (dw - rw) / 2;
+      const dy = (dh - rh) / 2;
+      ctx.drawImage(img, dx, dy, rw, rh);
+    }
 
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
@@ -280,11 +313,11 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       let nextCoverUrl = coverUrl;
 
       if (avatarFile) {
-        const blob = await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, crop: avatarCrop });
+        const blob = await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect });
         nextAvatarUrl = await uploadWebpToStorage(userId, 'avatar', blob);
       }
       if (coverFile) {
-        const blob = await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78, crop: coverCrop });
+        const blob = await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78, cropRect: coverCropRect });
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
