@@ -90,16 +90,25 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     if (!cropOpen) return;
     const el = cropWrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const update = () => {
       const r = el.getBoundingClientRect();
       setCropWrapSize({ w: Math.max(1, Math.floor(r.width)), h: Math.max(1, Math.floor(r.height)) });
-    });
-    ro.observe(el);
-    const r = el.getBoundingClientRect();
-    setCropWrapSize({ w: Math.max(1, Math.floor(r.width)), h: Math.max(1, Math.floor(r.height)) });
+    };
+    update();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof (window as any).ResizeObserver === 'function') {
+      ro = new ResizeObserver(() => update());
+      ro.observe(el);
+    } else {
+      window.addEventListener('resize', update);
+    }
     return () => {
       try {
-        ro.disconnect();
+        if (ro) ro.disconnect();
+      } catch {}
+      try {
+        window.removeEventListener('resize', update);
       } catch {}
     };
   }, [cropOpen]);
