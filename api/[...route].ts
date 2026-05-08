@@ -2545,6 +2545,33 @@ const libraryHandler = (() => {
     return send(res, 200, { ok: true, song: data });
   }
 
+  async function handleUpdateLyrics(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    const lyrics = typeof body?.lyrics === "string" ? body.lyrics.trim().slice(0, 8000) : "";
+    if (!id) return send(res, 400, { error: "Falta id" });
+    if (!lyrics) return send(res, 400, { error: "Falta lyrics" });
+
+    const { data, error } = await auth.admin
+      .from(TABLE)
+      .update({ lyrics })
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .eq("type", ITEM_TYPE)
+      .is("deleted_at", null)
+      .select("*")
+      .maybeSingle();
+    if (error) return send(res, 500, { error: "No pude actualizar letra", detail: error.message });
+    if (!data) return send(res, 404, { error: "Canción no encontrada" });
+    return send(res, 200, { ok: true, song: data });
+  }
+
   function safeFileBase(nameRaw: string) {
     const name = (nameRaw || "").toString().trim() || "cover";
     const base = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
@@ -2761,6 +2788,7 @@ const libraryHandler = (() => {
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);
     if (a === "update-audio") return handleUpdateAudio(req, res);
+    if (a === "update-lyrics") return handleUpdateLyrics(req, res);
     if (a === "set-cover") return handleSetCover(req, res);
 
     return send(res, 404, { error: "Ruta no encontrada", action: a || null });

@@ -1,7 +1,6 @@
 import { Component, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Edit2, Forward, MoreVertical, Settings, Share2, XCircle } from 'lucide-react';
-import { SettingsView } from './SettingsView';
+import { Edit2, Forward, MoreVertical, Share2, XCircle } from 'lucide-react';
 import { EditProfileView } from './EditProfileView';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import type { SongItem } from '@/types';
@@ -55,7 +54,6 @@ export function ProfileView({
   onPlaySong?: (song: SongItem) => void;
 }) {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
-  const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('Usuario');
@@ -188,14 +186,6 @@ export function ProfileView({
     }
   };
 
-  if (showSettings) {
-    return (
-      <ViewErrorBoundary title="Ajustes" onBack={() => setShowSettings(false)}>
-        <SettingsView onClose={() => setShowSettings(false)} />
-      </ViewErrorBoundary>
-    );
-  }
-
   if (showEditProfile) {
     return (
       <ViewErrorBoundary title="Editar perfil" onBack={() => setShowEditProfile(false)}>
@@ -233,9 +223,6 @@ export function ProfileView({
                 {userEmail ? <div className="text-xs text-slate-300/80 truncate">{userEmail}</div> : null}
               </div>
             </div>
-            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-200 hover:text-white transition-colors glass-card rounded-full">
-              <Settings className="w-5 h-5" />
-            </button>
           </div>
         </div>
       </div>

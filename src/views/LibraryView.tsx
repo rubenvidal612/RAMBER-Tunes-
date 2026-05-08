@@ -1514,6 +1514,8 @@ function SongOptionsSheet({
   const [isPinnedToProfile, setIsPinnedToProfile] = useState(false);
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsText, setLyricsText] = useState<string>(((song as any)?.lyrics || '').toString());
+  const [lyricsBusy, setLyricsBusy] = useState(false);
   const [showStems, setShowStems] = useState(false);
   const [showMp4, setShowMp4] = useState(false);
   const [mp4Author, setMp4Author] = useState('');
@@ -1579,6 +1581,114 @@ function SongOptionsSheet({
       alive = false;
     };
   }, [song?.id, isDeleted]);
+
+  useEffect(() => {
+    setLyricsText(((song as any)?.lyrics || '').toString());
+  }, [song?.id, (song as any)?.lyrics]);
+
+  useEffect(() => {
+    if (!showLyrics) return;
+    const existing = (lyricsText || '').toString().trim();
+    if (existing) return;
+    if (lyricsBusy) return;
+    let alive = true;
+
+    const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
+    const pickLyricsFromTaskPayload = (payload: any) => {
+      const d = payload?.data || payload?.data?.data || payload;
+      const candidates: any[] = [];
+      if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+      if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+      if (Array.isArray(d?.response)) candidates.push(d.response);
+      if (Array.isArray(d?.data)) candidates.push(d.data);
+      if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+      const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+      const pickUrl = (track: any) => cleanStr(track?.audio_url || track?.audioUrl || track?.streamAudioUrl || track?.stream_audio_url || track?.stream_url || track?.url || '');
+      const pickLyrics = (track: any) => {
+        const direct =
+          (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
+          (typeof track?.lyric === 'string' ? track.lyric : '') ||
+          (typeof track?.text === 'string' ? track.text : '') ||
+          (typeof track?.prompt === 'string' ? track.prompt : '');
+        return cleanStr(direct);
+      };
+      const songUrl = cleanStr((song as any)?.audioUrl || '');
+      if (songUrl) {
+        const match = list.find((t: any) => pickUrl(t) && pickUrl(t) === songUrl);
+        const m = match ? pickLyrics(match) : '';
+        if (m) return m;
+      }
+      for (const t of list) {
+        const l = pickLyrics(t);
+        if (l) return l;
+      }
+      return '';
+    };
+
+    const guessMimeType = (u: string) => {
+      const s = (u || '').toString().trim().toLowerCase();
+      const q = s.split('?')[0].split('#')[0];
+      if (q.endsWith('.mp3')) return 'audio/mpeg';
+      if (q.endsWith('.wav')) return 'audio/wav';
+      if (q.endsWith('.m4a')) return 'audio/mp4';
+      if (q.endsWith('.mp4')) return 'audio/mp4';
+      if (q.endsWith('.ogg')) return 'audio/ogg';
+      if (q.endsWith('.webm')) return 'audio/webm';
+      return '';
+    };
+
+    const run = async () => {
+      setLyricsBusy(true);
+      try {
+        const t = await getAccessToken();
+        if (!t.ok) return;
+
+        let found = '';
+        const taskId = cleanStr((song as any)?.sunoTaskId || '');
+        if (taskId) {
+          const tr = await fetch(`/api/suno/task?kind=generate&taskId=${encodeURIComponent(taskId)}`, {
+            headers: { authorization: `Bearer ${t.token}` },
+          }).catch(() => null as any);
+          if (tr?.ok) {
+            const tout = await tr.json().catch(() => ({}));
+            found = pickLyricsFromTaskPayload(tout?.data || tout);
+          }
+        }
+
+        if (!found) {
+          const url = cleanStr((song as any)?.audioUrl || '');
+          if (url && /^https?:\/\//i.test(url)) {
+            const mimeType = guessMimeType(url) || 'audio/mpeg';
+            const rr = await fetch('/api/ai/transcribe-lyrics', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+              body: JSON.stringify({ uploadUrl: url, mimeType }),
+            }).catch(() => null as any);
+            if (rr?.ok) {
+              const out = await rr.json().catch(() => ({}));
+              if (out?.ok && typeof out?.lyrics === 'string') found = String(out.lyrics || '').trim();
+            }
+          }
+        }
+
+        if (!found || !alive) return;
+        setLyricsText(found);
+        await fetch('/api/library/update-lyrics', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({ id: String((song as any)?.id || ''), lyrics: found }),
+        }).catch(() => null as any);
+        onRefreshSongs?.();
+      } finally {
+        if (alive) setLyricsBusy(false);
+      }
+    };
+
+    run().catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [showLyrics, song?.id, lyricsText, lyricsBusy]);
   useEffect(() => {
     if (!showPersonaSave) return;
     setPersonaVocalStart(0);
@@ -3453,7 +3563,7 @@ function SongOptionsSheet({
             </div>
             <div className="p-4">
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
-                {song.lyrics ? song.lyrics : 'Esta canción no tiene letra guardada.'}
+                {lyricsBusy ? 'Cargando letra…' : (lyricsText || '').toString().trim() ? lyricsText : 'Esta canción no tiene letra guardada.'}
               </div>
             </div>
           </div>
