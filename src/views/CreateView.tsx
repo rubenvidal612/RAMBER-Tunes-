@@ -588,8 +588,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const pickAudio = async (file: File) => {
     const n = (file?.name || '').toString().trim().toLowerCase();
     if (!n.endsWith('.mp3')) {
-      setAudioUploadError('Solo se puede subir formato MP3.');
-      alert('Solo se puede subir formato MP3.');
+      const msg = 'Solo se puede subir formato MP3. Usa el Convertidor a MP3.';
+      setAudioUploadError(msg);
+      alert(msg);
       try {
         if (audioInputRef.current) audioInputRef.current.value = '';
       } catch {}
@@ -632,6 +633,32 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const continueFromAudio = async () => {
     if (audioAction === 'library') return saveUploadedAudioToLibrary();
     setIsAudioModalOpen(false);
+  };
+
+  const openMp3Converter = () => {
+    const url = 'https://cloudconvert.com/mp3-converter';
+    try {
+      const w = window.open(url, '_blank', 'noopener,noreferrer');
+      if (w) {
+        try {
+          (w as any).opener = null;
+        } catch {}
+        return;
+      }
+    } catch {}
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    } catch {}
+    try {
+      window.location.href = url;
+    } catch {}
   };
 
   const handleAddVocalsFromAudio = async () => {
@@ -1165,6 +1192,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClearPersona={() => setSelectedPersona(null)}
             isTranscribingAudioLyrics={isTranscribingAudioLyrics}
             onTranscribeAudioLyrics={transcribeLyricsFromAudio}
+            setAudioUploadError={setAudioUploadError}
+            openMp3Converter={openMp3Converter}
           />
         )}
       </div>
@@ -1313,7 +1342,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
               {audioUploadError && (
                 <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
-                  {audioUploadError}
+                  <div>{audioUploadError}</div>
+                  {String(audioUploadError || '').toLowerCase().includes('mp3') ? (
+                    <button
+                      type="button"
+                      onClick={openMp3Converter}
+                      className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
+                    >
+                      Abrir Convertidor a MP3
+                    </button>
+                  ) : null}
                 </div>
               )}
 
@@ -1529,6 +1567,8 @@ function CustomForm({
   onClearPersona,
   isTranscribingAudioLyrics,
   onTranscribeAudioLyrics,
+  setAudioUploadError,
+  openMp3Converter,
 }: any) {
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
@@ -1720,7 +1760,9 @@ function CustomForm({
               e.currentTarget.value = '';
               const n = (f?.name || '').toString().trim().toLowerCase();
               if (!n.endsWith('.mp3')) {
-                alert('Solo se puede subir formato MP3.');
+                const msg = 'Solo se puede subir formato MP3. Usa el Convertidor a MP3.';
+                setAudioUploadError(msg);
+                alert(msg);
                 return;
               }
               onPickAudio(f);
@@ -1734,6 +1776,18 @@ function CustomForm({
           <Plus className="w-5 h-5 text-slate-400" /> Persona
         </button>
       </div>
+
+      {!audioUploadUrl && (
+        <div className="mt-2 px-1">
+          <button
+            type="button"
+            onClick={openMp3Converter}
+            className="text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
+          >
+            ¿Tu audio no es MP3? Convertir a MP3
+          </button>
+        </div>
+      )}
 
       {!!audioUploadUrl && (
         <div className="glass-card rounded-2xl p-4 border border-white/10 mt-3">

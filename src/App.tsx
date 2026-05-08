@@ -16,7 +16,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2 } from 'lucide-react';
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
   { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
@@ -1847,6 +1847,69 @@ export default function App() {
              )
            )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
+           {currentTab === 'convertidor' && (
+             <div className="flex-1 flex flex-col overflow-y-auto px-5 py-6">
+               <div className="max-w-[520px] w-full mx-auto space-y-4">
+                 <div className="glass-card rounded-3xl border border-white/10 p-5 bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10">
+                   <div className="flex items-center gap-3">
+                     <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-100">
+                       <Repeat2 className="w-6 h-6" />
+                     </div>
+                     <div className="min-w-0">
+                       <div className="text-white font-extrabold">Convertidor a MP3</div>
+                       <div className="text-xs text-slate-300">Convierte tu audio sin cargarlo a RAMBER Tunes.</div>
+                     </div>
+                   </div>
+                   <div className="mt-4 space-y-2 text-sm text-slate-200">
+                     <div>1) Abre el convertidor</div>
+                     <div>2) Selecciona tu archivo (m4a/wav/mp4, etc.)</div>
+                     <div>3) Convierte y descarga el MP3</div>
+                     <div>4) Regresa a Studio y súbelo</div>
+                   </div>
+                   <div className="mt-5 flex gap-3">
+                     <button
+                       type="button"
+                       onClick={() => {
+                         const url = 'https://cloudconvert.com/mp3-converter';
+                         try {
+                           const w = window.open(url, '_blank', 'noopener,noreferrer');
+                           if (w) {
+                             try {
+                               (w as any).opener = null;
+                             } catch {}
+                             return;
+                           }
+                         } catch {}
+                         try {
+                           const a = document.createElement('a');
+                           a.href = url;
+                           a.target = '_blank';
+                           a.rel = 'noopener noreferrer';
+                           document.body.appendChild(a);
+                           a.click();
+                           a.remove();
+                           return;
+                         } catch {}
+                         try {
+                           window.location.href = url;
+                         } catch {}
+                       }}
+                       className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-black rounded-full px-4 py-3 text-sm font-extrabold transition-colors"
+                     >
+                       Abrir Convertidor
+                     </button>
+                     <button
+                       type="button"
+                       onClick={() => setCurrentTab('studio')}
+                       className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-4 py-3 text-sm font-semibold text-slate-200 transition-colors"
+                     >
+                       Volver a Studio
+                     </button>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           )}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
            
@@ -1893,6 +1956,68 @@ export default function App() {
                <div className="flex-1 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30 relative z-10 w-full min-w-[300px]">
                 {currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
+               ) : currentTab === 'convertidor' ? (
+                 <div className="flex-1 min-h-0 overflow-y-auto p-6">
+                   <div className="max-w-[720px] mx-auto">
+                     <div className="bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6">
+                       <div className="flex items-center gap-3">
+                         <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-100">
+                           <Repeat2 className="w-6 h-6" />
+                         </div>
+                         <div className="min-w-0">
+                           <div className="text-white font-extrabold">Convertidor a MP3</div>
+                           <div className="text-xs text-slate-300">Úsalo cuando tu archivo no sea MP3.</div>
+                         </div>
+                       </div>
+                       <div className="mt-4 space-y-2 text-sm text-slate-200">
+                         <div>1) Abre el convertidor</div>
+                         <div>2) Selecciona tu archivo</div>
+                         <div>3) Convierte y descarga el MP3</div>
+                         <div>4) Regresa a Studio y súbelo</div>
+                       </div>
+                       <div className="mt-5 flex gap-3">
+                         <button
+                           type="button"
+                           onClick={() => {
+                             const url = 'https://cloudconvert.com/mp3-converter';
+                             try {
+                               const w = window.open(url, '_blank', 'noopener,noreferrer');
+                               if (w) {
+                                 try {
+                                   (w as any).opener = null;
+                                 } catch {}
+                                 return;
+                               }
+                             } catch {}
+                             try {
+                               const a = document.createElement('a');
+                               a.href = url;
+                               a.target = '_blank';
+                               a.rel = 'noopener noreferrer';
+                               document.body.appendChild(a);
+                               a.click();
+                               a.remove();
+                               return;
+                             } catch {}
+                             try {
+                               window.location.href = url;
+                             } catch {}
+                           }}
+                           className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-full px-5 py-3 text-sm font-extrabold transition-colors"
+                         >
+                           Abrir Convertidor
+                         </button>
+                         <button
+                           type="button"
+                           onClick={() => setCurrentTab('studio')}
+                           className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-5 py-3 text-sm font-semibold text-slate-200 transition-colors"
+                         >
+                           Volver a Studio
+                         </button>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
                 ) : (
                   <LibraryView
                     canciones={canciones}

@@ -1,4 +1,4 @@
-import { Home, Sparkles, Video, Library, User, Coins, HelpCircle } from 'lucide-react';
+import { Home, Sparkles, Library, User, Coins, HelpCircle, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -29,16 +29,16 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
           </button>
 
           <button
-            onClick={() => onChange('mv')}
+            onClick={() => onChange('convertidor')}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'mv'
+              currentTab === 'convertidor'
                 ? "bg-indigo-500/20 text-indigo-400 font-bold"
                 : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
             )}
           >
-            <Video className="w-5 h-5" />
-            <span className="text-sm">MV</span>
+            <Repeat2 className="w-5 h-5" />
+            <span className="text-sm">Convertidor</span>
           </button>
 
           <button

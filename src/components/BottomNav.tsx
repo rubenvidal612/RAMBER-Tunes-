@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Video, Sparkles, Library, User } from 'lucide-react';
+import { Home, Sparkles, Library, User, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -11,7 +11,7 @@ interface BottomNavProps {
 export function BottomNav({ currentTab, onChange }: BottomNavProps) {
   const items: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
-    { id: 'mv', label: 'MV', icon: Video },
+    { id: 'convertidor', label: 'Convertir', icon: Repeat2 },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
     { id: 'perfil', label: 'Perfil', icon: User },
