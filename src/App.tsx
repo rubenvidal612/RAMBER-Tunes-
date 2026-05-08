@@ -2692,7 +2692,6 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                 const location = [city, country].filter(Boolean).join(', ');
                 const contactEmail = String(data.profile?.contactEmail || '').trim();
                 const contactPhone = String(data.profile?.contactPhone || '').trim();
-                const personalInfo = String(data.profile?.personalInfo || '').trim();
                 const bio = String(data.profile?.bio || '').trim();
                 return (
                   <div className="mt-4 space-y-3">
@@ -2700,11 +2699,6 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                     {contactEmail ? <div className="text-sm text-slate-300">{contactEmail}</div> : null}
                     {contactPhone ? <div className="text-sm text-slate-300">{contactPhone}</div> : null}
                     {bio ? <div className="text-sm text-slate-300 whitespace-pre-wrap">{bio}</div> : null}
-                    {personalInfo ? (
-                      <div className="bg-white/5 border border-white/10 rounded-3xl p-4 text-sm text-slate-200 whitespace-pre-wrap">
-                        {personalInfo}
-                      </div>
-                    ) : null}
                   </div>
                 );
               })()}

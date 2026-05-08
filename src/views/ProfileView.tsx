@@ -65,7 +65,7 @@ export function ProfileView({
   const [city, setCity] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
-  const [personalInfo, setPersonalInfo] = useState('');
+  const [bio, setBio] = useState('');
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
@@ -91,7 +91,7 @@ export function ProfileView({
       setCity((meta?.city || '').toString());
       setContactEmail((meta?.contact_email || '').toString());
       setContactPhone((meta?.contact_phone || '').toString());
-      setPersonalInfo((meta?.personal_info || '').toString());
+      setBio((meta?.bio || '').toString());
     };
     loadUser().catch(() => {});
     const { data: sub } = supabaseBrowser.auth.onAuthStateChange(() => {
@@ -213,7 +213,7 @@ export function ProfileView({
   const pinnedSet = new Set(pinnedSongIds);
   const pinnedSongs = allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
   const location = [city, country].map((x) => String(x || '').trim()).filter(Boolean).join(', ');
-  const hasInfo = Boolean(location || String(contactEmail || '').trim() || String(contactPhone || '').trim() || String(personalInfo || '').trim());
+  const hasInfo = Boolean(location || String(contactEmail || '').trim() || String(contactPhone || '').trim() || String(bio || '').trim());
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
@@ -275,7 +275,7 @@ export function ProfileView({
             {location ? <div className="mt-2 text-sm text-slate-300">{location}</div> : null}
             {contactEmail ? <div className="mt-2 text-sm text-slate-300">{String(contactEmail)}</div> : null}
             {contactPhone ? <div className="mt-1 text-sm text-slate-300">{String(contactPhone)}</div> : null}
-            {personalInfo ? <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{String(personalInfo)}</div> : null}
+            {bio ? <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{String(bio)}</div> : null}
           </div>
         </div>
       )}

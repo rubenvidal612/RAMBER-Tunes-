@@ -12,7 +12,6 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [city, setCity] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
-  const [personalInfo, setPersonalInfo] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [coverUrl, setCoverUrl] = useState<string>('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -60,7 +59,6 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         setCity((meta?.city || '').toString());
         setContactEmail((meta?.contact_email || '').toString());
         setContactPhone((meta?.contact_phone || '').toString());
-        setPersonalInfo((meta?.personal_info || '').toString());
         setAvatarUrl((meta?.avatar_url || '').toString());
         setCoverUrl((meta?.cover_url || '').toString());
       })
@@ -342,7 +340,6 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
           city: (city || '').toString().slice(0, 60),
           contact_email: (contactEmail || '').toString().slice(0, 120),
           contact_phone: (contactPhone || '').toString().slice(0, 40),
-          personal_info: (personalInfo || '').toString().slice(0, 2000),
           avatar_url: nextAvatarUrl || undefined,
           cover_url: nextCoverUrl || undefined,
           profile_ready: true,
@@ -483,12 +480,12 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
         {/* Bio */}
         <div>
-          <h3 className="font-bold text-base mb-2">Biografía</h3>
+          <h3 className="font-bold text-base mb-2">Biografía (público)</h3>
           <div className="bg-white/5 rounded-xl p-4 border border-white/5 relative">
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value.substring(0, 250))}
-              placeholder="Escribe tu biografía"
+              placeholder="Escribe tu biografía (esto se verá en tu perfil)"
               className="w-full bg-transparent text-[15px] placeholder:text-slate-500 outline-none min-h-[120px] text-white resize-none"
             />
             <div className="absolute bottom-3 right-4 text-slate-500 text-sm">
@@ -543,20 +540,6 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div>
-          <h3 className="font-bold text-base mb-2">Información personal (público)</h3>
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5 relative">
-            <textarea
-              value={personalInfo}
-              onChange={(e) => setPersonalInfo(e.target.value.substring(0, 2000))}
-              placeholder="Escribe lo que quieras que salga en tu perfil público"
-              className="w-full bg-transparent text-[15px] placeholder:text-slate-500 outline-none min-h-[140px] text-white resize-none"
-            />
-            <div className="absolute bottom-3 right-4 text-slate-500 text-sm">
-              {personalInfo.length} / 2000
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Action Buttons Fixed at Bottom */}

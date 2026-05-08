@@ -3390,7 +3390,6 @@ const shareProfileHandler = (() => {
       const city = String(meta?.city || "").trim();
       const contactEmail = String(meta?.contact_email || "").trim();
       const contactPhone = String(meta?.contact_phone || "").trim();
-      const personalInfo = String(meta?.personal_info || "").trim();
 
       const { data: pins, error: pinsErr } = await admin
         .from("profile_pins")
@@ -3449,7 +3448,6 @@ const shareProfileHandler = (() => {
           city: city || null,
           contactEmail: contactEmail || null,
           contactPhone: contactPhone || null,
-          personalInfo: personalInfo || null,
         },
         songs,
       });
