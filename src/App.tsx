@@ -1409,6 +1409,54 @@ export default function App() {
       });
     };
 
+    const pickLyricsFromTaskPayload = (payload: any, matchAudioUrl?: string) => {
+      const d = payload?.data || payload?.data?.data || payload;
+      const candidates: any[] = [];
+      if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+      if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+      if (Array.isArray(d?.response)) candidates.push(d.response);
+      if (Array.isArray(d?.data)) candidates.push(d.data);
+      if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+      const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+      const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
+      const pickUrl = (track: any) =>
+        cleanStr(
+          track?.audio_url ||
+            track?.audioUrl ||
+            track?.streamAudioUrl ||
+            track?.stream_audio_url ||
+            track?.stream_url ||
+            track?.url ||
+            ''
+        );
+      const pickLyrics = (track: any) => {
+        const direct =
+          (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
+          (typeof track?.lyric === 'string' ? track.lyric : '') ||
+          (typeof track?.text === 'string' ? track.text : '') ||
+          (typeof track?.prompt === 'string' ? track.prompt : '');
+        return cleanStr(direct);
+      };
+
+      const wanted = cleanStr(matchAudioUrl || '');
+      if (wanted) {
+        const match = list.find((t: any) => pickUrl(t) && pickUrl(t) === wanted);
+        const m = match ? pickLyrics(match) : '';
+        if (m) return m;
+      }
+      for (const t of list) {
+        const l = pickLyrics(t);
+        if (l) return l;
+      }
+      const fallback =
+        cleanStr(d?.response?.lyrics) ||
+        cleanStr(d?.data?.response?.lyrics) ||
+        cleanStr(d?.lyrics) ||
+        cleanStr(d?.data?.lyrics) ||
+        '';
+      return fallback;
+    };
+
     const extractVocalRemovalUrls = (payload: any) => {
       const d = payload?.data || payload?.data?.data || payload;
       const root = d?.data || d || {};
@@ -1541,11 +1589,16 @@ export default function App() {
               const hasSuffix = new RegExp(`\\s${suffix}$`, 'i').test(chosen);
               return hasSuffix ? chosen : `${chosen} ${suffix}`;
             })();
+            const autoLyrics =
+              (draftLyrics || '').trim() ||
+              (typeof track?.lyrics === 'string' ? track.lyrics.trim() : '') ||
+              pickLyricsFromTaskPayload(data, track.audioUrl) ||
+              '';
             await addCancion({
               id: track.audioId || `${pending.taskId}_${i + 1}`,
               title: finalTitle,
               description: String(draft?.description || ''),
-              lyrics: draftLyrics ? draftLyrics : (typeof track?.lyrics === 'string' && track.lyrics.trim() ? track.lyrics : undefined),
+              lyrics: autoLyrics ? autoLyrics : undefined,
               genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
               audioUrl: track.audioUrl,
               coverUrl: track.coverUrl || undefined,
