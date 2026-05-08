@@ -1,10 +1,49 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Edit2, Forward, MoreVertical, Settings, Share2, XCircle } from 'lucide-react';
 import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import type { SongItem } from '@/types';
+
+class ViewErrorBoundary extends Component<{ onBack: () => void; title: string; children: any }, { hasError: boolean; message: string }> {
+  declare props: Readonly<{ onBack: () => void; title: string; children: any }>;
+  state: { hasError: boolean; message: string } = { hasError: false, message: '' };
+  static getDerivedStateFromError(err: any) {
+    const msg = err instanceof Error ? err.message : String(err || '');
+    return { hasError: true, message: msg || 'Error inesperado' };
+  }
+  componentDidCatch() {
+  }
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="fixed inset-0 z-[400] bg-[#0a0a0a] text-white p-5 pb-safe">
+        <div className="text-xl font-extrabold">No se pudo abrir</div>
+        <div className="mt-2 text-sm text-slate-300">{this.props.title}</div>
+        <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl p-3 text-xs text-slate-300 break-words">
+          {this.state.message}
+        </div>
+        <div className="mt-5 flex gap-3">
+          <button onClick={this.props.onBack} className="flex-1 h-[46px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 font-extrabold">
+            Regresar
+          </button>
+          <button
+            onClick={() => {
+              try {
+                window.location.reload();
+              } catch {
+              }
+            }}
+            className="flex-1 h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold"
+          >
+            Recargar
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 
 export function ProfileView({
   onGoStudio,
@@ -150,20 +189,26 @@ export function ProfileView({
   };
 
   if (showSettings) {
-    return <SettingsView onClose={() => setShowSettings(false)} />;
+    return (
+      <ViewErrorBoundary title="Ajustes" onBack={() => setShowSettings(false)}>
+        <SettingsView onClose={() => setShowSettings(false)} />
+      </ViewErrorBoundary>
+    );
   }
 
   if (showEditProfile) {
     return (
-      <EditProfileView
-        onClose={() => {
-          setShowEditProfile(false);
-          try {
-            supabaseBrowser?.auth.getUser().then(() => {}).catch(() => {});
-          } catch {
-          }
-        }}
-      />
+      <ViewErrorBoundary title="Editar perfil" onBack={() => setShowEditProfile(false)}>
+        <EditProfileView
+          onClose={() => {
+            setShowEditProfile(false);
+            try {
+              supabaseBrowser?.auth.getUser().then(() => {}).catch(() => {});
+            } catch {
+            }
+          }}
+        />
+      </ViewErrorBoundary>
     );
   }
 
