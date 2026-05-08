@@ -2350,7 +2350,6 @@ export default function App() {
                       { k: 'sounds', label: 'Sounds', cost: CREDIT_COSTS.sounds },
                       { k: 'replace_section', label: 'Reemplazar sección', cost: CREDIT_COSTS.replace_section },
                       { k: 'wav', label: 'Convertir a WAV', cost: CREDIT_COSTS.wav },
-                      { k: 'lyrics', label: 'Generar letra', cost: CREDIT_COSTS.lyrics },
                       { k: 'timestamped_lyrics', label: 'Letra con tiempo', cost: CREDIT_COSTS.timestamped_lyrics },
                       { k: 'boost_style', label: 'Boost estilo', cost: CREDIT_COSTS.boost_style },
                     ];

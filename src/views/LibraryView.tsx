@@ -748,7 +748,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   const step = Math.max(0, Math.floor((now - base) / 3500));
                   const simulated = Math.min(95, Math.max(3, 3 + step * 2));
                   const pctFromProvider = Number.isFinite(Number(first?.progressPct)) ? Number(first?.progressPct) : null;
-                  const pctBase = pctFromProvider !== null ? Math.max(3, Math.min(99, pctFromProvider)) : simulated;
+                  const pctProvider = pctFromProvider !== null ? Math.max(3, Math.min(99, pctFromProvider)) : 0;
+                  const pctBase = Math.max(simulated, pctProvider);
                   const ring = (pct: number) => `conic-gradient(#22c55e ${pct * 3.6}deg, rgba(255,255,255,0.10) 0deg)`;
                   const row = (k: number) => {
                     const pct = Math.min(95, pctBase + k);
@@ -1586,109 +1587,38 @@ function SongOptionsSheet({
     setLyricsText(((song as any)?.lyrics || '').toString());
   }, [song?.id, (song as any)?.lyrics]);
 
-  useEffect(() => {
-    if (!showLyrics) return;
-    const existing = (lyricsText || '').toString().trim();
-    if (existing) return;
+  const saveLyrics = async () => {
     if (lyricsBusy) return;
-    let alive = true;
-
-    const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
-    const pickLyricsFromTaskPayload = (payload: any) => {
-      const d = payload?.data || payload?.data?.data || payload;
-      const candidates: any[] = [];
-      if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
-      if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
-      if (Array.isArray(d?.response)) candidates.push(d.response);
-      if (Array.isArray(d?.data)) candidates.push(d.data);
-      if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
-      const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
-      const pickUrl = (track: any) => cleanStr(track?.audio_url || track?.audioUrl || track?.streamAudioUrl || track?.stream_audio_url || track?.stream_url || track?.url || '');
-      const pickLyrics = (track: any) => {
-        const direct =
-          (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
-          (typeof track?.lyric === 'string' ? track.lyric : '') ||
-          (typeof track?.text === 'string' ? track.text : '') ||
-          (typeof track?.prompt === 'string' ? track.prompt : '');
-        return cleanStr(direct);
-      };
-      const songUrl = cleanStr((song as any)?.audioUrl || '');
-      if (songUrl) {
-        const match = list.find((t: any) => pickUrl(t) && pickUrl(t) === songUrl);
-        const m = match ? pickLyrics(match) : '';
-        if (m) return m;
+    const id = String((song as any)?.id || '').trim();
+    const text = String(lyricsText || '').trim();
+    if (!id) return;
+    if (!text) {
+      alert('Escribe la letra antes de guardar.');
+      return;
+    }
+    setLyricsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
       }
-      for (const t of list) {
-        const l = pickLyrics(t);
-        if (l) return l;
+      const r = await fetch('/api/library/update-lyrics', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id, lyrics: text }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        alert((out?.error || out?.detail || 'No pude guardar la letra.').toString());
+        return;
       }
-      return '';
-    };
-
-    const guessMimeType = (u: string) => {
-      const s = (u || '').toString().trim().toLowerCase();
-      const q = s.split('?')[0].split('#')[0];
-      if (q.endsWith('.mp3')) return 'audio/mpeg';
-      if (q.endsWith('.wav')) return 'audio/wav';
-      if (q.endsWith('.m4a')) return 'audio/mp4';
-      if (q.endsWith('.mp4')) return 'audio/mp4';
-      if (q.endsWith('.ogg')) return 'audio/ogg';
-      if (q.endsWith('.webm')) return 'audio/webm';
-      return '';
-    };
-
-    const run = async () => {
-      setLyricsBusy(true);
-      try {
-        const t = await getAccessToken();
-        if (!t.ok) return;
-
-        let found = '';
-        const taskId = cleanStr((song as any)?.sunoTaskId || '');
-        if (taskId) {
-          const tr = await fetch(`/api/suno/task?kind=generate&taskId=${encodeURIComponent(taskId)}`, {
-            headers: { authorization: `Bearer ${t.token}` },
-          }).catch(() => null as any);
-          if (tr?.ok) {
-            const tout = await tr.json().catch(() => ({}));
-            found = pickLyricsFromTaskPayload(tout?.data || tout);
-          }
-        }
-
-        if (!found) {
-          const url = cleanStr((song as any)?.audioUrl || '');
-          if (url && /^https?:\/\//i.test(url)) {
-            const mimeType = guessMimeType(url) || 'audio/mpeg';
-            const rr = await fetch('/api/ai/transcribe-lyrics', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-              body: JSON.stringify({ uploadUrl: url, mimeType }),
-            }).catch(() => null as any);
-            if (rr?.ok) {
-              const out = await rr.json().catch(() => ({}));
-              if (out?.ok && typeof out?.lyrics === 'string') found = String(out.lyrics || '').trim();
-            }
-          }
-        }
-
-        if (!found || !alive) return;
-        setLyricsText(found);
-        await fetch('/api/library/update-lyrics', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-          body: JSON.stringify({ id: String((song as any)?.id || ''), lyrics: found }),
-        }).catch(() => null as any);
-        onRefreshSongs?.();
-      } finally {
-        if (alive) setLyricsBusy(false);
-      }
-    };
-
-    run().catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [showLyrics, song?.id, lyricsText, lyricsBusy]);
+      onRefreshSongs?.();
+      alert('Listo. Letra guardada.');
+    } finally {
+      setLyricsBusy(false);
+    }
+  };
   useEffect(() => {
     if (!showPersonaSave) return;
     setPersonaVocalStart(0);
@@ -3561,9 +3491,33 @@ function SongOptionsSheet({
                 ✕
               </button>
             </div>
-            <div className="p-4">
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
-                {lyricsBusy ? 'Cargando letra…' : (lyricsText || '').toString().trim() ? lyricsText : 'Esta canción no tiene letra guardada.'}
+            <div className="p-4 space-y-3">
+              <textarea
+                value={lyricsText}
+                onChange={(e) => setLyricsText(e.target.value)}
+                placeholder="Pega o escribe aquí la letra para guardarla en tu Biblioteca"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[15px] text-slate-100 placeholder:text-slate-500 outline-none min-h-[50vh] resize-none"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowLyrics(false)}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full h-[46px] text-slate-200 font-extrabold"
+                  disabled={lyricsBusy}
+                >
+                  Cerrar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveLyrics().catch(() => {})}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  disabled={lyricsBusy}
+                >
+                  {lyricsBusy ? 'Guardando…' : 'Guardar letra'}
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                No generamos letra aquí. Solo guardamos lo que tú escribas/pegues.
               </div>
             </div>
           </div>
