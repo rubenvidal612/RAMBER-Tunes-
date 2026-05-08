@@ -3386,6 +3386,13 @@ const shareProfileHandler = (() => {
       const avatarUrl = String(meta?.avatar_url || "").trim();
       const coverUrl = String(meta?.cover_url || "").trim();
       const bio = String(meta?.bio || "").trim();
+      const country = String(meta?.country || "").trim();
+      const city = String(meta?.city || "").trim();
+      const contactEmail = String(meta?.contact_email || "").trim();
+      const contactPhone = String(meta?.contact_phone || "").trim();
+      const personalInfo = String(meta?.personal_info || "").trim();
+      const galleryUrlsRaw = Array.isArray(meta?.gallery_urls) ? meta.gallery_urls : [];
+      const galleryUrls = galleryUrlsRaw.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 5);
 
       const { data: pins, error: pinsErr } = await admin
         .from("profile_pins")
@@ -3440,6 +3447,12 @@ const shareProfileHandler = (() => {
           avatarUrl: avatarUrl || null,
           coverUrl: coverUrl || null,
           bio: bio || null,
+          country: country || null,
+          city: city || null,
+          contactEmail: contactEmail || null,
+          contactPhone: contactPhone || null,
+          personalInfo: personalInfo || null,
+          galleryUrls,
         },
         songs,
       });

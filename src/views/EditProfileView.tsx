@@ -8,6 +8,11 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
+  const [country, setCountry] = useState('');
+  const [city, setCity] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [personalInfo, setPersonalInfo] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [coverUrl, setCoverUrl] = useState<string>('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -18,8 +23,18 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [coverCropRect, setCoverCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const [galleryUrls, setGalleryUrls] = useState<string[]>(['', '', '', '', '']);
+  const [galleryDraft, setGalleryDraft] = useState<Array<{ file: File; previewUrl: string; cropRect: { x: number; y: number; w: number; h: number } | null } | null>>([
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
   const [cropOpen, setCropOpen] = useState(false);
-  const [cropTarget, setCropTarget] = useState<'avatar' | 'cover' | null>(null);
+  const [cropTarget, setCropTarget] = useState<'avatar' | 'cover' | 'gallery' | null>(null);
+  const [cropGalleryIndex, setCropGalleryIndex] = useState<number | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [cropUrl, setCropUrl] = useState('');
   const [cropZoom, setCropZoom] = useState(1);
@@ -51,8 +66,17 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         setName(n);
         setUsername(u);
         setBio(b);
+        setCountry((meta?.country || '').toString());
+        setCity((meta?.city || '').toString());
+        setContactEmail((meta?.contact_email || '').toString());
+        setContactPhone((meta?.contact_phone || '').toString());
+        setPersonalInfo((meta?.personal_info || '').toString());
         setAvatarUrl((meta?.avatar_url || '').toString());
         setCoverUrl((meta?.cover_url || '').toString());
+        const gu = Array.isArray(meta?.gallery_urls) ? meta.gallery_urls : [];
+        const nextUrls = gu.map((x: any) => String(x || '').trim()).slice(0, 5);
+        while (nextUrls.length < 5) nextUrls.push('');
+        setGalleryUrls(nextUrls);
       })
       .catch(() => {})
       .finally(() => {
@@ -72,8 +96,13 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       try {
         if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
       } catch {}
+      try {
+        for (const slot of galleryDraft) {
+          if (slot?.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+        }
+      } catch {}
     };
-  }, [avatarPreviewUrl, coverPreviewUrl]);
+  }, [avatarPreviewUrl, coverPreviewUrl, galleryDraft]);
 
   const sanitizeUsername = (s: string) =>
     (s || '')
@@ -113,12 +142,13 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     };
   }, [cropOpen]);
 
-  const openCrop = async (target: 'avatar' | 'cover', file: File) => {
+  const openCrop = async (target: 'avatar' | 'cover' | 'gallery', file: File, galleryIndex?: number) => {
     try {
       if (cropUrl) URL.revokeObjectURL(cropUrl);
     } catch {}
     const url = URL.createObjectURL(file);
     setCropTarget(target);
+    setCropGalleryIndex(target === 'gallery' ? (Number.isFinite(galleryIndex as any) ? Number(galleryIndex) : null) : null);
     setCropFile(file);
     setCropUrl(url);
     setCropZoom(1);
@@ -142,6 +172,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     cropDragRef.current.pid = null;
     setCropOpen(false);
     setCropTarget(null);
+    setCropGalleryIndex(null);
     setCropFile(null);
     setCropZoom(1);
     setCropShift({ x: 0, y: 0 });
@@ -192,18 +223,30 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       setAvatarFile(cropFile);
       setAvatarPreviewUrl(cropUrl);
       setAvatarCropRect(rect);
-    } else {
+    } else if (cropTarget === 'cover') {
       try {
         if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
       } catch {}
       setCoverFile(cropFile);
       setCoverPreviewUrl(cropUrl);
       setCoverCropRect(rect);
+    } else {
+      const idx = Number.isFinite(cropGalleryIndex as any) ? Number(cropGalleryIndex) : -1;
+      if (idx < 0 || idx > 4) return;
+      setGalleryDraft((prev) => {
+        const next = prev.slice();
+        try {
+          if (next[idx]?.previewUrl) URL.revokeObjectURL(next[idx]!.previewUrl);
+        } catch {}
+        next[idx] = { file: cropFile, previewUrl: cropUrl, cropRect: rect };
+        return next;
+      });
     }
     cropDragRef.current.on = false;
     cropDragRef.current.pid = null;
     setCropOpen(false);
     setCropTarget(null);
+    setCropGalleryIndex(null);
     setCropFile(null);
     setCropUrl('');
     setCropZoom(1);
@@ -273,10 +316,11 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     return blob;
   };
 
-  const uploadWebpToStorage = async (userId: string, kind: 'avatar' | 'cover', blob: Blob) => {
+  const uploadWebpToStorage = async (userId: string, kind: 'avatar' | 'cover' | 'gallery', blob: Blob, galleryIndex?: number) => {
     await ensureAnonSession();
-    const base = kind === 'avatar' ? `avatars/${userId}` : `profile-covers/${userId}`;
-    const path = `${base}/${kind}_${Date.now()}.webp`;
+    const base = kind === 'avatar' ? `avatars/${userId}` : kind === 'cover' ? `profile-covers/${userId}` : `profile-gallery/${userId}`;
+    const suffix = kind === 'gallery' ? `photo_${Number.isFinite(galleryIndex as any) ? Number(galleryIndex) : 0}` : kind;
+    const path = `${base}/${suffix}_${Date.now()}.webp`;
     const up = await supabaseBrowser.storage.from('ramber-tunes').upload(path, blob, {
       upsert: true,
       contentType: 'image/webp',
@@ -313,6 +357,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
       let nextAvatarUrl = avatarUrl;
       let nextCoverUrl = coverUrl;
+      let nextGalleryUrls = galleryUrls.slice(0, 5);
+      while (nextGalleryUrls.length < 5) nextGalleryUrls.push('');
 
       if (avatarFile) {
         const blob = await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect });
@@ -323,11 +369,30 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
+      for (let i = 0; i < 5; i++) {
+        const slot = galleryDraft[i];
+        if (!slot?.file) continue;
+        const blob = await imageFileToWebpBlob(slot.file, { width: 1080, height: 1080, quality: 0.8, cropRect: slot.cropRect });
+        const url = await uploadWebpToStorage(userId, 'gallery', blob, i);
+        if (!url) continue;
+        const next = nextGalleryUrls.slice();
+        next[i] = url;
+        nextGalleryUrls = next;
+      }
+      nextGalleryUrls = nextGalleryUrls.map((x) => String(x || '').trim()).slice(0, 5);
+      while (nextGalleryUrls.length < 5) nextGalleryUrls.push('');
+
       const upd = await supabaseBrowser.auth.updateUser({
         data: {
           full_name: cleanName,
           username: cleanUsername,
           bio: (bio || '').toString().slice(0, 250),
+          country: (country || '').toString().slice(0, 60),
+          city: (city || '').toString().slice(0, 60),
+          contact_email: (contactEmail || '').toString().slice(0, 120),
+          contact_phone: (contactPhone || '').toString().slice(0, 40),
+          personal_info: (personalInfo || '').toString().slice(0, 2000),
+          gallery_urls: nextGalleryUrls,
           avatar_url: nextAvatarUrl || undefined,
           cover_url: nextCoverUrl || undefined,
           profile_ready: true,
@@ -481,6 +546,184 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
+
+        <div>
+          <h3 className="font-bold text-base mb-2">Información (opcional)</h3>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="bg-white/5 rounded-xl px-4 py-3 border border-white/5">
+              <div className="text-xs text-slate-400 font-semibold">País</div>
+              <input
+                type="text"
+                value={country}
+                onChange={(e) => setCountry(e.target.value.substring(0, 60))}
+                placeholder="Ej: México"
+                className="mt-1 w-full bg-transparent text-white outline-none text-[15px] placeholder:text-slate-500"
+              />
+            </div>
+            <div className="bg-white/5 rounded-xl px-4 py-3 border border-white/5">
+              <div className="text-xs text-slate-400 font-semibold">Ciudad</div>
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value.substring(0, 60))}
+                placeholder="Ej: Guadalajara"
+                className="mt-1 w-full bg-transparent text-white outline-none text-[15px] placeholder:text-slate-500"
+              />
+            </div>
+            <div className="bg-white/5 rounded-xl px-4 py-3 border border-white/5">
+              <div className="text-xs text-slate-400 font-semibold">Correo de contacto</div>
+              <input
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value.substring(0, 120))}
+                placeholder="Ej: contacto@correo.com"
+                className="mt-1 w-full bg-transparent text-white outline-none text-[15px] placeholder:text-slate-500"
+              />
+            </div>
+            <div className="bg-white/5 rounded-xl px-4 py-3 border border-white/5">
+              <div className="text-xs text-slate-400 font-semibold">Teléfono de contacto</div>
+              <input
+                type="tel"
+                value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value.substring(0, 40))}
+                placeholder="Ej: +52 33 1234 5678"
+                className="mt-1 w-full bg-transparent text-white outline-none text-[15px] placeholder:text-slate-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="font-bold text-base mb-2">Información personal (público)</h3>
+          <div className="bg-white/5 rounded-xl p-4 border border-white/5 relative">
+            <textarea
+              value={personalInfo}
+              onChange={(e) => setPersonalInfo(e.target.value.substring(0, 2000))}
+              placeholder="Escribe lo que quieras que salga en tu perfil público"
+              className="w-full bg-transparent text-[15px] placeholder:text-slate-500 outline-none min-h-[140px] text-white resize-none"
+            />
+            <div className="absolute bottom-3 right-4 text-slate-500 text-sm">
+              {personalInfo.length} / 2000
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h3 className="font-bold text-base">Fotos (hasta 5)</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setGalleryDraft([null, null, null, null, null]);
+                setGalleryUrls(['', '', '', '', '']);
+              }}
+              className="text-xs font-extrabold text-slate-300 hover:text-white bg-white/5 border border-white/10 rounded-full px-3 py-2"
+              disabled={isLoading || isSaving}
+            >
+              Quitar todas
+            </button>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {Array.from({ length: 5 }).map((_, i) => {
+              const draft = galleryDraft[i];
+              const url = (draft?.previewUrl || galleryUrls[i] || '').toString();
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    (galleryInputRef.current as any).__pickIndex = i;
+                    galleryInputRef.current?.click?.();
+                  }}
+                  className="relative aspect-square rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center text-slate-400 text-xs font-extrabold"
+                  disabled={isLoading || isSaving}
+                  title="Toca para agregar/cambiar"
+                >
+                  {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <span>+</span>}
+                  {url ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setGalleryDraft((prev) => {
+                          const next = prev.slice();
+                          try {
+                            if (next[i]?.previewUrl) URL.revokeObjectURL(next[i]!.previewUrl);
+                          } catch {}
+                          next[i] = null;
+                          return next;
+                        });
+                        setGalleryUrls((prev) => {
+                          const next = prev.slice();
+                          while (next.length < 5) next.push('');
+                          next[i] = '';
+                          return next;
+                        });
+                      }}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 border border-white/10 text-white flex items-center justify-center text-xs"
+                      aria-label="Quitar"
+                      title="Quitar"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[11px] text-slate-400">
+            Estas fotos se verán en tu perfil público. Toca un cuadro para agregar o cambiar.
+          </div>
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              const idx = Number((galleryInputRef.current as any)?.__pickIndex ?? -1);
+              e.currentTarget.value = '';
+              if (!f) return;
+              if (!(idx >= 0 && idx <= 4)) return;
+              if (f.size > 8 * 1024 * 1024) {
+                alert('Cada foto debe ser menor a 8 MB.');
+                return;
+              }
+              openCrop('gallery', f, idx).catch(() => {});
+            }}
+          />
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                let idx = -1;
+                for (let i = 0; i < 5; i++) {
+                  if (galleryDraft[i]?.file) continue;
+                  if (galleryUrls[i]) continue;
+                  idx = i;
+                  break;
+                }
+                if (idx < 0) idx = 0;
+                (galleryInputRef.current as any).__pickIndex = idx;
+                galleryInputRef.current?.click?.();
+              }}
+              className="w-full h-[44px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-extrabold"
+              disabled={
+                isLoading ||
+                isSaving ||
+                (() => {
+                  for (let i = 0; i < 5; i++) {
+                    if (!galleryDraft[i]?.file && !galleryUrls[i]) return false;
+                  }
+                  return true;
+                })()
+              }
+            >
+              Agregar foto
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Action Buttons Fixed at Bottom */}
@@ -518,7 +761,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
               <div
                 ref={cropWrapRef}
-                className={cropTarget === 'avatar' ? 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full h-[180px] rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
+                className={cropTarget === 'cover' ? 'w-full h-24 rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
                 onPointerDown={(e) => {
                   if (!cropUrl) return;
                   cropDragRef.current.on = true;

@@ -2663,7 +2663,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
           </div>
         ) : data ? (
           <div className="w-full">
-            <div className="relative h-[180px] bg-gradient-to-r from-indigo-500/30 via-fuchsia-500/20 to-cyan-500/20">
+            <div className="relative h-24 bg-gradient-to-r from-indigo-500/30 via-fuchsia-500/20 to-cyan-500/20">
               {data.profile?.coverUrl ? <img src={data.profile.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
               <div className="absolute inset-0 bg-black/40" />
             </div>
@@ -2686,7 +2686,41 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                 </div>
               </div>
 
-              {data.profile?.bio ? <div className="mt-3 text-sm text-slate-300">{String(data.profile.bio)}</div> : null}
+              {(() => {
+                const city = String(data.profile?.city || '').trim();
+                const country = String(data.profile?.country || '').trim();
+                const location = [city, country].filter(Boolean).join(', ');
+                const contactEmail = String(data.profile?.contactEmail || '').trim();
+                const contactPhone = String(data.profile?.contactPhone || '').trim();
+                const personalInfo = String(data.profile?.personalInfo || '').trim();
+                const bio = String(data.profile?.bio || '').trim();
+                const galleryUrls = Array.isArray(data.profile?.galleryUrls) ? data.profile.galleryUrls : [];
+                return (
+                  <div className="mt-4 space-y-3">
+                    {location ? <div className="text-sm text-slate-300">{location}</div> : null}
+                    {contactEmail ? <div className="text-sm text-slate-300">{contactEmail}</div> : null}
+                    {contactPhone ? <div className="text-sm text-slate-300">{contactPhone}</div> : null}
+                    {bio ? <div className="text-sm text-slate-300 whitespace-pre-wrap">{bio}</div> : null}
+                    {personalInfo ? (
+                      <div className="bg-white/5 border border-white/10 rounded-3xl p-4 text-sm text-slate-200 whitespace-pre-wrap">
+                        {personalInfo}
+                      </div>
+                    ) : null}
+                    {galleryUrls.length > 0 ? (
+                      <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                        <div className="text-white font-extrabold">Fotos</div>
+                        <div className="mt-3 grid grid-cols-5 gap-2">
+                          {galleryUrls.slice(0, 5).map((u: any, i: number) => (
+                            <div key={`${i}:${u}`} className="aspect-square rounded-xl overflow-hidden bg-white/5 border border-white/10">
+                              <img src={String(u)} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               <div className="mt-6">
                 <div className="text-white font-extrabold">Canciones</div>

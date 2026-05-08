@@ -58,10 +58,15 @@ export function ProfileView({
   const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
-  const [userEmail, setUserEmail] = useState('');
   const [username, setUsername] = useState('');
   const [userAvatarUrl, setUserAvatarUrl] = useState('');
   const [userCoverUrl, setUserCoverUrl] = useState('');
+  const [country, setCountry] = useState('');
+  const [city, setCity] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [personalInfo, setPersonalInfo] = useState('');
+  const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
@@ -72,19 +77,24 @@ export function ProfileView({
       const { data } = await supabaseBrowser.auth.getUser();
       const user = data?.user;
       const id = (user?.id || '').toString();
-      const email = (user?.email || '').toString().trim();
       const meta: any = user?.user_metadata || {};
       const name = (meta?.full_name || meta?.name || '').toString().trim();
       const uname = (meta?.username || '').toString().trim();
-      const display = (name || email || 'Usuario').toString().trim();
+      const display = (name || 'Usuario').toString().trim();
       if (!alive) return;
       setUserId(id);
-      setUserEmail(email);
       setUsername(uname);
       setUserName(display);
       setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
       setUserAvatarUrl((meta?.avatar_url || '').toString());
       setUserCoverUrl((meta?.cover_url || '').toString());
+      setCountry((meta?.country || '').toString());
+      setCity((meta?.city || '').toString());
+      setContactEmail((meta?.contact_email || '').toString());
+      setContactPhone((meta?.contact_phone || '').toString());
+      setPersonalInfo((meta?.personal_info || '').toString());
+      const gu = Array.isArray(meta?.gallery_urls) ? meta.gallery_urls : [];
+      setGalleryUrls(gu.map((x: any) => String(x || '').trim()).filter(Boolean).slice(0, 5));
     };
     loadUser().catch(() => {});
     const { data: sub } = supabaseBrowser.auth.onAuthStateChange(() => {
@@ -205,6 +215,8 @@ export function ProfileView({
   const allSongs = Array.isArray(songs) ? songs : [];
   const pinnedSet = new Set(pinnedSongIds);
   const pinnedSongs = allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
+  const location = [city, country].map((x) => String(x || '').trim()).filter(Boolean).join(', ');
+  const hasInfo = Boolean(location || String(contactEmail || '').trim() || String(contactPhone || '').trim() || String(personalInfo || '').trim());
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
@@ -220,7 +232,7 @@ export function ProfileView({
               </div>
               <div className="min-w-0">
                 <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
-                {userEmail ? <div className="text-xs text-slate-300/80 truncate">{userEmail}</div> : null}
+                {username ? <div className="text-xs text-slate-300/80 truncate">@{username}</div> : null}
               </div>
             </div>
           </div>
@@ -258,6 +270,33 @@ export function ProfileView({
           <Forward className="w-4 h-4" /> Compartir
         </button>
       </div>
+
+      {(galleryUrls.length > 0 || hasInfo) && (
+        <div className="px-6 mb-8 space-y-3">
+          {hasInfo && (
+            <div className="glass-card rounded-3xl border border-white/10 p-4">
+              <div className="text-white font-extrabold">Información</div>
+              {location ? <div className="mt-2 text-sm text-slate-300">{location}</div> : null}
+              {contactEmail ? <div className="mt-2 text-sm text-slate-300">{String(contactEmail)}</div> : null}
+              {contactPhone ? <div className="mt-1 text-sm text-slate-300">{String(contactPhone)}</div> : null}
+              {personalInfo ? <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{String(personalInfo)}</div> : null}
+            </div>
+          )}
+
+          {galleryUrls.length > 0 && (
+            <div className="glass-card rounded-3xl border border-white/10 p-4">
+              <div className="text-white font-extrabold">Fotos</div>
+              <div className="mt-3 grid grid-cols-5 gap-2">
+                {galleryUrls.slice(0, 5).map((u, i) => (
+                  <div key={`${i}:${u}`} className="aspect-square rounded-xl overflow-hidden bg-white/5 border border-white/10">
+                    <img src={u} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex px-6 border-b border-white/10 space-x-6 mb-6">
