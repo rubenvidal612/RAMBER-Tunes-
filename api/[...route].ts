@@ -3391,8 +3391,6 @@ const shareProfileHandler = (() => {
       const contactEmail = String(meta?.contact_email || "").trim();
       const contactPhone = String(meta?.contact_phone || "").trim();
       const personalInfo = String(meta?.personal_info || "").trim();
-      const galleryUrlsRaw = Array.isArray(meta?.gallery_urls) ? meta.gallery_urls : [];
-      const galleryUrls = galleryUrlsRaw.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 5);
 
       const { data: pins, error: pinsErr } = await admin
         .from("profile_pins")
@@ -3452,7 +3450,6 @@ const shareProfileHandler = (() => {
           contactEmail: contactEmail || null,
           contactPhone: contactPhone || null,
           personalInfo: personalInfo || null,
-          galleryUrls,
         },
         songs,
       });

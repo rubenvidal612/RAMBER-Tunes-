@@ -2694,7 +2694,6 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                 const contactPhone = String(data.profile?.contactPhone || '').trim();
                 const personalInfo = String(data.profile?.personalInfo || '').trim();
                 const bio = String(data.profile?.bio || '').trim();
-                const galleryUrls = Array.isArray(data.profile?.galleryUrls) ? data.profile.galleryUrls : [];
                 return (
                   <div className="mt-4 space-y-3">
                     {location ? <div className="text-sm text-slate-300">{location}</div> : null}
@@ -2704,18 +2703,6 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                     {personalInfo ? (
                       <div className="bg-white/5 border border-white/10 rounded-3xl p-4 text-sm text-slate-200 whitespace-pre-wrap">
                         {personalInfo}
-                      </div>
-                    ) : null}
-                    {galleryUrls.length > 0 ? (
-                      <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
-                        <div className="text-white font-extrabold">Fotos</div>
-                        <div className="mt-3 grid grid-cols-5 gap-2">
-                          {galleryUrls.slice(0, 5).map((u: any, i: number) => (
-                            <div key={`${i}:${u}`} className="aspect-square rounded-xl overflow-hidden bg-white/5 border border-white/10">
-                              <img src={String(u)} alt="" className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
                       </div>
                     ) : null}
                   </div>

@@ -66,7 +66,6 @@ export function ProfileView({
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [personalInfo, setPersonalInfo] = useState('');
-  const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
@@ -93,8 +92,6 @@ export function ProfileView({
       setContactEmail((meta?.contact_email || '').toString());
       setContactPhone((meta?.contact_phone || '').toString());
       setPersonalInfo((meta?.personal_info || '').toString());
-      const gu = Array.isArray(meta?.gallery_urls) ? meta.gallery_urls : [];
-      setGalleryUrls(gu.map((x: any) => String(x || '').trim()).filter(Boolean).slice(0, 5));
     };
     loadUser().catch(() => {});
     const { data: sub } = supabaseBrowser.auth.onAuthStateChange(() => {
@@ -271,30 +268,15 @@ export function ProfileView({
         </button>
       </div>
 
-      {(galleryUrls.length > 0 || hasInfo) && (
+      {hasInfo && (
         <div className="px-6 mb-8 space-y-3">
-          {hasInfo && (
-            <div className="glass-card rounded-3xl border border-white/10 p-4">
-              <div className="text-white font-extrabold">Información</div>
-              {location ? <div className="mt-2 text-sm text-slate-300">{location}</div> : null}
-              {contactEmail ? <div className="mt-2 text-sm text-slate-300">{String(contactEmail)}</div> : null}
-              {contactPhone ? <div className="mt-1 text-sm text-slate-300">{String(contactPhone)}</div> : null}
-              {personalInfo ? <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{String(personalInfo)}</div> : null}
-            </div>
-          )}
-
-          {galleryUrls.length > 0 && (
-            <div className="glass-card rounded-3xl border border-white/10 p-4">
-              <div className="text-white font-extrabold">Fotos</div>
-              <div className="mt-3 grid grid-cols-5 gap-2">
-                {galleryUrls.slice(0, 5).map((u, i) => (
-                  <div key={`${i}:${u}`} className="aspect-square rounded-xl overflow-hidden bg-white/5 border border-white/10">
-                    <img src={u} alt="" className="w-full h-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="glass-card rounded-3xl border border-white/10 p-4">
+            <div className="text-white font-extrabold">Información</div>
+            {location ? <div className="mt-2 text-sm text-slate-300">{location}</div> : null}
+            {contactEmail ? <div className="mt-2 text-sm text-slate-300">{String(contactEmail)}</div> : null}
+            {contactPhone ? <div className="mt-1 text-sm text-slate-300">{String(contactPhone)}</div> : null}
+            {personalInfo ? <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{String(personalInfo)}</div> : null}
+          </div>
         </div>
       )}
 
@@ -392,7 +374,7 @@ export function ProfileView({
       {menuSong && (
         <div className="fixed inset-0 z-[250] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setMenuSong(null)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="text-white font-extrabold truncate">{(menuSong.title || 'Canción').toString()}</div>
               <button
