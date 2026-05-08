@@ -374,13 +374,13 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={() => coverInputRef.current?.click()}
-            className="w-full h-24 rounded-xl bg-gradient-to-r from-teal-900 to-slate-800 relative flex items-center justify-center cursor-pointer overflow-hidden border border-white/5"
+            className="w-full h-24 rounded-3xl bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10 relative flex items-center justify-center cursor-pointer overflow-hidden border border-white/10"
             disabled={isLoading || isSaving}
           >
             {(coverPreviewUrl || coverUrl) ? (
               <img src={(coverPreviewUrl || coverUrl).toString()} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : null}
-            <div className="absolute inset-0 bg-black/25" />
+            <div className="absolute inset-0 bg-black/35" />
             <div className="absolute bottom-2 right-2 w-7 h-7 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10">
               <Edit2 className="w-3.5 h-3.5 text-white" />
             </div>
