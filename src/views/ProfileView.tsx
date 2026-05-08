@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Edit2, Forward, Settings } from 'lucide-react';
+import { Edit2, Forward, MoreVertical, Settings, Share2, XCircle } from 'lucide-react';
 import { SettingsView } from './SettingsView';
 import { EditProfileView } from './EditProfileView';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -26,26 +26,40 @@ export function ProfileView({
   const [userAvatarUrl, setUserAvatarUrl] = useState('');
   const [userCoverUrl, setUserCoverUrl] = useState('');
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
+  const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
-    supabaseBrowser.auth
-      .getUser()
-      .then(({ data }) => {
-        const user = data?.user;
-        setUserId((user?.id || '').toString());
-        const email = (user?.email || '').toString().trim();
-        const meta: any = user?.user_metadata || {};
-        const name = (meta?.full_name || meta?.name || '').toString().trim();
-        setUsername((meta?.username || '').toString().trim());
-        const display = (name || email || 'Usuario').toString().trim();
-        setUserName(display);
-        setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
-        setUserEmail(email);
-        setUserAvatarUrl((meta?.avatar_url || '').toString());
-        setUserCoverUrl((meta?.cover_url || '').toString());
-      })
-      .catch(() => {});
+    let alive = true;
+    const loadUser = async () => {
+      const { data } = await supabaseBrowser.auth.getUser();
+      const user = data?.user;
+      const id = (user?.id || '').toString();
+      const email = (user?.email || '').toString().trim();
+      const meta: any = user?.user_metadata || {};
+      const name = (meta?.full_name || meta?.name || '').toString().trim();
+      const uname = (meta?.username || '').toString().trim();
+      const display = (name || email || 'Usuario').toString().trim();
+      if (!alive) return;
+      setUserId(id);
+      setUserEmail(email);
+      setUsername(uname);
+      setUserName(display);
+      setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
+      setUserAvatarUrl((meta?.avatar_url || '').toString());
+      setUserCoverUrl((meta?.cover_url || '').toString());
+    };
+    loadUser().catch(() => {});
+    const { data: sub } = supabaseBrowser.auth.onAuthStateChange(() => {
+      loadUser().catch(() => {});
+    });
+    return () => {
+      alive = false;
+      try {
+        sub?.subscription?.unsubscribe?.();
+      } catch {
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -87,17 +101,77 @@ export function ProfileView({
     alert(url);
   };
 
+  const shareSong = async (song: SongItem) => {
+    const title = (song?.title || 'Canción').toString().trim();
+    const url = song?.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
+    if (!url) {
+      alert('No hay link para compartir.');
+      return;
+    }
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `RAMBER Tunes - ${title}`, url });
+        return;
+      }
+    } catch {
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Link copiado al portapapeles.');
+    } catch {
+      alert(url);
+    }
+  };
+
+  const removeFromProfile = async (song: SongItem) => {
+    const sid = (song?.id || '').toString().trim();
+    if (!sid) return;
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/profile/pin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: sid, pin: false }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        alert((out?.error || out?.detail || 'No pude quitarla del perfil.').toString());
+        return;
+      }
+      setPinnedSongIds((prev) => prev.filter((x) => x !== sid));
+      setMenuSong(null);
+    } catch {
+      alert('No pude quitarla del perfil.');
+    }
+  };
+
   if (showSettings) {
     return <SettingsView onClose={() => setShowSettings(false)} />;
   }
 
   if (showEditProfile) {
-    return <EditProfileView onClose={() => setShowEditProfile(false)} />;
+    return (
+      <EditProfileView
+        onClose={() => {
+          setShowEditProfile(false);
+          try {
+            supabaseBrowser?.auth.getUser().then(() => {}).catch(() => {});
+          } catch {
+          }
+        }}
+      />
+    );
   }
 
   const allSongs = Array.isArray(songs) ? songs : [];
-  const pinnedSet = new Set(pinnedSongIds);
-  const pinnedSongs = allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
+  const pinnedSongs = useMemo(() => {
+    const set = new Set(pinnedSongIds);
+    return allSongs.filter((s) => set.has(String(s?.id || '')));
+  }, [allSongs, pinnedSongIds]);
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
@@ -181,11 +255,7 @@ export function ProfileView({
             <div className="text-slate-200 font-extrabold">Canciones en tu perfil</div>
             <div className="mt-3 space-y-2">
               {pinnedSongs.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => onPlaySong?.(s)}
-                  className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors text-left"
-                >
+                <div key={s.id} className="w-full glass-card rounded-2xl p-4 flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
                     <img
                       src={(s.coverUrl || `https://picsum.photos/seed/${s.id}/150/150`).toString()}
@@ -194,10 +264,21 @@ export function ProfileView({
                     />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-white font-extrabold truncate">{s.title || 'Pista sin título'}</div>
+                    <button onClick={() => onPlaySong?.(s)} className="text-left w-full">
+                      <div className="text-white font-extrabold truncate">{s.title || 'Pista sin título'}</div>
+                    </button>
                     <div className="text-slate-400 text-xs truncate">{s.genre || ' '}</div>
                   </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuSong(s)}
+                    className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors shrink-0"
+                    aria-label="Opciones"
+                    title="Opciones"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
+                </div>
               ))}
             </div>
             <div className="mt-4 text-[11px] text-slate-400">
@@ -236,6 +317,39 @@ export function ProfileView({
         <div className="flex-1 px-6 flex flex-col items-center justify-center text-center pb-8 mt-[-30px]">
           <div className="text-slate-300 font-extrabold">Playlists (próximamente)</div>
           <div className="mt-2 text-sm text-slate-400">Aquí van a salir tus listas.</div>
+        </div>
+      )}
+
+      {menuSong && (
+        <div className="fixed inset-0 z-[250] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setMenuSong(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold truncate">{(menuSong.title || 'Canción').toString()}</div>
+              <button
+                onClick={() => setMenuSong(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-2">
+              <button
+                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
+                onClick={() => shareSong(menuSong).catch(() => {})}
+              >
+                <Share2 className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-100 font-extrabold">Compartir canción</div>
+              </button>
+              <button
+                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
+                onClick={() => removeFromProfile(menuSong).catch(() => {})}
+              >
+                <XCircle className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-100 font-extrabold">Quitar de mi perfil</div>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

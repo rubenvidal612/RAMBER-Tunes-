@@ -212,8 +212,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     const rh = sh * scale;
     const baseDx = (dw - rw) / 2;
     const baseDy = (dh - rh) / 2;
-    const dx = baseDx + baseDx * shiftX;
-    const dy = baseDy + baseDy * shiftY;
+    const dx = baseDx + Math.abs(baseDx) * shiftX;
+    const dy = baseDy + Math.abs(baseDy) * shiftY;
     ctx.drawImage(img, dx, dy, rw, rh);
 
     const blob = await new Promise<Blob>((resolve, reject) => {
@@ -506,8 +506,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                   const maxY = Math.abs(baseDy);
                   const dx = Number(e.clientX) - drag.x;
                   const dy = Number(e.clientY) - drag.y;
-                  const nx = maxX > 0.0001 ? clamp(drag.sx - dx / maxX, -1, 1) : 0;
-                  const ny = maxY > 0.0001 ? clamp(drag.sy - dy / maxY, -1, 1) : 0;
+                  const nx = maxX > 0.0001 ? clamp(drag.sx + dx / maxX, -1, 1) : 0;
+                  const ny = maxY > 0.0001 ? clamp(drag.sy + dy / maxY, -1, 1) : 0;
                   setCropShift({ x: nx, y: ny });
                 }}
                 onPointerUp={(e) => {
@@ -537,8 +537,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                   const rh = ih * scale;
                   const baseDx = (w - rw) / 2;
                   const baseDy = (h - rh) / 2;
-                  const dx = baseDx + baseDx * clamp(cropShift.x, -1, 1);
-                  const dy = baseDy + baseDy * clamp(cropShift.y, -1, 1);
+                  const dx = baseDx + Math.abs(baseDx) * clamp(cropShift.x, -1, 1);
+                  const dy = baseDy + Math.abs(baseDy) * clamp(cropShift.y, -1, 1);
                   return (
                     <>
                       <img
