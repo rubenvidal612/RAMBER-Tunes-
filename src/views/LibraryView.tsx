@@ -38,6 +38,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [downloadsModalBusy, setDownloadsModalBusy] = useState(false);
   const [downloadsModalError, setDownloadsModalError] = useState('');
   const [downloadsModalSaving, setDownloadsModalSaving] = useState(false);
+  const [downloadsModalZipping, setDownloadsModalZipping] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -1209,6 +1210,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               setDownloadsModalOpen(false);
               setDownloadsModalItems([]);
               setDownloadsModalError('');
+              setDownloadsModalZipping(false);
             }}
             aria-label="Cerrar"
           />
@@ -1220,6 +1222,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   setDownloadsModalOpen(false);
                   setDownloadsModalItems([]);
                   setDownloadsModalError('');
+                  setDownloadsModalZipping(false);
                 }}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
@@ -1242,7 +1245,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
                       className="bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-100 border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0}
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
                       onClick={async () => {
                         const text = downloadsModalItems.map((x) => `${x.label}: ${x.url}`).join('\n');
                         try {
@@ -1257,7 +1260,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </button>
                     <button
                       className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0}
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
                       onClick={() => {
                         const base = sanitizeFileName(downloadsModalTitle || 'stems');
                         downloadsModalItems.forEach((x) => {
@@ -1266,7 +1269,58 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         });
                       }}
                     >
-                      Descargar todo
+                      Descargar todo (archivos)
+                    </button>
+                    <button
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
+                      onClick={async () => {
+                        if (downloadsModalItems.length === 0) return;
+                        setDownloadsModalZipping(true);
+                        try {
+                          const t = await getAccessToken();
+                          if (!t.ok) {
+                            alert(t.error || 'No se pudo iniciar sesión.');
+                            return;
+                          }
+                          const r = await fetch('/api/library/zip-stems', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                            body: JSON.stringify({
+                              title: downloadsModalTitle || 'Stems',
+                              items: downloadsModalItems.map((x) => ({
+                                label: x.label,
+                                url: x.url,
+                              })),
+                            }),
+                          });
+                          if (!r.ok) {
+                            const out = await r.json().catch(() => ({}));
+                            alert((out?.detail || out?.error || 'No pude preparar el ZIP.').toString());
+                            return;
+                          }
+                          const skipped = Number((r.headers.get('x-ramber-zip-skipped') || '').toString().trim() || '0');
+                          const blob = await r.blob();
+                          const obj = URL.createObjectURL(blob);
+                          const base = sanitizeFileName(downloadsModalTitle || 'stems') || 'stems';
+                          await downloadToDevice(obj, `${base}.zip`);
+                          if (Number.isFinite(skipped) && skipped > 0) {
+                            alert(`Algunas pistas no se pudieron incluir en el ZIP (${skipped}). Vuelve a intentar si las necesitas.`);
+                          }
+                          window.setTimeout(() => {
+                            try {
+                              URL.revokeObjectURL(obj);
+                            } catch {
+                            }
+                          }, 60_000);
+                        } catch (e) {
+                          alert(e instanceof Error ? e.message : 'No pude preparar el ZIP.');
+                        } finally {
+                          setDownloadsModalZipping(false);
+                        }
+                      }}
+                    >
+                      Descargar todo (ZIP)
                     </button>
                     <button
                       className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
@@ -1278,6 +1332,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   </div>
 
                   {downloadsModalSaving && <div className="mt-3 text-slate-400 text-xs">Guardando en Biblioteca…</div>}
+                  {downloadsModalZipping && <div className="mt-2 text-slate-400 text-xs">Preparando ZIP…</div>}
 
                   <div className="mt-4 space-y-2">
                     {downloadsModalItems.map((it) => (
@@ -1316,6 +1371,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
                               downloadToDevice(it.url, name).catch(() => {});
                             }}
+                            disabled={downloadsModalZipping}
                           >
                             Descargar
                           </button>

@@ -2626,6 +2626,86 @@ const libraryHandler = (() => {
     return send(res, 200, { song: data, already: false });
   }
 
+  async function handleZipStems(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const rawTitle = typeof body?.title === "string" ? body.title.trim() : "";
+    const title = (rawTitle || "stems").slice(0, 120);
+    const rawItems = Array.isArray(body?.items) ? body.items : [];
+    const items = rawItems
+      .map((x: any) => ({
+        label: typeof x?.label === "string" ? x.label.trim().slice(0, 120) : "",
+        url: typeof x?.url === "string" ? x.url.trim().slice(0, 2000) : "",
+      }))
+      .filter((x: any) => x.label && /^https?:\/\//i.test(x.url));
+
+    if (items.length === 0) return send(res, 400, { error: "No hay pistas para comprimir" });
+    if (items.length > 40) return send(res, 413, { error: "Demasiadas pistas para comprimir" });
+
+    const sanitize = (s: string) =>
+      (s || "")
+        .toString()
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120);
+
+    const extFromContentType = (ct: string) => {
+      const v = (ct || "").toLowerCase();
+      if (v.includes("wav")) return "wav";
+      if (v.includes("mp3") || v.includes("mpeg")) return "mp3";
+      if (v.includes("ogg")) return "ogg";
+      if (v.includes("aac")) return "aac";
+      if (v.includes("m4a") || v.includes("mp4")) return "m4a";
+      return "mp3";
+    };
+
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+
+    let skipped = 0;
+    let totalBytes = 0;
+    const maxTotalBytes = 150 * 1024 * 1024;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 120_000);
+        const r = await fetch(it.url, { signal: ctrl.signal as any });
+        clearTimeout(timer);
+        if (!r.ok) {
+          skipped++;
+          continue;
+        }
+        const ct = (r.headers.get("content-type") || "").toString().trim();
+        const ab = await r.arrayBuffer();
+        const size = ab.byteLength || 0;
+        if (size <= 0) {
+          skipped++;
+          continue;
+        }
+        totalBytes += size;
+        if (totalBytes > maxTotalBytes) return send(res, 413, { error: "El ZIP es demasiado grande" });
+        const ext = extFromContentType(ct);
+        const fileName = sanitize(`${title} - ${it.label}.${ext}`) || `stem_${i + 1}.${ext}`;
+        zip.file(fileName, Buffer.from(ab));
+      } catch {
+        skipped++;
+      }
+    }
+
+    const buf = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/zip");
+    res.setHeader("content-disposition", `attachment; filename="${sanitize(title) || "stems"}.zip"`);
+    res.setHeader("x-ramber-zip-skipped", String(skipped));
+    res.end(buf);
+  }
+
   async function handleDelete(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -2923,6 +3003,7 @@ const libraryHandler = (() => {
     if (a === "list") return handleList(req, res);
     if (a === "create") return handleCreate(req, res);
     if (a === "import-audio") return handleImportAudio(req, res);
+    if (a === "zip-stems") return handleZipStems(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);
     if (a === "update-audio") return handleUpdateAudio(req, res);
