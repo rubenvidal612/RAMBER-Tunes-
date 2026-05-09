@@ -1231,8 +1231,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             </div>
 
             <div className="p-4 flex-1 overflow-y-auto overscroll-contain">
-              <div className="text-slate-400 text-xs">{downloadsModalTaskId ? `TaskId: ${downloadsModalTaskId}` : ' '}</div>
-              <div className="mt-1 text-slate-500 text-xs">{downloadsModalKind ? `Tipo: ${downloadsModalKind}` : ' '}</div>
+              <div className="text-slate-400 text-xs">{' '}</div>
+              <div className="mt-1 text-slate-500 text-xs">{' '}</div>
 
               {downloadsModalBusy ? (
                 <div className="mt-6 text-slate-400 text-sm">Cargando…</div>
