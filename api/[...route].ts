@@ -778,7 +778,7 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const { getSignedR2Url } = await import('@/lib/r2');
+        const { getSignedR2Url } = await import('../src/lib/r2');
         const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
@@ -894,7 +894,7 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const { getSignedR2Url } = await import('@/lib/r2');
+        const { getSignedR2Url } = await import('../src/lib/r2');
         const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
@@ -998,7 +998,7 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const { getSignedR2Url } = await import('@/lib/r2');
+        const { getSignedR2Url } = await import('../src/lib/r2');
         const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
@@ -1906,7 +1906,7 @@ const sunoHandler = (() => {
       let finalUploadUrl = uploadUrl;
       if (uploadPath) {
         try {
-          const { getSignedR2Url } = await import('@/lib/r2');
+          const { getSignedR2Url } = await import('../src/lib/r2');
           finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         } catch (e) {
           if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -2365,7 +2365,7 @@ const libraryHandler = (() => {
     // Eliminar archivos de R2
     if (r2Paths.length > 0) {
       const uniqueR2Paths = Array.from(new Set(r2Paths)).filter(Boolean);
-      const { deleteFromR2 } = await import('@/lib/r2');
+      const { deleteFromR2 } = await import('../src/lib/r2');
       deletedCount += await deleteFromR2(uniqueR2Paths);
     }
     
@@ -2524,7 +2524,7 @@ const libraryHandler = (() => {
 
     try {
       const buf = Buffer.from(file);
-      const { uploadToR2 } = await import('@/lib/r2');
+      const { uploadToR2 } = await import('../src/lib/r2');
       const audioUrl = await uploadToR2(path, buf, contentType);
 
       const insertRow: any = {
@@ -2605,7 +2605,7 @@ const libraryHandler = (() => {
       return send(res, 502, { error: "No pude descargar el audio", detail: e instanceof Error ? e.message : String(e) });
     }
 
-    const { uploadToR2 } = await import('@/lib/r2');
+    const { uploadToR2 } = await import('../src/lib/r2');
     const audioUrl = await uploadToR2(path, buf, contentType);
 
     const insertRow: any = {
@@ -2980,7 +2980,7 @@ const libraryHandler = (() => {
       }
     }
 
-    const { uploadToR2 } = await import('@/lib/r2');
+    const { uploadToR2 } = await import('../src/lib/r2');
     const coverUrl = await uploadToR2(path, buf, finalCt);
 
     const { error: updErr } = await auth.admin.from(TABLE).update({ cover_url: coverUrl }).eq("id", id).eq("user_id", auth.user.id).eq("type", ITEM_TYPE);
@@ -3403,7 +3403,7 @@ const uploadProfileImageHandler = (() => {
 
     try {
       const buf = Buffer.from(data);
-      const { uploadToR2 } = await import('@/lib/r2');
+      const { uploadToR2 } = await import('../src/lib/r2');
       const audioUrl = await uploadToR2(path, buf, contentType);
 
       return send(res, 200, { ok: true, url: audioUrl });
@@ -3483,7 +3483,7 @@ const sunoWebhookHandler = (() => {
                 if (!buf || buf.length === 0) return "";
                 const ext = ct.includes("jpeg") ? "jpg" : ct.includes("webp") ? "webp" : "png";
                 const path = `covers/${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
-                const { uploadToR2 } = await import('@/lib/r2');
+                const { uploadToR2 } = await import('../src/lib/r2');
                 const publicUrl = await uploadToR2(path, buf, ct || `image/${ext}`);
                 return typeof publicUrl === "string" ? publicUrl.trim() : "";
               } catch {
