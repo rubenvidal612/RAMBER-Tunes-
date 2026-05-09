@@ -3408,7 +3408,11 @@ const uploadProfileImageHandler = (() => {
 
       return send(res, 200, { ok: true, url: audioUrl });
     } catch (e) {
-      return send(res, 500, { error: "Error subiendo imagen", detail: e instanceof Error ? e.message : String(e) });
+      const detail = e instanceof Error ? e.message : String(e);
+      const msg = /Missing required R2 environment variables/i.test(detail || "")
+        ? "Falta configurar Cloudflare R2 en Vercel"
+        : "Error subiendo imagen";
+      return send(res, 500, { error: msg, detail: String(detail || "").slice(0, 1200) });
     }
   };
 })();

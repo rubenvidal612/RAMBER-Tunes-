@@ -301,8 +301,9 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     });
 
     if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'No pude subir la imagen.');
+      const err = await response.json().catch(() => ({} as any));
+      const msg = [err?.error, err?.detail].filter(Boolean).join(': ');
+      throw new Error(msg || 'No pude subir la imagen.');
     }
 
     const { url } = await response.json();
@@ -406,8 +407,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
               const f = e.target.files?.[0] || null;
               e.currentTarget.value = '';
               if (!f) return;
-              if (f.size > 10 * 1024 * 1024) {
-                alert('La imagen debe ser menor a 10 MB.');
+              if (f.size > 25 * 1024 * 1024) {
+                alert('La imagen es muy pesada. Usa una menor a 25 MB.');
                 return;
               }
               openCrop('cover', f).catch(() => {});
@@ -447,8 +448,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
               const f = e.target.files?.[0] || null;
               e.currentTarget.value = '';
               if (!f) return;
-              if (f.size > 500 * 1024) {
-                alert('La foto de perfil debe ser menor a 500 KB.');
+              if (f.size > 25 * 1024 * 1024) {
+                alert('La imagen es muy pesada. Usa una menor a 25 MB.');
                 return;
               }
               openCrop('avatar', f).catch(() => {});
