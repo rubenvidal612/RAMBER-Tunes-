@@ -29,7 +29,7 @@ export function MiniPlayer({ song, isPlaying, onPlayPause, onClose, placement = 
 
   return (
     <div
-      className={`fixed ${bottomClass} md:bottom-4 left-2 right-2 glass-panel rounded-2xl p-3 shadow-2xl shadow-indigo-900/20 z-40 animate-in slide-in-from-bottom-5`}
+      className={`fixed ${bottomClass} md:bottom-4 left-2 right-2 bg-[#0b0f16] border border-white/10 rounded-2xl p-3 shadow-2xl shadow-black/50 z-[120] animate-in slide-in-from-bottom-5`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1 overflow-hidden">

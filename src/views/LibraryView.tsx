@@ -1214,8 +1214,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full md:max-w-[720px] glass-panel rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col shadow-[0_-20px_60px_rgba(0,0,0,0.55)]">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/10 to-fuchsia-500/10">
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col shadow-[0_-20px_60px_rgba(0,0,0,0.65)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0b0f16]">
               <div className="text-white font-extrabold truncate">{downloadsModalTitle || 'Descarga'}</div>
               <button
                 onClick={() => {
@@ -1338,7 +1338,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     {downloadsModalItems.map((it) => (
                       <div
                         key={`${it.key}:${it.url}`}
-                        className="w-full glass-card rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-white/10 transition-colors"
+                        className="w-full bg-[#0f1420] border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-[#141c2c] transition-colors"
                       >
                         <div className="min-w-0">
                           <div className="text-white font-bold truncate">{it.label}</div>
