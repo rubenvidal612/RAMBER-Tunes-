@@ -282,18 +282,27 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   };
 
   const uploadWebpToStorage = async (userId: string, kind: 'avatar' | 'cover', blob: Blob) => {
-    await ensureAnonSession();
     const base = kind === 'avatar' ? `avatars/${userId}` : `profile-covers/${userId}`;
     const path = `${base}/${kind}_${Date.now()}.webp`;
-    const up = await supabaseBrowser.storage.from('ramber-tunes').upload(path, blob, {
-      upsert: true,
-      contentType: 'image/webp',
-      cacheControl: '31536000',
+    
+    const response = await fetch('/api/upload-profile-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        path,
+        data: Array.from(new Uint8Array(await blob.arrayBuffer())),
+        contentType: 'image/webp',
+      }),
     });
-    if (up.error) throw new Error(up.error.message || 'No pude subir la imagen.');
-    const { data } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
-    const url = (data?.publicUrl || '').toString();
-    if (!url) throw new Error('No pude obtener el link de la imagen.');
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'No pude subir la imagen.');
+    }
+
+    const { url } = await response.json();
     return url;
   };
 

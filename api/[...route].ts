@@ -17,6 +17,7 @@ const CREDIT_COSTS = {
   midi: 0,
   generate_persona: 0,
   music_cover: 0,
+  clone_voice: 15,
 } as const;
 
 function round2(n: number) {
@@ -358,6 +359,8 @@ async function getSupabaseCreateClient() {
   const mod = await import("@supabase/supabase-js");
   return mod.createClient;
 }
+
+
 
 async function buildRealUserIdSet(admin: any) {
   const ids = new Set<string>();
@@ -750,7 +753,6 @@ const sunoHandler = (() => {
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
-    const uploadBucket = firstString(payload, ["uploadBucket", "upload_bucket"]) || "ramber-tunes";
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const instrumental = Boolean(payload?.instrumental);
     const prompt = firstString(payload, ["prompt", "lyrics", "text"]) || " ";
@@ -776,8 +778,8 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const signed = await auth.admin.storage.from(uploadBucket).createSignedUrl(uploadPath, 60 * 60 * 2);
-        const signedUrl = (signed?.data as any)?.signedUrl || (signed?.data as any)?.signedURL || "";
+        const { getSignedR2Url } = await import('@/lib/r2');
+        const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
       }
@@ -869,7 +871,6 @@ const sunoHandler = (() => {
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
-    const uploadBucket = firstString(payload, ["uploadBucket", "upload_bucket"]) || "ramber-tunes";
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const title = firstString(payload, ["title"]) || "Instrumental";
     const tags = firstString(payload, ["tags", "style"]) || "Instrumental";
@@ -893,8 +894,8 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const signed = await auth.admin.storage.from(uploadBucket).createSignedUrl(uploadPath, 60 * 60 * 2);
-        const signedUrl = (signed?.data as any)?.signedUrl || (signed?.data as any)?.signedURL || "";
+        const { getSignedR2Url } = await import('@/lib/r2');
+        const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
       }
@@ -970,7 +971,6 @@ const sunoHandler = (() => {
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
-    const uploadBucket = firstString(payload, ["uploadBucket", "upload_bucket"]) || "ramber-tunes";
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const prompt = firstString(payload, ["prompt", "lyrics", "text"]) || " ";
     const style = firstString(payload, ["style", "tags"]) || "General";
@@ -998,8 +998,8 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const signed = await auth.admin.storage.from(uploadBucket).createSignedUrl(uploadPath, 60 * 60 * 2);
-        const signedUrl = (signed?.data as any)?.signedUrl || (signed?.data as any)?.signedURL || "";
+        const { getSignedR2Url } = await import('@/lib/r2');
+        const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
       }
@@ -1877,6 +1877,88 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleCloneVoice(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
+    const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
+    const voiceName = firstString(payload, ["voiceName", "voice_name"]) || "Mi Voz";
+    const description = firstString(payload, ["description"]) || "Voz clonada desde RAMBER Tunes";
+
+    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = CREDIT_COSTS.clone_voice || 10;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      let finalUploadUrl = uploadUrl;
+      if (uploadPath) {
+        try {
+          const { getSignedR2Url } = await import('@/lib/r2');
+          finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
+        } catch (e) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          return send(res, 502, { error: "Error generando URL firmada para el audio", detail: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      const body = {
+        audio_url: finalUploadUrl,
+        voice_name: voiceName.slice(0, 100),
+        description: description.slice(0, 500),
+        callback_url: absoluteUrlFromReq(req, "/api/webhooks/kits"),
+      };
+
+      const response = await fetch('https://api.kits.ai/v1/voices/clone', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.KITS_API_KEY}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error clonando voz", detail: data?.error || `HTTP ${response.status}` });
+      }
+
+      const voiceId = data?.id;
+      if (!voiceId) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      }
+
+      await auth.admin.from("kits_voices").insert({
+        voice_id: voiceId,
+        user_id: user.id,
+        voice_name: voiceName,
+        description: description,
+        cost,
+        created_at: new Date().toISOString(),
+      });
+
+      return send(res, 200, { voiceId, message: "Voz clonada exitosamente" });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error clonando voz", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
@@ -1905,6 +1987,7 @@ const sunoHandler = (() => {
       if (a === "boost-style") return handleBoostStyle(req, res);
       if (a === "music-cover") return handleMusicCover(req, res);
       if (a === "credits") return handleCredits(req, res);
+      if (a === "clone-voice") return handleCloneVoice(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
     } catch (e) {
@@ -2224,6 +2307,18 @@ const libraryHandler = (() => {
   function storagePathFromPublicUrl(supabaseUrl: string, bucket: string, url: string) {
     try {
       const u = new URL(url);
+      
+      // Primero verificar si es una URL de Cloudflare R2
+      const r2Pattern = /\.r2\.cloudflarestorage\.com\//;
+      if (r2Pattern.test(u.hostname)) {
+        // Extraer la ruta después del dominio
+        const path = u.pathname.slice(1); // Eliminar el slash inicial
+        const decoded = decodeURIComponent(path);
+        if (!decoded) return null;
+        return decoded;
+      }
+      
+      // Si no es R2, verificar si es una URL de Supabase Storage
       if (!supabaseUrl) return null;
       const supa = new URL(supabaseUrl);
       void supa;
@@ -2244,7 +2339,9 @@ const libraryHandler = (() => {
   }
 
   async function deletePhysicalFiles(admin: any, supabaseUrl: string, rows: any[]) {
-    const paths: string[] = [];
+    const r2Paths: string[] = [];
+    const supabasePaths: string[] = [];
+    
     for (const r of rows) {
       const a = typeof r?.audio_url === "string" ? r.audio_url : "";
       const c = typeof r?.cover_url === "string" ? r.cover_url : "";
@@ -2253,14 +2350,33 @@ const libraryHandler = (() => {
         const p = storagePathFromPublicUrl(supabaseUrl, BUCKET, url);
         if (!p) continue;
         if (!shouldDeletePhysicalFile(p)) continue;
-        paths.push(p);
+        
+        // Verificar si es una URL de R2
+        if (url.includes('.r2.cloudflarestorage.com')) {
+          r2Paths.push(p);
+        } else {
+          supabasePaths.push(p);
+        }
       }
     }
-    const unique = Array.from(new Set(paths)).filter(Boolean);
-    if (unique.length === 0) return 0;
-    const { error } = await admin.storage.from(BUCKET).remove(unique);
-    if (error) return 0;
-    return unique.length;
+    
+    let deletedCount = 0;
+    
+    // Eliminar archivos de R2
+    if (r2Paths.length > 0) {
+      const uniqueR2Paths = Array.from(new Set(r2Paths)).filter(Boolean);
+      const { deleteFromR2 } = await import('@/lib/r2');
+      deletedCount += await deleteFromR2(uniqueR2Paths);
+    }
+    
+    // Eliminar archivos de Supabase (para compatibilidad con archivos antiguos)
+    if (supabasePaths.length > 0) {
+      const uniqueSupabasePaths = Array.from(new Set(supabasePaths)).filter(Boolean);
+      const { error } = await admin.storage.from(BUCKET).remove(uniqueSupabasePaths);
+      if (!error) deletedCount += uniqueSupabasePaths.length;
+    }
+    
+    return deletedCount;
   }
 
   async function listSongs(admin: any, userId: string, deleted: boolean) {
@@ -2385,6 +2501,54 @@ const libraryHandler = (() => {
     });
   }
 
+  async function handleUploadAudio(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const file = body?.file;
+    const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Audio";
+    const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
+    const contentType = typeof body?.contentType === "string" ? body.contentType.trim() : "audio/webm";
+
+    if (!file || !Array.isArray(file)) return send(res, 400, { error: "Falta archivo de audio (array de bytes)" });
+
+    const safeName = (title || "audio")
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .slice(0, 80);
+    const path = `uploads/${auth.user.id}/${Date.now()}_${safeName}.webm`;
+
+    try {
+      const buf = Buffer.from(file);
+      const { uploadToR2 } = await import('@/lib/r2');
+      const audioUrl = await uploadToR2(path, buf, contentType);
+
+      const insertRow: any = {
+        user_id: auth.user.id,
+        type: ITEM_TYPE,
+        title,
+        description: description || null,
+        lyrics: null,
+        gender: null,
+        audio_url: audioUrl,
+        cover_url: null,
+        suno_task_id: null,
+        suno_audio_id: null,
+        is_cover: false,
+      };
+      const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
+      if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+
+      return send(res, 200, { ok: true, url: audioUrl, song: data });
+    } catch (e) {
+      return send(res, 500, { error: "Error subiendo audio", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleImportAudio(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -2441,19 +2605,8 @@ const libraryHandler = (() => {
       return send(res, 502, { error: "No pude descargar el audio", detail: e instanceof Error ? e.message : String(e) });
     }
 
-    const up = await auth.admin.storage.from(BUCKET).upload(path, buf, { upsert: true, contentType, cacheControl: "31536000" });
-    if (up.error) {
-      return send(res, 500, {
-        error: "No pude guardar el audio",
-        detail: up.error.message,
-        hint: "Verifica que exista el bucket 'ramber-tunes' en Supabase Storage y esté en modo Public.",
-      });
-    }
-
-    const pub = auth.admin.storage.from(BUCKET).getPublicUrl(path);
-    const publicUrl = (pub?.data as any)?.publicUrl || "";
-    const audioUrl = typeof publicUrl === "string" ? publicUrl.trim().slice(0, 2000) : "";
-    if (!audioUrl) return send(res, 500, { error: "No pude obtener URL pública del audio" });
+    const { uploadToR2 } = await import('@/lib/r2');
+    const audioUrl = await uploadToR2(path, buf, contentType);
 
     const insertRow: any = {
       user_id: auth.user.id,
@@ -2747,23 +2900,8 @@ const libraryHandler = (() => {
       }
     }
 
-    const up = await auth.admin.storage.from(COVERS_BUCKET).upload(path, buf, {
-      upsert: true,
-      contentType: finalCt,
-      cacheControl: "31536000",
-    });
-    if (up.error) {
-      return send(res, 500, {
-        error: "No pude guardar la portada",
-        detail: up.error.message,
-        hint: "Verifica que exista el bucket 'covers' en Supabase Storage y esté en modo Public.",
-      });
-    }
-
-    const pub = auth.admin.storage.from(COVERS_BUCKET).getPublicUrl(path);
-    const publicUrl = (pub?.data as any)?.publicUrl || "";
-    const coverUrl = typeof publicUrl === "string" ? publicUrl.trim().slice(0, 2000) : "";
-    if (!coverUrl) return send(res, 500, { error: "No pude obtener URL pública de la portada" });
+    const { uploadToR2 } = await import('@/lib/r2');
+    const coverUrl = await uploadToR2(path, buf, finalCt);
 
     const { error: updErr } = await auth.admin.from(TABLE).update({ cover_url: coverUrl }).eq("id", id).eq("user_id", auth.user.id).eq("type", ITEM_TYPE);
     if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
@@ -3086,6 +3224,114 @@ const bootstrapProfileHandler = (() => {
   };
 })();
 
+const uploadProfileImageHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function uploadToR2(path: string, buf: Buffer, contentType: string): Promise<string> {
+    const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
+    
+    const accountId = process.env.R2_ACCOUNT_ID;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    const bucketName = process.env.R2_BUCKET_NAME;
+    const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
+
+    if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+      throw new Error('Missing required R2 environment variables');
+    }
+
+    const client = new S3Client({
+      region: 'auto',
+      endpoint,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
+
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: path,
+      Body: buf,
+      ContentType: contentType,
+    });
+
+    await client.send(command);
+
+    return `https://${bucketName}.${accountId}.r2.cloudflarestorage.com/${path}`;
+  }
+
+
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const path = typeof payload?.path === "string" ? payload.path.trim() : "";
+    const data = payload?.data;
+    const contentType = typeof payload?.contentType === "string" ? payload.contentType.trim() : "image/webp";
+
+    if (!path) return send(res, 400, { error: "Falta path" });
+    if (!data || !Array.isArray(data)) return send(res, 400, { error: "Falta data (array de bytes)" });
+
+    try {
+      const buf = Buffer.from(data);
+      const { uploadToR2 } = await import('@/lib/r2');
+      const audioUrl = await uploadToR2(path, buf, contentType);
+
+      return send(res, 200, { ok: true, url: audioUrl });
+    } catch (e) {
+      return send(res, 500, { error: "Error subiendo imagen", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
 const sunoWebhookHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -3119,20 +3365,6 @@ const sunoWebhookHandler = (() => {
     try {
       const createClient = await getSupabaseCreateClient();
       const admin = createClient(supabaseUrl, supabaseService);
-      const ensureCoversBucket = async () => {
-        try {
-          const getBucket = (admin.storage as any)?.getBucket;
-          const createBucket = (admin.storage as any)?.createBucket;
-          if (typeof getBucket === "function") {
-            const r = await getBucket.call(admin.storage, "covers");
-            if (!r?.error) return;
-          }
-          if (typeof createBucket === "function") {
-            await createBucket.call(admin.storage, "covers", { public: true });
-          }
-        } catch {
-        }
-      };
 
       if (taskId) {
         const { data: taskRows } = await admin.from("suno_tasks").select("user_id, kind, cost, consumed").eq("task_id", taskId).limit(1);
@@ -3155,8 +3387,6 @@ const sunoWebhookHandler = (() => {
         } else if (isMusicCover && userId) {
           const originalTaskId = kind.split("music-cover:").slice(1).join("music-cover:").trim();
           if (code === 200 && coverImages.length > 0 && originalTaskId) {
-            await ensureCoversBucket();
-            const bucket = "covers";
             const tryDownloadAndStore = async (urlRaw: any, index: number) => {
               const url = String(urlRaw || "").trim();
               if (!url) return "";
@@ -3167,15 +3397,9 @@ const sunoWebhookHandler = (() => {
                 const buf = Buffer.from(await r.arrayBuffer());
                 if (!buf || buf.length === 0) return "";
                 const ext = ct.includes("jpeg") ? "jpg" : ct.includes("webp") ? "webp" : "png";
-                const path = `${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
-                const up = await admin.storage.from(bucket).upload(path, buf, {
-                  upsert: true,
-                  contentType: ct || `image/${ext}`,
-                  cacheControl: "31536000",
-                });
-                if (up.error) return "";
-                const pub = admin.storage.from(bucket).getPublicUrl(path);
-                const publicUrl = (pub?.data as any)?.publicUrl || "";
+                const path = `covers/${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
+                const { uploadToR2 } = await import('@/lib/r2');
+                const publicUrl = await uploadToR2(path, buf, ct || `image/${ext}`);
                 return typeof publicUrl === "string" ? publicUrl.trim() : "";
               } catch {
                 return "";
@@ -5227,6 +5451,7 @@ export default async function handler(req: any, res: any) {
     if (head === "profile") return profileHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
+    if (head === "account" && next === "upload-profile-image") return uploadProfileImageHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
 
     return sendNotFound(res);

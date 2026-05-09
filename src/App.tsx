@@ -598,20 +598,33 @@ export default function App() {
   };
 
   const uploadProfileAvatar = async (file: File, userId: string) => {
-    if (!supabaseBrowser) return '';
-    const s = await ensureAnonSession();
-    if (!s.ok) return '';
+    const t = await getAccessToken();
+    if (!t.ok) return '';
+    
     const blob = await compressAvatarToBlob(file);
-    const path = `avatars/${userId}/avatar_${Date.now()}.webp`;
-    const up = await supabaseBrowser.storage.from('ramber-tunes').upload(path, blob, {
-      upsert: true,
-      contentType: 'image/webp',
-      cacheControl: '31536000',
+    const arrayBuffer = await blob.arrayBuffer();
+    const fileArray = Array.from(new Uint8Array(arrayBuffer));
+    
+    const response = await fetch('/api/upload-profile-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'authorization': `Bearer ${t.token}`,
+      },
+      body: JSON.stringify({
+        file: fileArray,
+        title: `avatar_${Date.now()}.webp`,
+        contentType: 'image/webp',
+      }),
     });
-    if (up.error) return '';
-    const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
-    const url = (pub?.publicUrl || '').toString().trim();
-    return url;
+    
+    if (response.ok) {
+      const result = await response.json();
+      const url = result.url;
+      return typeof url === 'string' ? url.trim() : '';
+    }
+    
+    return '';
   };
 
   const saveProfileSetup = async () => {

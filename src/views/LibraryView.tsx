@@ -3053,24 +3053,33 @@ function SongOptionsSheet({
         }
       }
 
-      if (personaPhoto && supabaseBrowser) {
-        const s = await ensureAnonSession();
-        if (s.ok) {
-          const { data } = await supabaseBrowser.auth.getUser();
-          const user = data?.user;
-          if (user?.id) {
-            const blob = await compressImage(personaPhoto);
-            const path = `personas/${user.id}/${personaId}.webp`;
-            const up = await supabaseBrowser.storage.from('ramber-tunes').upload(path, blob, {
-              upsert: true,
+      if (personaPhoto) {
+        const t = await getAccessToken();
+        if (t.ok) {
+          const blob = await compressImage(personaPhoto);
+          const arrayBuffer = await blob.arrayBuffer();
+          const fileArray = Array.from(new Uint8Array(arrayBuffer));
+          
+          const response = await fetch('/api/upload-profile-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'authorization': `Bearer ${t.token}`,
+            },
+            body: JSON.stringify({
+              file: fileArray,
+              title: `persona_${personaId}.webp`,
               contentType: 'image/webp',
-              cacheControl: '31536000',
-            });
-            if (!up.error) {
-              const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
-              const url = (pub?.publicUrl || '').toString();
-              if (url) {
-                await supabaseBrowser.from('suno_personas').update({ photo_url: url }).eq('persona_id', personaId).eq('user_id', user.id);
+            }),
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            const url = result.url;
+            if (url && supabaseBrowser) {
+              const s = await ensureAnonSession();
+              if (s.ok) {
+                await supabaseBrowser.from('suno_personas').update({ photo_url: url }).eq('persona_id', personaId);
               }
             }
           }

@@ -473,115 +473,54 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     });
 
   const uploadAudio = async (file: File) => {
-    if (!supabaseBrowser) {
-      setAudioUploadError('Supabase no está configurado.');
-      alert('Supabase no está configurado.');
-      return;
-    }
     setAudioUploadError(null);
     setIsUploadingAudio(true);
     setAudioUploadUrl('');
     setAudioUploadPath('');
     setUploadProgress(0);
     try {
-      const s = await ensureAnonSession();
-      if (!s.ok) {
-        setAudioUploadError(s.error || 'No se pudo iniciar sesión.');
-        alert(s.error || 'No se pudo iniciar sesión.');
-        return;
-      }
       const t = await getAccessToken();
       if (!t.ok) {
         setAudioUploadError(t.error || 'No se pudo iniciar sesión.');
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
-      const { data } = await supabaseBrowser.auth.getUser();
-      const user = data?.user;
-      if (!user) {
-        setAudioUploadError('No se pudo identificar tu usuario.');
-        alert('No se pudo identificar tu usuario.');
+
+      const fileBuffer = await file.arrayBuffer();
+      const fileArray = Array.from(new Uint8Array(fileBuffer));
+
+      const response = await fetch('/api/upload-audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({
+          file: fileArray,
+          title: file.name,
+          contentType: file.type || 'audio/webm',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setAudioUploadError(result.error || 'No se pudo subir el audio.');
+        alert(result.error || 'No se pudo subir el audio.');
         return;
       }
-      const safeName = (file.name || 'audio')
-        .trim()
-        .replaceAll(/[^a-zA-Z0-9._-]+/g, '_')
-        .slice(0, 80);
-      const path = `uploads/${user.id}/${Date.now()}_${safeName}`;
-      const effectiveContentType = (() => {
-        const raw = (file.type || '').toString().trim().toLowerCase();
-        if (raw) return raw;
-        const n = (file.name || '').toString().trim().toLowerCase();
-        if (n.endsWith('.mp3')) return 'audio/mpeg';
-        if (n.endsWith('.wav')) return 'audio/wav';
-        if (n.endsWith('.m4a') || n.endsWith('.mp4')) return 'audio/mp4';
-        if (n.endsWith('.ogg')) return 'audio/ogg';
-        if (n.endsWith('.webm')) return 'audio/webm';
-        return 'application/octet-stream';
-      })();
 
-      const supabaseUrl = ((process.env.SUPABASE_URL as any) || '').toString().trim();
-      const supabaseAnonKey = ((process.env.SUPABASE_ANON_KEY as any) || '').toString().trim();
-
-      const tryXhr = Boolean(supabaseUrl && supabaseAnonKey);
-      if (tryXhr) {
-        await new Promise<void>((resolve, reject) => {
-          try {
-            const xhr = new XMLHttpRequest();
-            uploadXhrRef.current = xhr;
-            const url = `${supabaseUrl.replace(/\/+$/g, '')}/storage/v1/object/ramber-tunes/${encodeURI(path)}`;
-            xhr.open('POST', url);
-            xhr.setRequestHeader('authorization', `Bearer ${t.token}`);
-            xhr.setRequestHeader('apikey', supabaseAnonKey);
-            xhr.setRequestHeader('x-upsert', 'true');
-            xhr.setRequestHeader('cache-control', '31536000');
-            xhr.setRequestHeader('content-type', effectiveContentType);
-            xhr.upload.onprogress = (e) => {
-              if (!e.lengthComputable) return;
-              const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
-              setUploadProgress(pct);
-            };
-            xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) return resolve();
-              const txt = (xhr.responseText || '').toString();
-              reject(new Error(txt || `HTTP ${xhr.status}`));
-            };
-            xhr.send(file);
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
-          }
-        });
-      } else {
-        const { error } = await supabaseBrowser.storage.from('ramber-tunes').upload(path, file, {
-          upsert: true,
-          contentType: effectiveContentType,
-          cacheControl: '31536000',
-        });
-        if (error) {
-          const raw = (error.message || '').toString();
-          const msg = raw.toLowerCase().includes('bucket not found')
-            ? 'No existe el bucket "ramber-tunes" en Supabase Storage. Crea el bucket y vuelve a intentar.'
-            : raw || 'No se pudo subir el audio.';
-          setAudioUploadError(msg);
-          alert(msg);
-          return;
-        }
-      }
-
-      const { data: pub } = supabaseBrowser.storage.from('ramber-tunes').getPublicUrl(path);
-      const url = (pub?.publicUrl || '').toString();
-      if (!url) {
-        setAudioUploadError('No pude obtener el link del audio subido.');
-        alert('No pude obtener el link del audio subido.');
-        return;
-      }
-      setAudioUploadUrl(url);
-      setAudioUploadPath(path);
-      setAudioUploadError(null);
+      setAudioUploadUrl(result.url);
+      setAudioUploadPath(result.url.split('/').pop() || '');
+      setAudioFile(file);
+      setExternalAudioLabel('');
+      setUploadProgress(100);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No se pudo subir el audio.';
+      setAudioUploadError(msg);
+      alert(msg);
     } finally {
       setIsUploadingAudio(false);
-      uploadXhrRef.current = null;
     }
   };
 
