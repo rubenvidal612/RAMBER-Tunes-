@@ -1909,56 +1909,13 @@ export default function App() {
                        <Repeat2 className="w-6 h-6" />
                      </div>
                      <div className="min-w-0">
-                       <div className="text-white font-extrabold">Convertidor a MP3</div>
-                       <div className="text-xs text-slate-300">Convierte tu audio sin cargarlo a RAMBER Tunes.</div>
+                      <div className="text-white font-extrabold">Clonar Voz</div>
+                      <div className="text-xs text-slate-300">En Construcción</div>
                      </div>
                    </div>
-                   <div className="mt-4 space-y-2 text-sm text-slate-200">
-                     <div>1) Abre el convertidor</div>
-                     <div>2) Selecciona tu archivo (m4a/wav/mp4, etc.)</div>
-                     <div>3) Convierte y descarga el MP3</div>
-                     <div>4) Regresa a Studio y súbelo</div>
-                   </div>
-                   <div className="mt-5 flex gap-3">
-                     <button
-                       type="button"
-                       onClick={() => {
-                         const url = 'https://cloudconvert.com/mp3-converter';
-                         try {
-                           const w = window.open(url, '_blank', 'noopener,noreferrer');
-                           if (w) {
-                             try {
-                               (w as any).opener = null;
-                             } catch {}
-                             return;
-                           }
-                         } catch {}
-                         try {
-                           const a = document.createElement('a');
-                           a.href = url;
-                           a.target = '_blank';
-                           a.rel = 'noopener noreferrer';
-                           document.body.appendChild(a);
-                           a.click();
-                           a.remove();
-                           return;
-                         } catch {}
-                         try {
-                           window.location.href = url;
-                         } catch {}
-                       }}
-                       className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-black rounded-full px-4 py-3 text-sm font-extrabold transition-colors"
-                     >
-                       Abrir Convertidor
-                     </button>
-                     <button
-                       type="button"
-                       onClick={() => setCurrentTab('studio')}
-                       className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-4 py-3 text-sm font-semibold text-slate-200 transition-colors"
-                     >
-                       Volver a Studio
-                     </button>
-                   </div>
+                  <div className="mt-4 text-sm text-slate-200">
+                    Próximamente podrás clonar tu voz para usarla en tus canciones.
+                  </div>
                  </div>
                </div>
              </div>
@@ -2018,56 +1975,13 @@ export default function App() {
                            <Repeat2 className="w-6 h-6" />
                          </div>
                          <div className="min-w-0">
-                           <div className="text-white font-extrabold">Convertidor a MP3</div>
-                           <div className="text-xs text-slate-300">Úsalo cuando tu archivo no sea MP3.</div>
+                          <div className="text-white font-extrabold">Clonar Voz</div>
+                          <div className="text-xs text-slate-300">En Construcción</div>
                          </div>
                        </div>
-                       <div className="mt-4 space-y-2 text-sm text-slate-200">
-                         <div>1) Abre el convertidor</div>
-                         <div>2) Selecciona tu archivo</div>
-                         <div>3) Convierte y descarga el MP3</div>
-                         <div>4) Regresa a Studio y súbelo</div>
-                       </div>
-                       <div className="mt-5 flex gap-3">
-                         <button
-                           type="button"
-                           onClick={() => {
-                             const url = 'https://cloudconvert.com/mp3-converter';
-                             try {
-                               const w = window.open(url, '_blank', 'noopener,noreferrer');
-                               if (w) {
-                                 try {
-                                   (w as any).opener = null;
-                                 } catch {}
-                                 return;
-                               }
-                             } catch {}
-                             try {
-                               const a = document.createElement('a');
-                               a.href = url;
-                               a.target = '_blank';
-                               a.rel = 'noopener noreferrer';
-                               document.body.appendChild(a);
-                               a.click();
-                               a.remove();
-                               return;
-                             } catch {}
-                             try {
-                               window.location.href = url;
-                             } catch {}
-                           }}
-                           className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-full px-5 py-3 text-sm font-extrabold transition-colors"
-                         >
-                           Abrir Convertidor
-                         </button>
-                         <button
-                           type="button"
-                           onClick={() => setCurrentTab('studio')}
-                           className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-5 py-3 text-sm font-semibold text-slate-200 transition-colors"
-                         >
-                           Volver a Studio
-                         </button>
-                       </div>
+                      <div className="mt-4 text-sm text-slate-200">
+                        Próximamente podrás clonar tu voz para usarla en tus canciones.
+                      </div>
                      </div>
                    </div>
                  </div>

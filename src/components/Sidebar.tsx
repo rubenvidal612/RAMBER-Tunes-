@@ -38,7 +38,7 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
             )}
           >
             <Repeat2 className="w-5 h-5" />
-            <span className="text-sm">Convertidor</span>
+            <span className="text-sm">Clonar Voz</span>
           </button>
 
           <button
