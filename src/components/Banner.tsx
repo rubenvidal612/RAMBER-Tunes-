@@ -1,6 +1,18 @@
+import * as React from 'react';
 import { X } from 'lucide-react';
 
 export function Banner() {
+  const STORAGE_KEY = 'ramber_promo_2_songs_banner_dismissed';
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      if (localStorage.getItem(STORAGE_KEY) === '1') setDismissed(true);
+    } catch {}
+  }, []);
+
+  if (dismissed) return null;
+
   return (
     <div className="hidden md:flex w-full bg-gradient-to-r from-cyan-500 to-blue-500 p-2 items-center justify-between text-white border-b border-cyan-800 relative shadow-inner overflow-hidden">
       <div className="flex-1 flex justify-center items-center gap-4 relative z-10">
@@ -27,7 +39,17 @@ export function Banner() {
         </button>
       </div>
       
-      <button className="p-2 hover:bg-white/10 rounded-full transition-colors absolute right-4 z-10">
+      <button
+        type="button"
+        aria-label="Cerrar anuncio"
+        onClick={() => {
+          setDismissed(true);
+          try {
+            localStorage.setItem(STORAGE_KEY, '1');
+          } catch {}
+        }}
+        className="p-2 hover:bg-white/10 rounded-full transition-colors absolute right-4 z-10"
+      >
          <X className="w-5 h-5" />
       </button>
       
