@@ -1244,7 +1244,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 <>
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
-                      className="bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-100 border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
                       disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
                       onClick={async () => {
                         const text = downloadsModalItems.map((x) => `${x.label}: ${x.url}`).join('\n');
@@ -1259,7 +1259,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       Copiar links
                     </button>
                     <button
-                      className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
                       disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
                       onClick={() => {
                         const base = sanitizeFileName(downloadsModalTitle || 'stems');
@@ -1272,7 +1272,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       Descargar todo (archivos)
                     </button>
                     <button
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
                       disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
                       onClick={async () => {
                         if (downloadsModalItems.length === 0) return;
@@ -1323,7 +1323,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       Descargar todo (ZIP)
                     </button>
                     <button
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
                       onClick={() => removeCompletedDownload(downloadsModalTaskId)}
                       disabled={!downloadsModalTaskId}
                     >
@@ -1346,7 +1346,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
                           <button
-                            className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                             onClick={() => {
                               const id = `${downloadsModalTaskId || 'stem'}_${it.key}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
                               const title = `${downloadsModalTitle || 'Descarga'} - ${it.label}`.slice(0, 120);
@@ -1365,7 +1365,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             Reproducir
                           </button>
                           <button
-                            className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border border-emerald-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                             onClick={() => {
                               const base = sanitizeFileName(downloadsModalTitle || 'stems');
                               const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
