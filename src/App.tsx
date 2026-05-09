@@ -141,7 +141,7 @@ function InicioLanding({
             <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <div className="text-xs text-slate-400 font-semibold">Plan gratis</div>
-                <div className="mt-1 text-white font-extrabold">5 canciones</div>
+                <div className="mt-1 text-white font-extrabold">2 canciones</div>
                 <div className="mt-1 text-[11px] text-slate-400">10 versiones A/B</div>
               </div>
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -238,7 +238,7 @@ function InicioLanding({
               <div className="text-white font-extrabold">Gratis y sin riesgo</div>
             </div>
             <div className="mt-2 text-slate-300 text-sm">
-              Empieza con 5 canciones. Cuando necesites descargar, compra un plan y listo.
+              Empieza con 2 canciones. Cuando necesites descargar, compra un plan y listo.
             </div>
             <button
               onClick={onOpenPlans}
@@ -1101,7 +1101,7 @@ export default function App() {
           out = null;
         }
         if (out?.welcome_granted) {
-          showToast('Listo: se activó tu saldo de bienvenida (5 canciones).');
+          showToast('Listo: se activó tu saldo de bienvenida (2 canciones).');
         }
         if (out?.welcome_error) {
           showToast(String(out.welcome_error));
