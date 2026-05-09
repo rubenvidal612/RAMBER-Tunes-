@@ -604,16 +604,17 @@ export default function App() {
     const blob = await compressAvatarToBlob(file);
     const arrayBuffer = await blob.arrayBuffer();
     const fileArray = Array.from(new Uint8Array(arrayBuffer));
+    const path = `avatars/${userId}/avatar_${Date.now()}.webp`;
     
-    const response = await fetch('/api/upload-profile-image', {
+    const response = await fetch('/api/account/upload-profile-image', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'authorization': `Bearer ${t.token}`,
       },
       body: JSON.stringify({
-        file: fileArray,
-        title: `avatar_${Date.now()}.webp`,
+        path,
+        data: fileArray,
         contentType: 'image/webp',
       }),
     });

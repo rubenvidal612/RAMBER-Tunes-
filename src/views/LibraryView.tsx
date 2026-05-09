@@ -3112,19 +3112,28 @@ function SongOptionsSheet({
       if (personaPhoto) {
         const t = await getAccessToken();
         if (t.ok) {
+          let uid = '';
+          try {
+            const { data } = await supabaseBrowser?.auth.getUser();
+            uid = (data?.user?.id || '').toString().trim();
+          } catch {
+            uid = '';
+          }
           const blob = await compressImage(personaPhoto);
           const arrayBuffer = await blob.arrayBuffer();
           const fileArray = Array.from(new Uint8Array(arrayBuffer));
+          const safePersona = (personaId || '').toString().replaceAll(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 120) || 'persona';
+          const path = `personas/${uid || 'unknown'}/${safePersona}.webp`;
           
-          const response = await fetch('/api/upload-profile-image', {
+          const response = await fetch('/api/account/upload-profile-image', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'authorization': `Bearer ${t.token}`,
             },
             body: JSON.stringify({
-              file: fileArray,
-              title: `persona_${personaId}.webp`,
+              path,
+              data: fileArray,
               contentType: 'image/webp',
             }),
           });

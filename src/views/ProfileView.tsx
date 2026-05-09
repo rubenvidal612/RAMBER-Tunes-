@@ -69,29 +69,33 @@ export function ProfileView({
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
+  const applyUserToState = (user: any) => {
+    const id = (user?.id || '').toString();
+    const meta: any = user?.user_metadata || {};
+    const name = (meta?.full_name || meta?.name || '').toString().trim();
+    const uname = (meta?.username || '').toString().trim();
+    const display = (name || 'Usuario').toString().trim();
+    setUserId(id);
+    setUsername(uname);
+    setUserName(display);
+    setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
+    setUserAvatarUrl((meta?.avatar_url || '').toString());
+    setUserCoverUrl((meta?.cover_url || '').toString());
+    setCountry((meta?.country || '').toString());
+    setCity((meta?.city || '').toString());
+    setContactEmail((meta?.contact_email || '').toString());
+    setContactPhone((meta?.contact_phone || '').toString());
+    setBio((meta?.bio || '').toString());
+  };
+
   useEffect(() => {
     if (!supabaseBrowser) return;
     let alive = true;
     const loadUser = async () => {
       const { data } = await supabaseBrowser.auth.getUser();
       const user = data?.user;
-      const id = (user?.id || '').toString();
-      const meta: any = user?.user_metadata || {};
-      const name = (meta?.full_name || meta?.name || '').toString().trim();
-      const uname = (meta?.username || '').toString().trim();
-      const display = (name || 'Usuario').toString().trim();
       if (!alive) return;
-      setUserId(id);
-      setUsername(uname);
-      setUserName(display);
-      setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
-      setUserAvatarUrl((meta?.avatar_url || '').toString());
-      setUserCoverUrl((meta?.cover_url || '').toString());
-      setCountry((meta?.country || '').toString());
-      setCity((meta?.city || '').toString());
-      setContactEmail((meta?.contact_email || '').toString());
-      setContactPhone((meta?.contact_phone || '').toString());
-      setBio((meta?.bio || '').toString());
+      applyUserToState(user);
     };
     loadUser().catch(() => {});
     const { data: sub } = supabaseBrowser.auth.onAuthStateChange(() => {
@@ -200,7 +204,10 @@ export function ProfileView({
           onClose={() => {
             setShowEditProfile(false);
             try {
-              supabaseBrowser?.auth.getUser().then(() => {}).catch(() => {});
+              supabaseBrowser?.auth
+                .getUser()
+                .then(({ data }) => applyUserToState(data?.user))
+                .catch(() => {});
             } catch {
             }
           }}

@@ -282,13 +282,16 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   };
 
   const uploadWebpToStorage = async (userId: string, kind: 'avatar' | 'cover', blob: Blob) => {
+    const s = await ensureAnonSession();
+    if (!s.ok) throw new Error(s.error || 'No se pudo iniciar sesión.');
     const base = kind === 'avatar' ? `avatars/${userId}` : `profile-covers/${userId}`;
     const path = `${base}/${kind}_${Date.now()}.webp`;
     
-    const response = await fetch('/api/upload-profile-image', {
+    const response = await fetch('/api/account/upload-profile-image', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'authorization': `Bearer ${s.session.access_token}`,
       },
       body: JSON.stringify({
         path,
