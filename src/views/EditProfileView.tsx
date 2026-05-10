@@ -225,7 +225,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       setAvatarPreviewUrl(preview);
       setAvatarCropRect(null);
     } else if (cropTarget === 'cover') {
-      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 180, quality: 0.82, cropRect: rect, fitMode: 'cover' } as any);
+      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 720, quality: 0.82, cropRect: rect, fitMode: 'cover' } as any);
       const f = new File([blob], `cover_${Date.now()}.webp`, { type: 'image/webp' });
       const preview = URL.createObjectURL(blob);
       try {
@@ -424,7 +424,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         const blob =
           fileToProcess.type === 'image/webp' && !coverCropRect
             ? fileToProcess
-            : await imageFileToWebpBlob(fileToProcess, { width: 1610, height: 180, quality: 0.82, cropRect: coverCropRect, fitMode: 'cover' } as any);
+            : await imageFileToWebpBlob(fileToProcess, { width: 1610, height: 720, quality: 0.82, cropRect: coverCropRect, fitMode: 'cover' } as any);
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
@@ -466,12 +466,12 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         <div>
           <div className="flex items-center gap-2 mb-2">
             <h3 className="font-bold text-lg">Imagen de perfil</h3>
-            <span className="text-slate-400 text-xs font-medium leading-tight max-w-[200px]">(Tamaño recomendado: 1610 × 180 px, máx. 10 MB)</span>
+            <span className="text-slate-400 text-xs font-medium leading-tight max-w-[200px]">(Tamaño recomendado: 1610 × 720 px, máx. 10 MB)</span>
           </div>
           <button
             type="button"
             onClick={() => coverInputRef.current?.click()}
-            className="w-full h-40 rounded-3xl bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10 relative flex items-center justify-center cursor-pointer overflow-hidden border border-white/10"
+            className="w-full aspect-[1610/720] rounded-3xl bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10 relative flex items-center justify-center cursor-pointer overflow-hidden border border-white/10"
             disabled={isLoading || isSaving}
           >
             {(coverPreviewUrl || coverUrl) ? (
@@ -674,7 +674,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
               <div
                 ref={cropWrapRef}
-                className={cropTarget === 'cover' ? 'w-full h-40 rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
+                className={cropTarget === 'cover' ? 'w-full aspect-[1610/720] rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
                 onPointerDown={(e) => {
                   if (!cropUrl) return;
                   cropDragRef.current.on = true;
