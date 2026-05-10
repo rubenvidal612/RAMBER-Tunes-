@@ -79,6 +79,119 @@ function isMissingColumnError(err: any) {
   );
 }
 
+type R2Env = {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucketName: string;
+  endpoint: string;
+  publicBaseUrl: string;
+};
+
+let cachedR2Env: R2Env | null = null;
+let cachedR2Client: any | null = null;
+let cachedR2Aws: any | null = null;
+let cachedR2Presigner: any | null = null;
+
+function getR2Env(): R2Env {
+  if (cachedR2Env) return cachedR2Env;
+  const accountId = (process.env.R2_ACCOUNT_ID || "").toString().trim();
+  const accessKeyId = (process.env.R2_ACCESS_KEY_ID || "").toString().trim();
+  const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || "").toString().trim();
+  const bucketName = (process.env.R2_BUCKET_NAME || "").toString().trim();
+  const endpoint =
+    ((process.env.R2_ENDPOINT || "") as string).toString().trim() || `https://${accountId}.r2.cloudflarestorage.com`;
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    throw new Error("Missing required R2 environment variables");
+  }
+  cachedR2Env = {
+    accountId,
+    accessKeyId,
+    secretAccessKey,
+    bucketName,
+    endpoint,
+    publicBaseUrl: `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`,
+  };
+  return cachedR2Env;
+}
+
+async function getR2AwsSdk() {
+  if (cachedR2Aws) return cachedR2Aws;
+  cachedR2Aws = await import("@aws-sdk/client-s3");
+  return cachedR2Aws;
+}
+
+async function getR2Presigner() {
+  if (cachedR2Presigner) return cachedR2Presigner;
+  cachedR2Presigner = await import("@aws-sdk/s3-request-presigner");
+  return cachedR2Presigner;
+}
+
+async function getR2Client() {
+  if (cachedR2Client) return cachedR2Client;
+  const env = getR2Env();
+  const { S3Client } = await getR2AwsSdk();
+  cachedR2Client = new S3Client({
+    region: "auto",
+    endpoint: env.endpoint,
+    credentials: {
+      accessKeyId: env.accessKeyId,
+      secretAccessKey: env.secretAccessKey,
+    },
+  });
+  return cachedR2Client;
+}
+
+async function uploadToR2(key: string, body: any, contentType: string): Promise<string> {
+  const env = getR2Env();
+  const client = await getR2Client();
+  const { PutObjectCommand } = await getR2AwsSdk();
+  const command = new PutObjectCommand({
+    Bucket: env.bucketName,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  });
+  await client.send(command);
+  return `${env.publicBaseUrl}/${key}`;
+}
+
+async function getSignedR2Url(key: string, expiresIn: number = 3600): Promise<string> {
+  const env = getR2Env();
+  const client = await getR2Client();
+  const { GetObjectCommand } = await getR2AwsSdk();
+  const { getSignedUrl } = await getR2Presigner();
+  const command = new GetObjectCommand({
+    Bucket: env.bucketName,
+    Key: key,
+  });
+  return await getSignedUrl(client, command, { expiresIn });
+}
+
+async function deleteFromR2(paths: string[]): Promise<number> {
+  const env = getR2Env();
+  const client = await getR2Client();
+  const { DeleteObjectsCommand } = await getR2AwsSdk();
+  const list = Array.isArray(paths) ? paths.map((x) => String(x || "").trim()).filter(Boolean) : [];
+  if (list.length === 0) return 0;
+  const batches: string[][] = [];
+  for (let i = 0; i < list.length; i += 1000) batches.push(list.slice(i, i + 1000));
+  let deletedCount = 0;
+  for (const batch of batches) {
+    const objects = batch.map((p) => ({ Key: p }));
+    const command = new DeleteObjectsCommand({
+      Bucket: env.bucketName,
+      Delete: { Objects: objects },
+    });
+    try {
+      await client.send(command);
+      deletedCount += batch.length;
+    } catch {
+    }
+  }
+  return deletedCount;
+}
+
 async function ensureProfileExists(admin: any, userId: string) {
   const r = await admin.from("profiles").upsert({ id: userId }, { onConflict: "id" });
   if (!r?.error) return { ok: true as const };
@@ -778,7 +891,6 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const { getSignedR2Url } = await import('../src/lib/r2');
         const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
@@ -894,7 +1006,6 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const { getSignedR2Url } = await import('../src/lib/r2');
         const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
@@ -998,7 +1109,6 @@ const sunoHandler = (() => {
 
     if (uploadPath) {
       try {
-        const { getSignedR2Url } = await import('../src/lib/r2');
         const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
       } catch {
@@ -1906,7 +2016,6 @@ const sunoHandler = (() => {
       let finalUploadUrl = uploadUrl;
       if (uploadPath) {
         try {
-          const { getSignedR2Url } = await import('../src/lib/r2');
           finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         } catch (e) {
           if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -2365,7 +2474,6 @@ const libraryHandler = (() => {
     // Eliminar archivos de R2
     if (r2Paths.length > 0) {
       const uniqueR2Paths = Array.from(new Set(r2Paths)).filter(Boolean);
-      const { deleteFromR2 } = await import('../src/lib/r2');
       deletedCount += await deleteFromR2(uniqueR2Paths);
     }
     
@@ -2524,7 +2632,6 @@ const libraryHandler = (() => {
 
     try {
       const buf = Buffer.from(file);
-      const { uploadToR2 } = await import('../src/lib/r2');
       const audioUrl = await uploadToR2(path, buf, contentType);
 
       const insertRow: any = {
@@ -2605,7 +2712,6 @@ const libraryHandler = (() => {
       return send(res, 502, { error: "No pude descargar el audio", detail: e instanceof Error ? e.message : String(e) });
     }
 
-    const { uploadToR2 } = await import('../src/lib/r2');
     const audioUrl = await uploadToR2(path, buf, contentType);
 
     const insertRow: any = {
@@ -2980,7 +3086,6 @@ const libraryHandler = (() => {
       }
     }
 
-    const { uploadToR2 } = await import('../src/lib/r2');
     const coverUrl = await uploadToR2(path, buf, finalCt);
 
     const { error: updErr } = await auth.admin.from(TABLE).update({ cover_url: coverUrl }).eq("id", id).eq("user_id", auth.user.id).eq("type", ITEM_TYPE);
@@ -3349,42 +3454,6 @@ const uploadProfileImageHandler = (() => {
     return { ok: true as const, user, admin };
   }
 
-  async function uploadToR2(path: string, buf: Buffer, contentType: string): Promise<string> {
-    const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
-    
-    const accountId = process.env.R2_ACCOUNT_ID;
-    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    const bucketName = process.env.R2_BUCKET_NAME;
-    const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
-
-    if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
-      throw new Error('Missing required R2 environment variables');
-    }
-
-    const client = new S3Client({
-      region: 'auto',
-      endpoint,
-      credentials: {
-        accessKeyId,
-        secretAccessKey,
-      },
-    });
-
-    const command = new PutObjectCommand({
-      Bucket: bucketName,
-      Key: path,
-      Body: buf,
-      ContentType: contentType,
-    });
-
-    await client.send(command);
-
-    return `https://${bucketName}.${accountId}.r2.cloudflarestorage.com/${path}`;
-  }
-
-
-
   return async function handler(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -3403,7 +3472,6 @@ const uploadProfileImageHandler = (() => {
 
     try {
       const buf = Buffer.from(data);
-      const { uploadToR2 } = await import('../src/lib/r2');
       const audioUrl = await uploadToR2(path, buf, contentType);
 
       return send(res, 200, { ok: true, url: audioUrl });
@@ -3483,7 +3551,6 @@ const sunoWebhookHandler = (() => {
                 if (!buf || buf.length === 0) return "";
                 const ext = ct.includes("jpeg") ? "jpg" : ct.includes("webp") ? "webp" : "png";
                 const path = `covers/${userId}/${originalTaskId.slice(0, 120)}/${taskId}_${index + 1}.${ext}`;
-                const { uploadToR2 } = await import('../src/lib/r2');
                 const publicUrl = await uploadToR2(path, buf, ct || `image/${ext}`);
                 return typeof publicUrl === "string" ? publicUrl.trim() : "";
               } catch {
