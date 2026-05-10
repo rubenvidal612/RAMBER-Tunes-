@@ -3953,10 +3953,49 @@ const shareSongAudioHandler = (() => {
       audioUrl = normalizeHttpUrl(audioUrl);
       if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return sendJson(res, 404, { error: "No hay audio para compartir" });
 
-      res.statusCode = 302;
+      const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
+      const headers: Record<string, string> = {};
+      if (range) headers.range = range;
+
+      const upstream = await fetch(audioUrl, { method: "GET", headers }).catch(() => null as any);
+      if (!upstream) return sendJson(res, 502, { error: "No pude descargar el audio" });
+
+      const status = Number((upstream as any).status || 502);
+      if (status >= 400) {
+        const txt = await (upstream as any).text?.().catch(() => "") || "";
+        return sendJson(res, 502, { error: "No pude reproducir el audio", detail: txt.slice(0, 800) || `HTTP ${status}` });
+      }
+
+      res.statusCode = status;
       res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
-      res.setHeader("location", audioUrl);
-      res.end();
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-headers", "range, content-type");
+      res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type");
+      res.setHeader("accept-ranges", "bytes");
+
+      const ct = (upstream as any).headers?.get?.("content-type") || "audio/mpeg";
+      const cl = (upstream as any).headers?.get?.("content-length") || "";
+      const cr = (upstream as any).headers?.get?.("content-range") || "";
+      if (ct) res.setHeader("content-type", ct);
+      if (cl) res.setHeader("content-length", cl);
+      if (cr) res.setHeader("content-range", cr);
+
+      const body = (upstream as any).body;
+      if (body) {
+        try {
+          const mod = await import("stream");
+          const Readable = (mod as any).Readable;
+          if (Readable?.fromWeb) {
+            Readable.fromWeb(body).pipe(res);
+            return;
+          }
+        } catch {
+        }
+      }
+
+      const ab = await (upstream as any).arrayBuffer?.().catch(() => null);
+      if (!ab) return sendJson(res, 502, { error: "No pude leer el audio" });
+      res.end(Buffer.from(ab));
     } catch (e) {
       return sendJson(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }

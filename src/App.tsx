@@ -2403,6 +2403,11 @@ function SharedSongPage({ shareId }: { shareId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState<{ id: string; title: string; audioUrl: string; coverUrl?: string } | null>(null);
+  const [showPlayer, setShowPlayer] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [playerDuration, setPlayerDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -2425,6 +2430,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           return;
         }
         setData({ id: (out?.id || shareId).toString(), title, audioUrl, coverUrl: coverUrl || undefined });
+        setShowPlayer(true);
       })
       .catch(() => {
         if (!alive) return;
@@ -2438,6 +2444,40 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       alive = false;
     };
   }, [shareId]);
+
+  useEffect(() => {
+    setIsPlaying(false);
+    setPlayerTime(0);
+    setPlayerDuration(0);
+    const a = audioRef.current;
+    if (!a) return;
+    try {
+      a.pause();
+    } catch {
+    }
+    a.src = '';
+  }, [data?.audioUrl]);
+
+  const togglePlay = async () => {
+    const a = audioRef.current;
+    if (!a || !data?.audioUrl) return;
+    try {
+      const nextSrc = new URL(data.audioUrl, window.location.origin).toString();
+      if (a.src !== nextSrc) {
+        a.src = '';
+        a.src = nextSrc;
+      }
+      if (isPlaying) {
+        a.pause();
+        setIsPlaying(false);
+        return;
+      }
+      await a.play();
+      setIsPlaying(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No pude reproducir esta canción.');
+    }
+  };
 
   const shareThis = async () => {
     const url = window.location.href;
@@ -2525,7 +2565,15 @@ function SharedSongPage({ shareId }: { shareId: string }) {
                 <div className="mt-1 text-sm text-slate-400">Disponible en RAMBER Tunes</div>
 
                 <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
-                  <audio controls preload="metadata" src={data.audioUrl} className="w-full" />
+                  <button
+                    onClick={async () => {
+                      setShowPlayer(true);
+                      await togglePlay();
+                    }}
+                    className="w-full h-[46px] rounded-full bg-white text-black font-extrabold"
+                  >
+                    {isPlaying ? 'Pausar' : 'Reproducir'}
+                  </button>
                   <div className="mt-3 text-[11px] text-slate-500 break-words">ID: {data.id}</div>
                 </div>
               </div>
@@ -2533,6 +2581,69 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           </div>
         ) : null}
       </div>
+
+      {showPlayer && data ? (
+        <MiniPlayer
+          song={{ id: data.id, title: data.title, description: 'Disponible en RAMBER Tunes', audioUrl: data.audioUrl } as any}
+          isPlaying={isPlaying}
+          onPlayPause={() => togglePlay().catch(() => {})}
+          onClose={() => {
+            setShowPlayer(false);
+            setIsPlaying(false);
+            setPlayerTime(0);
+            setPlayerDuration(0);
+            const a = audioRef.current;
+            if (a) {
+              try {
+                a.pause();
+              } catch {
+              }
+              a.src = '';
+            }
+          }}
+          placement="default"
+          currentTime={playerTime}
+          duration={playerDuration}
+          onSeek={(t) => {
+            const a = audioRef.current;
+            if (!a) return;
+            const dur = Number.isFinite(Number(a.duration)) ? Number(a.duration) : 0;
+            const next = Math.max(0, Math.min(Number.isFinite(Number(t)) ? Number(t) : 0, dur));
+            try {
+              a.currentTime = next;
+            } catch {
+            }
+            setPlayerTime(next);
+          }}
+        />
+      ) : null}
+
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onEnded={() => setIsPlaying(false)}
+        onPause={() => setIsPlaying(false)}
+        onPlay={() => setIsPlaying(true)}
+        onTimeUpdate={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const t = Number(a.currentTime);
+          if (Number.isFinite(t)) setPlayerTime(t);
+        }}
+        onLoadedMetadata={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        onDurationChange={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        className="hidden"
+      />
     </div>
   );
 }
