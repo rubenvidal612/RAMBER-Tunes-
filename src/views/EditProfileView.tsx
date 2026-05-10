@@ -208,7 +208,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     };
     const rect = computeRect();
     if (cropTarget === 'avatar') {
-      const blob = await imageFileToWebpBlob(cropFile, { width: 256, height: 256, quality: 0.82, cropRect: rect });
+      const blob = await imageFileToWebpBlob(cropFile, { width: 256, height: 256, quality: 0.82, cropRect: rect, fitMode: 'cover' } as any);
       const f = new File([blob], `avatar_${Date.now()}.webp`, { type: 'image/webp' });
       const preview = URL.createObjectURL(blob);
       try {
@@ -218,7 +218,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       setAvatarPreviewUrl(preview);
       setAvatarCropRect(null);
     } else if (cropTarget === 'cover') {
-      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 180, quality: 0.78, cropRect: rect });
+      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 180, quality: 0.82, cropRect: null, fitMode: 'contain' } as any);
       const f = new File([blob], `cover_${Date.now()}.webp`, { type: 'image/webp' });
       const preview = URL.createObjectURL(blob);
       try {
@@ -251,6 +251,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
     const dw = canvas.width;
     const dh = canvas.height;
+    const fitMode = (opts as any)?.fitMode === 'contain' ? 'contain' : 'cover';
 
     const tryBitmap = async () => {
       try {
@@ -265,7 +266,14 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       const bitmap = await tryBitmap();
       const srcW = bitmap.width || 0;
       const srcH = bitmap.height || 0;
-      if (rect && srcW > 0 && srcH > 0) {
+      if (fitMode === 'contain' && !rect && srcW > 0 && srcH > 0) {
+        const scale = Math.min(dw / srcW, dh / srcH);
+        const rw = srcW * scale;
+        const rh = srcH * scale;
+        const dx = (dw - rw) / 2;
+        const dy = (dh - rh) / 2;
+        ctx.drawImage(bitmap, dx, dy, rw, rh);
+      } else if (rect && srcW > 0 && srcH > 0) {
         const rx = clamp(Number(rect.x || 0), 0, 1);
         const ry = clamp(Number(rect.y || 0), 0, 1);
         const rw = clamp(Number(rect.w || 1), 0.000001, 1);
@@ -276,7 +284,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         const sh = clamp(Math.round(rh * srcH), 1, Math.max(1, srcH - sy));
         ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, dw, dh);
       } else {
-        const scale = Math.max(dw / srcW, dh / srcH);
+        const scale = fitMode === 'contain' ? Math.min(dw / srcW, dh / srcH) : Math.max(dw / srcW, dh / srcH);
         const rw = srcW * scale;
         const rh = srcH * scale;
         const dx = (dw - rw) / 2;
@@ -302,7 +310,14 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       });
       const srcW = img.naturalWidth || img.width;
       const srcH = img.naturalHeight || img.height;
-      if (rect && srcW > 0 && srcH > 0) {
+      if (fitMode === 'contain' && !rect && srcW > 0 && srcH > 0) {
+        const scale = Math.min(dw / srcW, dh / srcH);
+        const rw = srcW * scale;
+        const rh = srcH * scale;
+        const dx = (dw - rw) / 2;
+        const dy = (dh - rh) / 2;
+        ctx.drawImage(img, dx, dy, rw, rh);
+      } else if (rect && srcW > 0 && srcH > 0) {
         const rx = clamp(Number(rect.x || 0), 0, 1);
         const ry = clamp(Number(rect.y || 0), 0, 1);
         const rw = clamp(Number(rect.w || 1), 0.000001, 1);
@@ -313,7 +328,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         const sh = clamp(Math.round(rh * srcH), 1, Math.max(1, srcH - sy));
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
       } else {
-        const scale = Math.max(dw / srcW, dh / srcH);
+        const scale = fitMode === 'contain' ? Math.min(dw / srcW, dh / srcH) : Math.max(dw / srcW, dh / srcH);
         const rw = srcW * scale;
         const rh = srcH * scale;
         const dx = (dw - rw) / 2;
@@ -393,14 +408,14 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         const blob =
           avatarFile.type === 'image/webp' && !avatarCropRect
             ? avatarFile
-            : await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect });
+            : await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect, fitMode: 'cover' } as any);
         nextAvatarUrl = await uploadWebpToStorage(userId, 'avatar', blob);
       }
       if (coverFile) {
         const blob =
           coverFile.type === 'image/webp' && !coverCropRect
             ? coverFile
-            : await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78, cropRect: coverCropRect });
+            : await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.82, cropRect: coverCropRect, fitMode: 'contain' } as any);
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
@@ -653,6 +668,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 className={cropTarget === 'cover' ? 'w-full h-40 rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
                 onPointerDown={(e) => {
                   if (!cropUrl) return;
+                  if (cropTarget === 'cover') return;
                   cropDragRef.current.on = true;
                   cropDragRef.current.pid = e.pointerId;
                   cropDragRef.current.x = e.clientX;
@@ -665,6 +681,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                   e.preventDefault();
                 }}
                 onPointerMove={(e) => {
+                  if (cropTarget === 'cover') return;
                   const drag = cropDragRef.current;
                   if (!drag.on) return;
                   if (drag.pid != null && e.pointerId !== drag.pid) return;
@@ -708,6 +725,19 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                   if (!cropUrl || !(w > 0 && h > 0 && iw > 0 && ih > 0)) {
                     return <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm font-semibold">Cargando…</div>;
                   }
+                  if (cropTarget === 'cover') {
+                    return (
+                      <>
+                        <img
+                          src={cropUrl}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-contain"
+                          draggable={false}
+                        />
+                        <div className="absolute inset-0 pointer-events-none ring-2 ring-white/15 rounded-3xl" />
+                      </>
+                    );
+                  }
                   const scale = Math.max(w / iw, h / ih) * zoom;
                   const rw = iw * scale;
                   const rh = ih * scale;
@@ -734,28 +764,30 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 })()}
               </div>
 
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <div className="flex items-center justify-between text-xs text-slate-300 font-semibold">
-                  <div>Zoom</div>
-                  <div>{Math.round(clamp(cropZoom, 1, 3) * 100)}%</div>
+              {cropTarget !== 'cover' && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="flex items-center justify-between text-xs text-slate-300 font-semibold">
+                    <div>Zoom</div>
+                    <div>{Math.round(clamp(cropZoom, 1, 3) * 100)}%</div>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={3}
+                    step={0.01}
+                    value={cropZoom}
+                    onChange={(e) => setCropZoom(Number(e.target.value))}
+                    className="w-full mt-3"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCropShift({ x: 0, y: 0 })}
+                    className="mt-3 w-full bg-white/10 hover:bg-white/15 border border-white/10 rounded-full h-[44px] text-white font-extrabold"
+                  >
+                    Centrar
+                  </button>
                 </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={3}
-                  step={0.01}
-                  value={cropZoom}
-                  onChange={(e) => setCropZoom(Number(e.target.value))}
-                  className="w-full mt-3"
-                />
-                <button
-                  type="button"
-                  onClick={() => setCropShift({ x: 0, y: 0 })}
-                  className="mt-3 w-full bg-white/10 hover:bg-white/15 border border-white/10 rounded-full h-[44px] text-white font-extrabold"
-                >
-                  Centrar
-                </button>
-              </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <button
