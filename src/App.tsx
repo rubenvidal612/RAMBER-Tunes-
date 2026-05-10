@@ -16,7 +16,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2 } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
   { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
@@ -2676,6 +2676,38 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState<{ profile: any; songs: Array<{ id: string; title: string; audioUrl: string; coverUrl?: string | null }> } | null>(null);
+  const [currentSong, setCurrentSong] = useState<null | { id: string; title: string; audioUrl: string; coverUrl?: string | null }>(null);
+  const [showPlayer, setShowPlayer] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [playerDuration, setPlayerDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const r2ValueToProxyUrl = (raw: any) => {
+    const url = (raw || '').toString().trim();
+    if (!url) return '';
+    if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+    const keyish = url.replace(/^\/+/, '');
+    const allowed = ['avatars/', 'profile-covers/', 'personas/', 'covers/'];
+    if (!/^https?:\/\//i.test(url) && allowed.some((p) => keyish.startsWith(p))) {
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(keyish)}`;
+    }
+    try {
+      const u = new URL(url);
+      const host = (u.hostname || '').toLowerCase();
+      const isR2 =
+        host.includes('.r2.cloudflarestorage.com') ||
+        host.endsWith('.r2.dev') ||
+        host.includes('.r2') ||
+        url.includes('.r2.cloudflarestorage.com/');
+      if (!isR2) return url;
+      const key = (u.pathname || '').replace(/^\/+/, '');
+      if (!key) return url;
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(key)}`;
+    } catch {
+      return url;
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -2693,6 +2725,8 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         const profile = out?.profile || {};
         const songs = Array.isArray(out?.songs) ? out.songs : [];
         setData({ profile, songs });
+        setCurrentSong(null);
+        setShowPlayer(true);
       })
       .catch(() => {
         if (!alive) return;
@@ -2706,6 +2740,19 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
       alive = false;
     };
   }, [profileId]);
+
+  useEffect(() => {
+    setIsPlaying(false);
+    setPlayerTime(0);
+    setPlayerDuration(0);
+    const a = audioRef.current;
+    if (!a) return;
+    try {
+      a.pause();
+    } catch {
+    }
+    a.src = '';
+  }, [currentSong?.audioUrl]);
 
   const shareThis = async () => {
     const url = window.location.href;
@@ -2724,8 +2771,78 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     }
   };
 
+  const shareSong = async (s: { id: string; title: string }) => {
+    const title = (s?.title || 'Canción').toString().trim();
+    const url = s?.id ? `${window.location.origin}/share/${encodeURIComponent(s.id)}` : '';
+    if (!url) {
+      alert('No hay link para compartir.');
+      return;
+    }
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `RAMBER Tunes - ${title}`, url });
+        return;
+      }
+    } catch {
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Link copiado al portapapeles.');
+    } catch {
+      alert(url);
+    }
+  };
+
+  const ensureAudioSrc = (src: string) => {
+    const a = audioRef.current;
+    if (!a) return;
+    const nextSrc = new URL(src, window.location.origin).toString();
+    if (a.src !== nextSrc) {
+      a.src = '';
+      a.src = nextSrc;
+    }
+  };
+
+  const playSong = async (s: { id: string; title: string; audioUrl: string; coverUrl?: string | null }) => {
+    if (!s?.audioUrl) return;
+    setCurrentSong(s);
+    setShowPlayer(true);
+    try {
+      ensureAudioSrc(s.audioUrl);
+      await audioRef.current?.play();
+      setIsPlaying(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
+      const clean = String(msg || '').includes('supported sources')
+        ? 'No pude reproducir. Intenta de nuevo en unos segundos.'
+        : msg || 'No pude reproducir esta canción.';
+      alert(clean);
+    }
+  };
+
+  const togglePlayPause = async () => {
+    const a = audioRef.current;
+    if (!a || !currentSong?.audioUrl) return;
+    try {
+      ensureAudioSrc(currentSong.audioUrl);
+      if (isPlaying) {
+        a.pause();
+        setIsPlaying(false);
+        return;
+      }
+      await a.play();
+      setIsPlaying(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
+      const clean = String(msg || '').includes('supported sources')
+        ? 'No pude reproducir. Intenta de nuevo en unos segundos.'
+        : msg || 'No pude reproducir esta canción.';
+      alert(clean);
+    }
+  };
+
   return (
-    <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
+    <div className="min-h-[100dvh] w-full text-white flex flex-col bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
       <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
         <a href="/" className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">R</div>
@@ -2777,76 +2894,195 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
             </div>
           </div>
         ) : data ? (
-          <div className="w-full">
-            <div className="relative h-24 bg-gradient-to-r from-indigo-500/30 via-fuchsia-500/20 to-cyan-500/20">
-              {data.profile?.coverUrl ? <img src={data.profile.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
-              <div className="absolute inset-0 bg-black/40" />
-            </div>
-            <div className="px-5 max-w-[980px] mx-auto w-full">
-              <div className="-mt-10 flex items-end justify-between gap-4">
-                <div className="flex items-end gap-4 min-w-0">
-                  <div className="w-20 h-20 rounded-full bg-white/10 border border-white/10 overflow-hidden shrink-0">
-                    {data.profile?.avatarUrl ? (
-                      <img src={data.profile.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-2xl font-extrabold text-slate-200">
-                        {(data.profile?.name || 'U').toString().trim().slice(0, 1).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 pb-2">
-                    <div className="text-2xl md:text-3xl font-extrabold truncate">{(data.profile?.name || 'Usuario').toString()}</div>
-                    {data.profile?.username ? <div className="text-sm text-slate-300 truncate">@{String(data.profile.username)}</div> : null}
+          <div className="w-full pt-4 relative z-10">
+            <div className="px-6 mb-6">
+              <div className="relative rounded-3xl overflow-hidden border border-white/10">
+                <div className="h-24 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
+                {data.profile?.coverUrl ? (
+                  <img
+                    src={r2ValueToProxyUrl(data.profile.coverUrl)}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : null}
+                <div className="absolute inset-0 bg-black/35" />
+                <div className="relative p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
+                      {data.profile?.avatarUrl ? (
+                        <img src={r2ValueToProxyUrl(data.profile.avatarUrl)} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        (data.profile?.name || 'U').toString().trim().slice(0, 1).toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-2xl font-bold text-white truncate">{(data.profile?.name || 'Usuario').toString()}</h2>
+                      {data.profile?.username ? <div className="text-xs text-slate-300/80 truncate">@{String(data.profile.username)}</div> : null}
+                    </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              {(() => {
-                const city = String(data.profile?.city || '').trim();
-                const country = String(data.profile?.country || '').trim();
-                const location = [city, country].filter(Boolean).join(', ');
-                const contactEmail = String(data.profile?.contactEmail || '').trim();
-                const contactPhone = String(data.profile?.contactPhone || '').trim();
-                const bio = String(data.profile?.bio || '').trim();
-                return (
-                  <div className="mt-4 space-y-3">
-                    {location ? <div className="text-sm text-slate-300">{location}</div> : null}
-                    {contactEmail ? <div className="text-sm text-slate-300">{contactEmail}</div> : null}
-                    {contactPhone ? <div className="text-sm text-slate-300">{contactPhone}</div> : null}
-                    {bio ? <div className="text-sm text-slate-300 whitespace-pre-wrap">{bio}</div> : null}
-                  </div>
-                );
-              })()}
-
-              <div className="mt-6">
-                <div className="text-white font-extrabold">Canciones</div>
-                {data.songs.length === 0 ? (
-                  <div className="mt-2 text-slate-400 text-sm">Este perfil todavía no tiene canciones agregadas.</div>
-                ) : (
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 pb-10">
-                    {data.songs.map((s) => (
-                      <div key={s.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden">
-                        <div className="flex items-center gap-3 p-4">
-                          <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
-                            {s.coverUrl ? <img src={String(s.coverUrl)} alt="" className="w-full h-full object-cover" /> : null}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-white font-extrabold truncate">{s.title}</div>
-                            <div className="text-[11px] text-slate-400 truncate">RAMBER Tunes</div>
-                          </div>
-                        </div>
-                        <div className="px-4 pb-4">
-                          <audio controls preload="metadata" src={s.audioUrl} className="w-full" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div className="grid grid-cols-3 gap-2 px-6 mb-6 text-center">
+              <div className="flex flex-col items-center">
+                <span className="text-lg font-bold text-slate-100">0</span>
+                <span className="text-xs text-slate-400">Me gusta</span>
               </div>
+              <div className="flex flex-col items-center">
+                <span className="text-lg font-bold text-slate-100">0</span>
+                <span className="text-xs text-slate-400">Seguidores</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-lg font-bold text-slate-100">0</span>
+                <span className="text-xs text-slate-400">Siguiendo</span>
+              </div>
+            </div>
+
+            <div className="px-6 mb-8">
+              <button
+                onClick={() => shareThis().catch(() => {})}
+                className="w-full py-2.5 rounded-full glass-card border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 hover:bg-white/5 transition-colors text-sm"
+              >
+                <Share2 className="w-4 h-4" /> Compartir
+              </button>
+            </div>
+
+            {(() => {
+              const city = String(data.profile?.city || '').trim();
+              const country = String(data.profile?.country || '').trim();
+              const location = [city, country].filter(Boolean).join(', ');
+              const contactEmail = String(data.profile?.contactEmail || '').trim();
+              const contactPhone = String(data.profile?.contactPhone || '').trim();
+              const bio = String(data.profile?.bio || '').trim();
+              const hasInfo = Boolean(location || contactEmail || contactPhone || bio);
+              if (!hasInfo) return null;
+              return (
+                <div className="px-6 mb-8 space-y-3">
+                  <div className="glass-card rounded-3xl border border-white/10 p-4">
+                    <div className="text-white font-extrabold">Información</div>
+                    {location ? <div className="mt-2 text-sm text-slate-300">{location}</div> : null}
+                    {contactEmail ? <div className="mt-2 text-sm text-slate-300">{contactEmail}</div> : null}
+                    {contactPhone ? <div className="mt-1 text-sm text-slate-300">{contactPhone}</div> : null}
+                    {bio ? <div className="mt-3 text-sm text-slate-200 whitespace-pre-wrap">{bio}</div> : null}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="px-6 pb-8 mt-[-10px]">
+              <div className="text-slate-200 font-extrabold">Canciones</div>
+              {data.songs.length === 0 ? (
+                <div className="mt-2 text-slate-400 text-sm">Este perfil todavía no tiene canciones agregadas.</div>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {data.songs.map((s) => {
+                    const isThis = currentSong?.id === s.id;
+                    return (
+                      <div key={s.id} className="w-full glass-card rounded-2xl p-4 flex items-center gap-3">
+                        <button
+                          onClick={() => playSong(s).catch(() => {})}
+                          className="w-12 h-12 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0"
+                          aria-label="Reproducir"
+                        >
+                          {s.coverUrl ? <img src={String(s.coverUrl)} alt="" className="w-full h-full object-cover" /> : null}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <button onClick={() => playSong(s).catch(() => {})} className="text-left w-full">
+                            <div className="text-white font-extrabold truncate">{s.title || 'Pista sin título'}</div>
+                          </button>
+                          <div className="text-slate-400 text-xs truncate">RAMBER Tunes</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => shareSong({ id: s.id, title: s.title }).catch(() => {})}
+                          className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors shrink-0"
+                          aria-label="Compartir"
+                          title="Compartir"
+                        >
+                          <Share2 className="w-5 h-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => (isThis ? togglePlayPause().catch(() => {}) : playSong(s).catch(() => {}))}
+                          className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors shrink-0"
+                          aria-label="Reproducir"
+                          title="Reproducir"
+                        >
+                          {isThis && isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
       </div>
+
+      {showPlayer && currentSong ? (
+        <MiniPlayer
+          song={{ id: currentSong.id, title: currentSong.title, description: 'Disponible en RAMBER Tunes', audioUrl: currentSong.audioUrl, coverUrl: currentSong.coverUrl } as any}
+          isPlaying={isPlaying}
+          onPlayPause={() => togglePlayPause().catch(() => {})}
+          onClose={() => {
+            setShowPlayer(false);
+            setIsPlaying(false);
+            setPlayerTime(0);
+            setPlayerDuration(0);
+            const a = audioRef.current;
+            if (a) {
+              try {
+                a.pause();
+              } catch {
+              }
+              a.src = '';
+            }
+          }}
+          placement="default"
+          currentTime={playerTime}
+          duration={playerDuration}
+          onSeek={(t) => {
+            const a = audioRef.current;
+            if (!a) return;
+            const dur = Number.isFinite(Number(a.duration)) ? Number(a.duration) : 0;
+            const next = Math.max(0, Math.min(Number.isFinite(Number(t)) ? Number(t) : 0, dur));
+            try {
+              a.currentTime = next;
+            } catch {
+            }
+            setPlayerTime(next);
+          }}
+        />
+      ) : null}
+
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onEnded={() => setIsPlaying(false)}
+        onPause={() => setIsPlaying(false)}
+        onPlay={() => setIsPlaying(true)}
+        onTimeUpdate={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const t = Number(a.currentTime);
+          if (Number.isFinite(t)) setPlayerTime(t);
+        }}
+        onLoadedMetadata={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        onDurationChange={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        className="hidden"
+      />
     </div>
   );
 }
