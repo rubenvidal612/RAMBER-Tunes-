@@ -47,6 +47,23 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState('');
+  const [openVideoMenuId, setOpenVideoMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openVideoMenuId) {
+        setOpenVideoMenuId(null);
+      }
+    };
+
+    if (openVideoMenuId) {
+      document.addEventListener('click', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [openVideoMenuId]);
 
   type Folder = { id: string; name: string; createdAt: number };
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -434,6 +451,60 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     window.open(videoUrl, '_blank');
   };
 
+  const downloadVideoByTaskId = async (taskId: string) => {
+    const t = await getAccessToken();
+    if (!t.ok) {
+      alert(t.error || 'No se pudo iniciar sesión.');
+      return;
+    }
+    const tr = await fetch(`/api/suno/task?kind=mp4&taskId=${encodeURIComponent(taskId)}`, {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const tout = await tr.json().catch(() => ({}));
+    if (!tr.ok) {
+      alert((tout?.detail || tout?.error || 'No pude consultar el video.').toString());
+      return;
+    }
+
+    const provider = tout?.data;
+    const status = String(
+      provider?.data?.successFlag ||
+        provider?.data?.status ||
+        provider?.data?.data?.successFlag ||
+        provider?.data?.data?.status ||
+        ''
+    ).toUpperCase();
+
+    if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_MP4_FAILED' || status === 'CALLBACK_EXCEPTION') {
+      alert('No se pudo generar el video.');
+      return;
+    }
+    if (status !== 'SUCCESS') {
+      alert('Tu video aún se está procesando. Intenta de nuevo en un rato.');
+      return;
+    }
+
+    const videoUrl = String(
+      provider?.data?.response?.videoUrl ||
+        provider?.data?.data?.response?.videoUrl ||
+        provider?.data?.response?.video_url ||
+        provider?.data?.data?.response?.video_url ||
+        ''
+    ).trim();
+
+    if (!videoUrl) {
+      alert('El video terminó, pero no recibí el link.');
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = `video-${taskId.slice(0, 8)}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     if (activeTab !== 'video') return;
     loadVideos().catch(() => {});
@@ -644,7 +715,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
                         </div>
                       </div>
-                      <div className="shrink-0 flex items-center gap-2">
+                      <div className="shrink-0 flex items-center gap-2 relative">
                         <button
                           onClick={() => {
                             navigator.clipboard
@@ -662,6 +733,57 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         >
                           Abrir
                         </button>
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenVideoMenuId(openVideoMenuId === v.taskId ? null : v.taskId);
+                            }}
+                            className="bg-white/5 border border-white/10 rounded-full p-2 text-slate-200 hover:bg-white/10 transition-colors"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                          {openVideoMenuId === v.taskId && (
+                            <div className="absolute right-0 top-full mt-1 w-48 bg-gray-900 border border-white/10 rounded-xl shadow-lg z-50">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const videoUrl = `https://app.rambertunes.com/video/${v.taskId}`;
+                                  navigator.clipboard.writeText(videoUrl)
+                                    .then(() => alert('Enlace del video copiado para compartir.'))
+                                    .catch(() => alert('No pude copiar el enlace.'));
+                                  setOpenVideoMenuId(null);
+                                }}
+                                className="w-full px-4 py-3 text-left text-sm text-slate-200 hover:bg-white/10 flex items-center gap-2"
+                              >
+                                <Share2 className="w-4 h-4" />
+                                Compartir
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openVideoByTaskId(v.taskId).catch(() => {});
+                                  setOpenVideoMenuId(null);
+                                }}
+                                className="w-full px-4 py-3 text-left text-sm text-slate-200 hover:bg-white/10 flex items-center gap-2"
+                              >
+                                <Video className="w-4 h-4" />
+                                Visualizar
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadVideoByTaskId(v.taskId).catch(() => {});
+                                  setOpenVideoMenuId(null);
+                                }}
+                                className="w-full px-4 py-3 text-left text-sm text-slate-200 hover:bg-white/10 flex items-center gap-2"
+                              >
+                                <Download className="w-4 h-4" />
+                                Descargar
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
