@@ -176,7 +176,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const applyCrop = () => {
+  const applyCrop = async () => {
     if (!cropTarget || !cropFile || !cropUrl) return;
     const wrapW = Number(cropWrapSize.w || 0);
     const wrapH = Number(cropWrapSize.h || 0);
@@ -208,19 +208,25 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     };
     const rect = computeRect();
     if (cropTarget === 'avatar') {
+      const blob = await imageFileToWebpBlob(cropFile, { width: 256, height: 256, quality: 0.82, cropRect: rect });
+      const f = new File([blob], `avatar_${Date.now()}.webp`, { type: 'image/webp' });
+      const preview = URL.createObjectURL(blob);
       try {
         if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
       } catch {}
-      setAvatarFile(cropFile);
-      setAvatarPreviewUrl(cropUrl);
-      setAvatarCropRect(rect);
+      setAvatarFile(f);
+      setAvatarPreviewUrl(preview);
+      setAvatarCropRect(null);
     } else if (cropTarget === 'cover') {
+      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 180, quality: 0.78, cropRect: rect });
+      const f = new File([blob], `cover_${Date.now()}.webp`, { type: 'image/webp' });
+      const preview = URL.createObjectURL(blob);
       try {
         if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
       } catch {}
-      setCoverFile(cropFile);
-      setCoverPreviewUrl(cropUrl);
-      setCoverCropRect(rect);
+      setCoverFile(f);
+      setCoverPreviewUrl(preview);
+      setCoverCropRect(null);
     }
     cropDragRef.current.on = false;
     cropDragRef.current.pid = null;
@@ -384,11 +390,17 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       let nextCoverUrl = coverUrl;
 
       if (avatarFile) {
-        const blob = await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect });
+        const blob =
+          avatarFile.type === 'image/webp' && !avatarCropRect
+            ? avatarFile
+            : await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect });
         nextAvatarUrl = await uploadWebpToStorage(userId, 'avatar', blob);
       }
       if (coverFile) {
-        const blob = await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78, cropRect: coverCropRect });
+        const blob =
+          coverFile.type === 'image/webp' && !coverCropRect
+            ? coverFile
+            : await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.78, cropRect: coverCropRect });
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
@@ -755,7 +767,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 </button>
                 <button
                   type="button"
-                  onClick={applyCrop}
+                  onClick={() => applyCrop().catch(() => {})}
                   className="w-full bg-green-500 hover:bg-green-400 rounded-full h-[46px] text-black font-extrabold"
                 >
                   Usar
