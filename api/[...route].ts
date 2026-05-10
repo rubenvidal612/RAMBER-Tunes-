@@ -3576,6 +3576,66 @@ const uploadProfileImageHandler = (() => {
     res.end(JSON.stringify(body));
   }
 
+  function shouldModeratePath(path: string) {
+    const p = (path || "").toString().trim().replace(/^\/+/, "");
+    return p.startsWith("avatars/") || p.startsWith("profile-covers/");
+  }
+
+  function getGoogleVisionApiKey() {
+    return (
+      (process.env.GOOGLE_VISION_API_KEY || "").toString().trim() ||
+      (process.env.GOOGLE_CLOUD_VISION_API_KEY || "").toString().trim() ||
+      ""
+    );
+  }
+
+  function levelToScore(level: string) {
+    const v = (level || "").toString().trim().toUpperCase();
+    if (v === "VERY_LIKELY") return 5;
+    if (v === "LIKELY") return 4;
+    if (v === "POSSIBLE") return 3;
+    if (v === "UNLIKELY") return 2;
+    if (v === "VERY_UNLIKELY") return 1;
+    return 0;
+  }
+
+  async function moderateImageWithGoogleVision(buf: Buffer) {
+    const key = getGoogleVisionApiKey();
+    if (!key) return { ok: true as const, skipped: true as const };
+
+    const b64 = buf.toString("base64");
+    const body = {
+      requests: [
+        {
+          image: { content: b64 },
+          features: [{ type: "SAFE_SEARCH_DETECTION" }],
+        },
+      ],
+    };
+
+    const url = `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(key)}`;
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const out = await r.json().catch(() => ({} as any));
+    if (!r.ok) {
+      const msg = (out?.error?.message || out?.error?.status || out?.error || `HTTP ${r.status}`).toString();
+      return { ok: false as const, error: `Google Vision: ${msg}`.slice(0, 500) };
+    }
+
+    const ann = out?.responses?.[0]?.safeSearchAnnotation || {};
+    const adult = levelToScore(ann?.adult);
+    const racy = levelToScore(ann?.racy);
+    const violence = levelToScore(ann?.violence);
+    const ok = adult <= 3 && racy <= 3 && violence <= 3;
+    if (ok) return { ok: true as const, skipped: false as const };
+
+    const reasons: string[] = [];
+    if (adult >= 4) reasons.push("desnudos");
+    if (racy >= 4) reasons.push("contenido sexual");
+    if (violence >= 4) reasons.push("violencia");
+    const reason = reasons.length ? reasons.join(", ") : "contenido no permitido";
+    return { ok: false as const, error: `Imagen no permitida: ${reason}`.slice(0, 200) };
+  }
+
   function originFromReq(req: any) {
     const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
     const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
@@ -3637,6 +3697,16 @@ const uploadProfileImageHandler = (() => {
 
     try {
       const buf = Buffer.from(data);
+      if (shouldModeratePath(path) && buf.length > 0) {
+        const check = await moderateImageWithGoogleVision(buf);
+        if (!check.ok) {
+          const needsKey = String(check.error || "").toLowerCase().includes("api key");
+          const hint = needsKey
+            ? "Falta configurar GOOGLE_VISION_API_KEY en Vercel (Google Cloud Vision API)."
+            : "";
+          return send(res, 400, { error: check.error || "Imagen no permitida", hint: hint || undefined });
+        }
+      }
       await uploadToR2(path, buf, contentType);
       const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
       return send(res, 200, { ok: true, url, key: path });
