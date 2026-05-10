@@ -3040,21 +3040,18 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                 ) : null}
-                <div className="absolute inset-0 bg-black/35" />
-                <div className="relative p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
-                      {data.profile?.avatarUrl ? (
-                        <img src={r2ValueToProxyUrl(data.profile.avatarUrl)} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        (data.profile?.name || 'U').toString().trim().slice(0, 1).toUpperCase()
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="text-2xl font-bold text-white truncate">{(data.profile?.name || 'Usuario').toString()}</h2>
-                      {data.profile?.username ? <div className="text-xs text-slate-300/80 truncate">@{String(data.profile.username)}</div> : null}
-                    </div>
-                  </div>
+              </div>
+              <div className="mt-4 flex items-center gap-4 min-w-0">
+                <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
+                  {data.profile?.avatarUrl ? (
+                    <img src={r2ValueToProxyUrl(data.profile.avatarUrl)} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (data.profile?.name || 'U').toString().trim().slice(0, 1).toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-2xl font-bold text-white truncate">{(data.profile?.name || 'Usuario').toString()}</h2>
+                  {data.profile?.username ? <div className="text-xs text-slate-300/80 truncate">@{String(data.profile.username)}</div> : null}
                 </div>
               </div>
             </div>
