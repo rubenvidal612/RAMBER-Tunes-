@@ -3032,7 +3032,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
           <div className="w-full pt-4 relative z-10">
             <div className="px-6 mb-6">
               <div className="relative rounded-3xl overflow-hidden border border-white/10">
-                <div className="h-24 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
+                <div className="h-40 sm:h-44 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
                 {data.profile?.coverUrl ? (
                   <img
                     src={r2ValueToProxyUrl(data.profile.coverUrl)}
