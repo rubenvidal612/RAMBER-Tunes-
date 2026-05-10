@@ -133,6 +133,20 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     setCropShift({ x: 0, y: 0 });
     setCropImg({ w: 0, h: 0 });
     setCropOpen(true);
+    try {
+      const bitmap = await (async () => {
+        try {
+          return await createImageBitmap(file, { imageOrientation: 'from-image' } as any);
+        } catch {
+          return await createImageBitmap(file);
+        }
+      })();
+      setCropImg({ w: bitmap.width || 0, h: bitmap.height || 0 });
+      try {
+        (bitmap as any)?.close?.();
+      } catch {}
+      return;
+    } catch {}
     await new Promise<void>((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -223,49 +237,83 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     file: File,
     opts: { width: number; height: number; quality: number; cropRect?: { x: number; y: number; w: number; h: number } | null }
   ) => {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const i = new Image();
-      i.onload = () => {
-        URL.revokeObjectURL(url);
-        resolve(i);
-      };
-      i.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('No pude leer la imagen.'));
-      };
-      i.src = url;
-    });
-
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.floor(opts.width));
     canvas.height = Math.max(1, Math.floor(opts.height));
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('No pude preparar la imagen.');
 
-    const srcW = img.naturalWidth || img.width;
-    const srcH = img.naturalHeight || img.height;
     const dw = canvas.width;
     const dh = canvas.height;
 
+    const tryBitmap = async () => {
+      try {
+        return await createImageBitmap(file, { imageOrientation: 'from-image' } as any);
+      } catch {
+        return await createImageBitmap(file);
+      }
+    };
+
     const rect = opts.cropRect || null;
-    if (rect && srcW > 0 && srcH > 0) {
-      const rx = clamp(Number(rect.x || 0), 0, 1);
-      const ry = clamp(Number(rect.y || 0), 0, 1);
-      const rw = clamp(Number(rect.w || 1), 0.000001, 1);
-      const rh = clamp(Number(rect.h || 1), 0.000001, 1);
-      const sx = clamp(Math.round(rx * srcW), 0, Math.max(0, srcW - 1));
-      const sy = clamp(Math.round(ry * srcH), 0, Math.max(0, srcH - 1));
-      const sw = clamp(Math.round(rw * srcW), 1, Math.max(1, srcW - sx));
-      const sh = clamp(Math.round(rh * srcH), 1, Math.max(1, srcH - sy));
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
-    } else {
-      const scale = Math.max(dw / srcW, dh / srcH);
-      const rw = srcW * scale;
-      const rh = srcH * scale;
-      const dx = (dw - rw) / 2;
-      const dy = (dh - rh) / 2;
-      ctx.drawImage(img, dx, dy, rw, rh);
+    try {
+      const bitmap = await tryBitmap();
+      const srcW = bitmap.width || 0;
+      const srcH = bitmap.height || 0;
+      if (rect && srcW > 0 && srcH > 0) {
+        const rx = clamp(Number(rect.x || 0), 0, 1);
+        const ry = clamp(Number(rect.y || 0), 0, 1);
+        const rw = clamp(Number(rect.w || 1), 0.000001, 1);
+        const rh = clamp(Number(rect.h || 1), 0.000001, 1);
+        const sx = clamp(Math.round(rx * srcW), 0, Math.max(0, srcW - 1));
+        const sy = clamp(Math.round(ry * srcH), 0, Math.max(0, srcH - 1));
+        const sw = clamp(Math.round(rw * srcW), 1, Math.max(1, srcW - sx));
+        const sh = clamp(Math.round(rh * srcH), 1, Math.max(1, srcH - sy));
+        ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, dw, dh);
+      } else {
+        const scale = Math.max(dw / srcW, dh / srcH);
+        const rw = srcW * scale;
+        const rh = srcH * scale;
+        const dx = (dw - rw) / 2;
+        const dy = (dh - rh) / 2;
+        ctx.drawImage(bitmap, dx, dy, rw, rh);
+      }
+      try {
+        (bitmap as any)?.close?.();
+      } catch {}
+    } catch {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const i = new Image();
+        i.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(i);
+        };
+        i.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('No pude leer la imagen.'));
+        };
+        i.src = url;
+      });
+      const srcW = img.naturalWidth || img.width;
+      const srcH = img.naturalHeight || img.height;
+      if (rect && srcW > 0 && srcH > 0) {
+        const rx = clamp(Number(rect.x || 0), 0, 1);
+        const ry = clamp(Number(rect.y || 0), 0, 1);
+        const rw = clamp(Number(rect.w || 1), 0.000001, 1);
+        const rh = clamp(Number(rect.h || 1), 0.000001, 1);
+        const sx = clamp(Math.round(rx * srcW), 0, Math.max(0, srcW - 1));
+        const sy = clamp(Math.round(ry * srcH), 0, Math.max(0, srcH - 1));
+        const sw = clamp(Math.round(rw * srcW), 1, Math.max(1, srcW - sx));
+        const sh = clamp(Math.round(rh * srcH), 1, Math.max(1, srcH - sy));
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+      } else {
+        const scale = Math.max(dw / srcW, dh / srcH);
+        const rw = srcW * scale;
+        const rh = srcH * scale;
+        const dx = (dw - rw) / 2;
+        const dy = (dh - rh) / 2;
+        ctx.drawImage(img, dx, dy, rw, rh);
+      }
     }
 
     const blob = await new Promise<Blob>((resolve, reject) => {
