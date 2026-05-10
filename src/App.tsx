@@ -2644,15 +2644,8 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         ) : data ? (
           <div className="w-full">
             <div className="relative h-24 bg-gradient-to-r from-indigo-500/30 via-fuchsia-500/20 to-cyan-500/20">
-              {data.profile?.coverUrl ? (
-                <img
-                  src={data.profile.coverUrl}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover opacity-60 blur-md scale-110"
-                />
-              ) : null}
+              {data.profile?.coverUrl ? <img src={data.profile.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
               <div className="absolute inset-0 bg-black/40" />
-              {data.profile?.coverUrl ? <img src={data.profile.coverUrl} alt="" className="absolute inset-0 w-full h-full object-contain" /> : null}
             </div>
             <div className="px-5 max-w-[980px] mx-auto w-full">
               <div className="-mt-10 flex items-end justify-between gap-4">

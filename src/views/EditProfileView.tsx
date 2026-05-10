@@ -185,9 +185,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     const zoom = clamp(Number(cropZoom || 1), 1, 3);
     const computeRect = () => {
       if (!(wrapW > 0 && wrapH > 0 && iw > 0 && ih > 0)) return null;
-      const scale = cropTarget === 'cover'
-        ? Math.min(wrapW / iw, wrapH / ih) * zoom
-        : Math.max(wrapW / iw, wrapH / ih) * zoom;
+      const scale = Math.max(wrapW / iw, wrapH / ih) * zoom;
       const rw = iw * scale;
       const rh = ih * scale;
       const baseDx = (wrapW - rw) / 2;
@@ -220,7 +218,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       setAvatarPreviewUrl(preview);
       setAvatarCropRect(null);
     } else if (cropTarget === 'cover') {
-      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 180, quality: 0.82, cropRect: rect, fitMode: 'contain' } as any);
+      const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 180, quality: 0.82, cropRect: rect, fitMode: 'cover' } as any);
       const f = new File([blob], `cover_${Date.now()}.webp`, { type: 'image/webp' });
       const preview = URL.createObjectURL(blob);
       try {
@@ -417,7 +415,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         const blob =
           coverFile.type === 'image/webp' && !coverCropRect
             ? coverFile
-            : await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.82, cropRect: coverCropRect, fitMode: 'contain' } as any);
+            : await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.82, cropRect: coverCropRect, fitMode: 'cover' } as any);
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
@@ -468,7 +466,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
             disabled={isLoading || isSaving}
           >
             {(coverPreviewUrl || coverUrl) ? (
-              <img src={(coverPreviewUrl || coverUrl).toString()} alt="" className="absolute inset-0 w-full h-full object-contain" />
+              <img src={(coverPreviewUrl || coverUrl).toString()} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : null}
             <div className="absolute inset-0 bg-black/35" />
             <div className="absolute bottom-2 right-2 w-7 h-7 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10">
@@ -690,9 +688,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                   const iw = Number(cropImg.w || 0);
                   const ih = Number(cropImg.h || 0);
                   if (!(w > 0 && h > 0 && iw > 0 && ih > 0)) return;
-                  const baseScale = cropTarget === 'cover'
-                    ? Math.min(w / iw, h / ih) * clamp(cropZoom, 1, 3)
-                    : Math.max(w / iw, h / ih) * clamp(cropZoom, 1, 3);
+                  const baseScale = Math.max(w / iw, h / ih) * clamp(cropZoom, 1, 3);
                   const rw = iw * baseScale;
                   const rh = ih * baseScale;
                   const baseDx = (w - rw) / 2;
@@ -727,9 +723,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                   if (!cropUrl || !(w > 0 && h > 0 && iw > 0 && ih > 0)) {
                     return <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm font-semibold">Cargando…</div>;
                   }
-                  const scale = cropTarget === 'cover' 
-                    ? Math.min(w / iw, h / ih) * zoom
-                    : Math.max(w / iw, h / ih) * zoom;
+                  const scale = Math.max(w / iw, h / ih) * zoom;
                   const rw = iw * scale;
                   const rh = ih * scale;
                   const baseDx = (w - rw) / 2;
