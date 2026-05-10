@@ -3417,6 +3417,12 @@ const uploadProfileImageHandler = (() => {
     res.end(JSON.stringify(body));
   }
 
+  function originFromReq(req: any) {
+    const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+    return `${proto}://${host}`;
+  }
+
   function parseJsonBody(req: any) {
     if (typeof req.body === "string") {
       try {
@@ -3472,15 +3478,80 @@ const uploadProfileImageHandler = (() => {
 
     try {
       const buf = Buffer.from(data);
-      const audioUrl = await uploadToR2(path, buf, contentType);
-
-      return send(res, 200, { ok: true, url: audioUrl });
+      await uploadToR2(path, buf, contentType);
+      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
+      return send(res, 200, { ok: true, url });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
         ? "Falta configurar Cloudflare R2 en Vercel"
         : "Error subiendo imagen";
       return send(res, 500, { error: msg, detail: String(detail || "").slice(0, 1200) });
+    }
+  };
+})();
+
+const r2ObjectHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function guessContentTypeFromKey(key: string) {
+    const k = (key || "").toLowerCase();
+    if (k.endsWith(".webp")) return "image/webp";
+    if (k.endsWith(".png")) return "image/png";
+    if (k.endsWith(".jpg") || k.endsWith(".jpeg")) return "image/jpeg";
+    if (k.endsWith(".gif")) return "image/gif";
+    return "application/octet-stream";
+  }
+
+  async function readBodyToBuffer(body: any): Promise<Buffer> {
+    if (!body) return Buffer.from([]);
+    if (Buffer.isBuffer(body)) return body;
+    if (typeof body === "string") return Buffer.from(body);
+    if (body instanceof Uint8Array) return Buffer.from(body);
+    const chunks: Buffer[] = [];
+    for await (const chunk of body as any) {
+      if (!chunk) continue;
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const key = pickQuery(req, "key").trim().replace(/^\/+/, "");
+    if (!key) return send(res, 400, { error: "Falta key" });
+
+    const allowed = ["avatars/", "profile-covers/", "personas/", "covers/"];
+    if (!allowed.some((p) => key.startsWith(p))) return send(res, 404, { error: "No encontrado" });
+
+    try {
+      const env = getR2Env();
+      const client = await getR2Client();
+      const { GetObjectCommand } = await getR2AwsSdk();
+      const out = await client.send(
+        new GetObjectCommand({
+          Bucket: env.bucketName,
+          Key: key,
+        })
+      );
+      const ct = (out as any)?.ContentType ? String((out as any).ContentType) : guessContentTypeFromKey(key);
+      const buf = await readBodyToBuffer((out as any)?.Body);
+      if (!buf || buf.length === 0) return send(res, 404, { error: "No encontrado" });
+      res.statusCode = 200;
+      res.setHeader("content-type", ct);
+      res.setHeader("cache-control", "public, max-age=31536000, immutable");
+      res.end(buf);
+    } catch (e) {
+      return send(res, 404, { error: "No encontrado", detail: e instanceof Error ? e.message : String(e) });
     }
   };
 })();
@@ -5598,6 +5669,7 @@ export default async function handler(req: any, res: any) {
     if (head === "ai") return aiHandler(req, res);
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
+    if (head === "r2" && next === "object") return r2ObjectHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "share" && next === "profile") return shareProfileHandler(req, res);
     if (head === "profile") return profileHandler(req, res);

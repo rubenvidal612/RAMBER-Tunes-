@@ -69,6 +69,26 @@ export function ProfileView({
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
+  const normalizeR2PublicToProxy = (raw: any) => {
+    const url = (raw || '').toString().trim();
+    if (!url) return '';
+    try {
+      const u = new URL(url);
+      const host = (u.hostname || '').toLowerCase();
+      const isR2 =
+        host.includes('.r2.cloudflarestorage.com') ||
+        host.endsWith('.r2.dev') ||
+        host.includes('.r2') ||
+        url.includes('.r2.cloudflarestorage.com/');
+      if (!isR2) return url;
+      const key = (u.pathname || '').replace(/^\/+/, '');
+      if (!key) return url;
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(key)}`;
+    } catch {
+      return url;
+    }
+  };
+
   const applyUserToState = (user: any) => {
     const id = (user?.id || '').toString();
     const meta: any = user?.user_metadata || {};
@@ -79,8 +99,8 @@ export function ProfileView({
     setUsername(uname);
     setUserName(display);
     setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
-    setUserAvatarUrl((meta?.avatar_url || '').toString());
-    setUserCoverUrl((meta?.cover_url || '').toString());
+    setUserAvatarUrl(normalizeR2PublicToProxy(meta?.avatar_url || ''));
+    setUserCoverUrl(normalizeR2PublicToProxy(meta?.cover_url || ''));
     setCountry((meta?.country || '').toString());
     setCity((meta?.city || '').toString());
     setContactEmail((meta?.contact_email || '').toString());
@@ -232,7 +252,16 @@ export function ProfileView({
           <div className="relative p-4 flex items-center justify-between">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
-                {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="w-full h-full object-cover" /> : userInitial}
+                {userAvatarUrl ? (
+                  <img
+                    src={userAvatarUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={() => setUserAvatarUrl('')}
+                  />
+                ) : (
+                  userInitial
+                )}
               </div>
               <div className="min-w-0">
                 <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
