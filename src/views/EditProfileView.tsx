@@ -447,7 +447,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={() => coverInputRef.current?.click()}
-            className="w-full h-24 rounded-3xl bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10 relative flex items-center justify-center cursor-pointer overflow-hidden border border-white/10"
+            className="w-full h-40 rounded-3xl bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10 relative flex items-center justify-center cursor-pointer overflow-hidden border border-white/10"
             disabled={isLoading || isSaving}
           >
             {(coverPreviewUrl || coverUrl) ? (
@@ -650,7 +650,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
 
               <div
                 ref={cropWrapRef}
-                className={cropTarget === 'cover' ? 'w-full h-24 rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
+                className={cropTarget === 'cover' ? 'w-full h-40 rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative' : 'w-full max-w-[360px] mx-auto aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 touch-none select-none relative'}
                 onPointerDown={(e) => {
                   if (!cropUrl) return;
                   cropDragRef.current.on = true;
