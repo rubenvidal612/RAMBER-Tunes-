@@ -2427,7 +2427,41 @@ function SharedSongPage({ shareId }: { shareId: string }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
+  const [toast, setToast] = useState('');
+  const toastTimerRef = useRef<number | null>(null);
+  const [shareSheetUrl, setShareSheetUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 2600);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -2449,7 +2483,9 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           setError('Este link no tiene audio para reproducir.');
           return;
         }
-        setData({ id: (out?.id || shareId).toString(), title, audioUrl, coverUrl: coverUrl || undefined });
+        const id = (out?.id || shareId).toString();
+        const baseAudio = `/api/share/song/audio?id=${encodeURIComponent(id)}`;
+        setData({ id, title, audioUrl: baseAudio, coverUrl: coverUrl || undefined });
         setShowPlayer(true);
       })
       .catch(() => {
@@ -2496,10 +2532,20 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       setIsPlaying(true);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
-      const clean = String(msg || '').includes('supported sources')
-        ? 'No pude reproducir. Intenta de nuevo en unos segundos.'
-        : msg || 'No pude reproducir esta canción.';
-      alert(clean);
+      const isNoSource = String(msg || '').toLowerCase().includes('supported source');
+      if (isNoSource) {
+        try {
+          const bust = `${data.audioUrl}${data.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+          const bustSrc = new URL(bust, window.location.origin).toString();
+          a.src = '';
+          a.src = bustSrc;
+          await a.play();
+          setIsPlaying(true);
+          return;
+        } catch {
+        }
+      }
+      showToast('No pude reproducir. Intenta de nuevo en unos segundos.');
     }
   };
 
@@ -2512,12 +2558,12 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       }
     } catch {
     }
-    try {
-      await navigator.clipboard.writeText(url);
-      alert('Link copiado al portapapeles.');
-    } catch {
-      alert(url);
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      showToast('Link copiado.');
+      return;
     }
+    setShareSheetUrl(url);
   };
 
   return (
@@ -2556,19 +2602,6 @@ function SharedSongPage({ shareId }: { shareId: string }) {
                 className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm"
               >
                 Reintentar
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(shareId);
-                    alert('ID copiado.');
-                  } catch {
-                    alert(shareId);
-                  }
-                }}
-                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
-              >
-                <Copy className="w-4 h-4" /> Copiar ID
               </button>
             </div>
           </div>
@@ -2648,6 +2681,10 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
+        onError={() => {
+          setIsPlaying(false);
+          showToast('No se pudo cargar el audio.');
+        }}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
@@ -2668,6 +2705,49 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         }}
         className="hidden"
       />
+
+      {toast ? (
+        <div className="fixed left-0 right-0 bottom-[92px] z-[320] flex justify-center px-4 pointer-events-none">
+          <div className="bg-black/80 border border-white/10 backdrop-blur-md text-slate-100 text-sm font-semibold px-4 py-2 rounded-full">
+            {toast}
+          </div>
+        </div>
+      ) : null}
+
+      {shareSheetUrl ? (
+        <div className="fixed inset-0 z-[350] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold truncate">Compartir</div>
+              <button
+                onClick={() => setShareSheetUrl(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Copia este link:</div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-words text-slate-100 text-sm">{shareSheetUrl}</div>
+              <button
+                className="w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm"
+                onClick={async () => {
+                  const ok = await copyToClipboard(shareSheetUrl);
+                  if (ok) {
+                    setShareSheetUrl(null);
+                    showToast('Link copiado.');
+                  } else {
+                    showToast('No pude copiar. Mantén presionado el link para copiarlo.');
+                  }
+                }}
+              >
+                Copiar link
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2681,7 +2761,41 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
+  const [toast, setToast] = useState('');
+  const toastTimerRef = useRef<number | null>(null);
+  const [shareSheetUrl, setShareSheetUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 2600);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
 
   const r2ValueToProxyUrl = (raw: any) => {
     const url = (raw || '').toString().trim();
@@ -2763,21 +2877,18 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
       }
     } catch {
     }
-    try {
-      await navigator.clipboard.writeText(url);
-      alert('Link copiado al portapapeles.');
-    } catch {
-      alert(url);
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      showToast('Link copiado.');
+      return;
     }
+    setShareSheetUrl(url);
   };
 
   const shareSong = async (s: { id: string; title: string }) => {
     const title = (s?.title || 'Canción').toString().trim();
     const url = s?.id ? `${window.location.origin}/share/${encodeURIComponent(s.id)}` : '';
-    if (!url) {
-      alert('No hay link para compartir.');
-      return;
-    }
+    if (!url) return;
     try {
       if (navigator.share) {
         await navigator.share({ title: `RAMBER Tunes - ${title}`, url });
@@ -2785,12 +2896,12 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
       }
     } catch {
     }
-    try {
-      await navigator.clipboard.writeText(url);
-      alert('Link copiado al portapapeles.');
-    } catch {
-      alert(url);
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      showToast('Link copiado.');
+      return;
     }
+    setShareSheetUrl(url);
   };
 
   const ensureAudioSrc = (src: string) => {
@@ -2804,19 +2915,28 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
   };
 
   const playSong = async (s: { id: string; title: string; audioUrl: string; coverUrl?: string | null }) => {
-    if (!s?.audioUrl) return;
-    setCurrentSong(s);
+    if (!s?.id) return;
+    const baseAudio = `/api/share/song/audio?id=${encodeURIComponent(s.id)}`;
+    setCurrentSong({ id: s.id, title: s.title, audioUrl: baseAudio, coverUrl: s.coverUrl });
     setShowPlayer(true);
     try {
-      ensureAudioSrc(s.audioUrl);
+      ensureAudioSrc(baseAudio);
       await audioRef.current?.play();
       setIsPlaying(true);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
-      const clean = String(msg || '').includes('supported sources')
-        ? 'No pude reproducir. Intenta de nuevo en unos segundos.'
-        : msg || 'No pude reproducir esta canción.';
-      alert(clean);
+      const msg = e instanceof Error ? e.message : '';
+      const isNoSource = String(msg || '').toLowerCase().includes('supported source');
+      if (isNoSource) {
+        try {
+          const bust = `${baseAudio}&t=${Date.now()}`;
+          ensureAudioSrc(bust);
+          await audioRef.current?.play();
+          setIsPlaying(true);
+          return;
+        } catch {
+        }
+      }
+      showToast('No pude reproducir. Intenta de nuevo en unos segundos.');
     }
   };
 
@@ -2833,11 +2953,19 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
       await a.play();
       setIsPlaying(true);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
-      const clean = String(msg || '').includes('supported sources')
-        ? 'No pude reproducir. Intenta de nuevo en unos segundos.'
-        : msg || 'No pude reproducir esta canción.';
-      alert(clean);
+      const msg = e instanceof Error ? e.message : '';
+      const isNoSource = String(msg || '').toLowerCase().includes('supported source');
+      if (isNoSource) {
+        try {
+          const bust = `${currentSong.audioUrl}${currentSong.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+          ensureAudioSrc(bust);
+          await a.play();
+          setIsPlaying(true);
+          return;
+        } catch {
+        }
+      }
+      showToast('No pude reproducir. Intenta de nuevo en unos segundos.');
     }
   };
 
@@ -2877,19 +3005,6 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                 className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm"
               >
                 Reintentar
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(profileId);
-                    alert('ID copiado.');
-                  } catch {
-                    alert(profileId);
-                  }
-                }}
-                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
-              >
-                <Copy className="w-4 h-4" /> Copiar ID
               </button>
             </div>
           </div>
@@ -3063,6 +3178,10 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
+        onError={() => {
+          setIsPlaying(false);
+          showToast('No se pudo cargar el audio.');
+        }}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
@@ -3083,6 +3202,49 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         }}
         className="hidden"
       />
+
+      {toast ? (
+        <div className="fixed left-0 right-0 bottom-[92px] z-[320] flex justify-center px-4 pointer-events-none">
+          <div className="bg-black/80 border border-white/10 backdrop-blur-md text-slate-100 text-sm font-semibold px-4 py-2 rounded-full">
+            {toast}
+          </div>
+        </div>
+      ) : null}
+
+      {shareSheetUrl ? (
+        <div className="fixed inset-0 z-[350] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold truncate">Compartir</div>
+              <button
+                onClick={() => setShareSheetUrl(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Copia este link:</div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-words text-slate-100 text-sm">{shareSheetUrl}</div>
+              <button
+                className="w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm"
+                onClick={async () => {
+                  const ok = await copyToClipboard(shareSheetUrl);
+                  if (ok) {
+                    setShareSheetUrl(null);
+                    showToast('Link copiado.');
+                  } else {
+                    showToast('No pude copiar. Mantén presionado el link para copiarlo.');
+                  }
+                }}
+              >
+                Copiar link
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
