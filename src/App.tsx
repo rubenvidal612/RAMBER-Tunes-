@@ -2545,7 +2545,16 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         } catch {
         }
       }
-      showToast('No pude reproducir. Intenta de nuevo en unos segundos.');
+      try {
+        const bust = `${data.audioUrl}${data.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        const bustSrc = new URL(bust, window.location.origin).toString();
+        a.src = '';
+        a.src = bustSrc;
+        await a.play();
+        setIsPlaying(true);
+        return;
+      } catch {
+      }
     }
   };
 
@@ -2681,10 +2690,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
-        onError={() => {
-          setIsPlaying(false);
-          showToast('No se pudo cargar el audio.');
-        }}
+        onError={() => setIsPlaying(false)}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
@@ -2936,7 +2942,14 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         } catch {
         }
       }
-      showToast('No pude reproducir. Intenta de nuevo en unos segundos.');
+      try {
+        const bust = `${baseAudio}&t=${Date.now()}`;
+        ensureAudioSrc(bust);
+        await audioRef.current?.play();
+        setIsPlaying(true);
+        return;
+      } catch {
+      }
     }
   };
 
@@ -2965,7 +2978,14 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         } catch {
         }
       }
-      showToast('No pude reproducir. Intenta de nuevo en unos segundos.');
+      try {
+        const bust = `${currentSong.audioUrl}${currentSong.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        ensureAudioSrc(bust);
+        await a.play();
+        setIsPlaying(true);
+        return;
+      } catch {
+      }
     }
   };
 
@@ -3178,10 +3198,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
-        onError={() => {
-          setIsPlaying(false);
-          showToast('No se pudo cargar el audio.');
-        }}
+        onError={() => setIsPlaying(false)}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
