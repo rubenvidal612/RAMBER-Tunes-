@@ -487,6 +487,7 @@ export default function App() {
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string>('');
   const [isStartingLogin, setIsStartingLogin] = useState(false);
+  const [isAuthBooting, setIsAuthBooting] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
   const [profileFirstName, setProfileFirstName] = useState('');
@@ -708,13 +709,17 @@ export default function App() {
     showToast(msg);
   }, [creditsError]);
   useEffect(() => {
-    if (!supabaseBrowser) return;
+    if (!supabaseBrowser) {
+      setIsAuthBooting(false);
+      return;
+    }
     let alive = true;
     let signingOut = false;
     const setFromSession = (session: any) => {
       if (!session) {
         if (!alive) return;
         setAuthEmail('');
+        setIsAuthBooting(false);
         return;
       }
       const email = (session?.user?.email || '').toString().trim().toLowerCase();
@@ -727,10 +732,12 @@ export default function App() {
         } catch {}
         if (!alive) return;
         setAuthEmail('');
+        setIsAuthBooting(false);
         return;
       }
       if (!alive) return;
       setAuthEmail(email);
+      setIsAuthBooting(false);
     };
     supabaseBrowser.auth
       .getSession()
@@ -738,6 +745,7 @@ export default function App() {
       .catch(() => {
         if (!alive) return;
         setAuthEmail('');
+        setIsAuthBooting(false);
       });
     const { data: sub } = supabaseBrowser.auth.onAuthStateChange((_evt, session) => {
       setFromSession(session);
@@ -1823,29 +1831,41 @@ export default function App() {
   }
 
   if (!isAuthed) {
+    const showLoading = isAuthBooting || isStartingLogin;
     return (
       <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-center px-6 text-center bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
         <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
           R
         </div>
         <div className="mt-4 text-xl font-extrabold">RAMBER Tunes</div>
-        <div className="mt-2 text-sm text-slate-300">Para usar la app necesitas entrar con tu cuenta Gmail.</div>
-        <button
-          onClick={() => {
-            if (isStartingLogin) return;
-            setIsStartingLogin(true);
-            signInWithGoogle()
-              .then((r) => {
-                if (!r.ok) alert(r.error);
-              })
-              .catch(() => alert('No pude iniciar sesión con Google.'))
-              .finally(() => setIsStartingLogin(false));
-          }}
-          disabled={isStartingLogin || !supabaseBrowser}
-          className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
-        >
-          {isStartingLogin ? 'Abriendo Google…' : 'Entrar con Google'}
-        </button>
+        {showLoading ? (
+          <div className="mt-2 text-sm text-slate-300">Cargando…</div>
+        ) : (
+          <>
+            <div className="mt-2 text-sm text-slate-300">Para usar la app necesitas entrar con tu cuenta Gmail.</div>
+            <button
+              onClick={() => {
+                if (isStartingLogin) return;
+                setIsStartingLogin(true);
+                signInWithGoogle()
+                  .then((r) => {
+                    if (!r.ok) {
+                      alert(r.error);
+                      setIsStartingLogin(false);
+                    }
+                  })
+                  .catch(() => {
+                    alert('No pude iniciar sesión con Google.');
+                    setIsStartingLogin(false);
+                  });
+              }}
+              disabled={isStartingLogin || !supabaseBrowser}
+              className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
+            >
+              Entrar con Google
+            </button>
+          </>
+        )}
         {!supabaseBrowser && <div className="mt-3 text-xs text-red-200">Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY en Vercel (y redeploy).</div>}
       </div>
     );

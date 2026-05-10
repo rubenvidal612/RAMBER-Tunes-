@@ -158,8 +158,12 @@ export function ProfileView({
   }, []);
 
   const shareFromProfile = async () => {
-    const key = (username || userId || '').toString().trim();
-    const url = key ? `${window.location.origin}/u/${encodeURIComponent(key)}` : window.location.origin;
+    const uid = (userId || '').toString().trim();
+    if (!uid) {
+      alert('Aún estoy cargando tu perfil. Intenta de nuevo.');
+      return;
+    }
+    const url = `${window.location.origin}/u/${encodeURIComponent(uid)}`;
     try {
       if (navigator.share && url) {
         await navigator.share({

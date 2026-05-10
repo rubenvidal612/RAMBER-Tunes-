@@ -5,6 +5,7 @@ import { ensureAnonSession, supabaseBrowser } from '@/lib/supabaseBrowser';
 export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAvatarAutoSaving, setIsAvatarAutoSaving] = useState(false);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -250,6 +251,28 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       setAvatarFile(f);
       setAvatarPreviewUrl(preview);
       setAvatarCropRect(null);
+      try {
+        if (!supabaseBrowser) throw new Error('No se pudo iniciar sesión.');
+        setIsAvatarAutoSaving(true);
+        const { data } = await supabaseBrowser.auth.getUser();
+        const user = data?.user;
+        const userId = (user?.id || '').toString().trim();
+        if (!userId) throw new Error('No pude identificar tu usuario.');
+        const key = await uploadWebpToStorage(userId, 'avatar', blob);
+        const upd = await supabaseBrowser.auth.updateUser({ data: { avatar_url: key } });
+        if (upd.error) throw new Error(upd.error.message || 'No pude guardar tu foto.');
+        try {
+          URL.revokeObjectURL(preview);
+        } catch {}
+        setAvatarPreviewUrl('');
+        setAvatarUrl(key);
+        setAvatarFile(null);
+        setOriginalAvatarFile(null);
+      } catch (e: any) {
+        alert(e instanceof Error ? e.message : 'No pude guardar tu foto.');
+      } finally {
+        setIsAvatarAutoSaving(false);
+      }
     } else if (cropTarget === 'cover') {
       const blob = await imageFileToWebpBlob(cropFile, { width: 1610, height: 720, quality: 0.82, cropRect: rect, fitMode: 'cover' } as any);
       const f = new File([blob], `cover_${Date.now()}.webp`, { type: 'image/webp' });
@@ -536,7 +559,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 type="button"
                 onClick={() => avatarInputRef.current?.click()}
                 className="w-20 h-20 rounded-full bg-teal-600 flex items-center justify-center text-3xl font-bold text-white shadow-inner overflow-hidden"
-                disabled={isLoading || isSaving}
+                disabled={isLoading || isSaving || isAvatarAutoSaving}
               >
                 {(avatarPreviewUrl || avatarUrl) ? (
                   <img src={r2ValueToProxyUrl(avatarPreviewUrl || avatarUrl)} alt="" className="w-full h-full object-cover" />
@@ -550,6 +573,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
             </div>
             <span className="text-slate-400 text-xs font-medium leading-tight max-w-[180px]">(Tamaño recomendado: 88 × 88 px, máx. 500 KB)</span>
           </div>
+          {isAvatarAutoSaving ? <div className="mt-2 text-xs text-slate-300">Guardando tu foto…</div> : null}
           <input
             ref={avatarInputRef}
             type="file"
