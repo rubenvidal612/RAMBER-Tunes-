@@ -226,7 +226,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       } catch {}
       setCoverFile(f);
       setCoverPreviewUrl(preview);
-      setCoverCropRect(rect);
+      setCoverCropRect(null);
     }
     cropDragRef.current.on = false;
     cropDragRef.current.pid = null;
