@@ -3799,6 +3799,80 @@ const shareSongAudioHandler = (() => {
     return u;
   }
 
+  function extractR2KeyFromUrlOrKey(raw: string) {
+    const s = (raw || "").toString().trim();
+    if (!s) return "";
+    if (/^https?:\/\//i.test(s)) {
+      try {
+        const u = new URL(s);
+        const host = (u.hostname || "").toLowerCase();
+        const isR2 = host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+        if (!isR2) return "";
+        return (u.pathname || "").replace(/^\/+/, "");
+      } catch {
+        return "";
+      }
+    }
+    return s.includes("/") ? s.replace(/^\/+/, "") : "";
+  }
+
+  async function serveR2Object(req: any, res: any, key: string) {
+    const env = getR2Env();
+    const client = await getR2Client();
+    const { GetObjectCommand } = await getR2AwsSdk();
+    const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
+    const command = new GetObjectCommand({
+      Bucket: env.bucketName,
+      Key: key,
+      ...(range ? { Range: range } : {}),
+    });
+    const out: any = await client.send(command);
+
+    const isPartial = Boolean(range);
+    res.statusCode = isPartial ? 206 : 200;
+    res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-headers", "range, content-type");
+    res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type");
+    res.setHeader("accept-ranges", "bytes");
+
+    const ct = typeof out?.ContentType === "string" && out.ContentType.trim() ? out.ContentType.trim() : "audio/mpeg";
+    res.setHeader("content-type", ct);
+    if (out?.ContentLength != null) res.setHeader("content-length", String(out.ContentLength));
+    if (out?.ContentRange) res.setHeader("content-range", String(out.ContentRange));
+
+    const method = (req.method || "").toUpperCase();
+    if (method === "HEAD") {
+      res.end();
+      return;
+    }
+
+    const body = out?.Body;
+    if (body?.pipe) {
+      body.pipe(res);
+      return;
+    }
+    if (body?.transformToWebStream) {
+      try {
+        const mod = await import("stream");
+        const Readable = (mod as any).Readable;
+        if (Readable?.fromWeb) {
+          Readable.fromWeb(body.transformToWebStream()).pipe(res);
+          return;
+        }
+      } catch {
+      }
+    }
+    const ab = await (body?.arrayBuffer?.() ?? Promise.resolve(null)).catch(() => null);
+    if (!ab) {
+      res.statusCode = 502;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "No pude leer el audio" }));
+      return;
+    }
+    res.end(Buffer.from(ab));
+  }
+
   function isAudioLikeContentType(ct: string) {
     const v = (ct || "").toString().trim().toLowerCase();
     if (!v) return false;
@@ -3966,6 +4040,15 @@ const shareSongAudioHandler = (() => {
       const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
       let audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
       const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
+      const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
+      if (r2Key) {
+        try {
+          await serveR2Object(req, res, r2Key);
+          return;
+        } catch (e) {
+          return sendJson(res, 502, { error: "No pude cargar el audio", detail: e instanceof Error ? e.message : String(e) });
+        }
+      }
 
       const shouldRefresh = !audioUrl || looksExpiringUrl(audioUrl) || /^http:\/\//i.test(audioUrl);
       if (shouldRefresh && sunoTaskId) {
