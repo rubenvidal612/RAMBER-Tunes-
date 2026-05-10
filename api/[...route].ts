@@ -3761,9 +3761,375 @@ const shareHandler = (() => {
       const coverUrl = typeof (data as any).cover_url === "string" ? (data as any).cover_url.trim() : "";
       if (!audioUrl) return send(res, 404, { error: "No hay audio para compartir" });
 
-      return send(res, 200, { id: String((data as any).id || ""), title, audioUrl, coverUrl });
+      const encId = encodeURIComponent(String((data as any).id || id));
+      const audioProxy = `/api/share/song/audio?id=${encId}`;
+      const coverProxy = coverUrl ? `/api/share/song/cover?id=${encId}` : "";
+      return send(res, 200, { id: String((data as any).id || ""), title, audioUrl: audioProxy, coverUrl: coverProxy || "" });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const shareSongAudioHandler = (() => {
+  function sendJson(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function looksExpiringUrl(url: string) {
+    const u = (url || "").toString();
+    if (!u) return false;
+    if (!u.includes("?")) return false;
+    return /[?&](x-amz-signature|x-amz-credential|x-amz-algorithm|x-amz-expires|x-amz-date|expires|signature|token)=/i.test(u);
+  }
+
+  function normalizeHttpUrl(url: string) {
+    const u = (url || "").toString().trim();
+    if (!u) return "";
+    if (/^https:\/\//i.test(u)) return u;
+    if (/^http:\/\//i.test(u)) return u.replace(/^http:\/\//i, "https://");
+    if (/^\/\//.test(u)) return `https:${u}`;
+    return u;
+  }
+
+  function extractBestTrackInfo(providerRaw: any, title: string) {
+    const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+    const d = providerRaw?.data || providerRaw?.data?.data || providerRaw;
+    const candidates: any[] = [];
+    if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+    if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+    if (Array.isArray(d?.response)) candidates.push(d.response);
+    if (Array.isArray(d?.data)) candidates.push(d.data);
+    if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+    const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+
+    const pickAudioUrl = (track: any) => {
+      const raw =
+        track?.audio_url ||
+        track?.audioUrl ||
+        track?.streamAudioUrl ||
+        track?.stream_audio_url ||
+        track?.stream_url ||
+        track?.url ||
+        track?.audio ||
+        "";
+      const s = cleanStr(raw);
+      return /^https?:\/\//i.test(s) || /^\/\//.test(s) ? s : "";
+    };
+    const pickCoverUrl = (track: any) => {
+      const raw =
+        track?.image_url ||
+        track?.imageUrl ||
+        track?.cover_url ||
+        track?.coverUrl ||
+        track?.img_url ||
+        track?.imgUrl ||
+        "";
+      const s = cleanStr(raw);
+      return /^https?:\/\//i.test(s) || /^\/\//.test(s) ? s : "";
+    };
+    const pickAudioId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || "");
+
+    const tracks = (Array.isArray(list) ? list : [])
+      .map((track: any) => ({ audioUrl: pickAudioUrl(track), coverUrl: pickCoverUrl(track), audioId: pickAudioId(track) }))
+      .filter((x: any) => x.audioUrl || x.coverUrl);
+
+    if (tracks.length === 0) return { audioUrl: "", coverUrl: "", audioId: "" };
+    const wantsB = /\sB$/i.test((title || "").toString().trim());
+    const chosen = wantsB && tracks.length > 1 ? tracks[1] : tracks[0];
+    return { audioUrl: cleanStr(chosen.audioUrl), coverUrl: cleanStr(chosen.coverUrl), audioId: cleanStr(chosen.audioId) };
+  }
+
+  function sunoErrorMessagePublic(data: any, fallback: string) {
+    const msg =
+      (typeof data?.message === "string" && data.message) ||
+      (typeof data?.error === "string" && data.error) ||
+      (typeof data?.msg === "string" && data.msg) ||
+      fallback;
+    return String(msg);
+  }
+
+  async function sunoFetchJsonPublic(path: string, init?: RequestInit) {
+    const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+    const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
+    const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+
+    const headers = new Headers(init?.headers);
+    if (!headers.has("content-type")) headers.set("content-type", "application/json");
+    if (apiKey && !headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
+
+    const url = new URL(path, base).toString();
+    const res = await fetch(url, { ...init, headers });
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    return { res, data, text };
+  }
+
+  async function resolveFreshFromSuno(taskId: string, title: string) {
+    const enc = encodeURIComponent(taskId);
+    const paths = [
+      `/api/v1/generate/record-info?taskId=${enc}`,
+      `/api/v1/suno/generate/record-info?taskId=${enc}`,
+      `/api/v1/task/${enc}`,
+      `/api/v1/suno/task/${enc}`,
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      const r = await sunoFetchJsonPublic(p, { method: "GET" });
+      last = r;
+      if (r?.res?.status !== 404) break;
+    }
+    const { res: r, data, text } = last || {};
+    if (!r) return { ok: false as const, error: "No pude contactar al proveedor" };
+    if (!r.ok) {
+      const msg = sunoErrorMessagePublic(data, text || `HTTP ${r.status}`);
+      return { ok: false as const, error: String(msg).slice(0, 1200) };
+    }
+    const code = Number(data?.code);
+    if (code && code !== 200) {
+      const msg = sunoErrorMessagePublic(data, "Error del proveedor");
+      return { ok: false as const, error: String(msg).slice(0, 1200) };
+    }
+    const best = extractBestTrackInfo(data, title || "");
+    const audioUrl = normalizeHttpUrl(best.audioUrl);
+    const coverUrl = normalizeHttpUrl(best.coverUrl);
+    return { ok: true as const, audioUrl, coverUrl, audioId: best.audioId || "" };
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return sendJson(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return sendJson(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return sendJson(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const { data, error } = await admin
+        .from("library_items")
+        .select("id, title, audio_url, cover_url, deleted_at, type, suno_task_id, suno_audio_id")
+        .eq("id", id.slice(0, 200))
+        .eq("type", "song")
+        .maybeSingle();
+      if (error) return sendJson(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (!data || (data as any).deleted_at) return sendJson(res, 404, { error: "No encontrada" });
+
+      const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
+      let audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
+      const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
+
+      const shouldRefresh = !audioUrl || looksExpiringUrl(audioUrl) || /^http:\/\//i.test(audioUrl);
+      if (shouldRefresh && sunoTaskId) {
+        const fresh = await resolveFreshFromSuno(sunoTaskId, title || "");
+        if (fresh.ok && fresh.audioUrl) {
+          audioUrl = fresh.audioUrl;
+          const patch: any = { audio_url: audioUrl.slice(0, 2000) };
+          if (fresh.audioId) patch.suno_audio_id = fresh.audioId.slice(0, 200);
+          if (fresh.coverUrl && !(typeof (data as any).cover_url === "string" && (data as any).cover_url.trim())) {
+            patch.cover_url = fresh.coverUrl.slice(0, 2000);
+          }
+          await admin.from("library_items").update(patch).eq("id", id.slice(0, 200)).eq("type", "song");
+        }
+      }
+
+      audioUrl = normalizeHttpUrl(audioUrl);
+      if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return sendJson(res, 404, { error: "No hay audio para compartir" });
+
+      res.statusCode = 302;
+      res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+      res.setHeader("location", audioUrl);
+      res.end();
+    } catch (e) {
+      return sendJson(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const shareSongCoverHandler = (() => {
+  function sendJson(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function looksExpiringUrl(url: string) {
+    const u = (url || "").toString();
+    if (!u) return false;
+    if (!u.includes("?")) return false;
+    return /[?&](x-amz-signature|x-amz-credential|x-amz-algorithm|x-amz-expires|x-amz-date|expires|signature|token)=/i.test(u);
+  }
+
+  function normalizeHttpUrl(url: string) {
+    const u = (url || "").toString().trim();
+    if (!u) return "";
+    if (/^https:\/\//i.test(u)) return u;
+    if (/^http:\/\//i.test(u)) return u.replace(/^http:\/\//i, "https://");
+    if (/^\/\//.test(u)) return `https:${u}`;
+    return u;
+  }
+
+  function extractBestCover(providerRaw: any, title: string) {
+    const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+    const d = providerRaw?.data || providerRaw?.data?.data || providerRaw;
+    const candidates: any[] = [];
+    if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+    if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+    if (Array.isArray(d?.response)) candidates.push(d.response);
+    if (Array.isArray(d?.data)) candidates.push(d.data);
+    if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+    const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+
+    const pickCoverUrl = (track: any) => {
+      const raw =
+        track?.image_url ||
+        track?.imageUrl ||
+        track?.cover_url ||
+        track?.coverUrl ||
+        track?.img_url ||
+        track?.imgUrl ||
+        "";
+      const s = cleanStr(raw);
+      return /^https?:\/\//i.test(s) || /^\/\//.test(s) ? s : "";
+    };
+
+    const covers = (Array.isArray(list) ? list : []).map((t: any) => cleanStr(pickCoverUrl(t))).filter(Boolean);
+    if (covers.length === 0) return "";
+    const wantsB = /\sB$/i.test((title || "").toString().trim());
+    return wantsB && covers.length > 1 ? covers[1] : covers[0];
+  }
+
+  function sunoErrorMessagePublic(data: any, fallback: string) {
+    const msg =
+      (typeof data?.message === "string" && data.message) ||
+      (typeof data?.error === "string" && data.error) ||
+      (typeof data?.msg === "string" && data.msg) ||
+      fallback;
+    return String(msg);
+  }
+
+  async function sunoFetchJsonPublic(path: string, init?: RequestInit) {
+    const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+    const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
+    const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+
+    const headers = new Headers(init?.headers);
+    if (!headers.has("content-type")) headers.set("content-type", "application/json");
+    if (apiKey && !headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
+
+    const url = new URL(path, base).toString();
+    const res = await fetch(url, { ...init, headers });
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    return { res, data, text };
+  }
+
+  async function resolveFreshCoverFromSuno(taskId: string, title: string) {
+    const enc = encodeURIComponent(taskId);
+    const paths = [
+      `/api/v1/generate/record-info?taskId=${enc}`,
+      `/api/v1/suno/generate/record-info?taskId=${enc}`,
+      `/api/v1/task/${enc}`,
+      `/api/v1/suno/task/${enc}`,
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      const r = await sunoFetchJsonPublic(p, { method: "GET" });
+      last = r;
+      if (r?.res?.status !== 404) break;
+    }
+    const { res: r, data, text } = last || {};
+    if (!r) return { ok: false as const, error: "No pude contactar al proveedor" };
+    if (!r.ok) {
+      const msg = sunoErrorMessagePublic(data, text || `HTTP ${r.status}`);
+      return { ok: false as const, error: String(msg).slice(0, 1200) };
+    }
+    const code = Number(data?.code);
+    if (code && code !== 200) {
+      const msg = sunoErrorMessagePublic(data, "Error del proveedor");
+      return { ok: false as const, error: String(msg).slice(0, 1200) };
+    }
+    const coverUrl = normalizeHttpUrl(extractBestCover(data, title || ""));
+    return { ok: true as const, coverUrl };
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return sendJson(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return sendJson(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return sendJson(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const { data, error } = await admin
+        .from("library_items")
+        .select("id, title, cover_url, deleted_at, type, suno_task_id")
+        .eq("id", id.slice(0, 200))
+        .eq("type", "song")
+        .maybeSingle();
+      if (error) return sendJson(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (!data || (data as any).deleted_at) return sendJson(res, 404, { error: "No encontrada" });
+
+      const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
+      let coverUrl = typeof (data as any).cover_url === "string" ? (data as any).cover_url.trim() : "";
+      const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
+
+      const shouldRefresh = !coverUrl || looksExpiringUrl(coverUrl) || /^http:\/\//i.test(coverUrl);
+      if (shouldRefresh && sunoTaskId) {
+        const fresh = await resolveFreshCoverFromSuno(sunoTaskId, title || "");
+        if (fresh.ok && fresh.coverUrl) {
+          coverUrl = fresh.coverUrl;
+          await admin
+            .from("library_items")
+            .update({ cover_url: coverUrl.slice(0, 2000) })
+            .eq("id", id.slice(0, 200))
+            .eq("type", "song");
+        }
+      }
+
+      coverUrl = normalizeHttpUrl(coverUrl);
+      if (!coverUrl || !/^https?:\/\//i.test(coverUrl)) return sendJson(res, 404, { error: "No hay portada para compartir" });
+
+      res.statusCode = 302;
+      res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+      res.setHeader("location", coverUrl);
+      res.end();
+    } catch (e) {
+      return sendJson(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
   };
 })();
@@ -3876,8 +4242,8 @@ const shareProfileHandler = (() => {
           .map((x: any) => ({
             id: String(x?.id || ""),
             title: String(x?.title || "Canción").trim(),
-            audioUrl: String(x?.audio_url || "").trim(),
-            coverUrl: String(x?.cover_url || "").trim() || null,
+            audioUrl: `/api/share/song/audio?id=${encodeURIComponent(String(x?.id || ""))}`,
+            coverUrl: String(x?.cover_url || "").trim() ? `/api/share/song/cover?id=${encodeURIComponent(String(x?.id || ""))}` : null,
           }))
           .filter((x: any) => x.id && x.audioUrl);
       }
@@ -5659,6 +6025,7 @@ export default async function handler(req: any, res: any) {
     const isApi = parts[0] === "api";
     const head = isApi ? parts[1] : parts[0];
     const next = isApi ? parts[2] : parts[1];
+    const third = isApi ? parts[3] : parts[2];
 
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
@@ -5670,6 +6037,8 @@ export default async function handler(req: any, res: any) {
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
     if (head === "r2" && next === "object") return r2ObjectHandler(req, res);
+    if (head === "share" && next === "song" && third === "audio") return shareSongAudioHandler(req, res);
+    if (head === "share" && next === "song" && third === "cover") return shareSongCoverHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "share" && next === "profile") return shareProfileHandler(req, res);
     if (head === "profile") return profileHandler(req, res);
