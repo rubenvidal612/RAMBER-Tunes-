@@ -60,7 +60,9 @@ export function ProfileView({
   const [userInitial, setUserInitial] = useState('U');
   const [username, setUsername] = useState('');
   const [userAvatarUrl, setUserAvatarUrl] = useState('');
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [userCoverUrl, setUserCoverUrl] = useState('');
+  const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [country, setCountry] = useState('');
   const [city, setCity] = useState('');
   const [contactEmail, setContactEmail] = useState('');
@@ -72,6 +74,11 @@ export function ProfileView({
   const normalizeR2PublicToProxy = (raw: any) => {
     const url = (raw || '').toString().trim();
     if (!url) return '';
+    const keyish = url.replace(/^\/+/, '');
+    const allowed = ['avatars/', 'profile-covers/', 'personas/', 'covers/'];
+    if (!/^https?:\/\//i.test(url) && allowed.some((p) => keyish.startsWith(p))) {
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(keyish)}`;
+    }
     try {
       const u = new URL(url);
       const host = (u.hostname || '').toLowerCase();
@@ -99,6 +106,8 @@ export function ProfileView({
     setUsername(uname);
     setUserName(display);
     setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
+    setAvatarLoadFailed(false);
+    setCoverLoadFailed(false);
     setUserAvatarUrl(normalizeR2PublicToProxy(meta?.avatar_url || ''));
     setUserCoverUrl(normalizeR2PublicToProxy(meta?.cover_url || ''));
     setCountry((meta?.country || '').toString());
@@ -247,17 +256,24 @@ export function ProfileView({
       <div className="px-6 mb-6">
         <div className="relative rounded-3xl overflow-hidden border border-white/10">
           <div className="h-24 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
-          {userCoverUrl ? <img src={userCoverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" onError={() => setUserCoverUrl('')} /> : null}
+          {userCoverUrl && !coverLoadFailed ? (
+            <img
+              src={userCoverUrl}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={() => setCoverLoadFailed(true)}
+            />
+          ) : null}
           <div className="absolute inset-0 bg-black/35" />
           <div className="relative p-4 flex items-center justify-between">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
-                {userAvatarUrl ? (
+                {userAvatarUrl && !avatarLoadFailed ? (
                   <img
                     src={userAvatarUrl}
                     alt=""
                     className="w-full h-full object-cover"
-                    onError={() => setUserAvatarUrl('')}
+                    onError={() => setAvatarLoadFailed(true)}
                   />
                 ) : (
                   userInitial

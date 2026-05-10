@@ -45,6 +45,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [videoTasks, setVideoTasks] = useState<Array<{ taskId: string; createdAt?: string }>>([]);
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
+  const [videoTitles, setVideoTitles] = useState<Record<string, string>>({});
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState('');
   const [openVideoMenuId, setOpenVideoMenuId] = useState<string | null>(null);
@@ -363,30 +364,88 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const pickMp4ThumbUrl = (provider: any) => {
     const a = provider?.data?.response || {};
     const b = provider?.data?.data?.response || {};
+    const c = provider?.data?.data?.data?.response || {};
     return pickFirst(
       a?.thumbnailUrl,
       b?.thumbnailUrl,
+      c?.thumbnailUrl,
       a?.thumbnail_url,
       b?.thumbnail_url,
+      c?.thumbnail_url,
       a?.posterUrl,
       b?.posterUrl,
+      c?.posterUrl,
       a?.poster_url,
       b?.poster_url,
+      c?.poster_url,
       a?.imageUrl,
       b?.imageUrl,
+      c?.imageUrl,
       a?.image_url,
       b?.image_url,
+      c?.image_url,
       a?.coverUrl,
       b?.coverUrl,
+      c?.coverUrl,
       a?.cover_url,
-      b?.cover_url
+      b?.cover_url,
+      c?.cover_url
+    );
+  };
+
+  const pickMp4AudioId = (provider: any) => {
+    const a = provider?.data?.response || {};
+    const b = provider?.data?.data?.response || {};
+    const c = provider?.data?.data?.data?.response || {};
+    return pickFirst(
+      a?.audioId,
+      b?.audioId,
+      c?.audioId,
+      a?.audio_id,
+      b?.audio_id,
+      c?.audio_id,
+      a?.sourceAudioId,
+      b?.sourceAudioId,
+      c?.sourceAudioId,
+      a?.source_audio_id,
+      b?.source_audio_id,
+      c?.source_audio_id,
+      a?.musicId,
+      b?.musicId,
+      c?.musicId,
+      a?.music_id,
+      b?.music_id,
+      c?.music_id
+    );
+  };
+
+  const pickMp4Title = (provider: any) => {
+    const a = provider?.data?.response || {};
+    const b = provider?.data?.data?.response || {};
+    const c = provider?.data?.data?.data?.response || {};
+    return pickFirst(
+      a?.title,
+      b?.title,
+      c?.title,
+      a?.songTitle,
+      b?.songTitle,
+      c?.songTitle,
+      a?.song_title,
+      b?.song_title,
+      c?.song_title,
+      a?.musicTitle,
+      b?.musicTitle,
+      c?.musicTitle,
+      a?.music_title,
+      b?.music_title,
+      c?.music_title
     );
   };
 
   const preloadVideoThumbs = async (tasks: Array<{ taskId: string }>) => {
     const ids = tasks
       .map((x) => x.taskId)
-      .filter((id) => id && !videoThumbs[id])
+      .filter((id) => id && (!videoThumbs[id] || !videoTitles[id]))
       .slice(0, 12);
     if (ids.length === 0) return;
 
@@ -404,6 +463,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         const thumbUrl = pickMp4ThumbUrl(provider);
         if (thumbUrl) {
           setVideoThumbs((prev) => (prev[id] ? prev : { ...prev, [id]: thumbUrl }));
+        }
+
+        let title = '';
+        const audioId = pickMp4AudioId(provider);
+        if (audioId) {
+          const found = (Array.isArray(canciones) ? canciones : []).find((s) => String((s as any)?.sunoAudioId || '').trim() === String(audioId || '').trim());
+          title = String((found as any)?.title || '').trim();
+        }
+        if (!title) title = String(pickMp4Title(provider) || '').trim();
+        if (title) {
+          setVideoTitles((prev) => (prev[id] === title ? prev : { ...prev, [id]: title }));
         }
       } catch {
       }
@@ -585,7 +655,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   useEffect(() => {
     if (activeTab !== 'video') return;
     preloadVideoThumbs(videoTasks).catch(() => {});
-  }, [activeTab, videoTasks]);
+  }, [activeTab, videoTasks, canciones]);
 
   useEffect(() => {
     try {
@@ -767,6 +837,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                   })();
                   const thumb = normalizePublicUrl((videoThumbs[v.taskId] || '').toString().trim());
+                  const title = (videoTitles[v.taskId] || '').toString().trim() || 'Video';
                   return (
                     <div key={v.taskId} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center justify-between gap-3">
                       <button
@@ -783,7 +854,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-white font-bold truncate">Video</div>
+                          <div className="text-white font-bold truncate">{title}</div>
                           {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
                         </div>
                       </button>
