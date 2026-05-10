@@ -2475,7 +2475,11 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       await a.play();
       setIsPlaying(true);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'No pude reproducir esta canción.');
+      const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
+      const clean = String(msg || '').includes('supported sources')
+        ? 'No pude reproducir. Intenta de nuevo en unos segundos.'
+        : msg || 'No pude reproducir esta canción.';
+      alert(clean);
     }
   };
 
@@ -2570,7 +2574,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
                       setShowPlayer(true);
                       await togglePlay();
                     }}
-                    className="w-full h-[46px] rounded-full bg-white text-black font-extrabold"
+                    className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold"
                   >
                     {isPlaying ? 'Pausar' : 'Reproducir'}
                   </button>

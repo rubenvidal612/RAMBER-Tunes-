@@ -94,6 +94,32 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       .replace(/[^a-z0-9_]/g, '')
       .slice(0, 20);
 
+  const r2ValueToProxyUrl = (raw: any) => {
+    const url = (raw || '').toString().trim();
+    if (!url) return '';
+    if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+    const keyish = url.replace(/^\/+/, '');
+    const allowed = ['avatars/', 'profile-covers/', 'personas/', 'covers/'];
+    if (!/^https?:\/\//i.test(url) && allowed.some((p) => keyish.startsWith(p))) {
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(keyish)}`;
+    }
+    try {
+      const u = new URL(url);
+      const host = (u.hostname || '').toLowerCase();
+      const isR2 =
+        host.includes('.r2.cloudflarestorage.com') ||
+        host.endsWith('.r2.dev') ||
+        host.includes('.r2') ||
+        url.includes('.r2.cloudflarestorage.com/');
+      if (!isR2) return url;
+      const key = (u.pathname || '').replace(/^\/+/, '');
+      if (!key) return url;
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(key)}`;
+    } catch {
+      return url;
+    }
+  };
+
   const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
   useEffect(() => {
@@ -382,8 +408,9 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       throw new Error(msg || 'No pude subir la imagen.');
     }
 
-    const { url } = await response.json();
-    return url;
+    const out: any = await response.json().catch(() => ({} as any));
+    const key = typeof out?.key === 'string' ? out.key.trim() : '';
+    return key || path;
   };
 
   const save = async () => {
@@ -475,7 +502,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
             disabled={isLoading || isSaving}
           >
             {(coverPreviewUrl || coverUrl) ? (
-              <img src={(coverPreviewUrl || coverUrl).toString()} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src={r2ValueToProxyUrl(coverPreviewUrl || coverUrl)} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : null}
             <div className="absolute inset-0 bg-black/35" />
             <div className="absolute bottom-2 right-2 w-7 h-7 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10">
@@ -512,7 +539,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
                 disabled={isLoading || isSaving}
               >
                 {(avatarPreviewUrl || avatarUrl) ? (
-                  <img src={(avatarPreviewUrl || avatarUrl).toString()} alt="" className="w-full h-full object-cover" />
+                  <img src={r2ValueToProxyUrl(avatarPreviewUrl || avatarUrl)} alt="" className="w-full h-full object-cover" />
                 ) : (
                   <span>{(name || 'U').toString().trim().slice(0, 1).toUpperCase()}</span>
                 )}

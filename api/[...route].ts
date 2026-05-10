@@ -3480,7 +3480,7 @@ const uploadProfileImageHandler = (() => {
       const buf = Buffer.from(data);
       await uploadToR2(path, buf, contentType);
       const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
-      return send(res, 200, { ok: true, url });
+      return send(res, 200, { ok: true, url, key: path });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
@@ -3799,6 +3799,15 @@ const shareSongAudioHandler = (() => {
     return u;
   }
 
+  function isAudioLikeContentType(ct: string) {
+    const v = (ct || "").toString().trim().toLowerCase();
+    if (!v) return false;
+    if (v.startsWith("audio/")) return true;
+    if (v === "application/octet-stream") return true;
+    if (v.includes("mpeg") || v.includes("mp3") || v.includes("mp4") || v.includes("aac") || v.includes("wav") || v.includes("ogg")) return true;
+    return false;
+  }
+
   function extractBestTrackInfo(providerRaw: any, title: string) {
     const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
     const d = providerRaw?.data || providerRaw?.data?.data || providerRaw;
@@ -3908,8 +3917,30 @@ const shareSongAudioHandler = (() => {
     return { ok: true as const, audioUrl, coverUrl, audioId: best.audioId || "" };
   }
 
+  async function probeAudio(url: string) {
+    try {
+      const headers: Record<string, string> = { range: "bytes=0-1" };
+      const r = await fetch(url, { method: "GET", headers });
+      const status = Number(r.status || 0);
+      const ct = (r.headers.get("content-type") || "").toString();
+      return { ok: status >= 200 && status < 400, status, ct };
+    } catch {
+      return { ok: false, status: 0, ct: "" };
+    }
+  }
+
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return sendJson(res, 405, { error: "Método no permitido" });
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS");
+      res.setHeader("access-control-allow-headers", "range, content-type");
+      res.setHeader("access-control-max-age", "86400");
+      res.end();
+      return;
+    }
+    if (method !== "GET" && method !== "HEAD") return sendJson(res, 405, { error: "Método no permitido" });
 
     const id = pickQuery(req, "id").trim();
     if (!id) return sendJson(res, 400, { error: "Falta id" });
@@ -3953,6 +3984,21 @@ const shareSongAudioHandler = (() => {
       audioUrl = normalizeHttpUrl(audioUrl);
       if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return sendJson(res, 404, { error: "No hay audio para compartir" });
 
+      const probe = await probeAudio(audioUrl);
+      const looksBad = !probe.ok || (probe.ct && !isAudioLikeContentType(probe.ct));
+      if (looksBad && sunoTaskId) {
+        const fresh = await resolveFreshFromSuno(sunoTaskId, title || "");
+        if (fresh.ok && fresh.audioUrl) {
+          audioUrl = normalizeHttpUrl(fresh.audioUrl);
+          const patch: any = { audio_url: audioUrl.slice(0, 2000) };
+          if (fresh.audioId) patch.suno_audio_id = fresh.audioId.slice(0, 200);
+          if (fresh.coverUrl && !(typeof (data as any).cover_url === "string" && (data as any).cover_url.trim())) {
+            patch.cover_url = fresh.coverUrl.slice(0, 2000);
+          }
+          await admin.from("library_items").update(patch).eq("id", id.slice(0, 200)).eq("type", "song");
+        }
+      }
+
       const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
       const headers: Record<string, string> = {};
       if (range) headers.range = range;
@@ -3973,12 +4019,18 @@ const shareSongAudioHandler = (() => {
       res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type");
       res.setHeader("accept-ranges", "bytes");
 
-      const ct = (upstream as any).headers?.get?.("content-type") || "audio/mpeg";
+      const upstreamCt = (upstream as any).headers?.get?.("content-type") || "";
+      const ct = isAudioLikeContentType(upstreamCt) ? upstreamCt : "audio/mpeg";
       const cl = (upstream as any).headers?.get?.("content-length") || "";
       const cr = (upstream as any).headers?.get?.("content-range") || "";
       if (ct) res.setHeader("content-type", ct);
       if (cl) res.setHeader("content-length", cl);
       if (cr) res.setHeader("content-range", cr);
+
+      if (method === "HEAD") {
+        res.end();
+        return;
+      }
 
       const body = (upstream as any).body;
       if (body) {
