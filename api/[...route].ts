@@ -2487,6 +2487,158 @@ const libraryHandler = (() => {
     return deletedCount;
   }
 
+  function normalizeHttpUrl(url: string) {
+    const u = (url || "").toString().trim();
+    if (!u) return "";
+    if (/^https:\/\//i.test(u)) return u;
+    if (/^http:\/\//i.test(u)) return u.replace(/^http:\/\//i, "https://");
+    if (/^\/\//.test(u)) return `https:${u}`;
+    return u;
+  }
+
+  function looksExpiringUrl(url: string) {
+    const u = (url || "").toString();
+    if (!u) return false;
+    if (!u.includes("?")) return false;
+    return /[?&](x-amz-signature|x-amz-credential|x-amz-algorithm|x-amz-expires|x-amz-date|expires|signature|token)=/i.test(u);
+  }
+
+  function extractR2KeyFromUrlOrKey(raw: string) {
+    const s = (raw || "").toString().trim();
+    if (!s) return "";
+    if (/^https?:\/\//i.test(s)) {
+      try {
+        const u = new URL(s);
+        const host = (u.hostname || "").toLowerCase();
+        const isR2 = host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+        if (!isR2) return "";
+        return (u.pathname || "").replace(/^\/+/, "");
+      } catch {
+        return "";
+      }
+    }
+    return s.includes("/") ? s.replace(/^\/+/, "") : "";
+  }
+
+  async function sunoFetchJsonLocal(path: string, init?: RequestInit) {
+    const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
+    const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
+    const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+    const headers = new Headers(init?.headers);
+    if (!headers.has("content-type")) headers.set("content-type", "application/json");
+    if (apiKey && !headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
+    const url = new URL(path, base).toString();
+    const res = await fetch(url, { ...init, headers });
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    return { res, data, text };
+  }
+
+  function extractBestTrackInfo(providerRaw: any, title: string) {
+    const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+    const d = providerRaw?.data || providerRaw?.data?.data || providerRaw;
+    const candidates: any[] = [];
+    if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+    if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+    if (Array.isArray(d?.response)) candidates.push(d.response);
+    if (Array.isArray(d?.data)) candidates.push(d.data);
+    if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+    const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+
+    const pickAudioUrl = (track: any) => {
+      const raw =
+        track?.audio_url ||
+        track?.audioUrl ||
+        track?.streamAudioUrl ||
+        track?.stream_audio_url ||
+        track?.stream_url ||
+        track?.url ||
+        track?.audio ||
+        "";
+      const s = cleanStr(raw);
+      return /^https?:\/\//i.test(s) || /^\/\//.test(s) ? s : "";
+    };
+    const pickCoverUrl = (track: any) => {
+      const raw =
+        track?.image_url ||
+        track?.imageUrl ||
+        track?.cover_url ||
+        track?.coverUrl ||
+        track?.img_url ||
+        track?.imgUrl ||
+        "";
+      const s = cleanStr(raw);
+      return /^https?:\/\//i.test(s) || /^\/\//.test(s) ? s : "";
+    };
+    const pickAudioId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || "");
+
+    const tracks = (Array.isArray(list) ? list : [])
+      .map((track: any) => ({ audioUrl: pickAudioUrl(track), coverUrl: pickCoverUrl(track), audioId: pickAudioId(track) }))
+      .filter((x: any) => x.audioUrl || x.coverUrl);
+    if (tracks.length === 0) return { audioUrl: "", coverUrl: "", audioId: "" };
+    const wantsB = /\sB$/i.test((title || "").toString().trim());
+    const chosen = wantsB && tracks.length > 1 ? tracks[1] : tracks[0];
+    return { audioUrl: cleanStr(chosen.audioUrl), coverUrl: cleanStr(chosen.coverUrl), audioId: cleanStr(chosen.audioId) };
+  }
+
+  async function resolveFreshFromSuno(taskId: string, title: string) {
+    const enc = encodeURIComponent(taskId);
+    const paths = [
+      `/api/v1/generate/record-info?taskId=${enc}`,
+      `/api/v1/suno/generate/record-info?taskId=${enc}`,
+      `/api/v1/task/${enc}`,
+      `/api/v1/suno/task/${enc}`,
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      const r = await sunoFetchJsonLocal(p, { method: "GET" });
+      last = r;
+      if (r?.res?.status !== 404) break;
+    }
+    const { res: r, data, text } = last || {};
+    if (!r || !r.ok) return { ok: false as const, audioUrl: "", coverUrl: "", audioId: "", error: (text || "").slice(0, 500) };
+    const code = Number(data?.code);
+    if (code && code !== 200) return { ok: false as const, audioUrl: "", coverUrl: "", audioId: "", error: String(data?.msg || "Error del proveedor").slice(0, 500) };
+    const best = extractBestTrackInfo(data, title || "");
+    const audioUrl = normalizeHttpUrl(best.audioUrl);
+    const coverUrl = normalizeHttpUrl(best.coverUrl);
+    return { ok: true as const, audioUrl, coverUrl, audioId: best.audioId || "" };
+  }
+
+  async function migrateSunoSongsToSunoLinks(admin: any, rows: any[]) {
+    const list = Array.isArray(rows) ? rows : [];
+    let changed = 0;
+    for (const s of list.slice(0, 40)) {
+      const sid = String(s?.id || "").trim();
+      const taskId = String(s?.suno_task_id || "").trim();
+      if (!sid || !taskId) continue;
+      const current = String(s?.audio_url || "").trim();
+      const currentIsR2 = Boolean(extractR2KeyFromUrlOrKey(current));
+      const shouldRefresh = !current || currentIsR2 || looksExpiringUrl(current) || /^http:\/\//i.test(current);
+      if (!shouldRefresh) continue;
+      const title = String(s?.title || "").trim();
+      const fresh = await resolveFreshFromSuno(taskId, title);
+      if (!fresh.ok || !fresh.audioUrl) continue;
+      const freshIsR2 = Boolean(extractR2KeyFromUrlOrKey(fresh.audioUrl));
+      if (freshIsR2) continue;
+      const patch: any = { audio_url: fresh.audioUrl.slice(0, 2000) };
+      if (fresh.audioId) patch.suno_audio_id = fresh.audioId.slice(0, 200);
+      if (fresh.coverUrl) patch.cover_url = fresh.coverUrl.slice(0, 2000);
+      const { error } = await admin.from(TABLE).update(patch).eq("id", sid.slice(0, 200)).eq("type", ITEM_TYPE);
+      if (error) continue;
+      s.audio_url = patch.audio_url;
+      if (patch.cover_url) s.cover_url = patch.cover_url;
+      if (patch.suno_audio_id) s.suno_audio_id = patch.suno_audio_id;
+      changed += 1;
+    }
+    return changed;
+  }
+
   async function listSongs(admin: any, userId: string, deleted: boolean) {
     const q = admin.from(TABLE).select("*").eq("user_id", userId).eq("type", ITEM_TYPE).order(deleted ? "deleted_at" : "created_at", { ascending: false }).limit(200);
     if (deleted) q.not("deleted_at", "is", null);
@@ -2504,6 +2656,13 @@ const libraryHandler = (() => {
     const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
     const r = await listSongs(auth.admin, auth.user.id, deleted);
     if (!r.ok) return send(res, 500, { error: "Error cargando canciones", detail: r.error });
+
+    if (!deleted) {
+      try {
+        await migrateSunoSongsToSunoLinks(auth.admin, r.songs);
+      } catch {
+      }
+    }
     let publishedBySongId: Record<string, { genre?: string; published_at?: string }> = {};
     try {
       const ids = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => String(s?.id || "").trim()).filter(Boolean);
@@ -4040,17 +4199,9 @@ const shareSongAudioHandler = (() => {
       const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
       let audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
       const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
-      const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
-      if (r2Key) {
-        try {
-          await serveR2Object(req, res, r2Key);
-          return;
-        } catch (e) {
-          return sendJson(res, 502, { error: "No pude cargar el audio", detail: e instanceof Error ? e.message : String(e) });
-        }
-      }
 
-      const shouldRefresh = !audioUrl || looksExpiringUrl(audioUrl) || /^http:\/\//i.test(audioUrl);
+      const initialR2Key = extractR2KeyFromUrlOrKey(audioUrl);
+      const shouldRefresh = !audioUrl || looksExpiringUrl(audioUrl) || /^http:\/\//i.test(audioUrl) || Boolean(initialR2Key);
       if (shouldRefresh && sunoTaskId) {
         const fresh = await resolveFreshFromSuno(sunoTaskId, title || "");
         if (fresh.ok && fresh.audioUrl) {
@@ -4061,6 +4212,21 @@ const shareSongAudioHandler = (() => {
             patch.cover_url = fresh.coverUrl.slice(0, 2000);
           }
           await admin.from("library_items").update(patch).eq("id", id.slice(0, 200)).eq("type", "song");
+        }
+      }
+
+      const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
+      const audioLooksR2 =
+        Boolean(r2Key) &&
+        ((typeof audioUrl === "string" && audioUrl.includes(".r2.cloudflarestorage.com/")) ||
+          (typeof audioUrl === "string" && /https?:\/\/[^/]+\.r2\.dev\//i.test(audioUrl)) ||
+          !/^https?:\/\//i.test((audioUrl || "").toString().trim()));
+      if (audioLooksR2 && r2Key) {
+        try {
+          await serveR2Object(req, res, r2Key);
+          return;
+        } catch (e) {
+          return sendJson(res, 502, { error: "No pude cargar el audio", detail: e instanceof Error ? e.message : String(e) });
         }
       }
 
