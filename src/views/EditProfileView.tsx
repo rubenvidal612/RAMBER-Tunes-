@@ -16,6 +16,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [coverUrl, setCoverUrl] = useState<string>('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [originalAvatarFile, setOriginalAvatarFile] = useState<File | null>(null);
+  const [originalCoverFile, setOriginalCoverFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string>('');
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string>('');
   const [avatarCropRect, setAvatarCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -133,6 +135,11 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
     setCropShift({ x: 0, y: 0 });
     setCropImg({ w: 0, h: 0 });
     setCropOpen(true);
+    if (target === 'avatar') {
+      setOriginalAvatarFile(file);
+    } else if (target === 'cover') {
+      setOriginalCoverFile(file);
+    }
     try {
       const bitmap = await (async () => {
         try {
@@ -226,7 +233,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       } catch {}
       setCoverFile(f);
       setCoverPreviewUrl(preview);
-      setCoverCropRect(null);
+      setCoverCropRect(rect);
     }
     cropDragRef.current.on = false;
     cropDragRef.current.pid = null;
@@ -405,17 +412,19 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       let nextCoverUrl = coverUrl;
 
       if (avatarFile) {
+        const fileToProcess = originalAvatarFile || avatarFile;
         const blob =
-          avatarFile.type === 'image/webp' && !avatarCropRect
-            ? avatarFile
-            : await imageFileToWebpBlob(avatarFile, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect, fitMode: 'cover' } as any);
+          fileToProcess.type === 'image/webp' && !avatarCropRect
+            ? fileToProcess
+            : await imageFileToWebpBlob(fileToProcess, { width: 256, height: 256, quality: 0.82, cropRect: avatarCropRect, fitMode: 'cover' } as any);
         nextAvatarUrl = await uploadWebpToStorage(userId, 'avatar', blob);
       }
       if (coverFile) {
+        const fileToProcess = originalCoverFile || coverFile;
         const blob =
-          coverFile.type === 'image/webp' && !coverCropRect
-            ? coverFile
-            : await imageFileToWebpBlob(coverFile, { width: 1610, height: 180, quality: 0.82, cropRect: coverCropRect, fitMode: 'cover' } as any);
+          fileToProcess.type === 'image/webp' && !coverCropRect
+            ? fileToProcess
+            : await imageFileToWebpBlob(fileToProcess, { width: 1610, height: 180, quality: 0.82, cropRect: coverCropRect, fitMode: 'cover' } as any);
         nextCoverUrl = await uploadWebpToStorage(userId, 'cover', blob);
       }
 
