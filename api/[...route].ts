@@ -4434,6 +4434,55 @@ const profileHandler = (() => {
     return send(res, 200, { ok: true, items: list.map((x: any) => ({ songId: String(x?.song_id || ""), addedAt: String(x?.added_at || "") })) });
   }
 
+  async function handlePinsFull(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const { data, error } = await auth.admin
+      .from(PINS_TABLE)
+      .select("song_id, added_at")
+      .eq("user_id", auth.user.id)
+      .order("added_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar el perfil",
+          hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude leer tu perfil", detail: error.message });
+    }
+    const pins = Array.isArray(data) ? data : [];
+    const songIds = pins.map((x: any) => String(x?.song_id || "").trim()).filter(Boolean);
+    if (songIds.length === 0) return send(res, 200, { ok: true, items: [] });
+
+    const { data: items, error: itemsErr } = await auth.admin
+      .from(LIB_TABLE)
+      .select("id, title, audio_url, cover_url, deleted_at, type, user_id")
+      .eq("user_id", auth.user.id)
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .in("id", songIds.map((x) => x.slice(0, 200)));
+    if (itemsErr) return send(res, 500, { error: "No pude leer tus canciones", detail: itemsErr.message });
+    const list = Array.isArray(items) ? items : [];
+    const byId = new Map(list.map((x: any) => [String(x?.id || ""), x]));
+    const out = songIds
+      .map((sid) => byId.get(sid))
+      .filter(Boolean)
+      .map((x: any) => ({
+        id: String(x?.id || ""),
+        title: String(x?.title || "Canción").trim(),
+        audioUrl: `/api/share/song/audio?id=${encodeURIComponent(String(x?.id || ""))}`,
+        coverUrl: String(x?.cover_url || "").trim() ? `/api/share/song/cover?id=${encodeURIComponent(String(x?.id || ""))}` : "",
+      }))
+      .filter((x: any) => x.id && x.audioUrl);
+    return send(res, 200, { ok: true, items: out });
+  }
+
   async function handlePin(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -4484,6 +4533,7 @@ const profileHandler = (() => {
     const isApi = parts[0] === "api";
     const next = isApi ? parts[2] : parts[1];
     if (next === "pins") return handlePins(req, res);
+    if (next === "pins-full") return handlePinsFull(req, res);
     if (next === "pin") return handlePin(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };

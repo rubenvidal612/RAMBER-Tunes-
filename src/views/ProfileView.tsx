@@ -69,6 +69,7 @@ export function ProfileView({
   const [contactPhone, setContactPhone] = useState('');
   const [bio, setBio] = useState('');
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
+  const [pinnedSongsFull, setPinnedSongsFull] = useState<Array<{ id: string; title: string; audioUrl: string; coverUrl?: string }>>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
 
   const normalizeR2PublicToProxy = (raw: any) => {
@@ -143,14 +144,35 @@ export function ProfileView({
     let alive = true;
     (async () => {
       const t = await getAccessToken();
-      if (!t.ok) return;
-      const r = await fetch('/api/profile/pins', { headers: { authorization: `Bearer ${t.token}` } });
+      if (!t.ok) {
+        if (!alive) return;
+        setPinnedSongIds([]);
+        setPinnedSongsFull([]);
+        return;
+      }
+      const r = await fetch('/api/profile/pins-full', { headers: { authorization: `Bearer ${t.token}` } });
       const out = await r.json().catch(() => ({}));
-      if (!r.ok || out?.ok === false) return;
+      if (!r.ok || out?.ok === false) {
+        const msg = (out?.error || 'No pude cargar tu perfil.').toString();
+        const hint = (out?.hint || '').toString();
+        if (msg) alert([msg, hint].filter(Boolean).join('\n\n'));
+        if (!alive) return;
+        setPinnedSongIds([]);
+        setPinnedSongsFull([]);
+        return;
+      }
       const items = Array.isArray(out?.items) ? out.items : [];
-      const ids = items.map((x: any) => String(x?.songId || '').trim()).filter(Boolean);
+      const mapped = items
+        .map((x: any) => ({
+          id: String(x?.id || '').trim(),
+          title: String(x?.title || 'Canción').trim(),
+          audioUrl: String(x?.audioUrl || x?.audio_url || '').trim(),
+          coverUrl: String(x?.coverUrl || x?.cover_url || '').trim() || undefined,
+        }))
+        .filter((x: any) => x.id && x.audioUrl);
       if (!alive) return;
-      setPinnedSongIds(ids);
+      setPinnedSongsFull(mapped);
+      setPinnedSongIds(mapped.map((x) => x.id));
     })().catch(() => {});
     return () => {
       alive = false;
@@ -249,9 +271,13 @@ export function ProfileView({
     );
   }
 
-  const allSongs = Array.isArray(songs) ? songs : [];
-  const pinnedSet = new Set(pinnedSongIds);
-  const pinnedSongs = allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
+  const pinnedSongs = pinnedSongsFull.length
+    ? pinnedSongsFull.map((x) => ({ id: x.id, title: x.title, audioUrl: x.audioUrl, coverUrl: x.coverUrl } as any as SongItem))
+    : (() => {
+        const allSongs = Array.isArray(songs) ? songs : [];
+        const pinnedSet = new Set(pinnedSongIds);
+        return allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
+      })();
   const location = [city, country].map((x) => String(x || '').trim()).filter(Boolean).join(', ');
   const hasInfo = Boolean(location || String(contactEmail || '').trim() || String(contactPhone || '').trim() || String(bio || '').trim());
 
