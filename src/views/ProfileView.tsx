@@ -247,8 +247,16 @@ export function ProfileView({
       <div className="px-6 mb-6">
         <div className="relative rounded-3xl overflow-hidden border border-white/10">
           <div className="h-24 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
-          {userCoverUrl ? <img src={userCoverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
+          {userCoverUrl ? (
+            <img
+              src={userCoverUrl}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-60 blur-md scale-110"
+              onError={() => setUserCoverUrl('')}
+            />
+          ) : null}
           <div className="absolute inset-0 bg-black/35" />
+          {userCoverUrl ? <img src={userCoverUrl} alt="" className="absolute inset-0 w-full h-full object-contain" onError={() => setUserCoverUrl('')} /> : null}
           <div className="relative p-4 flex items-center justify-between">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
