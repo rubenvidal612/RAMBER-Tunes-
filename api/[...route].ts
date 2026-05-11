@@ -3120,6 +3120,8 @@ const libraryHandler = (() => {
 
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Audio";
     const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
+    const lyrics = typeof body?.lyrics === "string" ? body.lyrics.trim().slice(0, 8000) : "";
+    const gender = typeof body?.gender === "string" ? body.gender.trim().slice(0, 120) : "";
     const coverUrl = typeof body?.coverUrl === "string" ? body.coverUrl.trim().slice(0, 2000) : "";
     const externalId = typeof body?.externalId === "string" ? body.externalId.trim().slice(0, 200) : "";
     const sunoTaskId = typeof body?.sunoTaskId === "string" ? body.sunoTaskId.trim().slice(0, 200) : null;
@@ -3171,8 +3173,8 @@ const libraryHandler = (() => {
       type: ITEM_TYPE,
       title,
       description: description || null,
-      lyrics: null,
-      gender: null,
+      lyrics: lyrics || null,
+      gender: gender || null,
       audio_url: audioUrl,
       cover_url: coverUrl || null,
       suno_task_id: sunoTaskId,

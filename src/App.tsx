@@ -17,7 +17,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, MessageCircle, MoreVertical, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
   { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
@@ -510,6 +510,10 @@ export default function App() {
   const [playerDuration, setPlayerDuration] = useState(0);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [nowPlayingMode, setNowPlayingMode] = useState<'normal' | 'elenco'>('normal');
+  const [isElencoMenuOpen, setIsElencoMenuOpen] = useState(false);
+  const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false);
+  const [lyricsDraft, setLyricsDraft] = useState('');
+  const [isLyricsSaving, setIsLyricsSaving] = useState(false);
   const lyricsWrapRef = useRef<HTMLDivElement | null>(null);
   const lyricLineRefs = useRef<Array<HTMLDivElement | null>>([]);
   const lastActiveLyricRef = useRef<number>(-1);
@@ -546,6 +550,57 @@ export default function App() {
     setToast(message);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const toProxyMediaUrl = (raw: any) => {
+    const url = (raw || '').toString().trim();
+    if (!url) return '';
+    if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+    const keyish = url.replace(/^\/+/, '');
+    const allowed = ['avatars/', 'profile-covers/', 'personas/', 'covers/'];
+    if (!/^https?:\/\//i.test(url) && allowed.some((p) => keyish.startsWith(p))) {
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(keyish)}`;
+    }
+    try {
+      const u = new URL(url);
+      const host = (u.hostname || '').toLowerCase();
+      const isR2 =
+        host.includes('.r2.cloudflarestorage.com') ||
+        host.endsWith('.r2.dev') ||
+        host.includes('.r2') ||
+        url.includes('.r2.cloudflarestorage.com/');
+      if (!isR2) return url;
+      const key = (u.pathname || '').replace(/^\/+/, '');
+      if (!key) return url;
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(key)}`;
+    } catch {
+      return url;
+    }
   };
 
   const makeAvatarSvgUrl = (variant: 'male' | 'female', label: string) => {
@@ -1424,16 +1479,36 @@ export default function App() {
         const direct =
           (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
           (typeof track?.lyric === 'string' ? track.lyric : '') ||
+          (typeof track?.lyrics_text === 'string' ? track.lyrics_text : '') ||
+          (typeof track?.lyricsText === 'string' ? track.lyricsText : '') ||
+          (typeof track?.gpt_lyrics === 'string' ? track.gpt_lyrics : '') ||
+          (typeof track?.gptLyrics === 'string' ? track.gptLyrics : '') ||
           (typeof track?.text === 'string' ? track.text : '') ||
-          (typeof track?.prompt === 'string' ? track.prompt : '');
+          (typeof track?.prompt === 'string' ? track.prompt : '') ||
+          (typeof track?.metadata?.lyrics === 'string' ? track.metadata.lyrics : '') ||
+          (typeof track?.metadata?.lyric === 'string' ? track.metadata.lyric : '') ||
+          (typeof track?.metadata?.text === 'string' ? track.metadata.text : '') ||
+          (typeof track?.metadata?.prompt === 'string' ? track.metadata.prompt : '');
         const s = (direct || '').toString().trim();
         return s || undefined;
       };
+      const pickCover = (track: any) =>
+        cleanStr(
+          track?.image_url ||
+            track?.imageUrl ||
+            track?.image_large_url ||
+            track?.imageLargeUrl ||
+            track?.cover_url ||
+            track?.coverUrl ||
+            track?.thumbnail_url ||
+            track?.thumbnailUrl ||
+            ''
+        );
       return (Array.isArray(list) ? list : []).map((track: any) => {
         const audioUrl = pickUrl(track);
         const audioId = pickAudioId(track);
         const title = cleanStr(track?.title || '');
-        const coverUrl = cleanStr(track?.image_url || track?.imageUrl || '');
+        const coverUrl = pickCover(track);
         const lyrics = pickLyrics(track);
         return { audioUrl, audioId, title, coverUrl, lyrics };
       });
@@ -1463,8 +1538,16 @@ export default function App() {
         const direct =
           (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
           (typeof track?.lyric === 'string' ? track.lyric : '') ||
+          (typeof track?.lyrics_text === 'string' ? track.lyrics_text : '') ||
+          (typeof track?.lyricsText === 'string' ? track.lyricsText : '') ||
+          (typeof track?.gpt_lyrics === 'string' ? track.gpt_lyrics : '') ||
+          (typeof track?.gptLyrics === 'string' ? track.gptLyrics : '') ||
           (typeof track?.text === 'string' ? track.text : '') ||
-          (typeof track?.prompt === 'string' ? track.prompt : '');
+          (typeof track?.prompt === 'string' ? track.prompt : '') ||
+          (typeof track?.metadata?.lyrics === 'string' ? track.metadata.lyrics : '') ||
+          (typeof track?.metadata?.lyric === 'string' ? track.metadata.lyric : '') ||
+          (typeof track?.metadata?.text === 'string' ? track.metadata.text : '') ||
+          (typeof track?.metadata?.prompt === 'string' ? track.metadata.prompt : '');
         return cleanStr(direct);
       };
 
@@ -1480,9 +1563,19 @@ export default function App() {
       }
       const fallback =
         cleanStr(d?.response?.lyrics) ||
+        cleanStr(d?.response?.lyric) ||
+        cleanStr(d?.response?.lyricsText) ||
+        cleanStr(d?.response?.lyrics_text) ||
+        cleanStr(d?.response?.gpt_lyrics) ||
+        cleanStr(d?.response?.gptLyrics) ||
         cleanStr(d?.data?.response?.lyrics) ||
+        cleanStr(d?.data?.response?.lyric) ||
+        cleanStr(d?.data?.response?.lyricsText) ||
+        cleanStr(d?.data?.response?.lyrics_text) ||
         cleanStr(d?.lyrics) ||
+        cleanStr(d?.lyric) ||
         cleanStr(d?.data?.lyrics) ||
+        cleanStr(d?.data?.lyric) ||
         '';
       return fallback;
     };
@@ -1608,6 +1701,7 @@ export default function App() {
           const draft = pending.draft ?? {};
           const baseTitle = String(draft?.title || 'Canción');
           const draftLyrics = typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? String(draft.lyrics) : '';
+          const draftPrompt = typeof draft?.prompt === 'string' && draft.prompt.trim() ? String(draft.prompt) : '';
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             const suffix =
@@ -1620,9 +1714,10 @@ export default function App() {
               return hasSuffix ? chosen : `${chosen} ${suffix}`;
             })();
             const autoLyrics =
-              (draftLyrics || '').trim() ||
               (typeof track?.lyrics === 'string' ? track.lyrics.trim() : '') ||
               pickLyricsFromTaskPayload(data, track.audioUrl) ||
+              (draftLyrics || '').trim() ||
+              (draftPrompt || '').trim() ||
               '';
             await addCancion({
               id: track.audioId || `${pending.taskId}_${i + 1}`,
@@ -1793,8 +1888,36 @@ export default function App() {
               return /^https?:\/\//i.test(s) ? s : '';
             };
             const pickAudioId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || '');
+            const pickCover = (track: any) =>
+              cleanStr(
+                track?.image_url ||
+                  track?.imageUrl ||
+                  track?.image_large_url ||
+                  track?.imageLargeUrl ||
+                  track?.cover_url ||
+                  track?.coverUrl ||
+                  track?.thumbnail_url ||
+                  track?.thumbnailUrl ||
+                  ''
+              );
+            const pickLyrics = (track: any) => {
+              const direct =
+                (typeof track?.lyrics === 'string' ? track.lyrics : '') ||
+                (typeof track?.lyric === 'string' ? track.lyric : '') ||
+                (typeof track?.lyrics_text === 'string' ? track.lyrics_text : '') ||
+                (typeof track?.lyricsText === 'string' ? track.lyricsText : '') ||
+                (typeof track?.gpt_lyrics === 'string' ? track.gpt_lyrics : '') ||
+                (typeof track?.gptLyrics === 'string' ? track.gptLyrics : '') ||
+                (typeof track?.text === 'string' ? track.text : '') ||
+                (typeof track?.prompt === 'string' ? track.prompt : '') ||
+                (typeof track?.metadata?.lyrics === 'string' ? track.metadata.lyrics : '') ||
+                (typeof track?.metadata?.lyric === 'string' ? track.metadata.lyric : '') ||
+                (typeof track?.metadata?.text === 'string' ? track.metadata.text : '') ||
+                (typeof track?.metadata?.prompt === 'string' ? track.metadata.prompt : '');
+              return cleanStr(direct);
+            };
             const tracks = (Array.isArray(list) ? list : [])
-              .map((track: any) => ({ audioUrl: pickUrl(track), audioId: pickAudioId(track) }))
+              .map((track: any) => ({ audioUrl: pickUrl(track), audioId: pickAudioId(track), coverUrl: pickCover(track), lyrics: pickLyrics(track) }))
               .filter((x) => x.audioUrl);
             if (tracks.length > 0) {
               const wantsB = /\sB$/i.test((song.title || '').toString().trim());
@@ -1812,6 +1935,30 @@ export default function App() {
                       sunoAudioId: chosen.audioId || song.sunoAudioId || null,
                     }),
                   }).catch(() => null as any);
+                } catch {}
+                try {
+                  const cover = (song.coverUrl || '').toString().trim();
+                  const nextCover = (chosen.coverUrl || '').toString().trim();
+                  if (!cover && nextCover) {
+                    await fetch('/api/library/set-cover', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                      body: JSON.stringify({ id: song.id, fileUrl: nextCover, fileName: 'cover.jpg' }),
+                    }).catch(() => null as any);
+                    refreshLibrary().catch(() => {});
+                  }
+                } catch {}
+                try {
+                  const l = (song.lyrics || '').toString().trim();
+                  const nextL = (chosen.lyrics || '').toString().trim();
+                  if (!l && nextL) {
+                    await fetch('/api/library/update-lyrics', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                      body: JSON.stringify({ id: song.id, lyrics: nextL }),
+                    }).catch(() => null as any);
+                    refreshLibrary().catch(() => {});
+                  }
                 } catch {}
                 return;
               }
@@ -1874,6 +2021,17 @@ export default function App() {
     } catch {
     }
   }, [nowPlayingOpen, activeLyricIndex]);
+
+  useEffect(() => {
+    if (!activeSong) return;
+    const next = canciones.find((s) => s.id === activeSong.id);
+    if (!next) return;
+    const a = (activeSong as any) || {};
+    const b = (next as any) || {};
+    if (a?.lyrics !== b?.lyrics || a?.coverUrl !== b?.coverUrl || a?.title !== b?.title || a?.audioUrl !== b?.audioUrl) {
+      setActiveSong(next);
+    }
+  }, [canciones, activeSong?.id]);
 
   const displayCredits = credits;
 
@@ -1989,7 +2147,7 @@ export default function App() {
            )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
            {currentTab === 'convertidor' && <CloneVoiceView />}
-           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
+           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
            
            {/* Placeholders */}
@@ -2063,7 +2221,7 @@ export default function App() {
         <div className="fixed inset-0 z-[270] bg-black/80">
           <div className="absolute inset-0 overflow-hidden">
             {(() => {
-              const cover = (activeSong.coverUrl || '').toString().trim();
+              const cover = toProxyMediaUrl((activeSong.coverUrl || '').toString().trim());
               if (cover) {
                 return <img src={cover} alt="" className="w-full h-full object-cover scale-110 blur-2xl opacity-60" />;
               }
@@ -2073,6 +2231,53 @@ export default function App() {
           </div>
 
           <div className="relative h-[100dvh] flex flex-col">
+            {nowPlayingMode === 'elenco' ? (
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 z-[2] flex flex-col items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => showToast('Comentarios: próximamente')}
+                  className="flex flex-col items-center gap-1 text-white/90"
+                >
+                  <div className="w-12 h-12 rounded-full bg-black/35 border border-white/10 backdrop-blur-md flex items-center justify-center">
+                    <MessageCircle className="w-5 h-5" />
+                  </div>
+                  <div className="text-[10px] font-semibold">Comentario</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const id = (activeSong?.id || '').toString().trim();
+                    if (!id) return;
+                    const shareUrl = `${window.location.origin}/share/${encodeURIComponent(id)}`;
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({ title: `RAMBER Tunes - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
+                        return;
+                      }
+                    } catch {
+                    }
+                    const ok = await copyToClipboard(shareUrl);
+                    showToast(ok ? 'Link copiado.' : shareUrl);
+                  }}
+                  className="flex flex-col items-center gap-1 text-white/90"
+                >
+                  <div className="w-12 h-12 rounded-full bg-black/35 border border-white/10 backdrop-blur-md flex items-center justify-center">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div className="text-[10px] font-semibold">Compartir</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsElencoMenuOpen(true)}
+                  className="flex flex-col items-center gap-1 text-white/90"
+                >
+                  <div className="w-12 h-12 rounded-full bg-black/35 border border-white/10 backdrop-blur-md flex items-center justify-center">
+                    <MoreVertical className="w-5 h-5" />
+                  </div>
+                  <div className="text-[10px] font-semibold">Opciones</div>
+                </button>
+              </div>
+            ) : null}
             <div className="p-4 flex items-center justify-between gap-3">
               <button
                 type="button"
@@ -2134,71 +2339,183 @@ export default function App() {
               )}
             </div>
 
-            {nowPlayingMode === 'normal' ? (
-              <div className="px-5 pb-6 pt-2">
-                <div className="bg-black/30 border border-white/10 rounded-2xl p-4 backdrop-blur-xl">
-                  <div className="flex items-center justify-between gap-4">
-                    <button
-                      type="button"
-                      onClick={togglePlay}
-                      className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform shrink-0"
-                      aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-                      title={isPlaying ? 'Pausar' : 'Reproducir'}
-                    >
-                      {isPlaying ? <Pause className="w-6 h-6 fill-black" strokeWidth={1} /> : <Play className="w-6 h-6 fill-black ml-0.5" strokeWidth={1} />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <input
-                        type="range"
-                        min={0}
-                        max={Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0}
-                        step={0.1}
-                        value={
-                          Number.isFinite(Number(playerDuration)) && Number(playerDuration) > 0
-                            ? Math.min(Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0, Number(playerDuration))
-                            : 0
+            <div className="px-5 pb-6 pt-2">
+              <div className="bg-black/30 border border-white/10 rounded-2xl p-4 backdrop-blur-xl">
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform shrink-0"
+                    aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                    title={isPlaying ? 'Pausar' : 'Reproducir'}
+                  >
+                    {isPlaying ? <Pause className="w-6 h-6 fill-black" strokeWidth={1} /> : <Play className="w-6 h-6 fill-black ml-0.5" strokeWidth={1} />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="range"
+                      min={0}
+                      max={Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0}
+                      step={0.1}
+                      value={
+                        Number.isFinite(Number(playerDuration)) && Number(playerDuration) > 0
+                          ? Math.min(Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0, Number(playerDuration))
+                          : 0
+                      }
+                      disabled={!Number.isFinite(Number(playerDuration)) || Number(playerDuration) <= 0}
+                      onChange={(e) => {
+                        const a = audioRef.current;
+                        if (!a) return;
+                        const dur = Number.isFinite(Number(a.duration)) ? Number(a.duration) : 0;
+                        const next = Math.max(0, Math.min(Number(e.target.value), dur));
+                        try {
+                          a.currentTime = next;
+                        } catch {
                         }
-                        disabled={!Number.isFinite(Number(playerDuration)) || Number(playerDuration) <= 0}
-                        onChange={(e) => {
-                          const a = audioRef.current;
-                          if (!a) return;
-                          const dur = Number.isFinite(Number(a.duration)) ? Number(a.duration) : 0;
-                          const next = Math.max(0, Math.min(Number(e.target.value), dur));
-                          try {
-                            a.currentTime = next;
-                          } catch {
-                          }
-                          setPlayerTime(next);
-                        }}
-                        className="w-full accent-yellow-400 disabled:opacity-40"
-                      />
-                      <div className="mt-1 flex justify-between text-[11px] text-slate-300 tabular-nums">
-                        <span>
-                          {(() => {
-                            const s = Math.max(0, Math.floor(Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0));
-                            const m = Math.floor(s / 60);
-                            const r = s % 60;
-                            return `${m}:${String(r).padStart(2, '0')}`;
-                          })()}
-                        </span>
-                        <span>
-                          {(() => {
-                            const s = Math.max(0, Math.floor(Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0));
-                            const m = Math.floor(s / 60);
-                            const r = s % 60;
-                            return `${m}:${String(r).padStart(2, '0')}`;
-                          })()}
-                        </span>
-                      </div>
+                        setPlayerTime(next);
+                      }}
+                      className="w-full accent-yellow-400 disabled:opacity-40"
+                    />
+                    <div className="mt-1 flex justify-between text-[11px] text-slate-300 tabular-nums">
+                      <span>
+                        {(() => {
+                          const s = Math.max(0, Math.floor(Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0));
+                          const m = Math.floor(s / 60);
+                          const r = s % 60;
+                          return `${m}:${String(r).padStart(2, '0')}`;
+                        })()}
+                      </span>
+                      <span>
+                        {(() => {
+                          const s = Math.max(0, Math.floor(Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0));
+                          const m = Math.floor(s / 60);
+                          const r = s % 60;
+                          return `${m}:${String(r).padStart(2, '0')}`;
+                        })()}
+                      </span>
                     </div>
+                    {nowPlayingMode === 'elenco' ? (
+                      <div className="mt-1 text-[10px] text-slate-400">
+                        Elenco: pensado para ponerlo en pantalla y que la gente lea la letra mientras suena.
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="px-6 pb-6 text-center text-[11px] text-slate-300">
-                Elenco está pensado para ponerlo en pantalla y que la gente lea la letra mientras suena la canción.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isElencoMenuOpen && activeSong ? (
+        <div className="fixed inset-0 z-[280] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsElencoMenuOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold truncate">Opciones</div>
+              <button
+                onClick={() => setIsElencoMenuOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-2">
+              <button
+                type="button"
+                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                onClick={() => {
+                  setIsElencoMenuOpen(false);
+                  setLyricsDraft((activeSong.lyrics || '').toString());
+                  setIsLyricsEditorOpen(true);
+                }}
+              >
+                Letra (ver/editar)
+              </button>
+              <button
+                type="button"
+                className="w-full bg-transparent border border-white/10 text-slate-300 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                onClick={() => setIsElencoMenuOpen(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isLyricsEditorOpen && activeSong ? (
+        <div className="fixed inset-0 z-[285] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsLyricsEditorOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold truncate">Letra</div>
+              <button
+                onClick={() => setIsLyricsEditorOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3 flex-1 overflow-y-auto">
+              <textarea
+                value={lyricsDraft}
+                onChange={(e) => setLyricsDraft(e.target.value)}
+                placeholder="Pega o escribe aquí la letra para guardarla en tu Biblioteca"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[15px] text-slate-100 placeholder:text-slate-500 outline-none min-h-[50vh] resize-none"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsLyricsEditorOpen(false)}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full h-[46px] text-slate-200 font-extrabold"
+                  disabled={isLyricsSaving}
+                >
+                  Cerrar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (isLyricsSaving) return;
+                    const id = String(activeSong.id || '').trim();
+                    const text = String(lyricsDraft || '').trim();
+                    if (!text) {
+                      showToast('Escribe la letra antes de guardar.');
+                      return;
+                    }
+                    setIsLyricsSaving(true);
+                    try {
+                      const t = await getAccessToken();
+                      if (!t.ok) {
+                        showToast(t.error || 'No se pudo iniciar sesión.');
+                        return;
+                      }
+                      const r = await fetch('/api/library/update-lyrics', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                        body: JSON.stringify({ id, lyrics: text }),
+                      });
+                      const out = await r.json().catch(() => ({}));
+                      if (!r.ok || out?.ok === false) {
+                        showToast((out?.error || out?.detail || 'No pude guardar la letra.').toString());
+                        return;
+                      }
+                      await refreshLibrary();
+                      showToast('Listo. Letra guardada.');
+                      setIsLyricsEditorOpen(false);
+                    } finally {
+                      setIsLyricsSaving(false);
+                    }
+                  }}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  disabled={isLyricsSaving}
+                >
+                  {isLyricsSaving ? 'Guardando…' : 'Guardar'}
+                </button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       ) : null}
