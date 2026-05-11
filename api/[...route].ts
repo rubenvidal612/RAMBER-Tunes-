@@ -7231,6 +7231,17 @@ const uploadAudioHandler = (() => {
     return cleaned.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "audio.mp3";
   }
 
+  function fileArrayToUint8(arr: any): Uint8Array | null {
+    if (!Array.isArray(arr)) return null;
+    const out = new Uint8Array(arr.length);
+    for (let i = 0; i < arr.length; i++) {
+      const n = Number(arr[i]);
+      if (!Number.isFinite(n)) return null;
+      out[i] = Math.max(0, Math.min(255, Math.trunc(n)));
+    }
+    return out;
+  }
+
   async function requireUser(req: any) {
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
@@ -7269,9 +7280,24 @@ const uploadAudioHandler = (() => {
     const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
 
     try {
+      const inline = fileArrayToUint8(payload?.file);
+      if (inline) {
+        const maxBytes = 4 * 1024 * 1024;
+        if (inline.byteLength > maxBytes) {
+          return send(res, 413, {
+            ok: false,
+            error: "Audio muy pesado",
+            message: "Ese MP3 está muy pesado para subirlo por el servidor. Intenta con un MP3 más ligero o habilita CORS en R2 para subida directa.",
+          });
+        }
+        await uploadToR2(key, inline, contentType);
+        const url = await getSignedR2Url(key, 60 * 60 * 2);
+        return send(res, 200, { ok: true, url, key, contentType, via: "server" });
+      }
+
       const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
       const url = await getSignedR2Url(key, 60 * 60 * 2);
-      return send(res, 200, { ok: true, uploadUrl, url, key, contentType });
+      return send(res, 200, { ok: true, uploadUrl, url, key, contentType, via: "direct" });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")

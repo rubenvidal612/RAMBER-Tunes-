@@ -566,6 +566,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const uploadUrl = (result?.uploadUrl || '').toString().trim();
       const url = (result?.url || '').toString().trim();
       const key = (result?.key || '').toString().trim();
+      const via = (result?.via || '').toString().trim();
+      if (via === 'server' && url && key) {
+        setAudioUploadUrl(url);
+        setAudioUploadPath(key);
+        setAudioFile(file);
+        setExternalAudioLabel('');
+        setUploadProgress(100);
+        return;
+      }
+
       if (!uploadUrl || !url || !key) {
         const msg = (result?.error || 'No recibí URLs para subir el audio.').toString();
         setAudioUploadError(msg);
@@ -573,28 +583,84 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
       
-      await new Promise<void>((resolve, reject) => {
-        try {
-          const xhr = new XMLHttpRequest();
-          uploadXhrRef.current = xhr;
-          xhr.open('PUT', uploadUrl);
-          xhr.setRequestHeader('Content-Type', (file.type || 'audio/mpeg').toString());
-          xhr.upload.onprogress = (e) => {
-            if (!e.lengthComputable) return;
-            const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
-            setUploadProgress(pct);
-          };
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) return resolve();
-            return reject(new Error(`No se pudo subir el audio (HTTP ${xhr.status}).`));
-          };
-          xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
-          xhr.onabort = () => reject(new Error('Subida cancelada.'));
-          xhr.send(file);
-        } catch (e) {
-          reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
+      try {
+        await new Promise<void>((resolve, reject) => {
+          try {
+            const xhr = new XMLHttpRequest();
+            uploadXhrRef.current = xhr;
+            xhr.open('PUT', uploadUrl);
+            xhr.setRequestHeader('Content-Type', (file.type || 'audio/mpeg').toString());
+            xhr.upload.onprogress = (e) => {
+              if (!e.lengthComputable) return;
+              const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
+              setUploadProgress(pct);
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) return resolve();
+              return reject(new Error(`No se pudo subir el audio (HTTP ${xhr.status}).`));
+            };
+            xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
+            xhr.onabort = () => reject(new Error('Subida cancelada.'));
+            xhr.send(file);
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
+          }
+        });
+      } catch (putErr) {
+        const canFallback = file.size <= 4 * 1024 * 1024;
+        if (!canFallback) {
+          const msg =
+            'No se pudo subir el audio desde el navegador. ' +
+            'Tu MP3 es pesado y requiere configuración CORS en Cloudflare R2. ' +
+            'Prueba con un MP3 más ligero o dime y te paso los pasos para activar CORS.';
+          setAudioUploadError(msg);
+          alert(msg);
+          return;
         }
-      });
+
+        setUploadProgress(0);
+        const fileBuffer = await file.arrayBuffer();
+        const fileArray = Array.from(new Uint8Array(fileBuffer));
+        const resp2 = await fetch('/api/upload-audio', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'authorization': `Bearer ${t.token}`,
+          },
+          body: JSON.stringify({
+            title: file.name,
+            contentType: file.type || 'audio/mpeg',
+            file: fileArray,
+          }),
+        });
+        const raw2 = await resp2.text().catch(() => '');
+        let out2: any = {};
+        try {
+          out2 = raw2 ? JSON.parse(raw2) : {};
+        } catch {
+          out2 = { error: raw2 || 'Respuesta inválida del servidor.' };
+        }
+        if (!resp2.ok || out2?.ok === false) {
+          const msg = (out2?.message || out2?.error || (putErr instanceof Error ? putErr.message : 'No se pudo subir el audio.')).toString();
+          setAudioUploadError(msg);
+          alert(msg);
+          return;
+        }
+        const url2 = (out2?.url || '').toString().trim();
+        const key2 = (out2?.key || '').toString().trim();
+        if (!url2 || !key2) {
+          const msg = (out2?.error || 'No pude terminar la subida del audio.').toString();
+          setAudioUploadError(msg);
+          alert(msg);
+          return;
+        }
+        setAudioUploadUrl(url2);
+        setAudioUploadPath(key2);
+        setAudioFile(file);
+        setExternalAudioLabel('');
+        setUploadProgress(100);
+        return;
+      }
 
       setAudioUploadUrl(url);
       setAudioUploadPath(key);
