@@ -6804,8 +6804,13 @@ const aiHandler = (() => {
           return { ok: false as const, error: msg, userMessage: "La generación de letras no está disponible (modelo). Intenta de nuevo." };
         }
 
-        const text = String(r?.text || "").trim();
-        if (!text) return { ok: false as const, error: "Gemini no devolvió texto", userMessage: "No pude generar letras para ese tema." };
+        const pickCandidateText = (obj: any) => {
+          const parts = obj?.candidates?.[0]?.content?.parts;
+          if (!Array.isArray(parts)) return "";
+          return parts.map((p: any) => (p?.text ? String(p.text) : "")).join("");
+        };
+        const text = String(r?.text || pickCandidateText(r) || "").trim();
+        if (!text) return { ok: false as const, error: "Gemini no devolvió texto", userMessage: "La IA no devolvió letra para ese tema. Intenta con otro tema o espera unos minutos." };
 
         const cleaned = text.replaceAll("```", "").trim();
         return { ok: true as const, lyrics: cleaned };
@@ -6874,6 +6879,15 @@ const aiHandler = (() => {
         });
       }
 
+      const lyrics = typeof (out as any)?.lyrics === "string" ? String((out as any).lyrics).trim() : "";
+      if (!lyrics) {
+        return send(res, 200, {
+          ok: false,
+          error: "La IA no devolvió letra",
+          message: "La IA no devolvió letra para ese tema. Intenta con un tema más específico o espera unos minutos y vuelve a intentar.",
+        });
+      }
+
       await deductCredits(auth.user.id, auth.admin, cost, "lyrics", {
         topic,
         gender,
@@ -6882,7 +6896,7 @@ const aiHandler = (() => {
 
       return send(res, 200, { 
         ok: true, 
-        lyrics: out.lyrics || "", 
+        lyrics,
         cost,
         remaining: credits - cost
       });

@@ -387,11 +387,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
       
-      if (result.lyrics) {
-        setLyrics(result.lyrics);
-      } else {
-        alert('La IA no pudo generar letras para ese tema.');
+      const nextLyrics = (result?.lyrics || '').toString().trim();
+      if (nextLyrics) {
+        setLyrics(nextLyrics);
+        return;
       }
+      alert((result?.message || 'La IA no devolvió letra. Intenta con un tema más específico o espera unos minutos.').toString());
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error generando letras con IA.');
     } finally {
