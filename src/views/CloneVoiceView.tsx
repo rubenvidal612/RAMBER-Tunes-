@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User } from 'lucide-react';
+import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +34,7 @@ export function CloneVoiceView() {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
+  const [showAudioRequirements, setShowAudioRequirements] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -433,17 +434,26 @@ export function CloneVoiceView() {
 
         {/* Audio Requirements Info */}
         <div className="glass-card rounded-3xl border border-white/10 p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-              <Upload className="w-6 h-6 text-emerald-300" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+                <Info className="w-6 h-6 text-emerald-300" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Requisitos del Audio</div>
+                <div className="text-xs text-slate-300">Para obtener los mejores resultados</div>
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="text-white font-extrabold">Requisitos del Audio</div>
-              <div className="text-xs text-slate-300">Para obtener los mejores resultados</div>
-            </div>
+            <button
+              onClick={() => setShowAudioRequirements(!showAudioRequirements)}
+              className="p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-colors"
+            >
+              {showAudioRequirements ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            </button>
           </div>
 
-          <div className="space-y-4">
+          {showAudioRequirements && (
+            <div className="space-y-4">
             {/* Duración Requirements */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
               <div className="text-white font-semibold mb-2">Duración del Audio</div>
@@ -507,7 +517,7 @@ export function CloneVoiceView() {
               <ul className="space-y-2 text-sm text-slate-300">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400">•</span>
-                  <span>Usa un micrófono de buena calidad</span>
+                  <span>Usa el micrófono de tu celular</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400">•</span>
@@ -524,13 +534,14 @@ export function CloneVoiceView() {
               </ul>
             </div>
           </div>
+          )}
         </div>
 
         {/* Upload Section */}
         <div className="glass-card rounded-3xl border border-white/10 p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-100">
-              <Upload className="w-6 h-6" />
+              <Mic className="w-6 h-6" />
             </div>
             <div className="min-w-0">
               <div className="text-white font-extrabold">Subir Audio</div>
@@ -545,7 +556,7 @@ export function CloneVoiceView() {
                 className="flex-1 py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 transition-colors"
                 disabled={isLoading}
               >
-                <Upload className="w-4 h-4" /> Seleccionar archivo
+                <Mic className="w-4 h-4" /> Seleccionar archivo
               </button>
               <input
                 ref={fileInputRef}
