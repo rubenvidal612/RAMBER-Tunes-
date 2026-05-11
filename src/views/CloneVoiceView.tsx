@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
@@ -14,15 +14,23 @@ interface VoiceItem {
 }
 
 export function CloneVoiceView() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [voices, setVoices] = useState<VoiceItem[]>([]);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [voiceName, setVoiceName] = useState('');
   const [description, setDescription] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string>('');
+  const [voiceProfileName, setVoiceProfileName] = useState('');
+  const [category, setCategory] = useState('personal');
+  const [language, setLanguage] = useState('es');
+  const [gender, setGender] = useState('unknown');
+  const [tags, setTags] = useState<string[]>([]);
+  const [isPublic, setIsPublic] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -181,81 +189,122 @@ export function CloneVoiceView() {
     return { url: result.url, path };
   };
 
+  const uploadProfileImageToR2 = async (file: File): Promise<{ url: string; path: string }> => {
+    const t = await getAccessToken();
+    if (!t.ok) throw new Error('No autorizado');
+
+    const arrayBuffer = await file.arrayBuffer();
+    const fileArray = Array.from(new Uint8Array(arrayBuffer));
+    const userId = (await supabaseBrowser.auth.getUser()).data.user?.id || 'unknown';
+    const path = `personas/${userId}/profile_${Date.now()}.jpg`;
+
+    const response = await fetch('/api/account/upload-profile-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'authorization': `Bearer ${t.token}`,
+      },
+      body: JSON.stringify({
+        path,
+        data: fileArray,
+        contentType: file.type,
+      }),
+    });
+
+    if (!response.ok) {
+      const out = await response.json().catch(() => ({}));
+      throw new Error(out?.error || 'Error subiendo imagen de perfil');
+    }
+
+    const result = await response.json();
+    return { url: result.url, path };
+  };
+
   const cloneVoice = async () => {
     if (!selectedFile) {
-      setError('Selecciona un archivo de audio primero.');
+      setError('Por favor selecciona un archivo de audio');
       return;
     }
 
     if (!voiceName.trim()) {
-      setError('Escribe un nombre para tu voz.');
+      setError('Por favor ingresa un nombre para la voz');
       return;
     }
 
     setIsLoading(true);
     setError('');
     setSuccess('');
-    setUploadProgress(0);
 
     try {
+      // Subir audio a R2
       setIsUploading(true);
-      setUploadProgress(30);
-      const { url, path } = await uploadAudioToR2(selectedFile);
-      setUploadProgress(70);
+      setUploadProgress(0);
+      const { url: audioUrl } = await uploadAudioToR2(selectedFile);
+      
+      // Subir imagen de perfil si existe
+      let profileImageUrlToUse = profileImageUrl;
+      if (profileImage) {
+        const { url: uploadedProfileImageUrl } = await uploadProfileImageToR2(profileImage);
+        profileImageUrlToUse = uploadedProfileImageUrl;
+      }
+      
+      setIsUploading(false);
+      setUploadProgress(100);
 
-      const t = await getAccessToken();
-      if (!t.ok) throw new Error('No autorizado');
+      // Crear voz en el backend
+      const token = await getAccessToken();
+      if (!token.ok) throw new Error('No autorizado');
 
-      const response = await fetch('/api/suno/clone-voice', {
+      const response = await fetch('/api/voices/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'authorization': `Bearer ${t.token}`,
+          'Authorization': `Bearer ${token.token}`,
         },
         body: JSON.stringify({
-          uploadUrl: url,
-          uploadPath: path,
-          voiceName: voiceName.trim(),
-          description: description.trim() || 'Voz clonada desde RAMBER Tunes',
+          name: voiceName,
+          description: description.trim() || undefined,
+          audioUrl,
+          profileImageUrl: profileImageUrlToUse,
+          voiceProfileName: voiceProfileName.trim() || voiceName,
+          category,
+          language,
+          gender,
+          tags: tags.filter(tag => tag.trim()),
+          isPublic,
         }),
       });
 
-      const out = await response.json();
       if (!response.ok) {
-        let errorMessage = out?.error || 'Error clonando voz';
-        let errorDetail = out?.detail || '';
-        
-        // Mensajes más específicos según el tipo de error
-        if (out?.status === 401 || out?.status === 403) {
-          errorMessage = 'Error de autenticación';
-          errorDetail = 'La API key del servicio de voz no es válida. Contacta al administrador.';
-        } else if (out?.status === 422) {
-          errorMessage = 'Archivo de audio inválido';
-          errorDetail = 'El archivo de audio no cumple con los requisitos. Asegúrate de que sea un archivo MP3 o WAV válido.';
-        } else if (out?.status === 429) {
-          errorMessage = 'Demasiadas solicitudes';
-          errorDetail = 'Has realizado demasiadas solicitudes. Espera unos minutos e intenta de nuevo.';
-        } else if (out?.status === 500) {
-          errorMessage = 'Error de configuración';
-          errorDetail = 'El servicio de voz no está configurado correctamente. Contacta al administrador.';
-        }
-        
-        throw new Error(`${errorMessage}${errorDetail ? ': ' + errorDetail : ''}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Error al crear la voz');
       }
 
-      setSuccess(`¡Voz "${voiceName}" creada! Se está procesando (puede tardar unos minutos).`);
+      const data = await response.json();
+      setSuccess(`Voz "${voiceName}" creada exitosamente. Se está entrenando el modelo...`);
+      
+      // Recargar la lista de voces
+      loadVoices();
+      
+      // Resetear formulario
       setSelectedFile(null);
+      setProfileImage(null);
+      setProfileImageUrl('');
       setVoiceName('');
+      setVoiceProfileName('');
       setDescription('');
-      setUploadProgress(100);
-
-      setTimeout(() => loadVoices(), 2000);
-    } catch (e: any) {
-      setError(e.message || 'Error inesperado al clonar la voz');
+      setCategory('personal');
+      setLanguage('es');
+      setGender('unknown');
+      setTags([]);
+      setIsPublic(false);
+      setUploadProgress(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+      console.error('Error cloning voice:', err);
     } finally {
       setIsLoading(false);
       setIsUploading(false);
-      setUploadProgress(0);
     }
   };
 
@@ -435,6 +484,198 @@ export function CloneVoiceView() {
                 />
                 <div className="text-xs text-slate-500 mt-1 text-right">
                   {description.length}/200
+                </div>
+              </div>
+
+              {/* Profile Image Upload */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Foto de perfil de la voz (opcional)
+                </label>
+                <div className="flex items-center gap-4">
+                  {profileImageUrl ? (
+                    <div className="relative">
+                      <img
+                        src={profileImageUrl}
+                        alt="Preview"
+                        className="w-16 h-16 rounded-2xl object-cover border border-white/10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileImage(null);
+                          setProfileImageUrl('');
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                      <User className="w-6 h-6 text-slate-500" />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setProfileImage(file);
+                          setProfileImageUrl(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="hidden"
+                      id="profile-image-input"
+                    />
+                    <label
+                      htmlFor="profile-image-input"
+                      className="block w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl px-4 py-3 text-slate-300 text-sm cursor-pointer transition-colors text-center"
+                    >
+                      {profileImage ? 'Cambiar imagen' : 'Subir imagen'}
+                    </label>
+                    <div className="text-xs text-slate-500 mt-1">
+                      JPG, PNG o GIF, máximo 5MB
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Voice Profile Name */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Nombre del perfil de voz (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={voiceProfileName}
+                  onChange={(e) => setVoiceProfileName(e.target.value.slice(0, 50))}
+                  placeholder="Ej: Ruben Cantante, Mi Voz Profesional"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors"
+                  maxLength={50}
+                />
+                <div className="text-xs text-slate-500 mt-1 text-right">
+                  {voiceProfileName.length}/50
+                </div>
+              </div>
+
+              {/* Additional Metadata */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Categoría
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
+                  >
+                    <option value="personal">Personal</option>
+                    <option value="celebrity">Celebridad</option>
+                    <option value="character">Personaje</option>
+                    <option value="professional">Profesional</option>
+                    <option value="ai">IA Generada</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Idioma
+                  </label>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
+                  >
+                    <option value="es">Español</option>
+                    <option value="en">Inglés</option>
+                    <option value="fr">Francés</option>
+                    <option value="pt">Portugués</option>
+                    <option value="de">Alemán</option>
+                    <option value="it">Italiano</option>
+                    <option value="ja">Japonés</option>
+                    <option value="ko">Coreano</option>
+                    <option value="zh">Chino</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Género
+                  </label>
+                  <select
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
+                  >
+                    <option value="unknown">No especificado</option>
+                    <option value="male">Masculino</option>
+                    <option value="female">Femenino</option>
+                    <option value="neutral">Neutral</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Visibilidad
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="is-public"
+                      checked={isPublic}
+                      onChange={(e) => setIsPublic(e.target.checked)}
+                      className="w-4 h-4 rounded border-white/10 bg-white/5 text-emerald-500 focus:ring-emerald-500/50"
+                    />
+                    <label htmlFor="is-public" className="text-sm text-slate-300">
+                      Hacer pública en el catálogo
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tags Input */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Etiquetas (opcional)
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {tags.map((tag, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-sm"
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => setTags(tags.filter((_, i) => i !== index))}
+                        className="text-xs hover:text-white"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Agrega etiquetas separadas por comas (ej: pop, rock, suave)"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                      e.preventDefault();
+                      const input = e.currentTarget;
+                      const value = input.value.trim();
+                      if (value && !tags.includes(value)) {
+                        setTags([...tags, value]);
+                      }
+                      input.value = '';
+                    }
+                  }}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors"
+                />
+                <div className="text-xs text-slate-500 mt-1">
+                  Presiona Enter o coma para agregar etiquetas
                 </div>
               </div>
             </div>
