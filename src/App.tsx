@@ -499,7 +499,9 @@ export default function App() {
   const [profileAvatarMode, setProfileAvatarMode] = useState<'male' | 'female' | 'photo'>('male');
   const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>('');
-  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const avatarGalleryInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarCameraInputRef = useRef<HTMLInputElement | null>(null);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -2357,7 +2359,7 @@ export default function App() {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    onClick={() => avatarInputRef.current?.click()}
+                    onClick={() => setIsAvatarPickerOpen(true)}
                     className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-extrabold px-4 py-2 rounded-full"
                     type="button"
                   >
@@ -2395,9 +2397,27 @@ export default function App() {
                   </button>
                 </div>
                 <input
-                  ref={avatarInputRef}
+                  ref={avatarGalleryInputRef}
                   type="file"
                   accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    e.currentTarget.value = '';
+                    if (!f) return;
+                    setProfileAvatarMode('photo');
+                    setProfileAvatarFile(f);
+                    try {
+                      const url = URL.createObjectURL(f);
+                      setProfileAvatarUrl(url);
+                    } catch {}
+                  }}
+                />
+                <input
+                  ref={avatarCameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0] || null;
@@ -2438,6 +2458,52 @@ export default function App() {
       )}
 
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} onOpenUpdates={() => openUpdates()} />}
+      {isAvatarPickerOpen && (
+        <div className="fixed inset-0 z-[260] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsAvatarPickerOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div className="text-white font-extrabold">Elegir foto</div>
+              <button
+                onClick={() => setIsAvatarPickerOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-2">
+              <button
+                type="button"
+                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                onClick={() => {
+                  setIsAvatarPickerOpen(false);
+                  window.setTimeout(() => avatarCameraInputRef.current?.click(), 0);
+                }}
+              >
+                Tomar foto (Cámara)
+              </button>
+              <button
+                type="button"
+                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                onClick={() => {
+                  setIsAvatarPickerOpen(false);
+                  window.setTimeout(() => avatarGalleryInputRef.current?.click(), 0);
+                }}
+              >
+                Elegir de galería / archivos
+              </button>
+              <button
+                type="button"
+                className="w-full bg-transparent border border-white/10 text-slate-300 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                onClick={() => setIsAvatarPickerOpen(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {isPricingOpen && (
         <PricingView
           onClose={() => {
