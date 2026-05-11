@@ -33,6 +33,7 @@ export function CloneVoiceView() {
   const [voices, setVoices] = useState<VoiceItem[]>([]);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,7 +137,7 @@ export function CloneVoiceView() {
     return () => clearInterval(interval);
   }, [voices]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     if (!file) return;
 
@@ -151,11 +152,52 @@ export function CloneVoiceView() {
       return;
     }
 
-    setSelectedFile(file);
-    setError('');
-    if (!voiceName.trim()) {
-      setVoiceName(file.name.replace(/\.[^/.]+$/, '').slice(0, 50));
+    // Validar duración del audio
+    try {
+      const duration = await getAudioDuration(file);
+      const minDuration = 10; // 10 segundos mínimo
+      const maxDuration = 300; // 5 minutos máximo (300 segundos)
+      
+      if (duration < minDuration) {
+        setError(`El audio es demasiado corto. Mínimo ${minDuration} segundos. Duración actual: ${duration.toFixed(1)} segundos.`);
+        return;
+      }
+      
+      if (duration > maxDuration) {
+         setError(`El audio es demasiado largo. Máximo ${maxDuration} segundos (5 minutos). Duración actual: ${duration.toFixed(1)} segundos.`);
+         return;
+       }
+       
+       setSelectedFile(file);
+       setAudioDuration(duration);
+       setError('');
+       if (!voiceName.trim()) {
+         setVoiceName(file.name.replace(/\.[^/.]+$/, '').slice(0, 50));
+       }
+    } catch (err) {
+      setError('No se pudo verificar la duración del audio. Asegúrate de que sea un archivo de audio válido.');
+      console.error('Error checking audio duration:', err);
     }
+  };
+
+  // Función para obtener la duración de un archivo de audio
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      
+      audio.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(audio.src);
+        resolve(audio.duration);
+      };
+      
+      audio.onerror = () => {
+        window.URL.revokeObjectURL(audio.src);
+        reject(new Error('No se pudo cargar el audio'));
+      };
+      
+      audio.src = URL.createObjectURL(file);
+    });
   };
 
   const uploadAudioToR2 = async (file: File): Promise<{ url: string; path: string }> => {
@@ -299,6 +341,7 @@ export function CloneVoiceView() {
       setTags([]);
       setIsPublic(false);
       setUploadProgress(0);
+      setAudioDuration(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
       console.error('Error cloning voice:', err);
@@ -384,8 +427,103 @@ export function CloneVoiceView() {
         <div>
           <h1 className="text-2xl font-bold text-white">Clonar Voz</h1>
           <p className="text-sm text-slate-300 mt-1">
-            Sube un audio de tu voz (mínimo 10 segundos, máximo 50 MB) para crear un clon que podrás usar en tus canciones.
+            Sube un audio de tu voz para crear un clon que podrás usar en tus canciones.
           </p>
+        </div>
+
+        {/* Audio Requirements Info */}
+        <div className="glass-card rounded-3xl border border-white/10 p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+              <Upload className="w-6 h-6 text-emerald-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-white font-extrabold">Requisitos del Audio</div>
+              <div className="text-xs text-slate-300">Para obtener los mejores resultados</div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Duración Requirements */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <div className="text-white font-semibold mb-2">Duración del Audio</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span className="text-slate-300 text-sm">Mínimo:</span>
+                  </div>
+                  <div className="text-white font-bold text-lg">10 segundos</div>
+                  <div className="text-slate-400 text-xs">
+                    Tiempo suficiente para capturar tu voz
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                    <span className="text-slate-300 text-sm">Máximo:</span>
+                  </div>
+                  <div className="text-white font-bold text-lg">5 minutos</div>
+                  <div className="text-slate-400 text-xs">
+                    Equivalente a una canción completa
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* File Size Requirements */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <div className="text-white font-semibold mb-2">Tamaño del Archivo</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <span className="text-slate-300 text-sm">Formato:</span>
+                  </div>
+                  <div className="text-white font-bold text-lg">MP3 o WAV</div>
+                  <div className="text-slate-400 text-xs">
+                    Formatos de audio compatibles
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                    <span className="text-slate-300 text-sm">Tamaño máximo:</span>
+                  </div>
+                  <div className="text-white font-bold text-lg">50 MB</div>
+                  <div className="text-slate-400 text-xs">
+                    Suficiente para audio de alta calidad
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tips */}
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
+              <div className="text-white font-semibold mb-2 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                <span>Consejos para mejores resultados:</span>
+              </div>
+              <ul className="space-y-2 text-sm text-slate-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400">•</span>
+                  <span>Usa un micrófono de buena calidad</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400">•</span>
+                  <span>Grabar en un ambiente silencioso</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400">•</span>
+                  <span>Habla o canta de forma natural</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400">•</span>
+                  <span>Evita ruidos de fondo y ecos</span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         {/* Upload Section */}
@@ -396,7 +534,7 @@ export function CloneVoiceView() {
             </div>
             <div className="min-w-0">
               <div className="text-white font-extrabold">Subir Audio</div>
-              <div className="text-xs text-slate-300">MP3 o WAV, máximo 50 MB</div>
+              <div className="text-xs text-slate-300">MP3 o WAV, mínimo 10 segundos, máximo 5 minutos (50 MB)</div>
             </div>
           </div>
 
@@ -417,6 +555,52 @@ export function CloneVoiceView() {
                 onChange={handleFileSelect}
               />
             </div>
+
+            {/* Selected File Info */}
+            {selectedFile && (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                    <span className="text-white font-semibold">Archivo seleccionado:</span>
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                  </div>
+                </div>
+                
+                <div className="text-sm text-slate-300 mb-2 truncate">
+                  {selectedFile.name}
+                </div>
+                
+                {audioDuration && (
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">Duración:</span>
+                        <span className="text-white font-bold">
+                          {Math.floor(audioDuration / 60)}:{Math.floor(audioDuration % 60).toString().padStart(2, '0')}
+                        </span>
+                        <span className="text-slate-400">(min:seg)</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">Segundos:</span>
+                        <span className="text-white font-bold">{audioDuration.toFixed(1)}</span>
+                      </div>
+                    </div>
+                    
+                    <div className={`px-2 py-1 rounded-full text-xs font-bold ${
+                      audioDuration >= 10 && audioDuration <= 300 
+                        ? 'bg-emerald-500/20 text-emerald-300' 
+                        : 'bg-red-500/20 text-red-300'
+                    }`}>
+                      {audioDuration >= 10 && audioDuration <= 300 ? '✓ Válido' : '✗ Inválido'}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {selectedFile && (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
