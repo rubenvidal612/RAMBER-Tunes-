@@ -66,6 +66,10 @@ export default defineConfig(({mode}) => {
           },
           selfHandleResponse: true
         },
+        '/api/voices': {
+          target: env.API_BASE_URL || 'http://localhost:3001',
+          changeOrigin: true,
+        },
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

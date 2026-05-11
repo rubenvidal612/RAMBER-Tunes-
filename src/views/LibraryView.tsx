@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
+import { VoiceSelector } from '@/components/VoiceSelector';
 
 interface LibraryViewProps {
   canciones: SongItem[];
@@ -1857,6 +1858,8 @@ function SongOptionsSheet({
   const trimPointerIdRef = useRef<number | null>(null);
   const trimRootRef = useRef<HTMLDivElement | null>(null);
   const trimDragOffsetSecRef = useRef<number>(0);
+  const [showVoiceClone, setShowVoiceClone] = useState(false);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
   useEffect(() => {
     setPublished(Boolean((song as any)?.isPublic));
     setPublishGenre(((song as any)?.publicGenre || '').toString());
@@ -3477,6 +3480,17 @@ function SongOptionsSheet({
             )}
             {!isDeleted && (
               <button
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5 bg-gradient-to-r from-purple-500/10 to-transparent"
+                onClick={() => {
+                  setShowVoiceClone(true);
+                }}
+                disabled={isBusy}
+              >
+                <AudioLines className="w-5 h-5 text-purple-300" /> <span className="text-slate-200 font-extrabold">Clonar voz</span>
+              </button>
+            )}
+            {!isDeleted && (
+              <button
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5"
                 onClick={() => onMoveToFolder?.()}
                 disabled={isBusy}
@@ -3739,6 +3753,105 @@ function SongOptionsSheet({
               >
                 Guardar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVoiceClone && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowVoiceClone(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Clonar voz para: {song.title || 'Canción'}</div>
+              <button
+                onClick={() => setShowVoiceClone(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4">
+              <VoiceSelector
+                onSelectVoice={(voiceId) => setSelectedVoiceId(voiceId)}
+                selectedVoiceId={selectedVoiceId}
+                songId={song.id}
+                className="mb-4"
+              />
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowVoiceClone(false)}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full py-3 text-slate-200 font-extrabold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!selectedVoiceId) {
+                      alert('Selecciona una voz primero');
+                      return;
+                    }
+                    
+                    try {
+                      setIsBusy(true);
+                      const token = await getAccessToken();
+                      if (!token.ok) {
+                        alert('No se pudo iniciar sesión');
+                        return;
+                      }
+
+                      const response = await fetch('/api/create-cover', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token.token}`,
+                        },
+                        body: JSON.stringify({
+                          songId: song.id,
+                          voiceId: selectedVoiceId,
+                        }),
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        alert(errorData.error || 'Error al crear el cover');
+                        return;
+                      }
+
+                      const data = await response.json();
+                      alert(`¡Cover creado exitosamente! ID: ${data.coverId}`);
+                      
+                      setShowVoiceClone(false);
+                      onClose();
+                      
+                      // Recargar la biblioteca si es necesario
+                      if (onRefreshSongs) {
+                        onRefreshSongs();
+                      }
+                    } catch (err) {
+                      alert('Error al crear el cover');
+                      console.error(err);
+                    } finally {
+                      setIsBusy(false);
+                    }
+                  }}
+                  disabled={isBusy || !selectedVoiceId}
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-3 rounded-full transition-colors disabled:opacity-60"
+                >
+                  {isBusy ? 'Creando cover...' : 'Crear cover con voz clonada'}
+                </button>
+              </div>
+              
+              <div className="mt-4 text-slate-400 text-sm">
+                <p className="mb-2">📝 <strong>¿Qué hace esta función?</strong></p>
+                <ul className="space-y-1 text-xs">
+                  <li>• Toma la canción seleccionada y aplica una voz clonada</li>
+                  <li>• Crea una nueva versión con la voz elegida</li>
+                  <li>• La nueva canción aparecerá en tu biblioteca</li>
+                  <li>• Puedes usar voces que hayas entrenado previamente</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>

@@ -31,3 +31,22 @@ export interface SongItem {
   sunoAudioId?: string | null;
   isCover?: boolean;
 }
+
+export interface VoiceItem {
+  id: string;
+  name: string;
+  description?: string;
+  modelUrl?: string;
+  sampleUrl?: string;
+  createdAt: string;
+  status: 'training' | 'ready' | 'failed';
+  userId: string;
+  profileImageUrl?: string;
+  voiceProfileName?: string;
+  category?: string;
+  language?: string;
+  gender?: string;
+  accent?: string;
+  tags?: string[];
+  isPublic?: boolean;
+}

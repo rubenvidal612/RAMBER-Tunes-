@@ -2140,6 +2140,167 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleCreateCover(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
+    const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
+    const voiceId = firstString(payload, ["voiceId", "voice_id"]);
+    const voiceModelUrl = firstString(payload, ["voiceModelUrl", "voice_model_url"]);
+    const title = firstString(payload, ["title"]) || "Cover Personalizado";
+    const pitchChange = Number(payload?.pitchChange) || 0;
+    const indexRate = Number(payload?.indexRate) || 0.5;
+    const protect = Number(payload?.protect) || 0.33;
+    const outputFormat = firstString(payload, ["outputFormat", "output_format"]) || "mp3";
+
+    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
+    if (!voiceId && !voiceModelUrl) return send(res, 400, { error: "Falta voiceId o voiceModelUrl" });
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = 25; // 25 créditos por cover
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      let finalUploadUrl = uploadUrl;
+      if (uploadPath) {
+        try {
+          finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
+        } catch (e) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          return send(res, 502, { error: "Error generando URL firmada para el audio", detail: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // Determinar la URL del modelo de voz
+      let modelUrl = voiceModelUrl;
+      if (voiceId && !voiceModelUrl) {
+        // Buscar la voz en la base de datos
+        const { data: voiceRows } = await auth.admin
+          .from("kits_voices")
+          .select("replicate_id, output")
+          .eq("id", voiceId)
+          .eq("user_id", user.id)
+          .limit(1);
+        
+        const voiceRow = Array.isArray(voiceRows) ? voiceRows[0] : null;
+        if (voiceRow?.output?.model_url) {
+          modelUrl = voiceRow.output.model_url;
+        } else if (voiceRow?.replicate_id) {
+          // Si no tenemos URL del modelo, usar el replicate_id para obtener el modelo
+          const replicateToken = process.env.REPLICATE_API_TOKEN;
+          if (replicateToken) {
+            const replicateResponse = await fetch(`https://api.replicate.com/v1/predictions/${voiceRow.replicate_id}`, {
+              headers: { 'Authorization': `Token ${replicateToken}` },
+            });
+            if (replicateResponse.ok) {
+              const replicateData = await replicateResponse.json();
+              modelUrl = replicateData.output?.model_url;
+            }
+          }
+        }
+      }
+
+      if (!modelUrl) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 400, { error: "No se pudo obtener la URL del modelo de voz" });
+      }
+
+      // Llamar a Replicate API para crear el cover
+      const replicateToken = process.env.REPLICATE_API_TOKEN;
+      if (!replicateToken) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 500, { error: "Replicate API token no configurado", detail: "Contacta al administrador del sistema" });
+      }
+
+      const replicateResponse = await fetch("https://api.replicate.com/v1/models/zsxkib/realistic-voice-cloning/versions/a0076ea1/predictions", {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${replicateToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: {
+            song_input: finalUploadUrl,
+            rvc_model: "CUSTOM",
+            custom_rvc_model_download_url: modelUrl,
+            pitch_change: pitchChange,
+            index_rate: indexRate,
+            protect: protect,
+            output_format: outputFormat
+          },
+          webhook: `${process.env.APP_URL || 'https://your-app-url.com'}/api/webhooks/replicate-cover`,
+          webhook_events_filter: ['completed', 'failed']
+        }),
+      });
+
+      const replicateData = await replicateResponse.json();
+
+      if (!replicateResponse.ok) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        
+        let errorMessage = "Error creando cover";
+        let errorDetail = replicateData?.detail || `HTTP ${replicateResponse.status}`;
+        
+        if (replicateResponse.status === 401 || replicateResponse.status === 403) {
+          errorMessage = "Error de autenticación con Replicate API";
+          errorDetail = "El token de API no es válido o ha expirado";
+        } else if (replicateResponse.status === 422) {
+          errorMessage = "Datos de solicitud inválidos";
+          errorDetail = "El archivo de audio o el modelo de voz no cumplen con los requisitos";
+        } else if (replicateResponse.status === 429) {
+          errorMessage = "Límite de solicitudes excedido";
+          errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
+        }
+        
+        return send(res, 502, { error: errorMessage, detail: errorDetail, status: replicateResponse.status });
+      }
+
+      const predictionId = replicateData?.id;
+      if (!predictionId) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Respuesta inválida de Replicate API" });
+      }
+
+      // Guardar en la base de datos
+      await auth.admin.from("rvc_covers").insert({
+        user_id: user.id,
+        title: title,
+        original_audio_url: finalUploadUrl,
+        voice_id: voiceId,
+        voice_model_url: modelUrl,
+        prediction_id: predictionId,
+        cost: cost,
+        pitch_change: pitchChange,
+        index_rate: indexRate,
+        protect: protect,
+        output_format: outputFormat,
+        status: 'processing',
+        created_at: new Date().toISOString(),
+      });
+
+      return send(res, 200, { 
+        predictionId, 
+        message: "Cover en proceso. Recibirás una notificación cuando esté listo.",
+        status: 'processing',
+        cost: cost
+      });
+    } catch (e) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+      return send(res, 502, { error: "Error creando cover", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleKitsVoices(req: any, res: any) {
     if ((req.method || "").toUpperCase() === "GET") {
       const auth = await requireUser(req);
@@ -2215,6 +2376,7 @@ const sunoHandler = (() => {
       if (a === "credits") return handleCredits(req, res);
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
+      if (a === "create-cover") return handleCreateCover(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
     } catch (e) {
@@ -6895,6 +7057,7 @@ export default async function handler(req: any, res: any) {
     if (head === "account" && next === "upload-profile-image") return uploadProfileImageHandler(req, res);
     if (head === "kits" && next === "voice-conversions") return kitsVoicesHandler(req, res);
     if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
+    if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate") return replicateWebhookHandler(req, res);
 
