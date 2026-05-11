@@ -2398,7 +2398,6 @@ export default function App() {
                   ref={avatarInputRef}
                   type="file"
                   accept="image/*"
-                  capture="user"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0] || null;
