@@ -270,6 +270,13 @@ export function CloneVoiceView() {
       return { file: normalizeAudioType(file, isWav ? 'audio/wav' : 'audio/mpeg'), duration };
     }
 
+    const isAmr = ext === 'amr' || type.includes('amr');
+    const is3gp = ext === '3gp' || ext === '3gpp' || type.includes('3gpp') || type.includes('3gp');
+    if (isAmr || is3gp) {
+      const label = [ext ? `.${ext}` : '', type ? `(${type})` : ''].filter(Boolean).join(' ');
+      throw new Error(`Este formato ${label || ''} no se puede convertir aquí. Convierte a MP3 o WAV y vuelve a intentar.`);
+    }
+
     const buf = await file.arrayBuffer();
     const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) {
@@ -306,7 +313,8 @@ export function CloneVoiceView() {
       const wavFile = new File([wavBlob], `${base}.wav`, { type: 'audio/wav' });
       return { file: wavFile, duration: Number.isFinite(toEncode.duration) ? toEncode.duration : 0 };
     } catch {
-      throw new Error('Ese archivo no se pudo leer. Usa MP3 o WAV, o convierte a MP3/WAV.');
+      const label = [ext ? `.${ext}` : '', type ? `(${type})` : ''].filter(Boolean).join(' ');
+      throw new Error(`Ese archivo ${label || ''} no se pudo leer. Usa MP3 o WAV, o convierte tu audio a MP3/WAV.`);
     } finally {
       try {
         await ctx.close();
