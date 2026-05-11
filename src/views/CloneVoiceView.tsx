@@ -35,6 +35,7 @@ export function CloneVoiceView() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [showAudioRequirements, setShowAudioRequirements] = useState(false);
+  const [isPreparingAudio, setIsPreparingAudio] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,22 +143,17 @@ export function CloneVoiceView() {
     const file = e.target.files?.[0] || null;
     if (!file) return;
 
-    const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'];
-    if (!allowedTypes.includes(file.type)) {
-      setError('Solo se permiten archivos MP3 o WAV.');
-      return;
-    }
-
     if (file.size > 50 * 1024 * 1024) {
       setError('El archivo es muy pesado. Máximo 50 MB.');
       return;
     }
 
-    // Validar duración del audio
     try {
-      const duration = await getAudioDuration(file);
-      const minDuration = 10; // 10 segundos mínimo
-      const maxDuration = 300; // 5 minutos máximo (300 segundos)
+      setIsPreparingAudio(true);
+      setError('');
+      const { file: normalizedFile, duration } = await normalizeVoiceAudioFile(file);
+      const minDuration = 10;
+      const maxDuration = 300;
       
       if (duration < minDuration) {
         setError(`El audio es demasiado corto. Mínimo ${minDuration} segundos. Duración actual: ${duration.toFixed(1)} segundos.`);
@@ -169,15 +165,21 @@ export function CloneVoiceView() {
          return;
        }
        
-       setSelectedFile(file);
+       setSelectedFile(normalizedFile);
        setAudioDuration(duration);
        setError('');
        if (!voiceName.trim()) {
-         setVoiceName(file.name.replace(/\.[^/.]+$/, '').slice(0, 50));
+         setVoiceName(normalizedFile.name.replace(/\.[^/.]+$/, '').slice(0, 50));
        }
     } catch (err) {
-      setError('No se pudo verificar la duración del audio. Asegúrate de que sea un archivo de audio válido.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo preparar el audio. Usa MP3 o WAV, o convierte tu archivo a MP3/WAV.'
+      );
       console.error('Error checking audio duration:', err);
+    } finally {
+      setIsPreparingAudio(false);
     }
   };
 
@@ -201,6 +203,117 @@ export function CloneVoiceView() {
     });
   };
 
+  const normalizeAudioType = (file: File, forcedType: string) => {
+    const t = (file?.type || '').toString().toLowerCase();
+    if (t === forcedType.toLowerCase()) return file;
+    try {
+      return new File([file], file.name || (forcedType.includes('wav') ? 'audio.wav' : 'audio.mp3'), { type: forcedType });
+    } catch {
+      return file;
+    }
+  };
+
+  const audioBufferToWavBlob = (buffer: AudioBuffer): Blob => {
+    const numChannels = Math.max(1, Math.min(2, buffer.numberOfChannels || 1));
+    const sampleRate = Math.max(8000, Math.min(96000, Math.floor(buffer.sampleRate || 44100)));
+    const length = Math.max(1, buffer.length || 1);
+    const bytesPerSample = 2;
+    const blockAlign = numChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = length * blockAlign;
+    const out = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(out);
+
+    const writeStr = (offset: number, s: string) => {
+      for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+    };
+    const writeU16 = (offset: number, v: number) => view.setUint16(offset, v, true);
+    const writeU32 = (offset: number, v: number) => view.setUint32(offset, v, true);
+
+    writeStr(0, 'RIFF');
+    writeU32(4, 36 + dataSize);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    writeU32(16, 16);
+    writeU16(20, 1);
+    writeU16(22, numChannels);
+    writeU32(24, sampleRate);
+    writeU32(28, byteRate);
+    writeU16(32, blockAlign);
+    writeU16(34, 16);
+    writeStr(36, 'data');
+    writeU32(40, dataSize);
+
+    const channels: Float32Array[] = [];
+    for (let c = 0; c < numChannels; c++) channels.push(buffer.getChannelData(c));
+    let o = 44;
+    for (let i = 0; i < length; i++) {
+      for (let c = 0; c < numChannels; c++) {
+        const x = Math.max(-1, Math.min(1, channels[c][i] || 0));
+        const s = x < 0 ? x * 0x8000 : x * 0x7fff;
+        view.setInt16(o, Math.round(s), true);
+        o += 2;
+      }
+    }
+
+    return new Blob([out], { type: 'audio/wav' });
+  };
+
+  const normalizeVoiceAudioFile = async (file: File): Promise<{ file: File; duration: number }> => {
+    const name = (file?.name || '').toString();
+    const ext = name.toLowerCase().split('.').pop() || '';
+    const type = (file?.type || '').toString().toLowerCase();
+    const isMp3 = ext === 'mp3' || type === 'audio/mpeg' || type === 'audio/mp3';
+    const isWav = ext === 'wav' || type === 'audio/wav' || type === 'audio/x-wav';
+    if (isMp3 || isWav) {
+      const duration = await getAudioDuration(file).catch(() => 0);
+      return { file: normalizeAudioType(file, isWav ? 'audio/wav' : 'audio/mpeg'), duration };
+    }
+
+    const buf = await file.arrayBuffer();
+    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) {
+      throw new Error('Tu navegador no soporta convertir este audio. Usa MP3 o WAV.');
+    }
+    const ctx = new AudioCtx();
+    try {
+      const decoded: AudioBuffer = await new Promise((resolve, reject) => {
+        const p = ctx.decodeAudioData(buf.slice(0));
+        if (p && typeof (p as any).then === 'function') {
+          (p as any).then(resolve).catch(reject);
+        } else {
+          ctx.decodeAudioData(buf.slice(0), resolve, reject);
+        }
+      });
+
+      const targetRate = 44100;
+      let toEncode = decoded;
+      if (Number.isFinite(decoded.sampleRate) && decoded.sampleRate > 0 && decoded.sampleRate !== targetRate) {
+        try {
+          const ch = Math.max(1, Math.min(2, decoded.numberOfChannels || 1));
+          const len = Math.max(1, Math.ceil(decoded.duration * targetRate));
+          const offline = new (window as any).OfflineAudioContext(ch, len, targetRate);
+          const src = offline.createBufferSource();
+          src.buffer = decoded;
+          src.connect(offline.destination);
+          src.start(0);
+          toEncode = await offline.startRendering();
+        } catch {}
+      }
+
+      const wavBlob = audioBufferToWavBlob(toEncode);
+      const base = name.replace(/\.[^/.]+$/, '').slice(0, 120) || 'voz';
+      const wavFile = new File([wavBlob], `${base}.wav`, { type: 'audio/wav' });
+      return { file: wavFile, duration: Number.isFinite(toEncode.duration) ? toEncode.duration : 0 };
+    } catch {
+      throw new Error('Ese archivo no se pudo leer. Usa MP3 o WAV, o convierte a MP3/WAV.');
+    } finally {
+      try {
+        await ctx.close();
+      } catch {}
+    }
+  };
+
   const uploadAudioToR2 = async (file: File): Promise<{ url: string; path: string }> => {
     const t = await getAccessToken();
     if (!t.ok) throw new Error('No autorizado');
@@ -208,7 +321,8 @@ export function CloneVoiceView() {
     const arrayBuffer = await file.arrayBuffer();
     const fileArray = Array.from(new Uint8Array(arrayBuffer));
     const userId = (await supabaseBrowser.auth.getUser()).data.user?.id || 'unknown';
-    const path = `personas/${userId}/clone_${Date.now()}.mp3`;
+    const ext = ((file?.name || '').toString().toLowerCase().split('.').pop() || '') === 'wav' || (file.type || '').toLowerCase().includes('wav') ? 'wav' : 'mp3';
+    const path = `personas/${userId}/clone_${Date.now()}.${ext}`;
 
     const response = await fetch('/api/account/upload-profile-image', {
       method: 'POST',
@@ -490,9 +604,9 @@ export function CloneVoiceView() {
                     <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                     <span className="text-slate-300 text-sm">Formato:</span>
                   </div>
-                  <div className="text-white font-bold text-lg">MP3 o WAV</div>
+                  <div className="text-white font-bold text-lg">MP3 o WAV (o M4A/AAC/OGG/WEBM)</div>
                   <div className="text-slate-400 text-xs">
-                    Formatos de audio compatibles
+                    Si no es MP3/WAV, la app lo convierte a WAV
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -545,7 +659,7 @@ export function CloneVoiceView() {
             </div>
             <div className="min-w-0">
               <div className="text-white font-extrabold">Subir Audio</div>
-              <div className="text-xs text-slate-300">MP3 o WAV, mínimo 10 segundos, máximo 5 minutos (50 MB)</div>
+              <div className="text-xs text-slate-300">MP3/WAV o M4A/AAC/OGG/WEBM, mínimo 10 segundos, máximo 5 minutos (50 MB)</div>
             </div>
           </div>
 
@@ -561,11 +675,16 @@ export function CloneVoiceView() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".mp3,.wav,audio/mpeg,audio/wav"
+                accept=".mp3,.wav,.m4a,.aac,.ogg,.webm,audio/*"
                 className="hidden"
                 onChange={handleFileSelect}
               />
             </div>
+            {isPreparingAudio && (
+              <div className="text-xs text-slate-400">
+                Preparando audio…
+              </div>
+            )}
 
             {/* Selected File Info */}
             {selectedFile && (
