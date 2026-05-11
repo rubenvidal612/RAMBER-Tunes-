@@ -86,6 +86,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const pendingListKey = 'ramber.pendingSunoTasks_v1';
   const pendingLegacyKey = 'ramber.pendingSunoTask';
   const [isBoostingStyle, setIsBoostingStyle] = useState(false);
+  const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
@@ -346,6 +347,56 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (auto) setAudioLyricsStatus('No pude transcribir la letra automáticamente.');
     } finally {
       setIsTranscribingAudioLyrics(false);
+    }
+  };
+
+  const generateLyricsWithAI = async () => {
+    if (isGeneratingLyrics) return;
+    
+    // Verificar que haya algo en la descripción o instrucciones para generar letras
+    const topic = description.trim() || instructions.trim();
+    if (!topic) {
+      alert('Escribe una descripción o tema para que la IA pueda generar letras.');
+      return;
+    }
+    
+    setIsGeneratingLyrics(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      
+      const response = await fetch('/api/ai/generate-lyrics', {
+        method: 'POST',
+        headers: { 
+          'content-type': 'application/json', 
+          authorization: `Bearer ${t.token}` 
+        },
+        body: JSON.stringify({ 
+          topic: topic,
+          gender: gender,
+          style: instructions.trim() || 'General'
+        }),
+      });
+      
+      const result = await response.json().catch(() => ({}));
+      
+      if (!response.ok) {
+        alert(result.error || result.message || 'No se pudo generar letras con IA.');
+        return;
+      }
+      
+      if (result.lyrics) {
+        setLyrics(result.lyrics);
+      } else {
+        alert('La IA no pudo generar letras para ese tema.');
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error generando letras con IA.');
+    } finally {
+      setIsGeneratingLyrics(false);
     }
   };
 
@@ -1133,6 +1184,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onTranscribeAudioLyrics={transcribeLyricsFromAudio}
             setAudioUploadError={setAudioUploadError}
             openMp3Converter={openMp3Converter}
+            generateLyricsWithAI={generateLyricsWithAI}
+            isGeneratingLyrics={isGeneratingLyrics}
           />
         )}
       </div>
@@ -1508,6 +1561,8 @@ function CustomForm({
   onTranscribeAudioLyrics,
   setAudioUploadError,
   openMp3Converter,
+  generateLyricsWithAI,
+  isGeneratingLyrics,
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
@@ -1745,8 +1800,19 @@ function CustomForm({
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <button className="text-slate-400 hover:text-white transition-colors" type="button">
-                <ListMusic className="w-5 h-5" />
+              <button 
+                onClick={generateLyricsWithAI}
+                disabled={isGeneratingLyrics}
+                className="text-slate-400 hover:text-white transition-colors disabled:opacity-50" 
+                type="button"
+                aria-label="Generar letras con IA"
+                title="Generar letras con IA basadas en tu tema"
+              >
+                {isGeneratingLyrics ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <ListMusic className="w-5 h-5" />
+                )}
               </button>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-300">Instrumental</span>

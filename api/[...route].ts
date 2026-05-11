@@ -6725,6 +6725,128 @@ const aiHandler = (() => {
     };
   }
 
+  async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
+    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    if (!apiKey) {
+      return {
+        ok: false as const,
+        error: "Falta GEMINI_API_KEY en Vercel",
+        userMessage: "La generación de letras no está configurada. Falta GEMINI_API_KEY en Vercel.",
+      };
+    }
+
+    const mod: any = await import("@google/genai");
+    const { GoogleGenerativeAI } = mod;
+    const genai = new GoogleGenerativeAI(apiKey);
+    const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = `Eres un compositor profesional de canciones. Genera una letra original para una canción basada en los siguientes parámetros:
+
+Tema principal: ${topic}
+Género vocal: ${gender}
+Estilo musical: ${style}
+
+La letra debe ser:
+1. Original y creativa
+2. Coherente con el tema y estilo
+3. Con estructura de canción típica (verso, coro, puente si es apropiado)
+4. En español (a menos que se especifique otro idioma)
+5. Con emoción y sentimiento apropiados para el tema
+
+Formato de salida:
+- Usa etiquetas entre corchetes para las secciones: [Intro], [Verso], [Coro], [Puente], [Outro]
+- Cada línea debe ser una línea de la letra
+- No incluyas explicaciones ni comentarios, solo la letra
+
+Genera la letra ahora:`;
+
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      // Limpiar y formatear la letra
+      const cleanedLyrics = text
+        .replace(/```[\s\S]*?```/g, '') // Remover bloques de código
+        .replace(/["']/g, '') // Remover comillas
+        .trim();
+      
+      return {
+        ok: true as const,
+        lyrics: cleanedLyrics,
+      };
+    } catch (e: any) {
+      return {
+        ok: false as const,
+        error: e?.message || "Error generando letras",
+        userMessage: "No pude generar letras en este momento. Intenta de nuevo más tarde.",
+      };
+    }
+  }
+
+  async function handleGenerateLyrics(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const topic = typeof payload?.topic === "string" ? payload.topic.trim() : "";
+    const gender = typeof payload?.gender === "string" ? payload.gender.trim() : "Masculino";
+    const style = typeof payload?.style === "string" ? payload.style.trim() : "General";
+
+    if (!topic) {
+      return send(res, 400, { error: "El tema es requerido para generar letras" });
+    }
+
+    try {
+      // Verificar créditos del usuario
+      const credits = await getCredits(auth.user.id, auth.admin);
+      const cost = CREDIT_COSTS.lyrics;
+      
+      if (credits < cost) {
+        return send(res, 402, { 
+          error: "Créditos insuficientes", 
+          message: `Necesitas ${cost} créditos para generar letras. Tienes ${credits} créditos.` 
+        });
+      }
+
+      // Generar letras con IA
+      const out = await generateLyricsWithGemini(topic, gender, style);
+      
+      if (!out.ok) {
+        return send(res, 200, { 
+          ok: false, 
+          error: out.error || "No pude generar letras", 
+          message: out.userMessage || "No pude generar letras para ese tema." 
+        });
+      }
+
+      // Descontar créditos
+      await deductCredits(auth.user.id, auth.admin, cost, "lyrics", {
+        topic,
+        gender,
+        style,
+      });
+
+      return send(res, 200, { 
+        ok: true, 
+        lyrics: out.lyrics || "", 
+        cost,
+        remaining: credits - cost
+      });
+    } catch (e) {
+      return send(res, 200, {
+        ok: false,
+        error: "Error generando letras",
+        message: "No pude generar letras. Intenta con un tema diferente o más tarde.",
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   async function handleTranscribeLyrics(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -6782,6 +6904,7 @@ const aiHandler = (() => {
     action = action.trim().toLowerCase();
     const a = action || (next || "").toLowerCase();
     if (a === "transcribe-lyrics") return handleTranscribeLyrics(req, res);
+    if (a === "generate-lyrics") return handleGenerateLyrics(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
