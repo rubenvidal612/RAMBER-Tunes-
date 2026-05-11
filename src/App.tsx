@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { MiniPlayer } from './components/MiniPlayer';
@@ -17,7 +17,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
   { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
@@ -506,6 +506,11 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
+  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  const [nowPlayingMode, setNowPlayingMode] = useState<'normal' | 'elenco'>('normal');
+  const lyricsWrapRef = useRef<HTMLDivElement | null>(null);
+  const lyricLineRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const lastActiveLyricRef = useRef<number>(-1);
   const { credits, internalCredits, isAdmin, refreshCredits, error: creditsError } = useUserCredits();
   const lastCreditsErrorRef = useRef<string>('');
   const [showInstallBanner, setShowInstallBanner] = useState(false);
@@ -1710,7 +1715,8 @@ export default function App() {
     }
   };
 
-  const playSong = async (song: SongItem) => {
+  const playSong = async (song: SongItem, opts?: { openMode?: 'normal' | 'elenco' | 'none' }) => {
+    const openMode = opts?.openMode ?? 'normal';
     if (activeSong?.id === song.id) {
       togglePlay();
       return;
@@ -1736,6 +1742,10 @@ export default function App() {
         }
         await a.play();
         setIsPlaying(true);
+        if (openMode !== 'none') {
+          setNowPlayingMode(openMode === 'elenco' ? 'elenco' : 'normal');
+          setNowPlayingOpen(true);
+        }
         return true;
       } catch (e) {
         alert(e instanceof Error ? e.message : 'No pude reproducir esta canción.');
@@ -1821,6 +1831,47 @@ export default function App() {
     }
     setIsPlaying(!isPlaying);
   };
+
+  const parsedLyrics = useMemo(() => {
+    const raw = (activeSong?.lyrics || '').toString();
+    const lines = raw
+      .split(/\r?\n/g)
+      .map((x) => x.replace(/\s+/g, ' ').trim())
+      .filter((x) => x.length > 0);
+    const items = lines.map((text) => {
+      const weight = Math.max(1, Math.min(180, text.replace(/[^\p{L}\p{N}\s]/gu, '').length || text.length));
+      return { text, weight };
+    });
+    const total = items.reduce((acc, x) => acc + x.weight, 0);
+    return { items, total, raw: raw.trim() };
+  }, [activeSong?.id, (activeSong as any)?.lyrics]);
+
+  const activeLyricIndex = useMemo(() => {
+    const dur = Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0;
+    const t = Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0;
+    if (!dur || !parsedLyrics.items.length || !parsedLyrics.total) return -1;
+    const pct = Math.max(0, Math.min(1, t / dur));
+    const target = pct * parsedLyrics.total;
+    let acc = 0;
+    for (let i = 0; i < parsedLyrics.items.length; i++) {
+      acc += parsedLyrics.items[i].weight;
+      if (acc >= target) return i;
+    }
+    return parsedLyrics.items.length - 1;
+  }, [playerTime, playerDuration, parsedLyrics.items, parsedLyrics.total]);
+
+  useEffect(() => {
+    if (!nowPlayingOpen) return;
+    if (activeLyricIndex < 0) return;
+    if (lastActiveLyricRef.current === activeLyricIndex) return;
+    lastActiveLyricRef.current = activeLyricIndex;
+    const el = lyricLineRefs.current[activeLyricIndex];
+    if (!el) return;
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch {
+    }
+  }, [nowPlayingOpen, activeLyricIndex]);
 
   const displayCredits = credits;
 
@@ -1991,6 +2042,7 @@ export default function App() {
                     vibes={vibes}
                     onAddVibe={addVibe}
                     onPlaySong={playSong}
+                    onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })}
                     onDeleteSong={deleteCancion}
                     onRestoreSong={restoreCancion}
                     onRefreshSongs={refreshLibrary}
@@ -2004,6 +2056,150 @@ export default function App() {
            )}
         </div>
       </main>
+
+      {nowPlayingOpen && activeSong ? (
+        <div className="fixed inset-0 z-[270] bg-black/80">
+          <div className="absolute inset-0 overflow-hidden">
+            {(() => {
+              const cover = (activeSong.coverUrl || '').toString().trim();
+              if (cover) {
+                return <img src={cover} alt="" className="w-full h-full object-cover scale-110 blur-2xl opacity-60" />;
+              }
+              return <div className="w-full h-full bg-gradient-to-b from-indigo-900/40 via-black/70 to-black" />;
+            })()}
+            <div className="absolute inset-0 bg-black/55" />
+          </div>
+
+          <div className="relative h-[100dvh] flex flex-col">
+            <div className="p-4 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setNowPlayingOpen(false)}
+                className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors shrink-0"
+                aria-label="Cerrar"
+                title="Cerrar"
+              >
+                <ChevronDown className="w-6 h-6" />
+              </button>
+
+              <div className="min-w-0 flex-1 text-center">
+                <div className="text-white font-extrabold truncate">{(activeSong.title || 'Canción').toString()}</div>
+                <div className="text-[11px] text-slate-300 truncate">{((activeSong as any)?.authorName || 'RAMBER Tunes').toString()}</div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setNowPlayingMode((m) => (m === 'elenco' ? 'normal' : 'elenco'))}
+                className={cn(
+                  'w-11 h-11 rounded-full border flex items-center justify-center transition-colors shrink-0',
+                  nowPlayingMode === 'elenco'
+                    ? 'bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/25'
+                    : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10',
+                )}
+                aria-label="Elenco"
+                title="Elenco"
+              >
+                <Cast className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div ref={lyricsWrapRef} className={cn('flex-1 overflow-y-auto overscroll-contain px-6 pb-8', nowPlayingMode === 'elenco' ? 'pt-2' : 'pt-4')}>
+              {parsedLyrics.raw ? (
+                <div className={cn('space-y-3', nowPlayingMode === 'elenco' ? 'pb-10' : '')}>
+                  {parsedLyrics.items.map((line, idx) => {
+                    const isActive = idx === activeLyricIndex;
+                    return (
+                      <div
+                        key={`${idx}-${line.text}`}
+                        ref={(el) => {
+                          lyricLineRefs.current[idx] = el;
+                        }}
+                        className={cn(
+                          'text-[22px] leading-snug font-extrabold transition-all select-none',
+                          isActive ? 'text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]' : 'text-white/55',
+                        )}
+                      >
+                        {line.text}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-slate-200 font-semibold">
+                  Esta canción todavía no tiene letra guardada.
+                  <div className="mt-2 text-sm text-slate-400">Entra a los 3 puntitos de la canción y guarda la letra en “Letra”.</div>
+                </div>
+              )}
+            </div>
+
+            {nowPlayingMode === 'normal' ? (
+              <div className="px-5 pb-6 pt-2">
+                <div className="bg-black/30 border border-white/10 rounded-2xl p-4 backdrop-blur-xl">
+                  <div className="flex items-center justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={togglePlay}
+                      className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform shrink-0"
+                      aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                      title={isPlaying ? 'Pausar' : 'Reproducir'}
+                    >
+                      {isPlaying ? <Pause className="w-6 h-6 fill-black" strokeWidth={1} /> : <Play className="w-6 h-6 fill-black ml-0.5" strokeWidth={1} />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <input
+                        type="range"
+                        min={0}
+                        max={Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0}
+                        step={0.1}
+                        value={
+                          Number.isFinite(Number(playerDuration)) && Number(playerDuration) > 0
+                            ? Math.min(Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0, Number(playerDuration))
+                            : 0
+                        }
+                        disabled={!Number.isFinite(Number(playerDuration)) || Number(playerDuration) <= 0}
+                        onChange={(e) => {
+                          const a = audioRef.current;
+                          if (!a) return;
+                          const dur = Number.isFinite(Number(a.duration)) ? Number(a.duration) : 0;
+                          const next = Math.max(0, Math.min(Number(e.target.value), dur));
+                          try {
+                            a.currentTime = next;
+                          } catch {
+                          }
+                          setPlayerTime(next);
+                        }}
+                        className="w-full accent-yellow-400 disabled:opacity-40"
+                      />
+                      <div className="mt-1 flex justify-between text-[11px] text-slate-300 tabular-nums">
+                        <span>
+                          {(() => {
+                            const s = Math.max(0, Math.floor(Number.isFinite(Number(playerTime)) ? Number(playerTime) : 0));
+                            const m = Math.floor(s / 60);
+                            const r = s % 60;
+                            return `${m}:${String(r).padStart(2, '0')}`;
+                          })()}
+                        </span>
+                        <span>
+                          {(() => {
+                            const s = Math.max(0, Math.floor(Number.isFinite(Number(playerDuration)) ? Number(playerDuration) : 0));
+                            const m = Math.floor(s / 60);
+                            const r = s % 60;
+                            return `${m}:${String(r).padStart(2, '0')}`;
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="px-6 pb-6 text-center text-[11px] text-slate-300">
+                Elenco está pensado para ponerlo en pantalla y que la gente lea la letra mientras suena la canción.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <MiniPlayer 
         song={activeSong} 

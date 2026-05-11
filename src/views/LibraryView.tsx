@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
@@ -13,6 +13,7 @@ interface LibraryViewProps {
   vibes: VibeItem[];
   onAddVibe: (v: VibeItem) => void;
   onPlaySong: (s: SongItem) => void;
+  onOpenElenco?: (s: SongItem) => void;
   onDeleteSong?: (id: string) => void;
   onRestoreSong?: (id: string) => void;
   onRefreshSongs?: () => void;
@@ -21,7 +22,7 @@ interface LibraryViewProps {
   onStartCover?: (song: SongItem) => void;
 }
 
-export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onDeleteSong, onRestoreSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
+export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onOpenElenco, onDeleteSong, onRestoreSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -1426,6 +1427,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onClose={() => setMenuSong(null)}
           isDeleted={showTrash}
           onPlay={() => onPlaySong(menuSong)}
+          onElenco={() => onOpenElenco?.(menuSong)}
           onStartCover={() => onStartCover?.(menuSong)}
           onOpenLists={() => setActiveTab('listas')}
           onMoveToFolder={() => {
@@ -1790,6 +1792,7 @@ function SongOptionsSheet({
   onClose,
   isDeleted,
   onPlay,
+  onElenco,
   onStartCover,
   onOpenLists,
   onMoveToFolder,
@@ -1801,6 +1804,7 @@ function SongOptionsSheet({
   onClose: () => void;
   isDeleted: boolean;
   onPlay: () => void;
+  onElenco?: () => void;
   onStartCover?: () => void;
   onOpenLists?: () => void;
   onMoveToFolder?: () => void;
@@ -3458,6 +3462,20 @@ function SongOptionsSheet({
               </div>
             </button>
           </div>
+          {!isDeleted && (
+            <button
+              className="mt-3 w-full glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors"
+              onClick={() => {
+                onClose();
+                onElenco?.();
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <Cast className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-200 font-semibold text-sm">Elenco</div>
+              </div>
+            </button>
+          )}
         </div>
 
         <div className="px-5 pb-5">
