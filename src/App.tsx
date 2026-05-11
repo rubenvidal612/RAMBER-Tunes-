@@ -7,6 +7,7 @@ import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
+import { CloneVoiceView } from './views/CloneVoiceView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -1934,26 +1935,7 @@ export default function App() {
              )
            )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
-           {currentTab === 'convertidor' && (
-             <div className="flex-1 flex flex-col overflow-y-auto px-5 py-6">
-               <div className="max-w-[520px] w-full mx-auto space-y-4">
-                 <div className="glass-card rounded-3xl border border-white/10 p-5 bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10">
-                   <div className="flex items-center gap-3">
-                     <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-100">
-                       <Repeat2 className="w-6 h-6" />
-                     </div>
-                     <div className="min-w-0">
-                      <div className="text-white font-extrabold">Clonar Voz</div>
-                      <div className="text-xs text-slate-300">En Construcción</div>
-                     </div>
-                   </div>
-                  <div className="mt-4 text-sm text-slate-200">
-                    Próximamente podrás clonar tu voz para usarla en tus canciones.
-                  </div>
-                 </div>
-               </div>
-             </div>
-           )}
+           {currentTab === 'convertidor' && <CloneVoiceView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
            
@@ -2001,24 +1983,7 @@ export default function App() {
                 {currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
                ) : currentTab === 'convertidor' ? (
-                 <div className="flex-1 min-h-0 overflow-y-auto p-6">
-                   <div className="max-w-[720px] mx-auto">
-                     <div className="bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6">
-                       <div className="flex items-center gap-3">
-                         <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-100">
-                           <Repeat2 className="w-6 h-6" />
-                         </div>
-                         <div className="min-w-0">
-                          <div className="text-white font-extrabold">Clonar Voz</div>
-                          <div className="text-xs text-slate-300">En Construcción</div>
-                         </div>
-                       </div>
-                      <div className="mt-4 text-sm text-slate-200">
-                        Próximamente podrás clonar tu voz para usarla en tus canciones.
-                      </div>
-                     </div>
-                   </div>
-                 </div>
+                 <CloneVoiceView />
                 ) : (
                   <LibraryView
                     canciones={canciones}
@@ -2999,17 +2964,6 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
             <div className="text-[11px] text-slate-400 leading-tight truncate">Perfil público</div>
           </div>
         </a>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => shareThis().catch(() => {})}
-            className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
-          >
-            <Share2 className="w-4 h-4" /> Compartir
-          </button>
-          <a href="/" className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-sm flex items-center justify-center">
-            Abrir app
-          </a>
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -3031,8 +2985,8 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         ) : data ? (
           <div className="w-full pt-4 relative z-10">
             <div className="px-6 mb-6">
-              <div className="relative rounded-3xl overflow-hidden border border-white/10">
-                <div className="h-40 sm:h-44 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
+              <div className="relative w-full aspect-[1610/720] rounded-3xl overflow-hidden border border-white/10">
+                <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
                 {data.profile?.coverUrl ? (
                   <img
                     src={r2ValueToProxyUrl(data.profile.coverUrl)}
@@ -3071,10 +3025,16 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
               </div>
             </div>
 
-            <div className="px-6 mb-8">
+            <div className="flex gap-4 px-6 mb-8">
+              <a
+                href="/"
+                className="flex-1 py-2.5 rounded-full glass-card border border-indigo-500/50 text-indigo-300 font-semibold flex items-center justify-center gap-2 hover:bg-indigo-500/10 transition-colors text-sm"
+              >
+                Abrir app
+              </a>
               <button
                 onClick={() => shareThis().catch(() => {})}
-                className="w-full py-2.5 rounded-full glass-card border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 hover:bg-white/5 transition-colors text-sm"
+                className="flex-1 py-2.5 rounded-full glass-card border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 hover:bg-white/5 transition-colors text-sm"
               >
                 <Share2 className="w-4 h-4" /> Compartir
               </button>

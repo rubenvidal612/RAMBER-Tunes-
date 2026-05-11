@@ -2023,48 +2023,165 @@ const sunoHandler = (() => {
         }
       }
 
-      const body = {
-        audio_url: finalUploadUrl,
-        voice_name: voiceName.slice(0, 100),
-        description: description.slice(0, 500),
-        callback_url: absoluteUrlFromReq(req, "/api/webhooks/kits"),
+      // Descargar el audio para preparar el dataset
+      const audioResponse = await fetch(finalUploadUrl);
+      const audioBuffer = await audioResponse.arrayBuffer();
+      
+      // Crear un archivo WAV temporal (RVC requiere WAV)
+      const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
+      
+      // Subir el audio a un servicio temporal para que Replicate pueda acceder
+      // Primero vamos a subirlo a R2 con un nombre específico
+      const timestamp = Date.now();
+      const rvcDatasetKey = `rvc_datasets/${user.id}/${timestamp}_dataset.wav`;
+      
+      // Subir el audio a R2
+      const env = getR2Env();
+      const client = await getR2Client();
+      const { PutObjectCommand } = await getR2AwsSdk();
+      const putCommand = new PutObjectCommand({
+        Bucket: env.bucketName,
+        Key: rvcDatasetKey,
+        Body: Buffer.from(audioBuffer),
+        ContentType: 'audio/wav',
+      });
+      
+      await client.send(putCommand);
+      
+      // Generar URL firmada para el dataset
+      const datasetUrl = await getSignedR2Url(rvcDatasetKey, 60 * 60 * 24); // 24 horas
+
+      // Configurar la solicitud a Replicate API
+      const replicateToken = process.env.REPLICATE_API_TOKEN;
+      if (!replicateToken) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 500, { error: "Replicate API token no configurado", detail: "Contacta al administrador del sistema" });
+      }
+
+      const replicateModel = process.env.REPLICATE_RVC_MODEL || 'replicate/train-rvc-model';
+      const replicateVersion = process.env.REPLICATE_RVC_VERSION || 'cf360587a27f67500c30fc31de1e0f0f9aa26dcd7b866e6ac937a07bd104bad9';
+
+      // Parámetros para entrenamiento RVC
+      const replicateInput = {
+        dataset_zip: datasetUrl,
+        sample_rate: "48k",
+        version: "v2",
+        f0method: "rmvpe_gpu",
+        epoch: 50,
+        batch_size: "7"
       };
 
-      const response = await fetch('https://api.kits.ai/v1/voices/clone', {
+      // Llamar a Replicate API
+      const replicateResponse = await fetch(`https://api.replicate.com/v1/models/${replicateModel}/versions/${replicateVersion}/predictions`, {
         method: 'POST',
         headers: {
+          'Authorization': `Token ${replicateToken}`,
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.KITS_API_KEY}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          input: replicateInput,
+          webhook: `${process.env.APP_URL || 'https://your-app-url.com'}/api/webhooks/replicate`,
+          webhook_events_filter: ['completed', 'failed']
+        }),
       });
 
-      const data = await response.json();
+      const replicateData = await replicateResponse.json();
 
-      if (!response.ok) {
+      if (!replicateResponse.ok) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error clonando voz", detail: data?.error || `HTTP ${response.status}` });
+        
+        let errorMessage = "Error entrenando modelo RVC";
+        let errorDetail = replicateData?.detail || `HTTP ${replicateResponse.status}`;
+        
+        if (replicateResponse.status === 401 || replicateResponse.status === 403) {
+          errorMessage = "Error de autenticación con Replicate API";
+          errorDetail = "El token de API no es válido o ha expirado";
+        } else if (replicateResponse.status === 422) {
+          errorMessage = "Datos de solicitud inválidos";
+          errorDetail = replicateData?.detail || "El archivo de audio no cumple con los requisitos para RVC";
+        } else if (replicateResponse.status === 429) {
+          errorMessage = "Límite de solicitudes excedido";
+          errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
+        }
+        
+        return send(res, 502, { error: errorMessage, detail: errorDetail, status: replicateResponse.status });
       }
 
-      const voiceId = data?.id;
-      if (!voiceId) {
+      const predictionId = replicateData?.id;
+      if (!predictionId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta inválida de Replicate API" });
       }
 
+      // Guardar en la base de datos
       await auth.admin.from("kits_voices").insert({
-        voice_id: voiceId,
+        voice_id: predictionId,
         user_id: user.id,
         voice_name: voiceName,
         description: description,
         cost,
         created_at: new Date().toISOString(),
+        status: 'processing',
+        provider: 'replicate',
+        replicate_id: predictionId,
+        dataset_url: datasetUrl,
+        model_name: replicateModel,
       });
 
-      return send(res, 200, { voiceId, message: "Voz clonada exitosamente" });
+      return send(res, 200, { 
+        predictionId, 
+        message: "Modelo RVC en entrenamiento. Recibirás una notificación cuando esté listo.",
+        status: 'processing',
+        provider: 'replicate'
+      });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-      return send(res, 502, { error: "Error clonando voz", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error entrenando modelo RVC", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleKitsVoices(req: any, res: any) {
+    if ((req.method || "").toUpperCase() === "GET") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      try {
+        const { data: voices, error } = await auth.admin
+          .from("kits_voices")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        return send(res, 200, { voices: voices || [] });
+      } catch (e) {
+        return send(res, 500, { error: "Error obteniendo voces", detail: e instanceof Error ? e.message : String(e) });
+      }
+    } else if ((req.method || "").toUpperCase() === "DELETE") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      const voiceId = firstString(payload, ["voiceId", "voice_id"]);
+
+      if (!voiceId) return send(res, 400, { error: "Falta voiceId" });
+
+      try {
+        const { error } = await auth.admin
+          .from("kits_voices")
+          .delete()
+          .eq("id", voiceId)
+          .eq("user_id", auth.user.id);
+
+        if (error) throw error;
+
+        return send(res, 200, { ok: true, message: "Voz eliminada" });
+      } catch (e) {
+        return send(res, 500, { error: "Error eliminando voz", detail: e instanceof Error ? e.message : String(e) });
+      }
+    } else {
+      return send(res, 405, { error: "Método no permitido" });
     }
   }
 
@@ -2097,6 +2214,7 @@ const sunoHandler = (() => {
       if (a === "music-cover") return handleMusicCover(req, res);
       if (a === "credits") return handleCredits(req, res);
       if (a === "clone-voice") return handleCloneVoice(req, res);
+      if (a === "kits-voices") return handleKitsVoices(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
     } catch (e) {
@@ -3625,13 +3743,13 @@ const uploadProfileImageHandler = (() => {
     const adult = levelToScore(ann?.adult);
     const racy = levelToScore(ann?.racy);
     const violence = levelToScore(ann?.violence);
-    const ok = adult <= 3 && racy <= 3 && violence <= 3;
+    const ok = adult <= 2 && racy <= 2 && violence <= 2;
     if (ok) return { ok: true as const, skipped: false as const };
 
     const reasons: string[] = [];
-    if (adult >= 4) reasons.push("desnudos");
-    if (racy >= 4) reasons.push("contenido sexual");
-    if (violence >= 4) reasons.push("violencia");
+    if (adult >= 3) reasons.push("desnudos");
+    if (racy >= 3) reasons.push("contenido sexual");
+    if (violence >= 3) reasons.push("violencia");
     const reason = reasons.length ? reasons.join(", ") : "contenido no permitido";
     return { ok: false as const, error: `Imagen no permitida: ${reason}`.slice(0, 200) };
   }
@@ -3782,6 +3900,89 @@ const r2ObjectHandler = (() => {
     } catch (e) {
       return send(res, 404, { error: "No encontrado", detail: e instanceof Error ? e.message : String(e) });
     }
+  };
+})();
+
+const replicateWebhookHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  return async function handler(req: any, res: any) {
+    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return send(res, 200, { ok: true });
+
+    let body: any = null;
+    try {
+      if (typeof req.body === "string") body = JSON.parse(req.body);
+      else body = req.body ?? null;
+    } catch {
+      body = null;
+    }
+
+    const predictionId = body?.id;
+    const status = body?.status;
+    const output = body?.output;
+    const error = body?.error;
+
+    if (!predictionId) {
+      return send(res, 400, { error: "Falta prediction ID" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService);
+
+      // Buscar la voz en la base de datos usando replicate_id
+      const { data: voiceRows } = await admin
+        .from("kits_voices")
+        .select("id, user_id, status, cost")
+        .eq("replicate_id", predictionId)
+        .limit(1);
+      
+      const voiceRow = Array.isArray(voiceRows) ? voiceRows[0] : null;
+      
+      if (voiceRow) {
+        const userId = voiceRow.user_id;
+        const currentStatus = voiceRow.status;
+        
+        // Actualizar el estado de la voz
+        let newStatus = currentStatus;
+        if (status === 'succeeded' || status === 'completed') {
+          newStatus = 'ready';
+        } else if (status === 'failed' || status === 'canceled') {
+          newStatus = 'failed';
+        }
+        
+        // Actualizar la base de datos
+        await admin
+          .from("kits_voices")
+          .update({ 
+            status: newStatus,
+            output: output ? JSON.stringify(output) : null,
+            error: error ? JSON.stringify(error) : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq("replicate_id", predictionId);
+        
+        // Si falló, devolver los créditos al usuario
+        if (newStatus === 'failed' && userId) {
+          const cost = voiceRow.cost || 15;
+          await adjustUserCredits(admin, userId, cost);
+        }
+        
+        // También podemos notificar al usuario aquí si tenemos un sistema de notificaciones
+      }
+    } catch (e) {
+      console.error('Error procesando webhook de Replicate:', e);
+    }
+
+    return send(res, 200, { ok: true, received: true, predictionId, status });
   };
 })();
 
@@ -6471,6 +6672,193 @@ const appHandler = (() => {
   };
 })();
 
+const kitsVoicesHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function firstString(obj: any, keys: string[]): string {
+    if (!obj || typeof obj !== "object") return "";
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = (req.headers.authorization || "").toString();
+    const bearerToken = token.toLowerCase().startsWith("bearer ") ? token.slice(7).trim() : "";
+    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  return async function handler(req: any, res: any) {
+    const url = new URL(req.url, "http://localhost");
+    const pathname = url.pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    
+    // Verificar si es una ruta específica como /api/kits/voice-conversions/:id
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    const third = isApi ? parts[3] : parts[2];
+    
+    if (head === "kits" && next === "voice-conversions" && third) {
+      // Es una solicitud para obtener el estado de una conversión específica
+      const conversionId = third;
+      
+      if ((req.method || "").toUpperCase() === "GET") {
+        const auth = await requireUser(req);
+        if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+        try {
+          // Primero verificar si la voz pertenece al usuario
+          const { data: voice, error } = await auth.admin
+            .from("kits_voices")
+            .select("*")
+            .eq("voice_id", conversionId)
+            .eq("user_id", auth.user.id)
+            .single();
+
+          if (error) {
+            if (error.code === "PGRST116") {
+              return send(res, 404, { error: "Conversión no encontrada" });
+            }
+            throw error;
+          }
+
+          // Consultar el estado en la API de Arpeggi
+          const apiKey = process.env.ARPEGGI_API_KEY || process.env.KITS_API_KEY;
+          if (!apiKey) {
+            return send(res, 500, { error: "Falta API key de Arpeggi/Kits" });
+          }
+
+          const response = await fetch(`https://arpeggi.io/api/kits/v1/voice-conversions/${conversionId}`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+            },
+          });
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              return send(res, 404, { error: "Conversión no encontrada en Arpeggi" });
+            }
+            const errorData = await response.json().catch(() => ({}));
+            return send(res, response.status, { 
+              error: "Error consultando estado", 
+              detail: errorData?.error || `HTTP ${response.status}` 
+            });
+          }
+
+          const conversionData = await response.json();
+          
+          // Actualizar el estado en nuestra base de datos
+          let newStatus = "processing";
+          if (conversionData.status === "completed" || conversionData.status === "succeeded") {
+            newStatus = "ready";
+          } else if (conversionData.status === "failed" || conversionData.status === "error") {
+            newStatus = "failed";
+          }
+          
+          if (voice.status !== newStatus) {
+            await auth.admin
+              .from("kits_voices")
+              .update({ status: newStatus })
+              .eq("id", voice.id);
+          }
+
+          return send(res, 200, { 
+            conversion: {
+              ...conversionData,
+              local_status: newStatus,
+              voice_name: voice.voice_name,
+              description: voice.description
+            }
+          });
+        } catch (e) {
+          return send(res, 500, { error: "Error obteniendo estado de conversión", detail: e instanceof Error ? e.message : String(e) });
+        }
+      } else {
+        return send(res, 405, { error: "Método no permitido" });
+      }
+    }
+    
+    // Rutas originales para /api/kits/voices
+    if ((req.method || "").toUpperCase() === "GET") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      try {
+        const { data: voices, error } = await auth.admin
+          .from("kits_voices")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        return send(res, 200, { voices: voices || [] });
+      } catch (e) {
+        return send(res, 500, { error: "Error obteniendo voces", detail: e instanceof Error ? e.message : String(e) });
+      }
+    } else if ((req.method || "").toUpperCase() === "DELETE") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      const voiceId = firstString(payload, ["voiceId", "voice_id"]);
+
+      if (!voiceId) return send(res, 400, { error: "Falta voiceId" });
+
+      try {
+        const { error } = await auth.admin
+          .from("kits_voices")
+          .delete()
+          .eq("id", voiceId)
+          .eq("user_id", auth.user.id);
+
+        if (error) throw error;
+
+        return send(res, 200, { ok: true, message: "Voz eliminada" });
+      } catch (e) {
+        return send(res, 500, { error: "Error eliminando voz", detail: e instanceof Error ? e.message : String(e) });
+      }
+    } else {
+      return send(res, 405, { error: "Método no permitido" });
+    }
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -6505,7 +6893,10 @@ export default async function handler(req: any, res: any) {
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
     if (head === "account" && next === "upload-profile-image") return uploadProfileImageHandler(req, res);
+    if (head === "kits" && next === "voice-conversions") return kitsVoicesHandler(req, res);
+    if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
+    if (head === "webhooks" && next === "replicate") return replicateWebhookHandler(req, res);
 
     return sendNotFound(res);
   } catch (e) {

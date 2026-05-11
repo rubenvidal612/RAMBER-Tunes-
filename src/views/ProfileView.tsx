@@ -284,8 +284,8 @@ export function ProfileView({
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
       <div className="px-6 mb-6">
-        <div className="relative rounded-3xl overflow-hidden border border-white/10">
-          <div className="h-40 sm:h-44 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
+        <div className="relative w-full aspect-[1610/720] rounded-3xl overflow-hidden border border-white/10">
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
           {userCoverUrl && !coverLoadFailed ? (
             <img
               src={userCoverUrl}
