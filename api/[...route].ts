@@ -168,6 +168,19 @@ async function getSignedR2Url(key: string, expiresIn: number = 3600): Promise<st
   return await getSignedUrl(client, command, { expiresIn });
 }
 
+async function getSignedR2PutUrl(key: string, contentType: string, expiresIn: number = 600): Promise<string> {
+  const env = getR2Env();
+  const client = await getR2Client();
+  const { PutObjectCommand } = await getR2AwsSdk();
+  const { getSignedUrl } = await getR2Presigner();
+  const command = new PutObjectCommand({
+    Bucket: env.bucketName,
+    Key: key,
+    ContentType: contentType,
+  });
+  return await getSignedUrl(client, command, { expiresIn });
+}
+
 async function deleteFromR2(paths: string[]): Promise<number> {
   const env = getR2Env();
   const client = await getR2Client();
@@ -6736,52 +6749,91 @@ const aiHandler = (() => {
     }
 
     const mod: any = await import("@google/genai");
-    const { GoogleGenerativeAI } = mod;
-    const genai = new GoogleGenerativeAI(apiKey);
-    const model = genai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
+    if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
+    const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `Eres un compositor profesional de canciones. Genera una letra original para una canción basada en los siguientes parámetros:
+    const systemInstruction =
+      "Eres un compositor profesional. " +
+      "Genera letras totalmente originales (no copies canciones existentes). " +
+      "Entrega solo la letra, sin explicación.";
+    const userPrompt =
+      "Genera una letra para una canción en español con estructura clara. " +
+      "Usa etiquetas: [Intro], [Verso], [Coro], [Puente], [Outro]. " +
+      "Tema: " +
+      topic +
+      "\nGénero vocal: " +
+      gender +
+      "\nEstilo musical: " +
+      style +
+      "\nNo uses comillas ni markdown.";
 
-Tema principal: ${topic}
-Género vocal: ${gender}
-Estilo musical: ${style}
+    const baseModels = [
+      "gemini-3.1-flash-lite-preview",
+      "gemini-flash-lite-latest",
+      "gemini-3-flash-preview",
+      "gemini-1.5-flash",
+    ];
 
-La letra debe ser:
-1. Original y creativa
-2. Coherente con el tema y estilo
-3. Con estructura de canción típica (verso, coro, puente si es apropiado)
-4. En español (a menos que se especifique otro idioma)
-5. Con emoción y sentimiento apropiados para el tema
+    let lastErr: any = null;
+    for (const base of baseModels) {
+      const modelsToTry = base.startsWith("models/") ? [base] : [base, `models/${base}`];
+      try {
+        let r: any = null;
+        let ok = false;
+        for (const model of modelsToTry) {
+          try {
+            r = await ai.models.generateContent({
+              model,
+              systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
+              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            });
+            ok = true;
+            break;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            lastErr = msg;
+            const lower = msg.toLowerCase();
+            const is404 = lower.includes("404") || lower.includes("not found");
+            if (is404) continue;
+            throw e;
+          }
+        }
+        if (!ok) {
+          const msg = String(lastErr || "Modelo no disponible");
+          return { ok: false as const, error: msg, userMessage: "La generación de letras no está disponible (modelo). Intenta de nuevo." };
+        }
 
-Formato de salida:
-- Usa etiquetas entre corchetes para las secciones: [Intro], [Verso], [Coro], [Puente], [Outro]
-- Cada línea debe ser una línea de la letra
-- No incluyas explicaciones ni comentarios, solo la letra
+        const text = String(r?.text || "").trim();
+        if (!text) return { ok: false as const, error: "Gemini no devolvió texto", userMessage: "No pude generar letras para ese tema." };
 
-Genera la letra ahora:`;
-
-    try {
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      
-      // Limpiar y formatear la letra
-      const cleanedLyrics = text
-        .replace(/```[\s\S]*?```/g, '') // Remover bloques de código
-        .replace(/["']/g, '') // Remover comillas
-        .trim();
-      
-      return {
-        ok: true as const,
-        lyrics: cleanedLyrics,
-      };
-    } catch (e: any) {
-      return {
-        ok: false as const,
-        error: e?.message || "Error generando letras",
-        userMessage: "No pude generar letras en este momento. Intenta de nuevo más tarde.",
-      };
+        const cleaned = text.replaceAll("```", "").trim();
+        return { ok: true as const, lyrics: cleaned };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        lastErr = msg;
+        const lower = msg.toLowerCase();
+        const is404 = lower.includes("404") || lower.includes("not found");
+        if (is404) continue;
+        const is401 = lower.includes("401") || lower.includes("unauthorized");
+        const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
+        const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
+        const userMessage = is429
+          ? "La generación está saturada. Intenta de nuevo en unos minutos."
+          : is401 || is403
+            ? "La generación no está disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
+            : "No pude generar letras en este momento. Intenta de nuevo.";
+        return { ok: false as const, error: msg, userMessage };
+      }
     }
+
+    return {
+      ok: false as const,
+      error: String(lastErr || "Modelo no disponible"),
+      userMessage:
+        "La generación de letras no está disponible en este momento. " +
+        "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
+    };
   }
 
   async function handleGenerateLyrics(req: any, res: any) {
@@ -6802,7 +6854,6 @@ Genera la letra ahora:`;
     }
 
     try {
-      // Verificar créditos del usuario
       const credits = await getCredits(auth.user.id, auth.admin);
       const cost = CREDIT_COSTS.lyrics;
       
@@ -6813,7 +6864,6 @@ Genera la letra ahora:`;
         });
       }
 
-      // Generar letras con IA
       const out = await generateLyricsWithGemini(topic, gender, style);
       
       if (!out.ok) {
@@ -6824,7 +6874,6 @@ Genera la letra ahora:`;
         });
       }
 
-      // Descontar créditos
       await deductCredits(auth.user.id, auth.admin, cost, "lyrics", {
         topic,
         gender,
@@ -7144,6 +7193,81 @@ const kitsVoicesHandler = (() => {
   };
 })();
 
+const uploadAudioHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function safeFileName(name: string) {
+    const s = (name || "").toString().trim();
+    const cleaned = s.replaceAll("\\", "/").split("/").pop() || "audio.mp3";
+    return cleaned.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "audio.mp3";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = (req.headers.authorization || "").toString();
+    const bearerToken = token.toLowerCase().startsWith("bearer ") ? token.slice(7).trim() : "";
+    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
+    const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
+    const fname = safeFileName(title);
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
+
+    try {
+      const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
+      const url = await getSignedR2Url(key, 60 * 60 * 2);
+      return send(res, 200, { ok: true, uploadUrl, url, key, contentType });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      const msg = /Missing required R2 environment variables/i.test(detail || "")
+        ? "Falta configurar Cloudflare R2 en Vercel"
+        : "No pude preparar la subida del audio";
+      return send(res, 500, { ok: false, error: msg, detail });
+    }
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -7169,6 +7293,7 @@ export default async function handler(req: any, res: any) {
     if (head === "ai") return aiHandler(req, res);
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
+    if (head === "upload-audio") return uploadAudioHandler(req, res);
     if (head === "r2" && next === "object") return r2ObjectHandler(req, res);
     if (head === "share" && next === "song" && third === "audio") return shareSongAudioHandler(req, res);
     if (head === "share" && next === "song" && third === "cover") return shareSongCoverHandler(req, res);

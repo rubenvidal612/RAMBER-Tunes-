@@ -353,10 +353,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const generateLyricsWithAI = async () => {
     if (isGeneratingLyrics) return;
     
-    // Verificar que haya algo en la descripción o instrucciones para generar letras
-    const topic = description.trim() || instructions.trim();
+    const topic = (lyrics || '').toString().trim() || description.trim() || instructions.trim();
     if (!topic) {
-      alert('Escribe una descripción o tema para que la IA pueda generar letras.');
+      alert('Escribe en el cuadro de Letras (o en Descripción/Instrucciones) de qué quieres que trate la canción.');
       return;
     }
     
@@ -383,7 +382,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       
       const result = await response.json().catch(() => ({}));
       
-      if (!response.ok) {
+      if (!response.ok || result?.ok === false) {
         alert(result.error || result.message || 'No se pudo generar letras con IA.');
         return;
       }
@@ -536,10 +535,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
-
-      const fileBuffer = await file.arrayBuffer();
-      const fileArray = Array.from(new Uint8Array(fileBuffer));
-
+      
       const response = await fetch('/api/upload-audio', {
         method: 'POST',
         headers: {
@@ -547,13 +543,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           'authorization': `Bearer ${t.token}`,
         },
         body: JSON.stringify({
-          file: fileArray,
           title: file.name,
-          contentType: file.type || 'audio/webm',
+          contentType: file.type || 'audio/mpeg',
         }),
       });
-
-      const result = await response.json();
+      
+      const raw = await response.text().catch(() => '');
+      let result: any = {};
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        result = { error: raw || 'Respuesta inválida del servidor.' };
+      }
 
       if (!response.ok) {
         setAudioUploadError(result.error || 'No se pudo subir el audio.');
@@ -561,8 +562,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
 
-      setAudioUploadUrl(result.url);
-      setAudioUploadPath(result.url.split('/').pop() || '');
+      const uploadUrl = (result?.uploadUrl || '').toString().trim();
+      const url = (result?.url || '').toString().trim();
+      const key = (result?.key || '').toString().trim();
+      if (!uploadUrl || !url || !key) {
+        const msg = (result?.error || 'No recibí URLs para subir el audio.').toString();
+        setAudioUploadError(msg);
+        alert(msg);
+        return;
+      }
+      
+      await new Promise<void>((resolve, reject) => {
+        try {
+          const xhr = new XMLHttpRequest();
+          uploadXhrRef.current = xhr;
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', (file.type || 'audio/mpeg').toString());
+          xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable) return;
+            const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
+            setUploadProgress(pct);
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) return resolve();
+            return reject(new Error(`No se pudo subir el audio (HTTP ${xhr.status}).`));
+          };
+          xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
+          xhr.onabort = () => reject(new Error('Subida cancelada.'));
+          xhr.send(file);
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
+        }
+      });
+
+      setAudioUploadUrl(url);
+      setAudioUploadPath(key);
       setAudioFile(file);
       setExternalAudioLabel('');
       setUploadProgress(100);
