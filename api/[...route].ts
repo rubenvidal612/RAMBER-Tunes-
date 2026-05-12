@@ -7759,7 +7759,25 @@ function sendNotFound(res: any) {
 
 export default async function handler(req: any, res: any) {
   try {
-    const pathname = new URL(req.url, "http://localhost").pathname;
+    const u = new URL(req.url, "http://localhost");
+    let pathname = u.pathname;
+    if (pathname.includes("[...route]")) {
+      const qp = u.searchParams;
+      const packed = (qp.get("path") || qp.get("p") || qp.get("route") || "").toString().trim();
+      if (packed) {
+        pathname = `/api/${packed.replace(/^\/+/, "")}`;
+      } else {
+        const h =
+          (req.headers["x-vercel-original-url"] ||
+            req.headers["x-forwarded-uri"] ||
+            req.headers["x-original-uri"] ||
+            req.headers["x-rewrite-url"] ||
+            req.headers["x-url"] ||
+            "") as any;
+        const raw = (Array.isArray(h) ? h[0] : h || "").toString().trim();
+        if (raw && raw.startsWith("/") && !raw.includes("[...route]")) pathname = raw.split("?")[0] || pathname;
+      }
+    }
     const parts = pathname.split("/").filter(Boolean);
 
     const isApi = parts[0] === "api";
