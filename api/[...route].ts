@@ -2111,7 +2111,32 @@ const sunoHandler = (() => {
       }
 
       const replicateModel = process.env.REPLICATE_RVC_MODEL || 'replicate/train-rvc-model';
-      const replicateVersion = process.env.REPLICATE_RVC_VERSION || 'cf360587a27f67500c30fc31de1e0f0f9aa26dcd7b866e6ac937a07bd104bad9';
+      const getLatestReplicateVersionId = async (modelSlug: string): Promise<string | null> => {
+        try {
+          const infoRes = await fetch(`https://api.replicate.com/v1/models/${modelSlug}`, {
+            method: "GET",
+            headers: { Authorization: `Token ${replicateToken}` },
+          });
+          if (!infoRes.ok) return null;
+          const info = await infoRes.json().catch(() => null);
+          const id = String(info?.latest_version?.id || "").trim();
+          return id || null;
+        } catch {
+          return null;
+        }
+      };
+
+      let replicateVersion = String(process.env.REPLICATE_RVC_VERSION || "").trim();
+      if (!replicateVersion) {
+        const latest = await getLatestReplicateVersionId(replicateModel);
+        if (latest) replicateVersion = latest;
+      }
+      if (!replicateVersion) {
+        return send(res, 500, {
+          error: "No pude determinar la versión del modelo de Replicate",
+          detail: "Configura REPLICATE_RVC_VERSION en el servidor (Vercel → Settings → Environment Variables).",
+        });
+      }
 
       // Parámetros para entrenamiento RVC
       const replicateInput = {
@@ -2128,20 +2153,40 @@ const sunoHandler = (() => {
       console.log(`Dataset URL: ${datasetUrl}`);
       console.log(`Replicate Input:`, JSON.stringify(replicateInput, null, 2));
       
-      const replicateResponse = await fetch(`https://api.replicate.com/v1/models/${replicateModel}/versions/${replicateVersion}/predictions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${replicateToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: replicateInput,
-          webhook: `${process.env.APP_URL || 'https://your-app-url.com'}/api/webhooks/replicate`,
-          webhook_events_filter: ['completed', 'failed']
-        }),
-      });
+      const callReplicate = async (versionId: string) => {
+        const r = await fetch(`https://api.replicate.com/v1/models/${replicateModel}/versions/${versionId}/predictions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${replicateToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            input: replicateInput,
+            webhook: `${process.env.APP_URL || 'https://your-app-url.com'}/api/webhooks/replicate`,
+            webhook_events_filter: ['completed', 'failed']
+          }),
+        });
+        const data = await r.json().catch(() => ({}));
+        return { r, data };
+      };
 
-      const replicateData = await replicateResponse.json();
+      let { r: replicateResponse, data: replicateData } = await callReplicate(replicateVersion);
+
+      if (!replicateResponse.ok && replicateResponse.status === 422) {
+        const d = String(replicateData?.detail || "").toLowerCase();
+        const looksDisabled = d.includes("has been disabled") || d.includes("disabled") || d.includes("consistently fails");
+        if (looksDisabled) {
+          const latest = await getLatestReplicateVersionId(replicateModel);
+          if (latest && latest !== replicateVersion) {
+            console.log(`Versión deshabilitada en Replicate (${replicateVersion}). Reintentando con latest_version (${latest})`);
+            replicateVersion = latest;
+            const retry = await callReplicate(replicateVersion);
+            replicateResponse = retry.r;
+            replicateData = retry.data;
+          }
+        }
+      }
+
       console.log(`Respuesta de Replicate:`, JSON.stringify(replicateData, null, 2));
 
       if (!replicateResponse.ok) {
@@ -2153,7 +2198,15 @@ const sunoHandler = (() => {
           errorDetail = "El token de API no es válido o ha expirado";
         } else if (replicateResponse.status === 422) {
           errorMessage = "Datos de solicitud inválidos";
-          errorDetail = replicateData?.detail || "El archivo de audio no cumple con los requisitos para RVC";
+          const d = String(replicateData?.detail || "").trim();
+          const lower = d.toLowerCase();
+          if (lower.includes("has been disabled") || lower.includes("consistently fails") || lower.includes("disabled")) {
+            errorDetail =
+              "Replicate deshabilitó esa versión del modelo. " +
+              "Solución: actualiza REPLICATE_RVC_VERSION en el servidor (Vercel → Settings → Environment Variables) o déjalo vacío para usar la última versión automáticamente.";
+          } else {
+            errorDetail = d || "El archivo de audio no cumple con los requisitos para RVC";
+          }
           console.log(`Error 422 de Replicate: ${errorDetail}`);
         } else if (replicateResponse.status === 429) {
           errorMessage = "Límite de solicitudes excedido";
