@@ -394,7 +394,7 @@ export function CloneVoiceView() {
       });
 
       setUploadProgress(100);
-      return { url, path };
+      return { url, path: key || path };
     } catch (putErr) {
       const canFallback = file.size <= 4 * 1024 * 1024;
       if (!canFallback) {
@@ -492,7 +492,7 @@ export function CloneVoiceView() {
       // Subir audio a R2
       setIsUploading(true);
       setUploadProgress(0);
-      const { url: audioUrl } = await uploadAudioToR2(selectedFile);
+      const { url: audioUrl, path: audioPath } = await uploadAudioToR2(selectedFile);
       
       // Subir imagen de perfil si existe
       let profileImageUrlToUse = profileImageUrl;
@@ -508,16 +508,17 @@ export function CloneVoiceView() {
       const token = await getAccessToken();
       if (!token.ok) throw new Error('No autorizado');
 
-      const response = await fetch('/api/voices/create', {
+      const response = await fetch('/api/suno/clone-voice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token.token}`,
         },
         body: JSON.stringify({
-          name: voiceName,
+          uploadUrl: audioUrl,
+          uploadPath: audioPath,
+          voiceName,
           description: description.trim() || undefined,
-          audioUrl,
           profileImageUrl: profileImageUrlToUse,
           voiceProfileName: voiceProfileName.trim() || voiceName,
           category,
