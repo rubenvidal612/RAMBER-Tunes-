@@ -756,7 +756,13 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true });
+      await auth.admin.from("suno_tasks").insert({ 
+        task_id: taskId, 
+        user_id: user.id, 
+        kind: "generate", 
+        cost, 
+        consumed: true
+      });
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);

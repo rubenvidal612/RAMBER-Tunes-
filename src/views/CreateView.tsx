@@ -1294,6 +1294,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       {/* Action Buttons & Sticky Create */}
       <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
+        {/* Create Button */}
         <button 
           onClick={() => handleCreate().catch(() => {})}
           disabled={isSubmitting || (audioFile && !audioUploadUrl) || (audioAction === 'extend' && Boolean(audioUploadUrl))}
