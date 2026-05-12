@@ -2062,29 +2062,33 @@ const sunoHandler = (() => {
       // Crear un archivo WAV temporal (RVC requiere WAV)
       const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
       
-      // Subir el audio a un servicio temporal para que Replicate pueda acceder
-      // Primero vamos a subirlo a R2 con un nombre específico
-      const timestamp = Date.now();
-      const rvcDatasetKey = `rvc_datasets/${user.id}/${timestamp}_dataset.wav`;
+      // Crear un archivo ZIP que contenga el audio WAV (Replicate espera un ZIP)
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      zip.file("dataset.wav", Buffer.from(audioBuffer));
+      const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
       
-      console.log(`Subiendo audio a R2: ${rvcDatasetKey}`);
-      // Subir el audio a R2
+      // Subir el archivo ZIP a R2
+      const timestamp = Date.now();
+      const rvcDatasetKey = `rvc_datasets/${user.id}/${timestamp}_dataset.zip`;
+      
+      console.log(`Subiendo archivo ZIP a R2: ${rvcDatasetKey}, tamaño: ${zipBuffer.length} bytes`);
       const env = getR2Env();
       const client = await getR2Client();
       const { PutObjectCommand } = await getR2AwsSdk();
       const putCommand = new PutObjectCommand({
         Bucket: env.bucketName,
         Key: rvcDatasetKey,
-        Body: Buffer.from(audioBuffer),
-        ContentType: 'audio/wav',
+        Body: zipBuffer,
+        ContentType: 'application/zip',
       });
       
       await client.send(putCommand);
-      console.log(`Audio subido a R2 exitosamente`);
+      console.log(`Archivo ZIP subido a R2 exitosamente`);
       
-      // Generar URL firmada para el dataset
+      // Generar URL firmada para el dataset ZIP
       const datasetUrl = await getSignedR2Url(rvcDatasetKey, 60 * 60 * 24); // 24 horas
-      console.log(`URL del dataset generada: ${datasetUrl}`);
+      console.log(`URL del dataset ZIP generada: ${datasetUrl}`);
 
       // Configurar la solicitud a Replicate API
       const replicateToken = process.env.REPLICATE_API_TOKEN;
