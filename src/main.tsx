@@ -9,6 +9,13 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+try {
+  const ua = (navigator.userAgent || '').toString();
+  if (/android/i.test(ua)) {
+    document.documentElement.classList.add('android');
+  }
+} catch {}
+
 const isProd = Boolean((import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD);
 if ('serviceWorker' in navigator && isProd) {
   window.addEventListener('load', () => {
