@@ -1,7 +1,8 @@
 import { Component, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Edit2, Forward, MoreVertical, Share2, XCircle } from 'lucide-react';
+import { Edit2, Forward, MoreVertical, Share2, XCircle, Search, ArrowLeft } from 'lucide-react';
 import { EditProfileView } from './EditProfileView';
+import { UserProfileView } from './UserProfileView';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import type { SongItem } from '@/types';
 
@@ -71,6 +72,10 @@ export function ProfileView({
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [pinnedSongsFull, setPinnedSongsFull] = useState<Array<{ id: string; title: string; audioUrl: string; coverUrl?: string }>>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; full_name: string; last_name: string; username: string; avatar_url: string }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
 
   const normalizeR2PublicToProxy = (raw: any) => {
     const url = (raw || '').toString().trim();
@@ -278,8 +283,58 @@ export function ProfileView({
         const pinnedSet = new Set(pinnedSongIds);
         return allSongs.filter((s) => pinnedSet.has(String(s?.id || '')));
       })();
+  const searchUsers = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setIsSearching(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      
+      const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+        headers: { authorization: `Bearer ${t.token}` }
+      });
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        alert(error?.error || 'No se pudo buscar usuarios.');
+        return;
+      }
+      
+      const data = await response.json();
+      setSearchResults(Array.isArray(data?.users) ? data.users : []);
+    } catch (error) {
+      alert('Error al buscar usuarios.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const location = [city, country].map((x) => String(x || '').trim()).filter(Boolean).join(', ');
   const hasInfo = Boolean(location || String(contactEmail || '').trim() || String(contactPhone || '').trim() || String(bio || '').trim());
+
+  if (viewingUserId) {
+    return (
+      <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
+        <div className="px-6 mb-4">
+          <button
+            onClick={() => setViewingUserId(null)}
+            className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Volver a mi perfil</span>
+          </button>
+        </div>
+        <UserProfileView userId={viewingUserId} onPlaySong={onPlaySong} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
@@ -314,6 +369,70 @@ export function ProfileView({
           </div>
         </div>
       </div>
+
+      {/* Search Bar */}
+      <div className="px-6 mb-6">
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
+            <Search className="w-5 h-5 text-slate-400" />
+          </div>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              searchUsers(e.target.value);
+            }}
+            placeholder="Buscar usuarios por nombre, apellido o usuario..."
+            className="w-full bg-white/5 border border-white/10 rounded-full py-3 pl-12 pr-4 text-white placeholder:text-slate-400 outline-none focus:border-indigo-500/50 transition-colors"
+          />
+          {isSearching && (
+            <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+              <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+         </div>
+       </div>
+
+      {/* Search Results */}
+      {searchResults.length > 0 && (
+        <div className="px-6 mb-6">
+          <div className="glass-card rounded-3xl border border-white/10 p-4">
+            <div className="text-white font-extrabold mb-4">Resultados de búsqueda</div>
+            <div className="space-y-3">
+              {searchResults.map((user) => (
+                <div key={user.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors cursor-pointer">
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center overflow-hidden shrink-0">
+                    {user.avatar_url ? (
+                      <img
+                        src={normalizeR2PublicToProxy(user.avatar_url)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-lg font-bold text-indigo-300">
+                        {(user.full_name || 'U').slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white font-bold truncate">
+                      {user.full_name} {user.last_name}
+                    </div>
+                    <div className="text-xs text-slate-300/80 truncate">@{user.username}</div>
+                  </div>
+                  <button
+                    className="px-4 py-2 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
+                    onClick={() => setViewingUserId(user.id)}
+                  >
+                    Ver perfil
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 px-6 mb-6 text-center">

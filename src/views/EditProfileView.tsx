@@ -7,6 +7,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isAvatarAutoSaving, setIsAvatarAutoSaving] = useState(false);
   const [name, setName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [country, setCountry] = useState('');
@@ -53,9 +54,11 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         if (!alive) return;
         const meta: any = data?.user?.user_metadata || {};
         const n = (meta?.full_name || meta?.name || '').toString().trim();
+        const ln = (meta?.last_name || '').toString().trim();
         const u = (meta?.username || '').toString().trim();
         const b = (meta?.bio || '').toString();
         setName(n);
+        setLastName(ln);
         setUsername(u);
         setBio(b);
         setCountry((meta?.country || '').toString());
@@ -439,6 +442,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
   const save = async () => {
     if (!supabaseBrowser) return;
     const cleanName = (name || '').toString().trim().slice(0, 20);
+    const cleanLastName = (lastName || '').toString().trim().slice(0, 30);
     const cleanUsername = sanitizeUsername(username);
     if (!cleanName) {
       alert('Pon tu Nombre.');
@@ -481,6 +485,7 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
       const upd = await supabaseBrowser.auth.updateUser({
         data: {
           full_name: cleanName,
+          last_name: cleanLastName,
           username: cleanUsername,
           bio: (bio || '').toString().slice(0, 250),
           country: (country || '').toString().slice(0, 60),
@@ -606,6 +611,23 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
               className="bg-transparent text-white outline-none flex-1 text-[15px]"
             />
             <span className="text-slate-500 text-sm ml-2">{name.length}/20</span>
+          </div>
+        </div>
+
+        {/* Last Name */}
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <h3 className="font-bold text-base">Apellidos</h3>
+            <HelpCircle className="w-4 h-4 text-slate-500" />
+          </div>
+          <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
+            <input 
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value.substring(0, 30))}
+              className="bg-transparent text-white outline-none flex-1 text-[15px]"
+            />
+            <span className="text-slate-500 text-sm ml-2">{lastName.length}/30</span>
           </div>
         </div>
 

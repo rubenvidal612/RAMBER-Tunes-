@@ -5589,6 +5589,125 @@ const socialHandler = (() => {
     }
   }
 
+  async function handleSearchUsers(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const query = (pickQuery(req, "q") || "").toString().trim();
+    if (!query) return send(res, 400, { error: "Falta término de búsqueda" });
+
+    try {
+      const searchTerm = query.toLowerCase();
+      const filteredUsers: any[] = [];
+      
+      // Buscar usuarios página por página
+      for (let page = 1; page <= 10; page++) {
+        const { data: users, error } = await auth.admin.auth.admin.listUsers({
+          page,
+          perPage: 100
+        });
+
+        if (error) break;
+        
+        const usersArray = Array.isArray(users?.users) ? users.users : [];
+        if (!usersArray.length) break;
+        
+        for (const user of usersArray) {
+          const meta = user?.user_metadata || {};
+          const fullName = (meta?.full_name || "").toString().toLowerCase();
+          const lastName = (meta?.last_name || "").toString().toLowerCase();
+          const username = (meta?.username || "").toString().toLowerCase();
+          const email = (user?.email || "").toString().toLowerCase();
+          
+          if (
+            fullName.includes(searchTerm) ||
+            lastName.includes(searchTerm) ||
+            username.includes(searchTerm) ||
+            email.includes(searchTerm)
+          ) {
+            filteredUsers.push({
+              id: user.id,
+              full_name: meta?.full_name || "",
+              last_name: meta?.last_name || "",
+              username: meta?.username || "",
+              email: user.email,
+              avatar_url: meta?.avatar_url || ""
+            });
+            
+            // Limitar a 50 resultados
+            if (filteredUsers.length >= 50) break;
+          }
+        }
+        
+        if (filteredUsers.length >= 50) break;
+      }
+
+      return send(res, 200, { ok: true, users: filteredUsers });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFollowUser(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    
+    const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId.trim() : "";
+    const follow = Boolean(body?.follow);
+    
+    if (!targetUserId) return send(res, 400, { error: "Falta targetUserId" });
+    if (targetUserId === auth.user.id) return send(res, 400, { error: "No puedes seguirte a ti mismo" });
+
+    try {
+      // Verificar si el usuario objetivo existe
+      const { data: targetUser, error: targetError } = await auth.admin.auth.admin.getUserById(targetUserId);
+      if (targetError || !targetUser) return send(res, 404, { error: "Usuario no encontrado" });
+
+      // Crear o eliminar la relación de seguimiento
+      if (follow) {
+        const { error } = await auth.admin
+          .from('user_follows')
+          .upsert({
+            follower_id: auth.user.id,
+            following_id: targetUserId,
+            created_at: new Date().toISOString()
+          }, { onConflict: 'follower_id,following_id' });
+        
+        if (error) {
+          const msg = (error.message || "").toLowerCase();
+          const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+          if (missing) {
+            return send(res, 500, {
+              error: "Falta configurar la tabla de seguimientos",
+              hint: "Crea la tabla 'user_follows' en Supabase (SQL Editor). Luego intenta de nuevo.",
+              detail: error.message
+            });
+          }
+          return send(res, 500, { error: "No pude seguir al usuario", detail: error.message });
+        }
+      } else {
+        const { error } = await auth.admin
+          .from('user_follows')
+          .delete()
+          .eq('follower_id', auth.user.id)
+          .eq('following_id', targetUserId);
+        
+        if (error) {
+          return send(res, 500, { error: "No pude dejar de seguir al usuario", detail: error.message });
+        }
+      }
+
+      return send(res, 200, { ok: true, following: follow });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleFeed(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
     const a = await getAdminOrError();
@@ -5686,6 +5805,8 @@ const socialHandler = (() => {
     if (a === "feed") return handleFeed(req, res);
     if (a === "genres") return handleGenres(req, res);
     if (a === "publish") return handlePublish(req, res);
+    if (a === "search") return handleSearchUsers(req, res);
+    if (a === "follow") return handleFollowUser(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
