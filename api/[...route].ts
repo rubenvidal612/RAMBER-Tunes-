@@ -2223,7 +2223,7 @@ const sunoHandler = (() => {
       console.log(`Prediction ID obtenido: ${predictionId}`);
 
       // Guardar en la base de datos
-      await auth.admin.from("kits_voices").insert({
+      const fullRow: any = {
         voice_id: predictionId,
         user_id: user.id,
         voice_name: voiceName,
@@ -2242,7 +2242,41 @@ const sunoHandler = (() => {
         gender: gender,
         tags: tags.length > 0 ? tags : null,
         is_public: isPublic,
-      });
+      };
+
+      const tryInsertWithFallback = async () => {
+        let row: any = { ...fullRow };
+        let lastErr: any = null;
+        for (let i = 0; i < 8; i++) {
+          const ins = await auth.admin.from("kits_voices").insert(row);
+          if (!ins.error) return { ok: true as const };
+          lastErr = ins.error;
+          const msg = String(ins.error?.message || "");
+          const m1 = msg.match(/column \"([^\"]+)\" of relation \"kits_voices\" does not exist/i);
+          const m2 = msg.match(/Could not find the '([^']+)' column/i);
+          const col = (m1?.[1] || m2?.[1] || "").toString().trim();
+          if (col && Object.prototype.hasOwnProperty.call(row, col)) {
+            delete row[col];
+            continue;
+          }
+          const lower = msg.toLowerCase();
+          if (row.tags != null && (lower.includes("invalid input syntax") || lower.includes("json") || lower.includes("array"))) {
+            delete row.tags;
+            continue;
+          }
+          break;
+        }
+        return { ok: false as const, error: lastErr };
+      };
+
+      const saved = await tryInsertWithFallback();
+      if (!saved.ok) {
+        return send(res, 500, {
+          error: "No pude guardar la voz en la base de datos",
+          detail: saved.error instanceof Error ? saved.error.message : String(saved.error || ""),
+          hint: "Revisa la tabla kits_voices en Supabase (que exista y tenga las columnas básicas).",
+        });
+      }
 
       return send(res, 200, { 
         predictionId, 

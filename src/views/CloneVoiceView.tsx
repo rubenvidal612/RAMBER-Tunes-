@@ -49,7 +49,22 @@ export function CloneVoiceView() {
       });
       const out = await r.json();
       if (r.ok && Array.isArray(out?.voices)) {
-        setVoices(out.voices);
+        const mapped: VoiceItem[] = out.voices
+          .map((v: any) => {
+            const id = String(v?.id || '').trim() || String(v?.voice_id || '').trim() || String(v?.replicate_id || '').trim();
+            const voice_id = String(v?.voice_id || '').trim() || String(v?.replicate_id || '').trim() || id;
+            const voice_name = String(v?.voice_name || '').trim() || 'Voz';
+            const description = String(v?.description || '').trim();
+            const statusRaw = String(v?.status || '').trim().toLowerCase();
+            const status: VoiceItem['status'] =
+              statusRaw === 'ready' || statusRaw === 'failed' || statusRaw === 'processing' ? (statusRaw as any) : 'processing';
+            const created_at = String(v?.created_at || '').trim() || new Date().toISOString();
+            const cost = Number(v?.cost ?? 0) || 0;
+            if (!id) return null;
+            return { id, voice_id, voice_name, description, status, created_at, cost };
+          })
+          .filter(Boolean) as any;
+        setVoices(mapped);
       }
     } catch (e) {
       console.error('Error loading voices:', e);
