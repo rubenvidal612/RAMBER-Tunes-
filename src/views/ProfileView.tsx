@@ -76,6 +76,8 @@ export function ProfileView({
   const [searchResults, setSearchResults] = useState<Array<{ id: string; full_name: string; last_name: string; username: string; avatar_url: string }>>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
 
   const normalizeR2PublicToProxy = (raw: any) => {
     const url = (raw || '').toString().trim();
@@ -145,6 +147,17 @@ export function ProfileView({
     };
   }, []);
 
+  const refreshFollowCounts = async () => {
+    if (!userId) return;
+    const t = await getAccessToken();
+    if (!t.ok) return;
+    const r = await fetch(`/api/social/follow-status?userId=${encodeURIComponent(userId)}`, { headers: { authorization: `Bearer ${t.token}` } });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok || out?.ok === false) return;
+    setFollowersCount(typeof out?.followers_count === 'number' ? out.followers_count : 0);
+    setFollowingCount(typeof out?.following_count === 'number' ? out.following_count : 0);
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -183,6 +196,10 @@ export function ProfileView({
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    refreshFollowCounts().catch(() => {});
+  }, [userId]);
 
   const shareFromProfile = async () => {
     const uid = (userId || '').toString().trim();
@@ -324,14 +341,21 @@ export function ProfileView({
       <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
         <div className="px-6 mb-4">
           <button
-            onClick={() => setViewingUserId(null)}
+            onClick={() => {
+              setViewingUserId(null);
+              refreshFollowCounts().catch(() => {});
+            }}
             className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Volver a mi perfil</span>
           </button>
         </div>
-        <UserProfileView userId={viewingUserId} onPlaySong={onPlaySong} />
+        <UserProfileView
+          userId={viewingUserId}
+          onPlaySong={onPlaySong}
+          onFollowChanged={() => refreshFollowCounts().catch(() => {})}
+        />
       </div>
     );
   }
@@ -455,11 +479,11 @@ export function ProfileView({
           <span className="text-xs text-slate-400">Me gusta</span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-lg font-bold text-slate-100">0</span>
+          <span className="text-lg font-bold text-slate-100">{followersCount}</span>
           <span className="text-xs text-slate-400">Seguidores</span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-lg font-bold text-slate-100">0</span>
+          <span className="text-lg font-bold text-slate-100">{followingCount}</span>
           <span className="text-xs text-slate-400">Siguiendo</span>
         </div>
       </div>

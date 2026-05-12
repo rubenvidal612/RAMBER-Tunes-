@@ -29,7 +29,15 @@ function normalizeR2PublicToProxy(raw: any) {
   }
 }
 
-export function UserProfileView({ userId, onPlaySong }: { userId: string; onPlaySong?: (song: SongItem) => void }) {
+export function UserProfileView({
+  userId,
+  onPlaySong,
+  onFollowChanged,
+}: {
+  userId: string;
+  onPlaySong?: (song: SongItem) => void;
+  onFollowChanged?: (nextFollowing: boolean) => void;
+}) {
   const [isLoading, setIsLoading] = useState(true);
   const [userData, setUserData] = useState<{
     id: string;
@@ -170,6 +178,10 @@ export function UserProfileView({ userId, onPlaySong }: { userId: string; onPlay
         const nextFollowing = typeof data?.following === 'boolean' ? data.following : !isFollowing;
         setIsFollowing(nextFollowing);
         setFollowersCount(prev => (nextFollowing ? prev + 1 : Math.max(0, prev - 1)));
+        try {
+          onFollowChanged?.(nextFollowing);
+        } catch {
+        }
       }
     } catch (error) {
       alert('Error al procesar la solicitud.');

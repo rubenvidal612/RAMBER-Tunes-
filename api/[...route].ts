@@ -5921,20 +5921,21 @@ const socialHandler = (() => {
 
     const userId = (pickQuery(req, "userId") || pickQuery(req, "id") || "").toString().trim();
     if (!userId) return send(res, 400, { error: "Falta userId" });
-    if (userId === auth.user.id) return send(res, 200, { ok: true, is_following: false, followers_count: 0, following_count: 0 });
 
     try {
       let isFollowing = false;
       let followersCount = 0;
       let followingCount = 0;
 
-      const rel = await auth.admin
-        .from("user_follows")
-        .select("follower_id")
-        .eq("follower_id", auth.user.id)
-        .eq("following_id", userId)
-        .maybeSingle();
-      if (!rel.error && rel.data) isFollowing = true;
+      if (userId !== auth.user.id) {
+        const rel = await auth.admin
+          .from("user_follows")
+          .select("follower_id")
+          .eq("follower_id", auth.user.id)
+          .eq("following_id", userId)
+          .maybeSingle();
+        if (!rel.error && rel.data) isFollowing = true;
+      }
 
       const followers = await auth.admin
         .from("user_follows")
