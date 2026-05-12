@@ -267,7 +267,7 @@ export function CloneVoiceView() {
     const isWav = ext === 'wav' || type === 'audio/wav' || type === 'audio/x-wav';
     if (isMp3 || isWav) {
       const duration = await getAudioDuration(file).catch(() => 0);
-      return { file: normalizeAudioType(file, isWav ? 'audio/wav' : 'audio/mpeg'), duration };
+      if (duration > 0) return { file: normalizeAudioType(file, isWav ? 'audio/wav' : 'audio/mpeg'), duration };
     }
 
     const isAmr = ext === 'amr' || type.includes('amr');
@@ -314,6 +314,13 @@ export function CloneVoiceView() {
       return { file: wavFile, duration: Number.isFinite(toEncode.duration) ? toEncode.duration : 0 };
     } catch {
       const label = [ext ? `.${ext}` : '', type ? `(${type})` : ''].filter(Boolean).join(' ');
+      const isAacLike = ext === 'aac' || ext === 'm4a' || ext === 'mp4' || type.includes('aac') || type.includes('mp4');
+      if (isAacLike) {
+        throw new Error(
+          `Ese audio ${label || ''} no se pudo leer. ` +
+            'No lo renombres a .mp3: debes convertirlo de verdad a MP3 o WAV y volver a intentar.'
+        );
+      }
       throw new Error(`Ese archivo ${label || ''} no se pudo leer. Usa MP3 o WAV, o convierte tu audio a MP3/WAV.`);
     } finally {
       try {
