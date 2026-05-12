@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { MoreVertical, Share2, UserPlus, UserCheck } from 'lucide-react';
-import { supabaseBrowser, getAccessToken } from '@/lib/supabaseBrowser';
+import { getAccessToken } from '@/lib/supabaseBrowser';
 import type { SongItem } from '@/types';
 
 function normalizeR2PublicToProxy(raw: any) {
@@ -54,108 +54,55 @@ export function UserProfileView({ userId, onPlaySong }: { userId: string; onPlay
 
   useEffect(() => {
     if (!userId) return;
-    
-    const loadUserProfile = async () => {
+
+    let alive = true;
+    (async () => {
       setIsLoading(true);
       try {
-        // Cargar datos del usuario
-        const { data: user, error } = await supabaseBrowser.auth.admin.getUserById(userId);
-        
-        if (error || !user) {
-          console.error('Error loading user:', error);
+        const t = await getAccessToken();
+        if (!t.ok) {
+          if (!alive) return;
+          setUserData(null);
+          setUserSongs([]);
           return;
         }
-        
-        const meta = user.user_metadata || {};
-        setUserData({
-          id: user.id,
-          full_name: meta?.full_name || '',
-          last_name: meta?.last_name || '',
-          username: meta?.username || '',
-          avatar_url: meta?.avatar_url || '',
-          cover_url: meta?.cover_url || '',
-          country: meta?.country || '',
-          city: meta?.city || '',
-          contact_email: meta?.contact_email || '',
-          contact_phone: meta?.contact_phone || '',
-          bio: meta?.bio || ''
-        });
-        
-        // Cargar canciones públicas del usuario
-        const { data: songs, error: songsError } = await supabaseBrowser
-          .from('public_songs')
-          .select('*')
-          .eq('user_id', userId)
-          .order('published_at', { ascending: false });
-        
-        if (!songsError && songs) {
-          const mappedSongs: SongItem[] = songs.map((song: any) => ({
-            id: song.song_id,
-            title: song.title || 'Canción',
-            audioUrl: song.audio_url,
-            coverUrl: song.cover_url || undefined,
-            genre: song.genre || '',
-            authorName: song.author_name || '',
-            authorAvatarUrl: song.author_avatar_url || '',
-            publishedCount: song.published_at
-          }));
-          setUserSongs(mappedSongs);
+
+        const r = await fetch(`/api/social/user?id=${encodeURIComponent(userId)}`, { headers: { authorization: `Bearer ${t.token}` } });
+        const out = await r.json().catch(() => ({}));
+        if (!alive) return;
+        if (!r.ok || out?.ok === false) {
+          setUserData(null);
+          setUserSongs([]);
+          return;
         }
 
-        // Cargar estado de seguimiento y contadores
-        const loadFollowStatus = async () => {
-          try {
-            const token = await getAccessToken();
-            if (!token.ok) return;
+        setUserData(out.user || null);
+        setUserSongs(Array.isArray(out.songs) ? out.songs : []);
 
-            // Verificar si el usuario actual sigue al usuario objetivo
-            const { data: currentUser } = await supabaseBrowser.auth.getUser();
-            if (!currentUser.user) return;
-
-            const { data: followData, error: followError } = await supabaseBrowser
-              .from('user_follows')
-              .select('*')
-              .eq('follower_id', currentUser.user.id)
-              .eq('following_id', userId)
-              .maybeSingle();
-
-            if (!followError && followData) {
-              setIsFollowing(true);
-            }
-
-            // Contar seguidores
-            const { count: followersCount } = await supabaseBrowser
-              .from('user_follows')
-              .select('*', { count: 'exact', head: true })
-              .eq('following_id', userId);
-
-            if (followersCount !== null) {
-              setFollowersCount(followersCount);
-            }
-
-            // Contar seguidos
-            const { count: followingCount } = await supabaseBrowser
-              .from('user_follows')
-              .select('*', { count: 'exact', head: true })
-              .eq('follower_id', userId);
-
-            if (followingCount !== null) {
-              setFollowingCount(followingCount);
-            }
-          } catch (error) {
-            console.error('Error loading follow status:', error);
-          }
-        };
-
-        loadFollowStatus();
-      } catch (error) {
-        console.error('Error loading user profile:', error);
+        const fr = await fetch(`/api/social/follow-status?userId=${encodeURIComponent(userId)}`, { headers: { authorization: `Bearer ${t.token}` } });
+        const fo = await fr.json().catch(() => ({}));
+        if (!alive) return;
+        if (fr.ok && fo?.ok !== false) {
+          setIsFollowing(Boolean(fo?.is_following));
+          setFollowersCount(typeof fo?.followers_count === 'number' ? fo.followers_count : 0);
+          setFollowingCount(typeof fo?.following_count === 'number' ? fo.following_count : 0);
+        } else {
+          setIsFollowing(false);
+          setFollowersCount(0);
+          setFollowingCount(0);
+        }
       } finally {
+        if (!alive) return;
         setIsLoading(false);
       }
+    })().catch(() => {
+      if (!alive) return;
+      setIsLoading(false);
+    });
+
+    return () => {
+      alive = false;
     };
-    
-    loadUserProfile();
   }, [userId]);
 
   const shareProfile = async () => {

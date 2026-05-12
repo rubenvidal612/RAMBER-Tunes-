@@ -297,7 +297,7 @@ export function ProfileView({
         return;
       }
       
-      const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+      const response = await fetch(`/api/social/search?q=${encodeURIComponent(query)}`, {
         headers: { authorization: `Bearer ${t.token}` }
       });
       
@@ -338,38 +338,6 @@ export function ProfileView({
 
   return (
     <div className="flex-1 flex flex-col pt-4 overflow-y-auto w-full relative z-10">
-      <div className="px-6 mb-6">
-        <div className="relative w-full aspect-[1610/720] rounded-3xl overflow-hidden border border-white/10">
-          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
-          {userCoverUrl && !coverLoadFailed ? (
-            <img
-              src={userCoverUrl}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover"
-              onError={() => setCoverLoadFailed(true)}
-            />
-          ) : null}
-        </div>
-        <div className="mt-4 flex items-center gap-4 min-w-0">
-          <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
-            {userAvatarUrl && !avatarLoadFailed ? (
-              <img
-                src={userAvatarUrl}
-                alt=""
-                className="w-full h-full object-cover"
-                onError={() => setAvatarLoadFailed(true)}
-              />
-            ) : (
-              userInitial
-            )}
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
-            {username ? <div className="text-xs text-slate-300/80 truncate">@{username}</div> : null}
-          </div>
-        </div>
-      </div>
-
       {/* Search Bar */}
       <div className="px-6 mb-6">
         <div className="relative">
@@ -391,8 +359,8 @@ export function ProfileView({
               <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
-         </div>
-       </div>
+        </div>
+      </div>
 
       {/* Search Results */}
       {searchResults.length > 0 && (
@@ -433,6 +401,38 @@ export function ProfileView({
           </div>
         </div>
       )}
+
+      <div className="px-6 mb-6">
+        <div className="relative w-full aspect-[1610/720] rounded-3xl overflow-hidden border border-white/10">
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-fuchsia-500/10 to-yellow-500/10" />
+          {userCoverUrl && !coverLoadFailed ? (
+            <img
+              src={userCoverUrl}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={() => setCoverLoadFailed(true)}
+            />
+          ) : null}
+        </div>
+        <div className="mt-4 flex items-center gap-4 min-w-0">
+          <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl font-bold text-indigo-300 overflow-hidden shrink-0">
+            {userAvatarUrl && !avatarLoadFailed ? (
+              <img
+                src={userAvatarUrl}
+                alt=""
+                className="w-full h-full object-cover"
+                onError={() => setAvatarLoadFailed(true)}
+              />
+            ) : (
+              userInitial
+            )}
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold text-white truncate">{userName}</h2>
+            {username ? <div className="text-xs text-slate-300/80 truncate">@{username}</div> : null}
+          </div>
+        </div>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 px-6 mb-6 text-center">

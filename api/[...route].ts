@@ -5708,6 +5708,110 @@ const socialHandler = (() => {
     }
   }
 
+  async function handleUserProfile(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const userId = (pickQuery(req, "id") || pickQuery(req, "userId") || "").toString().trim();
+    if (!userId) return send(res, 400, { error: "Falta id" });
+
+    try {
+      const { data: targetUser, error: targetError } = await auth.admin.auth.admin.getUserById(userId);
+      if (targetError || !targetUser?.user) return send(res, 404, { error: "Usuario no encontrado" });
+
+      const u = targetUser.user;
+      const meta: any = u?.user_metadata || {};
+
+      const user = {
+        id: String(u?.id || ""),
+        full_name: String(meta?.full_name || ""),
+        last_name: String(meta?.last_name || ""),
+        username: String(meta?.username || ""),
+        avatar_url: String(meta?.avatar_url || ""),
+        cover_url: String(meta?.cover_url || ""),
+        country: String(meta?.country || ""),
+        city: String(meta?.city || ""),
+        contact_email: String(meta?.contact_email || ""),
+        contact_phone: String(meta?.contact_phone || ""),
+        bio: String(meta?.bio || ""),
+      };
+
+      const { data: songsData, error: songsError } = await auth.admin
+        .from(PUBLIC_TABLE)
+        .select("*")
+        .eq("user_id", userId)
+        .order("published_at", { ascending: false })
+        .limit(100);
+      if (songsError) {
+        const msg = (songsError.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) return send(res, 200, { ok: true, user, songs: [] });
+        return send(res, 500, { error: "No pude cargar canciones públicas", detail: songsError.message });
+      }
+
+      const songs = (Array.isArray(songsData) ? songsData : [])
+        .map((r: any) => ({
+          id: String(r?.song_id || "").trim(),
+          title: String(r?.title || "Canción").trim(),
+          audioUrl: String(r?.audio_url || "").trim(),
+          coverUrl: String(r?.cover_url || "").trim() || undefined,
+          genre: typeof r?.genre === "string" ? r.genre : "",
+          authorName: typeof r?.author_name === "string" ? r.author_name : "Usuario",
+          authorAvatarUrl: typeof r?.author_avatar_url === "string" ? r.author_avatar_url : "",
+          publishedAt: typeof r?.published_at === "string" ? r.published_at : undefined,
+        }))
+        .filter((x: any) => x.id && x.audioUrl);
+
+      return send(res, 200, { ok: true, user, songs });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFollowStatus(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const userId = (pickQuery(req, "userId") || pickQuery(req, "id") || "").toString().trim();
+    if (!userId) return send(res, 400, { error: "Falta userId" });
+    if (userId === auth.user.id) return send(res, 200, { ok: true, is_following: false, followers_count: 0, following_count: 0 });
+
+    try {
+      let isFollowing = false;
+      let followersCount = 0;
+      let followingCount = 0;
+
+      const rel = await auth.admin
+        .from("user_follows")
+        .select("follower_id")
+        .eq("follower_id", auth.user.id)
+        .eq("following_id", userId)
+        .maybeSingle();
+      if (!rel.error && rel.data) isFollowing = true;
+
+      const followers = await auth.admin
+        .from("user_follows")
+        .select("follower_id", { count: "exact", head: true })
+        .eq("following_id", userId);
+      if (typeof followers.count === "number") followersCount = followers.count;
+
+      const following = await auth.admin
+        .from("user_follows")
+        .select("following_id", { count: "exact", head: true })
+        .eq("follower_id", userId);
+      if (typeof following.count === "number") followingCount = following.count;
+
+      return send(res, 200, { ok: true, is_following: isFollowing, followers_count: followersCount, following_count: followingCount });
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) return send(res, 200, { ok: true, is_following: false, followers_count: 0, following_count: 0 });
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleFeed(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
     const a = await getAdminOrError();
@@ -5807,6 +5911,8 @@ const socialHandler = (() => {
     if (a === "publish") return handlePublish(req, res);
     if (a === "search") return handleSearchUsers(req, res);
     if (a === "follow") return handleFollowUser(req, res);
+    if (a === "user") return handleUserProfile(req, res);
+    if (a === "follow-status") return handleFollowStatus(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
