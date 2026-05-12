@@ -4033,9 +4033,15 @@ const uploadProfileImageHandler = (() => {
     const contentType = typeof payload?.contentType === "string" ? payload.contentType.trim() : "image/webp";
 
     if (!path) return send(res, 400, { error: "Falta path" });
-    if (!data || !Array.isArray(data)) return send(res, 400, { error: "Falta data (array de bytes)" });
 
     try {
+      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
+
+      if (!data || !Array.isArray(data)) {
+        const uploadUrl = await getSignedR2PutUrl(path, contentType || "application/octet-stream", 60 * 10);
+        return send(res, 200, { ok: true, uploadUrl, url, key: path, via: "direct" });
+      }
+
       const buf = Buffer.from(data);
       if (shouldModeratePath(path) && buf.length > 0) {
         const check = await moderateImageWithGoogleVision(buf);
@@ -4048,8 +4054,7 @@ const uploadProfileImageHandler = (() => {
         }
       }
       await uploadToR2(path, buf, contentType);
-      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
-      return send(res, 200, { ok: true, url, key: path });
+      return send(res, 200, { ok: true, url, key: path, via: "server" });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")

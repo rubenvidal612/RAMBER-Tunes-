@@ -333,32 +333,111 @@ export function CloneVoiceView() {
     const t = await getAccessToken();
     if (!t.ok) throw new Error('No autorizado');
 
-    const arrayBuffer = await file.arrayBuffer();
-    const fileArray = Array.from(new Uint8Array(arrayBuffer));
     const userId = (await supabaseBrowser.auth.getUser()).data.user?.id || 'unknown';
     const ext = ((file?.name || '').toString().toLowerCase().split('.').pop() || '') === 'wav' || (file.type || '').toLowerCase().includes('wav') ? 'wav' : 'mp3';
     const path = `personas/${userId}/clone_${Date.now()}.${ext}`;
+    const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
 
-    const response = await fetch('/api/account/upload-profile-image', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'authorization': `Bearer ${t.token}`,
-      },
-      body: JSON.stringify({
-        path,
-        data: fileArray,
-        contentType: file.type,
-      }),
-    });
+    setUploadProgress(0);
 
-    if (!response.ok) {
-      const out = await response.json().catch(() => ({}));
-      throw new Error(out?.error || 'Error subiendo audio');
+    try {
+      const prep = await fetch('/api/account/upload-profile-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({
+          path,
+          contentType,
+        }),
+      });
+
+      const prepText = await prep.text().catch(() => '');
+      let prepOut: any = {};
+      try {
+        prepOut = prepText ? JSON.parse(prepText) : {};
+      } catch {
+        prepOut = { error: prepText || 'Respuesta inválida del servidor.' };
+      }
+      if (!prep.ok || prepOut?.ok === false) {
+        const msg = (prepOut?.error || 'Error subiendo audio').toString();
+        const detail = (prepOut?.detail || prepOut?.hint || '').toString();
+        throw new Error([msg, detail].filter(Boolean).join('\n'));
+      }
+
+      const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+      const url = (prepOut?.url || '').toString().trim();
+      if (!uploadUrl || !url) throw new Error((prepOut?.error || 'No recibí URL para subir el audio.').toString());
+
+      await new Promise<void>((resolve, reject) => {
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', contentType);
+          xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable) return;
+            const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
+            setUploadProgress(pct);
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) return resolve();
+            return reject(new Error(`No se pudo subir el audio (HTTP ${xhr.status}).`));
+          };
+          xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
+          xhr.onabort = () => reject(new Error('Subida cancelada.'));
+          xhr.send(file);
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
+        }
+      });
+
+      setUploadProgress(100);
+      return { url, path };
+    } catch (putErr) {
+      const canFallback = file.size <= 4 * 1024 * 1024;
+      if (!canFallback) {
+        throw new Error(
+          'No se pudo subir el audio desde el teléfono. ' +
+            'Tu audio es pesado y requiere activar CORS en Cloudflare R2 para subida directa. ' +
+            'Prueba con un audio más ligero (menos de 4 MB) o conviértelo a MP3 más pequeño.'
+        );
+      }
+
+      setUploadProgress(0);
+      const arrayBuffer = await file.arrayBuffer();
+      const fileArray = Array.from(new Uint8Array(arrayBuffer));
+      const response = await fetch('/api/account/upload-profile-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({
+          path,
+          data: fileArray,
+          contentType,
+        }),
+      });
+
+      const raw = await response.text().catch(() => '');
+      let out: any = {};
+      try {
+        out = raw ? JSON.parse(raw) : {};
+      } catch {
+        out = { error: raw || 'Respuesta inválida del servidor.' };
+      }
+      if (!response.ok || out?.ok === false) {
+        const msg = (out?.error || 'Error subiendo audio').toString();
+        const detail = (out?.detail || out?.hint || '').toString();
+        throw new Error([msg, detail].filter(Boolean).join('\n'));
+      }
+
+      const url = (out?.url || '').toString().trim();
+      if (!url) throw new Error((out?.error || 'No pude terminar la subida del audio.').toString());
+      setUploadProgress(100);
+      return { url, path };
     }
-
-    const result = await response.json();
-    return { url: result.url, path };
   };
 
   const uploadProfileImageToR2 = async (file: File): Promise<{ url: string; path: string }> => {
