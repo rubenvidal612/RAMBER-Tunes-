@@ -341,14 +341,14 @@ export function CloneVoiceView() {
     setUploadProgress(0);
 
     try {
-      const prep = await fetch('/api/account/upload-profile-image', {
+      const prep = await fetch('/api/upload-audio', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'authorization': `Bearer ${t.token}`,
         },
         body: JSON.stringify({
-          path,
+          title: file.name,
           contentType,
         }),
       });
@@ -368,6 +368,7 @@ export function CloneVoiceView() {
 
       const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
       const url = (prepOut?.url || '').toString().trim();
+      const key = (prepOut?.key || '').toString().trim();
       if (!uploadUrl || !url) throw new Error((prepOut?.error || 'No recibí URL para subir el audio.').toString());
 
       await new Promise<void>((resolve, reject) => {
@@ -407,16 +408,16 @@ export function CloneVoiceView() {
       setUploadProgress(0);
       const arrayBuffer = await file.arrayBuffer();
       const fileArray = Array.from(new Uint8Array(arrayBuffer));
-      const response = await fetch('/api/account/upload-profile-image', {
+      const response = await fetch('/api/upload-audio', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'authorization': `Bearer ${t.token}`,
         },
         body: JSON.stringify({
-          path,
-          data: fileArray,
+          title: file.name,
           contentType,
+          file: fileArray,
         }),
       });
 
@@ -434,9 +435,10 @@ export function CloneVoiceView() {
       }
 
       const url = (out?.url || '').toString().trim();
+      const key = (out?.key || '').toString().trim();
       if (!url) throw new Error((out?.error || 'No pude terminar la subida del audio.').toString());
       setUploadProgress(100);
-      return { url, path };
+      return { url, path: key || path };
     }
   };
 

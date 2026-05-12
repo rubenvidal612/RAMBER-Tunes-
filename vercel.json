@@ -20,7 +20,7 @@
   ],
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/api/(.*)", "dest": "/api/[...route]?path=$1" },
+    { "src": "/api/(.*)", "dest": "/api/[...route]" },
     { "src": "/((?!api/).*)", "dest": "/index.html" }
   ]
 }
