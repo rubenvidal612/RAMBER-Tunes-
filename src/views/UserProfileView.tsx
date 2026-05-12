@@ -154,7 +154,14 @@ export function UserProfileView({ userId, onPlaySong }: { userId: string; onPlay
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        alert(error?.error || 'No se pudo completar la acción.');
+        const msg = [
+          error?.error,
+          error?.hint,
+          typeof error?.sql === 'string' && error.sql.trim() ? `SQL (copia y pega en Supabase):\n${error.sql}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        alert(msg || 'No se pudo completar la acción.');
         return;
       }
 

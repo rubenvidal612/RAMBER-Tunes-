@@ -5802,7 +5802,16 @@ const socialHandler = (() => {
           if (missing) {
             return send(res, 500, {
               error: "Falta configurar la tabla de seguimientos",
-              hint: "Crea la tabla 'user_follows' en Supabase (SQL Editor). Luego intenta de nuevo.",
+              hint: "En Supabase: Database → SQL Editor → New query → pega el SQL → Run. Luego intenta de nuevo.",
+              sql:
+                "create table if not exists public.user_follows (\n" +
+                "  follower_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  following_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  created_at timestamptz not null default now(),\n" +
+                "  primary key (follower_id, following_id)\n" +
+                ");\n" +
+                "create index if not exists user_follows_follower_id_idx on public.user_follows (follower_id);\n" +
+                "create index if not exists user_follows_following_id_idx on public.user_follows (following_id);\n",
               detail: error.message
             });
           }
@@ -5816,6 +5825,24 @@ const socialHandler = (() => {
           .eq('following_id', targetUserId);
         
         if (error) {
+          const msg = (error.message || "").toLowerCase();
+          const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+          if (missing) {
+            return send(res, 500, {
+              error: "Falta configurar la tabla de seguimientos",
+              hint: "En Supabase: Database → SQL Editor → New query → pega el SQL → Run. Luego intenta de nuevo.",
+              sql:
+                "create table if not exists public.user_follows (\n" +
+                "  follower_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  following_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  created_at timestamptz not null default now(),\n" +
+                "  primary key (follower_id, following_id)\n" +
+                ");\n" +
+                "create index if not exists user_follows_follower_id_idx on public.user_follows (follower_id);\n" +
+                "create index if not exists user_follows_following_id_idx on public.user_follows (following_id);\n",
+              detail: error.message
+            });
+          }
           return send(res, 500, { error: "No pude dejar de seguir al usuario", detail: error.message });
         }
       }
