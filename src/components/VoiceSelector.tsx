@@ -155,7 +155,7 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
         return;
       }
 
-      const response = await fetch('/api/create-cover', {
+      const response = await fetch('/api/suno/create-cover', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

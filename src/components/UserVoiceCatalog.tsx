@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { VoiceItem } from '@/types';
 import { Search, Filter, Star, Play, User, Globe, Music, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -102,7 +102,7 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
     setPage(1); // Reset to first page when filters change
   };
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     loadCatalog();
   };

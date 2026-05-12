@@ -120,6 +120,22 @@ app.post('/api/voices/create', authenticate, async (req, res) => {
       });
     }
 
+    // Obtener el correo del usuario para verificar si es el dueño
+    const { data: userData, error: userError } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', req.user.id)
+      .single();
+
+    if (userError) {
+      console.error('Error obteniendo email del usuario:', userError);
+    }
+
+    const userEmail = userData?.email || '';
+    const isOwnerEmail = 
+      userEmail.toLowerCase() === 'rubenfiverr612@gmail.com' ||
+      userEmail.toLowerCase() === 'rubenvidal612@gmail.com';
+
     // Crear registro en la base de datos
     const { data: voice, error } = await supabase
       .from('kits_voices')

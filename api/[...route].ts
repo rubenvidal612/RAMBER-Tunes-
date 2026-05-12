@@ -2018,20 +2018,14 @@ const sunoHandler = (() => {
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
-    const cost = CREDIT_COSTS.clone_voice || 10;
+    const cost = 0;
 
     try {
-      if (!isAdmin) {
-        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
-      }
-
       let finalUploadUrl = uploadUrl;
       if (uploadPath) {
         try {
           finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
         } catch (e) {
-          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
           return send(res, 502, { error: "Error generando URL firmada para el audio", detail: e instanceof Error ? e.message : String(e) });
         }
       }
@@ -2067,7 +2061,6 @@ const sunoHandler = (() => {
       // Configurar la solicitud a Replicate API
       const replicateToken = process.env.REPLICATE_API_TOKEN;
       if (!replicateToken) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 500, { error: "Replicate API token no configurado", detail: "Contacta al administrador del sistema" });
       }
 
@@ -2101,8 +2094,6 @@ const sunoHandler = (() => {
       const replicateData = await replicateResponse.json();
 
       if (!replicateResponse.ok) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        
         let errorMessage = "Error entrenando modelo RVC";
         let errorDetail = replicateData?.detail || `HTTP ${replicateResponse.status}`;
         
@@ -2122,7 +2113,6 @@ const sunoHandler = (() => {
 
       const predictionId = replicateData?.id;
       if (!predictionId) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Respuesta inválida de Replicate API" });
       }
 
@@ -2148,7 +2138,6 @@ const sunoHandler = (() => {
         provider: 'replicate'
       });
     } catch (e) {
-      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
       return send(res, 502, { error: "Error entrenando modelo RVC", detail: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -2162,38 +2151,52 @@ const sunoHandler = (() => {
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
+    const songId = firstString(payload, ["songId", "song_id"]);
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const voiceId = firstString(payload, ["voiceId", "voice_id"]);
     const voiceModelUrl = firstString(payload, ["voiceModelUrl", "voice_model_url"]);
-    const title = firstString(payload, ["title"]) || "Cover Personalizado";
+    const rawTitle = firstString(payload, ["title"]);
     const pitchChange = Number(payload?.pitchChange) || 0;
     const indexRate = Number(payload?.indexRate) || 0.5;
     const protect = Number(payload?.protect) || 0.33;
     const outputFormat = firstString(payload, ["outputFormat", "output_format"]) || "mp3";
 
-    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
     if (!voiceId && !voiceModelUrl) return send(res, 400, { error: "Falta voiceId o voiceModelUrl" });
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
-    const cost = 25; // 25 créditos por cover
+    const cost = 0;
 
     try {
-      if (!isAdmin) {
-        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
-      }
-
-      let finalUploadUrl = uploadUrl;
-      if (uploadPath) {
-        try {
-          finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
-        } catch (e) {
-          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-          return send(res, 502, { error: "Error generando URL firmada para el audio", detail: e instanceof Error ? e.message : String(e) });
+      let finalUploadUrl = "";
+      let finalTitle = rawTitle || "Cover Personalizado";
+      if (songId) {
+        const { data: baseSong, error: baseErr } = await auth.admin
+          .from("library_items")
+          .select("id, user_id, title, audio_url, deleted_at, type")
+          .eq("id", songId.slice(0, 200))
+          .eq("user_id", user.id)
+          .eq("type", "song")
+          .maybeSingle();
+        if (baseErr) return send(res, 500, { error: "No pude buscar la canción", detail: baseErr.message });
+        if (!baseSong || (baseSong as any).deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+        const aurl = String((baseSong as any).audio_url || "").trim();
+        if (!aurl) return send(res, 404, { error: "La canción no tiene audio" });
+        finalTitle = rawTitle || `${String((baseSong as any).title || "Canción").trim().slice(0, 90)} (Voz clonada)`;
+        finalUploadUrl = aurl;
+      } else if (uploadUrl || uploadPath) {
+        finalUploadUrl = uploadUrl;
+        if (uploadPath) {
+          try {
+            finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
+          } catch (e) {
+            return send(res, 502, { error: "Error generando URL firmada para el audio", detail: e instanceof Error ? e.message : String(e) });
+          }
         }
       }
+
+      if (!finalUploadUrl) return send(res, 400, { error: "Falta songId o uploadUrl/uploadPath" });
 
       // Determinar la URL del modelo de voz
       let modelUrl = voiceModelUrl;
@@ -2207,8 +2210,22 @@ const sunoHandler = (() => {
           .limit(1);
         
         const voiceRow = Array.isArray(voiceRows) ? voiceRows[0] : null;
-        if (voiceRow?.output?.model_url) {
-          modelUrl = voiceRow.output.model_url;
+        const parseOutput = (raw: any) => {
+          if (!raw) return null;
+          if (typeof raw === "object") return raw;
+          if (typeof raw === "string") {
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return null;
+            }
+          }
+          return null;
+        };
+        const outObj = parseOutput((voiceRow as any)?.output);
+        const modelFromDb = typeof outObj?.model_url === "string" ? outObj.model_url.trim() : "";
+        if (modelFromDb) {
+          modelUrl = modelFromDb;
         } else if (voiceRow?.replicate_id) {
           // Si no tenemos URL del modelo, usar el replicate_id para obtener el modelo
           const replicateToken = process.env.REPLICATE_API_TOKEN;
@@ -2225,14 +2242,12 @@ const sunoHandler = (() => {
       }
 
       if (!modelUrl) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 400, { error: "No se pudo obtener la URL del modelo de voz" });
       }
 
       // Llamar a Replicate API para crear el cover
       const replicateToken = process.env.REPLICATE_API_TOKEN;
       if (!replicateToken) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 500, { error: "Replicate API token no configurado", detail: "Contacta al administrador del sistema" });
       }
 
@@ -2260,8 +2275,6 @@ const sunoHandler = (() => {
       const replicateData = await replicateResponse.json();
 
       if (!replicateResponse.ok) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        
         let errorMessage = "Error creando cover";
         let errorDetail = replicateData?.detail || `HTTP ${replicateResponse.status}`;
         
@@ -2281,14 +2294,13 @@ const sunoHandler = (() => {
 
       const predictionId = replicateData?.id;
       if (!predictionId) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Respuesta inválida de Replicate API" });
       }
 
       // Guardar en la base de datos
       await auth.admin.from("rvc_covers").insert({
         user_id: user.id,
-        title: title,
+        title: finalTitle,
         original_audio_url: finalUploadUrl,
         voice_id: voiceId,
         voice_model_url: modelUrl,
@@ -2303,13 +2315,13 @@ const sunoHandler = (() => {
       });
 
       return send(res, 200, { 
-        predictionId, 
+        coverId: predictionId,
+        predictionId,
         message: "Cover en proceso. Recibirás una notificación cuando esté listo.",
         status: 'processing',
         cost: cost
       });
     } catch (e) {
-      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
       return send(res, 502, { error: "Error creando cover", detail: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -3548,6 +3560,38 @@ const libraryHandler = (() => {
     return send(res, 200, { ok: true, coverUrl });
   }
 
+  async function handleChargeDownload(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const id = typeof body?.id === "string" ? body.id.trim().slice(0, 200) : "";
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const { data: song, error } = await auth.admin
+      .from(TABLE)
+      .select("id, user_id, deleted_at, type, suno_audio_id")
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .eq("type", ITEM_TYPE)
+      .maybeSingle();
+    if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
+    if (!song || (song as any).deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+
+    const externalId = String((song as any).suno_audio_id || "").trim();
+    const isVoiceCover = /^rvc_/i.test(externalId);
+    if (!isVoiceCover) return send(res, 200, { ok: true, charged: false });
+
+    const isAdmin = isAdminEmail(auth.user.email);
+    if (isAdmin) return send(res, 200, { ok: true, charged: false, is_admin: true });
+
+    const cost = CREDIT_COSTS.clone_voice || 10;
+    const consumed = await consumeUserCredits(auth.admin, auth.user.id, cost);
+    if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar.", charged: false });
+    return send(res, 200, { ok: true, charged: true, cost, credits: consumed.credits });
+  }
+
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
     const fallback = (() => {
@@ -3568,6 +3612,7 @@ const libraryHandler = (() => {
     if (a === "update-audio") return handleUpdateAudio(req, res);
     if (a === "update-lyrics") return handleUpdateLyrics(req, res);
     if (a === "set-cover") return handleSetCover(req, res);
+    if (a === "charge-download") return handleChargeDownload(req, res);
 
     return send(res, 404, { error: "Ruta no encontrada", action: a || null });
   };
@@ -4146,20 +4191,179 @@ const replicateWebhookHandler = (() => {
             updated_at: new Date().toISOString()
           })
           .eq("replicate_id", predictionId);
-        
-        // Si falló, devolver los créditos al usuario
-        if (newStatus === 'failed' && userId) {
-          const cost = voiceRow.cost || 15;
-          await adjustUserCredits(admin, userId, cost);
-        }
-        
-        // También podemos notificar al usuario aquí si tenemos un sistema de notificaciones
       }
     } catch (e) {
       console.error('Error procesando webhook de Replicate:', e);
     }
 
     return send(res, 200, { ok: true, received: true, predictionId, status });
+  };
+})();
+
+const replicateCoverWebhookHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function normalizeHttpUrl(raw: any) {
+    const s = (typeof raw === "string" ? raw : raw == null ? "" : String(raw)).trim();
+    if (!s) return "";
+    if (/^https?:\/\//i.test(s) || /^\/\//.test(s)) return s;
+    return "";
+  }
+
+  function pickFirstUrl(output: any) {
+    const direct = normalizeHttpUrl(output);
+    if (direct) return direct;
+    const candidates: any[] = [];
+    if (output && typeof output === "object") {
+      candidates.push(
+        output?.audio,
+        output?.audio_url,
+        output?.audioUrl,
+        output?.output,
+        output?.output_url,
+        output?.outputUrl,
+        output?.url,
+        output?.download,
+        output?.download_url
+      );
+      if (Array.isArray(output)) candidates.push(...output);
+    }
+    for (const c of candidates) {
+      const u = normalizeHttpUrl(c);
+      if (u) return u;
+    }
+    return "";
+  }
+
+  function contentTypeForExt(ext: string) {
+    const e = (ext || "").toString().trim().toLowerCase();
+    if (e === "wav") return "audio/wav";
+    if (e === "ogg") return "audio/ogg";
+    if (e === "aac") return "audio/aac";
+    if (e === "m4a") return "audio/mp4";
+    return "audio/mpeg";
+  }
+
+  return async function handler(req: any, res: any) {
+    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return send(res, 200, { ok: true });
+
+    let body: any = null;
+    try {
+      if (typeof req.body === "string") body = JSON.parse(req.body);
+      else body = req.body ?? null;
+    } catch {
+      body = null;
+    }
+
+    const predictionId = (body?.id || "").toString().trim();
+    const statusRaw = (body?.status || "").toString().trim().toLowerCase();
+    const output = body?.output;
+    const error = body?.error;
+    if (!predictionId) return send(res, 400, { error: "Falta prediction ID" });
+
+    const newStatus =
+      statusRaw === "succeeded" || statusRaw === "completed"
+        ? "ready"
+        : statusRaw === "failed" || statusRaw === "canceled" || statusRaw === "error"
+        ? "failed"
+        : "processing";
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService);
+
+      const { data: coverRows, error: coverErr } = await admin
+        .from("rvc_covers")
+        .select("*")
+        .eq("prediction_id", predictionId)
+        .limit(1);
+      if (coverErr) return send(res, 500, { error: "No pude buscar el cover", detail: coverErr.message });
+      const coverRow = Array.isArray(coverRows) ? coverRows[0] : null;
+      if (!coverRow) return send(res, 200, { ok: true, received: true, predictionId, status: newStatus, missing: true });
+
+      await admin
+        .from("rvc_covers")
+        .update({
+          status: newStatus,
+          output: output ? JSON.stringify(output) : null,
+          error: error ? JSON.stringify(error) : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("prediction_id", predictionId);
+
+      if (newStatus !== "ready") return send(res, 200, { ok: true, received: true, predictionId, status: newStatus });
+
+      const userId = (coverRow as any)?.user_id ? String((coverRow as any).user_id) : "";
+      if (!userId) return send(res, 200, { ok: true, received: true, predictionId, status: newStatus });
+
+      const externalId = `rvc_${predictionId}`.slice(0, 200);
+      const { data: exists } = await admin
+        .from("library_items")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("type", "song")
+        .eq("suno_audio_id", externalId)
+        .is("deleted_at", null)
+        .limit(1);
+      if (Array.isArray(exists) && exists.length > 0) {
+        return send(res, 200, { ok: true, received: true, predictionId, status: newStatus, imported: false, already: true });
+      }
+
+      const audioSourceUrl = pickFirstUrl(output);
+      if (!audioSourceUrl) return send(res, 200, { ok: true, received: true, predictionId, status: newStatus, imported: false, missing_audio: true });
+
+      let buf: any = null;
+      let remoteCt = "";
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 120_000);
+        const r = await fetch(audioSourceUrl, { signal: ctrl.signal as any });
+        clearTimeout(timer);
+        if (!r.ok) return send(res, 502, { error: "No pude descargar el audio del cover", detail: `HTTP ${r.status}` });
+        remoteCt = (r.headers.get("content-type") || "").toString().trim().slice(0, 120);
+        const ab = await r.arrayBuffer();
+        if (!ab || !ab.byteLength) return send(res, 502, { error: "El audio del cover llegó vacío" });
+        buf = Buffer.from(ab);
+      } catch (e) {
+        return send(res, 502, { error: "No pude descargar el audio del cover", detail: e instanceof Error ? e.message : String(e) });
+      }
+
+      const fmt = String((coverRow as any)?.output_format || "mp3").trim().toLowerCase();
+      const ext = ["mp3", "wav", "ogg", "aac", "m4a"].includes(fmt) ? fmt : "mp3";
+      const contentType = remoteCt || contentTypeForExt(ext);
+      const safeId = predictionId.replaceAll(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 120) || "cover";
+      const key = `covers/${userId}/${Date.now()}_${safeId}.${ext}`;
+      const audioUrl = await uploadToR2(key, buf, contentType);
+
+      const title = String((coverRow as any)?.title || "Cover (voz clonada)").trim().slice(0, 120) || "Cover (voz clonada)";
+      const insertRow: any = {
+        user_id: userId,
+        type: "song",
+        title,
+        description: "Cover generado con voz clonada",
+        lyrics: null,
+        gender: null,
+        audio_url: audioUrl,
+        cover_url: null,
+        suno_task_id: null,
+        suno_audio_id: externalId,
+        is_cover: true,
+      };
+
+      const { error: insErr } = await admin.from("library_items").insert(insertRow);
+      if (insErr) return send(res, 500, { error: "No pude guardar el cover en tu biblioteca", detail: insErr.message });
+      return send(res, 200, { ok: true, received: true, predictionId, status: newStatus, imported: true });
+    } catch (e) {
+      return send(res, 200, { ok: true, received: true, predictionId, status: newStatus });
+    }
   };
 })();
 
@@ -6861,14 +7065,18 @@ const aiHandler = (() => {
     }
 
     try {
-      const credits = await getCredits(auth.user.id, auth.admin);
       const cost = CREDIT_COSTS.lyrics;
-      
-      if (credits < cost) {
-        return send(res, 402, { 
-          error: "Créditos insuficientes", 
-          message: `Necesitas ${cost} créditos para generar letras. Tienes ${credits} créditos.` 
-        });
+      const { data: profile, error: profErr } = await auth.admin.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
+      if (profErr) return send(res, 500, { error: "No pude leer tu saldo", detail: profErr.message });
+      const credits = creditsFromProfile(profile);
+
+      if (!isAdminEmail(auth.user.email)) {
+        if (credits < cost) {
+          return send(res, 402, {
+            error: "Créditos insuficientes",
+            message: `Necesitas ${cost} créditos para generar letras. Tienes ${credits} créditos.`,
+          });
+        }
       }
 
       const out = await generateLyricsWithGemini(topic, gender, style);
@@ -6890,17 +7098,18 @@ const aiHandler = (() => {
         });
       }
 
-      await deductCredits(auth.user.id, auth.admin, cost, "lyrics", {
-        topic,
-        gender,
-        style,
-      });
+      let remaining = credits;
+      if (!isAdminEmail(auth.user.email)) {
+        const consumed = await consumeUserCredits(auth.admin, auth.user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes", ok: false });
+        remaining = Number(consumed.credits ?? remaining);
+      }
 
       return send(res, 200, { 
         ok: true, 
         lyrics,
         cost,
-        remaining: credits - cost
+        remaining
       });
     } catch (e) {
       return send(res, 200, {
@@ -7349,6 +7558,7 @@ export default async function handler(req: any, res: any) {
     if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
+    if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate") return replicateWebhookHandler(req, res);
 
     return sendNotFound(res);

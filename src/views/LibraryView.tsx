@@ -2685,6 +2685,20 @@ function SongOptionsSheet({
         return;
       }
 
+      const externalId = (song.sunoAudioId || '').toString().trim();
+      if (/^rvc_/i.test(externalId)) {
+        const cr = await fetch('/api/library/charge-download', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({ id: song.id }),
+        });
+        const cout = await cr.json().catch(() => ({}));
+        if (!cr.ok || cout?.ok === false) {
+          alert(cout?.error || 'No pude cobrar créditos para esta descarga.');
+          return;
+        }
+      }
+
       const url = (song.audioUrl || '').toString();
       if (!url) {
         alert('No hay audio para descargar.');
@@ -2716,6 +2730,20 @@ function SongOptionsSheet({
       if (!out?.downloads_allowed) {
         alert('Tu plan no incluye descargas.');
         return;
+      }
+
+      const externalId = (song.sunoAudioId || '').toString().trim();
+      if (/^rvc_/i.test(externalId)) {
+        const cr = await fetch('/api/library/charge-download', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({ id: song.id }),
+        });
+        const cout = await cr.json().catch(() => ({}));
+        if (!cr.ok || cout?.ok === false) {
+          alert(cout?.error || 'No pude cobrar créditos para esta descarga.');
+          return;
+        }
       }
       const baseTaskId = (song.sunoTaskId || '').toString().trim();
       let baseAudioId = (song.sunoAudioId || '').toString().trim();
@@ -3819,7 +3847,7 @@ function SongOptionsSheet({
                         return;
                       }
 
-                      const response = await fetch('/api/create-cover', {
+                      const response = await fetch('/api/suno/create-cover', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',

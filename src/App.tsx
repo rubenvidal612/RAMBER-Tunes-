@@ -8,6 +8,7 @@ import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { CloneVoiceView } from './views/CloneVoiceView';
+import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -514,6 +515,10 @@ export default function App() {
   const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false);
   const [lyricsDraft, setLyricsDraft] = useState('');
   const [isLyricsSaving, setIsLyricsSaving] = useState(false);
+  const [isConnectingToDevice, setIsConnectingToDevice] = useState(false);
+  const [availableDevices, setAvailableDevices] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  const [presentationConnection, setPresentationConnection] = useState<any>(null);
   const lyricsWrapRef = useRef<HTMLDivElement | null>(null);
   const lyricLineRefs = useRef<Array<HTMLDivElement | null>>([]);
   const lastActiveLyricRef = useRef<number>(-1);
@@ -841,6 +846,13 @@ export default function App() {
     if (!m) return '';
     const raw = m[2] || '';
     return decodeURIComponent(raw).trim();
+  });
+
+  const [elencoPresentationRoute] = useState(() => {
+    const p = (window.location?.pathname || '').toString();
+    const m = p.match(/^\/elenco-presentation/i);
+    if (!m) return false;
+    return true;
   });
 
   useEffect(() => {
@@ -1981,6 +1993,141 @@ export default function App() {
     setIsPlaying(!isPlaying);
   };
 
+  const discoverDevices = async () => {
+    setIsConnectingToDevice(true);
+    try {
+      if ('presentation' in navigator) {
+        const PresentationRequestCtor = (window as any)?.PresentationRequest;
+        if (!PresentationRequestCtor) {
+          showToast('Tu navegador no soporta Presentation API');
+          return;
+        }
+        const request = new PresentationRequestCtor('/elenco-presentation');
+        const availability = await request.getAvailability();
+        
+        if (availability.value) {
+          const receivers = await request.getAvailability();
+          const devices = [];
+          
+          if (receivers && receivers.value) {
+            devices.push({ id: 'default', name: 'Pantalla disponible' });
+          }
+          
+          setAvailableDevices(devices);
+          showToast('Dispositivos disponibles encontrados');
+        } else {
+          showToast('No hay dispositivos de presentación disponibles');
+        }
+      } else {
+        showToast('Tu navegador no soporta conexión a dispositivos externos');
+      }
+    } catch (error) {
+      showToast('Error al buscar dispositivos: ' + (error instanceof Error ? error.message : 'Desconocido'));
+    } finally {
+      setIsConnectingToDevice(false);
+    }
+  };
+
+  const connectToDevice = async (deviceId: string) => {
+    if (!activeSong) {
+      showToast('No hay canción activa para conectar');
+      return;
+    }
+
+    setIsConnectingToDevice(true);
+    try {
+      if ('presentation' in navigator) {
+        const presentationUrl = `/elenco-presentation?songId=${encodeURIComponent(activeSong.id)}`;
+        const PresentationRequestCtor = (window as any)?.PresentationRequest;
+        if (!PresentationRequestCtor) {
+          showToast('Tu navegador no soporta Presentation API');
+          return;
+        }
+        const request = new PresentationRequestCtor(presentationUrl);
+        
+        const connection = await request.start();
+        setPresentationConnection(connection);
+        setSelectedDevice(deviceId);
+        
+        connection.addEventListener('connect', () => {
+          showToast('Conectado al dispositivo externo');
+          
+          const songData = {
+            id: activeSong.id,
+            title: activeSong.title,
+            coverUrl: activeSong.coverUrl,
+            lyrics: activeSong.lyrics,
+            audioUrl: activeSong.audioUrl,
+            isPlaying: isPlaying,
+            currentTime: playerTime,
+            duration: playerDuration
+          };
+          
+          connection.send(JSON.stringify({
+            type: 'songData',
+            data: songData
+          }));
+        });
+        
+        connection.addEventListener('close', () => {
+          showToast('Conexión cerrada');
+          setPresentationConnection(null);
+          setSelectedDevice(null);
+        });
+        
+        connection.addEventListener('terminate', () => {
+          showToast('Conexión terminada');
+          setPresentationConnection(null);
+          setSelectedDevice(null);
+        });
+      } else {
+        showToast('Tu navegador no soporta conexión a dispositivos externos');
+      }
+    } catch (error) {
+      showToast('Error al conectar: ' + (error instanceof Error ? error.message : 'Desconocido'));
+    } finally {
+      setIsConnectingToDevice(false);
+    }
+  };
+
+  const disconnectFromDevice = () => {
+    if (presentationConnection) {
+      presentationConnection.close();
+      setPresentationConnection(null);
+      setSelectedDevice(null);
+      showToast('Desconectado del dispositivo');
+    }
+  };
+
+  const updatePresentation = () => {
+    if (!presentationConnection || !activeSong) return;
+    
+    const songData = {
+      id: activeSong.id,
+      title: activeSong.title,
+      coverUrl: activeSong.coverUrl,
+      lyrics: activeSong.lyrics,
+      audioUrl: activeSong.audioUrl,
+      isPlaying: isPlaying,
+      currentTime: playerTime,
+      duration: playerDuration
+    };
+    
+    try {
+      presentationConnection.send(JSON.stringify({
+        type: 'songUpdate',
+        data: songData
+      }));
+    } catch (error) {
+    }
+  };
+
+  useEffect(() => {
+    if (nowPlayingMode === 'elenco' && activeSong) {
+      updatePresentation();
+    }
+  }, [isPlaying, playerTime, activeSong?.lyrics]);
+
   const parsedLyrics = useMemo(() => {
     const raw = (activeSong?.lyrics || '').toString();
     const lines = raw
@@ -2040,6 +2187,9 @@ export default function App() {
   }
   if (profileRouteId) {
     return <SharedProfilePage profileId={profileRouteId} />;
+  }
+  if (elencoPresentationRoute) {
+    return <ElencoPresentationView />;
   }
 
   if (!isAuthed) {
@@ -2433,6 +2583,53 @@ export default function App() {
               >
                 Letra (ver/editar)
               </button>
+              
+              {presentationConnection ? (
+                <button
+                  type="button"
+                  className="w-full bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                  onClick={() => {
+                    setIsElencoMenuOpen(false);
+                    disconnectFromDevice();
+                  }}
+                  disabled={isConnectingToDevice}
+                >
+                  {isConnectingToDevice ? 'Desconectando...' : 'Desconectar dispositivo'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                  onClick={() => {
+                    setIsElencoMenuOpen(false);
+                    discoverDevices();
+                  }}
+                  disabled={isConnectingToDevice}
+                >
+                  {isConnectingToDevice ? 'Buscando dispositivos...' : 'Conectar a dispositivo externo'}
+                </button>
+              )}
+              
+              {availableDevices.length > 0 && !presentationConnection && (
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-400 font-semibold px-2">Dispositivos disponibles:</div>
+                  {availableDevices.map((device) => (
+                    <button
+                      key={device.id}
+                      type="button"
+                      className="w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
+                      onClick={() => {
+                        setIsElencoMenuOpen(false);
+                        connectToDevice(device.id);
+                      }}
+                      disabled={isConnectingToDevice}
+                    >
+                      {device.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              
               <button
                 type="button"
                 className="w-full bg-transparent border border-white/10 text-slate-300 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
