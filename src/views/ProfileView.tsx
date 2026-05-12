@@ -352,13 +352,27 @@ export function ProfileView({
               searchUsers(e.target.value);
             }}
             placeholder="Buscar usuarios por nombre, apellido o usuario..."
-            className="w-full bg-white/5 border border-white/10 rounded-full py-3 pl-12 pr-4 text-white placeholder:text-slate-400 outline-none focus:border-indigo-500/50 transition-colors"
+            className="w-full bg-white/5 border border-white/10 rounded-full py-3 pl-12 pr-16 text-white placeholder:text-slate-400 outline-none focus:border-indigo-500/50 transition-colors"
           />
-          {isSearching && (
-            <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+          <div className="absolute right-4 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+            {isSearching ? (
               <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          )}
+            ) : null}
+            {searchQuery.trim() ? (
+              <button
+                type="button"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  setIsSearching(false);
+                }}
+                aria-label="Borrar búsqueda"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 

@@ -167,13 +167,9 @@ export function UserProfileView({ userId, onPlaySong }: { userId: string; onPlay
 
       const data = await response.json();
       if (data.ok) {
-        setIsFollowing(!isFollowing);
-        // Actualizar contador de seguidores
-        if (!isFollowing) {
-          setFollowersCount(prev => prev + 1);
-        } else {
-          setFollowersCount(prev => Math.max(0, prev - 1));
-        }
+        const nextFollowing = typeof data?.following === 'boolean' ? data.following : !isFollowing;
+        setIsFollowing(nextFollowing);
+        setFollowersCount(prev => (nextFollowing ? prev + 1 : Math.max(0, prev - 1)));
       }
     } catch (error) {
       alert('Error al procesar la solicitud.');
