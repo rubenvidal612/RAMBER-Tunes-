@@ -11,9 +11,15 @@ interface VoiceItem {
   status: 'processing' | 'ready' | 'failed';
   created_at: string;
   cost: number;
+  output?: any;
+  model_url?: string | null;
+  sample_url?: string | null;
+  profile_image_url?: string | null;
+  voice_profile_name?: string | null;
 }
 
 export function CloneVoiceView() {
+  const DRAFT_KEY = 'ramber.cloneVoiceDraft.v1';
   const [voiceName, setVoiceName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -56,12 +62,32 @@ export function CloneVoiceView() {
             const voice_name = String(v?.voice_name || '').trim() || 'Voz';
             const description = String(v?.description || '').trim();
             const statusRaw = String(v?.status || '').trim().toLowerCase();
-            const status: VoiceItem['status'] =
-              statusRaw === 'ready' || statusRaw === 'failed' || statusRaw === 'processing' ? (statusRaw as any) : 'processing';
+            const statusNorm =
+              statusRaw === 'ready' || statusRaw === 'failed' || statusRaw === 'processing'
+                ? statusRaw
+                : statusRaw === 'training' || statusRaw === 'starting'
+                ? 'processing'
+                : 'processing';
+            const status: VoiceItem['status'] = statusNorm as any;
             const created_at = String(v?.created_at || '').trim() || new Date().toISOString();
             const cost = Number(v?.cost ?? 0) || 0;
+            const model_url = v?.model_url == null ? null : String(v.model_url || '') || null;
+            const sample_url = v?.sample_url == null ? null : String(v.sample_url || '') || null;
+            const profile_image_url = v?.profile_image_url == null ? null : String(v.profile_image_url || '') || null;
+            const voice_profile_name = v?.voice_profile_name == null ? null : String(v.voice_profile_name || '') || null;
+            let output: any = null;
+            const outRaw = (v as any)?.output;
+            if (outRaw && typeof outRaw === 'string') {
+              try {
+                output = JSON.parse(outRaw);
+              } catch {
+                output = null;
+              }
+            } else if (outRaw && typeof outRaw === 'object') {
+              output = outRaw;
+            }
             if (!id) return null;
-            return { id, voice_id, voice_name, description, status, created_at, cost };
+            return { id, voice_id, voice_name, description, status, created_at, cost, output, model_url, sample_url, profile_image_url, voice_profile_name };
           })
           .filter(Boolean) as any;
         setVoices(mapped);
@@ -75,36 +101,12 @@ export function CloneVoiceView() {
     const t = await getAccessToken();
     if (!t.ok) return null;
     try {
-      // Para Replicate API, necesitamos verificar el estado de la predicción
-      // Primero obtenemos la información de la voz desde nuestra base de datos
       const r = await fetch('/api/kits/voices', {
         headers: { authorization: `Bearer ${t.token}` },
       });
       if (r.ok) {
         const data = await r.json();
         const voice = data.voices?.find((v: any) => v.id === voiceId || v.replicate_id === voiceId);
-        if (voice?.replicate_id) {
-          // Si tenemos un replicate_id, podemos verificar el estado directamente con Replicate
-          const replicateToken = process.env.REPLICATE_API_TOKEN;
-          if (replicateToken) {
-            const replicateResponse = await fetch(`https://api.replicate.com/v1/predictions/${voice.replicate_id}`, {
-              headers: {
-                'Authorization': `Token ${replicateToken}`,
-              },
-            });
-            if (replicateResponse.ok) {
-              const replicateData = await replicateResponse.json();
-              return {
-                status: replicateData.status,
-                output: replicateData.output,
-                error: replicateData.error,
-                created_at: replicateData.created_at,
-                started_at: replicateData.started_at,
-                completed_at: replicateData.completed_at
-              };
-            }
-          }
-        }
         return voice;
       }
     } catch (e) {
@@ -114,45 +116,57 @@ export function CloneVoiceView() {
   };
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d: any = JSON.parse(raw);
+        if (typeof d?.voiceName === 'string') setVoiceName(d.voiceName);
+        if (typeof d?.description === 'string') setDescription(d.description);
+        if (typeof d?.profileImageUrl === 'string') setProfileImageUrl(d.profileImageUrl);
+        if (typeof d?.voiceProfileName === 'string') setVoiceProfileName(d.voiceProfileName);
+        if (typeof d?.category === 'string') setCategory(d.category);
+        if (typeof d?.language === 'string') setLanguage(d.language);
+        if (typeof d?.gender === 'string') setGender(d.gender);
+        if (Array.isArray(d?.tags)) setTags(d.tags.filter((x: any) => typeof x === 'string').map((x: string) => x.trim()).filter(Boolean));
+        if (typeof d?.isPublic === 'boolean') setIsPublic(d.isPublic);
+        if (typeof d?.audioDuration === 'number' && Number.isFinite(d.audioDuration)) setAudioDuration(d.audioDuration);
+        const fileName = typeof d?.selectedFileName === 'string' ? d.selectedFileName.trim() : '';
+        if (fileName) setSuccess(`Se restauró lo que estabas llenando. Vuelve a seleccionar el audio: ${fileName}`);
+      }
+    } catch {
+    }
     loadVoices();
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const processingVoices = voices.filter(v => v.status === 'processing');
-      if (processingVoices.length === 0) return;
-
-      const t = await getAccessToken();
-      if (!t.ok) return;
-
-      for (const voice of processingVoices) {
-        try {
-          const statusData = await checkVoiceStatus(voice.id);
-          if (statusData) {
-            // Mapear estados de Replicate a nuestros estados
-            let newStatus = voice.status;
-            if (statusData.status === 'starting' || statusData.status === 'processing') {
-              newStatus = 'processing';
-            } else if (statusData.status === 'succeeded' || statusData.status === 'completed') {
-              newStatus = 'ready';
-            } else if (statusData.status === 'failed' || statusData.status === 'canceled') {
-              newStatus = 'failed';
-            }
-            
-            if (newStatus !== voice.status) {
-              setVoices(prev => prev.map(v => 
-                v.id === voice.id ? { ...v, status: newStatus } : v
-              ));
-            }
-          }
-        } catch (e) {
-          console.error('Error updating voice status:', e);
-        }
-      }
+    const interval = setInterval(() => {
+      const hasProcessing = voices.some(v => v.status === 'processing');
+      if (!hasProcessing) return;
+      loadVoices().catch(() => {});
     }, 10000);
 
     return () => clearInterval(interval);
   }, [voices]);
+
+  useEffect(() => {
+    try {
+      const draft = {
+        voiceName,
+        description,
+        profileImageUrl,
+        voiceProfileName,
+        category,
+        language,
+        gender,
+        tags,
+        isPublic,
+        audioDuration,
+        selectedFileName: selectedFile?.name || '',
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {
+    }
+  }, [voiceName, description, profileImageUrl, voiceProfileName, category, language, gender, tags, isPublic, audioDuration, selectedFile]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
@@ -546,7 +560,8 @@ export function CloneVoiceView() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const msg = [errorData?.error, errorData?.detail].filter(Boolean).join('\n');
+        const sqlText = typeof errorData?.sql === 'string' && errorData.sql.trim() ? `SQL (copia y pega en Supabase):\n${errorData.sql}` : '';
+        const msg = [errorData?.error, errorData?.detail, errorData?.hint, sqlText].filter(Boolean).join('\n\n');
         throw new Error(msg || 'Error al crear la voz');
       }
 
@@ -570,6 +585,10 @@ export function CloneVoiceView() {
       setIsPublic(false);
       setUploadProgress(0);
       setAudioDuration(null);
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
       console.error('Error cloning voice:', err);
@@ -616,15 +635,43 @@ export function CloneVoiceView() {
       return;
     }
 
-    // Para Replicate, necesitamos obtener la URL del modelo entrenado
-    // Primero verificamos el estado para ver si hay un output
     const statusData = await checkVoiceStatus(voice.id);
-    if (statusData?.output?.model_url) {
-      setPlayingVoiceId(voice.voice_id);
-      setAudioUrl(statusData.output.model_url);
-    } else {
-      setError('La voz aún no está lista para reproducir. Está en proceso de entrenamiento.');
+    const statusTextRaw = String(statusData?.status || '').trim().toLowerCase();
+    const isReady = statusTextRaw === 'ready' || statusTextRaw === 'succeeded' || statusTextRaw === 'completed';
+
+    let output: any = null;
+    const outRaw = statusData?.output;
+    if (outRaw && typeof outRaw === 'string') {
+      try {
+        output = JSON.parse(outRaw);
+      } catch {
+        output = null;
+      }
+    } else if (outRaw && typeof outRaw === 'object') {
+      output = outRaw;
     }
+
+    const url =
+      (typeof statusData?.sample_url === 'string' && statusData.sample_url.trim()) ||
+      (typeof statusData?.model_url === 'string' && statusData.model_url.trim()) ||
+      (typeof output?.sample_url === 'string' && output.sample_url.trim()) ||
+      (typeof output?.audio_url === 'string' && output.audio_url.trim()) ||
+      (typeof output?.audio === 'string' && output.audio.trim()) ||
+      (typeof output?.model_url === 'string' && output.model_url.trim()) ||
+      '';
+
+    if (!isReady) {
+      setError('La voz aún no está lista. Está en proceso de entrenamiento.');
+      return;
+    }
+
+    if (!url) {
+      setError('La voz está lista pero no tiene una URL de audio para reproducir.');
+      return;
+    }
+
+    setPlayingVoiceId(voice.voice_id);
+    setAudioUrl(url);
   };
 
   const formatDate = (iso: string) => {

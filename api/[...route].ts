@@ -2271,21 +2271,83 @@ const sunoHandler = (() => {
 
       const saved = await tryInsertWithFallback();
       if (!saved.ok) {
-        // Extraer el mensaje del error de Supabase correctamente
         let errorDetail = "";
         if (saved.error) {
-          if (typeof saved.error === 'object') {
-            // Intentar obtener el mensaje del error de Supabase
+          if (typeof saved.error === "object") {
             errorDetail = saved.error.message || saved.error.details || saved.error.hint || JSON.stringify(saved.error);
           } else {
             errorDetail = String(saved.error);
           }
         }
-        
+
+        const lower = errorDetail.toLowerCase();
+        const missingTable = lower.includes("could not find the table") && lower.includes("kits_voices");
+        const createTableSql = `create extension if not exists pgcrypto;
+
+create table if not exists public.kits_voices (
+  id uuid primary key default gen_random_uuid(),
+  voice_id text,
+  user_id uuid not null,
+  voice_name text not null,
+  description text,
+  cost numeric default 0,
+  status text default 'processing',
+  provider text,
+  replicate_id text,
+  dataset_url text,
+  model_name text,
+  model_url text,
+  sample_url text,
+  profile_image_url text,
+  voice_profile_name text,
+  category text,
+  language text,
+  gender text,
+  accent text,
+  tags text[],
+  is_public boolean default false,
+  output jsonb,
+  error jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.kits_voices enable row level security;
+
+drop policy if exists "kits_voices_select_own" on public.kits_voices;
+create policy "kits_voices_select_own"
+on public.kits_voices for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "kits_voices_insert_own" on public.kits_voices;
+create policy "kits_voices_insert_own"
+on public.kits_voices for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "kits_voices_update_own" on public.kits_voices;
+create policy "kits_voices_update_own"
+on public.kits_voices for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "kits_voices_delete_own" on public.kits_voices;
+create policy "kits_voices_delete_own"
+on public.kits_voices for delete
+to authenticated
+using (auth.uid() = user_id);
+
+notify pgrst, 'reload schema';`;
+
         return send(res, 500, {
           error: "No pude guardar la voz en la base de datos",
           detail: errorDetail,
-          hint: "Revisa la tabla kits_voices en Supabase (que exista y tenga las columnas básicas).",
+          hint: missingTable
+            ? "Falta la tabla kits_voices en Supabase. Crea la tabla y recarga el schema cache (incluyo el SQL)."
+            : "Revisa la tabla kits_voices en Supabase (que exista y tenga las columnas básicas).",
+          sql: missingTable ? createTableSql : undefined,
         });
       }
 
@@ -2500,7 +2562,16 @@ const sunoHandler = (() => {
 
         return send(res, 200, { voices: voices || [] });
       } catch (e) {
-        return send(res, 500, { error: "Error obteniendo voces", detail: e instanceof Error ? e.message : String(e) });
+        const detail = e instanceof Error ? e.message : String(e);
+        const lower = detail.toLowerCase();
+        const missingTable = lower.includes("could not find the table") && lower.includes("kits_voices");
+        return send(res, 500, {
+          error: "Error obteniendo voces",
+          detail,
+          hint: missingTable
+            ? "Falta la tabla kits_voices en Supabase. Crea la tabla y recarga el schema cache."
+            : undefined,
+        });
       }
     } else if ((req.method || "").toUpperCase() === "DELETE") {
       const auth = await requireUser(req);
@@ -2522,7 +2593,16 @@ const sunoHandler = (() => {
 
         return send(res, 200, { ok: true, message: "Voz eliminada" });
       } catch (e) {
-        return send(res, 500, { error: "Error eliminando voz", detail: e instanceof Error ? e.message : String(e) });
+        const detail = e instanceof Error ? e.message : String(e);
+        const lower = detail.toLowerCase();
+        const missingTable = lower.includes("could not find the table") && lower.includes("kits_voices");
+        return send(res, 500, {
+          error: "Error eliminando voz",
+          detail,
+          hint: missingTable
+            ? "Falta la tabla kits_voices en Supabase. Crea la tabla y recarga el schema cache."
+            : undefined,
+        });
       }
     } else {
       return send(res, 405, { error: "Método no permitido" });
