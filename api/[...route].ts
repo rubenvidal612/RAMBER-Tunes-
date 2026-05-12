@@ -2013,6 +2013,13 @@ const sunoHandler = (() => {
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const voiceName = firstString(payload, ["voiceName", "voice_name"]) || "Mi Voz";
     const description = firstString(payload, ["description"]) || "Voz clonada desde RAMBER Tunes";
+    const profileImageUrl = firstString(payload, ["profileImageUrl", "profile_image_url"]);
+    const voiceProfileName = firstString(payload, ["voiceProfileName", "voice_profile_name"]) || voiceName;
+    const category = firstString(payload, ["category"]) || "personal";
+    const language = firstString(payload, ["language"]) || "es";
+    const gender = firstString(payload, ["gender"]) || "unknown";
+    const tags = Array.isArray(payload?.tags) ? payload.tags.filter((t: any) => typeof t === "string" && t.trim()) : [];
+    const isPublic = typeof payload?.isPublic === "boolean" ? payload.isPublic : false;
 
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
@@ -2031,8 +2038,26 @@ const sunoHandler = (() => {
       }
 
       // Descargar el audio para preparar el dataset
+      console.log(`Descargando audio desde: ${finalUploadUrl}`);
       const audioResponse = await fetch(finalUploadUrl);
+      if (!audioResponse.ok) {
+        return send(res, 502, { 
+          error: "Error descargando el audio", 
+          detail: `HTTP ${audioResponse.status}: ${await audioResponse.text().catch(() => '')}` 
+        });
+      }
+      
       const audioBuffer = await audioResponse.arrayBuffer();
+      console.log(`Audio descargado: ${audioBuffer.byteLength} bytes`);
+      
+      // Verificar que el audio sea válido
+      if (audioBuffer.byteLength === 0) {
+        return send(res, 400, { error: "El archivo de audio está vacío" });
+      }
+      
+      if (audioBuffer.byteLength > 50 * 1024 * 1024) { // 50 MB límite
+        return send(res, 413, { error: "El archivo de audio es demasiado grande (máximo 50 MB)" });
+      }
       
       // Crear un archivo WAV temporal (RVC requiere WAV)
       const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
@@ -2042,6 +2067,7 @@ const sunoHandler = (() => {
       const timestamp = Date.now();
       const rvcDatasetKey = `rvc_datasets/${user.id}/${timestamp}_dataset.wav`;
       
+      console.log(`Subiendo audio a R2: ${rvcDatasetKey}`);
       // Subir el audio a R2
       const env = getR2Env();
       const client = await getR2Client();
@@ -2054,9 +2080,11 @@ const sunoHandler = (() => {
       });
       
       await client.send(putCommand);
+      console.log(`Audio subido a R2 exitosamente`);
       
       // Generar URL firmada para el dataset
       const datasetUrl = await getSignedR2Url(rvcDatasetKey, 60 * 60 * 24); // 24 horas
+      console.log(`URL del dataset generada: ${datasetUrl}`);
 
       // Configurar la solicitud a Replicate API
       const replicateToken = process.env.REPLICATE_API_TOKEN;
@@ -2078,6 +2106,10 @@ const sunoHandler = (() => {
       };
 
       // Llamar a Replicate API
+      console.log(`Llamando a Replicate API con modelo: ${replicateModel}, versión: ${replicateVersion}`);
+      console.log(`Dataset URL: ${datasetUrl}`);
+      console.log(`Replicate Input:`, JSON.stringify(replicateInput, null, 2));
+      
       const replicateResponse = await fetch(`https://api.replicate.com/v1/models/${replicateModel}/versions/${replicateVersion}/predictions`, {
         method: 'POST',
         headers: {
@@ -2092,6 +2124,7 @@ const sunoHandler = (() => {
       });
 
       const replicateData = await replicateResponse.json();
+      console.log(`Respuesta de Replicate:`, JSON.stringify(replicateData, null, 2));
 
       if (!replicateResponse.ok) {
         let errorMessage = "Error entrenando modelo RVC";
@@ -2103,6 +2136,7 @@ const sunoHandler = (() => {
         } else if (replicateResponse.status === 422) {
           errorMessage = "Datos de solicitud inválidos";
           errorDetail = replicateData?.detail || "El archivo de audio no cumple con los requisitos para RVC";
+          console.log(`Error 422 de Replicate: ${errorDetail}`);
         } else if (replicateResponse.status === 429) {
           errorMessage = "Límite de solicitudes excedido";
           errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
@@ -2115,6 +2149,7 @@ const sunoHandler = (() => {
       if (!predictionId) {
         return send(res, 502, { error: "Respuesta inválida de Replicate API" });
       }
+      console.log(`Prediction ID obtenido: ${predictionId}`);
 
       // Guardar en la base de datos
       await auth.admin.from("kits_voices").insert({
@@ -2129,6 +2164,13 @@ const sunoHandler = (() => {
         replicate_id: predictionId,
         dataset_url: datasetUrl,
         model_name: replicateModel,
+        profile_image_url: profileImageUrl || null,
+        voice_profile_name: voiceProfileName,
+        category: category,
+        language: language,
+        gender: gender,
+        tags: tags.length > 0 ? tags : null,
+        is_public: isPublic,
       });
 
       return send(res, 200, { 
