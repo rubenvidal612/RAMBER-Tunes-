@@ -2058,14 +2058,28 @@ const sunoHandler = (() => {
       if (audioBuffer.byteLength > 50 * 1024 * 1024) { // 50 MB límite
         return send(res, 413, { error: "El archivo de audio es demasiado grande (máximo 50 MB)" });
       }
-      
-      // Crear un archivo WAV temporal (RVC requiere WAV)
-      const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
-      
-      // Crear un archivo ZIP que contenga el audio WAV (Replicate espera un ZIP)
+
+      const head = Buffer.from(audioBuffer.slice(0, 12));
+      const isWav = head.subarray(0, 4).toString("ascii") === "RIFF" && head.subarray(8, 12).toString("ascii") === "WAVE";
+      if (!isWav) {
+        return send(res, 400, {
+          error: "El audio debe ser WAV",
+          detail: "Sube un WAV (o vuelve a subir el audio para que la app lo convierta a WAV automáticamente).",
+        });
+      }
+
+      // Crear un archivo ZIP que contenga el dataset en la estructura que espera Replicate
       const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
-      zip.file("dataset.wav", Buffer.from(audioBuffer));
+      const sanitizeRvcName = (s: string) =>
+        (s || "")
+          .toString()
+          .replace(/[\\/:*?"<>|]+/g, "_")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 60);
+      const rvcName = sanitizeRvcName(voiceProfileName || voiceName || "voz") || "voz";
+      zip.file(`dataset/${rvcName}/split_0.wav`, Buffer.from(audioBuffer));
       const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
       
       // Subir el archivo ZIP a R2

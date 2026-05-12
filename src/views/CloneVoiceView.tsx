@@ -265,9 +265,9 @@ export function CloneVoiceView() {
     const type = (file?.type || '').toString().toLowerCase();
     const isMp3 = ext === 'mp3' || type === 'audio/mpeg' || type === 'audio/mp3';
     const isWav = ext === 'wav' || type === 'audio/wav' || type === 'audio/x-wav';
-    if (isMp3 || isWav) {
+    if (isWav) {
       const duration = await getAudioDuration(file).catch(() => 0);
-      if (duration > 0) return { file: normalizeAudioType(file, isWav ? 'audio/wav' : 'audio/mpeg'), duration };
+      if (duration > 0) return { file: normalizeAudioType(file, 'audio/wav'), duration };
     }
 
     const isAmr = ext === 'amr' || type.includes('amr');
@@ -293,7 +293,7 @@ export function CloneVoiceView() {
         }
       });
 
-      const targetRate = 44100;
+      const targetRate = 48000;
       let toEncode = decoded;
       if (Number.isFinite(decoded.sampleRate) && decoded.sampleRate > 0 && decoded.sampleRate !== targetRate) {
         try {
@@ -531,7 +531,8 @@ export function CloneVoiceView() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Error al crear la voz');
+        const msg = [errorData?.error, errorData?.detail].filter(Boolean).join('\n');
+        throw new Error(msg || 'Error al crear la voz');
       }
 
       const data = await response.json();
