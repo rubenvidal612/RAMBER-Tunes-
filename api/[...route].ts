@@ -2271,9 +2271,20 @@ const sunoHandler = (() => {
 
       const saved = await tryInsertWithFallback();
       if (!saved.ok) {
+        // Extraer el mensaje del error de Supabase correctamente
+        let errorDetail = "";
+        if (saved.error) {
+          if (typeof saved.error === 'object') {
+            // Intentar obtener el mensaje del error de Supabase
+            errorDetail = saved.error.message || saved.error.details || saved.error.hint || JSON.stringify(saved.error);
+          } else {
+            errorDetail = String(saved.error);
+          }
+        }
+        
         return send(res, 500, {
           error: "No pude guardar la voz en la base de datos",
-          detail: saved.error instanceof Error ? saved.error.message : String(saved.error || ""),
+          detail: errorDetail,
           hint: "Revisa la tabla kits_voices en Supabase (que exista y tenga las columnas básicas).",
         });
       }
