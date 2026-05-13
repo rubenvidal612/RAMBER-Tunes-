@@ -263,139 +263,105 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
           </a>
         </div>
       ) : (
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-          {voices.map((voice) => (
-            <div
-              key={voice.id}
-              className={cn(
-                "glass-card rounded-2xl p-4 border transition-colors",
-                selectedVoiceId === voice.id
-                  ? "border-emerald-500 bg-emerald-500/10"
-                  : "border-white/10 hover:bg-white/5"
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                    {voice.profileImageUrl ? (
-                      <img src={voice.profileImageUrl} alt={voice.voiceProfileName || voice.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-200 font-extrabold">
-                        {(voice.voiceProfileName || voice.name || 'V').toString().trim().slice(0, 1).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="text-white font-bold truncate">{voice.voiceProfileName || voice.name}</div>
-                      {voice.status === 'training' && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
-                          Entrenando
-                        </span>
-                      )}
-                      {voice.status === 'ready' && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
-                          Lista
-                        </span>
-                      )}
-                      {voice.status === 'failed' && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-300">
-                          Falló
-                        </span>
-                      )}
+        <div className="max-h-96 overflow-y-auto pr-2">
+          <div className="grid grid-cols-3 gap-3">
+            {voices.map((voice) => {
+              const displayName = (voice.voiceProfileName || voice.name || 'Voz').toString().trim() || 'Voz';
+              const isSelected = selectedVoiceId === voice.id;
+              const isReady = voice.status === 'ready';
+              return (
+                <button
+                  key={voice.id}
+                  type="button"
+                  onClick={() => handleSelectVoice(voice.id)}
+                  className={cn(
+                    "relative aspect-square rounded-[26px] overflow-hidden border transition-colors text-left",
+                    isSelected ? "border-emerald-500 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10",
+                    !isReady ? "opacity-80" : ""
+                  )}
+                  title={displayName}
+                  aria-label={displayName}
+                >
+                  {voice.profileImageUrl ? (
+                    <img src={voice.profileImageUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-200 font-extrabold text-3xl bg-white/5">
+                      {displayName.slice(0, 1).toUpperCase()}
                     </div>
-                    
-                    {voice.description && (
-                      <div className="text-slate-400 text-sm truncate mt-1">{voice.description}</div>
-                    )}
-                    
-                    <div className="text-slate-500 text-xs mt-1">
-                      Creada: {(() => {
-                        try {
-                          const d = new Date(voice.createdAt);
-                          return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-MX');
-                        } catch {
-                          return '';
-                        }
-                      })()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {voice.sampleUrl && (
-                    <button
-                      onClick={() => handlePlaySample(voice)}
-                      disabled={playingVoiceId === voice.id}
-                      className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors disabled:opacity-50"
-                      title="Escuchar muestra"
-                    >
-                      {playingVoiceId === voice.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Play className="w-4 h-4" />
-                      )}
-                    </button>
                   )}
 
-                  <button
-                    onClick={() => handleEditVoice(voice)}
-                    className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors"
-                    title="Editar efectos de voz"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
+                  <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/45 to-transparent">
+                    <div className="text-white font-extrabold truncate text-base leading-tight">{displayName}</div>
+                  </div>
 
-                  <button
-                    onClick={() => handleSelectVoice(voice.id)}
-                    className={cn(
-                      "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
-                      selectedVoiceId === voice.id
-                        ? "bg-emerald-500 text-white"
-                        : "bg-white/5 border border-white/10 text-slate-200 hover:bg-white/10"
-                    )}
-                    title={selectedVoiceId === voice.id ? "Seleccionada" : "Seleccionar"}
-                  >
-                    {selectedVoiceId === voice.id ? (
-                      <Check className="w-4 h-4" />
-                    ) : (
-                      <div className="w-2 h-2 rounded-full bg-current" />
-                    )}
-                  </button>
+                  <div className="absolute left-2 top-2 flex items-center gap-2">
+                    {voice.sampleUrl ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handlePlaySample(voice);
+                        }}
+                        disabled={playingVoiceId === voice.id}
+                        className="w-11 h-11 rounded-full bg-black/45 border border-white/10 text-white flex items-center justify-center hover:bg-black/60 disabled:opacity-60"
+                        title="Escuchar"
+                        aria-label="Escuchar"
+                      >
+                        {playingVoiceId === voice.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 ml-0.5" />}
+                      </button>
+                    ) : null}
+                  </div>
 
-                  {songId && voice.status === 'ready' && (
+                  <div className="absolute right-2 top-2 flex items-center gap-2">
                     <button
-                      onClick={() => handleCreateCover(voice.id)}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 px-4 rounded-full text-sm transition-colors"
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleEditVoice(voice);
+                      }}
+                      className="w-11 h-11 rounded-full bg-black/45 border border-white/10 text-white flex items-center justify-center hover:bg-black/60"
+                      title="Editar"
+                      aria-label="Editar"
                     >
-                      Aplicar
+                      <Edit className="w-5 h-5" />
                     </button>
-                  )}
-                </div>
-              </div>
+                    <div
+                      className={cn(
+                        "w-11 h-11 rounded-full border flex items-center justify-center",
+                        isSelected ? "bg-emerald-500/35 border-emerald-500/40 text-emerald-200" : "bg-black/45 border-white/10 text-white"
+                      )}
+                      title={isSelected ? "Seleccionada" : "Seleccionar"}
+                      aria-label={isSelected ? "Seleccionada" : "Seleccionar"}
+                    >
+                      {isSelected ? <Check className="w-5 h-5" /> : <div className="w-2.5 h-2.5 rounded-full bg-current" />}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-              {playingVoiceId === voice.id && (
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="text-slate-400 text-sm">Reproduciendo muestra...</div>
-                  <button
-                    onClick={handleStopPlayback}
-                    className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm"
-                  >
-                    <X className="w-4 h-4" /> Detener
-                  </button>
-                </div>
-              )}
+          {playingVoiceId ? (
+            <div className="mt-4 flex items-center justify-between text-slate-400 text-sm">
+              <div>Reproduciendo muestra…</div>
+              <button
+                onClick={handleStopPlayback}
+                className="text-slate-300 hover:text-white transition-colors flex items-center gap-2"
+              >
+                <X className="w-5 h-5" /> Detener
+              </button>
             </div>
-          ))}
+          ) : null}
         </div>
       )}
 
-      {playingVoiceId && (
+      {playingVoiceId ? (
         <div className="mt-4 text-center text-slate-500 text-xs">
-          Haz clic en el ícono de play para escuchar una muestra de cada voz
+          Toca “Detener” para parar la muestra
         </div>
-      )}
+      ) : null}
 
       {editingVoiceId && editingVoiceUrl && (
         <div className="mt-6">

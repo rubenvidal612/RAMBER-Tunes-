@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp, Edit } from 'lucide-react';
+import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp, Edit, Pencil } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
@@ -48,6 +48,7 @@ export function CloneVoiceView() {
   const [editProfileImage, setEditProfileImage] = useState<File | null>(null);
   const [editProfileImagePreview, setEditProfileImagePreview] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isManageVoices, setIsManageVoices] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1320,6 +1321,20 @@ export function CloneVoiceView() {
                 {voices.length} {voices.length === 1 ? 'voz' : 'voces'}
               </div>
             </div>
+            {voices.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setIsManageVoices((v) => !v)}
+                className={cn(
+                  "ml-auto w-11 h-11 rounded-full border flex items-center justify-center transition-colors",
+                  isManageVoices ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-200" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                )}
+                aria-label={isManageVoices ? 'Listo' : 'Editar voces'}
+                title={isManageVoices ? 'Listo' : 'Editar voces'}
+              >
+                <Pencil className="w-5 h-5" />
+              </button>
+            ) : null}
           </div>
 
           {voices.length === 0 ? (
@@ -1329,7 +1344,7 @@ export function CloneVoiceView() {
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4">
               {voices.map((voice) => {
                 const playableUrl =
                   (typeof voice.output?.sample_url === 'string' && voice.output.sample_url.trim()) ||
@@ -1337,79 +1352,83 @@ export function CloneVoiceView() {
                   (typeof voice.output?.audio === 'string' && voice.output.audio.trim()) ||
                   '';
                 const canPlay = voice.status === 'ready' && Boolean(playableUrl);
+                const displayName = (voice.voice_profile_name || voice.voice_name || '').toString().trim() || 'Voz';
                 return (
-                  <div
-                    key={voice.id}
-                    className="bg-white/5 border border-white/10 rounded-2xl p-4"
-                  >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {statusIcon(voice.status)}
-                      <div className="w-9 h-9 rounded-full overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
-                        {voice.profile_image_url ? (
-                          <img src={voice.profile_image_url} alt={voice.voice_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <User className="w-4 h-4 text-slate-400" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-white font-semibold truncate">
-                          {voice.voice_name}
+                  <div key={voice.id} className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isManageVoices) {
+                          openEditVoice(voice);
+                          return;
+                        }
+                        if (canPlay) playVoice(voice);
+                      }}
+                      className={cn(
+                        "relative w-full aspect-square rounded-[28px] overflow-hidden border transition-colors",
+                        isManageVoices ? "bg-emerald-500/10 border-emerald-500/30" : "bg-white/5 border-white/10 hover:bg-white/10",
+                        !canPlay && !isManageVoices ? "opacity-80" : ""
+                      )}
+                      aria-label={displayName}
+                      title={displayName}
+                    >
+                      {voice.profile_image_url ? (
+                        <img src={voice.profile_image_url} alt={displayName} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                          <User className="w-12 h-12" />
                         </div>
+                      )}
+
+                      <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
+                        <div className="text-white font-extrabold truncate text-base leading-tight">{displayName}</div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => playVoice(voice)}
-                        disabled={!canPlay}
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                          playingVoiceId === voice.voice_id
-                            ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
-                            : "bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
-                        )}
-                        title={!canPlay ? (voice.status !== 'ready' ? 'La voz aún se está entrenando' : 'No hay muestra para reproducir') : 'Reproducir'}
-                      >
-                        {playingVoiceId === voice.voice_id ? (
-                          <Pause className="w-3.5 h-3.5" />
-                        ) : (
-                          <Play className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => openEditVoice(voice)}
-                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300"
-                        title="Editar"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => deleteVoice(voice.id)}
-                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
 
-                  <div className="text-xs text-slate-400 mb-2">
-                    {voice.description}
-                  </div>
+                      {!isManageVoices && canPlay ? (
+                        <div className="absolute right-2 top-2">
+                          <div
+                            className={cn(
+                              "w-12 h-12 rounded-full border flex items-center justify-center",
+                              playingVoiceId === voice.voice_id ? "bg-emerald-500/25 border-emerald-500/30 text-emerald-200" : "bg-black/40 border-white/10 text-white"
+                            )}
+                          >
+                            {playingVoiceId === voice.voice_id ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                          </div>
+                        </div>
+                      ) : null}
 
-                  {voice.status === 'failed' && (
-                    <div className="mb-2 p-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-200 text-xs whitespace-pre-wrap">
-                      {formatVoiceErrorMessage(voice.error) || 'No se recibió el motivo del fallo.'}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <div className="flex items-center gap-4">
-                      <span>{statusText(voice.status)}</span>
-                      <span>{formatDate(voice.created_at)}</span>
-                    </div>
-                    <span>{voice.cost} créditos</span>
+                      {isManageVoices ? (
+                        <div className="absolute right-2 top-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openEditVoice(voice);
+                            }}
+                            className="w-12 h-12 rounded-full bg-black/45 border border-white/10 text-white flex items-center justify-center hover:bg-black/60"
+                            aria-label="Editar voz"
+                            title="Editar"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              deleteVoice(voice.id);
+                            }}
+                            className="w-12 h-12 rounded-full bg-black/45 border border-white/10 text-white flex items-center justify-center hover:bg-black/60"
+                            aria-label="Eliminar voz"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ) : null}
+                    </button>
                   </div>
-                </div>
                 );
               })}
             </div>
