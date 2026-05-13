@@ -168,6 +168,22 @@ export function CloneVoiceView() {
   }, [voices]);
 
   useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (!audioUrl) return;
+    try {
+      el.pause();
+      el.currentTime = 0;
+    } catch {}
+    try {
+      const p = el.play();
+      if (p && typeof (p as any).catch === 'function') {
+        (p as any).catch(() => {});
+      }
+    } catch {}
+  }, [audioUrl]);
+
+  useEffect(() => {
     try {
       const draft = {
         voiceName,
@@ -747,10 +763,20 @@ export function CloneVoiceView() {
       return;
     }
 
-    const statusData = await checkVoiceStatus(voice.id);
-    const statusTextRaw = String(statusData?.status || '').trim().toLowerCase();
-    const isReady = statusTextRaw === 'ready' || statusTextRaw === 'succeeded' || statusTextRaw === 'completed';
+    const fromRow =
+      (typeof voice.sample_url === 'string' && voice.sample_url.trim()) ||
+      (typeof voice.output?.sample_url === 'string' && voice.output.sample_url.trim()) ||
+      (typeof voice.output?.audio_url === 'string' && voice.output.audio_url.trim()) ||
+      (typeof voice.output?.audio === 'string' && voice.output.audio.trim()) ||
+      '';
 
+    if (fromRow) {
+      setPlayingVoiceId(voice.voice_id);
+      setAudioUrl(fromRow);
+      return;
+    }
+
+    const statusData = await checkVoiceStatus(voice.id);
     let output: any = null;
     const outRaw = statusData?.output;
     if (outRaw && typeof outRaw === 'string') {
@@ -769,13 +795,8 @@ export function CloneVoiceView() {
       (typeof output?.audio === 'string' && output.audio.trim()) ||
       '';
 
-    if (!isReady) {
-      setError('La voz aún no está lista. Está en proceso de entrenamiento.');
-      return;
-    }
-
     if (!url) {
-      setError('La voz está lista pero no tiene una URL de audio para reproducir.');
+      setError('Esta voz no tiene audio para reproducir todavía.');
       return;
     }
 
@@ -1061,23 +1082,6 @@ export function CloneVoiceView() {
             )}
 
             <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Descripción (opcional)
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value.slice(0, 200))}
-                  placeholder="Ej: Voz clonada de mis grabaciones personales"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors resize-none"
-                  rows={2}
-                  maxLength={200}
-                />
-                <div className="text-xs text-slate-500 mt-1 text-right">
-                  {description.length}/200
-                </div>
-              </div>
-
               {/* Profile Image Upload */}
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
@@ -1149,6 +1153,23 @@ export function CloneVoiceView() {
                 />
                 <div className="text-xs text-slate-500 mt-1 text-right">
                   {voiceProfileName.length}/50
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Descripción (opcional)
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value.slice(0, 200))}
+                  placeholder="Ej: Voz clonada de mis grabaciones personales"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors resize-none"
+                  rows={2}
+                  maxLength={200}
+                />
+                <div className="text-xs text-slate-500 mt-1 text-right">
+                  {description.length}/200
                 </div>
               </div>
 
@@ -1230,48 +1251,6 @@ export function CloneVoiceView() {
                 </div>
               </div>
 
-              {/* Tags Input */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Etiquetas (opcional)
-                </label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {tags.map((tag, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-sm"
-                    >
-                      {tag}
-                      <button
-                        type="button"
-                        onClick={() => setTags(tags.filter((_, i) => i !== index))}
-                        className="text-xs hover:text-white"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  placeholder="Agrega etiquetas separadas por comas (ej: pop, rock, suave)"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault();
-                      const input = e.currentTarget;
-                      const value = input.value.trim();
-                      if (value && !tags.includes(value)) {
-                        setTags([...tags, value]);
-                      }
-                      input.value = '';
-                    }
-                  }}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors"
-                />
-                <div className="text-xs text-slate-500 mt-1">
-                  Presiona Enter o coma para agregar etiquetas
-                </div>
-              </div>
             </div>
 
             <button
@@ -1347,11 +1326,12 @@ export function CloneVoiceView() {
             <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4">
               {voices.map((voice) => {
                 const playableUrl =
+                  (typeof voice.sample_url === 'string' && voice.sample_url.trim()) ||
                   (typeof voice.output?.sample_url === 'string' && voice.output.sample_url.trim()) ||
                   (typeof voice.output?.audio_url === 'string' && voice.output.audio_url.trim()) ||
                   (typeof voice.output?.audio === 'string' && voice.output.audio.trim()) ||
                   '';
-                const canPlay = voice.status === 'ready' && Boolean(playableUrl);
+                const hasAudio = Boolean(playableUrl);
                 const displayName = (voice.voice_profile_name || voice.voice_name || '').toString().trim() || 'Voz';
                 return (
                   <div key={voice.id} className="min-w-0">
@@ -1364,7 +1344,7 @@ export function CloneVoiceView() {
                           openEditVoice(voice);
                           return;
                         }
-                        if (canPlay) {
+                        if (hasAudio) {
                           e.preventDefault();
                           e.stopPropagation();
                           playVoice(voice);
@@ -1373,7 +1353,7 @@ export function CloneVoiceView() {
                       className={cn(
                         "relative w-full aspect-square rounded-[28px] overflow-hidden border transition-colors",
                         isManageVoices ? "bg-emerald-500/10 border-emerald-500/30" : "bg-white/5 border-white/10 hover:bg-white/10",
-                        !canPlay && !isManageVoices ? "opacity-80" : ""
+                        !hasAudio && !isManageVoices ? "opacity-80" : ""
                       )}
                       aria-label={displayName}
                       title={displayName}
@@ -1387,7 +1367,7 @@ export function CloneVoiceView() {
                       )}
 
                       <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
-                        <div className="text-white font-extrabold truncate text-base leading-tight">{displayName}</div>
+                        <div className="text-white font-extrabold truncate text-sm leading-tight">{displayName}</div>
                       </div>
 
 

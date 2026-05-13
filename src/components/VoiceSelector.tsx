@@ -299,7 +299,7 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
                   )}
 
                   <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/45 to-transparent">
-                    <div className="text-white font-extrabold truncate text-base leading-tight">{displayName}</div>
+                    <div className="text-white font-extrabold truncate text-sm leading-tight">{displayName}</div>
                   </div>
 
 
