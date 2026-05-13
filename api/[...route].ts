@@ -2631,11 +2631,12 @@ notify pgrst, 'reload schema';`;
       let modelUrl = voiceModelUrl;
       if (voiceId && !voiceModelUrl) {
         // Buscar la voz en la base de datos
+        const safeVoiceId = voiceId.replaceAll(",", "").slice(0, 200);
         const { data: voiceRows } = await auth.admin
           .from("kits_voices")
-          .select("replicate_id, output")
-          .eq("id", voiceId)
+          .select("id, replicate_id, voice_id, output, model_url")
           .eq("user_id", user.id)
+          .or(`id.eq.${safeVoiceId},voice_id.eq.${safeVoiceId},replicate_id.eq.${safeVoiceId}`)
           .limit(1);
         
         const voiceRow = Array.isArray(voiceRows) ? voiceRows[0] : null;
@@ -2651,12 +2652,14 @@ notify pgrst, 'reload schema';`;
           }
           return null;
         };
+        const modelFromCol =
+          voiceRow && (voiceRow as any)?.model_url != null ? String((voiceRow as any).model_url || "").trim() : "";
         const outObj = parseOutput((voiceRow as any)?.output);
-        const modelFromDb = typeof outObj?.model_url === "string" ? outObj.model_url.trim() : "";
-        if (modelFromDb) {
-          modelUrl = modelFromDb;
-        } else if (voiceRow?.replicate_id) {
-          // Si no tenemos URL del modelo, usar el replicate_id para obtener el modelo
+        const modelFromOutputField = typeof outObj?.model_url === "string" ? outObj.model_url.trim() : "";
+        const modelFromOutput = modelFromOutputField || (outObj ? extractOutputUrl(outObj) || "" : "");
+        if (!modelUrl) modelUrl = modelFromCol || modelFromOutput;
+
+        if (!modelUrl && voiceRow?.replicate_id) {
           const replicateToken = process.env.REPLICATE_API_TOKEN;
           if (replicateToken) {
             const replicateResponse = await fetch(`https://api.replicate.com/v1/predictions/${voiceRow.replicate_id}`, {
@@ -2664,8 +2667,18 @@ notify pgrst, 'reload schema';`;
             });
             if (replicateResponse.ok) {
               const replicateData = await replicateResponse.json();
-              modelUrl = replicateData.output?.model_url;
+              const fromOutput =
+                (typeof replicateData?.output?.model_url === "string" ? replicateData.output.model_url.trim() : "") ||
+                (replicateData?.output ? extractOutputUrl(replicateData.output) || "" : "");
+              modelUrl = fromOutput;
             }
+          }
+        }
+
+        if (modelUrl && voiceRow && !(voiceRow as any)?.model_url) {
+          try {
+            await auth.admin.from("kits_voices").update({ model_url: modelUrl }).eq("id", (voiceRow as any).id);
+          } catch {
           }
         }
       }
