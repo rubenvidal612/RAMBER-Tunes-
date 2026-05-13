@@ -1181,14 +1181,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   const v = e.target.value as any;
                   setModel(v);
                 }}
+                style={{ colorScheme: 'dark' }}
                 className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
               >
-                <option value="V5_5">V5.5</option>
-                <option value="V5">V5</option>
-                <option value="V4_5PLUS">V4.5+</option>
-                <option value="V4_5ALL">V4.5 All</option>
-                <option value="V4_5">V4.5</option>
-                <option value="V4">V4</option>
+                <option value="V5_5" className="bg-[#0b0f16] text-slate-200">V5.5</option>
+                <option value="V5" className="bg-[#0b0f16] text-slate-200">V5</option>
+                <option value="V4_5PLUS" className="bg-[#0b0f16] text-slate-200">V4.5+</option>
+                <option value="V4_5ALL" className="bg-[#0b0f16] text-slate-200">V4.5 All</option>
+                <option value="V4_5" className="bg-[#0b0f16] text-slate-200">V4.5</option>
+                <option value="V4" className="bg-[#0b0f16] text-slate-200">V4</option>
               </select>
               <ChevronDown className="w-4 h-4 text-slate-200 -ml-3 pointer-events-none" />
             </div>

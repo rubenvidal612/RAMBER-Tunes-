@@ -1013,20 +1013,22 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
               <select
                 value={planKey}
                 onChange={(e) => setPlanKey(e.target.value as any)}
+                style={{ colorScheme: 'dark' }}
                 className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
               >
-                <option value="ninguno">Sin plan</option>
-                <option value="inicio">Inicio</option>
-                <option value="productor">Productor</option>
+                <option value="ninguno" className="bg-[#0b0f16] text-slate-200">Sin plan</option>
+                <option value="inicio" className="bg-[#0b0f16] text-slate-200">Inicio</option>
+                <option value="productor" className="bg-[#0b0f16] text-slate-200">Productor</option>
               </select>
               <select
                 value={planCreditsMode}
                 onChange={(e) => setPlanCreditsMode(e.target.value as any)}
+                style={{ colorScheme: 'dark' }}
                 className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
               >
-                <option value="none">No tocar créditos</option>
-                <option value="default">Créditos del plan</option>
-                <option value="set">Créditos manuales</option>
+                <option value="none" className="bg-[#0b0f16] text-slate-200">No tocar créditos</option>
+                <option value="default" className="bg-[#0b0f16] text-slate-200">Créditos del plan</option>
+                <option value="set" className="bg-[#0b0f16] text-slate-200">Créditos manuales</option>
               </select>
                 </div>
                 {planCreditsMode === 'set' ? (

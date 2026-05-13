@@ -653,11 +653,9 @@ export function CloneVoiceView() {
 
     const url =
       (typeof statusData?.sample_url === 'string' && statusData.sample_url.trim()) ||
-      (typeof statusData?.model_url === 'string' && statusData.model_url.trim()) ||
       (typeof output?.sample_url === 'string' && output.sample_url.trim()) ||
       (typeof output?.audio_url === 'string' && output.audio_url.trim()) ||
       (typeof output?.audio === 'string' && output.audio.trim()) ||
-      (typeof output?.model_url === 'string' && output.model_url.trim()) ||
       '';
 
     if (!isReady) {
@@ -1044,13 +1042,14 @@ export function CloneVoiceView() {
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
+                    style={{ colorScheme: 'dark' }}
                     className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
                   >
-                    <option value="personal">Personal</option>
-                    <option value="celebrity">Celebridad</option>
-                    <option value="character">Personaje</option>
-                    <option value="professional">Profesional</option>
-                    <option value="ai">IA Generada</option>
+                    <option value="personal" className="bg-[#0b0f16] text-slate-200">Personal</option>
+                    <option value="celebrity" className="bg-[#0b0f16] text-slate-200">Celebridad</option>
+                    <option value="character" className="bg-[#0b0f16] text-slate-200">Personaje</option>
+                    <option value="professional" className="bg-[#0b0f16] text-slate-200">Profesional</option>
+                    <option value="ai" className="bg-[#0b0f16] text-slate-200">IA Generada</option>
                   </select>
                 </div>
 
@@ -1061,17 +1060,18 @@ export function CloneVoiceView() {
                   <select
                     value={language}
                     onChange={(e) => setLanguage(e.target.value)}
+                    style={{ colorScheme: 'dark' }}
                     className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
                   >
-                    <option value="es">Español</option>
-                    <option value="en">Inglés</option>
-                    <option value="fr">Francés</option>
-                    <option value="pt">Portugués</option>
-                    <option value="de">Alemán</option>
-                    <option value="it">Italiano</option>
-                    <option value="ja">Japonés</option>
-                    <option value="ko">Coreano</option>
-                    <option value="zh">Chino</option>
+                    <option value="es" className="bg-[#0b0f16] text-slate-200">Español</option>
+                    <option value="en" className="bg-[#0b0f16] text-slate-200">Inglés</option>
+                    <option value="fr" className="bg-[#0b0f16] text-slate-200">Francés</option>
+                    <option value="pt" className="bg-[#0b0f16] text-slate-200">Portugués</option>
+                    <option value="de" className="bg-[#0b0f16] text-slate-200">Alemán</option>
+                    <option value="it" className="bg-[#0b0f16] text-slate-200">Italiano</option>
+                    <option value="ja" className="bg-[#0b0f16] text-slate-200">Japonés</option>
+                    <option value="ko" className="bg-[#0b0f16] text-slate-200">Coreano</option>
+                    <option value="zh" className="bg-[#0b0f16] text-slate-200">Chino</option>
                   </select>
                 </div>
 
@@ -1082,12 +1082,13 @@ export function CloneVoiceView() {
                   <select
                     value={gender}
                     onChange={(e) => setGender(e.target.value)}
+                    style={{ colorScheme: 'dark' }}
                     className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
                   >
-                    <option value="unknown">No especificado</option>
-                    <option value="male">Masculino</option>
-                    <option value="female">Femenino</option>
-                    <option value="neutral">Neutral</option>
+                    <option value="unknown" className="bg-[#0b0f16] text-slate-200">No especificado</option>
+                    <option value="male" className="bg-[#0b0f16] text-slate-200">Masculino</option>
+                    <option value="female" className="bg-[#0b0f16] text-slate-200">Femenino</option>
+                    <option value="neutral" className="bg-[#0b0f16] text-slate-200">Neutral</option>
                   </select>
                 </div>
 
@@ -1211,11 +1212,19 @@ export function CloneVoiceView() {
             </div>
           ) : (
             <div className="space-y-3">
-              {voices.map((voice) => (
-                <div
-                  key={voice.id}
-                  className="bg-white/5 border border-white/10 rounded-2xl p-4"
-                >
+              {voices.map((voice) => {
+                const playableUrl =
+                  (typeof voice.sample_url === 'string' && voice.sample_url.trim()) ||
+                  (typeof voice.output?.sample_url === 'string' && voice.output.sample_url.trim()) ||
+                  (typeof voice.output?.audio_url === 'string' && voice.output.audio_url.trim()) ||
+                  (typeof voice.output?.audio === 'string' && voice.output.audio.trim()) ||
+                  '';
+                const canPlay = voice.status === 'ready' && Boolean(playableUrl);
+                return (
+                  <div
+                    key={voice.id}
+                    className="bg-white/5 border border-white/10 rounded-2xl p-4"
+                  >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       {statusIcon(voice.status)}
@@ -1226,12 +1235,14 @@ export function CloneVoiceView() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => playVoice(voice)}
+                        disabled={!canPlay}
                         className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-colors",
+                          "w-8 h-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                           playingVoiceId === voice.voice_id
                             ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
                             : "bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
                         )}
+                        title={!canPlay ? (voice.status !== 'ready' ? 'La voz aún se está entrenando' : 'No hay muestra para reproducir') : 'Reproducir'}
                       >
                         {playingVoiceId === voice.voice_id ? (
                           <Pause className="w-3.5 h-3.5" />
@@ -1260,7 +1271,8 @@ export function CloneVoiceView() {
                     <span>{voice.cost} créditos</span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -192,10 +192,11 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
               <select
                 value={filters.category}
                 onChange={(e) => handleFilterChange('category', e.target.value)}
+                style={{ colorScheme: 'dark' }}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
               >
                 {CATEGORIES.map(cat => (
-                  <option key={cat.value} value={cat.value}>
+                  <option key={cat.value} value={cat.value} className="bg-[#0b0f16] text-slate-200">
                     {cat.label}
                   </option>
                 ))}
@@ -210,10 +211,11 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
               <select
                 value={filters.language}
                 onChange={(e) => handleFilterChange('language', e.target.value)}
+                style={{ colorScheme: 'dark' }}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
               >
                 {LANGUAGES.map(lang => (
-                  <option key={lang.value} value={lang.value}>
+                  <option key={lang.value} value={lang.value} className="bg-[#0b0f16] text-slate-200">
                     {lang.label}
                   </option>
                 ))}
@@ -228,10 +230,11 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
               <select
                 value={filters.gender}
                 onChange={(e) => handleFilterChange('gender', e.target.value)}
+                style={{ colorScheme: 'dark' }}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-emerald-500/50 transition-colors"
               >
                 {GENDERS.map(gen => (
-                  <option key={gen.value} value={gen.value}>
+                  <option key={gen.value} value={gen.value} className="bg-[#0b0f16] text-slate-200">
                     {gen.label}
                   </option>
                 ))}
