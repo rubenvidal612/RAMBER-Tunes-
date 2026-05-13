@@ -32,6 +32,7 @@ export function AffiliatesView() {
   const [search, setSearch] = useState('');
   const [payoutEmail, setPayoutEmail] = useState('');
   const [filter, setFilter] = useState<ReferralFilter>('active');
+  console.log('isListOpen:', isListOpen);
 
   const CACHE_KEY = 'ramber.affiliates_cache_v1';
 
@@ -78,13 +79,17 @@ export function AffiliatesView() {
   }, []);
 
   const filtered = useMemo(() => {
+    console.log('Calculating filtered list:', { filter, data: data ? 'has data' : 'no data' });
     let list: Array<{ user_id: string; full_name: string }> = [];
     if (filter === 'active') {
       list = data?.active_referrals || [];
+      console.log('Active referrals:', data?.active_referrals?.length || 0);
     } else if (filter === 'inactive') {
       list = data?.inactive_referrals || [];
+      console.log('Inactive referrals:', data?.inactive_referrals?.length || 0);
     } else if (filter === 'all') {
       list = [...(data?.active_referrals || []), ...(data?.inactive_referrals || [])];
+      console.log('All referrals:', list.length);
     }
     
     const q = (search || '').toString().trim().toLowerCase();
@@ -257,7 +262,7 @@ export function AffiliatesView() {
 
               <div className="flex flex-wrap gap-2 mb-4">
                 <button
-                  onClick={() => setFilter('active')}
+                  onClick={() => { console.log('Setting filter to active'); setFilter('active'); }}
                   className={cn(
                     "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
                     filter === 'active' 
@@ -269,7 +274,7 @@ export function AffiliatesView() {
                   Activos ({data?.stats?.referrals_active || 0})
                 </button>
                 <button
-                  onClick={() => setFilter('inactive')}
+                  onClick={() => { console.log('Setting filter to inactive'); setFilter('inactive'); }}
                   className={cn(
                     "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
                     filter === 'inactive' 
@@ -281,7 +286,7 @@ export function AffiliatesView() {
                   Inactivos ({data?.stats ? data.stats.referrals_total - data.stats.referrals_active : 0})
                 </button>
                 <button
-                  onClick={() => setFilter('all')}
+                  onClick={() => { console.log('Setting filter to all'); setFilter('all'); }}
                   className={cn(
                     "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
                     filter === 'all' 
