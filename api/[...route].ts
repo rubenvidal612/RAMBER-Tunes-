@@ -2767,14 +2767,30 @@ notify pgrst, 'reload schema';`;
 
       if (!replicateResponse.ok) {
         let errorMessage = "Error creando cover";
-        let errorDetail = replicateData?.detail || `HTTP ${replicateResponse.status}`;
+        const normalizeDetail = (raw: any) => {
+          if (typeof raw === "string") return raw;
+          if (raw == null) return "";
+          try {
+            return JSON.stringify(raw);
+          } catch {
+            return String(raw);
+          }
+        };
+        const rawDetail =
+          replicateData?.detail ??
+          replicateData?.error ??
+          replicateData?.message ??
+          replicateData?.title ??
+          `HTTP ${replicateResponse.status}`;
+        let errorDetail = normalizeDetail(rawDetail) || `HTTP ${replicateResponse.status}`;
         
         if (replicateResponse.status === 401 || replicateResponse.status === 403) {
           errorMessage = "Error de autenticación con Replicate API";
           errorDetail = "El token de API no es válido o ha expirado";
         } else if (replicateResponse.status === 422) {
           errorMessage = "Datos de solicitud inválidos";
-          errorDetail = "El archivo de audio o el modelo de voz no cumplen con los requisitos";
+          const base = "El archivo de audio o el modelo de voz no cumplen con los requisitos.";
+          errorDetail = errorDetail ? `${base}\n\nDetalle: ${errorDetail}` : base;
         } else if (replicateResponse.status === 429) {
           errorMessage = "Límite de solicitudes excedido";
           errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
