@@ -308,9 +308,15 @@ export function AffiliatesView() {
               ) : (
                 <div className="space-y-2">
                   {filtered.slice(0, 80).map((u) => (
-                    <div key={u.user_id} className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-slate-200">
-                      {u.full_name}
-                    </div>
+                    <a
+                      key={u.user_id}
+                      href={`/api/share/profile?id=${encodeURIComponent(u.user_id)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      {u.full_name || 'Usuario'}
+                    </a>
                   ))}
                 </div>
               )}

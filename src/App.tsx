@@ -832,7 +832,6 @@ export default function App() {
 
   const isAuthed = Boolean(authEmail);
   const didBootstrapRef = useRef(false);
-  const didProfileSetupRef = useRef(false);
 
   const [shareRouteId] = useState(() => {
     const p = (window.location?.pathname || '').toString();
@@ -1234,7 +1233,6 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthed) {
-      didProfileSetupRef.current = false;
       setIsProfileSetupOpen(false);
       return;
     }
@@ -1245,8 +1243,6 @@ export default function App() {
       setIsProfileSetupOpen(false);
       return;
     }
-    if (didProfileSetupRef.current) return;
-    didProfileSetupRef.current = true;
     if (!supabaseBrowser) return;
     supabaseBrowser.auth
       .getUser()
@@ -1256,7 +1252,22 @@ export default function App() {
         const isReady = Boolean(meta?.profile_ready);
         const full = (meta?.full_name || meta?.name || '').toString().trim();
         const birth = (meta?.birthdate || meta?.birthday || meta?.dob || '').toString().trim();
-        if (isReady) return;
+        
+        console.log('Profile setup check:', {
+          authEmail,
+          isAdminAccount,
+          isReady,
+          full,
+          birth,
+          meta
+        });
+        
+        if (isReady) {
+          console.log('Profile is already ready, skipping setup');
+          return;
+        }
+        
+        console.log('Profile not ready, showing setup form');
         const parts = full ? full.split(/\s+/g) : [];
         const first = parts.length ? parts[0] : '';
         const last = parts.length > 1 ? parts.slice(1).join(' ') : '';
