@@ -213,9 +213,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setInstructions(song.description);
       setDescription(song.description);
     }
-    if (typeof song?.lyrics === 'string') {
-      setLyrics(song.lyrics);
-    }
+    const srcLyrics = typeof song?.lyrics === 'string' ? song.lyrics : '';
+    if (srcLyrics.trim()) setLyrics(srcLyrics);
   }, [prefillNonce, prefill]);
 
   useEffect(() => {
