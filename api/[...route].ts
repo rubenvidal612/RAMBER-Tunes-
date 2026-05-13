@@ -2428,6 +2428,7 @@ const sunoHandler = (() => {
       console.log(`Prediction ID obtenido: ${predictionId}`);
 
       // Guardar en la base de datos
+      const sampleUrlToSave = (uploadUrl || "").toString().trim() || (finalUploadUrl || "").toString().trim() || null;
       const fullRow: any = {
         voice_id: predictionId,
         user_id: user.id,
@@ -2440,6 +2441,7 @@ const sunoHandler = (() => {
         replicate_id: predictionId,
         dataset_url: datasetUrl,
         model_name: replicateModel,
+        sample_url: sampleUrlToSave,
         profile_image_url: profileImageUrl || null,
         voice_profile_name: voiceProfileName,
         category: category,
@@ -8497,6 +8499,39 @@ const kitsVoicesHandler = (() => {
         return send(res, 200, { ok: true, message: "Voz eliminada" });
       } catch (e) {
         return send(res, 500, { error: "Error eliminando voz", detail: e instanceof Error ? e.message : String(e) });
+      }
+    } else if ((req.method || "").toUpperCase() === "PATCH") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      const voiceId = firstString(payload, ["voiceId", "voice_id"]);
+      const voiceName = firstString(payload, ["voiceName", "voice_name"]);
+      const profileImageUrl = firstString(payload, ["profileImageUrl", "profile_image_url"]);
+
+      if (!voiceId) return send(res, 400, { error: "Falta voiceId" });
+
+      const patch: any = { updated_at: new Date().toISOString() };
+      if (voiceName) patch.voice_name = voiceName.slice(0, 120);
+      if (profileImageUrl) patch.profile_image_url = profileImageUrl.slice(0, 2000);
+
+      const keys = Object.keys(patch).filter((k) => k !== "updated_at");
+      if (keys.length === 0) return send(res, 400, { error: "No hay cambios" });
+
+      try {
+        const { data, error } = await auth.admin
+          .from("kits_voices")
+          .update(patch)
+          .eq("id", voiceId)
+          .eq("user_id", auth.user.id)
+          .select("*")
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return send(res, 404, { error: "Voz no encontrada" });
+        return send(res, 200, { ok: true, voice: data });
+      } catch (e) {
+        return send(res, 500, { error: "Error actualizando voz", detail: e instanceof Error ? e.message : String(e) });
       }
     } else {
       return send(res, 405, { error: "Método no permitido" });

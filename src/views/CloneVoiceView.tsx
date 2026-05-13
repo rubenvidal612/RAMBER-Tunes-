@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp, Edit } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
@@ -43,9 +43,15 @@ export function CloneVoiceView() {
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [showAudioRequirements, setShowAudioRequirements] = useState(false);
   const [isPreparingAudio, setIsPreparingAudio] = useState(false);
+  const [editingVoice, setEditingVoice] = useState<VoiceItem | null>(null);
+  const [editVoiceName, setEditVoiceName] = useState('');
+  const [editProfileImage, setEditProfileImage] = useState<File | null>(null);
+  const [editProfileImagePreview, setEditProfileImagePreview] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
 
   const loadVoices = async () => {
     const t = await getAccessToken();
@@ -512,6 +518,99 @@ export function CloneVoiceView() {
 
     const result = await response.json();
     return { url: result.url, path };
+  };
+
+  const openEditVoice = (voice: VoiceItem) => {
+    setError('');
+    setSuccess('');
+    setEditingVoice(voice);
+    setEditVoiceName(voice.voice_name || '');
+    setEditProfileImage(null);
+    setEditProfileImagePreview((voice.profile_image_url || '').toString());
+  };
+
+  const closeEditVoice = () => {
+    setEditingVoice(null);
+    setEditVoiceName('');
+    setEditProfileImage(null);
+    setEditProfileImagePreview('');
+    setIsSavingEdit(false);
+    try {
+      if (editImageInputRef.current) editImageInputRef.current.value = '';
+    } catch {}
+  };
+
+  const saveEditVoice = async () => {
+    if (!editingVoice) return;
+    const nextName = editVoiceName.trim();
+    if (!nextName) {
+      setError('Escribe un nombre para la voz');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      let nextProfileImageUrl = editProfileImagePreview.trim();
+      if (editProfileImage) {
+        const up = await uploadProfileImageToR2(editProfileImage);
+        nextProfileImageUrl = (up?.url || '').toString().trim();
+      }
+
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error('No autorizado');
+
+      const r = await fetch('/api/kits/voices', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({
+          voiceId: editingVoice.id,
+          voiceName: nextName,
+          profileImageUrl: nextProfileImageUrl || undefined,
+        }),
+      });
+
+      const raw = await r.text().catch(() => '');
+      let out: any = {};
+      try {
+        out = raw ? JSON.parse(raw) : {};
+      } catch {
+        out = { error: raw || 'Respuesta inválida del servidor.' };
+      }
+
+      if (!r.ok) {
+        const msg = [out?.error, out?.detail].filter(Boolean).join('\n');
+        throw new Error(msg || 'No se pudo actualizar la voz');
+      }
+
+      const updated = out?.voice;
+      if (updated && typeof updated === 'object') {
+        setVoices((prev) =>
+          prev.map((v) => {
+            if (v.id !== editingVoice.id) return v;
+            return {
+              ...v,
+              voice_name: typeof updated.voice_name === 'string' ? updated.voice_name : v.voice_name,
+              profile_image_url: updated.profile_image_url == null ? null : String(updated.profile_image_url || '') || null,
+            };
+          })
+        );
+      } else {
+        loadVoices().catch(() => {});
+      }
+
+      setSuccess('Voz actualizada.');
+      closeEditVoice();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo actualizar la voz');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const cloneVoice = async () => {
@@ -1263,10 +1362,19 @@ export function CloneVoiceView() {
                     className="bg-white/5 border border-white/10 rounded-2xl p-4"
                   >
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
                       {statusIcon(voice.status)}
-                      <div className="text-white font-semibold truncate">
-                        {voice.voice_name}
+                      <div className="w-9 h-9 rounded-full overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+                        {voice.profile_image_url ? (
+                          <img src={voice.profile_image_url} alt={voice.voice_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-4 h-4 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-white font-semibold truncate">
+                          {voice.voice_name}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1286,6 +1394,13 @@ export function CloneVoiceView() {
                         ) : (
                           <Play className="w-3.5 h-3.5" />
                         )}
+                      </button>
+                      <button
+                        onClick={() => openEditVoice(voice)}
+                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300"
+                        title="Editar"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => deleteVoice(voice.id)}
@@ -1320,6 +1435,101 @@ export function CloneVoiceView() {
           )}
         </div>
       </div>
+
+      {editingVoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={closeEditVoice}
+            className="absolute inset-0 bg-black/60"
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full max-w-md glass-card rounded-3xl border border-white/10 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-white font-extrabold text-lg">Editar voz</div>
+              <button
+                type="button"
+                onClick={closeEditVoice}
+                className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-2xl overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+                {editProfileImagePreview ? (
+                  <img src={editProfileImagePreview} alt={editVoiceName || 'Voz'} className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-6 h-6 text-slate-400" />
+                )}
+              </div>
+              <div className="flex-1">
+                <button
+                  type="button"
+                  onClick={() => editImageInputRef.current?.click()}
+                  className="w-full py-2 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 transition-colors"
+                  disabled={isSavingEdit}
+                >
+                  <Upload className="w-4 h-4" /> Cambiar imagen
+                </button>
+                <input
+                  ref={editImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setEditProfileImage(f);
+                    if (f) {
+                      try {
+                        const u = URL.createObjectURL(f);
+                        setEditProfileImagePreview(u);
+                      } catch {}
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-slate-300 mb-1">Nombre</div>
+                <input
+                  value={editVoiceName}
+                  onChange={(e) => setEditVoiceName(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors"
+                  placeholder="Nombre de la voz"
+                  maxLength={120}
+                  disabled={isSavingEdit}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-5">
+              <button
+                type="button"
+                onClick={closeEditVoice}
+                className="flex-1 py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-semibold transition-colors"
+                disabled={isSavingEdit}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveEditVoice}
+                className={cn(
+                  "flex-1 py-3 rounded-2xl font-extrabold transition-colors",
+                  isSavingEdit ? "bg-white/10 text-slate-400 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-black"
+                )}
+                disabled={isSavingEdit}
+              >
+                {isSavingEdit ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hidden Audio Element */}
       <audio
