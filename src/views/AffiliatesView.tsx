@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, RefreshCw, Users, Search, Wallet } from 'lucide-react';
+import { Copy, RefreshCw, Users, Search, Wallet, UserCheck, UserX } from 'lucide-react';
 import { getAccessToken } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +18,10 @@ type AffiliateMeResponse = {
     commissions_blocked_mxn: number;
   };
   active_referrals: Array<{ user_id: string; full_name: string }>;
+  inactive_referrals: Array<{ user_id: string; full_name: string }>;
 };
+
+type ReferralFilter = 'active' | 'inactive' | 'all';
 
 export function AffiliatesView() {
   const [isLoading, setIsLoading] = useState(false);
@@ -28,6 +31,7 @@ export function AffiliatesView() {
   const [isListOpen, setIsListOpen] = useState(true);
   const [search, setSearch] = useState('');
   const [payoutEmail, setPayoutEmail] = useState('');
+  const [filter, setFilter] = useState<ReferralFilter>('active');
 
   const CACHE_KEY = 'ramber.affiliates_cache_v1';
 
@@ -74,11 +78,19 @@ export function AffiliatesView() {
   }, []);
 
   const filtered = useMemo(() => {
-    const list = data?.active_referrals || [];
+    let list: Array<{ user_id: string; full_name: string }> = [];
+    if (filter === 'active') {
+      list = data?.active_referrals || [];
+    } else if (filter === 'inactive') {
+      list = data?.inactive_referrals || [];
+    } else if (filter === 'all') {
+      list = [...(data?.active_referrals || []), ...(data?.inactive_referrals || [])];
+    }
+    
     const q = (search || '').toString().trim().toLowerCase();
     if (!q) return list;
     return list.filter((x) => (x.full_name || '').toString().toLowerCase().includes(q));
-  }, [data, search]);
+  }, [data, search, filter]);
 
   const copy = async (text: string) => {
     const t = (text || '').toString();
@@ -214,9 +226,15 @@ export function AffiliatesView() {
                 <Users className="w-6 h-6" />
               </div>
               <div className="min-w-0 text-left">
-                <div className="text-white font-extrabold">Personas registradas (activas)</div>
+                <div className="text-white font-extrabold">
+                  {filter === 'active' && 'Personas registradas (activas)'}
+                  {filter === 'inactive' && 'Personas registradas (inactivas)'}
+                  {filter === 'all' && 'Personas registradas (todas)'}
+                </div>
                 <div className="text-xs text-slate-300">
-                  {data?.stats ? `${data.stats.referrals_active}/${data.stats.referrals_total}` : '—'} activos
+                  {filter === 'active' && `${data?.stats?.referrals_active || 0} activos`}
+                  {filter === 'inactive' && `${data?.stats ? data.stats.referrals_total - data.stats.referrals_active : 0} inactivos`}
+                  {filter === 'all' && `${data?.stats?.referrals_total || 0} total`}
                 </div>
               </div>
             </div>
@@ -237,8 +255,51 @@ export function AffiliatesView() {
                 />
               </div>
 
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button
+                  onClick={() => setFilter('active')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
+                    filter === 'active' 
+                      ? 'bg-emerald-500 text-black border-emerald-600 shadow-lg shadow-emerald-500/20' 
+                      : 'bg-white/5 text-slate-200 hover:bg-white/10 border-white/10 hover:border-white/20'
+                  )}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  Activos ({data?.stats?.referrals_active || 0})
+                </button>
+                <button
+                  onClick={() => setFilter('inactive')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
+                    filter === 'inactive' 
+                      ? 'bg-yellow-500 text-black border-yellow-600 shadow-lg shadow-yellow-500/20' 
+                      : 'bg-white/5 text-slate-200 hover:bg-white/10 border-white/10 hover:border-white/20'
+                  )}
+                >
+                  <UserX className="w-4 h-4" />
+                  Inactivos ({data?.stats ? data.stats.referrals_total - data.stats.referrals_active : 0})
+                </button>
+                <button
+                  onClick={() => setFilter('all')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
+                    filter === 'all' 
+                      ? 'bg-blue-500 text-black border-blue-600 shadow-lg shadow-blue-500/20' 
+                      : 'bg-white/5 text-slate-200 hover:bg-white/10 border-white/10 hover:border-white/20'
+                  )}
+                >
+                  <Users className="w-4 h-4" />
+                  Todos ({data?.stats?.referrals_total || 0})
+                </button>
+              </div>
+
               {filtered.length === 0 ? (
-                <div className="text-slate-400 text-sm py-6 text-center">No hay usuarios activos en tu lista.</div>
+                <div className="text-slate-400 text-sm py-6 text-center">
+                  {filter === 'active' && 'No hay usuarios activos en tu lista.'}
+                  {filter === 'inactive' && 'No hay usuarios inactivos en tu lista.'}
+                  {filter === 'all' && 'No hay usuarios en tu lista.'}
+                </div>
               ) : (
                 <div className="space-y-2">
                   {filtered.slice(0, 80).map((u) => (

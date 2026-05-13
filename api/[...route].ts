@@ -8038,14 +8038,21 @@ notify pgrst, 'reload schema';`;
       const refs = Array.isArray(refRows) ? refRows : [];
 
       const active: Array<{ user_id: string; full_name: string }> = [];
+      const inactive: Array<{ user_id: string; full_name: string }> = [];
       for (const r of refs) {
         const rid = String((r as any)?.referred_user_id || "").trim();
         if (!rid) continue;
         const p = await getUserPlan(auth.admin, rid).catch(() => ({ plan_active: false }));
-        if (!Boolean((p as any)?.plan_active)) continue;
         const name = String((r as any)?.referred_full_name || "").trim();
-        active.push({ user_id: rid, full_name: name || "Usuario" });
-        if (active.length >= 80) break;
+        const referral = { user_id: rid, full_name: name || "Usuario" };
+        
+        if (Boolean((p as any)?.plan_active)) {
+          active.push(referral);
+        } else {
+          inactive.push(referral);
+        }
+        
+        if (active.length + inactive.length >= 200) break;
       }
 
       const { data: cRows } = await auth.admin
@@ -8078,6 +8085,7 @@ notify pgrst, 'reload schema';`;
         payout_email: acc?.payout_email ?? null,
         stats,
         active_referrals: active,
+        inactive_referrals: inactive,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
