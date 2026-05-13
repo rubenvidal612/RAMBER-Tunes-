@@ -940,7 +940,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         draft: {
           title: titleFromFile,
           description: tags,
-          lyrics: '',
+          lyrics: tags,
+          prompt: tags,
           genre: gender,
           isCover: false,
         },
@@ -980,7 +981,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       const baseLyrics = normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
-      const prompt = (baseLyrics || description || ' ').trim() || ' ';
+      const promptRaw = (baseLyrics || description || '').trim();
+      const prompt = promptRaw || ' ';
       const payload: any = {
         uploadUrl: audioUploadUrl,
         uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
@@ -1028,7 +1030,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           draft: {
             title: (title || 'Cover').toString(),
             description: (instructions || 'Cover').toString(),
-            lyrics: (baseLyrics || '').toString() || null,
+            lyrics: promptRaw ? promptRaw : null,
+            prompt: promptRaw ? promptRaw : null,
             genre: gender,
             isCover: true,
           },

@@ -1748,6 +1748,7 @@ export default function App() {
           const baseTitle = String(draft?.title || 'Canción');
           const draftLyrics = typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? String(draft.lyrics) : '';
           const draftPrompt = typeof draft?.prompt === 'string' && draft.prompt.trim() ? String(draft.prompt) : '';
+          const draftDescription = typeof draft?.description === 'string' && draft.description.trim() ? String(draft.description) : '';
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             const suffix =
@@ -1764,6 +1765,7 @@ export default function App() {
               pickLyricsFromTaskPayload(data, track.audioUrl) ||
               (draftLyrics || '').trim() ||
               (draftPrompt || '').trim() ||
+              (draftDescription || '').trim() ||
               '';
             await addCancion({
               id: track.audioId || `${pending.taskId}_${i + 1}`,
