@@ -79,6 +79,47 @@ function isMissingColumnError(err: any) {
   );
 }
 
+function extractOutputUrl(output: any): string | null {
+  if (!output) return null;
+  
+  // Si output es una string, podría ser directamente la URL
+  if (typeof output === "string") {
+    const trimmed = output.trim();
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return trimmed;
+    }
+    return null;
+  }
+  
+  // Si output es un objeto, buscar propiedades comunes de URL
+  if (typeof output === "object") {
+    const candidates = [
+      output?.url,
+      output?.output,
+      output?.output_url,
+      output?.audio_url,
+      output?.audioUrl,
+      output?.file_url,
+      output?.fileUrl,
+      output?.download_url,
+      output?.downloadUrl,
+      output?.result_url,
+      output?.resultUrl,
+    ];
+    
+    for (const candidate of candidates) {
+      if (typeof candidate === "string") {
+        const trimmed = candidate.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+          return trimmed;
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
 type R2Env = {
   accountId: string;
   accessKeyId: string;
@@ -2432,7 +2473,9 @@ notify pgrst, 'reload schema';`;
         predictionId, 
         message: "Modelo RVC en entrenamiento. Recibirás una notificación cuando esté listo.",
         status: 'processing',
-        provider: 'replicate'
+        provider: 'replicate',
+        note: "Cuando el entrenamiento se complete, el resultado estará disponible en la base de datos. Para obtener la URL del archivo resultante, consulta el campo 'output' en la tabla 'kits_voices' usando el replicate_id.",
+        helperFunction: "Usa extractOutputUrl(output) para extraer la URL del resultado. Ejemplo: const url = extractOutputUrl(voiceRow.output);"
       });
     } catch (e) {
       return send(res, 502, { error: "Error entrenando modelo RVC", detail: e instanceof Error ? e.message : String(e) });
@@ -4653,12 +4696,19 @@ const replicateWebhookHandler = (() => {
           newStatus = 'failed';
         }
         
+        // Extraer la URL del output si está disponible
+        let modelUrl = null;
+        if (output) {
+          modelUrl = extractOutputUrl(output);
+        }
+        
         // Actualizar la base de datos
         await admin
           .from("kits_voices")
           .update({ 
             status: newStatus,
             output: output ? JSON.stringify(output) : null,
+            model_url: modelUrl,
             error: error ? JSON.stringify(error) : null,
             updated_at: new Date().toISOString()
           })
