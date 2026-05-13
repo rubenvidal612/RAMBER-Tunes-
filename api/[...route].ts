@@ -2368,8 +2368,7 @@ const sunoHandler = (() => {
           },
           body: JSON.stringify({
             input: replicateInput,
-            webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate"),
-            webhook_events_filter: ['completed', 'failed']
+            webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate")
           }),
         });
         const data = await r.json().catch(() => ({}));
@@ -2695,8 +2694,7 @@ notify pgrst, 'reload schema';`;
             protect: protect,
             output_format: outputFormat
           },
-          webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate-cover"),
-          webhook_events_filter: ['completed', 'failed']
+          webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate-cover")
         }),
       });
 
