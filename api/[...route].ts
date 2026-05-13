@@ -81,41 +81,80 @@ function isMissingColumnError(err: any) {
 
 function extractOutputUrl(output: any): string | null {
   if (!output) return null;
-  
+
+  const clean = (raw: any) =>
+    String(raw || "")
+      .trim()
+      .replaceAll("`", "")
+      .trim();
+
+  const isHttp = (s: string) => /^https?:\/\//i.test(s);
+
+  const score = (url: string) => {
+    const u = url.toLowerCase();
+    let s = 0;
+    if (u.includes("replicate.delivery")) s += 50;
+    if (u.endsWith(".pth") || u.endsWith(".pt") || u.endsWith(".zip") || u.endsWith(".tar") || u.endsWith(".tar.gz")) s += 30;
+    if (u.includes("model")) s += 10;
+    if (u.includes("weights")) s += 8;
+    if (u.includes("audio")) s -= 5;
+    if (u.endsWith(".mp3") || u.endsWith(".wav") || u.endsWith(".m4a") || u.endsWith(".ogg")) s -= 20;
+    return s;
+  };
+
+  const urls: string[] = [];
+  const pushUrl = (raw: any) => {
+    const s = clean(raw);
+    if (!s) return;
+    if (isHttp(s)) urls.push(s);
+  };
+
   if (typeof output === "string") {
-    const trimmed = output.trim();
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      return trimmed;
-    }
-    return null;
-  }
-  
-  if (typeof output === "object") {
-    const candidates = [
-      output?.url,
-      output?.output,
-      output?.output_url,
-      output?.audio_url,
-      output?.audioUrl,
+    pushUrl(output);
+  } else if (Array.isArray(output)) {
+    for (const item of output) pushUrl(item);
+  } else if (typeof output === "object") {
+    const primary = [
+      output?.model_url,
+      output?.modelUrl,
+      output?.model,
+      output?.weights,
+      output?.weight_url,
+      output?.weightUrl,
       output?.file_url,
       output?.fileUrl,
       output?.download_url,
       output?.downloadUrl,
       output?.result_url,
       output?.resultUrl,
+      output?.output_url,
+      output?.outputUrl,
+      output?.output,
+      output?.url,
     ];
-    
-    for (const candidate of candidates) {
-      if (typeof candidate === "string") {
-        const trimmed = candidate.trim();
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-          return trimmed;
+    for (const c of primary) pushUrl(c);
+    if (urls.length === 0) {
+      for (const v of Object.values(output)) {
+        if (Array.isArray(v)) {
+          for (const item of v) pushUrl(item);
+        } else {
+          pushUrl(v);
         }
       }
     }
   }
-  
-  return null;
+
+  if (urls.length === 0) return null;
+  let best = urls[0];
+  let bestScore = score(best);
+  for (const u of urls.slice(1)) {
+    const sc = score(u);
+    if (sc > bestScore) {
+      best = u;
+      bestScore = sc;
+    }
+  }
+  return best;
 }
 
 type R2Env = {
@@ -2659,7 +2698,18 @@ notify pgrst, 'reload schema';`;
         const modelFromOutput = modelFromOutputField || (outObj ? extractOutputUrl(outObj) || "" : "");
         if (!modelUrl) modelUrl = modelFromCol || modelFromOutput;
 
-        if (!modelUrl && voiceRow?.replicate_id) {
+        const looksBadModelUrl = (raw: any) => {
+          const s = String(raw || "").trim();
+          if (!s) return true;
+          if (!/^https?:\/\//i.test(s)) return true;
+          const lower = s.toLowerCase();
+          if (lower.includes("replicate.com/") && !lower.includes("replicate.delivery")) return true;
+          return false;
+        };
+
+        if (modelUrl && looksBadModelUrl(modelUrl)) modelUrl = "";
+
+        if ((!modelUrl || looksBadModelUrl(modelUrl)) && voiceRow?.replicate_id) {
           const replicateToken = process.env.REPLICATE_API_TOKEN;
           if (replicateToken) {
             const replicateResponse = await fetch(`https://api.replicate.com/v1/predictions/${voiceRow.replicate_id}`, {
