@@ -48,8 +48,44 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
         return;
       }
 
-      const data = await response.json();
-      setVoices(data.voices || []);
+      const data = await response.json().catch(() => ({}));
+      const rawList = Array.isArray((data as any)?.voices) ? (data as any).voices : [];
+
+      const mapped = rawList
+        .map((v: any) => {
+          const id = String(v?.id || '').trim() || String(v?.voice_id || '').trim() || String(v?.replicate_id || '').trim();
+          if (!id) return null;
+          const name =
+            String(v?.voice_profile_name || '').trim() ||
+            String(v?.voice_name || '').trim() ||
+            String(v?.name || '').trim() ||
+            'Voz';
+          const description = String(v?.description || '').trim();
+          const statusRaw = String(v?.status || '').trim().toLowerCase();
+          const status: VoiceItem['status'] =
+            statusRaw === 'ready' ? 'ready' : statusRaw === 'failed' ? 'failed' : 'training';
+          const createdAt = String(v?.created_at || v?.createdAt || '').trim() || new Date().toISOString();
+          const modelUrl = v?.model_url == null ? undefined : String(v?.model_url || '').trim() || undefined;
+          const sampleUrl = v?.sample_url == null ? undefined : String(v?.sample_url || '').trim() || undefined;
+          const profileImageUrl = v?.profile_image_url == null ? undefined : String(v?.profile_image_url || '').trim() || undefined;
+          const userId = String(v?.user_id || v?.userId || '').trim();
+          const voiceProfileName = String(v?.voice_profile_name || '').trim() || undefined;
+          return {
+            id,
+            name,
+            description: description || undefined,
+            modelUrl,
+            sampleUrl,
+            createdAt,
+            status,
+            userId,
+            profileImageUrl,
+            voiceProfileName,
+          } satisfies VoiceItem;
+        })
+        .filter(Boolean) as VoiceItem[];
+
+      setVoices(mapped);
     } catch (err) {
       setError('Error de conexión');
       console.error(err);
@@ -240,13 +276,19 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                    <AudioLines className="w-5 h-5 text-slate-300" />
+                  <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
+                    {voice.profileImageUrl ? (
+                      <img src={voice.profileImageUrl} alt={voice.voiceProfileName || voice.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-200 font-extrabold">
+                        {(voice.voiceProfileName || voice.name || 'V').toString().trim().slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
                   </div>
                   
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <div className="text-white font-bold truncate">{voice.name}</div>
+                      <div className="text-white font-bold truncate">{voice.voiceProfileName || voice.name}</div>
                       {voice.status === 'training' && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
                           Entrenando
@@ -269,7 +311,14 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
                     )}
                     
                     <div className="text-slate-500 text-xs mt-1">
-                      Creada: {new Date(voice.createdAt).toLocaleDateString('es-MX')}
+                      Creada: {(() => {
+                        try {
+                          const d = new Date(voice.createdAt);
+                          return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-MX');
+                        } catch {
+                          return '';
+                        }
+                      })()}
                     </div>
                   </div>
                 </div>
