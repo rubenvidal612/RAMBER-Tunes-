@@ -2211,10 +2211,8 @@ const sunoHandler = (() => {
         if (latest) replicateVersion = latest;
       }
       if (!replicateVersion) {
-        return send(res, 500, {
-          error: "No pude determinar la versión del modelo de Replicate",
-          detail: "Configura REPLICATE_RVC_VERSION en el servidor (Vercel → Settings → Environment Variables).",
-        });
+        // Usar la versión específica que compartiste como fallback
+        replicateVersion = "0397d5e28c9b54665e1e5d29d5cf4f722a7b89ec20e9dbf31487235305b1a101";
       }
 
       // Parámetros para entrenamiento RVC
@@ -2223,7 +2221,7 @@ const sunoHandler = (() => {
         sample_rate: "48k",
         version: "v2",
         f0method: "rmvpe_gpu",
-        epoch: 50,
+        epoch: 80,
         batch_size: "7"
       };
 
