@@ -99,7 +99,7 @@ export function PricingView({ onClose }: PricingViewProps) {
             </div>
 
             <div className="flex items-end gap-2 mt-4 mb-6">
-              <span className="text-4xl font-bold text-white">$275 MXN</span>
+              <span className="text-4xl font-bold text-white">$375 MXN</span>
               <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">200 versiones</span>
             </div>
 

@@ -8,6 +8,7 @@ import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { CloneVoiceView } from './views/CloneVoiceView';
+import { AffiliatesView } from './views/AffiliatesView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
@@ -260,6 +261,8 @@ function InicioLanding({
     </div>
   );
 }
+
+const AFFILIATE_REF_KEY = 'ramber.affiliate_ref_v1';
 
 function InicioSocial({
   onPlaySong,
@@ -1181,21 +1184,41 @@ export default function App() {
   }, [isAuthed]);
 
   useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      const ref = (u.searchParams.get('ref') || u.searchParams.get('af') || u.searchParams.get('affiliate') || '').toString().trim();
+      if (ref) {
+        localStorage.setItem(AFFILIATE_REF_KEY, ref);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (!isAuthed) return;
     if (didBootstrapRef.current) return;
     didBootstrapRef.current = true;
     getAccessToken()
       .then(async (t) => {
         if (!t.ok) return;
+        let referralCode = '';
+        try {
+          referralCode = (localStorage.getItem(AFFILIATE_REF_KEY) || '').toString().trim();
+        } catch {}
         const r = await fetch('/api/account/bootstrap-profile', {
           method: 'POST',
-          headers: { authorization: `Bearer ${t.token}` },
+          headers: { authorization: `Bearer ${t.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ referralCode: referralCode || undefined }),
         }).catch(() => {});
         let out: any = null;
         try {
           out = r && typeof (r as any).json === 'function' ? await (r as any).json().catch(() => null) : null;
         } catch {
           out = null;
+        }
+        if (out?.referral_attached) {
+          try {
+            localStorage.removeItem(AFFILIATE_REF_KEY);
+          } catch {}
         }
         if (out?.welcome_granted) {
           showToast('Listo: se activó tu saldo de bienvenida (2 canciones).');
@@ -2297,6 +2320,7 @@ export default function App() {
            )}
            {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
            {currentTab === 'convertidor' && <CloneVoiceView />}
+           {currentTab === 'afiliados' && <AffiliatesView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
            
@@ -2345,6 +2369,8 @@ export default function App() {
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
                ) : currentTab === 'convertidor' ? (
                  <CloneVoiceView />
+               ) : currentTab === 'afiliados' ? (
+                 <AffiliatesView />
                 ) : (
                   <LibraryView
                     canciones={canciones}

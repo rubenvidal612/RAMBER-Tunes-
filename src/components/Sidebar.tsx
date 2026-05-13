@@ -84,9 +84,17 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
         {/* GANAR CRÉDITOS */}
         <div>
           <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Ganar créditos</div>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+          <button
+            onClick={() => onChange('afiliados')}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+              currentTab === 'afiliados'
+                ? "bg-indigo-500/20 text-indigo-400 font-bold"
+                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
+            )}
+          >
             <Coins className="w-5 h-5" />
-            <span className="text-sm font-medium">Centro de misiones</span>
+            <span className="text-sm">Afiliados</span>
           </button>
         </div>
         

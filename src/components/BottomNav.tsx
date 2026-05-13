@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Sparkles, Library, User, Repeat2 } from 'lucide-react';
+import { Home, Sparkles, Library, User, Repeat2, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -14,6 +14,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
     { id: 'convertidor', label: 'Clonar Voz', icon: Repeat2 },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
+    { id: 'afiliados', label: 'Afiliados', icon: Coins },
     { id: 'perfil', label: 'Perfil', icon: User },
   ];
 

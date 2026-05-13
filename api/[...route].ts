@@ -481,6 +481,79 @@ async function getUserPlan(admin: any, userId: string) {
   return { plan_key, downloads_allowed, plan_active, plan_expires_at, hasProductor };
 }
 
+async function randomHex(bytes: number) {
+  try {
+    const mod: any = await import("crypto");
+    const buf: Buffer = mod.randomBytes(bytes);
+    return buf.toString("hex");
+  } catch {
+    return Math.random().toString(16).slice(2).padEnd(bytes * 2, "0").slice(0, bytes * 2);
+  }
+}
+
+function normalizeAffiliateCode(raw: any) {
+  return (raw || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 32);
+}
+
+async function ensureAffiliateAccount(admin: any, userId: string) {
+  const { data: rows } = await admin.from("affiliate_accounts").select("*").eq("user_id", userId).limit(1);
+  const existing = Array.isArray(rows) ? rows[0] : null;
+  if (existing?.code) return { ok: true as const, account: existing };
+  for (let i = 0; i < 6; i++) {
+    const code = `r${await randomHex(6)}`.slice(0, 13);
+    const ins = await admin.from("affiliate_accounts").insert({
+      user_id: userId,
+      code,
+      payout_email: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    if (!ins?.error) {
+      const { data: next } = await admin.from("affiliate_accounts").select("*").eq("user_id", userId).limit(1);
+      const acc = Array.isArray(next) ? next[0] : null;
+      return { ok: true as const, account: acc || { user_id: userId, code } };
+    }
+  }
+  return { ok: false as const, error: "No pude crear tu código de afiliado" };
+}
+
+async function tryAttachAffiliateReferral(admin: any, referredUserId: string, referralCodeRaw: any) {
+  const referralCode = normalizeAffiliateCode(referralCodeRaw);
+  if (!referralCode) return { ok: true as const, attached: false as const };
+
+  const { data: exists } = await admin.from("affiliate_referrals").select("id").eq("referred_user_id", referredUserId).limit(1);
+  if (Array.isArray(exists) && exists.length > 0) return { ok: true as const, attached: false as const, already: true as const };
+
+  const { data: accRows } = await admin.from("affiliate_accounts").select("user_id, code").eq("code", referralCode).limit(1);
+  const acc = Array.isArray(accRows) ? accRows[0] : null;
+  const affiliateUserId = String(acc?.user_id || "").trim();
+  if (!affiliateUserId) return { ok: true as const, attached: false as const, missing: true as const };
+  if (affiliateUserId === referredUserId) return { ok: true as const, attached: false as const, self: true as const };
+
+  let fullName = "";
+  try {
+    const u = await admin.auth.admin.getUserById(referredUserId);
+    const meta: any = u?.data?.user?.user_metadata || {};
+    const n = (meta?.full_name || meta?.name || "").toString().trim();
+    const ln = (meta?.last_name || "").toString().trim();
+    fullName = (n && ln ? `${n} ${ln}` : n || ln).toString().trim();
+  } catch {}
+
+  const ins = await admin.from("affiliate_referrals").insert({
+    affiliate_user_id: affiliateUserId,
+    referred_user_id: referredUserId,
+    referred_full_name: fullName || null,
+    created_at: new Date().toISOString(),
+  });
+  if (ins?.error) return { ok: false as const, error: String(ins.error?.message || "No pude guardar el referido") };
+  return { ok: true as const, attached: true as const, affiliate_user_id: affiliateUserId };
+}
+
 async function getSupabaseCreateClient() {
   const mod = await import("@supabase/supabase-js");
   return mod.createClient;
@@ -2716,7 +2789,7 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio", amount_mxn: 275, credits: 1200, songs: 100 },
+    inicio: { title: "Pack Inicio", amount_mxn: 375, credits: 1200, songs: 100 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 3000, songs: 250 },
   };
 
@@ -2726,6 +2799,115 @@ const mercadoPagoHandler = (() => {
     });
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
+  }
+
+  async function tryPayAffiliateCommission(admin: any, mpToken: string, paymentId: string, referredUserId: string, packKey: string, amountMxn: number) {
+    const amt = Number(amountMxn ?? 0);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    if (!referredUserId) return;
+    const commission = 100;
+
+    let affiliateUserId = "";
+    try {
+      const { data: refRows } = await admin.from("affiliate_referrals").select("affiliate_user_id").eq("referred_user_id", referredUserId).limit(1);
+      const ref = Array.isArray(refRows) ? refRows[0] : null;
+      affiliateUserId = String((ref as any)?.affiliate_user_id || "").trim();
+    } catch {
+      return;
+    }
+    if (!affiliateUserId) return;
+
+    try {
+      const { data: exists } = await admin.from("affiliate_commissions").select("id").eq("payment_id", paymentId).limit(1);
+      if (Array.isArray(exists) && exists.length > 0) return;
+    } catch {
+      return;
+    }
+
+    const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
+    const affiliateActive = Boolean((plan as any)?.plan_active);
+
+    let commissionId = "";
+    try {
+      const ins = await admin.from("affiliate_commissions").insert({
+        affiliate_user_id: affiliateUserId,
+        referred_user_id: referredUserId,
+        payment_id: paymentId,
+        pack_key: packKey || null,
+        amount_mxn: commission,
+        status: affiliateActive ? "pending" : "blocked",
+        detail: affiliateActive ? null : "affiliate_inactive",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      if (ins?.error) return;
+      const { data: rows } = await admin.from("affiliate_commissions").select("id").eq("payment_id", paymentId).limit(1);
+      commissionId = String((Array.isArray(rows) ? rows[0] : null)?.id || "").trim();
+    } catch {
+      return;
+    }
+
+    if (!affiliateActive) return;
+
+    let payoutEmail = "";
+    try {
+      const { data: accRows } = await admin.from("affiliate_accounts").select("payout_email").eq("user_id", affiliateUserId).limit(1);
+      payoutEmail = String((Array.isArray(accRows) ? accRows[0] : null)?.payout_email || "").trim();
+    } catch {}
+
+    if (!payoutEmail) {
+      if (commissionId) {
+        try {
+          await admin.from("affiliate_commissions").update({ status: "pending_destination", updated_at: new Date().toISOString() }).eq("id", commissionId);
+        } catch {}
+      }
+      return;
+    }
+
+    try {
+      const idem = `aff_${paymentId}_${await randomHex(6)}`;
+      const r = await fetch("https://api.mercadopago.com/v1/payments", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${mpToken}`,
+          "content-type": "application/json",
+          "x-idempotency-key": idem,
+        },
+        body: JSON.stringify({
+          transaction_amount: commission,
+          description: "Comisión Afiliados - RAMBER Tunes",
+          payment_method_id: "account_money",
+          operation_type: "money_transfer",
+          external_reference: `ramber_aff:${paymentId}`,
+          payer: { email: payoutEmail },
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      const payoutId = (out?.id || "").toString().trim();
+      if (r.ok) {
+        if (commissionId) {
+          await admin
+            .from("affiliate_commissions")
+            .update({ status: "paid", payout_payment_id: payoutId || null, updated_at: new Date().toISOString(), detail: null })
+            .eq("id", commissionId);
+        }
+        return;
+      }
+      const detail = (out?.message || out?.error || out?.status || `HTTP ${r.status}`).toString().slice(0, 800);
+      if (commissionId) {
+        await admin
+          .from("affiliate_commissions")
+          .update({ status: "failed", updated_at: new Date().toISOString(), detail })
+          .eq("id", commissionId);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (commissionId) {
+        try {
+          await admin.from("affiliate_commissions").update({ status: "failed", updated_at: new Date().toISOString(), detail: msg.slice(0, 800) }).eq("id", commissionId);
+        } catch {}
+      }
+    }
   }
 
   async function handleCreatePreference(req: any, res: any) {
@@ -2821,6 +3003,8 @@ const mercadoPagoHandler = (() => {
       payment_id: paymentId,
     });
 
+    await tryPayAffiliateCommission(auth.admin, mpToken, paymentId, auth.user.id, packKey || "", amountMxn);
+
     return send(res, 200, { ok: true, status: paymentStatus, credited: true });
   }
 
@@ -2873,6 +3057,8 @@ const mercadoPagoHandler = (() => {
       amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
       payment_id: paymentId,
     });
+
+    await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
 
     return send(res, 200, { ok: true, status: paymentStatus, credited: true });
   }
@@ -4084,6 +4270,17 @@ const bootstrapProfileHandler = (() => {
     res.end(JSON.stringify(body));
   }
 
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
   return async function handler(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -4098,6 +4295,9 @@ const bootstrapProfileHandler = (() => {
     const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
     if (!token) return send(res, 401, { error: "No autorizado" });
 
+    const body = parseJsonBody(req) || {};
+    const referralCode = typeof body?.referralCode === "string" ? body.referralCode.trim() : "";
+
     try {
       const createClient = await getSupabaseCreateClient();
       const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
@@ -4109,6 +4309,8 @@ const bootstrapProfileHandler = (() => {
       const is_admin = isAdminEmail(user.email);
       let welcome_granted = false;
       let welcome_error: string | null = null;
+      let referral_attached = false;
+      let referral_error: string | null = null;
       const grantWelcomeIfEligible = async () => {
         if (is_admin) return;
         try {
@@ -4146,7 +4348,20 @@ const bootstrapProfileHandler = (() => {
 
       await grantWelcomeIfEligible();
 
-      return send(res, 200, { ok: true, created: true, welcome_granted, welcome_error });
+      if (referralCode) {
+        try {
+          const attached = await tryAttachAffiliateReferral(admin, user.id, referralCode);
+          if (attached.ok && attached.attached) {
+            referral_attached = true;
+          } else if (!attached.ok) {
+            referral_error = attached.error || "No pude guardar el referido.";
+          }
+        } catch (e) {
+          referral_error = e instanceof Error ? e.message : String(e);
+        }
+      }
+
+      return send(res, 200, { ok: true, created: true, welcome_granted, welcome_error, referral_attached, referral_error });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -7687,6 +7902,220 @@ const aiHandler = (() => {
   };
 })();
 
+const affiliatesHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function originFromReq(req: any) {
+    const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+    return `${proto}://${host}`;
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const authHeader = (req.headers.authorization || "").toString();
+    const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  const createTablesSql = `create extension if not exists pgcrypto;
+
+create table if not exists public.affiliate_accounts (
+  user_id uuid primary key,
+  code text unique not null,
+  payout_email text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public.affiliate_referrals (
+  id uuid primary key default gen_random_uuid(),
+  affiliate_user_id uuid not null,
+  referred_user_id uuid not null unique,
+  referred_full_name text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.affiliate_commissions (
+  id uuid primary key default gen_random_uuid(),
+  affiliate_user_id uuid not null,
+  referred_user_id uuid not null,
+  payment_id text not null unique,
+  pack_key text,
+  amount_mxn numeric default 0,
+  status text default 'pending',
+  detail text,
+  payout_payment_id text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.affiliate_accounts enable row level security;
+alter table public.affiliate_referrals enable row level security;
+alter table public.affiliate_commissions enable row level security;
+
+drop policy if exists "affiliate_accounts_select_own" on public.affiliate_accounts;
+create policy "affiliate_accounts_select_own" on public.affiliate_accounts for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "affiliate_accounts_update_own" on public.affiliate_accounts;
+create policy "affiliate_accounts_update_own" on public.affiliate_accounts for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "affiliate_referrals_select_own" on public.affiliate_referrals;
+create policy "affiliate_referrals_select_own" on public.affiliate_referrals for select to authenticated using (auth.uid() = affiliate_user_id);
+
+drop policy if exists "affiliate_commissions_select_own" on public.affiliate_commissions;
+create policy "affiliate_commissions_select_own" on public.affiliate_commissions for select to authenticated using (auth.uid() = affiliate_user_id);
+
+notify pgrst, 'reload schema';`;
+
+  async function handleMe(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const userId = auth.user.id;
+    try {
+      const ensured = await ensureAffiliateAccount(auth.admin, userId);
+      if (!ensured.ok) return send(res, 500, { error: ensured.error || "No pude preparar tu cuenta" });
+      const acc: any = ensured.account || {};
+
+      const plan = await getUserPlan(auth.admin, userId).catch(() => ({ plan_active: false }));
+      const plan_active = Boolean((plan as any)?.plan_active);
+
+      const { data: refRows } = await auth.admin
+        .from("affiliate_referrals")
+        .select("referred_user_id, referred_full_name")
+        .eq("affiliate_user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      const refs = Array.isArray(refRows) ? refRows : [];
+
+      const active: Array<{ user_id: string; full_name: string }> = [];
+      for (const r of refs) {
+        const rid = String((r as any)?.referred_user_id || "").trim();
+        if (!rid) continue;
+        const p = await getUserPlan(auth.admin, rid).catch(() => ({ plan_active: false }));
+        if (!Boolean((p as any)?.plan_active)) continue;
+        const name = String((r as any)?.referred_full_name || "").trim();
+        active.push({ user_id: rid, full_name: name || "Usuario" });
+        if (active.length >= 80) break;
+      }
+
+      const { data: cRows } = await auth.admin
+        .from("affiliate_commissions")
+        .select("amount_mxn, status")
+        .eq("affiliate_user_id", userId)
+        .limit(5000);
+      const comm = Array.isArray(cRows) ? cRows : [];
+      const sumBy = (st: string[]) =>
+        comm
+          .filter((x: any) => st.includes(String(x?.status || "")))
+          .reduce((a: number, x: any) => a + (Number(x?.amount_mxn ?? 0) || 0), 0);
+
+      const stats = {
+        referrals_total: refs.length,
+        referrals_active: active.length,
+        commissions_paid_mxn: sumBy(["paid"]),
+        commissions_pending_mxn: sumBy(["pending", "pending_destination"]),
+        commissions_blocked_mxn: sumBy(["blocked"]),
+      };
+
+      const code = String(acc?.code || "").trim();
+      const link = code ? `${originFromReq(req)}/?ref=${encodeURIComponent(code)}` : "";
+      return send(res, 200, {
+        ok: true,
+        code,
+        link,
+        plan_active,
+        payout_email: acc?.payout_email ?? null,
+        stats,
+        active_referrals: active,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const lower = msg.toLowerCase();
+      const missingTable = lower.includes("could not find the table") || (lower.includes("relation") && lower.includes("does not exist"));
+      return send(res, 500, {
+        error: "No pude cargar Afiliados",
+        detail: msg,
+        hint: missingTable ? "Faltan tablas de Afiliados en Supabase. Crea las tablas y recarga el schema cache." : undefined,
+        sql: missingTable ? createTablesSql : undefined,
+      });
+    }
+  }
+
+  async function handlePayoutEmail(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const payoutEmail = (typeof body?.payoutEmail === "string" ? body.payoutEmail : "").toString().trim().slice(0, 160);
+    if (!payoutEmail) return send(res, 400, { error: "Falta correo de Mercado Pago" });
+
+    try {
+      const ensured = await ensureAffiliateAccount(auth.admin, auth.user.id);
+      if (!ensured.ok) return send(res, 500, { error: ensured.error || "No pude preparar tu cuenta" });
+      const upd = await auth.admin
+        .from("affiliate_accounts")
+        .update({ payout_email: payoutEmail, updated_at: new Date().toISOString() })
+        .eq("user_id", auth.user.id);
+      if (upd?.error) return send(res, 500, { error: "No pude guardar", detail: upd.error.message });
+      return send(res, 200, { ok: true });
+    } catch (e) {
+      return send(res, 500, { error: "No pude guardar", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "affiliates") return send(res, 404, { error: "Ruta no encontrada" });
+    const action = (pickQuery(req, "action") || "").toString().trim().toLowerCase();
+    const a = action || (next || "").toLowerCase();
+    if (a === "me") return handleMe(req, res);
+    if (a === "payout-email") return handlePayoutEmail(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 const appHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -8064,6 +8493,7 @@ export default async function handler(req: any, res: any) {
     if (head === "admin") return adminHandler(req, res);
     if (head === "support") return supportHandler(req, res);
     if (head === "ai") return aiHandler(req, res);
+    if (head === "affiliates") return affiliatesHandler(req, res);
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
     if (head === "upload-audio") return uploadAudioHandler(req, res);
