@@ -4335,8 +4335,6 @@ const bootstrapProfileHandler = (() => {
             return;
           }
           const { data: profile } = await admin.from("profiles").select("*").eq("id", user.id).maybeSingle();
-          const current = creditsFromProfile(profile);
-          if (current > 0) return;
           const credits = CREDIT_COSTS.generate_music * 2;
           const upd = await adjustUserCredits(admin, user.id, credits);
           if (!upd.ok) {
