@@ -82,7 +82,6 @@ function isMissingColumnError(err: any) {
 function extractOutputUrl(output: any): string | null {
   if (!output) return null;
   
-  // Si output es una string, podría ser directamente la URL
   if (typeof output === "string") {
     const trimmed = output.trim();
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
@@ -91,7 +90,6 @@ function extractOutputUrl(output: any): string | null {
     return null;
   }
   
-  // Si output es un objeto, buscar propiedades comunes de URL
   if (typeof output === "object") {
     const candidates = [
       output?.url,
@@ -2199,7 +2197,98 @@ const sunoHandler = (() => {
           .trim()
           .slice(0, 60);
       const rvcName = sanitizeRvcName(voiceProfileName || voiceName || "voz") || "voz";
-      zip.file(`dataset/${rvcName}/split_0.wav`, Buffer.from(audioBuffer));
+      const wavBuf = Buffer.from(audioBuffer);
+      const splitWavs = (() => {
+        try {
+          if (wavBuf.length < 44) return [wavBuf];
+          const riff = wavBuf.subarray(0, 4).toString("ascii");
+          const wave = wavBuf.subarray(8, 12).toString("ascii");
+          if (riff !== "RIFF" || wave !== "WAVE") return [wavBuf];
+
+          let fmtOffset = -1;
+          let fmtSize = 0;
+          let dataOffset = -1;
+          let dataSize = 0;
+          let off = 12;
+          while (off + 8 <= wavBuf.length) {
+            const id = wavBuf.subarray(off, off + 4).toString("ascii");
+            const size = wavBuf.readUInt32LE(off + 4);
+            const start = off + 8;
+            if (id === "fmt ") {
+              fmtOffset = start;
+              fmtSize = size;
+            } else if (id === "data") {
+              dataOffset = start;
+              dataSize = size;
+            }
+            const padded = size + (size % 2);
+            off = start + padded;
+            if (off > wavBuf.length) break;
+          }
+
+          if (fmtOffset < 0 || dataOffset < 0) return [wavBuf];
+          if (fmtSize < 16) return [wavBuf];
+
+          const audioFormat = wavBuf.readUInt16LE(fmtOffset + 0);
+          const numChannels = wavBuf.readUInt16LE(fmtOffset + 2);
+          const sampleRate = wavBuf.readUInt32LE(fmtOffset + 4);
+          const bitsPerSample = wavBuf.readUInt16LE(fmtOffset + 14);
+          if (audioFormat !== 1) return [wavBuf];
+          if (bitsPerSample !== 16) return [wavBuf];
+          if (!Number.isFinite(sampleRate) || sampleRate <= 0) return [wavBuf];
+          if (!Number.isFinite(numChannels) || numChannels <= 0) return [wavBuf];
+
+          const blockAlign = numChannels * 2;
+          const byteRate = sampleRate * blockAlign;
+          const safeDataSize = Math.max(0, Math.min(dataSize, wavBuf.length - dataOffset));
+          if (safeDataSize <= 0) return [wavBuf];
+
+          const makeWav = (pcm: Buffer) => {
+            const out = Buffer.alloc(44 + pcm.length);
+            out.write("RIFF", 0, "ascii");
+            out.writeUInt32LE(36 + pcm.length, 4);
+            out.write("WAVE", 8, "ascii");
+            out.write("fmt ", 12, "ascii");
+            out.writeUInt32LE(16, 16);
+            out.writeUInt16LE(1, 20);
+            out.writeUInt16LE(numChannels, 22);
+            out.writeUInt32LE(sampleRate, 24);
+            out.writeUInt32LE(byteRate, 28);
+            out.writeUInt16LE(blockAlign, 32);
+            out.writeUInt16LE(bitsPerSample, 34);
+            out.write("data", 36, "ascii");
+            out.writeUInt32LE(pcm.length, 40);
+            pcm.copy(out, 44);
+            return out;
+          };
+
+          const targetSeconds = 12;
+          const minSeconds = 2;
+          const maxChunks = 60;
+          const rawChunkBytes = Math.floor(byteRate * targetSeconds);
+          const chunkBytes = Math.max(blockAlign, rawChunkBytes - (rawChunkBytes % blockAlign));
+
+          const outChunks: Buffer[] = [];
+          let cursor = 0;
+          while (cursor < safeDataSize && outChunks.length < maxChunks) {
+            let len = Math.min(chunkBytes, safeDataSize - cursor);
+            len = len - (len % blockAlign);
+            if (len <= 0) break;
+            const seconds = len / byteRate;
+            if (seconds < minSeconds && outChunks.length > 0) break;
+            const pcm = wavBuf.subarray(dataOffset + cursor, dataOffset + cursor + len);
+            outChunks.push(makeWav(Buffer.from(pcm)));
+            cursor += len;
+          }
+          return outChunks.length > 0 ? outChunks : [wavBuf];
+        } catch {
+          return [wavBuf];
+        }
+      })();
+
+      for (let i = 0; i < splitWavs.length; i++) {
+        zip.file(`dataset/${rvcName}/split_${i}.wav`, splitWavs[i]);
+      }
       const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
       
       // Subir el archivo ZIP a R2
@@ -2252,7 +2341,6 @@ const sunoHandler = (() => {
         if (latest) replicateVersion = latest;
       }
       if (!replicateVersion) {
-        // Usar la versión específica que compartiste como fallback
         replicateVersion = "0397d5e28c9b54665e1e5d29d5cf4f722a7b89ec20e9dbf31487235305b1a101";
       }
 
@@ -4696,7 +4784,6 @@ const replicateWebhookHandler = (() => {
           newStatus = 'failed';
         }
         
-        // Extraer la URL del output si está disponible
         let modelUrl = null;
         if (output) {
           modelUrl = extractOutputUrl(output);

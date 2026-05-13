@@ -12,6 +12,7 @@ interface VoiceItem {
   created_at: string;
   cost: number;
   output?: any;
+  error?: any;
   model_url?: string | null;
   sample_url?: string | null;
   profile_image_url?: string | null;
@@ -86,8 +87,19 @@ export function CloneVoiceView() {
             } else if (outRaw && typeof outRaw === 'object') {
               output = outRaw;
             }
+            let errObj: any = null;
+            const errRaw = (v as any)?.error;
+            if (errRaw && typeof errRaw === 'string') {
+              try {
+                errObj = JSON.parse(errRaw);
+              } catch {
+                errObj = errRaw;
+              }
+            } else if (errRaw && typeof errRaw === 'object') {
+              errObj = errRaw;
+            }
             if (!id) return null;
-            return { id, voice_id, voice_name, description, status, created_at, cost, output, model_url, sample_url, profile_image_url, voice_profile_name };
+            return { id, voice_id, voice_name, description, status, created_at, cost, output, error: errObj, model_url, sample_url, profile_image_url, voice_profile_name };
           })
           .filter(Boolean) as any;
         setVoices(mapped);
@@ -693,6 +705,31 @@ export function CloneVoiceView() {
     }
   };
 
+  const formatVoiceErrorMessage = (err: any) => {
+    if (!err) return '';
+    let msg = '';
+    if (typeof err === 'string') {
+      msg = err.trim();
+    } else if (typeof err === 'object') {
+      const candidates = [err?.message, err?.detail, err?.error, err?.title, err?.reason];
+      for (const c of candidates) {
+        if (typeof c === 'string' && c.trim()) {
+          msg = c.trim();
+          break;
+        }
+      }
+      if (!msg) {
+        try {
+          msg = JSON.stringify(err);
+        } catch {
+          msg = '';
+        }
+      }
+    }
+    if (msg.length > 600) msg = msg.slice(0, 600) + '…';
+    return msg;
+  };
+
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto">
       <div className="max-w-[720px] mx-auto w-full space-y-6">
@@ -1262,6 +1299,12 @@ export function CloneVoiceView() {
                   <div className="text-xs text-slate-400 mb-2">
                     {voice.description}
                   </div>
+
+                  {voice.status === 'failed' && (
+                    <div className="mb-2 p-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-200 text-xs whitespace-pre-wrap">
+                      {formatVoiceErrorMessage(voice.error) || 'No se recibió el motivo del fallo.'}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <div className="flex items-center gap-4">
