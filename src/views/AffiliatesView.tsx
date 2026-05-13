@@ -8,6 +8,7 @@ type AffiliateMeResponse = {
   code: string;
   link: string;
   plan_active: boolean;
+  is_admin?: boolean;
   payout_email: string | null;
   stats: {
     referrals_total: number;
@@ -28,8 +29,10 @@ export function AffiliatesView() {
   const [search, setSearch] = useState('');
   const [payoutEmail, setPayoutEmail] = useState('');
 
-  const load = async () => {
-    setIsLoading(true);
+  const CACHE_KEY = 'ramber.affiliates_cache_v1';
+
+  const load = async (silent?: boolean) => {
+    if (!silent) setIsLoading(true);
     setError('');
     try {
       const t = await getAccessToken();
@@ -45,15 +48,29 @@ export function AffiliatesView() {
       }
       setData(out);
       setPayoutEmail((out.payout_email || '').toString());
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data: out }));
+      } catch {}
     } catch {
       setError('No se pudo cargar Afiliados.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    load().catch(() => {});
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const cached = parsed?.data;
+        if (cached?.ok && typeof cached?.link === 'string') {
+          setData(cached);
+          setPayoutEmail((cached.payout_email || '').toString());
+        }
+      }
+    } catch {}
+    load(true).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
@@ -122,7 +139,7 @@ export function AffiliatesView() {
           <div>
             <h1 className="text-2xl font-bold text-white">Afiliados</h1>
             <p className="text-sm text-slate-300 mt-1">
-              Comparte tu link. Por cada pago aprobado de un usuario referido, ganas $100 MXN si tu plan está activo.
+              Comparte tu link. Por cada pago aprobado de un usuario referido, ganas $100 MXN.
             </p>
           </div>
           <button
@@ -156,7 +173,7 @@ export function AffiliatesView() {
           <div className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-200 break-all">
             {data?.link || 'Cargando…'}
           </div>
-          {!data?.plan_active ? (
+          {!data?.plan_active && !data?.is_admin ? (
             <div className="mt-3 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 text-yellow-200 text-sm">
               Tu plan está inactivo. Mientras esté inactivo, no se generan comisiones.
             </div>

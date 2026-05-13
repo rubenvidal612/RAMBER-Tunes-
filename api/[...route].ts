@@ -2825,7 +2825,14 @@ const mercadoPagoHandler = (() => {
     }
 
     const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
-    const affiliateActive = Boolean((plan as any)?.plan_active);
+    let affiliateActive = Boolean((plan as any)?.plan_active);
+    if (!affiliateActive) {
+      try {
+        const u = await admin.auth.admin.getUserById(affiliateUserId);
+        const email = (u as any)?.data?.user?.email || "";
+        if (isAdminEmail(email)) affiliateActive = true;
+      } catch {}
+    }
 
     let commissionId = "";
     try {
@@ -8013,8 +8020,9 @@ notify pgrst, 'reload schema';`;
       if (!ensured.ok) return send(res, 500, { error: ensured.error || "No pude preparar tu cuenta" });
       const acc: any = ensured.account || {};
 
+      const is_admin = isAdminEmail(auth.user.email);
       const plan = await getUserPlan(auth.admin, userId).catch(() => ({ plan_active: false }));
-      const plan_active = Boolean((plan as any)?.plan_active);
+      const plan_active = is_admin ? true : Boolean((plan as any)?.plan_active);
 
       const { data: refRows } = await auth.admin
         .from("affiliate_referrals")
@@ -8061,6 +8069,7 @@ notify pgrst, 'reload schema';`;
         code,
         link,
         plan_active,
+        is_admin,
         payout_email: acc?.payout_email ?? null,
         stats,
         active_referrals: active,
