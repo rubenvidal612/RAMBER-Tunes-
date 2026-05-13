@@ -2457,7 +2457,11 @@ const sunoHandler = (() => {
           errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
         }
         
-        return send(res, 502, { error: errorMessage, detail: errorDetail, status: replicateResponse.status });
+        const combined =
+          errorDetail && String(errorDetail || "").trim()
+            ? `${errorMessage}\n\n${String(errorDetail || "").trim()}`
+            : errorMessage;
+        return send(res, 502, { error: combined, detail: errorDetail, status: replicateResponse.status });
       }
 
       const predictionId = replicateData?.id;
@@ -2829,7 +2833,9 @@ notify pgrst, 'reload schema';`;
         cost: cost
       });
     } catch (e) {
-      return send(res, 502, { error: "Error creando cover", detail: e instanceof Error ? e.message : String(e) });
+      const detail = e instanceof Error ? e.message : String(e);
+      const combined = detail && String(detail || "").trim() ? `Error creando cover\n\n${String(detail || "").trim()}` : "Error creando cover";
+      return send(res, 502, { error: combined, detail });
     }
   }
 
