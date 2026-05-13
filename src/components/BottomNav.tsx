@@ -20,6 +20,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const studioRef = React.useRef<HTMLButtonElement | null>(null);
+  const itemRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const [showLeftHint, setShowLeftHint] = React.useState(false);
   const [showRightHint, setShowRightHint] = React.useState(false);
 
@@ -45,6 +46,16 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
     updateHints();
   }, [updateHints]);
 
+  const scrollToTab = React.useCallback((tab: ViewTab) => {
+    const el = scrollRef.current;
+    const btn = itemRefs.current[tab] || null;
+    if (!el || !btn) return;
+    try {
+      btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    } catch {
+    }
+  }, []);
+
   React.useLayoutEffect(() => {
     const raf = requestAnimationFrame(() => {
       centerStudio();
@@ -62,6 +73,11 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
     updateHints();
   }, [updateHints]);
 
+  const primaryOrder: ViewTab[] = ['inicio', 'convertidor', 'studio', 'biblioteca', 'afiliados'];
+  const extraOrder: ViewTab[] = items
+    .map((x) => x.id)
+    .filter((id) => !primaryOrder.includes(id as any)) as any;
+
   return (
     <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-3 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">
       <div className="relative px-3 pb-3">
@@ -71,16 +87,25 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
           className="flex items-center justify-center overflow-x-auto scrollbar-hide overscroll-x-contain"
         >
           <div className="flex items-center justify-center min-w-max gap-0">
-            {items.map((item) => {
+            <div className="w-3 shrink-0" aria-hidden="true" />
+
+            {primaryOrder.map((id) => {
+              const item = items.find((x) => x.id === id)!;
               const isActive = currentTab === item.id;
               const isStudio = item.id === 'studio';
 
               if (isStudio) {
                 return (
                   <button
-                    ref={studioRef}
+                    ref={(el) => {
+                      studioRef.current = el;
+                      itemRefs.current[item.id] = el;
+                    }}
                     key={item.id}
-                    onClick={() => onChange(item.id)}
+                    onClick={() => {
+                      onChange(item.id);
+                      requestAnimationFrame(() => scrollToTab(item.id));
+                    }}
                     className="flex flex-col items-center gap-1 min-w-[76px] mx-3 relative"
                   >
                     <div className={cn(
@@ -97,8 +122,14 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
               return (
                 <button
+                  ref={(el) => {
+                    itemRefs.current[item.id] = el;
+                  }}
                   key={item.id}
-                  onClick={() => onChange(item.id)}
+                  onClick={() => {
+                    onChange(item.id);
+                    requestAnimationFrame(() => scrollToTab(item.id));
+                  }}
                   className={cn(
                     "flex flex-col items-center gap-1 transition-colors min-w-[58px] mx-1.5 py-1.5",
                     isActive ? "text-slate-100" : "text-slate-500 hover:text-slate-300"
@@ -109,6 +140,33 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
                 </button>
               );
             })}
+
+            {extraOrder.length > 0 ? <div className="w-10 shrink-0" aria-hidden="true" /> : null}
+            {extraOrder.map((id) => {
+              const item = items.find((x) => x.id === id)!;
+              const isActive = currentTab === item.id;
+              return (
+                <button
+                  ref={(el) => {
+                    itemRefs.current[item.id] = el;
+                  }}
+                  key={item.id}
+                  onClick={() => {
+                    onChange(item.id);
+                    requestAnimationFrame(() => scrollToTab(item.id));
+                  }}
+                  className={cn(
+                    "flex flex-col items-center gap-1 transition-colors min-w-[58px] mx-1.5 py-1.5",
+                    isActive ? "text-slate-100" : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  <item.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                  <span className="text-[10px] font-medium">{item.label}</span>
+                </button>
+              );
+            })}
+
+            <div className="w-3 shrink-0" aria-hidden="true" />
           </div>
         </div>
 
