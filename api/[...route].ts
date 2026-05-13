@@ -8624,8 +8624,30 @@ const kitsVoicesHandler = (() => {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
+        const out: any[] = Array.isArray(voices) ? voices : [];
+        for (const v of out) {
+          const raw = (v as any)?.sample_url;
+          if (typeof raw !== "string" || !raw.trim()) continue;
+          const s = raw.trim();
+          const looksSigned = s.includes("X-Amz-Signature=") || s.includes("X-Amz-Algorithm=");
+          if (!looksSigned) continue;
+          try {
+            const u = new URL(s);
+            const key = (u.pathname || "").replace(/^\/+/, "");
+            if (!key) continue;
+            const okPrefix =
+              key.startsWith("uploads/") ||
+              key.startsWith("personas/") ||
+              key.startsWith("rvc_datasets/") ||
+              key.startsWith("covers/");
+            if (!okPrefix) continue;
+            const refreshed = await getSignedR2Url(key, 60 * 60 * 2);
+            if (typeof refreshed === "string" && refreshed.trim()) (v as any).sample_url = refreshed.trim();
+          } catch {
+          }
+        }
 
-        return send(res, 200, { voices: voices || [] });
+        return send(res, 200, { voices: out });
       } catch (e) {
         return send(res, 500, { error: "Error obteniendo voces", detail: e instanceof Error ? e.message : String(e) });
       }
