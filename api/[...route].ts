@@ -4766,7 +4766,7 @@ const replicateWebhookHandler = (() => {
       // Buscar la voz en la base de datos usando replicate_id
       const { data: voiceRows } = await admin
         .from("kits_voices")
-        .select("id, user_id, status, cost")
+        .select("id, user_id, status, cost, sample_url")
         .eq("replicate_id", predictionId)
         .limit(1);
       
@@ -4800,6 +4800,35 @@ const replicateWebhookHandler = (() => {
             updated_at: new Date().toISOString()
           })
           .eq("replicate_id", predictionId);
+
+        if (newStatus === "ready" && modelUrl && typeof modelUrl === "string") {
+          const sourceAudioUrl = (voiceRow as any)?.sample_url ? String((voiceRow as any).sample_url).trim() : "";
+          const replicateToken = process.env.REPLICATE_API_TOKEN;
+          if (replicateToken && sourceAudioUrl) {
+            try {
+              await fetch("https://api.replicate.com/v1/models/zsxkib/realistic-voice-cloning/versions/a0076ea1/predictions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Token ${replicateToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  input: {
+                    song_input: sourceAudioUrl,
+                    rvc_model: "CUSTOM",
+                    custom_rvc_model_download_url: modelUrl,
+                    pitch_change: 0,
+                    index_rate: 0.5,
+                    protect: 0.33,
+                    output_format: "mp3",
+                  },
+                  webhook: absoluteUrlFromReq(req, `/api/webhooks/replicate-voice-sample?voiceId=${encodeURIComponent(String((voiceRow as any).id || ""))}`),
+                }),
+              }).catch(() => {});
+            } catch {
+            }
+          }
+        }
       }
     } catch (e) {
       console.error('Error procesando webhook de Replicate:', e);
@@ -4973,6 +5002,128 @@ const replicateCoverWebhookHandler = (() => {
     } catch (e) {
       return send(res, 200, { ok: true, received: true, predictionId, status: newStatus });
     }
+  };
+})();
+
+const replicateVoiceSampleWebhookHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function normalizeHttpUrl(raw: any) {
+    const s = (typeof raw === "string" ? raw : raw == null ? "" : String(raw)).trim();
+    if (!s) return "";
+    if (/^https?:\/\//i.test(s) || /^\/\//.test(s)) return s;
+    return "";
+  }
+
+  function pickFirstUrl(output: any) {
+    const direct = normalizeHttpUrl(output);
+    if (direct) return direct;
+    const candidates: any[] = [];
+    if (output && typeof output === "object") {
+      candidates.push(
+        output?.audio,
+        output?.audio_url,
+        output?.audioUrl,
+        output?.output,
+        output?.output_url,
+        output?.outputUrl,
+        output?.url,
+        output?.download,
+        output?.download_url
+      );
+      if (Array.isArray(output)) candidates.push(...output);
+    }
+    for (const c of candidates) {
+      const u = normalizeHttpUrl(c);
+      if (u) return u;
+    }
+    return "";
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  return async function handler(req: any, res: any) {
+    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return send(res, 200, { ok: true });
+
+    const url = new URL(req.url, "http://localhost");
+    const voiceId = (url.searchParams.get("voiceId") || "").toString().trim();
+    if (!voiceId) return send(res, 200, { ok: true, received: true, missing_voice_id: true });
+
+    const body = parseJsonBody(req) || {};
+    const predictionId = (body?.id || "").toString().trim();
+    const statusRaw = (body?.status || "").toString().trim().toLowerCase();
+    const output = body?.output;
+    const error = body?.error;
+
+    const newStatus =
+      statusRaw === "succeeded" || statusRaw === "completed"
+        ? "ready"
+        : statusRaw === "failed" || statusRaw === "canceled" || statusRaw === "error"
+        ? "failed"
+        : "processing";
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService);
+
+      const { data: row, error: rowErr } = await admin
+        .from("kits_voices")
+        .select("id, output, error")
+        .eq("id", voiceId)
+        .maybeSingle();
+      if (rowErr) return send(res, 500, { error: "No pude buscar la voz", detail: rowErr.message });
+      if (!row) return send(res, 200, { ok: true, received: true, missing: true, voiceId });
+
+      let outObj: any = null;
+      const outRaw = (row as any)?.output;
+      if (outRaw && typeof outRaw === "string") {
+        try {
+          outObj = JSON.parse(outRaw);
+        } catch {
+          outObj = null;
+        }
+      } else if (outRaw && typeof outRaw === "object") {
+        outObj = outRaw;
+      }
+      if (!outObj || typeof outObj !== "object") outObj = {};
+
+      const audioUrl = newStatus === "ready" ? pickFirstUrl(output) : "";
+      if (audioUrl) outObj.sample_url = audioUrl;
+      if (predictionId) outObj.sample_prediction_id = predictionId;
+
+      const patch: any = {
+        updated_at: new Date().toISOString(),
+      };
+      if (audioUrl) patch.sample_url = audioUrl;
+      patch.output = JSON.stringify(outObj);
+      if (error) patch.error = JSON.stringify(error);
+
+      await admin
+        .from("kits_voices")
+        .update(patch)
+        .eq("id", voiceId);
+    } catch (e) {
+      return send(res, 200, { ok: true, received: true, voiceId, predictionId, status: newStatus });
+    }
+
+    return send(res, 200, { ok: true, received: true, voiceId, predictionId, status: newStatus });
   };
 })();
 
@@ -8699,6 +8850,7 @@ export default async function handler(req: any, res: any) {
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
+    if (head === "webhooks" && next === "replicate-voice-sample") return replicateVoiceSampleWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate") return replicateWebhookHandler(req, res);
 
     return sendNotFound(res);

@@ -215,8 +215,8 @@ export function CloneVoiceView() {
        setSelectedFile(normalizedFile);
        setAudioDuration(duration);
        setError('');
-       if (!voiceName.trim()) {
-         setVoiceName(normalizedFile.name.replace(/\.[^/.]+$/, '').slice(0, 50));
+       if (!voiceProfileName.trim()) {
+         setVoiceProfileName(normalizedFile.name.replace(/\.[^/.]+$/, '').slice(0, 50));
        }
     } catch (err) {
       setError(
@@ -619,7 +619,7 @@ export function CloneVoiceView() {
       return;
     }
 
-    if (!voiceName.trim()) {
+    if (!voiceProfileName.trim()) {
       setError('Por favor ingresa un nombre para la voz');
       return;
     }
@@ -648,6 +648,7 @@ export function CloneVoiceView() {
       const token = await getAccessToken();
       if (!token.ok) throw new Error('No autorizado');
 
+      const finalVoiceName = voiceProfileName.trim();
       const response = await fetch('/api/suno/clone-voice', {
         method: 'POST',
         headers: {
@@ -657,10 +658,10 @@ export function CloneVoiceView() {
         body: JSON.stringify({
           uploadUrl: audioUrl,
           uploadPath: audioPath,
-          voiceName,
+          voiceName: finalVoiceName,
           description: description.trim() || undefined,
           profileImageUrl: profileImageUrlToUse,
-          voiceProfileName: voiceProfileName.trim() || voiceName,
+          voiceProfileName: finalVoiceName,
           category,
           language,
           gender,
@@ -677,7 +678,7 @@ export function CloneVoiceView() {
       }
 
       const data = await response.json();
-      setSuccess(`Voz "${voiceName}" creada exitosamente. Se está entrenando el modelo...`);
+      setSuccess(`Voz "${finalVoiceName}" creada exitosamente. Se está entrenando el modelo...`);
       
       // Recargar la lista de voces
       loadVoices();
@@ -686,7 +687,6 @@ export function CloneVoiceView() {
       setSelectedFile(null);
       setProfileImage(null);
       setProfileImageUrl('');
-      setVoiceName('');
       setVoiceProfileName('');
       setDescription('');
       setCategory('personal');
@@ -763,7 +763,6 @@ export function CloneVoiceView() {
     }
 
     const url =
-      (typeof statusData?.sample_url === 'string' && statusData.sample_url.trim()) ||
       (typeof output?.sample_url === 'string' && output.sample_url.trim()) ||
       (typeof output?.audio_url === 'string' && output.audio_url.trim()) ||
       (typeof output?.audio === 'string' && output.audio.trim()) ||
@@ -1063,23 +1062,6 @@ export function CloneVoiceView() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Nombre de la voz
-                </label>
-                <input
-                  type="text"
-                  value={voiceName}
-                  onChange={(e) => setVoiceName(e.target.value.slice(0, 50))}
-                  placeholder="Ej: Mi Voz, Cantante Favorito"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors"
-                  maxLength={50}
-                />
-                <div className="text-xs text-slate-500 mt-1 text-right">
-                  {voiceName.length}/50
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
                   Descripción (opcional)
                 </label>
                 <textarea
@@ -1154,7 +1136,7 @@ export function CloneVoiceView() {
               {/* Voice Profile Name */}
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Nombre del perfil de voz (opcional)
+                  Nombre de la Voz
                 </label>
                 <input
                   type="text"
@@ -1350,7 +1332,6 @@ export function CloneVoiceView() {
             <div className="space-y-3">
               {voices.map((voice) => {
                 const playableUrl =
-                  (typeof voice.sample_url === 'string' && voice.sample_url.trim()) ||
                   (typeof voice.output?.sample_url === 'string' && voice.output.sample_url.trim()) ||
                   (typeof voice.output?.audio_url === 'string' && voice.output.audio_url.trim()) ||
                   (typeof voice.output?.audio === 'string' && voice.output.audio.trim()) ||
@@ -1444,7 +1425,7 @@ export function CloneVoiceView() {
             className="absolute inset-0 bg-black/60"
             aria-label="Cerrar"
           />
-          <div className="relative w-full max-w-md glass-card rounded-3xl border border-white/10 p-5">
+          <div className="relative w-full max-w-md bg-[#0b0f16] rounded-3xl border border-white/10 p-5 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div className="text-white font-extrabold text-lg">Editar voz</div>
               <button
