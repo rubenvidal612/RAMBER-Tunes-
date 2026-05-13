@@ -273,7 +273,15 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
                 <button
                   key={voice.id}
                   type="button"
-                  onClick={() => handleSelectVoice(voice.id)}
+                  onClick={(e) => {
+                    if (voice.sampleUrl) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handlePlaySample(voice);
+                    } else {
+                      handleSelectVoice(voice.id);
+                    }
+                  }}
                   className={cn(
                     "relative aspect-square rounded-[26px] overflow-hidden border transition-colors text-left",
                     isSelected ? "border-emerald-500 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10",
@@ -294,24 +302,7 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
                     <div className="text-white font-extrabold truncate text-base leading-tight">{displayName}</div>
                   </div>
 
-                  <div className="absolute left-2 top-2 flex items-center gap-2">
-                    {voice.sampleUrl ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handlePlaySample(voice);
-                        }}
-                        disabled={playingVoiceId === voice.id}
-                        className="w-11 h-11 rounded-full bg-black/45 border border-white/10 text-white flex items-center justify-center hover:bg-black/60 disabled:opacity-60"
-                        title="Escuchar"
-                        aria-label="Escuchar"
-                      >
-                        {playingVoiceId === voice.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 ml-0.5" />}
-                      </button>
-                    ) : null}
-                  </div>
+
 
                   <div className="absolute right-2 top-2 flex items-center gap-2">
                     <button

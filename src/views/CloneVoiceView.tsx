@@ -1357,12 +1357,18 @@ export function CloneVoiceView() {
                   <div key={voice.id} className="min-w-0">
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
                         if (isManageVoices) {
+                          e.preventDefault();
+                          e.stopPropagation();
                           openEditVoice(voice);
                           return;
                         }
-                        if (canPlay) playVoice(voice);
+                        if (canPlay) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          playVoice(voice);
+                        }
                       }}
                       className={cn(
                         "relative w-full aspect-square rounded-[28px] overflow-hidden border transition-colors",
@@ -1384,18 +1390,7 @@ export function CloneVoiceView() {
                         <div className="text-white font-extrabold truncate text-base leading-tight">{displayName}</div>
                       </div>
 
-                      {!isManageVoices && canPlay ? (
-                        <div className="absolute right-2 top-2">
-                          <div
-                            className={cn(
-                              "w-12 h-12 rounded-full border flex items-center justify-center",
-                              playingVoiceId === voice.voice_id ? "bg-emerald-500/25 border-emerald-500/30 text-emerald-200" : "bg-black/40 border-white/10 text-white"
-                            )}
-                          >
-                            {playingVoiceId === voice.voice_id ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-                          </div>
-                        </div>
-                      ) : null}
+
 
                       {isManageVoices ? (
                         <div className="absolute right-2 top-2 flex items-center gap-2">
