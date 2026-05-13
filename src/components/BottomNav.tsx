@@ -81,58 +81,61 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
       </div>
 
       {isMenuOpen ? (
-        <div className="fixed inset-0 z-[120] bg-black/50 flex items-end md:items-center justify-center p-4">
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0"
             onClick={() => setIsMenuOpen(false)}
             aria-label="Cerrar"
           />
-          <div className="relative w-full max-w-md glass-panel rounded-3xl p-5 shadow-2xl bg-gradient-to-br from-indigo-500/10 via-white/5 to-fuchsia-500/10">
-            <div className="flex items-center justify-between">
-              <div className="gradient-text font-extrabold text-lg">Menú</div>
-              <button
-                type="button"
-                onClick={() => setIsMenuOpen(false)}
-                className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 flex items-center justify-center"
-                aria-label="Cerrar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+          <div className="relative w-full max-w-md rounded-3xl shadow-2xl border border-white/10 bg-[#070a12] overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-transparent to-fuchsia-500/20" />
+            <div className="relative p-5">
+              <div className="flex items-center justify-between">
+                <div className="gradient-text font-extrabold text-lg">Menú</div>
+                <button
+                  type="button"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 text-slate-200 flex items-center justify-center"
+                  aria-label="Cerrar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-4">
-              {menuItems.map((item) => {
-                const isActive = currentTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      onChange(item.id);
-                    }}
-                    className={cn(
-                      "flex flex-col items-center gap-2 rounded-3xl border p-4 transition-colors",
-                      "bg-gradient-to-br from-white/5 via-white/5 to-white/0 hover:from-indigo-500/15 hover:via-white/5 hover:to-fuchsia-500/15",
-                      isActive ? "border-indigo-400/40 text-slate-100" : "border-white/10 text-slate-200"
-                    )}
-                  >
-                    <div
+              <div className="mt-5 grid grid-cols-2 gap-4">
+                {menuItems.map((item) => {
+                  const isActive = currentTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onChange(item.id);
+                      }}
                       className={cn(
-                        "w-14 h-14 rounded-2xl border flex items-center justify-center",
-                        "bg-gradient-to-br from-indigo-500/25 via-white/10 to-fuchsia-500/20",
-                        isActive ? "border-indigo-400/40 text-white" : "border-white/10 text-slate-100"
+                        "flex flex-col items-center gap-2 rounded-3xl border p-4 transition-colors",
+                        "bg-gradient-to-br from-indigo-500/15 via-white/5 to-fuchsia-500/15 hover:from-indigo-500/25 hover:via-white/10 hover:to-fuchsia-500/25",
+                        isActive ? "border-indigo-400/45 text-slate-100" : "border-white/10 text-slate-200"
                       )}
                     >
-                      <item.icon className="w-7 h-7" />
-                    </div>
-                    <div className={cn("text-xs font-extrabold", isActive ? "text-slate-100" : "text-slate-200")}>
-                      {item.label}
-                    </div>
-                  </button>
-                );
-              })}
+                      <div
+                        className={cn(
+                          "w-14 h-14 rounded-2xl border flex items-center justify-center",
+                          "bg-gradient-to-br from-indigo-500/25 via-white/10 to-fuchsia-500/20",
+                          isActive ? "border-indigo-400/45 text-white" : "border-white/10 text-slate-100"
+                        )}
+                      >
+                        <item.icon className="w-7 h-7" />
+                      </div>
+                      <div className={cn("text-xs font-extrabold", isActive ? "text-slate-100" : "text-slate-200")}>
+                        {item.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
