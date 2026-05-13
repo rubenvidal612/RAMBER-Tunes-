@@ -81,16 +81,16 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
       </div>
 
       {isMenuOpen ? (
-        <div className="fixed inset-0 z-[120] bg-black/60 flex items-end md:items-center justify-center p-4">
+        <div className="fixed inset-0 z-[120] bg-black/50 flex items-end md:items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0"
             onClick={() => setIsMenuOpen(false)}
             aria-label="Cerrar"
           />
-          <div className="relative w-full max-w-md bg-[#0b0f16] border border-white/10 rounded-3xl p-5 shadow-2xl">
+          <div className="relative w-full max-w-md glass-panel rounded-3xl p-5 shadow-2xl bg-gradient-to-br from-indigo-500/10 via-white/5 to-fuchsia-500/10">
             <div className="flex items-center justify-between">
-              <div className="text-white font-extrabold">Menú</div>
+              <div className="gradient-text font-extrabold text-lg">Menú</div>
               <button
                 type="button"
                 onClick={() => setIsMenuOpen(false)}
@@ -102,22 +102,37 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-4">
-              {menuItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    onChange(item.id);
-                  }}
-                  className="flex flex-col items-center gap-2 rounded-3xl bg-white/5 hover:bg-white/10 border border-white/10 p-4 transition-colors"
-                >
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-white/10 to-transparent border border-white/10 flex items-center justify-center text-slate-100">
-                    <item.icon className="w-7 h-7" />
-                  </div>
-                  <div className="text-xs text-slate-200 font-extrabold">{item.label}</div>
-                </button>
-              ))}
+              {menuItems.map((item) => {
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onChange(item.id);
+                    }}
+                    className={cn(
+                      "flex flex-col items-center gap-2 rounded-3xl border p-4 transition-colors",
+                      "bg-gradient-to-br from-white/5 via-white/5 to-white/0 hover:from-indigo-500/15 hover:via-white/5 hover:to-fuchsia-500/15",
+                      isActive ? "border-indigo-400/40 text-slate-100" : "border-white/10 text-slate-200"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "w-14 h-14 rounded-2xl border flex items-center justify-center",
+                        "bg-gradient-to-br from-indigo-500/25 via-white/10 to-fuchsia-500/20",
+                        isActive ? "border-indigo-400/40 text-white" : "border-white/10 text-slate-100"
+                      )}
+                    >
+                      <item.icon className="w-7 h-7" />
+                    </div>
+                    <div className={cn("text-xs font-extrabold", isActive ? "text-slate-100" : "text-slate-200")}>
+                      {item.label}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, RefreshCw, Users, Search, Wallet, UserCheck, UserX } from 'lucide-react';
+import { Copy, RefreshCw, Users, Search, Wallet, UserCheck, UserX, X } from 'lucide-react';
 import { getAccessToken } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
+import { UserProfileView } from '@/views/UserProfileView';
 
 type AffiliateMeResponse = {
   ok: boolean;
@@ -32,6 +33,7 @@ export function AffiliatesView() {
   const [search, setSearch] = useState('');
   const [payoutEmail, setPayoutEmail] = useState('');
   const [filter, setFilter] = useState<ReferralFilter>('active');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   console.log('isListOpen:', isListOpen);
 
   const CACHE_KEY = 'ramber.affiliates_cache_v1';
@@ -308,15 +310,14 @@ export function AffiliatesView() {
               ) : (
                 <div className="space-y-2">
                   {filtered.slice(0, 80).map((u) => (
-                    <a
+                    <button
                       key={u.user_id}
-                      href={`/api/share/profile?id=${encodeURIComponent(u.user_id)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      type="button"
+                      onClick={() => setSelectedUserId(u.user_id)}
                       className="block bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
                     >
                       {u.full_name || 'Usuario'}
-                    </a>
+                    </button>
                   ))}
                 </div>
               )}
@@ -339,6 +340,34 @@ export function AffiliatesView() {
           ) : null}
         </div>
       </div>
+
+      {selectedUserId ? (
+        <div className="fixed inset-0 z-[140] bg-black/50 flex items-end md:items-center justify-center">
+          <button
+            type="button"
+            className="absolute inset-0"
+            onClick={() => setSelectedUserId(null)}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full md:max-w-[720px] glass-panel border border-white/10 rounded-t-[2rem] md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.55)] max-h-[92vh] md:max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 via-transparent to-fuchsia-500/10">
+              <div className="text-white font-extrabold">Perfil</div>
+              <button
+                type="button"
+                onClick={() => setSelectedUserId(null)}
+                className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 flex items-center justify-center"
+                aria-label="Cerrar"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <UserProfileView userId={selectedUserId} />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
