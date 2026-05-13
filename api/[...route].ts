@@ -4735,6 +4735,16 @@ const replicateWebhookHandler = (() => {
     res.end(JSON.stringify(body));
   }
 
+  function originFromReq(req: any) {
+    const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+    return `${proto}://${host}`;
+  }
+
+  function absoluteUrlFromReq(req: any, pathname: string) {
+    return new URL(pathname, originFromReq(req)).toString();
+  }
+
   return async function handler(req: any, res: any) {
     if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
     
