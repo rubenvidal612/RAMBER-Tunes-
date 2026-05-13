@@ -693,6 +693,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const expectedTracksForKind = (kind: string) => {
     const k = (kind || '').toLowerCase();
     if (k === 'generate') return 2;
+    if (k === 'upload-cover') return 2;
     return 1;
   };
 
