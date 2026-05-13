@@ -1126,7 +1126,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           draft: {
             title: (title || 'Nueva Canción').toString(),
             description: (mode === 'simple' ? description : instructions).toString(),
-            lyrics: mode === 'personalizado' ? (baseLyrics || '').toString() || null : null,
+            lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
             prompt: prompt,
             genre: gender,
             isCover: Boolean(audioFile || audioUploadUrl),
