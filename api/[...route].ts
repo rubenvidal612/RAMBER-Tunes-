@@ -2824,14 +2824,19 @@ const mercadoPagoHandler = (() => {
       return;
     }
 
-    const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
-    let affiliateActive = Boolean((plan as any)?.plan_active);
-    if (!affiliateActive) {
-      try {
-        const u = await admin.auth.admin.getUserById(affiliateUserId);
-        const email = (u as any)?.data?.user?.email || "";
-        if (isAdminEmail(email)) affiliateActive = true;
-      } catch {}
+    let affiliateActive = false;
+    try {
+      const u = await admin.auth.admin.getUserById(affiliateUserId);
+      const email = (u as any)?.data?.user?.email || "";
+      if (isAdminEmail(email)) {
+        affiliateActive = true;
+      } else {
+        const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
+        affiliateActive = Boolean((plan as any)?.plan_active);
+      }
+    } catch {
+      const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
+      affiliateActive = Boolean((plan as any)?.plan_active);
     }
 
     let commissionId = "";
