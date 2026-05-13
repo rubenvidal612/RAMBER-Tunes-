@@ -1333,6 +1333,7 @@ export function CloneVoiceView() {
                   '';
                 const hasAudio = Boolean(playableUrl);
                 const displayName = (voice.voice_profile_name || voice.voice_name || '').toString().trim() || 'Voz';
+                const isPlaying = playingVoiceId === voice.voice_id;
                 return (
                   <div key={voice.id} className="min-w-0">
                     <button
@@ -1403,6 +1404,27 @@ export function CloneVoiceView() {
                         </div>
                       ) : null}
                     </button>
+
+                    {!isManageVoices && hasAudio ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          playVoice(voice);
+                        }}
+                        className={cn(
+                          "mt-2 w-full rounded-2xl border px-3 py-2 text-sm font-extrabold flex items-center justify-center gap-2 transition-colors",
+                          "bg-white/5 border-white/10 text-slate-100 hover:bg-white/10",
+                          isPlaying ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200" : ""
+                        )}
+                        aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                        title={isPlaying ? 'Pausar' : 'Reproducir'}
+                      >
+                        {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                        {isPlaying ? 'Pausar' : 'Play'}
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}
