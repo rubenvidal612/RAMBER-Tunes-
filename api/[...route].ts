@@ -2643,16 +2643,22 @@ notify pgrst, 'reload schema';`;
     try {
       let finalUploadUrl = "";
       let finalTitle = rawTitle || "Cover Personalizado";
+      let baseSunoTaskId = "";
+      let baseSunoAudioId = "";
+      let baseSongDbId = "";
       if (songId) {
         const { data: baseSong, error: baseErr } = await auth.admin
           .from("library_items")
-          .select("id, user_id, title, audio_url, deleted_at, type")
+          .select("id, user_id, title, audio_url, deleted_at, type, suno_task_id, suno_audio_id")
           .eq("id", songId.slice(0, 200))
           .eq("user_id", user.id)
           .eq("type", "song")
           .maybeSingle();
         if (baseErr) return send(res, 500, { error: "No pude buscar la canción", detail: baseErr.message });
         if (!baseSong || (baseSong as any).deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+        baseSongDbId = String((baseSong as any).id || "").trim();
+        baseSunoTaskId = String((baseSong as any).suno_task_id || "").trim();
+        baseSunoAudioId = String((baseSong as any).suno_audio_id || "").trim();
         const aurl = String((baseSong as any).audio_url || "").trim();
         if (!aurl) return send(res, 404, { error: "La canción no tiene audio" });
         finalTitle = rawTitle || `${String((baseSong as any).title || "Canción").trim().slice(0, 90)} (Voz clonada)`;
@@ -2676,6 +2682,87 @@ notify pgrst, 'reload schema';`;
               detail: e instanceof Error ? e.message : String(e),
               hint: "Tip: Reproduce la canción una vez en Biblioteca y vuelve a intentar.",
             });
+          }
+        }
+
+        const checkUrl = async (url: string) => {
+          try {
+            const r = await fetch(url, { method: "HEAD" });
+            return { ok: r.ok, status: r.status };
+          } catch {
+            try {
+              const r = await fetch(url, { method: "GET", headers: { range: "bytes=0-0" } as any });
+              return { ok: r.ok, status: r.status };
+            } catch {
+              return { ok: false, status: 0 };
+            }
+          }
+        };
+
+        const check = await checkUrl(finalUploadUrl);
+        const looksMissing = !check.ok && (check.status === 404 || check.status === 0);
+        if (looksMissing && baseSunoTaskId) {
+          try {
+            const enc = encodeURIComponent(baseSunoTaskId);
+            const paths = [
+              `/api/v1/generate/record-info?taskId=${enc}`,
+              `/api/v1/suno/generate/record-info?taskId=${enc}`,
+              `/api/v1/task/${enc}`,
+              `/api/v1/suno/task/${enc}`,
+            ];
+            let last: any = null;
+            for (const p of paths) {
+              const r = await sunoFetchJson(p, { method: "GET" });
+              last = r;
+              if (r.res.status !== 404) break;
+            }
+            const { res: tr, data } = last || {};
+            if (tr && tr.ok) {
+              const root = data?.data || data?.data?.data || data || {};
+              const candidates: any[] = [];
+              if (Array.isArray(root?.response?.data)) candidates.push(root.response.data);
+              if (Array.isArray(root?.response?.sunoData)) candidates.push(root.response.sunoData);
+              if (Array.isArray(root?.response)) candidates.push(root.response);
+              if (Array.isArray(root?.data)) candidates.push(root.data);
+              if (Array.isArray(root?.data?.data)) candidates.push(root.data.data);
+              const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+              const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+              const pickUrl = (track: any) =>
+                cleanStr(
+                  track?.audio_url ||
+                    track?.audioUrl ||
+                    track?.streamAudioUrl ||
+                    track?.stream_audio_url ||
+                    track?.stream_url ||
+                    track?.url ||
+                    ""
+                );
+              const pickAudioId = (track: any) =>
+                cleanStr(track?.audio_id || track?.audioId || track?.id || track?.suno_audio_id || track?.sunoAudioId || "");
+              const match = baseSunoAudioId
+                ? list.find((t: any) => pickAudioId(t) && pickAudioId(t) === baseSunoAudioId)
+                : null;
+              const chosen = match || list[0];
+              const refreshedUrl = pickUrl(chosen);
+              const refreshedAudioId = pickAudioId(chosen);
+              if (/^https?:\/\//i.test(refreshedUrl)) {
+                finalUploadUrl = refreshedUrl;
+                try {
+                  if (baseSongDbId) {
+                    await auth.admin
+                      .from("library_items")
+                      .update({
+                        audio_url: refreshedUrl,
+                        suno_audio_id: refreshedAudioId || baseSunoAudioId || null,
+                      })
+                      .eq("id", baseSongDbId)
+                      .eq("user_id", user.id);
+                  }
+                } catch {
+                }
+              }
+            }
+          } catch {
           }
         }
       } else if (uploadUrl || uploadPath) {
