@@ -165,7 +165,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         const now = Date.now();
         const base = Math.max(0, Number(first?.startedAt || 0));
         const step = Math.max(0, Math.floor((now - base) / 3500));
-        const simulated = Math.min(95, Math.max(3, 5 + step * 2));
+        const simulatedBase = Math.min(95, Math.max(3, 5 + step * 2));
+        const simulated = (() => {
+          if (rawStatus === 'starting') return Math.min(30, simulatedBase);
+          if (rawStatus === 'processing') return Math.min(85, simulatedBase);
+          if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return Math.min(98, Math.max(90, simulatedBase));
+          return simulatedBase;
+        })();
         const pctFromStatus = (() => {
           if (out?.imported) return 100;
           if (rawStatus === 'starting') return 10;
@@ -1160,6 +1166,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             }}
                           />
                         </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          {(() => {
+                            const base = Math.max(0, Number(pendingRvcCovers[0]?.startedAt || 0));
+                            const sec = Math.max(0, Math.floor((Date.now() - base) / 1000));
+                            const mins = Math.floor(sec / 60);
+                            const hrs = Math.floor(mins / 60);
+                            const mm = (mins % 60).toString().padStart(2, '0');
+                            const ss = (sec % 60).toString().padStart(2, '0');
+                            return hrs > 0 ? `Tiempo: ${hrs}:${mm}:${ss}` : `Tiempo: ${mm}:${ss}`;
+                          })()}
+                        </div>
                       </div>
                       <div className="text-slate-500 text-[11px] truncate">{`ID: ${pendingRvcCovers[0]?.predictionId || ''}`}</div>
                     </div>
@@ -1169,6 +1186,50 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                       >
                         Actualizar
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const first = pendingRvcCovers[0];
+                          if (!first?.songId || !first?.voiceId) return;
+                          try {
+                            const t = await getAccessToken();
+                            if (!t.ok) return;
+                            const r = await fetch('/api/suno/create-cover', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${t.token}`,
+                              },
+                              body: JSON.stringify({ songId: first.songId, voiceId: first.voiceId }),
+                            });
+                            const out = await r.json().catch(() => ({}));
+                            if (!r.ok) {
+                              const msg = [out?.error, out?.detail, out?.hint]
+                                .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+                                .filter(Boolean)
+                                .join('\n\n');
+                              alert(msg || 'No pude reintentar el cover');
+                              return;
+                            }
+                            const nextId = (out?.predictionId || out?.coverId || '').toString().trim();
+                            if (!nextId) return;
+                            try {
+                              const key = 'ramber.pendingRvcCovers_v1';
+                              const raw = window.localStorage.getItem(key);
+                              const parsed = raw ? JSON.parse(raw) : null;
+                              const list = Array.isArray(parsed) ? parsed : [];
+                              const filtered = list.filter((x: any) => String(x?.predictionId || '').trim() !== String(first.predictionId || '').trim());
+                              filtered.push({ predictionId: nextId, startedAt: Date.now(), songId: first.songId, voiceId: first.voiceId });
+                              window.localStorage.setItem(key, JSON.stringify(filtered.slice(-10)));
+                            } catch {
+                            }
+                            onRefreshSongs?.();
+                          } catch {
+                          }
+                        }}
+                        className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                      >
+                        Reintentar
                       </button>
                       <button
                         onClick={() => {

@@ -2894,6 +2894,33 @@ notify pgrst, 'reload schema';`;
         return send(res, 400, { error: "No se pudo obtener la URL del modelo de voz" });
       }
 
+      try {
+        const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+        const { data: existingRows } = await auth.admin
+          .from("rvc_covers")
+          .select("prediction_id,status,created_at,updated_at")
+          .eq("user_id", user.id)
+          .eq("original_audio_url", finalUploadUrl)
+          .eq("voice_id", voiceId || "")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+        const status = String((existing as any)?.status || "").toString().trim().toLowerCase();
+        const createdAt = String((existing as any)?.created_at || "").trim();
+        const isRecent = createdAt && createdAt >= since;
+        if (existing && isRecent && status === "processing" && (existing as any)?.prediction_id) {
+          return send(res, 200, {
+            coverId: String((existing as any).prediction_id),
+            predictionId: String((existing as any).prediction_id),
+            message: "Cover en proceso. Ya había uno creando. Se seguirá usando ese mismo.",
+            status: "processing",
+            reused: true,
+            cost,
+          });
+        }
+      } catch {
+      }
+
       // Llamar a Replicate API para crear el cover
       const replicateToken = process.env.REPLICATE_API_TOKEN;
       if (!replicateToken) {
