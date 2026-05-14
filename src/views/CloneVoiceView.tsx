@@ -71,6 +71,8 @@ export function CloneVoiceView() {
   const [coverProgress, setCoverProgress] = useState('');
   const [coverError, setCoverError] = useState('');
   const [coverSuccess, setCoverSuccess] = useState('');
+  const [showPickCoverSong, setShowPickCoverSong] = useState(false);
+  const [showPickCoverVoice, setShowPickCoverVoice] = useState(false);
 
   const loadVoices = async () => {
     const t = await getAccessToken();
@@ -1285,43 +1287,40 @@ export function CloneVoiceView() {
 
           <div className="space-y-3">
             <div className="text-slate-300 text-sm">Canción</div>
-            <select
-              value={coverSongId}
-              onChange={(e) => setCoverSongId(e.target.value)}
-              className="w-full glass-card rounded-2xl p-3 text-sm text-white outline-none border border-white/10 bg-white/5"
-              disabled={isCoverBusy}
+            <button
+              type="button"
+              onClick={() => setShowPickCoverSong(true)}
+              disabled={isCoverBusy || librarySongs.length === 0}
+              className={cn(
+                "w-full glass-card rounded-2xl p-3 text-sm border border-white/10 text-left transition-colors",
+                isCoverBusy || librarySongs.length === 0 ? "bg-white/5 text-slate-500" : "bg-white/5 hover:bg-white/10 text-white"
+              )}
             >
-              <option value="">Selecciona una canción</option>
-              {librarySongs.map((s) => {
-                const ok = Boolean(s.suno_task_id || s.suno_audio_id);
-                const label = `${s.title}${ok ? '' : ' (no se puede separar)'}`;
-                return (
-                  <option key={s.id} value={s.id}>
-                    {label}
-                  </option>
-                );
-              })}
-            </select>
+              {(() => {
+                const s = librarySongs.find((x) => x.id === coverSongId) || null;
+                if (s) return s.title || 'Canción';
+                return librarySongs.length > 0 ? 'Seleccionar canción de la Biblioteca' : 'Cargando canciones…';
+              })()}
+            </button>
 
             <div className="text-slate-300 text-sm">Voz</div>
-            <select
-              value={coverVoiceId}
-              onChange={(e) => setCoverVoiceId(e.target.value)}
-              className="w-full glass-card rounded-2xl p-3 text-sm text-white outline-none border border-white/10 bg-white/5"
-              disabled={isCoverBusy}
+            <button
+              type="button"
+              onClick={() => setShowPickCoverVoice(true)}
+              disabled={isCoverBusy || voices.filter((v) => v.status === 'ready').length === 0}
+              className={cn(
+                "w-full glass-card rounded-2xl p-3 text-sm border border-white/10 text-left transition-colors",
+                isCoverBusy || voices.filter((v) => v.status === 'ready').length === 0
+                  ? "bg-white/5 text-slate-500"
+                  : "bg-white/5 hover:bg-white/10 text-white"
+              )}
             >
-              <option value="">Selecciona una voz</option>
-              {voices
-                .filter((v) => v.status === 'ready')
-                .map((v) => {
-                  const displayName = (v.voice_profile_name || v.voice_name || '').toString().trim() || 'Voz';
-                  return (
-                    <option key={v.voice_id} value={v.voice_id}>
-                      {displayName}
-                    </option>
-                  );
-                })}
-            </select>
+              {(() => {
+                const v = voices.find((x) => x.voice_id === coverVoiceId) || null;
+                if (v) return ((v.voice_profile_name || v.voice_name || '').toString().trim() || 'Voz');
+                return voices.filter((x) => x.status === 'ready').length > 0 ? 'Seleccionar tu voz clonada' : 'No hay voces listas';
+              })()}
+            </button>
 
             <button
               onClick={() => createHqCoverFromLibrarySong().catch(() => {})}
@@ -1355,6 +1354,103 @@ export function CloneVoiceView() {
             ) : null}
           </div>
         </div>
+
+        {showPickCoverSong ? (
+          <div className="fixed inset-0 z-[2147483647] bg-black/70 flex items-end md:items-center justify-center">
+            <button className="absolute inset-0 w-full h-full" onClick={() => setShowPickCoverSong(false)} aria-label="Cerrar" />
+            <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[85vh] flex flex-col">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                <div className="text-white font-extrabold">Selecciona una canción</div>
+                <button
+                  onClick={() => setShowPickCoverSong(false)}
+                  className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto">
+                <div className="space-y-2">
+                  {librarySongs.map((s) => {
+                    const ok = Boolean(s.suno_task_id || s.suno_audio_id);
+                    const active = s.id === coverSongId;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={!ok}
+                        onClick={() => {
+                          if (!ok) return;
+                          setCoverSongId(s.id);
+                          setShowPickCoverSong(false);
+                        }}
+                        className={cn(
+                          "w-full text-left rounded-2xl p-4 border transition-colors",
+                          !ok ? "bg-white/5 border-white/10 text-slate-500 opacity-70" : active ? "bg-purple-600/20 border-purple-500/30 text-white" : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+                        )}
+                      >
+                        <div className="font-extrabold truncate">{s.title || 'Canción'}</div>
+                        <div className="text-xs text-slate-400 truncate">{ok ? 'Lista para separar voz/instrumental' : 'No se puede separar (no tiene info del proveedor)'}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showPickCoverVoice ? (
+          <div className="fixed inset-0 z-[2147483647] bg-black/70 flex items-end md:items-center justify-center">
+            <button className="absolute inset-0 w-full h-full" onClick={() => setShowPickCoverVoice(false)} aria-label="Cerrar" />
+            <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[85vh] flex flex-col">
+              <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                <div className="text-white font-extrabold">Selecciona una voz</div>
+                <button
+                  onClick={() => setShowPickCoverVoice(false)}
+                  className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto">
+                <div className="space-y-2">
+                  {voices
+                    .filter((v) => v.status === 'ready')
+                    .map((v) => {
+                      const name = (v.voice_profile_name || v.voice_name || '').toString().trim() || 'Voz';
+                      const active = v.voice_id === coverVoiceId;
+                      return (
+                        <button
+                          key={v.voice_id}
+                          type="button"
+                          onClick={() => {
+                            setCoverVoiceId(v.voice_id);
+                            setShowPickCoverVoice(false);
+                          }}
+                          className={cn(
+                            "w-full text-left rounded-2xl p-4 border transition-colors flex items-center gap-3",
+                            active ? "bg-purple-600/20 border-purple-500/30 text-white" : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+                          )}
+                        >
+                          <div className="w-12 h-12 rounded-2xl overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                            {v.profile_image_url ? (
+                              <img src={v.profile_image_url} alt={name} className="w-full h-full object-cover" />
+                            ) : (
+                              <User className="w-6 h-6 text-slate-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-extrabold truncate">{name}</div>
+                            <div className="text-xs text-slate-400 truncate">Lista para usar</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* Audio Requirements Info */}
         <div className="glass-card rounded-3xl border border-white/10 p-5">
