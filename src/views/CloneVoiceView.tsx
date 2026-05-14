@@ -19,6 +19,16 @@ interface VoiceItem {
   voice_profile_name?: string | null;
 }
 
+interface LibrarySongItem {
+  id: string;
+  title: string;
+  description: string;
+  audio_url: string;
+  cover_url: string;
+  suno_task_id: string;
+  suno_audio_id: string;
+}
+
 export function CloneVoiceView() {
   const DRAFT_KEY = 'ramber.cloneVoiceDraft.v1';
   const [voiceName, setVoiceName] = useState('');
@@ -53,6 +63,14 @@ export function CloneVoiceView() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editImageInputRef = useRef<HTMLInputElement>(null);
+
+  const [librarySongs, setLibrarySongs] = useState<LibrarySongItem[]>([]);
+  const [coverSongId, setCoverSongId] = useState('');
+  const [coverVoiceId, setCoverVoiceId] = useState('');
+  const [isCoverBusy, setIsCoverBusy] = useState(false);
+  const [coverProgress, setCoverProgress] = useState('');
+  const [coverError, setCoverError] = useState('');
+  const [coverSuccess, setCoverSuccess] = useState('');
 
   const loadVoices = async () => {
     const t = await getAccessToken();
@@ -115,6 +133,44 @@ export function CloneVoiceView() {
       console.error('Error loading voices:', e);
     }
   };
+
+  const loadLibrarySongs = async () => {
+    const t = await getAccessToken();
+    if (!t.ok) return;
+    try {
+      const r = await fetch('/api/library/list?deleted=0', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) return;
+      const rows = Array.isArray(out?.songs) ? out.songs : [];
+      const mapped: LibrarySongItem[] = rows
+        .map((s: any) => ({
+          id: String(s?.id || '').trim(),
+          title: String(s?.title || '').trim() || 'Canción',
+          description: String(s?.description || '').trim(),
+          audio_url: String(s?.audio_url || s?.audioUrl || '').trim(),
+          cover_url: String(s?.cover_url || s?.coverUrl || '').trim(),
+          suno_task_id: String(s?.suno_task_id || s?.sunoTaskId || '').trim(),
+          suno_audio_id: String(s?.suno_audio_id || s?.sunoAudioId || '').trim(),
+        }))
+        .filter((s: any) => s.id);
+      setLibrarySongs(mapped);
+      if (!coverSongId) {
+        const firstEligible = mapped.find((x) => x.suno_task_id || x.suno_audio_id) || mapped[0];
+        if (firstEligible?.id) setCoverSongId(firstEligible.id);
+      }
+    } catch {
+    }
+  };
+
+  useEffect(() => {
+    loadLibrarySongs().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (coverVoiceId) return;
+    const firstReady = voices.find((v) => v.status === 'ready') || voices[0];
+    if (firstReady?.voice_id) setCoverVoiceId(firstReady.voice_id);
+  }, [voices.length]);
 
   const checkVoiceStatus = async (voiceId: string) => {
     const t = await getAccessToken();
@@ -850,6 +906,361 @@ export function CloneVoiceView() {
     return msg;
   };
 
+  function parseVocalRemovalItems(provider: any) {
+    const cleanUrl = (raw: any) =>
+      String(raw || '')
+        .replace(/^"+|"+$/g, '')
+        .trim();
+
+    const map: Record<string, string> = {
+      originUrl: 'Original',
+      instrumentalUrl: 'Instrumental (Karaoke)',
+      vocalUrl: 'Voz',
+      backingVocalsUrl: 'Coros',
+      drumsUrl: 'Batería',
+      bassUrl: 'Bajo',
+      pianoUrl: 'Piano',
+      guitarUrl: 'Guitarra',
+      stringsUrl: 'Cuerdas',
+      woodwindsUrl: 'Vientos',
+      brassUrl: 'Metales',
+      synthUrl: 'Synth',
+      otherUrl: 'Otros',
+    };
+    const map2: Record<string, string> = {
+      Vocals: 'Voz',
+      Instrumental: 'Instrumental (Karaoke)',
+      'Backing Vocals': 'Coros',
+      Drums: 'Batería',
+      Bass: 'Bajo',
+      Piano: 'Piano',
+      Guitar: 'Guitarra',
+      Strings: 'Cuerdas',
+      Woodwinds: 'Vientos',
+      Brass: 'Metales',
+      Synth: 'Synth',
+      Other: 'Otros',
+    };
+
+    const takeObj = (x: any) => (x && typeof x === 'object' ? x : null);
+    const root = takeObj(provider?.data?.response) || takeObj(provider?.data?.data?.response) || takeObj(provider?.data?.data?.data?.response) || takeObj(provider?.data) || provider || {};
+
+    const items: Array<{ key: string; label: string; url: string; audioId?: string }> = [];
+    const push = (key: string, url: any, label?: string, audioId?: any) => {
+      const u = cleanUrl(url);
+      if (!/^https?:\/\//i.test(u)) return;
+      const k = String(key || '').trim();
+      if (!k) return;
+      const l = String(label || map[k] || map2[k] || k).trim();
+      const aid = typeof audioId === 'string' ? audioId.trim() : audioId == null ? '' : String(audioId).trim();
+      items.push({ key: k, label: l || k, url: u, audioId: aid || undefined });
+    };
+
+    const direct = root?.data || root?.result || root?.response || root;
+    if (direct && typeof direct === 'object') {
+      for (const k of Object.keys(map)) {
+        if ((direct as any)[k]) push(k, (direct as any)[k], map[k], (direct as any)?.audioId || (direct as any)?.audio_id);
+      }
+    }
+
+    const stems = Array.isArray(root?.stems) ? root.stems : Array.isArray(direct?.stems) ? direct.stems : [];
+    for (const s of stems) {
+      const name = String(s?.name || s?.label || '').trim();
+      const url = s?.url || s?.audio || s?.audio_url;
+      if (!name) continue;
+      const label = map2[name] || name;
+      const norm = name.trim().replace(/\s+/g, ' ');
+      const lower = norm.toLowerCase();
+      const fixed: Record<string, string> = {
+        vocals: 'vocalUrl',
+        vocal: 'vocalUrl',
+        instrumental: 'instrumentalUrl',
+        'backing vocals': 'backingVocalsUrl',
+        drums: 'drumsUrl',
+        bass: 'bassUrl',
+        piano: 'pianoUrl',
+        guitar: 'guitarUrl',
+        strings: 'stringsUrl',
+        woodwinds: 'woodwindsUrl',
+        brass: 'brassUrl',
+        synth: 'synthUrl',
+        other: 'otherUrl',
+      };
+      const key = fixed[lower] || norm;
+      push(key, url, label, s?.audioId || s?.audio_id);
+    }
+
+    const seen = new Set<string>();
+    return items.filter((x) => {
+      const k = `${x.key}|${x.url}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+
+  const createHqCoverFromLibrarySong = async () => {
+    if (isCoverBusy) return;
+    setCoverError('');
+    setCoverSuccess('');
+    setCoverProgress('');
+    const t = await getAccessToken();
+    if (!t.ok) {
+      setCoverError(t.error || 'No se pudo iniciar sesión.');
+      return;
+    }
+
+    const song = librarySongs.find((s) => s.id === coverSongId) || null;
+    if (!song) {
+      setCoverError('Selecciona una canción.');
+      return;
+    }
+    if (!coverVoiceId) {
+      setCoverError('Selecciona una voz.');
+      return;
+    }
+    if (!song.suno_task_id && !song.suno_audio_id) {
+      setCoverError('Esa canción no se puede separar (no tiene taskId/audioId).');
+      return;
+    }
+
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const parseStatus = (provider: any) => {
+      const data = provider?.data || provider?.data?.data || provider;
+      const raw = data?.data?.status ?? data?.data?.successFlag ?? data?.status ?? data?.successFlag ?? '';
+      return String(raw || '').toUpperCase();
+    };
+    const importAudio = async (params: {
+      sourceUrl: string;
+      title: string;
+      description?: string;
+      coverUrl?: string;
+      externalId?: string;
+      sunoTaskId?: string;
+    }) => {
+      const r = await fetch('/api/library/import-audio', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          sourceUrl: params.sourceUrl,
+          title: params.title,
+          description: params.description || '',
+          coverUrl: params.coverUrl || '',
+          externalId: params.externalId || '',
+          sunoTaskId: params.sunoTaskId || '',
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude guardar en Biblioteca.').toString());
+      return out?.song ?? null;
+    };
+
+    const decodeAudio = async (ctx: AudioContext, buf: ArrayBuffer): Promise<AudioBuffer> => {
+      return await new Promise((resolve, reject) => {
+        const p = ctx.decodeAudioData(buf.slice(0));
+        if (p && typeof (p as any).then === 'function') {
+          (p as any).then(resolve).catch(reject);
+        } else {
+          ctx.decodeAudioData(buf.slice(0), resolve, reject);
+        }
+      });
+    };
+
+    const mixToWavBlob = async (instUrl: string, vocalUrl: string) => {
+      const r1 = await fetch(instUrl);
+      if (!r1.ok) throw new Error(`No pude descargar instrumental (HTTP ${r1.status}).`);
+      const r2 = await fetch(vocalUrl);
+      if (!r2.ok) throw new Error(`No pude descargar voz clonada (HTTP ${r2.status}).`);
+      const b1 = await r1.arrayBuffer();
+      const b2 = await r2.arrayBuffer();
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) throw new Error('Tu navegador no soporta mezclar audio aquí.');
+      const ctx = new AudioCtx();
+      try {
+        const a1 = await decodeAudio(ctx, b1);
+        const a2 = await decodeAudio(ctx, b2);
+        const sr = a1.sampleRate || 44100;
+        const length = Math.max(a1.length, a2.length);
+        const oc = new OfflineAudioContext(2, Math.max(1, length), sr);
+        const g1 = oc.createGain();
+        g1.gain.value = 1;
+        const g2 = oc.createGain();
+        g2.gain.value = 1;
+        const s1 = oc.createBufferSource();
+        s1.buffer = a1;
+        s1.connect(g1);
+        g1.connect(oc.destination);
+        const s2 = oc.createBufferSource();
+        s2.buffer = a2;
+        s2.connect(g2);
+        g2.connect(oc.destination);
+        s1.start(0);
+        s2.start(0);
+        const rendered = await oc.startRendering();
+        return audioBufferToWavBlob(rendered);
+      } finally {
+        try {
+          await ctx.close();
+        } catch {
+        }
+      }
+    };
+
+    try {
+      setIsCoverBusy(true);
+      const baseName = (song.title || 'Canción').toString().trim().slice(0, 100);
+      const desc = (song.description || '').toString().trim().slice(0, 2000);
+      const coverUrl = (song.cover_url || '').toString().trim().slice(0, 2000);
+
+      setCoverProgress('Separando voz e instrumentos…');
+      const start = await fetch('/api/suno/separate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: song.suno_task_id || '', audioId: song.suno_audio_id || '', type: 'split_stem' }),
+      });
+      const startedOut = await start.json().catch(() => ({}));
+      if (!start.ok) throw new Error((startedOut?.detail || startedOut?.error || 'No pude iniciar la separación.').toString());
+      const sepTaskId = String(startedOut?.taskId || '').trim();
+      if (!sepTaskId) throw new Error('No recibí taskId de separación.');
+
+      let provider: any = null;
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 30 * 60 * 1000) {
+        await delay(3500);
+        const tr = await fetch(`/api/suno/task?kind=split_stem&taskId=${encodeURIComponent(sepTaskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const tout = await tr.json().catch(() => ({}));
+        if (!tr.ok) continue;
+        provider = tout?.data;
+        const status = parseStatus(provider);
+        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'CALLBACK_EXCEPTION') {
+          throw new Error('No se pudo separar la canción en stems.');
+        }
+        if (status === 'SUCCESS') break;
+      }
+
+      const items = parseVocalRemovalItems(provider);
+      const vocalItem = items.find((x: any) => (x?.key || '').trim() === 'vocalUrl');
+      const instItem = items.find((x: any) => (x?.key || '').trim() === 'instrumentalUrl');
+      if (!vocalItem?.url || !instItem?.url) throw new Error('Terminó, pero no recibí links de stems (voz/instrumental).');
+
+      setCoverProgress('Guardando stems…');
+      const instSaved = await importAudio({
+        sourceUrl: instItem.url,
+        title: `${baseName} - Instrumental`.slice(0, 120),
+        description: desc,
+        coverUrl,
+        externalId: `stem_${sepTaskId}_instrumentalUrl`,
+        sunoTaskId: sepTaskId,
+      }).catch(() => null);
+
+      const vocalSaved = await importAudio({
+        sourceUrl: vocalItem.url,
+        title: `${baseName} - Voz`.slice(0, 120),
+        description: desc,
+        coverUrl,
+        externalId: `stem_${sepTaskId}_vocalUrl`,
+        sunoTaskId: sepTaskId,
+      }).catch(() => null);
+
+      const vocalInputUrl =
+        (typeof (vocalSaved as any)?.audio_url === 'string' ? String((vocalSaved as any).audio_url).trim() : '') || vocalItem.url;
+      if (!vocalInputUrl) throw new Error('No pude preparar el audio de voz para clonar.');
+
+      setCoverProgress('Clonando solo la voz…');
+      const coverRes = await fetch('/api/suno/create-cover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ uploadUrl: vocalInputUrl, voiceId: coverVoiceId, title: `${baseName} - Voz clonada`.slice(0, 120), outputFormat: 'wav' }),
+      });
+      const coverOut = await coverRes.json().catch(() => ({}));
+      if (!coverRes.ok) {
+        const msg = [coverOut?.error, coverOut?.detail, coverOut?.hint].map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean).join('\n\n');
+        throw new Error(msg || 'No pude iniciar el clonado.');
+      }
+      const predictionId = String(coverOut?.predictionId || coverOut?.coverId || '').trim();
+      if (!predictionId) throw new Error('No recibí predictionId del clonador.');
+
+      let outputUrl = '';
+      const cloneStartedAt = Date.now();
+      while (Date.now() - cloneStartedAt < 45 * 60 * 1000) {
+        await delay(5000);
+        const sr = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(predictionId)}&nocache=1`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const sout = await sr.json().catch(() => ({}));
+        if (!sr.ok) continue;
+        const rawStatus = (sout?.replicateStatus || sout?.status || '').toString().trim().toLowerCase();
+        if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') {
+          throw new Error((sout?.importError || sout?.replicateFetchError || sout?.error || 'El clonador falló.').toString());
+        }
+        const u = typeof sout?.outputUrl === 'string' ? sout.outputUrl.trim() : '';
+        if (u && (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready')) {
+          outputUrl = u;
+          break;
+        }
+      }
+      if (!outputUrl) throw new Error('El clonador está tardando demasiado. Intenta más tarde.');
+
+      setCoverProgress('Guardando voz clonada…');
+      const clonedSaved = await importAudio({
+        sourceUrl: outputUrl,
+        title: `${baseName} - Voz clonada`.slice(0, 120),
+        description: desc,
+        coverUrl,
+        externalId: `rvc_vocals_${predictionId}`.slice(0, 200),
+      }).catch(() => null);
+
+      const instId = String((instSaved as any)?.id || '').trim();
+      const vocalsId = String((clonedSaved as any)?.id || '').trim();
+      const instFetchUrl = instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : instItem.url;
+      const vocalFetchUrl = vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : outputUrl;
+
+      setCoverProgress('Mezclando…');
+      const mixed = await mixToWavBlob(instFetchUrl, vocalFetchUrl);
+
+      setCoverProgress('Subiendo audio final…');
+      const up = await fetch('/api/upload-audio', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ title: `${baseName} (voz clonada)`.slice(0, 120), contentType: 'audio/wav' }),
+      });
+      const upOut = await up.json().catch(() => ({}));
+      if (!up.ok || upOut?.ok !== true || !upOut?.uploadUrl || !upOut?.key) {
+        throw new Error((upOut?.error || 'No pude preparar la subida del audio final.').toString());
+      }
+
+      const put = await fetch(String(upOut.uploadUrl), { method: 'PUT', headers: { 'content-type': 'audio/wav' }, body: mixed });
+      if (!put.ok) {
+        throw new Error('No pude subir el audio final. Si sale un error de CORS, hay que habilitar CORS en Cloudflare R2 (una sola vez).');
+      }
+
+      const created = await fetch('/api/library/create-from-r2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          key: String(upOut.key),
+          title: `${baseName} (voz clonada)`.slice(0, 120),
+          description: desc,
+          coverUrl,
+          isCover: true,
+          externalId: `rvc_mix_${predictionId}`.slice(0, 200),
+        }),
+      });
+      const createdOut = await created.json().catch(() => ({}));
+      if (!created.ok) throw new Error((createdOut?.detail || createdOut?.error || 'No pude guardar el audio final en Biblioteca.').toString());
+
+      setCoverSuccess('Listo. Ya está en tu Biblioteca.');
+      setCoverProgress('');
+      loadLibrarySongs().catch(() => {});
+    } catch (e) {
+      setCoverError(e instanceof Error ? e.message : 'Error creando el cover.');
+    } finally {
+      setIsCoverBusy(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto">
       <div className="max-w-[720px] mx-auto w-full space-y-6">
@@ -859,6 +1270,90 @@ export function CloneVoiceView() {
           <p className="text-sm text-slate-300 mt-1">
             Sube un audio de tu voz para crear un clon que podrás usar en tus canciones.
           </p>
+        </div>
+
+        <div className="glass-card rounded-3xl border border-white/10 p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
+              <Mic className="w-6 h-6 text-purple-200" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-white font-extrabold">Clonar voz en una canción</div>
+              <div className="text-xs text-slate-300">Mejor calidad: separa voz, clona solo la voz y luego mezcla con instrumental</div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-slate-300 text-sm">Canción</div>
+            <select
+              value={coverSongId}
+              onChange={(e) => setCoverSongId(e.target.value)}
+              className="w-full glass-card rounded-2xl p-3 text-sm text-white outline-none border border-white/10 bg-white/5"
+              disabled={isCoverBusy}
+            >
+              <option value="">Selecciona una canción</option>
+              {librarySongs.map((s) => {
+                const ok = Boolean(s.suno_task_id || s.suno_audio_id);
+                const label = `${s.title}${ok ? '' : ' (no se puede separar)'}`;
+                return (
+                  <option key={s.id} value={s.id}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+
+            <div className="text-slate-300 text-sm">Voz</div>
+            <select
+              value={coverVoiceId}
+              onChange={(e) => setCoverVoiceId(e.target.value)}
+              className="w-full glass-card rounded-2xl p-3 text-sm text-white outline-none border border-white/10 bg-white/5"
+              disabled={isCoverBusy}
+            >
+              <option value="">Selecciona una voz</option>
+              {voices
+                .filter((v) => v.status === 'ready')
+                .map((v) => {
+                  const displayName = (v.voice_profile_name || v.voice_name || '').toString().trim() || 'Voz';
+                  return (
+                    <option key={v.voice_id} value={v.voice_id}>
+                      {displayName}
+                    </option>
+                  );
+                })}
+            </select>
+
+            <button
+              onClick={() => createHqCoverFromLibrarySong().catch(() => {})}
+              disabled={isCoverBusy || !coverSongId || !coverVoiceId}
+              className={cn(
+                "w-full py-3.5 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
+                isCoverBusy || !coverSongId || !coverVoiceId
+                  ? "bg-white/10 text-slate-400 cursor-not-allowed"
+                  : "bg-purple-600 hover:bg-purple-500 text-white"
+              )}
+            >
+              {isCoverBusy ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" /> Crear cover (mejor calidad)
+                </>
+              )}
+            </button>
+
+            {coverProgress ? <div className="text-xs text-slate-300">{coverProgress}</div> : null}
+            {coverError ? (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-300 text-sm">{coverError}</div>
+            ) : null}
+            {coverSuccess ? (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-emerald-300 text-sm">
+                {coverSuccess} Ve a Biblioteca para verla.
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Audio Requirements Info */}
