@@ -1198,6 +1198,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           const first = pendingRvcCovers[0];
                           if (!first?.songId || !first?.voiceId) return;
                           try {
+                            const cooldownUntil = Number(window.localStorage.getItem('ramber.replicateCooldownUntil_v1') || 0);
+                            if (Number.isFinite(cooldownUntil) && cooldownUntil > Date.now()) {
+                              const sec = Math.max(1, Math.ceil((cooldownUntil - Date.now()) / 1000));
+                              alert(`Espera ${sec} segundos y vuelve a intentar.\n\nReplicate está limitando solicitudes (429).`);
+                              return;
+                            }
+                          } catch {
+                          }
+                          try {
                             const t = await getAccessToken();
                             if (!t.ok) return;
                             const r = await fetch('/api/suno/create-cover', {
@@ -1214,6 +1223,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                 .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
                                 .filter(Boolean)
                                 .join('\n\n');
+                              try {
+                                const status = Number(out?.status ?? 0);
+                                if (status === 429) {
+                                  window.localStorage.setItem('ramber.replicateCooldownUntil_v1', String(Date.now() + 2 * 60 * 1000));
+                                }
+                              } catch {
+                              }
                               alert(msg || 'No pude reintentar el cover');
                               return;
                             }

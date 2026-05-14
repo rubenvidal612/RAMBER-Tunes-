@@ -2657,6 +2657,7 @@ notify pgrst, 'reload schema';`;
 
     try {
       let finalUploadUrl = "";
+      let sourceAudioRef = "";
       let finalTitle = rawTitle || "Cover Personalizado";
       let baseSunoTaskId = "";
       let baseSunoAudioId = "";
@@ -2678,6 +2679,7 @@ notify pgrst, 'reload schema';`;
         if (!aurl) return send(res, 404, { error: "La canción no tiene audio" });
         finalTitle = rawTitle || `${String((baseSong as any).title || "Canción").trim().slice(0, 90)} (Voz clonada)`;
         finalUploadUrl = aurl;
+        sourceAudioRef = aurl;
         const isHttp = /^https?:\/\//i.test(finalUploadUrl);
         const isBlobOrData = /^blob:|^data:/i.test(finalUploadUrl);
         if (isBlobOrData) {
@@ -2762,6 +2764,7 @@ notify pgrst, 'reload schema';`;
               const refreshedAudioId = pickAudioId(chosen);
               if (/^https?:\/\//i.test(refreshedUrl)) {
                 finalUploadUrl = refreshedUrl;
+                if (!sourceAudioRef) sourceAudioRef = refreshedUrl;
                 try {
                   if (baseSongDbId) {
                     await auth.admin
@@ -2782,9 +2785,11 @@ notify pgrst, 'reload schema';`;
         }
       } else if (uploadUrl || uploadPath) {
         finalUploadUrl = uploadUrl;
+        sourceAudioRef = uploadUrl;
         if (uploadPath) {
           try {
             finalUploadUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
+            sourceAudioRef = uploadPath;
           } catch (e) {
             return send(res, 502, { error: "Error generando URL firmada para el audio", detail: e instanceof Error ? e.message : String(e) });
           }
@@ -2792,6 +2797,7 @@ notify pgrst, 'reload schema';`;
       }
 
       if (!finalUploadUrl) return send(res, 400, { error: "Falta songId o uploadUrl/uploadPath" });
+      if (!sourceAudioRef) sourceAudioRef = finalUploadUrl;
 
       try {
         const u = new URL(finalUploadUrl);
@@ -2900,7 +2906,7 @@ notify pgrst, 'reload schema';`;
           .from("rvc_covers")
           .select("prediction_id,status,created_at,updated_at")
           .eq("user_id", user.id)
-          .eq("original_audio_url", finalUploadUrl)
+          .eq("original_audio_url", sourceAudioRef)
           .eq("voice_id", voiceId || "")
           .order("created_at", { ascending: false })
           .limit(1);
@@ -3032,7 +3038,7 @@ notify pgrst, 'reload schema';`;
       await auth.admin.from("rvc_covers").insert({
         user_id: user.id,
         title: finalTitle,
-        original_audio_url: finalUploadUrl,
+        original_audio_url: sourceAudioRef,
         voice_id: voiceId,
         voice_model_url: modelUrl,
         prediction_id: predictionId,
@@ -9140,6 +9146,11 @@ const rvcHandler = (() => {
     return url.searchParams.get(key) || "";
   }
 
+  const replicateCache = new Map<
+    string,
+    { checkedAt: number; status: string; output: any; error: any }
+  >();
+
   async function requireUser(req: any) {
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
@@ -9238,19 +9249,30 @@ const rvcHandler = (() => {
       let replicateError: any = null;
       let outputUrlHint = "";
       const replicateToken = process.env.REPLICATE_API_TOKEN;
-      if (replicateToken) {
-        try {
-          const r = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
-            headers: { authorization: `Token ${replicateToken}` },
-          });
-          const data = await r.json().catch(() => null);
-          if (r.ok && data && typeof data === "object") {
-            replicateStatus = (data as any)?.status ? String((data as any).status) : "";
-            replicateOutput = (data as any)?.output ?? null;
-            replicateError = (data as any)?.error ?? null;
-            outputUrlHint = pickFirstUrl(replicateOutput);
+      const shouldRefreshFromReplicate = Boolean(replicateToken) && dbStatus === "processing";
+      if (shouldRefreshFromReplicate) {
+        const cached = replicateCache.get(predictionId);
+        const now = Date.now();
+        if (cached && now - cached.checkedAt < 45_000) {
+          replicateStatus = cached.status || "";
+          replicateOutput = cached.output ?? null;
+          replicateError = cached.error ?? null;
+          outputUrlHint = pickFirstUrl(replicateOutput);
+        } else {
+          try {
+            const r = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
+              headers: { authorization: `Token ${replicateToken}` },
+            });
+            const data = await r.json().catch(() => null);
+            if (r.ok && data && typeof data === "object") {
+              replicateStatus = (data as any)?.status ? String((data as any).status) : "";
+              replicateOutput = (data as any)?.output ?? null;
+              replicateError = (data as any)?.error ?? null;
+              replicateCache.set(predictionId, { checkedAt: now, status: replicateStatus, output: replicateOutput, error: replicateError });
+              outputUrlHint = pickFirstUrl(replicateOutput);
+            }
+          } catch {
           }
-        } catch {
         }
       }
 
