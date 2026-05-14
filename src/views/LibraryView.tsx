@@ -30,7 +30,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
   const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
-  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{ status: string; replicateStatus?: string | null; progressPct: number; imported?: boolean; importError?: string | null } | null>(null);
+  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{ status: string; replicateStatus?: string | null; progressPct: number; imported?: boolean; importError?: string | null; outputUrl?: string | null } | null>(null);
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
@@ -187,6 +187,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           progressPct: Math.max(0, Math.min(100, Number(pct))),
           imported: Boolean(out?.imported),
           importError: typeof out?.importError === 'string' ? out.importError : null,
+          outputUrl: typeof out?.outputUrl === 'string' ? out.outputUrl : null,
         });
 
         if (out?.imported) {
@@ -1179,6 +1180,19 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           <div className="mt-2 text-[11px] text-rose-300">
                             {pendingRvcCoverUi.importError}
                           </div>
+                        ) : null}
+                        {!pendingRvcCoverUi?.imported && pendingRvcCoverUi?.outputUrl ? (
+                          <button
+                            onClick={() => {
+                              try {
+                                window.open(pendingRvcCoverUi.outputUrl || '', '_blank', 'noopener,noreferrer');
+                              } catch {
+                              }
+                            }}
+                            className="mt-2 inline-flex items-center justify-center bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                          >
+                            Abrir audio (si ya terminó)
+                          </button>
                         ) : null}
                         <div className="mt-2 text-[11px] text-slate-500">
                           {(() => {
