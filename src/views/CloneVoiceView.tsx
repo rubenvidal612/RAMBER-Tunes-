@@ -99,9 +99,16 @@ export function CloneVoiceView() {
             const description = String(v?.description || '').trim();
             const statusRaw = String(v?.status || '').trim().toLowerCase();
             const statusNorm =
-              statusRaw === 'ready' || statusRaw === 'failed' || statusRaw === 'processing'
-                ? statusRaw
-                : statusRaw === 'training' || statusRaw === 'starting'
+              statusRaw === 'ready' ||
+              statusRaw === 'succeeded' ||
+              statusRaw === 'completed' ||
+              statusRaw === 'complete' ||
+              statusRaw === 'done' ||
+              statusRaw === 'success'
+                ? 'ready'
+                : statusRaw === 'failed' || statusRaw === 'error' || statusRaw === 'canceled' || statusRaw === 'cancelled'
+                ? 'failed'
+                : statusRaw === 'processing' || statusRaw === 'training' || statusRaw === 'starting'
                 ? 'processing'
                 : 'processing';
             const status: VoiceItem['status'] = statusNorm as any;
@@ -1701,6 +1708,11 @@ export function CloneVoiceView() {
                 return voices.filter((x) => x.status === 'ready').length > 0 ? 'Seleccionar tu voz clonada' : 'No hay voces listas';
               })()}
             </button>
+            {voices.filter((v) => v.status === 'ready').length === 0 ? (
+              <div className="text-[11px] text-slate-500">
+                Si ya tienes voces guardadas, entra a “Mis voces” arriba y presiona recargar (o espera a que termine de procesar).
+              </div>
+            ) : null}
 
             {songCloneMode === 'tracks' ? (
               <>
