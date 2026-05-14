@@ -41,6 +41,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     importError?: string | null;
     outputUrl?: string | null;
   } | null>(null);
+  const [pendingRvcAuthError, setPendingRvcAuthError] = useState<string>('');
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
@@ -163,7 +164,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         const first = pendingRvcCovers[0];
         if (!first?.predictionId) return;
         const t = await getAccessToken();
-        if (!t.ok) return;
+        if (!t.ok) {
+          if (!alive) return;
+          setPendingRvcAuthError((t.error || 'Necesitas iniciar sesión otra vez.').toString());
+          return;
+        }
+        if (!alive) return;
+        setPendingRvcAuthError('');
         const r = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(first.predictionId)}`, {
           headers: { authorization: `Bearer ${t.token}` },
         });
@@ -1184,6 +1191,25 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             }}
                           />
                         </div>
+                        {pendingRvcAuthError ? (
+                          <div className="mt-2 text-[11px] text-rose-300">{pendingRvcAuthError}</div>
+                        ) : null}
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          {(() => {
+                            const rs = (pendingRvcCoverUi?.replicateStatus || '').toString().trim() || '—';
+                            const http = pendingRvcCoverUi?.replicateHttpStatus != null ? `HTTP ${pendingRvcCoverUi.replicateHttpStatus}` : 'HTTP —';
+                            let at = '—';
+                            try {
+                              const ms = Number(pendingRvcCoverUi?.replicateCheckedAt ?? 0);
+                              if (ms > 0) {
+                                const d = new Date(ms);
+                                at = Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                              }
+                            } catch {
+                            }
+                            return `Replicate: ${rs} • ${http} • última consulta: ${at}`;
+                          })()}
+                        </div>
                         {pendingRvcCoverUi?.replicateFetchError ? (
                           <div className="mt-2 text-[11px] text-amber-200">
                             {pendingRvcCoverUi.replicateFetchError}
@@ -1283,6 +1309,43 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                       >
                         Actualizar
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const first = pendingRvcCovers[0];
+                            if (!first?.predictionId) return;
+                            const t = await getAccessToken();
+                            if (!t.ok) {
+                              alert((t.error || 'Necesitas iniciar sesión otra vez.').toString());
+                              return;
+                            }
+                            const r = await fetch(
+                              `/api/rvc/cover-status?predictionId=${encodeURIComponent(first.predictionId)}&nocache=1`,
+                              { headers: { authorization: `Bearer ${t.token}` } }
+                            );
+                            const out = await r.json().catch(() => ({}));
+                            const lines = [
+                              `status(app): ${String(out?.status || '')}`,
+                              `replicateStatus: ${String(out?.replicateStatus || '')}`,
+                              `replicateHTTP: ${out?.replicateHttpStatus == null ? '' : String(out.replicateHttpStatus)}`,
+                              `replicateError: ${String(out?.replicateFetchError || '')}`,
+                              `imported: ${String(Boolean(out?.imported))}`,
+                              `importError: ${String(out?.importError || '')}`,
+                              `outputUrl: ${String(out?.outputUrl || '')}`,
+                              `predictionId: ${String(out?.predictionId || first.predictionId || '')}`,
+                            ]
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                              .join('\n');
+                            alert(lines || 'Sin datos de diagnóstico.');
+                          } catch {
+                            alert('No pude obtener diagnóstico.');
+                          }
+                        }}
+                        className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                      >
+                        Diagnóstico
                       </button>
                       <button
                         onClick={async () => {
