@@ -30,7 +30,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
   const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
-  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{ status: string; replicateStatus?: string | null; progressPct: number; imported?: boolean } | null>(null);
+  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{ status: string; replicateStatus?: string | null; progressPct: number; imported?: boolean; importError?: string | null } | null>(null);
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
@@ -186,6 +186,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           replicateStatus: out?.replicateStatus ?? null,
           progressPct: Math.max(0, Math.min(100, Number(pct))),
           imported: Boolean(out?.imported),
+          importError: typeof out?.importError === 'string' ? out.importError : null,
         });
 
         if (out?.imported) {
@@ -1166,6 +1167,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             }}
                           />
                         </div>
+                        {pendingRvcCoverUi?.importError ? (
+                          <div className="mt-2 text-[11px] text-rose-300">
+                            {pendingRvcCoverUi.importError}
+                          </div>
+                        ) : null}
                         <div className="mt-2 text-[11px] text-slate-500">
                           {(() => {
                             const base = Math.max(0, Number(pendingRvcCovers[0]?.startedAt || 0));

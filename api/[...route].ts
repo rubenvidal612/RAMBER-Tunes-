@@ -9236,6 +9236,7 @@ const rvcHandler = (() => {
       let replicateStatus = "";
       let replicateOutput: any = null;
       let replicateError: any = null;
+      let outputUrlHint = "";
       const replicateToken = process.env.REPLICATE_API_TOKEN;
       if (replicateToken) {
         try {
@@ -9247,6 +9248,7 @@ const rvcHandler = (() => {
             replicateStatus = (data as any)?.status ? String((data as any).status) : "";
             replicateOutput = (data as any)?.output ?? null;
             replicateError = (data as any)?.error ?? null;
+            outputUrlHint = pickFirstUrl(replicateOutput);
           }
         } catch {
         }
@@ -9277,6 +9279,7 @@ const rvcHandler = (() => {
       }
 
       let syncImported = imported;
+      let importError: string | null = null;
       if (!syncImported && computedStatus === "ready") {
         const userId = row && (row as any)?.user_id ? String((row as any).user_id) : auth.user.id;
         let outObj: any = replicateOutput;
@@ -9293,16 +9296,21 @@ const rvcHandler = (() => {
           }
         }
         const audioSourceUrl = pickFirstUrl(outObj);
+        if (!audioSourceUrl) importError = "Replicate terminó, pero no devolvió una URL de audio para descargar.";
         if (audioSourceUrl) {
           try {
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 120_000);
             const r = await fetch(audioSourceUrl, { signal: ctrl.signal as any });
             clearTimeout(timer);
-            if (r.ok) {
+            if (!r.ok) {
+              importError = `Replicate terminó, pero no pude descargar el audio (HTTP ${r.status}).`;
+            } else {
               const remoteCt = (r.headers.get("content-type") || "").toString().trim().slice(0, 120);
               const ab = await r.arrayBuffer();
-              if (ab && ab.byteLength) {
+              if (!ab || !ab.byteLength) {
+                importError = "Replicate terminó, pero el audio descargado llegó vacío.";
+              } else {
                 const buf = Buffer.from(ab);
                 const fmt = String((row as any)?.output_format || "mp3").trim().toLowerCase();
                 const ext = ["mp3", "wav", "ogg", "aac", "m4a"].includes(fmt) ? fmt : "mp3";
@@ -9334,13 +9342,20 @@ const rvcHandler = (() => {
                     suno_audio_id: externalId,
                     is_cover: true,
                   } as any);
-                  if (!insErr) syncImported = true;
+                  if (!insErr) {
+                    syncImported = true;
+                    importError = null;
+                  } else {
+                    importError = `El cover está listo, pero no pude guardarlo en Biblioteca: ${insErr.message}`;
+                  }
                 } else {
                   syncImported = true;
+                  importError = null;
                 }
               }
             }
           } catch {
+            importError = "El cover está listo, pero falló la descarga/subida automática del audio.";
           }
         }
       }
@@ -9363,6 +9378,8 @@ const rvcHandler = (() => {
         status: computedStatus,
         replicateStatus: replicateStatus || null,
         imported: syncImported,
+        importError,
+        outputUrl: outputUrlHint || null,
         error: errObj,
         updatedAt: row && (row as any)?.updated_at ? String((row as any).updated_at) : null,
       });
