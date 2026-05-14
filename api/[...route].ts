@@ -3968,6 +3968,64 @@ const libraryHandler = (() => {
     });
   }
 
+  async function handleCreateFromR2(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const keyRaw = typeof body?.key === "string" ? body.key.trim() : "";
+    const key = keyRaw.replace(/^\/+/, "").slice(0, 500);
+    if (!key) return send(res, 400, { error: "Falta key" });
+    const mustPrefix = `uploads/audio/${auth.user.id}/`;
+    if (!key.startsWith(mustPrefix)) return send(res, 403, { error: "Key inválida" });
+
+    const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Audio";
+    const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
+    const coverUrl = typeof body?.coverUrl === "string" ? body.coverUrl.trim().slice(0, 2000) : "";
+    const externalId = typeof body?.externalId === "string" ? body.externalId.trim().slice(0, 200) : "";
+    const isCover = Boolean(body?.isCover);
+
+    let audioUrl = "";
+    try {
+      const env = getR2Env();
+      audioUrl = `${env.publicBaseUrl}/${key}`;
+    } catch (e) {
+      return send(res, 500, { error: "Falta configurar Cloudflare R2 en Vercel", detail: e instanceof Error ? e.message : String(e) });
+    }
+
+    if (externalId) {
+      const { data: existing } = await auth.admin
+        .from(TABLE)
+        .select("*")
+        .eq("user_id", auth.user.id)
+        .eq("type", ITEM_TYPE)
+        .eq("suno_audio_id", externalId)
+        .is("deleted_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (existing) return send(res, 200, { song: existing, already: true });
+    }
+
+    const insertRow: any = {
+      user_id: auth.user.id,
+      type: ITEM_TYPE,
+      title,
+      description: description || null,
+      lyrics: null,
+      gender: null,
+      audio_url: audioUrl,
+      cover_url: coverUrl || null,
+      suno_task_id: null,
+      suno_audio_id: externalId || null,
+      is_cover: isCover,
+    };
+    const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
+    if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+    return send(res, 200, { song: data, already: false });
+  }
+
   async function handleUploadAudio(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -4500,6 +4558,7 @@ const libraryHandler = (() => {
 
     if (a === "list") return handleList(req, res);
     if (a === "create") return handleCreate(req, res);
+    if (a === "create-from-r2") return handleCreateFromR2(req, res);
     if (a === "import-audio") return handleImportAudio(req, res);
     if (a === "zip-stems") return handleZipStems(req, res);
     if (a === "delete") return handleDelete(req, res);
