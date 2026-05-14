@@ -2900,27 +2900,67 @@ notify pgrst, 'reload schema';`;
         return send(res, 500, { error: "Replicate API token no configurado", detail: "Contacta al administrador del sistema" });
       }
 
-      const replicateResponse = await fetch("https://api.replicate.com/v1/models/zsxkib/realistic-voice-cloning/versions/a0076ea1/predictions", {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${replicateToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: {
-            song_input: finalUploadUrl,
-            rvc_model: "CUSTOM",
-            custom_rvc_model_download_url: modelUrl,
-            pitch_change: pitchChange,
-            index_rate: indexRate,
-            protect: protect,
-            output_format: outputFormat
-          },
-          webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate-cover")
-        }),
-      });
+      const replicateCoverModel = (process.env.REPLICATE_VOICE_COVER_MODEL || "zsxkib/realistic-voice-cloning").toString().trim();
+      const getLatestReplicateVersionId = async (modelSlug: string): Promise<string> => {
+        const r = await fetch(`https://api.replicate.com/v1/models/${modelSlug}`, {
+          method: "GET",
+          headers: { Authorization: `Token ${replicateToken}` },
+        });
+        if (!r.ok) throw new Error(`No pude consultar Replicate model (HTTP ${r.status})`);
+        const info = await r.json().catch(() => ({}));
+        const id = String(info?.latest_version?.id || "").trim();
+        if (!id) throw new Error("No recibí latest_version.id de Replicate");
+        return id;
+      };
 
-      const replicateData = await replicateResponse.json();
+      const callCover = async (versionId: string) => {
+        const url = `https://api.replicate.com/v1/models/${replicateCoverModel}/versions/${encodeURIComponent(versionId)}/predictions`;
+        const r = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${replicateToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            input: {
+              song_input: finalUploadUrl,
+              rvc_model: "CUSTOM",
+              custom_rvc_model_download_url: modelUrl,
+              pitch_change: pitchChange,
+              index_rate: indexRate,
+              protect: protect,
+              output_format: outputFormat,
+            },
+            webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate-cover"),
+          }),
+        });
+        const data = await r.json().catch(() => ({}));
+        return { r, data };
+      };
+
+      let replicateCoverVersion = (process.env.REPLICATE_VOICE_COVER_VERSION || "").toString().trim();
+      if (!replicateCoverVersion) {
+        try {
+          replicateCoverVersion = await getLatestReplicateVersionId(replicateCoverModel);
+        } catch {
+          replicateCoverVersion = "";
+        }
+      }
+      if (!replicateCoverVersion) replicateCoverVersion = "a0076ea1";
+
+      let { r: replicateResponse, data: replicateData } = await callCover(replicateCoverVersion);
+      if (!replicateResponse.ok && replicateResponse.status === 404) {
+        try {
+          const latest = await getLatestReplicateVersionId(replicateCoverModel);
+          if (latest && latest !== replicateCoverVersion) {
+            replicateCoverVersion = latest;
+            const retry = await callCover(replicateCoverVersion);
+            replicateResponse = retry.r;
+            replicateData = retry.data;
+          }
+        } catch {
+        }
+      }
 
       if (!replicateResponse.ok) {
         let errorMessage = "Error creando cover";
