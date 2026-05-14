@@ -157,6 +157,21 @@ function extractOutputUrl(output: any): string | null {
   return best;
 }
 
+async function fetchUrlToBuffer(url: string): Promise<{ buf: Buffer; contentType: string }> {
+  const headers: any = {
+    "user-agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+    accept: "*/*",
+  };
+  const res = await fetch(url, { method: "GET", headers });
+  if (!res.ok) throw new Error(`No pude descargar el audio (HTTP ${res.status})`);
+  const ab = await res.arrayBuffer();
+  const buf = Buffer.from(ab);
+  if (!buf || buf.length === 0) throw new Error("No pude descargar el audio (vacío)");
+  const contentType = (res.headers.get("content-type") || "audio/mpeg").toString().split(";")[0].trim() || "audio/mpeg";
+  return { buf, contentType };
+}
+
 type R2Env = {
   accountId: string;
   accessKeyId: string;
@@ -2777,6 +2792,36 @@ notify pgrst, 'reload schema';`;
       }
 
       if (!finalUploadUrl) return send(res, 400, { error: "Falta songId o uploadUrl/uploadPath" });
+
+      try {
+        const u = new URL(finalUploadUrl);
+        const host = (u.hostname || "").toLowerCase();
+        const isR2 =
+          host.includes(".r2.cloudflarestorage.com") ||
+          host.endsWith(".r2.dev") ||
+          host.includes(".r2");
+        const isSigned = u.searchParams.has("X-Amz-Signature") || u.searchParams.has("x-amz-signature");
+        const isAlreadyGood = isR2 && isSigned;
+        if (!isAlreadyGood) {
+          const { buf, contentType } = await fetchUrlToBuffer(finalUploadUrl);
+          const ext =
+            contentType === "audio/wav"
+              ? "wav"
+              : contentType === "audio/ogg"
+              ? "ogg"
+              : contentType === "audio/aac"
+              ? "aac"
+              : contentType === "audio/mp4"
+              ? "m4a"
+              : "mp3";
+          const suffix = `${Date.now()}_${(songId || "").slice(0, 12) || "song"}`;
+          const key = `covers/source-audio/${user.id}/${suffix}.${ext}`;
+          await uploadToR2(key, buf, contentType);
+          finalUploadUrl = await getSignedR2Url(key, 60 * 60 * 2);
+        }
+      } catch (e) {
+        return send(res, 502, { error: "No pude preparar el audio para el cover", detail: e instanceof Error ? e.message : String(e) });
+      }
 
       // Determinar la URL del modelo de voz
       let modelUrl = voiceModelUrl;
