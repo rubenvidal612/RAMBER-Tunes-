@@ -165,18 +165,18 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         const now = Date.now();
         const base = Math.max(0, Number(first?.startedAt || 0));
         const step = Math.max(0, Math.floor((now - base) / 3500));
-        const simulatedBase = Math.min(95, Math.max(3, 5 + step * 2));
+        const simulatedBase = Math.min(98, Math.max(3, 5 + step * 2));
         const simulated = (() => {
           if (rawStatus === 'starting') return Math.min(30, simulatedBase);
-          if (rawStatus === 'processing') return Math.min(85, simulatedBase);
-          if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return Math.min(98, Math.max(90, simulatedBase));
+          if (rawStatus === 'processing') return Math.min(90, simulatedBase);
+          if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return Math.min(99, Math.max(95, simulatedBase));
           return simulatedBase;
         })();
         const pctFromStatus = (() => {
           if (out?.imported) return 100;
           if (rawStatus === 'starting') return 10;
-          if (rawStatus === 'processing') return 60;
-          if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return 95;
+          if (rawStatus === 'processing') return 70;
+          if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return 98;
           if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') return 100;
           return null;
         })();
@@ -1147,11 +1147,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             {(() => {
                               const base = Math.max(0, Number(pendingRvcCovers[0]?.startedAt || 0));
                               const step = Math.max(0, Math.floor((Date.now() - base) / 3500));
-                              const fallbackPct = Math.min(95, Math.max(3, 5 + step * 2));
+                              const fallbackPct = Math.min(98, Math.max(3, 5 + step * 2));
                               const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
                               const finalPct = Math.max(3, Math.min(100, Number(pct)));
-                              if (finalPct >= 95 && pendingRvcCoverUi?.replicateStatus === 'processing') {
-                                return '95%';
+                              if (finalPct >= 98 && pendingRvcCoverUi?.replicateStatus === 'processing') {
+                                return '98%';
                               }
                               return `${Math.round(finalPct)}%`;
                             })()}
@@ -1164,11 +1164,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               width: `${(() => {
                                 const base = Math.max(0, Number(pendingRvcCovers[0]?.startedAt || 0));
                                 const step = Math.max(0, Math.floor((Date.now() - base) / 3500));
-                                const fallbackPct = Math.min(95, Math.max(3, 5 + step * 2));
+                                const fallbackPct = Math.min(98, Math.max(3, 5 + step * 2));
                                 const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
                                 const finalPct = Math.max(3, Math.min(100, Number(pct)));
-                                if (finalPct >= 95 && pendingRvcCoverUi?.replicateStatus === 'processing') {
-                                  return 95;
+                                if (finalPct >= 98 && pendingRvcCoverUi?.replicateStatus === 'processing') {
+                                  return 98;
                                 }
                                 return finalPct;
                               })()}%`,
@@ -1188,7 +1188,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             const hrs = Math.floor(mins / 60);
                             const mm = (mins % 60).toString().padStart(2, '0');
                             const ss = (sec % 60).toString().padStart(2, '0');
-                            return hrs > 0 ? `Tiempo: ${hrs}:${mm}:${ss}` : `Tiempo: ${mm}:${ss}`;
+                            const timeStr = hrs > 0 ? `Tiempo: ${hrs}:${mm}:${ss}` : `Tiempo: ${mm}:${ss}`;
+                            
+                            // Si el proceso lleva más de 10 minutos y sigue en "processing", mostrar un mensaje de advertencia
+                            if (sec > 600 && pendingRvcCoverUi?.replicateStatus === 'processing') {
+                              return `${timeStr} - El proceso está tardando más de lo normal. Puedes intentar cancelarlo y volver a intentar.`;
+                            }
+                            return timeStr;
                           })()}
                         </div>
                       </div>

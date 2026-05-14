@@ -9302,6 +9302,7 @@ const rvcHandler = (() => {
 
       let syncImported = imported;
       let importError: string | null = null;
+      console.log(`[DEBUG] coverStatus: predictionId=${predictionId}, computedStatus=${computedStatus}, imported=${imported}, replicateStatus=${replicateStatus}`);
       if (!syncImported && computedStatus === "ready") {
         const userId = row && (row as any)?.user_id ? String((row as any).user_id) : auth.user.id;
         let outObj: any = replicateOutput;
@@ -9318,28 +9319,34 @@ const rvcHandler = (() => {
           }
         }
         const audioSourceUrl = pickFirstUrl(outObj);
+        console.log(`[DEBUG] audioSourceUrl: ${audioSourceUrl}`);
         if (!audioSourceUrl) importError = "Replicate terminó, pero no devolvió una URL de audio para descargar.";
         if (audioSourceUrl) {
           try {
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 120_000);
-            const r = await fetch(audioSourceUrl, { signal: ctrl.signal as any });
-            clearTimeout(timer);
-            if (!r.ok) {
-              importError = `Replicate terminó, pero no pude descargar el audio (HTTP ${r.status}).`;
-            } else {
+              console.log(`[DEBUG] Intentando descargar audio de: ${audioSourceUrl}`);
+              const ctrl = new AbortController();
+              const timer = setTimeout(() => ctrl.abort(), 120_000);
+              const r = await fetch(audioSourceUrl, { signal: ctrl.signal as any });
+              clearTimeout(timer);
+              console.log(`[DEBUG] Respuesta de descarga: HTTP ${r.status}, ok=${r.ok}`);
+              if (!r.ok) {
+                importError = `Replicate terminó, pero no pude descargar el audio (HTTP ${r.status}).`;
+              } else {
               const remoteCt = (r.headers.get("content-type") || "").toString().trim().slice(0, 120);
               const ab = await r.arrayBuffer();
               if (!ab || !ab.byteLength) {
                 importError = "Replicate terminó, pero el audio descargado llegó vacío.";
               } else {
                 const buf = Buffer.from(ab);
+                console.log(`[DEBUG] Audio descargado: ${ab.byteLength} bytes`);
                 const fmt = String((row as any)?.output_format || "mp3").trim().toLowerCase();
                 const ext = ["mp3", "wav", "ogg", "aac", "m4a"].includes(fmt) ? fmt : "mp3";
                 const contentType = remoteCt || contentTypeForExt(ext);
                 const safeId = predictionId.replaceAll(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 120) || "cover";
                 const key = `covers/${userId}/${Date.now()}_${safeId}.${ext}`;
+                console.log(`[DEBUG] Subiendo a R2 con key: ${key}`);
                 const audioUrl = await uploadToR2(key, buf, contentType);
+                console.log(`[DEBUG] Audio subido a R2: ${audioUrl}`);
                 const title = String((row as any)?.title || "Cover (voz clonada)").trim().slice(0, 120) || "Cover (voz clonada)";
 
                 const { data: exists2 } = await auth.admin
@@ -9351,6 +9358,7 @@ const rvcHandler = (() => {
                   .is("deleted_at", null)
                   .limit(1);
                 if (!Array.isArray(exists2) || exists2.length === 0) {
+                  console.log(`[DEBUG] Insertando en library_items: title=${title}, audio_url=${audioUrl}`);
                   const { error: insErr } = await auth.admin.from("library_items").insert({
                     user_id: userId,
                     type: "song",
@@ -9365,9 +9373,11 @@ const rvcHandler = (() => {
                     is_cover: true,
                   } as any);
                   if (!insErr) {
+                    console.log(`[DEBUG] Inserción exitosa en library_items`);
                     syncImported = true;
                     importError = null;
                   } else {
+                    console.log(`[DEBUG] Error en inserción: ${insErr.message}`);
                     importError = `El cover está listo, pero no pude guardarlo en Biblioteca: ${insErr.message}`;
                   }
                 } else {
