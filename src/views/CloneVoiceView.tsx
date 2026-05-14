@@ -73,6 +73,9 @@ export function CloneVoiceView() {
   const [coverSuccess, setCoverSuccess] = useState('');
   const [showPickCoverSong, setShowPickCoverSong] = useState(false);
   const [showPickCoverVoice, setShowPickCoverVoice] = useState(false);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [externalCoverFile, setExternalCoverFile] = useState<File | null>(null);
+  const [externalCoverTitle, setExternalCoverTitle] = useState('');
 
   const loadVoices = async () => {
     const t = await getAccessToken();
@@ -1001,38 +1004,21 @@ export function CloneVoiceView() {
     });
   }
 
-  const createHqCoverFromLibrarySong = async () => {
-    if (isCoverBusy) return;
-    setCoverError('');
-    setCoverSuccess('');
-    setCoverProgress('');
-    const t = await getAccessToken();
-    if (!t.ok) {
-      setCoverError(t.error || 'No se pudo iniciar sesión.');
-      return;
-    }
-
-    const song = librarySongs.find((s) => s.id === coverSongId) || null;
-    if (!song) {
-      setCoverError('Selecciona una canción.');
-      return;
-    }
-    if (!coverVoiceId) {
-      setCoverError('Selecciona una voz.');
-      return;
-    }
-    if (!song.suno_task_id && !song.suno_audio_id) {
-      setCoverError('Esa canción no se puede separar (no tiene taskId/audioId).');
-      return;
-    }
-
+  const runHqCoverPipeline = async (params: {
+    token: string;
+    baseName: string;
+    description: string;
+    coverUrl: string;
+    taskId: string;
+    audioId: string;
+  }) => {
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     const parseStatus = (provider: any) => {
       const data = provider?.data || provider?.data?.data || provider;
       const raw = data?.data?.status ?? data?.data?.successFlag ?? data?.status ?? data?.successFlag ?? '';
       return String(raw || '').toUpperCase();
     };
-    const importAudio = async (params: {
+    const importAudio = async (p: {
       sourceUrl: string;
       title: string;
       description?: string;
@@ -1042,14 +1028,14 @@ export function CloneVoiceView() {
     }) => {
       const r = await fetch('/api/library/import-audio', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${params.token}` },
         body: JSON.stringify({
-          sourceUrl: params.sourceUrl,
-          title: params.title,
-          description: params.description || '',
-          coverUrl: params.coverUrl || '',
-          externalId: params.externalId || '',
-          sunoTaskId: params.sunoTaskId || '',
+          sourceUrl: p.sourceUrl,
+          title: p.title,
+          description: p.description || '',
+          coverUrl: p.coverUrl || '',
+          externalId: p.externalId || '',
+          sunoTaskId: p.sunoTaskId || '',
         }),
       });
       const out = await r.json().catch(() => ({}));
@@ -1108,28 +1094,291 @@ export function CloneVoiceView() {
       }
     };
 
+    if (!coverVoiceId) throw new Error('Selecciona una voz.');
+    if (!params.taskId && !params.audioId) throw new Error('No tengo taskId/audioId para separar.');
+
+    setCoverProgress('Separando voz e instrumentos…');
+    const start = await fetch('/api/suno/separate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${params.token}` },
+      body: JSON.stringify({ taskId: params.taskId || '', audioId: params.audioId || '', type: 'split_stem' }),
+    });
+    const startedOut = await start.json().catch(() => ({}));
+    if (!start.ok) throw new Error((startedOut?.detail || startedOut?.error || 'No pude iniciar la separación.').toString());
+    const sepTaskId = String(startedOut?.taskId || '').trim();
+    if (!sepTaskId) throw new Error('No recibí taskId de separación.');
+
+    let provider: any = null;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 30 * 60 * 1000) {
+      await delay(3500);
+      const tr = await fetch(`/api/suno/task?kind=split_stem&taskId=${encodeURIComponent(sepTaskId)}`, {
+        headers: { authorization: `Bearer ${params.token}` },
+      });
+      const tout = await tr.json().catch(() => ({}));
+      if (!tr.ok) continue;
+      provider = tout?.data;
+      const status = parseStatus(provider);
+      if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'CALLBACK_EXCEPTION') {
+        throw new Error('No se pudo separar la canción en stems.');
+      }
+      if (status === 'SUCCESS') break;
+    }
+
+    const items = parseVocalRemovalItems(provider);
+    const vocalItem = items.find((x: any) => (x?.key || '').trim() === 'vocalUrl');
+    const instItem = items.find((x: any) => (x?.key || '').trim() === 'instrumentalUrl');
+    if (!vocalItem?.url || !instItem?.url) throw new Error('Terminó, pero no recibí links de stems (voz/instrumental).');
+
+    setCoverProgress('Guardando stems…');
+    const instSaved = await importAudio({
+      sourceUrl: instItem.url,
+      title: `${params.baseName} - Instrumental`.slice(0, 120),
+      description: params.description,
+      coverUrl: params.coverUrl,
+      externalId: `stem_${sepTaskId}_instrumentalUrl`,
+      sunoTaskId: sepTaskId,
+    }).catch(() => null);
+
+    const vocalSaved = await importAudio({
+      sourceUrl: vocalItem.url,
+      title: `${params.baseName} - Voz`.slice(0, 120),
+      description: params.description,
+      coverUrl: params.coverUrl,
+      externalId: `stem_${sepTaskId}_vocalUrl`,
+      sunoTaskId: sepTaskId,
+    }).catch(() => null);
+
+    const vocalInputUrl =
+      (typeof (vocalSaved as any)?.audio_url === 'string' ? String((vocalSaved as any).audio_url).trim() : '') || vocalItem.url;
+    if (!vocalInputUrl) throw new Error('No pude preparar el audio de voz para clonar.');
+
+    setCoverProgress('Clonando solo la voz…');
+    const coverRes = await fetch('/api/suno/create-cover', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${params.token}` },
+      body: JSON.stringify({
+        uploadUrl: vocalInputUrl,
+        voiceId: coverVoiceId,
+        title: `${params.baseName} - Voz clonada`.slice(0, 120),
+        outputFormat: 'wav',
+      }),
+    });
+    const coverOut = await coverRes.json().catch(() => ({}));
+    if (!coverRes.ok) {
+      const msg = [coverOut?.error, coverOut?.detail, coverOut?.hint]
+        .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+        .filter(Boolean)
+        .join('\n\n');
+      throw new Error(msg || 'No pude iniciar el clonado.');
+    }
+    const predictionId = String(coverOut?.predictionId || coverOut?.coverId || '').trim();
+    if (!predictionId) throw new Error('No recibí predictionId del clonador.');
+
+    let outputUrl = '';
+    const cloneStartedAt = Date.now();
+    while (Date.now() - cloneStartedAt < 45 * 60 * 1000) {
+      await delay(5000);
+      const sr = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(predictionId)}&nocache=1`, {
+        headers: { authorization: `Bearer ${params.token}` },
+      });
+      const sout = await sr.json().catch(() => ({}));
+      if (!sr.ok) continue;
+      const rawStatus = (sout?.replicateStatus || sout?.status || '').toString().trim().toLowerCase();
+      if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') {
+        throw new Error((sout?.importError || sout?.replicateFetchError || sout?.error || 'El clonador falló.').toString());
+      }
+      const u = typeof sout?.outputUrl === 'string' ? sout.outputUrl.trim() : '';
+      if (u && (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready')) {
+        outputUrl = u;
+        break;
+      }
+    }
+    if (!outputUrl) throw new Error('El clonador está tardando demasiado. Intenta más tarde.');
+
+    setCoverProgress('Guardando voz clonada…');
+    const clonedSaved = await importAudio({
+      sourceUrl: outputUrl,
+      title: `${params.baseName} - Voz clonada`.slice(0, 120),
+      description: params.description,
+      coverUrl: params.coverUrl,
+      externalId: `rvc_vocals_${predictionId}`.slice(0, 200),
+    }).catch(() => null);
+
+    const instId = String((instSaved as any)?.id || '').trim();
+    const vocalsId = String((clonedSaved as any)?.id || '').trim();
+    const instFetchUrl = instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : instItem.url;
+    const vocalFetchUrl = vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : outputUrl;
+
+    setCoverProgress('Mezclando…');
+    const mixed = await mixToWavBlob(instFetchUrl, vocalFetchUrl);
+
+    setCoverProgress('Subiendo audio final…');
+    const up = await fetch('/api/upload-audio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${params.token}` },
+      body: JSON.stringify({ title: `${params.baseName} (voz clonada)`.slice(0, 120), contentType: 'audio/wav' }),
+    });
+    const upOut = await up.json().catch(() => ({}));
+    if (!up.ok || upOut?.ok !== true || !upOut?.uploadUrl || !upOut?.key) {
+      throw new Error((upOut?.error || 'No pude preparar la subida del audio final.').toString());
+    }
+
+    const put = await fetch(String(upOut.uploadUrl), { method: 'PUT', headers: { 'content-type': 'audio/wav' }, body: mixed });
+    if (!put.ok) {
+      throw new Error('No pude subir el audio final. Si sale un error de CORS, hay que habilitar CORS en Cloudflare R2 (una sola vez).');
+    }
+
+    const created = await fetch('/api/library/create-from-r2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${params.token}` },
+      body: JSON.stringify({
+        key: String(upOut.key),
+        title: `${params.baseName} (voz clonada)`.slice(0, 120),
+        description: params.description,
+        coverUrl: params.coverUrl,
+        isCover: true,
+        externalId: `rvc_mix_${predictionId}`.slice(0, 200),
+      }),
+    });
+    const createdOut = await created.json().catch(() => ({}));
+    if (!created.ok) throw new Error((createdOut?.detail || createdOut?.error || 'No pude guardar el audio final en Biblioteca.').toString());
+  };
+
+  const createHqCoverFromLibrarySong = async () => {
+    if (isCoverBusy) return;
+    setCoverError('');
+    setCoverSuccess('');
+    setCoverProgress('');
+    const t = await getAccessToken();
+    if (!t.ok) {
+      setCoverError(t.error || 'No se pudo iniciar sesión.');
+      return;
+    }
+
+    const song = librarySongs.find((s) => s.id === coverSongId) || null;
+    if (!song) {
+      setCoverError('Selecciona una canción.');
+      return;
+    }
+    if (!coverVoiceId) {
+      setCoverError('Selecciona una voz.');
+      return;
+    }
+    if (!song.suno_task_id && !song.suno_audio_id) {
+      setCoverError('Esa canción no se puede separar (no tiene taskId/audioId).');
+      return;
+    }
+
     try {
       setIsCoverBusy(true);
       const baseName = (song.title || 'Canción').toString().trim().slice(0, 100);
       const desc = (song.description || '').toString().trim().slice(0, 2000);
       const coverUrl = (song.cover_url || '').toString().trim().slice(0, 2000);
+      await runHqCoverPipeline({
+        token: t.token,
+        baseName,
+        description: desc,
+        coverUrl,
+        taskId: song.suno_task_id || '',
+        audioId: song.suno_audio_id || '',
+      });
 
-      setCoverProgress('Separando voz e instrumentos…');
-      const start = await fetch('/api/suno/separate', {
+      setCoverSuccess('Listo. Ya está en tu Biblioteca.');
+      setCoverProgress('');
+      loadLibrarySongs().catch(() => {});
+    } catch (e) {
+      setCoverError(e instanceof Error ? e.message : 'Error creando el cover.');
+    } finally {
+      setIsCoverBusy(false);
+    }
+  };
+
+  const createHqCoverFromExternalFile = async () => {
+    if (isCoverBusy) return;
+    setCoverError('');
+    setCoverSuccess('');
+    setCoverProgress('');
+    const file = externalCoverFile;
+    if (!file) {
+      setCoverError('Selecciona un archivo de audio.');
+      return;
+    }
+    if (!coverVoiceId) {
+      setCoverError('Selecciona una voz.');
+      return;
+    }
+
+    const baseName = (externalCoverTitle || file.name || 'Canción').toString().replace(/\.[^/.]+$/, '').trim().slice(0, 100) || 'Canción';
+
+    try {
+      setIsCoverBusy(true);
+      setCoverProgress('Subiendo tu canción…');
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+
+      let duration = 0;
+      try {
+        duration = await getAudioDuration(file);
+      } catch {
+        duration = 0;
+      }
+      if (Number.isFinite(duration) && duration > 0 && duration > 60 * 8) {
+        throw new Error('Tu audio dura más de 8 minutos. Usa un audio más corto.');
+      }
+
+      const uploaded = await uploadAudioToR2(file);
+
+      const createdOrig = await fetch('/api/library/create-from-r2', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ taskId: song.suno_task_id || '', audioId: song.suno_audio_id || '', type: 'split_stem' }),
+        body: JSON.stringify({
+          key: String(uploaded.path),
+          title: baseName.slice(0, 120),
+          description: '',
+          coverUrl: '',
+          isCover: false,
+          externalId: `ext_${String(uploaded.path).replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(-80)}`.slice(0, 200),
+        }),
       });
-      const startedOut = await start.json().catch(() => ({}));
-      if (!start.ok) throw new Error((startedOut?.detail || startedOut?.error || 'No pude iniciar la separación.').toString());
-      const sepTaskId = String(startedOut?.taskId || '').trim();
-      if (!sepTaskId) throw new Error('No recibí taskId de separación.');
+      const createdOrigOut = await createdOrig.json().catch(() => ({}));
+      if (!createdOrig.ok) throw new Error((createdOrigOut?.detail || createdOrigOut?.error || 'No pude guardar tu canción en Biblioteca.').toString());
+      const createdSongId = String(createdOrigOut?.song?.id || '').trim();
+      if (createdSongId) {
+        setCoverSongId(createdSongId);
+        loadLibrarySongs().catch(() => {});
+      }
 
-      let provider: any = null;
+      setCoverProgress('Preparando la canción…');
+      const startUploadCover = await fetch('/api/suno/upload-cover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          uploadPath: uploaded.path,
+          title: baseName.slice(0, 100),
+          style: 'General',
+          prompt: ' ',
+          instrumental: false,
+        }),
+      });
+      const startUploadOut = await startUploadCover.json().catch(() => ({}));
+      if (!startUploadCover.ok) throw new Error((startUploadOut?.detail || startUploadOut?.error || 'No pude preparar la canción.').toString());
+      const uploadTaskId = String(startUploadOut?.taskId || '').trim();
+      if (!uploadTaskId) throw new Error('No recibí taskId de preparación.');
+
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const parseStatus = (provider: any) => {
+        const data = provider?.data || provider?.data?.data || provider;
+        const raw = data?.data?.status ?? data?.data?.successFlag ?? data?.status ?? data?.successFlag ?? '';
+        return String(raw || '').toUpperCase();
+      };
+
       const startedAt = Date.now();
+      let provider: any = null;
+      setCoverProgress('Procesando la canción…');
       while (Date.now() - startedAt < 30 * 60 * 1000) {
         await delay(3500);
-        const tr = await fetch(`/api/suno/task?kind=split_stem&taskId=${encodeURIComponent(sepTaskId)}`, {
+        const tr = await fetch(`/api/suno/task?kind=upload-cover&taskId=${encodeURIComponent(uploadTaskId)}`, {
           headers: { authorization: `Bearer ${t.token}` },
         });
         const tout = await tr.json().catch(() => ({}));
@@ -1137,121 +1386,19 @@ export function CloneVoiceView() {
         provider = tout?.data;
         const status = parseStatus(provider);
         if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'CALLBACK_EXCEPTION') {
-          throw new Error('No se pudo separar la canción en stems.');
+          throw new Error('No se pudo preparar la canción.');
         }
         if (status === 'SUCCESS') break;
       }
 
-      const items = parseVocalRemovalItems(provider);
-      const vocalItem = items.find((x: any) => (x?.key || '').trim() === 'vocalUrl');
-      const instItem = items.find((x: any) => (x?.key || '').trim() === 'instrumentalUrl');
-      if (!vocalItem?.url || !instItem?.url) throw new Error('Terminó, pero no recibí links de stems (voz/instrumental).');
-
-      setCoverProgress('Guardando stems…');
-      const instSaved = await importAudio({
-        sourceUrl: instItem.url,
-        title: `${baseName} - Instrumental`.slice(0, 120),
-        description: desc,
-        coverUrl,
-        externalId: `stem_${sepTaskId}_instrumentalUrl`,
-        sunoTaskId: sepTaskId,
-      }).catch(() => null);
-
-      const vocalSaved = await importAudio({
-        sourceUrl: vocalItem.url,
-        title: `${baseName} - Voz`.slice(0, 120),
-        description: desc,
-        coverUrl,
-        externalId: `stem_${sepTaskId}_vocalUrl`,
-        sunoTaskId: sepTaskId,
-      }).catch(() => null);
-
-      const vocalInputUrl =
-        (typeof (vocalSaved as any)?.audio_url === 'string' ? String((vocalSaved as any).audio_url).trim() : '') || vocalItem.url;
-      if (!vocalInputUrl) throw new Error('No pude preparar el audio de voz para clonar.');
-
-      setCoverProgress('Clonando solo la voz…');
-      const coverRes = await fetch('/api/suno/create-cover', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ uploadUrl: vocalInputUrl, voiceId: coverVoiceId, title: `${baseName} - Voz clonada`.slice(0, 120), outputFormat: 'wav' }),
+      await runHqCoverPipeline({
+        token: t.token,
+        baseName,
+        description: '',
+        coverUrl: '',
+        taskId: uploadTaskId,
+        audioId: '',
       });
-      const coverOut = await coverRes.json().catch(() => ({}));
-      if (!coverRes.ok) {
-        const msg = [coverOut?.error, coverOut?.detail, coverOut?.hint].map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean).join('\n\n');
-        throw new Error(msg || 'No pude iniciar el clonado.');
-      }
-      const predictionId = String(coverOut?.predictionId || coverOut?.coverId || '').trim();
-      if (!predictionId) throw new Error('No recibí predictionId del clonador.');
-
-      let outputUrl = '';
-      const cloneStartedAt = Date.now();
-      while (Date.now() - cloneStartedAt < 45 * 60 * 1000) {
-        await delay(5000);
-        const sr = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(predictionId)}&nocache=1`, {
-          headers: { authorization: `Bearer ${t.token}` },
-        });
-        const sout = await sr.json().catch(() => ({}));
-        if (!sr.ok) continue;
-        const rawStatus = (sout?.replicateStatus || sout?.status || '').toString().trim().toLowerCase();
-        if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') {
-          throw new Error((sout?.importError || sout?.replicateFetchError || sout?.error || 'El clonador falló.').toString());
-        }
-        const u = typeof sout?.outputUrl === 'string' ? sout.outputUrl.trim() : '';
-        if (u && (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready')) {
-          outputUrl = u;
-          break;
-        }
-      }
-      if (!outputUrl) throw new Error('El clonador está tardando demasiado. Intenta más tarde.');
-
-      setCoverProgress('Guardando voz clonada…');
-      const clonedSaved = await importAudio({
-        sourceUrl: outputUrl,
-        title: `${baseName} - Voz clonada`.slice(0, 120),
-        description: desc,
-        coverUrl,
-        externalId: `rvc_vocals_${predictionId}`.slice(0, 200),
-      }).catch(() => null);
-
-      const instId = String((instSaved as any)?.id || '').trim();
-      const vocalsId = String((clonedSaved as any)?.id || '').trim();
-      const instFetchUrl = instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : instItem.url;
-      const vocalFetchUrl = vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : outputUrl;
-
-      setCoverProgress('Mezclando…');
-      const mixed = await mixToWavBlob(instFetchUrl, vocalFetchUrl);
-
-      setCoverProgress('Subiendo audio final…');
-      const up = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ title: `${baseName} (voz clonada)`.slice(0, 120), contentType: 'audio/wav' }),
-      });
-      const upOut = await up.json().catch(() => ({}));
-      if (!up.ok || upOut?.ok !== true || !upOut?.uploadUrl || !upOut?.key) {
-        throw new Error((upOut?.error || 'No pude preparar la subida del audio final.').toString());
-      }
-
-      const put = await fetch(String(upOut.uploadUrl), { method: 'PUT', headers: { 'content-type': 'audio/wav' }, body: mixed });
-      if (!put.ok) {
-        throw new Error('No pude subir el audio final. Si sale un error de CORS, hay que habilitar CORS en Cloudflare R2 (una sola vez).');
-      }
-
-      const created = await fetch('/api/library/create-from-r2', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({
-          key: String(upOut.key),
-          title: `${baseName} (voz clonada)`.slice(0, 120),
-          description: desc,
-          coverUrl,
-          isCover: true,
-          externalId: `rvc_mix_${predictionId}`.slice(0, 200),
-        }),
-      });
-      const createdOut = await created.json().catch(() => ({}));
-      if (!created.ok) throw new Error((createdOut?.detail || createdOut?.error || 'No pude guardar el audio final en Biblioteca.').toString());
 
       setCoverSuccess('Listo. Ya está en tu Biblioteca.');
       setCoverProgress('');
@@ -1302,6 +1449,57 @@ export function CloneVoiceView() {
                 return librarySongs.length > 0 ? 'Seleccionar canción de la Biblioteca' : 'Cargando canciones…';
               })()}
             </button>
+
+            <div className="text-[11px] text-slate-500">O sube una canción externa (MP3/WAV)</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => coverFileInputRef.current?.click()}
+                disabled={isCoverBusy}
+                className={cn(
+                  "shrink-0 px-4 py-2 rounded-full border text-xs font-extrabold transition-colors",
+                  isCoverBusy ? "bg-white/5 border-white/10 text-slate-500" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                )}
+              >
+                Subir archivo
+              </button>
+              <input
+                ref={coverFileInputRef}
+                type="file"
+                accept=".mp3,.wav,.m4a,.aac,.ogg,.webm,audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  setExternalCoverFile(f);
+                  const name = (f?.name || '').toString().replace(/\.[^/.]+$/, '').trim();
+                  setExternalCoverTitle(name);
+                }}
+              />
+              <div className="min-w-0 text-xs text-slate-400 truncate">
+                {externalCoverFile ? externalCoverFile.name : 'Ningún archivo seleccionado'}
+              </div>
+            </div>
+            {externalCoverFile ? (
+              <button
+                type="button"
+                onClick={() => createHqCoverFromExternalFile().catch(() => {})}
+                disabled={isCoverBusy || !coverVoiceId}
+                className={cn(
+                  "w-full py-3 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
+                  isCoverBusy || !coverVoiceId ? "bg-white/10 text-slate-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                )}
+              >
+                {isCoverBusy ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" /> Crear cover desde archivo
+                  </>
+                )}
+              </button>
+            ) : null}
 
             <div className="text-slate-300 text-sm">Voz</div>
             <button
