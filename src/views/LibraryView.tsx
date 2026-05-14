@@ -1149,7 +1149,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               const step = Math.max(0, Math.floor((Date.now() - base) / 3500));
                               const fallbackPct = Math.min(95, Math.max(3, 5 + step * 2));
                               const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
-                              return `${Math.round(Number(pct))}%`;
+                              const finalPct = Math.max(3, Math.min(100, Number(pct)));
+                              if (finalPct >= 95 && pendingRvcCoverUi?.replicateStatus === 'processing') {
+                                return '95%';
+                              }
+                              return `${Math.round(finalPct)}%`;
                             })()}
                           </div>
                         </div>
@@ -1162,7 +1166,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                 const step = Math.max(0, Math.floor((Date.now() - base) / 3500));
                                 const fallbackPct = Math.min(95, Math.max(3, 5 + step * 2));
                                 const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
-                                return Math.max(3, Math.min(100, Number(pct)));
+                                const finalPct = Math.max(3, Math.min(100, Number(pct)));
+                                if (finalPct >= 95 && pendingRvcCoverUi?.replicateStatus === 'processing') {
+                                  return 95;
+                                }
+                                return finalPct;
                               })()}%`,
                             }}
                           />
