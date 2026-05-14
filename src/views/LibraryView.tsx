@@ -30,7 +30,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
   const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
-  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{ status: string; replicateStatus?: string | null; progressPct: number; imported?: boolean; importError?: string | null; outputUrl?: string | null } | null>(null);
+  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{
+    status: string;
+    replicateStatus?: string | null;
+    replicateHttpStatus?: number | null;
+    replicateCheckedAt?: number | null;
+    replicateFetchError?: string | null;
+    progressPct: number;
+    imported?: boolean;
+    importError?: string | null;
+    outputUrl?: string | null;
+  } | null>(null);
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
@@ -180,10 +190,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') return 100;
           return null;
         })();
-        const pct = pctFromStatus == null ? simulated : Math.max(simulated, pctFromStatus);
+        const pctRaw = pctFromStatus == null ? simulated : Math.max(simulated, pctFromStatus);
+        const pct = rawStatus === 'processing' ? Math.min(90, pctRaw) : pctRaw;
         setPendingRvcCoverUi({
           status: (out?.status || 'processing').toString(),
           replicateStatus: out?.replicateStatus ?? null,
+          replicateHttpStatus: typeof out?.replicateHttpStatus === 'number' ? out.replicateHttpStatus : null,
+          replicateCheckedAt: typeof out?.replicateCheckedAt === 'number' ? out.replicateCheckedAt : null,
+          replicateFetchError: typeof out?.replicateFetchError === 'string' ? out.replicateFetchError : null,
           progressPct: Math.max(0, Math.min(100, Number(pct))),
           imported: Boolean(out?.imported),
           importError: typeof out?.importError === 'string' ? out.importError : null,
@@ -1151,9 +1165,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               const fallbackPct = Math.min(98, Math.max(3, 5 + step * 2));
                               const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
                               const finalPct = Math.max(3, Math.min(100, Number(pct)));
-                              if (finalPct >= 98 && pendingRvcCoverUi?.replicateStatus === 'processing') {
-                                return '98%';
-                              }
                               return `${Math.round(finalPct)}%`;
                             })()}
                           </div>
@@ -1168,14 +1179,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                 const fallbackPct = Math.min(98, Math.max(3, 5 + step * 2));
                                 const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
                                 const finalPct = Math.max(3, Math.min(100, Number(pct)));
-                                if (finalPct >= 98 && pendingRvcCoverUi?.replicateStatus === 'processing') {
-                                  return 98;
-                                }
                                 return finalPct;
                               })()}%`,
                             }}
                           />
                         </div>
+                        {pendingRvcCoverUi?.replicateFetchError ? (
+                          <div className="mt-2 text-[11px] text-amber-200">
+                            {pendingRvcCoverUi.replicateFetchError}
+                          </div>
+                        ) : null}
                         {pendingRvcCoverUi?.importError ? (
                           <div className="mt-2 text-[11px] text-rose-300">
                             {pendingRvcCoverUi.importError}
@@ -1216,7 +1229,57 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
                       <button
-                        onClick={() => onRefreshSongs?.()}
+                        onClick={async () => {
+                          try {
+                            const first = pendingRvcCovers[0];
+                            if (first?.predictionId) {
+                              const t = await getAccessToken();
+                              if (t.ok) {
+                                const r = await fetch(
+                                  `/api/rvc/cover-status?predictionId=${encodeURIComponent(first.predictionId)}&nocache=1`,
+                                  { headers: { authorization: `Bearer ${t.token}` } }
+                                );
+                                const out = await r.json().catch(() => ({}));
+                                if (r.ok && out?.ok === true) {
+                                  const rawStatus = (out?.replicateStatus || out?.status || '').toString().trim().toLowerCase();
+                                  const now = Date.now();
+                                  const base = Math.max(0, Number(first?.startedAt || 0));
+                                  const step = Math.max(0, Math.floor((now - base) / 3500));
+                                  const simulatedBase = Math.min(98, Math.max(3, 5 + step * 2));
+                                  const simulated = (() => {
+                                    if (rawStatus === 'starting') return Math.min(30, simulatedBase);
+                                    if (rawStatus === 'processing') return Math.min(90, simulatedBase);
+                                    if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return Math.min(99, Math.max(95, simulatedBase));
+                                    return simulatedBase;
+                                  })();
+                                  const pctFromStatus = (() => {
+                                    if (out?.imported) return 100;
+                                    if (rawStatus === 'starting') return 10;
+                                    if (rawStatus === 'processing') return 70;
+                                    if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return 98;
+                                    if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') return 100;
+                                    return null;
+                                  })();
+                                  const pctRaw = pctFromStatus == null ? simulated : Math.max(simulated, pctFromStatus);
+                                  const pct = rawStatus === 'processing' ? Math.min(90, pctRaw) : pctRaw;
+                                  setPendingRvcCoverUi({
+                                    status: (out?.status || 'processing').toString(),
+                                    replicateStatus: out?.replicateStatus ?? null,
+                                    replicateHttpStatus: typeof out?.replicateHttpStatus === 'number' ? out.replicateHttpStatus : null,
+                                    replicateCheckedAt: typeof out?.replicateCheckedAt === 'number' ? out.replicateCheckedAt : null,
+                                    replicateFetchError: typeof out?.replicateFetchError === 'string' ? out.replicateFetchError : null,
+                                    progressPct: Math.max(0, Math.min(100, Number(pct))),
+                                    imported: Boolean(out?.imported),
+                                    importError: typeof out?.importError === 'string' ? out.importError : null,
+                                    outputUrl: typeof out?.outputUrl === 'string' ? out.outputUrl : null,
+                                  });
+                                }
+                              }
+                            }
+                          } catch {
+                          }
+                          onRefreshSongs?.();
+                        }}
                         className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                       >
                         Actualizar

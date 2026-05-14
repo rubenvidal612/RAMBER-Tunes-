@@ -9180,6 +9180,7 @@ const rvcHandler = (() => {
 
     const predictionId = pickQuery(req, "predictionId").toString().trim();
     if (!predictionId) return send(res, 400, { error: "Falta predictionId" });
+    const noCache = pickQuery(req, "nocache").toString().trim() === "1";
 
     try {
       const { data: coverRows, error: coverErr } = await auth.admin
@@ -9249,20 +9250,26 @@ const rvcHandler = (() => {
       let replicateError: any = null;
       let outputUrlHint = "";
       const replicateToken = process.env.REPLICATE_API_TOKEN;
-      const shouldRefreshFromReplicate = Boolean(replicateToken) && dbStatus === "processing";
+      const shouldRefreshFromReplicate = Boolean(replicateToken) && (dbStatus === "processing" || noCache);
+      let replicateHttpStatus: number | null = null;
+      let replicateCheckedAt: number | null = null;
+      let replicateFetchError: string | null = null;
       if (shouldRefreshFromReplicate) {
         const cached = replicateCache.get(predictionId);
         const now = Date.now();
-        if (cached && now - cached.checkedAt < 45_000) {
+        if (!noCache && cached && now - cached.checkedAt < 45_000) {
           replicateStatus = cached.status || "";
           replicateOutput = cached.output ?? null;
           replicateError = cached.error ?? null;
           outputUrlHint = pickFirstUrl(replicateOutput);
+          replicateCheckedAt = cached.checkedAt;
         } else {
           try {
             const r = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
               headers: { authorization: `Token ${replicateToken}` },
             });
+            replicateHttpStatus = r.status;
+            replicateCheckedAt = now;
             const data = await r.json().catch(() => null);
             if (r.ok && data && typeof data === "object") {
               replicateStatus = (data as any)?.status ? String((data as any).status) : "";
@@ -9270,8 +9277,15 @@ const rvcHandler = (() => {
               replicateError = (data as any)?.error ?? null;
               replicateCache.set(predictionId, { checkedAt: now, status: replicateStatus, output: replicateOutput, error: replicateError });
               outputUrlHint = pickFirstUrl(replicateOutput);
+            } else {
+              const detail =
+                (data && typeof data === "object" && ((data as any)?.detail || (data as any)?.error || (data as any)?.message)) ||
+                `HTTP ${r.status}`;
+              replicateFetchError = String(detail || "").slice(0, 240) || `HTTP ${r.status}`;
             }
           } catch {
+            replicateCheckedAt = now;
+            replicateFetchError = "No pude consultar Replicate en este momento.";
           }
         }
       }
@@ -9409,6 +9423,9 @@ const rvcHandler = (() => {
         predictionId,
         status: computedStatus,
         replicateStatus: replicateStatus || null,
+        replicateHttpStatus,
+        replicateCheckedAt,
+        replicateFetchError,
         imported: syncImported,
         importError,
         outputUrl: outputUrlHint || null,
