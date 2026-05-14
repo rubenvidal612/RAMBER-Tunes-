@@ -3034,28 +3034,41 @@ notify pgrst, 'reload schema';`;
         return send(res, 502, { error: "Respuesta inválida de Replicate API" });
       }
 
-      // Guardar en la base de datos
-      await auth.admin.from("rvc_covers").insert({
-        user_id: user.id,
-        title: finalTitle,
-        original_audio_url: sourceAudioRef,
-        voice_id: voiceId,
-        voice_model_url: modelUrl,
-        prediction_id: predictionId,
-        cost: cost,
-        pitch_change: pitchChange,
-        index_rate: indexRate,
-        protect: protect,
-        output_format: outputFormat,
-        status: 'processing',
-        created_at: new Date().toISOString(),
-      });
+      let trackingWarning: string | null = null;
+      try {
+        const { error: insErr } = await auth.admin.from("rvc_covers").insert({
+          user_id: user.id,
+          title: finalTitle,
+          original_audio_url: sourceAudioRef,
+          voice_id: voiceId,
+          voice_model_url: modelUrl,
+          prediction_id: predictionId,
+          cost: cost,
+          pitch_change: pitchChange,
+          index_rate: indexRate,
+          protect: protect,
+          output_format: outputFormat,
+          status: "processing",
+          created_at: new Date().toISOString(),
+        });
+        if (insErr) {
+          const msg = String((insErr as any)?.message || "").trim();
+          const lower = msg.toLowerCase();
+          const missingTable = lower.includes("could not find the table") && lower.includes("rvc_covers");
+          trackingWarning = missingTable
+            ? "Falta la tabla rvc_covers en Supabase. El cover puede completarse, pero el seguimiento puede fallar."
+            : msg || "No pude guardar el seguimiento del cover.";
+        }
+      } catch (e) {
+        trackingWarning = e instanceof Error ? e.message : String(e);
+      }
 
       return send(res, 200, { 
         coverId: predictionId,
         predictionId,
         message: "Cover en proceso. Recibirás una notificación cuando esté listo.",
         status: 'processing',
+        warning: trackingWarning,
         cost: cost
       });
     } catch (e) {
@@ -9183,15 +9196,29 @@ const rvcHandler = (() => {
     const noCache = pickQuery(req, "nocache").toString().trim() === "1";
 
     try {
-      const { data: coverRows, error: coverErr } = await auth.admin
-        .from("rvc_covers")
-        .select("prediction_id,status,updated_at,error,output,output_format,title,user_id")
-        .eq("user_id", auth.user.id)
-        .eq("prediction_id", predictionId.slice(0, 200))
-        .limit(1);
-      if (coverErr) return send(res, 500, { error: "No pude buscar el cover", detail: coverErr.message });
-      const row = Array.isArray(coverRows) ? coverRows[0] : null;
-      const dbStatus = row && (row as any)?.status ? String((row as any).status) : "processing";
+      let row: any = null;
+      let dbStatus = "processing";
+      let trackingWarning: string | null = null;
+      try {
+        const { data: coverRows, error: coverErr } = await auth.admin
+          .from("rvc_covers")
+          .select("prediction_id,status,updated_at,error,output,output_format,title,user_id")
+          .eq("user_id", auth.user.id)
+          .eq("prediction_id", predictionId.slice(0, 200))
+          .limit(1);
+        if (coverErr) {
+          const msg = String((coverErr as any)?.message || "").trim();
+          const lower = msg.toLowerCase();
+          const missingTable = lower.includes("could not find the table") && lower.includes("rvc_covers");
+          if (!missingTable) return send(res, 500, { error: "No pude buscar el cover", detail: msg || coverErr.message });
+          trackingWarning = "Falta la tabla rvc_covers en Supabase. El seguimiento puede ser limitado.";
+        } else {
+          row = Array.isArray(coverRows) ? coverRows[0] : null;
+          dbStatus = row && (row as any)?.status ? String((row as any).status) : "processing";
+        }
+      } catch (e) {
+        trackingWarning = e instanceof Error ? e.message : String(e);
+      }
 
       const externalId = `rvc_${predictionId}`.slice(0, 200);
       const { data: libRows } = await auth.admin
@@ -9426,6 +9453,7 @@ const rvcHandler = (() => {
         replicateHttpStatus,
         replicateCheckedAt,
         replicateFetchError,
+        trackingWarning,
         imported: syncImported,
         importError,
         outputUrl: outputUrlHint || null,

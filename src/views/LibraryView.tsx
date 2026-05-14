@@ -176,7 +176,25 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         });
         const out = await r.json().catch(() => ({}));
         if (!alive) return;
-        if (!r.ok || out?.ok !== true) return;
+        if (!r.ok || out?.ok !== true) {
+          const msg = [out?.error, out?.detail, out?.hint]
+            .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+            .filter(Boolean)
+            .join('\n\n');
+          const base = msg || `No pude consultar el estado del cover (HTTP ${Number(r.status || 0) || 0}).`;
+          setPendingRvcCoverUi((prev) => ({
+            status: (prev?.status || 'processing').toString(),
+            replicateStatus: prev?.replicateStatus ?? null,
+            replicateHttpStatus: Number(r.status || 0) || null,
+            replicateCheckedAt: Date.now(),
+            replicateFetchError: base,
+            progressPct: prev?.progressPct ?? 0,
+            imported: Boolean(prev?.imported),
+            importError: prev?.importError ?? null,
+            outputUrl: prev?.outputUrl ?? null,
+          }));
+          return;
+        }
 
         const rawStatus = (out?.replicateStatus || out?.status || '').toString().trim().toLowerCase();
         const now = Date.now();
@@ -1324,12 +1342,24 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               `/api/rvc/cover-status?predictionId=${encodeURIComponent(first.predictionId)}&nocache=1`,
                               { headers: { authorization: `Bearer ${t.token}` } }
                             );
-                            const out = await r.json().catch(() => ({}));
+                            const text = await r.text().catch(() => '');
+                            const out = (() => {
+                              try {
+                                return text ? JSON.parse(text) : {};
+                              } catch {
+                                return {};
+                              }
+                            })();
                             const lines = [
+                              `httpStatus: ${String(Number(r.status || 0) || '')}`,
+                              `error: ${String(out?.error || '')}`,
+                              `detail: ${String(out?.detail || '')}`,
+                              `hint: ${String(out?.hint || '')}`,
                               `status(app): ${String(out?.status || '')}`,
                               `replicateStatus: ${String(out?.replicateStatus || '')}`,
                               `replicateHTTP: ${out?.replicateHttpStatus == null ? '' : String(out.replicateHttpStatus)}`,
                               `replicateError: ${String(out?.replicateFetchError || '')}`,
+                              `trackingWarning: ${String(out?.trackingWarning || '')}`,
                               `imported: ${String(Boolean(out?.imported))}`,
                               `importError: ${String(out?.importError || '')}`,
                               `outputUrl: ${String(out?.outputUrl || '')}`,
