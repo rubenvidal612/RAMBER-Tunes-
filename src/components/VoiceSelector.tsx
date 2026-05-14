@@ -273,18 +273,19 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
               const displayName = (voice.voiceProfileName || voice.name || 'Voz').toString().trim() || 'Voz';
               const isSelected = selectedVoiceId === voice.id;
               const isReady = voice.status === 'ready';
+              const isPlaying = playingVoiceId === voice.id;
               return (
                 <button
                   key={voice.id}
                   type="button"
                   onClick={(e) => {
-                    if (voice.sampleUrl) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handlePlaySample(voice);
-                    } else {
-                      handleSelectVoice(voice.id);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isReady) {
+                      alert('Esta voz todavía se está entrenando. Intenta de nuevo cuando esté lista.');
+                      return;
                     }
+                    handleSelectVoice(voice.id);
                   }}
                   className={cn(
                     "relative aspect-square rounded-[26px] overflow-hidden border transition-colors text-left",
@@ -322,6 +323,25 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
                     >
                       <Edit className="w-5 h-5" />
                     </button>
+                    {voice.sampleUrl ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (isPlaying) {
+                            handleStopPlayback();
+                            return;
+                          }
+                          handlePlaySample(voice);
+                        }}
+                        className="w-11 h-11 rounded-full bg-black/45 border border-white/10 text-white flex items-center justify-center hover:bg-black/60"
+                        title={isPlaying ? "Detener" : "Escuchar"}
+                        aria-label={isPlaying ? "Detener" : "Escuchar"}
+                      >
+                        {isPlaying ? <X className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                      </button>
+                    ) : null}
                     <div
                       className={cn(
                         "w-11 h-11 rounded-full border flex items-center justify-center",
