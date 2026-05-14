@@ -3862,7 +3862,11 @@ function SongOptionsSheet({
 
                       if (!response.ok) {
                         const errorData = await response.json().catch(() => ({}));
-                        alert(errorData.error || 'Error al crear el cover');
+                        const msg = [errorData?.error, errorData?.detail, errorData?.hint]
+                          .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+                          .filter(Boolean)
+                          .join('\n\n');
+                        alert(msg || 'Error al crear el cover');
                         return;
                       }
 
