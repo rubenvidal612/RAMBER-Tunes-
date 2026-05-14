@@ -9480,6 +9480,35 @@ export default async function handler(req: any, res: any) {
     if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "rvc") return rvcHandler(req, res);
+    if (head === "replicate" && next === "predictions" && third && parts[isApi ? 4 : 3] === "cancel") {
+      const predictionId = third;
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (!token) return new Response('Unauthorized', { status: 401 });
+      const createClient = await getSupabaseCreateClient();
+      const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+      const { data: user } = await supabase.auth.getUser(token);
+      if (!user?.user) return new Response('Unauthorized', { status: 401 });
+      const replicateApiKey = process.env.REPLICATE_API_TOKEN;
+      if (!replicateApiKey) return new Response('Replicate API key missing', { status: 500 });
+      const replicateRes = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${replicateApiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!replicateRes.ok) {
+        const err = await replicateRes.json().catch(() => ({}));
+        return new Response(JSON.stringify({ error: err?.detail || 'Failed to cancel' }), {
+          status: replicateRes.status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const out = await replicateRes.json();
+      return new Response(JSON.stringify(out), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-voice-sample") return replicateVoiceSampleWebhookHandler(req, res);

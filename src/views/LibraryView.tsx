@@ -1265,6 +1265,39 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       >
                         Ocultar
                       </button>
+                      <button
+                        onClick={async () => {
+                          const first = pendingRvcCovers[0];
+                          if (!first?.predictionId) return;
+                          try {
+                            const t = await getAccessToken();
+                            if (!t.ok) return;
+                            const r = await fetch(`/api/replicate/predictions/${first.predictionId}/cancel`, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${t.token}`,
+                              },
+                            });
+                            if (r.ok) {
+                              alert('Cover cancelado en Replicate');
+                              try {
+                                window.localStorage.removeItem('ramber.pendingRvcCovers_v1');
+                              } catch {
+                              }
+                              setPendingRvcCovers([]);
+                            } else {
+                              const out = await r.json().catch(() => ({}));
+                              alert(out?.error || 'No pude cancelar el cover');
+                            }
+                          } catch {
+                            alert('Error al cancelar');
+                          }
+                        }}
+                        className="bg-red-600 border border-red-700 rounded-full px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                      >
+                        Cancelar
+                      </button>
                     </div>
                   </div>
                 </div>
