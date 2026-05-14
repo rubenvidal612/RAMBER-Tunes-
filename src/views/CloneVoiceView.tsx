@@ -116,8 +116,10 @@ export function CloneVoiceView() {
             const cost = Number(v?.cost ?? 0) || 0;
             const model_url = v?.model_url == null ? null : String(v.model_url || '') || null;
             const sample_url = v?.sample_url == null ? null : String(v.sample_url || '') || null;
-            const profile_image_url = v?.profile_image_url == null ? null : String(v.profile_image_url || '') || null;
-            const voice_profile_name = v?.voice_profile_name == null ? null : String(v.voice_profile_name || '') || null;
+            const profileImageRaw = v?.profile_image_url ?? v?.profileImageUrl;
+            const profile_image_url = profileImageRaw == null ? null : String(profileImageRaw || '') || null;
+            const voiceProfileNameRaw = v?.voice_profile_name ?? v?.voiceProfileName;
+            const voice_profile_name = voiceProfileNameRaw == null ? null : String(voiceProfileNameRaw || '') || null;
             let output: any = null;
             const outRaw = (v as any)?.output;
             if (outRaw && typeof outRaw === 'string') {

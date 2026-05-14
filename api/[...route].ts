@@ -9018,26 +9018,31 @@ const kitsVoicesHandler = (() => {
 
         if (error) throw error;
         const out: any[] = Array.isArray(voices) ? voices : [];
-        for (const v of out) {
-          const raw = (v as any)?.sample_url;
-          if (typeof raw !== "string" || !raw.trim()) continue;
+        const refreshSignedUrlField = async (row: any, field: string) => {
+          const raw = row?.[field];
+          if (typeof raw !== "string" || !raw.trim()) return;
           const s = raw.trim();
           const looksSigned = s.includes("X-Amz-Signature=") || s.includes("X-Amz-Algorithm=");
-          if (!looksSigned) continue;
+          if (!looksSigned) return;
           try {
             const u = new URL(s);
             const key = (u.pathname || "").replace(/^\/+/, "");
-            if (!key) continue;
+            if (!key) return;
             const okPrefix =
               key.startsWith("uploads/") ||
               key.startsWith("personas/") ||
               key.startsWith("rvc_datasets/") ||
               key.startsWith("covers/");
-            if (!okPrefix) continue;
+            if (!okPrefix) return;
             const refreshed = await getSignedR2Url(key, 60 * 60 * 2);
-            if (typeof refreshed === "string" && refreshed.trim()) (v as any).sample_url = refreshed.trim();
+            if (typeof refreshed === "string" && refreshed.trim()) row[field] = refreshed.trim();
           } catch {
           }
+        };
+
+        for (const v of out) {
+          await refreshSignedUrlField(v, "sample_url");
+          await refreshSignedUrlField(v, "profile_image_url");
         }
 
         return send(res, 200, { voices: out });
