@@ -4299,93 +4299,12 @@ function SongOptionsSheet({
                 songId={song.id}
                 className="mb-4"
               />
-              
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setShowVoiceClone(false)}
-                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full py-3 text-slate-200 font-extrabold transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!selectedVoiceId) {
-                      alert('Selecciona una voz primero');
-                      return;
-                    }
-                    
-                    try {
-                      setIsBusy(true);
-                      setVoiceCloneProgress('Creando cover…');
-                      const token = await getAccessToken();
-                      if (!token.ok) {
-                        alert('No se pudo iniciar sesión');
-                        return;
-                      }
-
-                      const response = await fetch('/api/suno/create-cover', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${token.token}`,
-                        },
-                        body: JSON.stringify({
-                          songId: song.id,
-                          voiceId: selectedVoiceId,
-                          outputFormat: 'wav',
-                        }),
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        const msg = [errorData?.error, errorData?.detail, errorData?.hint]
-                          .map((x: any) => (typeof x === 'string' ? x.trim() : ''))
-                          .filter(Boolean)
-                          .join('\n\n');
-                        alert(msg || 'Error al crear el cover');
-                        return;
-                      }
-
-                      const data = await response.json().catch(() => ({}));
-                      const coverId = (data?.predictionId || data?.coverId || '').toString().trim();
-                      if (coverId) {
-                        try {
-                          const key = 'ramber.pendingRvcCovers_v1';
-                          const raw = window.localStorage.getItem(key);
-                          const parsed = raw ? JSON.parse(raw) : null;
-                          const list = Array.isArray(parsed) ? parsed : [];
-                          list.push({ predictionId: coverId, startedAt: Date.now(), songId: song.id, voiceId: selectedVoiceId });
-                          window.localStorage.setItem(key, JSON.stringify(list.slice(-10)));
-                        } catch {
-                        }
-                      }
-                      alert(
-                        coverId
-                          ? `Listo. Tu cover se está creando.\n\nID: ${coverId}\n\nEn unos minutos aparecerá en Biblioteca.`
-                          : 'Listo. Tu cover se está creando. En unos minutos aparecerá en Biblioteca.'
-                      );
-                      
-                      setShowVoiceClone(false);
-                      onClose();
-                      
-                      // Recargar la biblioteca si es necesario
-                      if (onRefreshSongs) {
-                        onRefreshSongs();
-                      }
-                    } catch (err) {
-                      alert('Error al crear el cover');
-                      console.error(err);
-                    } finally {
-                      setVoiceCloneProgress('');
-                      setIsBusy(false);
-                    }
-                  }}
-                  disabled={isBusy || !selectedVoiceId}
-                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-3 rounded-full transition-colors disabled:opacity-60"
-                >
-                  {isBusy ? 'Creando cover...' : 'Crear cover (rápido)'}
-                </button>
-              </div>
+              <button
+                onClick={() => setShowVoiceClone(false)}
+                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full py-3 text-slate-200 font-extrabold transition-colors"
+              >
+                Cancelar
+              </button>
 
               <button
                 onClick={async () => {
