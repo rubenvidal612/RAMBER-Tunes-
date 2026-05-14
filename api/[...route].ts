@@ -9101,6 +9101,107 @@ const uploadAudioHandler = (() => {
   };
 })();
 
+const rvcHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = (req.headers.authorization || "").toString();
+    const bearerToken = token.toLowerCase().startsWith("bearer ") ? token.slice(7).trim() : "";
+    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function coverStatus(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const predictionId = pickQuery(req, "predictionId").toString().trim();
+    if (!predictionId) return send(res, 400, { error: "Falta predictionId" });
+
+    try {
+      const { data: coverRows, error: coverErr } = await auth.admin
+        .from("rvc_covers")
+        .select("prediction_id,status,updated_at,error")
+        .eq("user_id", auth.user.id)
+        .eq("prediction_id", predictionId.slice(0, 200))
+        .limit(1);
+      if (coverErr) return send(res, 500, { error: "No pude buscar el cover", detail: coverErr.message });
+      const row = Array.isArray(coverRows) ? coverRows[0] : null;
+      const status = row && (row as any)?.status ? String((row as any).status) : "processing";
+
+      const externalId = `rvc_${predictionId}`.slice(0, 200);
+      const { data: libRows } = await auth.admin
+        .from("library_items")
+        .select("id")
+        .eq("user_id", auth.user.id)
+        .eq("type", "song")
+        .eq("suno_audio_id", externalId)
+        .is("deleted_at", null)
+        .limit(1);
+      const imported = Array.isArray(libRows) && libRows.length > 0;
+
+      let errObj: any = null;
+      const rawErr = row ? (row as any)?.error : null;
+      if (rawErr && typeof rawErr === "string") {
+        try {
+          errObj = JSON.parse(rawErr);
+        } catch {
+          errObj = rawErr;
+        }
+      } else if (rawErr && typeof rawErr === "object") {
+        errObj = rawErr;
+      }
+
+      return send(res, 200, {
+        ok: true,
+        predictionId,
+        status,
+        imported,
+        error: errObj,
+        updatedAt: row && (row as any)?.updated_at ? String((row as any).updated_at) : null,
+      });
+    } catch (e) {
+      return send(res, 502, { error: "No pude consultar el estado del cover", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const u = new URL(req.url, "http://localhost");
+    const parts = u.pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "rvc") return send(res, 404, { error: "Ruta no encontrada" });
+    if (next === "cover-status") return coverStatus(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -9158,6 +9259,7 @@ export default async function handler(req: any, res: any) {
     if (head === "kits" && next === "voice-conversions") return kitsVoicesHandler(req, res);
     if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
+    if (head === "rvc") return rvcHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-voice-sample") return replicateVoiceSampleWebhookHandler(req, res);

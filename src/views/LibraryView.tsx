@@ -29,6 +29,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
+  const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
@@ -116,6 +117,77 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const id = window.setInterval(() => setPendingTasks(read()), 1200);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const key = 'ramber.pendingRvcCovers_v1';
+    const read = () => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const list = Array.isArray(parsed) ? parsed : [];
+        return list
+          .map((x: any) => ({
+            predictionId: typeof x?.predictionId === 'string' ? x.predictionId.trim() : '',
+            startedAt: Number.isFinite(Number(x?.startedAt || 0)) ? Number(x.startedAt || 0) : 0,
+            songId: typeof x?.songId === 'string' ? x.songId.trim() : undefined,
+            voiceId: typeof x?.voiceId === 'string' ? x.voiceId.trim() : undefined,
+          }))
+          .filter((x: any) => x.predictionId);
+      } catch {
+        return [];
+      }
+    };
+    setPendingRvcCovers(read());
+    const id = window.setInterval(() => setPendingRvcCovers(read()), 1200);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (showTrash) return;
+    if (pendingRvcCovers.length === 0) return;
+    let alive = true;
+    const key = 'ramber.pendingRvcCovers_v1';
+    const tick = async () => {
+      try {
+        const first = pendingRvcCovers[0];
+        if (!first?.predictionId) return;
+        const t = await getAccessToken();
+        if (!t.ok) return;
+        const r = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(first.predictionId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const out = await r.json().catch(() => ({}));
+        if (!alive) return;
+        if (!r.ok || out?.ok !== true) return;
+        if (out?.imported) {
+          try {
+            const raw = window.localStorage.getItem(key);
+            const parsed = raw ? JSON.parse(raw) : null;
+            const list = Array.isArray(parsed) ? parsed : [];
+            const next = list.filter((x: any) => String(x?.predictionId || '').trim() !== first.predictionId);
+            if (next.length === 0) window.localStorage.removeItem(key);
+            else window.localStorage.setItem(key, JSON.stringify(next.slice(-10)));
+          } catch {
+          }
+          onRefreshSongs?.();
+        }
+        const status = String(out?.status || '').toLowerCase();
+        if (status === 'failed') {
+          try {
+            window.localStorage.removeItem(key);
+          } catch {
+          }
+        }
+      } catch {
+      }
+    };
+    tick().catch(() => {});
+    const id = window.setInterval(() => tick().catch(() => {}), 6000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [pendingRvcCovers, onRefreshSongs, showTrash]);
 
   useEffect(() => {
     const completedKey = 'ramber.completedSunoDownloads_v1';
@@ -1017,6 +1089,42 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   const n = expectedTracksForKind(first?.kind || 'generate');
                   return <>{Array.from({ length: n }, (_, i) => i).map(row)}</>;
                 })()}
+              </div>
+            )}
+
+            {pendingRvcCovers.length > 0 && !showTrash && (
+              <div className="space-y-3 mt-3">
+                <div className="glass-card rounded-2xl p-4 border border-white/10">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-white font-bold truncate">Cover con voz clonada en proceso</div>
+                      <div className="text-slate-400 text-xs">
+                        Esto puede tardar unos minutos. Cuando termine, aparecerá en tu Biblioteca.
+                      </div>
+                      <div className="text-slate-500 text-[11px] truncate">{`ID: ${pendingRvcCovers[0]?.predictionId || ''}`}</div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        onClick={() => onRefreshSongs?.()}
+                        className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                      >
+                        Actualizar
+                      </button>
+                      <button
+                        onClick={() => {
+                          try {
+                            window.localStorage.removeItem('ramber.pendingRvcCovers_v1');
+                          } catch {
+                          }
+                          setPendingRvcCovers([]);
+                        }}
+                        className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                      >
+                        Ocultar
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -3870,8 +3978,24 @@ function SongOptionsSheet({
                         return;
                       }
 
-                      const data = await response.json();
-                      alert(`¡Cover creado exitosamente! ID: ${data.coverId}`);
+                      const data = await response.json().catch(() => ({}));
+                      const coverId = (data?.predictionId || data?.coverId || '').toString().trim();
+                      if (coverId) {
+                        try {
+                          const key = 'ramber.pendingRvcCovers_v1';
+                          const raw = window.localStorage.getItem(key);
+                          const parsed = raw ? JSON.parse(raw) : null;
+                          const list = Array.isArray(parsed) ? parsed : [];
+                          list.push({ predictionId: coverId, startedAt: Date.now(), songId: song.id, voiceId: selectedVoiceId });
+                          window.localStorage.setItem(key, JSON.stringify(list.slice(-10)));
+                        } catch {
+                        }
+                      }
+                      alert(
+                        coverId
+                          ? `Listo. Tu cover se está creando.\n\nID: ${coverId}\n\nEn unos minutos aparecerá en Biblioteca.`
+                          : 'Listo. Tu cover se está creando. En unos minutos aparecerá en Biblioteca.'
+                      );
                       
                       setShowVoiceClone(false);
                       onClose();
