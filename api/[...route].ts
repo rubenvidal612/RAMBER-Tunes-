@@ -2657,6 +2657,27 @@ notify pgrst, 'reload schema';`;
         if (!aurl) return send(res, 404, { error: "La canción no tiene audio" });
         finalTitle = rawTitle || `${String((baseSong as any).title || "Canción").trim().slice(0, 90)} (Voz clonada)`;
         finalUploadUrl = aurl;
+        const isHttp = /^https?:\/\//i.test(finalUploadUrl);
+        const isBlobOrData = /^blob:|^data:/i.test(finalUploadUrl);
+        if (isBlobOrData) {
+          return send(res, 400, {
+            error: "El audio de esta canción no está en una URL pública todavía.",
+            detail:
+              "Esto pasa cuando el audio es temporal. Reproduce la canción una vez en Biblioteca para que se guarde la URL real y vuelve a intentar.",
+          });
+        }
+        if (!isHttp) {
+          try {
+            const key = finalUploadUrl.replace(/^\/+/, "");
+            finalUploadUrl = await getSignedR2Url(key, 60 * 60 * 2);
+          } catch (e) {
+            return send(res, 400, {
+              error: "El audio de esta canción no está en una URL pública todavía.",
+              detail: e instanceof Error ? e.message : String(e),
+              hint: "Tip: Reproduce la canción una vez en Biblioteca y vuelve a intentar.",
+            });
+          }
+        }
       } else if (uploadUrl || uploadPath) {
         finalUploadUrl = uploadUrl;
         if (uploadPath) {
