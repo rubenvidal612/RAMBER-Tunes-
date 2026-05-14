@@ -30,6 +30,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [showTrash, setShowTrash] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
   const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
+  const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{ status: string; replicateStatus?: string | null; progressPct: number; imported?: boolean } | null>(null);
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
@@ -159,6 +160,28 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         const out = await r.json().catch(() => ({}));
         if (!alive) return;
         if (!r.ok || out?.ok !== true) return;
+
+        const rawStatus = (out?.replicateStatus || out?.status || '').toString().trim().toLowerCase();
+        const now = Date.now();
+        const base = Math.max(0, Number(first?.startedAt || 0));
+        const step = Math.max(0, Math.floor((now - base) / 3500));
+        const simulated = Math.min(95, Math.max(3, 5 + step * 2));
+        const pctFromStatus = (() => {
+          if (out?.imported) return 100;
+          if (rawStatus === 'starting') return 10;
+          if (rawStatus === 'processing') return 60;
+          if (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready') return 95;
+          if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') return 100;
+          return null;
+        })();
+        const pct = pctFromStatus == null ? simulated : Math.max(simulated, pctFromStatus);
+        setPendingRvcCoverUi({
+          status: (out?.status || 'processing').toString(),
+          replicateStatus: out?.replicateStatus ?? null,
+          progressPct: Math.max(0, Math.min(100, Number(pct))),
+          imported: Boolean(out?.imported),
+        });
+
         if (out?.imported) {
           try {
             const raw = window.localStorage.getItem(key);
@@ -1100,6 +1123,43 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       <div className="text-white font-bold truncate">Cover con voz clonada en proceso</div>
                       <div className="text-slate-400 text-xs">
                         Esto puede tardar unos minutos. Cuando termine, aparecerá en tu Biblioteca.
+                      </div>
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between text-[11px] text-slate-300">
+                          <div className="truncate">
+                            {(() => {
+                              const s = (pendingRvcCoverUi?.replicateStatus || pendingRvcCoverUi?.status || 'processing').toString().trim().toLowerCase();
+                              if (s === 'starting') return 'Estado: iniciando...';
+                              if (s === 'processing') return 'Estado: procesando...';
+                              if (s === 'succeeded' || s === 'completed' || s === 'ready') return 'Estado: finalizando...';
+                              if (s === 'failed' || s === 'canceled' || s === 'error') return 'Estado: error';
+                              return 'Estado: en proceso...';
+                            })()}
+                          </div>
+                          <div className="shrink-0 font-bold text-slate-100">
+                            {(() => {
+                              const base = Math.max(0, Number(pendingRvcCovers[0]?.startedAt || 0));
+                              const step = Math.max(0, Math.floor((Date.now() - base) / 3500));
+                              const fallbackPct = Math.min(95, Math.max(3, 5 + step * 2));
+                              const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
+                              return `${Math.round(Number(pct))}%`;
+                            })()}
+                          </div>
+                        </div>
+                        <div className="mt-2 h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-fuchsia-500 to-emerald-400 transition-all"
+                            style={{
+                              width: `${(() => {
+                                const base = Math.max(0, Number(pendingRvcCovers[0]?.startedAt || 0));
+                                const step = Math.max(0, Math.floor((Date.now() - base) / 3500));
+                                const fallbackPct = Math.min(95, Math.max(3, 5 + step * 2));
+                                const pct = pendingRvcCoverUi?.progressPct ?? fallbackPct;
+                                return Math.max(3, Math.min(100, Number(pct)));
+                              })()}%`,
+                            }}
+                          />
+                        </div>
                       </div>
                       <div className="text-slate-500 text-[11px] truncate">{`ID: ${pendingRvcCovers[0]?.predictionId || ''}`}</div>
                     </div>

@@ -9146,13 +9146,13 @@ const rvcHandler = (() => {
     try {
       const { data: coverRows, error: coverErr } = await auth.admin
         .from("rvc_covers")
-        .select("prediction_id,status,updated_at,error")
+        .select("prediction_id,status,updated_at,error,output,output_format,title,user_id")
         .eq("user_id", auth.user.id)
         .eq("prediction_id", predictionId.slice(0, 200))
         .limit(1);
       if (coverErr) return send(res, 500, { error: "No pude buscar el cover", detail: coverErr.message });
       const row = Array.isArray(coverRows) ? coverRows[0] : null;
-      const status = row && (row as any)?.status ? String((row as any).status) : "processing";
+      const dbStatus = row && (row as any)?.status ? String((row as any).status) : "processing";
 
       const externalId = `rvc_${predictionId}`.slice(0, 200);
       const { data: libRows } = await auth.admin
@@ -9164,6 +9164,159 @@ const rvcHandler = (() => {
         .is("deleted_at", null)
         .limit(1);
       const imported = Array.isArray(libRows) && libRows.length > 0;
+
+      const normalizeHttpUrl = (raw: any) => {
+        const s = (typeof raw === "string" ? raw : raw == null ? "" : String(raw)).trim();
+        if (!s) return "";
+        if (/^https?:\/\//i.test(s) || /^\/\//.test(s)) return s;
+        return "";
+      };
+
+      const pickFirstUrl = (output: any) => {
+        const direct = normalizeHttpUrl(output);
+        if (direct) return direct;
+        const candidates: any[] = [];
+        if (output && typeof output === "object") {
+          candidates.push(
+            output?.audio,
+            output?.audio_url,
+            output?.audioUrl,
+            output?.output,
+            output?.output_url,
+            output?.outputUrl,
+            output?.url,
+            output?.download,
+            output?.download_url
+          );
+          if (Array.isArray(output)) candidates.push(...output);
+        }
+        for (const c of candidates) {
+          const u = normalizeHttpUrl(c);
+          if (u) return u;
+        }
+        return "";
+      };
+
+      const contentTypeForExt = (ext: string) => {
+        const e = (ext || "").toString().trim().toLowerCase();
+        if (e === "wav") return "audio/wav";
+        if (e === "ogg") return "audio/ogg";
+        if (e === "aac") return "audio/aac";
+        if (e === "m4a") return "audio/mp4";
+        return "audio/mpeg";
+      };
+
+      let replicateStatus = "";
+      let replicateOutput: any = null;
+      let replicateError: any = null;
+      const replicateToken = process.env.REPLICATE_API_TOKEN;
+      if (replicateToken) {
+        try {
+          const r = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
+            headers: { authorization: `Token ${replicateToken}` },
+          });
+          const data = await r.json().catch(() => null);
+          if (r.ok && data && typeof data === "object") {
+            replicateStatus = (data as any)?.status ? String((data as any).status) : "";
+            replicateOutput = (data as any)?.output ?? null;
+            replicateError = (data as any)?.error ?? null;
+          }
+        } catch {
+        }
+      }
+
+      const computedStatusRaw = (replicateStatus || dbStatus || "").toString().trim().toLowerCase();
+      const computedStatus =
+        computedStatusRaw === "succeeded" || computedStatusRaw === "completed"
+          ? "ready"
+          : computedStatusRaw === "failed" || computedStatusRaw === "canceled" || computedStatusRaw === "error"
+          ? "failed"
+          : "processing";
+
+      if (row && String((row as any)?.status || "").trim() !== computedStatus && (computedStatus === "ready" || computedStatus === "failed")) {
+        try {
+          await auth.admin
+            .from("rvc_covers")
+            .update({
+              status: computedStatus,
+              output: replicateOutput ? JSON.stringify(replicateOutput) : null,
+              error: replicateError ? JSON.stringify(replicateError) : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", auth.user.id)
+            .eq("prediction_id", predictionId.slice(0, 200));
+        } catch {
+        }
+      }
+
+      let syncImported = imported;
+      if (!syncImported && computedStatus === "ready") {
+        const userId = row && (row as any)?.user_id ? String((row as any).user_id) : auth.user.id;
+        let outObj: any = replicateOutput;
+        if (!outObj) {
+          const outRaw = row ? (row as any)?.output : null;
+          if (outRaw && typeof outRaw === "string") {
+            try {
+              outObj = JSON.parse(outRaw);
+            } catch {
+              outObj = null;
+            }
+          } else if (outRaw && typeof outRaw === "object") {
+            outObj = outRaw;
+          }
+        }
+        const audioSourceUrl = pickFirstUrl(outObj);
+        if (audioSourceUrl) {
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 120_000);
+            const r = await fetch(audioSourceUrl, { signal: ctrl.signal as any });
+            clearTimeout(timer);
+            if (r.ok) {
+              const remoteCt = (r.headers.get("content-type") || "").toString().trim().slice(0, 120);
+              const ab = await r.arrayBuffer();
+              if (ab && ab.byteLength) {
+                const buf = Buffer.from(ab);
+                const fmt = String((row as any)?.output_format || "mp3").trim().toLowerCase();
+                const ext = ["mp3", "wav", "ogg", "aac", "m4a"].includes(fmt) ? fmt : "mp3";
+                const contentType = remoteCt || contentTypeForExt(ext);
+                const safeId = predictionId.replaceAll(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 120) || "cover";
+                const key = `covers/${userId}/${Date.now()}_${safeId}.${ext}`;
+                const audioUrl = await uploadToR2(key, buf, contentType);
+                const title = String((row as any)?.title || "Cover (voz clonada)").trim().slice(0, 120) || "Cover (voz clonada)";
+
+                const { data: exists2 } = await auth.admin
+                  .from("library_items")
+                  .select("id")
+                  .eq("user_id", userId)
+                  .eq("type", "song")
+                  .eq("suno_audio_id", externalId)
+                  .is("deleted_at", null)
+                  .limit(1);
+                if (!Array.isArray(exists2) || exists2.length === 0) {
+                  const { error: insErr } = await auth.admin.from("library_items").insert({
+                    user_id: userId,
+                    type: "song",
+                    title,
+                    description: "Cover generado con voz clonada",
+                    lyrics: null,
+                    gender: null,
+                    audio_url: audioUrl,
+                    cover_url: null,
+                    suno_task_id: null,
+                    suno_audio_id: externalId,
+                    is_cover: true,
+                  } as any);
+                  if (!insErr) syncImported = true;
+                } else {
+                  syncImported = true;
+                }
+              }
+            }
+          } catch {
+          }
+        }
+      }
 
       let errObj: any = null;
       const rawErr = row ? (row as any)?.error : null;
@@ -9180,8 +9333,9 @@ const rvcHandler = (() => {
       return send(res, 200, {
         ok: true,
         predictionId,
-        status,
-        imported,
+        status: computedStatus,
+        replicateStatus: replicateStatus || null,
+        imported: syncImported,
         error: errObj,
         updatedAt: row && (row as any)?.updated_at ? String((row as any).updated_at) : null,
       });
