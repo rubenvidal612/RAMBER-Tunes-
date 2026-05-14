@@ -1399,7 +1399,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                 'Content-Type': 'application/json',
                                 Authorization: `Bearer ${t.token}`,
                               },
-                              body: JSON.stringify({ songId: first.songId, voiceId: first.voiceId }),
+                              body: JSON.stringify({ songId: first.songId, voiceId: first.voiceId, outputFormat: 'wav' }),
                             });
                             const out = await r.json().catch(() => ({}));
                             if (!r.ok) {
@@ -4325,6 +4325,7 @@ function SongOptionsSheet({
                         body: JSON.stringify({
                           songId: song.id,
                           voiceId: selectedVoiceId,
+                          outputFormat: 'wav',
                         }),
                       });
 

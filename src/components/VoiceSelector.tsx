@@ -200,6 +200,7 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
         body: JSON.stringify({
           songId,
           voiceId,
+          outputFormat: 'wav',
         }),
       });
 
