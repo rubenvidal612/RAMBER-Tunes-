@@ -1899,6 +1899,16 @@ export default function App() {
     };
 
     const directUrl = (song.audioUrl || '').toString().trim();
+    const looksLikeR2 = (() => {
+      const u = directUrl.toLowerCase();
+      if (!/^https?:\/\//i.test(directUrl)) return false;
+      return u.includes('.r2.cloudflarestorage.com/') || /https?:\/\/[^/]+\.r2\.dev\//i.test(directUrl);
+    })();
+    if (looksLikeR2 && song?.id) {
+      const proxyUrl = `/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`;
+      const ok = await tryPlay(proxyUrl);
+      if (ok) return;
+    }
     if (/^https?:\/\//i.test(directUrl)) {
       const ok = await tryPlay(directUrl);
       if (ok) return;
