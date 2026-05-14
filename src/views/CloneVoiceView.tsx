@@ -73,9 +73,14 @@ export function CloneVoiceView() {
   const [coverSuccess, setCoverSuccess] = useState('');
   const [showPickCoverSong, setShowPickCoverSong] = useState(false);
   const [showPickCoverVoice, setShowPickCoverVoice] = useState(false);
-  const coverFileInputRef = useRef<HTMLInputElement>(null);
-  const [externalCoverFile, setExternalCoverFile] = useState<File | null>(null);
-  const [externalCoverTitle, setExternalCoverTitle] = useState('');
+  const [activeSection, setActiveSection] = useState<'song' | 'voices'>('song');
+  const [songCloneMode, setSongCloneMode] = useState<'tracks' | 'library'>('tracks');
+  const vocalFileInputRef = useRef<HTMLInputElement>(null);
+  const instrumentalFileInputRef = useRef<HTMLInputElement>(null);
+  const [externalVocalFile, setExternalVocalFile] = useState<File | null>(null);
+  const [externalInstrumentalFile, setExternalInstrumentalFile] = useState<File | null>(null);
+  const [externalTrackTitle, setExternalTrackTitle] = useState('');
+  const [clonedVocalSongId, setClonedVocalSongId] = useState('');
 
   const loadVoices = async () => {
     const t = await getAccessToken();
@@ -1294,29 +1299,131 @@ export function CloneVoiceView() {
     }
   };
 
-  const createHqCoverFromExternalFile = async () => {
+  const uploadCoverFileToR2 = async (token: string, file: File, label: string) => {
+    const name = (file?.name || 'audio').toString();
+    const ext = name.toLowerCase().split('.').pop() || '';
+    const contentType =
+      (file?.type || '').toString().trim() ||
+      (ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'aac' ? 'audio/aac' : ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : 'audio/mpeg');
+
+    const prep = await fetch('/api/upload-audio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: name, contentType }),
+    });
+    const prepText = await prep.text().catch(() => '');
+    const prepOut = (() => {
+      try {
+        return prepText ? JSON.parse(prepText) : {};
+      } catch {
+        return { error: prepText || 'Respuesta inválida del servidor.' };
+      }
+    })();
+    if (!prep.ok || prepOut?.ok === false) {
+      const msg = (prepOut?.error || 'No pude preparar la subida.').toString();
+      const detail = (prepOut?.detail || prepOut?.hint || '').toString();
+      throw new Error([msg, detail].filter(Boolean).join('\n'));
+    }
+
+    const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+    const key = (prepOut?.key || '').toString().trim();
+    if (!uploadUrl || !key) throw new Error((prepOut?.error || 'No recibí URL para subir el audio.').toString());
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', contentType);
+          xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable) return;
+            const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
+            setCoverProgress(`Subiendo ${label}… ${pct}%`);
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) return resolve();
+            return reject(new Error(`No se pudo subir el audio (HTTP ${xhr.status}).`));
+          };
+          xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
+          xhr.onabort = () => reject(new Error('Subida cancelada.'));
+          xhr.send(file);
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('No se pudo subir el audio.'));
+        }
+      });
+      return { key };
+    } catch (putErr) {
+      const canFallback = file.size <= 4 * 1024 * 1024;
+      if (!canFallback) {
+        throw new Error(
+          'No se pudo subir el audio desde el teléfono. ' +
+            'Tu audio es pesado y requiere activar CORS en Cloudflare R2 para subida directa. ' +
+            'Prueba con un audio más ligero (menos de 4 MB) o conviértelo a MP3 más pequeño.'
+        );
+      }
+      const arrayBuffer = await file.arrayBuffer();
+      const fileArray = Array.from(new Uint8Array(arrayBuffer));
+      const response = await fetch('/api/upload-audio', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: name, contentType, file: fileArray }),
+      });
+      const raw = await response.text().catch(() => '');
+      const out = (() => {
+        try {
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return { error: raw || 'Respuesta inválida del servidor.' };
+        }
+      })();
+      if (!response.ok || out?.ok === false) {
+        const msg = (out?.error || 'Error subiendo audio').toString();
+        const detail = (out?.detail || out?.hint || '').toString();
+        throw new Error([msg, detail].filter(Boolean).join('\n'));
+      }
+      const k = (out?.key || '').toString().trim();
+      if (!k) throw new Error((out?.error || 'No pude terminar la subida del audio.').toString());
+      return { key: k };
+    }
+  };
+
+  const importAudioToLibrary = async (token: string, params: { sourceUrl: string; title: string; description?: string; coverUrl?: string; externalId?: string; sunoTaskId?: string }) => {
+    const r = await fetch('/api/library/import-audio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        sourceUrl: params.sourceUrl,
+        title: params.title,
+        description: params.description || '',
+        coverUrl: params.coverUrl || '',
+        externalId: params.externalId || '',
+        sunoTaskId: params.sunoTaskId || '',
+      }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude guardar en Biblioteca.').toString());
+    return out?.song ?? null;
+  };
+
+  const cloneVocalsFromFile = async () => {
     if (isCoverBusy) return;
     setCoverError('');
     setCoverSuccess('');
     setCoverProgress('');
-    const file = externalCoverFile;
+    setClonedVocalSongId('');
+    const file = externalVocalFile;
     if (!file) {
-      setCoverError('Selecciona un archivo de audio.');
+      setCoverError('Primero sube la pista de voz (sin música).');
       return;
     }
     if (!coverVoiceId) {
       setCoverError('Selecciona una voz.');
       return;
     }
-
-    const baseName = (externalCoverTitle || file.name || 'Canción').toString().replace(/\.[^/.]+$/, '').trim().slice(0, 100) || 'Canción';
-
     try {
       setIsCoverBusy(true);
-      setCoverProgress('Subiendo tu canción…');
       const t = await getAccessToken();
       if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
-
       let duration = 0;
       try {
         duration = await getAudioDuration(file);
@@ -1327,84 +1434,174 @@ export function CloneVoiceView() {
         throw new Error('Tu audio dura más de 8 minutos. Usa un audio más corto.');
       }
 
-      const uploaded = await uploadAudioToR2(file);
+      const baseName = (externalTrackTitle || file.name || 'Voz').toString().replace(/\.[^/.]+$/, '').trim().slice(0, 100) || 'Voz';
+      setCoverProgress('Subiendo pista de voz…');
+      const uploaded = await uploadCoverFileToR2(t.token, file, 'voz');
 
-      const createdOrig = await fetch('/api/library/create-from-r2', {
+      setCoverProgress('Clonando la voz…');
+      const coverRes = await fetch('/api/suno/create-cover', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({
-          key: String(uploaded.path),
-          title: baseName.slice(0, 120),
-          description: '',
-          coverUrl: '',
-          isCover: false,
-          externalId: `ext_${String(uploaded.path).replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(-80)}`.slice(0, 200),
-        }),
+        body: JSON.stringify({ uploadPath: uploaded.key, voiceId: coverVoiceId, title: `${baseName} - Voz clonada`.slice(0, 120), outputFormat: 'wav' }),
       });
-      const createdOrigOut = await createdOrig.json().catch(() => ({}));
-      if (!createdOrig.ok) throw new Error((createdOrigOut?.detail || createdOrigOut?.error || 'No pude guardar tu canción en Biblioteca.').toString());
-      const createdSongId = String(createdOrigOut?.song?.id || '').trim();
-      if (createdSongId) {
-        setCoverSongId(createdSongId);
-        loadLibrarySongs().catch(() => {});
+      const coverOut = await coverRes.json().catch(() => ({}));
+      if (!coverRes.ok) {
+        const msg = [coverOut?.error, coverOut?.detail, coverOut?.hint].map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean).join('\n\n');
+        throw new Error(msg || 'No pude iniciar el clonado.');
       }
-
-      setCoverProgress('Preparando la canción…');
-      const startUploadCover = await fetch('/api/suno/upload-cover', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({
-          uploadPath: uploaded.path,
-          title: baseName.slice(0, 100),
-          style: 'General',
-          prompt: ' ',
-          instrumental: false,
-        }),
-      });
-      const startUploadOut = await startUploadCover.json().catch(() => ({}));
-      if (!startUploadCover.ok) throw new Error((startUploadOut?.detail || startUploadOut?.error || 'No pude preparar la canción.').toString());
-      const uploadTaskId = String(startUploadOut?.taskId || '').trim();
-      if (!uploadTaskId) throw new Error('No recibí taskId de preparación.');
+      const predictionId = String(coverOut?.predictionId || coverOut?.coverId || '').trim();
+      if (!predictionId) throw new Error('No recibí ID del clonador.');
 
       const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      const parseStatus = (provider: any) => {
-        const data = provider?.data || provider?.data?.data || provider;
-        const raw = data?.data?.status ?? data?.data?.successFlag ?? data?.status ?? data?.successFlag ?? '';
-        return String(raw || '').toUpperCase();
-      };
-
+      let outputUrl = '';
       const startedAt = Date.now();
-      let provider: any = null;
-      setCoverProgress('Procesando la canción…');
-      while (Date.now() - startedAt < 30 * 60 * 1000) {
-        await delay(3500);
-        const tr = await fetch(`/api/suno/task?kind=upload-cover&taskId=${encodeURIComponent(uploadTaskId)}`, {
+      while (Date.now() - startedAt < 45 * 60 * 1000) {
+        await delay(5000);
+        setCoverProgress('Esperando resultado…');
+        const sr = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(predictionId)}&nocache=1`, {
           headers: { authorization: `Bearer ${t.token}` },
         });
-        const tout = await tr.json().catch(() => ({}));
-        if (!tr.ok) continue;
-        provider = tout?.data;
-        const status = parseStatus(provider);
-        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'CALLBACK_EXCEPTION') {
-          throw new Error('No se pudo preparar la canción.');
+        const sout = await sr.json().catch(() => ({}));
+        if (!sr.ok) continue;
+        const rawStatus = (sout?.replicateStatus || sout?.status || '').toString().trim().toLowerCase();
+        if (rawStatus === 'failed' || rawStatus === 'canceled' || rawStatus === 'error') {
+          throw new Error((sout?.importError || sout?.replicateFetchError || sout?.error || 'El clonador falló.').toString());
         }
-        if (status === 'SUCCESS') break;
+        const u = typeof sout?.outputUrl === 'string' ? sout.outputUrl.trim() : '';
+        if (u && (rawStatus === 'succeeded' || rawStatus === 'completed' || rawStatus === 'ready')) {
+          outputUrl = u;
+          break;
+        }
       }
+      if (!outputUrl) throw new Error('El clonador está tardando demasiado. Intenta más tarde.');
 
-      await runHqCoverPipeline({
-        token: t.token,
-        baseName,
+      setCoverProgress('Guardando voz clonada…');
+      const saved = await importAudioToLibrary(t.token, {
+        sourceUrl: outputUrl,
+        title: `${baseName} - Voz clonada`.slice(0, 120),
         description: '',
         coverUrl: '',
-        taskId: uploadTaskId,
-        audioId: '',
-      });
+        externalId: `rvc_vocals_${predictionId}`.slice(0, 200),
+      }).catch(() => null);
+      const sid = String((saved as any)?.id || '').trim();
+      if (sid) setClonedVocalSongId(sid);
 
-      setCoverSuccess('Listo. Ya está en tu Biblioteca.');
+      setCoverSuccess('Voz clonada lista. Ahora sube el instrumental para mezclar.');
       setCoverProgress('');
       loadLibrarySongs().catch(() => {});
     } catch (e) {
-      setCoverError(e instanceof Error ? e.message : 'Error creando el cover.');
+      setCoverError(e instanceof Error ? e.message : 'Error clonando la voz.');
+    } finally {
+      setIsCoverBusy(false);
+    }
+  };
+
+  const mixWithInstrumentalFile = async () => {
+    if (isCoverBusy) return;
+    setCoverError('');
+    setCoverSuccess('');
+    setCoverProgress('');
+    const inst = externalInstrumentalFile;
+    const vocalsId = clonedVocalSongId;
+    if (!vocalsId) {
+      setCoverError('Primero crea la voz clonada (solo voz).');
+      return;
+    }
+    if (!inst) {
+      setCoverError('Sube el instrumental (sin voz).');
+      return;
+    }
+
+    try {
+      setIsCoverBusy(true);
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+
+      let duration = 0;
+      try {
+        duration = await getAudioDuration(inst);
+      } catch {
+        duration = 0;
+      }
+      if (Number.isFinite(duration) && duration > 0 && duration > 60 * 8) {
+        throw new Error('Tu instrumental dura más de 8 minutos. Usa un audio más corto.');
+      }
+
+      setCoverProgress('Mezclando…');
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) throw new Error('Tu navegador no soporta mezclar audio aquí.');
+      const ctx = new AudioCtx();
+      const decodeAudio = async (buf: ArrayBuffer): Promise<AudioBuffer> => {
+        return await new Promise((resolve, reject) => {
+          const p = ctx.decodeAudioData(buf.slice(0));
+          if (p && typeof (p as any).then === 'function') (p as any).then(resolve).catch(reject);
+          else ctx.decodeAudioData(buf.slice(0), resolve, reject);
+        });
+      };
+      try {
+        const instBuf = await inst.arrayBuffer();
+        const instDecoded = await decodeAudio(instBuf);
+        const vocalRes = await fetch(`/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}`);
+        if (!vocalRes.ok) throw new Error(`No pude descargar la voz clonada (HTTP ${vocalRes.status}).`);
+        const vocalBuf = await vocalRes.arrayBuffer();
+        const vocalDecoded = await decodeAudio(vocalBuf);
+
+        const sr = instDecoded.sampleRate || 44100;
+        const length = Math.max(instDecoded.length, vocalDecoded.length);
+        const oc = new OfflineAudioContext(2, Math.max(1, length), sr);
+        const g1 = oc.createGain();
+        g1.gain.value = 1;
+        const g2 = oc.createGain();
+        g2.gain.value = 1;
+        const s1 = oc.createBufferSource();
+        s1.buffer = instDecoded;
+        s1.connect(g1);
+        g1.connect(oc.destination);
+        const s2 = oc.createBufferSource();
+        s2.buffer = vocalDecoded;
+        s2.connect(g2);
+        g2.connect(oc.destination);
+        s1.start(0);
+        s2.start(0);
+        const rendered = await oc.startRendering();
+        const wavBlob = audioBufferToWavBlob(rendered);
+
+        setCoverProgress('Subiendo audio final…');
+        const baseName = (externalTrackTitle || externalVocalFile?.name || inst.name || 'Canción')
+          .toString()
+          .replace(/\.[^/.]+$/, '')
+          .trim()
+          .slice(0, 100) || 'Canción';
+        const outFile = new File([wavBlob], `${baseName}.wav`, { type: 'audio/wav' });
+        const uploaded = await uploadCoverFileToR2(t.token, outFile, 'audio final');
+
+        setCoverProgress('Guardando en Biblioteca…');
+        const created = await fetch('/api/library/create-from-r2', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({
+            key: String(uploaded.key),
+            title: `${baseName} (voz clonada)`.slice(0, 120),
+            description: '',
+            coverUrl: '',
+            isCover: true,
+            externalId: `rvc_mix_${Date.now()}`.slice(0, 200),
+          }),
+        });
+        const createdOut = await created.json().catch(() => ({}));
+        if (!created.ok) throw new Error((createdOut?.detail || createdOut?.error || 'No pude guardar el audio final en Biblioteca.').toString());
+
+        setCoverSuccess('Listo. Ya está en tu Biblioteca.');
+        setCoverProgress('');
+        loadLibrarySongs().catch(() => {});
+      } finally {
+        try {
+          await ctx.close();
+        } catch {
+        }
+      }
+    } catch (e) {
+      setCoverError(e instanceof Error ? e.message : 'Error mezclando.');
     } finally {
       setIsCoverBusy(false);
     }
@@ -1421,6 +1618,30 @@ export function CloneVoiceView() {
           </p>
         </div>
 
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveSection('song')}
+            className={cn(
+              "py-3 rounded-full border text-sm font-extrabold transition-colors",
+              activeSection === 'song' ? "bg-white/10 border-white/20 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+            )}
+          >
+            Clonar en canción
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSection('voices')}
+            className={cn(
+              "py-3 rounded-full border text-sm font-extrabold transition-colors",
+              activeSection === 'voices' ? "bg-white/10 border-white/20 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+            )}
+          >
+            Mis voces
+          </button>
+        </div>
+
+        {activeSection === 'song' ? (
         <div className="glass-card rounded-3xl border border-white/10 p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
@@ -1433,75 +1654,36 @@ export function CloneVoiceView() {
           </div>
 
           <div className="space-y-3">
-            <div className="text-slate-300 text-sm">Canción</div>
-            <button
-              type="button"
-              onClick={() => setShowPickCoverSong(true)}
-              disabled={isCoverBusy || librarySongs.length === 0}
-              className={cn(
-                "w-full glass-card rounded-2xl p-3 text-sm border border-white/10 text-left transition-colors",
-                isCoverBusy || librarySongs.length === 0 ? "bg-white/5 text-slate-500" : "bg-white/5 hover:bg-white/10 text-white"
-              )}
-            >
-              {(() => {
-                const s = librarySongs.find((x) => x.id === coverSongId) || null;
-                if (s) return s.title || 'Canción';
-                return librarySongs.length > 0 ? 'Seleccionar canción de la Biblioteca' : 'Cargando canciones…';
-              })()}
-            </button>
-
-            <div className="text-[11px] text-slate-500">O sube una canción externa (MP3/WAV)</div>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => coverFileInputRef.current?.click()}
+                onClick={() => setSongCloneMode('tracks')}
                 disabled={isCoverBusy}
                 className={cn(
-                  "shrink-0 px-4 py-2 rounded-full border text-xs font-extrabold transition-colors",
-                  isCoverBusy ? "bg-white/5 border-white/10 text-slate-500" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                  "py-2.5 rounded-full border text-xs font-extrabold transition-colors",
+                  songCloneMode === 'tracks'
+                    ? "bg-purple-600/20 border-purple-500/30 text-white"
+                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
                 )}
               >
-                Subir archivo
+                Mis archivos
               </button>
-              <input
-                ref={coverFileInputRef}
-                type="file"
-                accept=".mp3,.wav,.m4a,.aac,.ogg,.webm,audio/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] || null;
-                  setExternalCoverFile(f);
-                  const name = (f?.name || '').toString().replace(/\.[^/.]+$/, '').trim();
-                  setExternalCoverTitle(name);
-                }}
-              />
-              <div className="min-w-0 text-xs text-slate-400 truncate">
-                {externalCoverFile ? externalCoverFile.name : 'Ningún archivo seleccionado'}
-              </div>
-            </div>
-            {externalCoverFile ? (
               <button
                 type="button"
-                onClick={() => createHqCoverFromExternalFile().catch(() => {})}
-                disabled={isCoverBusy || !coverVoiceId}
+                onClick={() => setSongCloneMode('library')}
+                disabled={isCoverBusy}
                 className={cn(
-                  "w-full py-3 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
-                  isCoverBusy || !coverVoiceId ? "bg-white/10 text-slate-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                  "py-2.5 rounded-full border text-xs font-extrabold transition-colors",
+                  songCloneMode === 'library'
+                    ? "bg-purple-600/20 border-purple-500/30 text-white"
+                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
                 )}
               >
-                {isCoverBusy ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" /> Crear cover desde archivo
-                  </>
-                )}
+                Biblioteca
               </button>
-            ) : null}
+            </div>
 
-            <div className="text-slate-300 text-sm">Voz</div>
+            <div className="text-slate-300 text-sm">Voz (la voz IA que vas a usar)</div>
             <button
               type="button"
               onClick={() => setShowPickCoverVoice(true)}
@@ -1520,26 +1702,156 @@ export function CloneVoiceView() {
               })()}
             </button>
 
-            <button
-              onClick={() => createHqCoverFromLibrarySong().catch(() => {})}
-              disabled={isCoverBusy || !coverSongId || !coverVoiceId}
-              className={cn(
-                "w-full py-3.5 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
-                isCoverBusy || !coverSongId || !coverVoiceId
-                  ? "bg-white/10 text-slate-400 cursor-not-allowed"
-                  : "bg-purple-600 hover:bg-purple-500 text-white"
-              )}
-            >
-              {isCoverBusy ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4" /> Crear cover (mejor calidad)
-                </>
-              )}
-            </button>
+            {songCloneMode === 'tracks' ? (
+              <>
+                <div className="text-slate-300 text-sm">1) Pista de voz (sin música)</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => vocalFileInputRef.current?.click()}
+                    disabled={isCoverBusy}
+                    className={cn(
+                      "shrink-0 px-4 py-2 rounded-full border text-xs font-extrabold transition-colors",
+                      isCoverBusy ? "bg-white/5 border-white/10 text-slate-500" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                    )}
+                  >
+                    Subir voz
+                  </button>
+                  <input
+                    ref={vocalFileInputRef}
+                    type="file"
+                    accept=".mp3,.wav,.m4a,.aac,.ogg,.webm,audio/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setExternalVocalFile(f);
+                      setClonedVocalSongId('');
+                      if (f) {
+                        const name = (f.name || '').toString().replace(/\.[^/.]+$/, '').trim();
+                        setExternalTrackTitle(name);
+                      }
+                    }}
+                  />
+                  <div className="min-w-0 text-xs text-slate-400 truncate">
+                    {externalVocalFile ? externalVocalFile.name : 'Ningún archivo seleccionado'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => cloneVocalsFromFile().catch(() => {})}
+                  disabled={isCoverBusy || !coverVoiceId || !externalVocalFile}
+                  className={cn(
+                    "w-full py-3 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
+                    isCoverBusy || !coverVoiceId || !externalVocalFile
+                      ? "bg-white/10 text-slate-400 cursor-not-allowed"
+                      : "bg-purple-600 hover:bg-purple-500 text-white"
+                  )}
+                >
+                  {isCoverBusy ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-4 h-4" /> Clonar voz (solo voz)
+                    </>
+                  )}
+                </button>
+
+                <div className="text-slate-300 text-sm">2) Pista instrumental (sin voz) (opcional)</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => instrumentalFileInputRef.current?.click()}
+                    disabled={isCoverBusy || !clonedVocalSongId}
+                    className={cn(
+                      "shrink-0 px-4 py-2 rounded-full border text-xs font-extrabold transition-colors",
+                      isCoverBusy || !clonedVocalSongId ? "bg-white/5 border-white/10 text-slate-500" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
+                    )}
+                  >
+                    Subir instrumental
+                  </button>
+                  <input
+                    ref={instrumentalFileInputRef}
+                    type="file"
+                    accept=".mp3,.wav,.m4a,.aac,.ogg,.webm,audio/*"
+                    className="hidden"
+                    onChange={(e) => setExternalInstrumentalFile(e.target.files?.[0] || null)}
+                  />
+                  <div className="min-w-0 text-xs text-slate-400 truncate">
+                    {externalInstrumentalFile ? externalInstrumentalFile.name : 'Ningún archivo seleccionado'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => mixWithInstrumentalFile().catch(() => {})}
+                  disabled={isCoverBusy || !clonedVocalSongId || !externalInstrumentalFile}
+                  className={cn(
+                    "w-full py-3 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
+                    isCoverBusy || !clonedVocalSongId || !externalInstrumentalFile
+                      ? "bg-white/10 text-slate-400 cursor-not-allowed"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                  )}
+                >
+                  {isCoverBusy ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" /> Mezclar y guardar canción
+                    </>
+                  )}
+                </button>
+
+                <div className="text-[11px] text-slate-500">
+                  Recomendado: la pista de voz debe ser acapella (sin música). La pista instrumental debe ser karaoke (sin voz).
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-slate-300 text-sm">Canción (la app separa voz + instrumental)</div>
+                <button
+                  type="button"
+                  onClick={() => setShowPickCoverSong(true)}
+                  disabled={isCoverBusy || librarySongs.length === 0}
+                  className={cn(
+                    "w-full glass-card rounded-2xl p-3 text-sm border border-white/10 text-left transition-colors",
+                    isCoverBusy || librarySongs.length === 0 ? "bg-white/5 text-slate-500" : "bg-white/5 hover:bg-white/10 text-white"
+                  )}
+                >
+                  {(() => {
+                    const s = librarySongs.find((x) => x.id === coverSongId) || null;
+                    if (s) return s.title || 'Canción';
+                    return librarySongs.length > 0 ? 'Seleccionar canción de la Biblioteca' : 'Cargando canciones…';
+                  })()}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => createHqCoverFromLibrarySong().catch(() => {})}
+                  disabled={isCoverBusy || !coverSongId || !coverVoiceId}
+                  className={cn(
+                    "w-full py-3.5 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
+                    isCoverBusy || !coverSongId || !coverVoiceId
+                      ? "bg-white/10 text-slate-400 cursor-not-allowed"
+                      : "bg-purple-600 hover:bg-purple-500 text-white"
+                  )}
+                >
+                  {isCoverBusy ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Procesando…
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-4 h-4" /> Crear cover (auto)
+                    </>
+                  )}
+                </button>
+              </>
+            )}
 
             {coverProgress ? <div className="text-xs text-slate-300">{coverProgress}</div> : null}
             {coverError ? (
@@ -1552,6 +1864,7 @@ export function CloneVoiceView() {
             ) : null}
           </div>
         </div>
+        ) : null}
 
         {showPickCoverSong ? (
           <div className="fixed inset-0 z-[2147483647] bg-black/70 flex items-end md:items-center justify-center">
@@ -1650,6 +1963,8 @@ export function CloneVoiceView() {
           </div>
         ) : null}
 
+        {activeSection === 'voices' ? (
+        <>
         {/* Audio Requirements Info */}
         <div className="glass-card rounded-3xl border border-white/10 p-5">
           <div className="flex items-center justify-between mb-4">
@@ -2220,6 +2535,8 @@ export function CloneVoiceView() {
             </div>
           )}
         </div>
+        </>
+        ) : null}
       </div>
 
       {editingVoice && (
