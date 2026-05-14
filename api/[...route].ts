@@ -9491,33 +9491,45 @@ export default async function handler(req: any, res: any) {
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "rvc") return rvcHandler(req, res);
     if (head === "replicate" && next === "predictions" && third && parts[isApi ? 4 : 3] === "cancel") {
-      const predictionId = third;
-      const token = req.headers.authorization?.replace('Bearer ', '');
-      if (!token) return new Response('Unauthorized', { status: 401 });
+      const sendJson = (status: number, body: any) => {
+        res.statusCode = status;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify(body));
+      };
+
+      if ((req.method || "").toUpperCase() !== "POST") return sendJson(405, { error: "Método no permitido" });
+
+      const predictionId = String(third || "").trim();
+      const authHeader = (req.headers?.authorization || req.headers?.Authorization || "").toString();
+      const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+      if (!token) return sendJson(401, { error: "No autorizado" });
+
+      const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+      const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+      if (!supabaseUrl || !supabaseAnon) return sendJson(500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY)" });
+
       const createClient = await getSupabaseCreateClient();
-      const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
-      const { data: user } = await supabase.auth.getUser(token);
-      if (!user?.user) return new Response('Unauthorized', { status: 401 });
-      const replicateApiKey = process.env.REPLICATE_API_TOKEN;
-      if (!replicateApiKey) return new Response('Replicate API key missing', { status: 500 });
-      const replicateRes = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}/cancel`, {
-        method: 'POST',
+      const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+      const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+      if (userErr || !userData?.user) return sendJson(401, { error: "No autorizado" });
+
+      const replicateApiKey = (process.env.REPLICATE_API_TOKEN || "").toString().trim();
+      if (!replicateApiKey) return sendJson(500, { error: "Replicate API token no configurado" });
+
+      const replicateRes = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}/cancel`, {
+        method: "POST",
         headers: {
-          'Authorization': `Token ${replicateApiKey}`,
-          'Content-Type': 'application/json',
+          Authorization: `Token ${replicateApiKey}`,
+          "Content-Type": "application/json",
         },
       });
+
+      const out = await replicateRes.json().catch(() => ({}));
       if (!replicateRes.ok) {
-        const err = await replicateRes.json().catch(() => ({}));
-        return new Response(JSON.stringify({ error: err?.detail || 'Failed to cancel' }), {
-          status: replicateRes.status,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return sendJson(replicateRes.status, { error: (out as any)?.detail || (out as any)?.error || "No pude cancelar en Replicate" });
       }
-      const out = await replicateRes.json();
-      return new Response(JSON.stringify(out), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+
+      return sendJson(200, out);
     }
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
