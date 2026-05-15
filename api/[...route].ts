@@ -713,6 +713,16 @@ const sunoHandler = (() => {
       (typeof data?.error === "string" && data.error) ||
       (typeof data?.msg === "string" && data.msg) ||
       fallback;
+    const lower = String(msg).toLowerCase();
+    const looksLikeCopyright =
+      lower.includes('copyright') ||
+      lower.includes('copyrighted') ||
+      lower.includes('dmca') ||
+      lower.includes('rights') ||
+      lower.includes('infring');
+    if (looksLikeCopyright) {
+      return 'Error por Copyright.\n\nEse audio parece ser de una canción protegida. Sube un audio original o usa otro audio.';
+    }
     return String(msg);
   }
 
