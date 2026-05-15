@@ -4101,6 +4101,30 @@ const libraryHandler = (() => {
     const externalId = typeof body?.externalId === "string" ? body.externalId.trim().slice(0, 200) : "";
     const sunoTaskId = typeof body?.sunoTaskId === "string" ? body.sunoTaskId.trim().slice(0, 200) : null;
 
+    const looksExpiringUrl = (url: string) => {
+      const u = (url || "").toString();
+      if (!u) return false;
+      if (!u.includes("?")) return false;
+      return /[?&](x-amz-signature|x-amz-credential|x-amz-algorithm|x-amz-expires|x-amz-date|expires|signature|token)=/i.test(u);
+    };
+    const isR2Url = (url: string) => {
+      try {
+        const u = new URL(url);
+        const host = (u.hostname || "").toLowerCase();
+        return host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+      } catch {
+        return false;
+      }
+    };
+    const shouldCopyToR2 = (() => {
+      const u = sourceUrl.toLowerCase();
+      if (isR2Url(sourceUrl)) return false;
+      if (looksExpiringUrl(sourceUrl)) return true;
+      if (u.includes("replicate.delivery")) return true;
+      if (u.includes("supabase.co/storage/v1/object/sign")) return true;
+      return false;
+    })();
+
     if (externalId) {
       const { data: existing } = await auth.admin
         .from(TABLE)
@@ -4112,6 +4136,25 @@ const libraryHandler = (() => {
         .limit(1)
         .maybeSingle();
       if (existing) return send(res, 200, { song: existing, already: true });
+    }
+
+    if (!shouldCopyToR2) {
+      const insertRow: any = {
+        user_id: auth.user.id,
+        type: ITEM_TYPE,
+        title,
+        description: description || null,
+        lyrics: lyrics || null,
+        gender: gender || null,
+        audio_url: sourceUrl,
+        cover_url: coverUrl || null,
+        suno_task_id: sunoTaskId,
+        suno_audio_id: externalId || null,
+        is_cover: false,
+      };
+      const { data: created, error: createErr } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
+      if (createErr) return send(res, 500, { error: "No pude guardar la canción", detail: createErr.message });
+      return send(res, 200, { song: created, already: false, stored: "link" });
     }
 
     const safeBase = (externalId || title || "audio")
@@ -5585,6 +5628,26 @@ const sunoWebhookHandler = (() => {
         } else if (isMusicCover && userId) {
           const originalTaskId = kind.split("music-cover:").slice(1).join("music-cover:").trim();
           if (code === 200 && coverImages.length > 0 && originalTaskId) {
+            const looksExpiringUrl = (url: string) => {
+              const u = (url || "").toString();
+              if (!u) return false;
+              if (!u.includes("?")) return false;
+              return /[?&](x-amz-signature|x-amz-credential|x-amz-algorithm|x-amz-expires|x-amz-date|expires|signature|token)=/i.test(u);
+            };
+
+            const stable = coverImages
+              .map((x: any) => String(x || "").trim())
+              .find((u: string) => u && /^https?:\/\//i.test(u) && !looksExpiringUrl(u));
+            if (stable) {
+              await admin
+                .from("library_items")
+                .update({ cover_url: stable.slice(0, 2000) })
+                .eq("user_id", userId)
+                .eq("type", "song")
+                .eq("suno_task_id", originalTaskId.slice(0, 200))
+                .is("deleted_at", null);
+            }
+
             const tryDownloadAndStore = async (urlRaw: any, index: number) => {
               const url = String(urlRaw || "").trim();
               if (!url) return "";
