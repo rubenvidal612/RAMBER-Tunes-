@@ -5790,7 +5790,13 @@ const shareSongAudioHandler = (() => {
     return s.includes("/") ? s.replace(/^\/+/, "") : "";
   }
 
-  async function serveR2Object(req: any, res: any, key: string) {
+  function sanitizeDispositionName(name: string, fallback: string) {
+    const s = (name || "").toString().replaceAll("\r", " ").replaceAll("\n", " ").trim();
+    const cleaned = s.replaceAll(/[^a-zA-Z0-9._ -]+/g, "_").replaceAll(/\s+/g, " ").trim().slice(0, 120);
+    return cleaned || fallback;
+  }
+
+  async function serveR2Object(req: any, res: any, key: string, downloadName?: string) {
     const env = getR2Env();
     const client = await getR2Client();
     const { GetObjectCommand } = await getR2AwsSdk();
@@ -5812,6 +5818,11 @@ const shareSongAudioHandler = (() => {
 
     const ct = typeof out?.ContentType === "string" && out.ContentType.trim() ? out.ContentType.trim() : "audio/mpeg";
     res.setHeader("content-type", ct);
+    if (downloadName) {
+      const safe = sanitizeDispositionName(downloadName, "audio.mp3");
+      res.setHeader("content-disposition", `attachment; filename=\"${safe.replaceAll('\"', '')}\"`);
+      res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type, content-disposition");
+    }
     if (out?.ContentLength != null) res.setHeader("content-length", String(out.ContentLength));
     if (out?.ContentRange) res.setHeader("content-range", String(out.ContentRange));
 
@@ -6030,6 +6041,15 @@ const shareSongAudioHandler = (() => {
         }
       }
 
+      const wantDownload = (() => {
+        const raw = pickQuery(req, "dl") || pickQuery(req, "download");
+        const v = (raw || "").toString().trim().toLowerCase();
+        return v === "1" || v === "true" || v === "yes" || v === "si";
+      })();
+      const dlName = wantDownload ? pickQuery(req, "filename") || pickQuery(req, "name") || "" : "";
+      const fallbackName = sanitizeDispositionName((title || "Cancion").toString(), "Cancion");
+      const downloadName = wantDownload ? sanitizeDispositionName(dlName, `${fallbackName}.mp3`) : "";
+
       const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
       const audioLooksR2 =
         Boolean(r2Key) &&
@@ -6038,7 +6058,7 @@ const shareSongAudioHandler = (() => {
           !/^https?:\/\//i.test((audioUrl || "").toString().trim()));
       if (audioLooksR2 && r2Key) {
         try {
-          await serveR2Object(req, res, r2Key);
+          await serveR2Object(req, res, r2Key, downloadName || undefined);
           return;
         } catch (e) {
           return sendJson(res, 502, { error: "No pude cargar el audio", detail: e instanceof Error ? e.message : String(e) });
@@ -6090,6 +6110,10 @@ const shareSongAudioHandler = (() => {
       if (ct) res.setHeader("content-type", ct);
       if (cl) res.setHeader("content-length", cl);
       if (cr) res.setHeader("content-range", cr);
+      if (wantDownload) {
+        res.setHeader("content-disposition", `attachment; filename=\"${downloadName.replaceAll('\"', '')}\"`);
+        res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type, content-disposition");
+      }
 
       if (method === "HEAD") {
         res.end();

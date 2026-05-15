@@ -3180,7 +3180,21 @@ function SongOptionsSheet({
         return;
       }
       const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
-      await downloadToDevice(url, `${base}.mp3`);
+      const wantsProxy = (() => {
+        if (!song?.id) return false;
+        const u = (url || '').toString().trim();
+        if (!u) return false;
+        if (!/^https?:\/\//i.test(u)) return true;
+        const lower = u.toLowerCase();
+        if (lower.includes('.r2.cloudflarestorage.com/')) return true;
+        if (/https?:\/\/[^/]+\.r2\.dev\//i.test(u)) return true;
+        return false;
+      })();
+      const filename = `${base}.mp3`;
+      const dlUrl = wantsProxy
+        ? `/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&dl=1&filename=${encodeURIComponent(filename)}&t=${Date.now()}`
+        : url;
+      await downloadToDevice(dlUrl, filename);
     } finally {
       setIsBusy(false);
     }
