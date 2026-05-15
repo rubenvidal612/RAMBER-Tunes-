@@ -55,6 +55,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [downloadsModalSaving, setDownloadsModalSaving] = useState(false);
   const [downloadsModalZipping, setDownloadsModalZipping] = useState(false);
   const [downloadsModalMuted, setDownloadsModalMuted] = useState<Record<string, boolean>>({});
+  const [downloadsModalMixing, setDownloadsModalMixing] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -481,12 +482,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       .trim()
       .slice(0, 120);
 
-  const downloadToDevice = async (url: string, filename: string) => {
+  const downloadBlobAsFile = async (blob: Blob, filename: string) => {
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const buf = await res.arrayBuffer();
-      const blob = new Blob([buf], { type: res.headers.get('content-type') || 'application/octet-stream' });
       const obj = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = obj;
@@ -494,7 +491,25 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(obj);
+      window.setTimeout(() => {
+        try {
+          URL.revokeObjectURL(obj);
+        } catch {
+        }
+      }, 60_000);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const downloadToDevice = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: res.headers.get('content-type') || 'application/octet-stream' });
+      await downloadBlobAsFile(blob, filename);
       return true;
     } catch {
       try {
@@ -510,6 +525,113 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       } catch {
         return false;
       }
+    }
+  };
+
+  const encodeAudioBufferToMp3 = async (buffer: AudioBuffer, kbps: number) => {
+    const mod: any = await import('lamejs');
+    const Mp3Encoder = mod?.Mp3Encoder || mod?.default?.Mp3Encoder || mod?.default || mod?.Mp3Encoder;
+    if (!Mp3Encoder) throw new Error('No pude cargar el convertidor MP3.');
+
+    const sr = Number(buffer.sampleRate || 44100) || 44100;
+    const channels = Math.min(2, Math.max(1, Number(buffer.numberOfChannels || 2) || 2));
+    const encoder = new Mp3Encoder(channels, sr, Math.max(64, Math.min(320, Math.floor(kbps))));
+
+    const getCh = (i: number) => buffer.getChannelData(Math.min(i, buffer.numberOfChannels - 1));
+    const left = getCh(0);
+    const right = channels > 1 ? getCh(1) : left;
+
+    const toInt16 = (f32: Float32Array) => {
+      const out = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++) {
+        const s = Math.max(-1, Math.min(1, f32[i] || 0));
+        out[i] = s < 0 ? Math.floor(s * 32768) : Math.floor(s * 32767);
+      }
+      return out;
+    };
+
+    const frameSize = 1152;
+    const chunks: Uint8Array[] = [];
+    for (let i = 0; i < left.length; i += frameSize) {
+      const l = toInt16(left.subarray(i, i + frameSize));
+      const r = channels > 1 ? toInt16(right.subarray(i, i + frameSize)) : l;
+      const mp3buf = encoder.encodeBuffer(l as any, r as any);
+      if (mp3buf && mp3buf.length > 0) chunks.push(new Uint8Array(mp3buf));
+    }
+    const end = encoder.flush();
+    if (end && end.length > 0) chunks.push(new Uint8Array(end));
+    return new Blob(chunks, { type: 'audio/mpeg' });
+  };
+
+  const downloadMixedStemsMp3 = async () => {
+    const active = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
+    if (active.length === 0) {
+      alert('No hay pistas activas para mezclar. Quita el mute a alguna.');
+      return;
+    }
+
+    const hasGranular = active.some((x) => {
+      const k = String(x?.key || '').trim();
+      return k && k !== 'originUrl' && k !== 'instrumentalUrl' && k !== 'vocalUrl';
+    });
+    const list = (hasGranular ? active.filter((x) => String(x?.key || '').trim() !== 'instrumentalUrl') : active).filter(
+      (x) => String(x?.key || '').trim() !== 'originUrl'
+    );
+    if (list.length === 0) {
+      alert('No hay pistas activas para mezclar.');
+      return;
+    }
+
+    setDownloadsModalMixing(true);
+    try {
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) throw new Error('Tu navegador no soporta mezcla de audio.');
+      const ctx: AudioContext = new AudioCtx();
+      const decoded: AudioBuffer[] = [];
+
+      for (const it of list) {
+        const res = await fetch(it.url);
+        if (!res.ok) throw new Error(`No pude descargar "${it.label}" (HTTP ${res.status}).`);
+        const ab = await res.arrayBuffer();
+        const b = await ctx.decodeAudioData(ab.slice(0) as any);
+        decoded.push(b);
+      }
+
+      const sr = Number(ctx.sampleRate || 44100) || 44100;
+      const maxLen = Math.max(...decoded.map((b) => Number(b.length || 0) || 0));
+      if (!Number.isFinite(maxLen) || maxLen <= 0) throw new Error('No pude leer la duración de los stems.');
+
+      const offline = new OfflineAudioContext(2, maxLen, sr);
+      for (const b0 of decoded) {
+        let b = b0;
+        if (b.numberOfChannels === 1) {
+          const two = offline.createBuffer(2, b.length, b.sampleRate);
+          const ch0 = b.getChannelData(0);
+          two.copyToChannel(ch0, 0);
+          two.copyToChannel(ch0, 1);
+          b = two;
+        }
+        const src = offline.createBufferSource();
+        src.buffer = b;
+        src.connect(offline.destination);
+        src.start(0);
+      }
+
+      const mixed = await offline.startRendering();
+      try {
+        await ctx.close();
+      } catch {
+      }
+
+      const base = sanitizeFileName(downloadsModalTitle || 'stems') || 'stems';
+      const mp3 = await encodeAudioBufferToMp3(mixed, 192);
+      const ok = await downloadBlobAsFile(mp3, `${base} - mezcla.mp3`);
+      if (!ok) alert('Tu navegador no permitió la descarga automática. Intenta de nuevo.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No pude crear la mezcla en MP3.';
+      alert(msg);
+    } finally {
+      setDownloadsModalMixing(false);
     }
   };
 
@@ -2098,8 +2220,30 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   })()}
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
+                      onClick={() => {
+                        const next: Record<string, boolean> = {};
+                        downloadsModalItems.forEach((x) => {
+                          const k = String(x?.key || '').trim();
+                          if (!k) return;
+                          next[k] = true;
+                        });
+                        setDownloadsModalMuted(next);
+                      }}
+                    >
+                      Silenciar todos
+                    </button>
+                    <button
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
+                      onClick={() => setDownloadsModalMuted({})}
+                    >
+                      Activar todos
+                    </button>
+                    <button
                       className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping}
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
                       onClick={async () => {
                         const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
                         const text = list.map((x) => `${x.label}: ${x.url}`).join('\n');
@@ -2115,7 +2259,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </button>
                     <button
                       className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping}
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
                       onClick={() => {
                         const base = sanitizeFileName(downloadsModalTitle || 'stems');
                         const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
@@ -2128,8 +2272,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       Descargar todo (archivos)
                     </button>
                     <button
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
+                      onClick={() => {
+                        downloadMixedStemsMp3().catch(() => {});
+                      }}
+                    >
+                      Descargar mezcla (MP3)
+                    </button>
+                    <button
                       className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping}
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
                       onClick={async () => {
                         const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
                         if (list.length === 0) return;
@@ -2190,6 +2343,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
                   {downloadsModalSaving && <div className="mt-3 text-slate-400 text-xs">Guardando en Biblioteca…</div>}
                   {downloadsModalZipping && <div className="mt-2 text-slate-400 text-xs">Preparando ZIP…</div>}
+                  {downloadsModalMixing && <div className="mt-2 text-slate-400 text-xs">Preparando mezcla MP3…</div>}
 
                   <div className="mt-4 space-y-2">
                     {downloadsModalItems.map((it) => (
