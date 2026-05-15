@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
@@ -54,6 +54,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [downloadsModalError, setDownloadsModalError] = useState('');
   const [downloadsModalSaving, setDownloadsModalSaving] = useState(false);
   const [downloadsModalZipping, setDownloadsModalZipping] = useState(false);
+  const [downloadsModalMuted, setDownloadsModalMuted] = useState<Record<string, boolean>>({});
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -555,6 +556,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const openCompletedDownload = async (item: { taskId: string; kind: string; doneAt: number; draft?: any }) => {
     setDownloadsModalError('');
     setDownloadsModalItems([]);
+    setDownloadsModalMuted({});
     setDownloadsModalTaskId(item.taskId);
     setDownloadsModalKind(item.kind);
     setDownloadsModalCoverUrl('');
@@ -2085,12 +2087,22 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 <div className="mt-6 text-slate-400 text-sm">No hay pistas para mostrar.</div>
               ) : (
                 <>
+                  {(() => {
+                    const activeCount = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length;
+                    const mutedCount = downloadsModalItems.length - activeCount;
+                    return (
+                      <div className="mt-2 text-xs text-slate-400">
+                        {mutedCount > 0 ? `Silenciadas: ${mutedCount} • ` : ''}Listas para descargar: {activeCount}
+                      </div>
+                    );
+                  })()}
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <button
                       className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping}
                       onClick={async () => {
-                        const text = downloadsModalItems.map((x) => `${x.label}: ${x.url}`).join('\n');
+                        const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
+                        const text = list.map((x) => `${x.label}: ${x.url}`).join('\n');
                         try {
                           await navigator.clipboard.writeText(text);
                           alert('Copiado al portapapeles.');
@@ -2103,10 +2115,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </button>
                     <button
                       className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping}
                       onClick={() => {
                         const base = sanitizeFileName(downloadsModalTitle || 'stems');
-                        downloadsModalItems.forEach((x) => {
+                        const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
+                        list.forEach((x) => {
                           const name = sanitizeFileName(`${base} - ${x.label}.mp3`);
                           downloadToDevice(x.url, name).catch(() => {});
                         });
@@ -2116,9 +2129,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </button>
                     <button
                       className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping}
+                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping}
                       onClick={async () => {
-                        if (downloadsModalItems.length === 0) return;
+                        const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
+                        if (list.length === 0) return;
                         setDownloadsModalZipping(true);
                         try {
                           const t = await getAccessToken();
@@ -2131,7 +2145,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
                             body: JSON.stringify({
                               title: downloadsModalTitle || 'Stems',
-                              items: downloadsModalItems.map((x) => ({
+                              items: list.map((x) => ({
                                 label: x.label,
                                 url: x.url,
                               })),
@@ -2179,15 +2193,47 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
                   <div className="mt-4 space-y-2">
                     {downloadsModalItems.map((it) => (
+                      (() => {
+                        const isMuted = Boolean(downloadsModalMuted[String(it?.key || '').trim()]);
+                        return (
                       <div
                         key={`${it.key}:${it.url}`}
-                        className="w-full bg-[#0f1420] border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-[#141c2c] transition-colors"
+                        className={cn(
+                          "w-full bg-[#0f1420] border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-[#141c2c] transition-colors",
+                          isMuted ? "opacity-60" : ""
+                        )}
                       >
                         <div className="min-w-0">
-                          <div className="text-white font-bold truncate">{it.label}</div>
+                          <div className="text-white font-bold truncate flex items-center gap-2">
+                            <span className="truncate">{it.label}</span>
+                            {isMuted ? <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-200">MUTE</span> : null}
+                          </div>
                           <div className="text-slate-500 text-xs truncate">{it.url}</div>
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
+                          <button
+                            className={cn(
+                              "bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors",
+                              isMuted ? "bg-rose-500/10 border-rose-400/20 text-rose-200 hover:bg-rose-500/15" : ""
+                            )}
+                            onClick={() => {
+                              const k = String(it?.key || '').trim();
+                              if (!k) return;
+                              setDownloadsModalMuted((prev) => ({ ...prev, [k]: !Boolean(prev?.[k]) }));
+                            }}
+                            disabled={downloadsModalZipping}
+                            title={isMuted ? 'Quitar mute' : 'Poner mute'}
+                          >
+                            {isMuted ? (
+                              <span className="inline-flex items-center gap-2">
+                                <Volume2 className="w-4 h-4" /> Activar
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-2">
+                                <VolumeX className="w-4 h-4" /> Mute
+                              </span>
+                            )}
+                          </button>
                           <button
                             className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
                             onClick={() => {
@@ -2214,12 +2260,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
                               downloadToDevice(it.url, name).catch(() => {});
                             }}
-                            disabled={downloadsModalZipping}
+                            disabled={downloadsModalZipping || isMuted}
                           >
                             Descargar
                           </button>
                         </div>
                       </div>
+                        );
+                      })()
                     ))}
                   </div>
 
