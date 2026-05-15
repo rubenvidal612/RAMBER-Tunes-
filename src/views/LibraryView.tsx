@@ -65,6 +65,130 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [videoError, setVideoError] = useState('');
   const [openVideoMenuId, setOpenVideoMenuId] = useState<string | null>(null);
 
+  const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
+    try {
+      const raw = window.localStorage.getItem('ramber.song_durations_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const obj = parsed && typeof parsed === 'object' ? parsed : {};
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        const id = String(k || '').trim();
+        const n = Number(v);
+        if (!id) continue;
+        if (!Number.isFinite(n) || n <= 0) continue;
+        out[id] = n;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  });
+  const songDurationsRef = useRef<Record<string, number>>({});
+  const durationInFlightRef = useRef<Set<string>>(new Set());
+
+  const fmtDuration = (sec: number) => {
+    const s = Math.max(0, Math.floor(Number.isFinite(sec) ? sec : 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+  };
+
+  const loadDurationFromUrl = (url: string) =>
+    new Promise<number | null>((resolve) => {
+      const u = (url || '').toString().trim();
+      if (!u) return resolve(null);
+      const a = document.createElement('audio');
+      a.preload = 'metadata';
+      a.muted = true;
+      let done = false;
+      const finish = (v: number | null) => {
+        if (done) return;
+        done = true;
+        try {
+          a.pause();
+        } catch {}
+        try {
+          a.removeAttribute('src');
+          a.load();
+        } catch {}
+        resolve(v);
+      };
+      const timer = window.setTimeout(() => finish(null), 15000);
+      const onMeta = () => {
+        const d = Number(a.duration);
+        if (!Number.isFinite(d) || d <= 0) return;
+        window.clearTimeout(timer);
+        finish(d);
+      };
+      const onErr = () => {
+        window.clearTimeout(timer);
+        finish(null);
+      };
+      a.addEventListener('loadedmetadata', onMeta);
+      a.addEventListener('durationchange', onMeta);
+      a.addEventListener('error', onErr);
+      try {
+        a.src = u;
+        a.load();
+      } catch {
+        window.clearTimeout(timer);
+        finish(null);
+      }
+    });
+
+  useEffect(() => {
+    songDurationsRef.current = songDurationsSec;
+    try {
+      window.localStorage.setItem('ramber.song_durations_v1', JSON.stringify(songDurationsSec));
+    } catch {
+    }
+  }, [songDurationsSec]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const list = showTrash ? (Array.isArray(cancionesEliminadas) ? cancionesEliminadas : []) : (Array.isArray(canciones) ? canciones : []);
+    const ids = list.map((s) => String((s as any)?.id || '').trim()).filter(Boolean);
+    const missing = ids.filter((id) => !Number.isFinite(Number(songDurationsRef.current[id] || 0)) || Number(songDurationsRef.current[id] || 0) <= 0);
+    const toQueue = missing.filter((id) => !durationInFlightRef.current.has(id));
+    if (toQueue.length === 0) return;
+
+    const maxConcurrent = 2;
+    let idx = 0;
+    let active = 0;
+
+    const next = () => {
+      if (cancelled) return;
+      while (active < maxConcurrent && idx < toQueue.length) {
+        const id = toQueue[idx++];
+        if (!id) continue;
+        durationInFlightRef.current.add(id);
+        active++;
+        const url = `/api/share/song/audio?id=${encodeURIComponent(id)}&t=${Date.now()}`;
+        loadDurationFromUrl(url)
+          .then((d) => {
+            if (cancelled) return;
+            if (!Number.isFinite(Number(d)) || Number(d) <= 0) return;
+            setSongDurationsSec((prev) => {
+              const cur = Number(prev?.[id] || 0);
+              const nextV = Number(d);
+              if (Number.isFinite(cur) && cur > 0 && Math.abs(cur - nextV) < 0.25) return prev;
+              return { ...prev, [id]: nextV };
+            });
+          })
+          .finally(() => {
+            durationInFlightRef.current.delete(id);
+            active--;
+            next();
+          });
+      }
+    };
+
+    next();
+    return () => {
+      cancelled = true;
+    };
+  }, [showTrash, canciones, cancionesEliminadas]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (openVideoMenuId) {
@@ -1598,7 +1722,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     {/* Thumbnail */}
                     <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-800 shrink-0 cursor-pointer" onClick={() => !showTrash && onPlaySong(song)}>
                       <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
-                      <div className="absolute bottom-1 right-1 bg-black/60 px-1 text-[10px] rounded font-medium">4:22</div>
+                      {(() => {
+                        const d = Number(songDurationsSec[song.id] || 0);
+                        if (!Number.isFinite(d) || d <= 0) return null;
+                        return <div className="absolute bottom-1 right-1 bg-black/60 px-1 text-[10px] rounded font-medium">{fmtDuration(d)}</div>;
+                      })()}
                       {(() => {
                         const isUploaded =
                           !song.isCover &&
