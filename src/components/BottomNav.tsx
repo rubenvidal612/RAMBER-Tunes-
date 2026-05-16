@@ -11,12 +11,14 @@ interface BottomNavProps {
 export function BottomNav({ currentTab, onChange }: BottomNavProps) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
+  const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'convertidor', label: 'Clonar Voz', icon: Repeat2 },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
-  ];
+  ].filter(item => item.id !== 'convertidor' || isDev);
 
   const menuItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'afiliados', label: 'Afiliados', icon: Coins },
@@ -27,7 +29,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   return (
     <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-3 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">
-      <div className="grid grid-cols-5 items-end px-3 pb-3">
+      <div className={cn("grid items-end px-3 pb-3", mainItems.length === 3 ? "grid-cols-4" : "grid-cols-5")}>
         {mainItems.map((item) => {
           const isActive = currentTab === item.id;
           const isStudio = item.id === 'studio';

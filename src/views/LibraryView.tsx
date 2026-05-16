@@ -7,6 +7,8 @@ import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supaba
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
 
+const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
 interface LibraryViewProps {
   canciones: SongItem[];
   cancionesEliminadas?: SongItem[];
@@ -4343,7 +4345,7 @@ function SongOptionsSheet({
                 <Music2 className="w-5 h-5 text-emerald-300" /> <span className="text-slate-200 font-extrabold">Cover (nueva versión)</span>
               </button>
             )}
-            {!isDeleted && (
+            {isDev && !isDeleted && (
               <button
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5 bg-gradient-to-r from-purple-500/10 to-transparent"
                 onClick={() => {

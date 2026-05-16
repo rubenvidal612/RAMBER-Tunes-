@@ -3,6 +3,7 @@ import { Check, Sparkles } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { getAccessToken } from '@/lib/supabaseBrowser';
 import { CREDIT_COSTS } from '@/lib/credits';
+const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 interface PricingViewProps {
   onClose: () => void;
@@ -192,10 +193,10 @@ export function PricingView({ onClose }: PricingViewProps) {
               { name: 'Video musical', cost: '2 créditos' },
               { name: 'Reemplazar sección', cost: '5 créditos' },
               { name: 'Generar WAV', cost: '0.4 créditos' },
-              { name: 'Letras', cost: '0.4 créditos' },
-              { name: 'Letras con tiempo', cost: '0.5 créditos' },
+              { name: 'Letras', cost: '0.4 créditos', devOnly: true },
+              { name: 'Letras con tiempo', cost: '0.5 créditos', devOnly: true },
               { name: 'Mejorar estilo', cost: '0.4 créditos' },
-            ].map((item, i) => (
+            ].filter(item => !item.devOnly || isDev).map((item, i) => (
               <div key={i} className="flex justify-between items-center p-4 bg-white/5 border border-white/5 rounded-2xl">
                 <span className="text-slate-200 font-medium">{item.name}</span>
                 <span className="text-white font-bold">{item.cost}</span>

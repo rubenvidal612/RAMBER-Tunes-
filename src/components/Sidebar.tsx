@@ -1,6 +1,7 @@
 import { Home, Sparkles, Library, User, Coins, HelpCircle, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
+const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 interface SidebarProps {
   currentTab: ViewTab;
@@ -28,18 +29,20 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
             <span className="text-sm">Inicio</span>
           </button>
 
-          <button
-            onClick={() => onChange('convertidor')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'convertidor'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Repeat2 className="w-5 h-5" />
-            <span className="text-sm">Clonar Voz</span>
-          </button>
+          {isDev && (
+            <button
+              onClick={() => onChange('convertidor')}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
+                currentTab === 'convertidor'
+                  ? "bg-indigo-500/20 text-indigo-400 font-bold"
+                  : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
+              )}
+            >
+              <Repeat2 className="w-5 h-5" />
+              <span className="text-sm">Clonar Voz</span>
+            </button>
+          )}
 
           <button
             onClick={() => onChange('studio')}

@@ -20,6 +20,7 @@ import { CREDIT_COSTS } from './lib/credits';
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
 import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, MessageCircle, MoreVertical, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
+const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
   { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
@@ -118,7 +119,7 @@ function InicioLanding({
               Crea música con IA para tus ideas, tu negocio o tus clientes
             </h1>
             <p className="mt-4 text-slate-300 text-sm md:text-base leading-relaxed max-w-xl">
-              Genera canciones con 2 versiones (A y B), guarda todo en tu biblioteca y mejora resultados con letras,
+              Genera canciones con 2 versiones (A y B), guarda todo en tu biblioteca y mejora resultados con {isDev ? 'letras, ' : ''}
               instrucciones y estilos. En el plan gratis puedes crear, pero las descargas se habilitan al comprar plan.
             </p>
             <div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-3">

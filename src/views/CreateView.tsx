@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
+const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
 function normalizeLyricsTags(t: string) {
   const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
   const mapped = lines.map((line) => {
@@ -1242,7 +1244,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       <div className="px-4 space-y-4 pb-[220px] md:pb-32">
         {mode === 'simple' ? (
-          <SimpleForm instrumental={instrumental} setInstrumental={setInstrumental} description={description} setDescription={setDescription} />
+          <SimpleForm instrumental={instrumental} setInstrumental={setInstrumental} description={description} setDescription={setDescription} isDev={isDev} />
         ) : (
           <CustomForm 
             instrumental={instrumental} 
@@ -1291,6 +1293,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             openMp3Converter={openMp3Converter}
             generateLyricsWithAI={generateLyricsWithAI}
             isGeneratingLyrics={isGeneratingLyrics}
+            isDev={isDev}
           />
         )}
       </div>
@@ -1579,7 +1582,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   );
 }
 
-function SimpleForm({ instrumental, setInstrumental, description, setDescription }: any) {
+function SimpleForm({ instrumental, setInstrumental, description, setDescription, isDev }: any) {
   return (
     <>
       <div className="glass-card rounded-3xl p-5 relative">
@@ -1609,15 +1612,17 @@ function SimpleForm({ instrumental, setInstrumental, description, setDescription
         </div>
       </div>
 
-      <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
-        <button className="flex items-center gap-2 text-white font-medium hover:text-gray-300 transition-colors">
-          <Plus className="w-5 h-5" /> Letras
-        </button>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-300">Instrumental</span>
-          <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+      {isDev && (
+        <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
+          <button className="flex items-center gap-2 text-white font-medium hover:text-gray-300 transition-colors">
+            <Plus className="w-5 h-5" /> Letras
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-300">Instrumental</span>
+            <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -1669,6 +1674,7 @@ function CustomForm({
   openMp3Converter,
   generateLyricsWithAI,
   isGeneratingLyrics,
+  isDev
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
@@ -1858,15 +1864,16 @@ function CustomForm({
         </div>
       )}
 
-      {instrumental ? (
-        <div className="glass-card rounded-2xl p-4 flex items-center justify-between mt-2 border border-white/10">
-          <div className="min-w-0">
-            <div className="text-white font-extrabold">Instrumental</div>
-            <div className="text-[11px] text-slate-400 truncate">Se crea sin letra</div>
+      {isDev && (
+        instrumental ? (
+          <div className="glass-card rounded-2xl p-4 flex items-center justify-between mt-2 border border-white/10">
+            <div className="min-w-0">
+              <div className="text-white font-extrabold">Instrumental</div>
+              <div className="text-[11px] text-slate-400 truncate">Se crea sin letra</div>
+            </div>
+            <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
           </div>
-          <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
-        </div>
-      ) : (
+        ) : (
         <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 flex flex-col mt-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -1953,6 +1960,7 @@ function CustomForm({
             </div>
           </div>
         </div>
+        )
       )}
 
       {isLyricsExpanded && (
