@@ -1172,8 +1172,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           </div>
         )}
 
-        {/* Navigation Tabs - Mobile mostly, but hidden on desktop since sidebar covers it */}
-        <div className="flex md:hidden border-b border-white/5 space-x-6 overflow-x-auto no-scrollbar">
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-white/5 space-x-6 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -1253,13 +1253,23 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
                         </div>
                       </button>
-                      <div className="shrink-0 relative">
+                      <div className="shrink-0 relative flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadVideoByTaskId(v.taskId).catch(() => {});
+                          }}
+                          className="bg-white/5 border border-white/10 rounded-full p-2 text-slate-200 hover:bg-white/10 transition-colors hidden sm:flex items-center justify-center"
+                          title="Descargar"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setOpenVideoMenuId(openVideoMenuId === v.taskId ? null : v.taskId);
                           }}
-                          className="bg-white/5 border border-white/10 rounded-full p-2 text-slate-200 hover:bg-white/10 transition-colors"
+                          className="bg-white/5 border border-white/10 rounded-full p-2 text-slate-200 hover:bg-white/10 transition-colors flex items-center justify-center"
                         >
                           <MoreVertical className="w-4 h-4" />
                         </button>
@@ -3768,10 +3778,14 @@ function SongOptionsSheet({
       }
       try {
         await navigator.clipboard.writeText(mp4TaskId);
-        alert(`Listo. Ya empecé el video.\n\nTaskId (copiado):\n${mp4TaskId}\n\nNo lo compartas.`);
+        alert(`Listo. El video se está generando en la pestaña "Video".\n\nTaskId (copiado):\n${mp4TaskId}`);
       } catch {
-        alert(`Listo. Ya empecé el video.\n\nTaskId:\n${mp4TaskId}\n\nNo lo compartas.`);
+        alert(`Listo. El video se está generando en la pestaña "Video".\n\nTaskId:\n${mp4TaskId}`);
       }
+
+      setActiveTab('video');
+      loadVideos().catch(() => {});
+      setIsBusy(false); // Release UI lock while polling in background
 
       const startedAt = Date.now();
       while (Date.now() - startedAt < 240_000) {
@@ -3813,7 +3827,9 @@ function SongOptionsSheet({
         return;
       }
 
-      alert('El video está tardando. Intenta de nuevo en unos segundos.');
+      alert('El video está tardando, pero se sigue generando en la pestaña "Video".');
+    } catch (e) {
+      alert('Error: ' + (e instanceof Error ? e.message : 'Desconocido'));
     } finally {
       setIsBusy(false);
     }
