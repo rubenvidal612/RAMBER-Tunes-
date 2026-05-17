@@ -1612,7 +1612,6 @@ function SimpleForm({ instrumental, setInstrumental, description, setDescription
         </div>
       </div>
 
-      {isDev && (
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
           <button className="flex items-center gap-2 text-white font-medium hover:text-gray-300 transition-colors">
             <Plus className="w-5 h-5" /> Letras
@@ -1622,7 +1621,6 @@ function SimpleForm({ instrumental, setInstrumental, description, setDescription
             <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
           </div>
         </div>
-      )}
     </>
   );
 }
@@ -1864,7 +1862,6 @@ function CustomForm({
         </div>
       )}
 
-      {isDev && (
         instrumental ? (
           <div className="glass-card rounded-2xl p-4 flex items-center justify-between mt-2 border border-white/10">
             <div className="min-w-0">
@@ -1961,7 +1958,6 @@ function CustomForm({
           </div>
         </div>
         )
-      )}
 
       {isLyricsExpanded && (
         <div className="fixed inset-0 z-[140] bg-black/70 flex items-end md:items-center justify-center">
