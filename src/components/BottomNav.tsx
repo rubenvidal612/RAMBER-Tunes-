@@ -11,14 +11,14 @@ interface BottomNavProps {
 export function BottomNav({ currentTab, onChange }: BottomNavProps) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
-  const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
 
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'convertidor', label: 'Clonar Voz', icon: Repeat2 },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
-  ].filter(item => item.id !== 'convertidor' || isDev);
+  ];
 
   const menuItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'afiliados', label: 'Afiliados', icon: Coins },
