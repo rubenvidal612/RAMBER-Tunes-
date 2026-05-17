@@ -1862,7 +1862,7 @@ function CustomForm({
         </div>
       )}
 
-        instrumental ? (
+      {instrumental ? (
           <div className="glass-card rounded-2xl p-4 flex items-center justify-between mt-2 border border-white/10">
             <div className="min-w-0">
               <div className="text-white font-extrabold">Instrumental</div>
@@ -1957,7 +1957,7 @@ function CustomForm({
             </div>
           </div>
         </div>
-        )
+        )}
 
       {isLyricsExpanded && (
         <div className="fixed inset-0 z-[140] bg-black/70 flex items-end md:items-center justify-center">
