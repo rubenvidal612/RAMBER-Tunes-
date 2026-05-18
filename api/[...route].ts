@@ -3151,6 +3151,236 @@ notify pgrst, 'reload schema';`;
     }
   }
 
+  async function syncLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string, lyrics: string) {
+    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    if (!apiKey) {
+      return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
+    }
+
+    try {
+      const mod: any = await import("@google/genai");
+      const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
+      if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
+
+      const ai = new GoogleGenAI({ apiKey });
+      const partAudio = {
+        inlineData: {
+          data: Buffer.from(audioBuf).toString("base64"),
+          mimeType
+        }
+      };
+
+      const prompt = `Listen to the audio and read the following lyrics:\n\n${lyrics}\n\nReturn a JSON array representing the exact timing of each line of the lyrics in the audio. The start_time and end_time should be in seconds (float). Use this exact format:\n[\n  { "text": "line of lyrics", "start_time": 0.0, "end_time": 2.5 }\n]\nOutput ONLY valid JSON without markdown wrapping.`;
+
+      const baseModels = [
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-1.5-flash"
+      ];
+      
+      let response: any = null;
+      let lastErr: any = null;
+      for (const model of baseModels) {
+        try {
+          response = await ai.models.generateContent({
+            model,
+            contents: [prompt, partAudio],
+            config: {
+              responseMimeType: "application/json"
+            }
+          });
+          if (response?.text) break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      if (!response?.text) {
+        return { ok: false as const, error: lastErr instanceof Error ? lastErr.message : String(lastErr || "Error llamando a Gemini") };
+      }
+
+      const textOut = response.text;
+      const parsed = JSON.parse(textOut);
+      return { ok: true as const, data: parsed };
+    } catch (error: any) {
+      return { ok: false as const, error: error.message || String(error) };
+    }
+  }
+
+  async function handleKaraokeSync(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
+    const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
+    const lyrics = firstString(payload, ["lyrics", "text"]) || "";
+
+    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
+    if (!lyrics.trim()) return send(res, 400, { error: "Falta la letra para sincronizar" });
+
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const cost = 12.5;
+
+    try {
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      let sourceAudioUrl = uploadUrl;
+      if (uploadPath) {
+        try {
+          const signedUrl = await getSignedR2Url(uploadPath, 7200);
+          if (signedUrl) sourceAudioUrl = signedUrl;
+        } catch (e) {
+          console.error("Error signing R2 URL:", e);
+        }
+      }
+
+      if (!sourceAudioUrl) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 400, { error: "Falta audio de origen" });
+      }
+
+      const audioRes = await fetch(sourceAudioUrl);
+      if (!audioRes.ok) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        throw new Error(`Error descargando audio: ${audioRes.status}`);
+      }
+      
+      const replicateToken = process.env.REPLICATE_API_TOKEN;
+      if (!replicateToken) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        throw new Error("Falta REPLICATE_API_TOKEN para la separación de voz.");
+      }
+
+      console.log("Iniciando separación principal en Replicate (Kim Vocal 2)...");
+      const initRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${replicateToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: { 
+            music_input: sourceAudioUrl, 
+            audioSeparator: true,
+            audioSeparatorModel: 'Kim_Vocal_2.onnx'
+          }
+        })
+      });
+
+      const initData = await initRes.json();
+      if (!initRes.ok) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        throw new Error(initData.detail || "Error iniciando separación en Replicate");
+      }
+
+      let separatedUrls = null;
+      let predictionUrl = initData.urls.get;
+
+      while (true) {
+        await new Promise(r => setTimeout(r, 4000));
+        const pollRes = await fetch(predictionUrl, {
+          headers: { 'Authorization': `Token ${replicateToken}` }
+        });
+        const pollData = await pollRes.json();
+
+        if (pollData.status === 'succeeded') {
+          separatedUrls = pollData.output;
+          break;
+        } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          throw new Error("La separación de voz falló en Replicate: " + pollData.error);
+        }
+      }
+
+      console.log("Separación completada:", separatedUrls);
+      let vocalUrl = separatedUrls.mdx_vocals || separatedUrls.vocals;
+      const instrumentalUrl = separatedUrls.mdx_other || separatedUrls.instrumental || separatedUrls.no_vocals;
+
+      if (!vocalUrl || !instrumentalUrl) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        throw new Error("No se obtuvieron las pistas separadas correctamente.");
+      }
+
+      let backingVocalUrl = null;
+
+      console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
+      const bveRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${replicateToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: { 
+            music_input: vocalUrl, 
+            audioSeparator: true,
+            audioSeparatorModel: 'UVR-BVE-4B_SN-44100-1.pth'
+          }
+        })
+      });
+
+      const bveData = await bveRes.json();
+      if (bveRes.ok) {
+        let bvePredUrl = bveData.urls.get;
+        let bveUrls = null;
+        while (true) {
+          await new Promise(r => setTimeout(r, 4000));
+          const pollRes = await fetch(bvePredUrl, {
+            headers: { 'Authorization': `Token ${replicateToken}` }
+          });
+          const pollData = await pollRes.json();
+
+          if (pollData.status === 'succeeded') {
+            bveUrls = pollData.output;
+            break;
+          } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+            console.error("Separación BVE falló, usando voces originales.");
+            break;
+          }
+        }
+
+        if (bveUrls && bveUrls.mdx_vocals) {
+          vocalUrl = bveUrls.mdx_vocals;
+          backingVocalUrl = bveUrls.mdx_other;
+          console.log("Segundas voces extraídas correctamente.");
+        }
+      } else {
+        console.error("Fallo al iniciar BVE:", bveData.detail);
+      }
+
+      console.log("Descargando pista vocal para Gemini...");
+      const vocalRes = await fetch(vocalUrl);
+      if (!vocalRes.ok) throw new Error("Error descargando voz separada.");
+      const vocalBuffer = await vocalRes.arrayBuffer();
+
+      console.log("Sincronizando con Gemini...");
+      const syncResult = await syncLyricsWithGemini(vocalBuffer, "audio/mpeg", lyrics);
+      if (!syncResult.ok) throw new Error(syncResult.error);
+
+      return send(res, 200, {
+        ok: true,
+        syncData: syncResult.data,
+        instrumentalUrl,
+        vocalUrl,
+        backingVocalUrl
+      });
+    } catch (e) {
+      console.error("Error en handleKaraokeSync:", e);
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost).catch(() => {});
+      return send(res, 500, { error: "Error en sincronización de Karaoke", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
@@ -3182,6 +3412,7 @@ notify pgrst, 'reload schema';`;
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
       if (a === "create-cover") return handleCreateCover(req, res);
+      if (a === "karaoke-sync") return handleKaraokeSync(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
     } catch (e) {
