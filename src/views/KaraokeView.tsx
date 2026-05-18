@@ -258,56 +258,129 @@ export function KaraokeView() {
   const handleGenerate = async () => {
     if (!karaokeStore.audioFile) return;
     karaokeStore.set({ step: 'generating', progress: 0 });
-    
+
     try {
+      // STEP 1: Upload audio to R2
       const progressInterval = setInterval(() => {
-        karaokeStore.set({ progress: Math.min(40, karaokeStore.progress + Math.random() * 5) });
-      }, 500);
-      
+        karaokeStore.set({ progress: Math.min(20, karaokeStore.progress + Math.random() * 4) });
+      }, 400);
       const { url: uploadUrl, path: uploadPath } = await uploadAudioToR2(karaokeStore.audioFile);
       clearInterval(progressInterval);
-      karaokeStore.set({ progress: 50 });
-      
-      const syncInterval = setInterval(() => {
-        // Demucs can take 1-2 minutes, progress slowly to 98%
-        karaokeStore.set({ progress: Math.min(98, karaokeStore.progress + Math.random() * 0.5) });
-      }, 1000);
-      
+      karaokeStore.set({ progress: 22 });
+
+      // STEP 2: Start Replicate separation job (returns immediately with a predictionId)
       const t = await getAccessToken();
-      const res = await fetch('/api/suno/karaoke-sync', {
+      const startRes = await fetch('/api/suno/karaoke-start', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${t.token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
+        body: JSON.stringify({ uploadUrl, uploadPath, lyrics: karaokeStore.lyrics })
+      });
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData?.predictionId) {
+        throw new Error(startData?.error || 'No se pudo iniciar la separación de audio');
+      }
+
+      karaokeStore.set({ progress: 25 });
+
+      // STEP 3: Poll karaoke-status until Replicate finishes
+      // State we accumulate across polls:
+      let predictionId: string = startData.predictionId;
+      let stage: string = 'separating';
+      let instrumentalUrl: string | null = null;
+      let vocalUrl: string | null = null;
+      let backingVocalUrl: string | null = null;
+
+      await new Promise<void>((resolve, reject) => {
+        let dots = 0;
+        const MAX_POLLS = 120; // 120 polls × 5s = 10 minutes safety cap
+        let pollCount = 0;
+
+        const interval = setInterval(async () => {
+          try {
+            pollCount++;
+            if (pollCount > MAX_POLLS) {
+              clearInterval(interval);
+              reject(new Error('El procesamiento tardó demasiado. Intenta con una canción más corta.'));
+              return;
+            }
+
+            // Advance fake progress slowly from 25 → 88
+            karaokeStore.set({ progress: Math.min(88, karaokeStore.progress + (Math.random() * 0.8)) });
+
+            const params = new URLSearchParams({ predictionId, stage });
+            if (stage === 'backing' && vocalUrl) params.set('vocalUrl', vocalUrl);
+
+            const statusRes = await fetch(`/api/suno/karaoke-status?${params.toString()}`, {
+              headers: { 'Authorization': `Bearer ${t.token}` }
+            });
+            const statusData = await statusRes.json().catch(() => ({}));
+
+            if (!statusData?.ok) {
+              clearInterval(interval);
+              reject(new Error(statusData?.error || 'Error consultando estado del karaoke'));
+              return;
+            }
+
+            if (statusData.status === 'processing' || statusData.status === 'starting') {
+              // Still going, update stage label
+              stage = statusData.stage || stage;
+              return;
+            }
+
+            if (statusData.status === 'progressing') {
+              // Main separation done, now polling BVE (backing vocal extraction)
+              predictionId = statusData.predictionId;
+              stage = 'backing';
+              instrumentalUrl = statusData.instrumentalUrl || instrumentalUrl;
+              vocalUrl = statusData.vocalUrl || vocalUrl;
+              karaokeStore.set({ progress: 65 });
+              return;
+            }
+
+            if (statusData.status === 'ready_for_finalize') {
+              // All Replicate work done
+              clearInterval(interval);
+              if (statusData.instrumentalUrl) instrumentalUrl = statusData.instrumentalUrl;
+              if (statusData.vocalUrl) vocalUrl = statusData.vocalUrl;
+              if (statusData.backingVocalUrl) backingVocalUrl = statusData.backingVocalUrl;
+              resolve();
+            }
+          } catch (err) {
+            clearInterval(interval);
+            reject(err);
+          }
+        }, 5000);
+      });
+
+      if (!vocalUrl) throw new Error('No se obtuvo la pista vocal de Replicate');
+      karaokeStore.set({ progress: 90 });
+
+      // STEP 4: Finalize — call Gemini for lyric sync (< 30s, fits Hobby plan)
+      const finalRes = await fetch('/api/suno/karaoke-finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
         body: JSON.stringify({
-          uploadUrl,
-          uploadPath,
-          lyrics: karaokeStore.lyrics,
-          keepBackingVocals: karaokeStore.keepBackingVocals
+          vocalUrl,
+          instrumentalUrl,
+          backingVocalUrl,
+          lyrics: karaokeStore.lyrics
         })
       });
-      
-      clearInterval(syncInterval);
-      karaokeStore.set({ progress: 100 });
-      
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Error sincronizando karaoke');
+      const finalData = await finalRes.json().catch(() => ({}));
+      if (!finalRes.ok || !finalData?.ok) {
+        throw new Error(finalData?.error || 'Error sincronizando con Gemini');
       }
-      
-      const data = await res.json();
-      
-      const newSyncData = (data.syncData && Array.isArray(data.syncData)) ? data.syncData : [];
-      
+
+      const newSyncData = Array.isArray(finalData.syncData) ? finalData.syncData : [];
       karaokeStore.set({
         syncData: newSyncData,
-        instrumentalUrl: data.instrumentalUrl || karaokeStore.instrumentalUrl,
-        vocalUrl: data.vocalUrl || karaokeStore.vocalUrl,
-        backingVocalUrl: data.backingVocalUrl || null,
-        audioMode: 'backing'
+        instrumentalUrl: finalData.instrumentalUrl || instrumentalUrl,
+        vocalUrl: finalData.vocalUrl || vocalUrl,
+        backingVocalUrl: finalData.backingVocalUrl || backingVocalUrl || null,
+        audioMode: 'backing',
+        progress: 100
       });
-      
+
       setTimeout(() => karaokeStore.set({ step: 'result' }), 500);
     } catch (e) {
       console.error(e);
@@ -585,9 +658,11 @@ export function KaraokeView() {
           </div>
           <h2 className="text-2xl font-bold mb-3">Creando Karaoke...</h2>
           <p className="text-slate-400 text-sm h-6">
-            {progress < 30 ? "Subiendo audio..." : 
-             progress < 85 ? "Separando voz e instrumental con Inteligencia Artificial (1-2 min)..." : 
-             "Sincronizando letras con Gemini IA..."}
+            {progress < 23 ? "Subiendo audio a la nube..." :
+             progress < 27 ? "Iniciando separación de voz con IA..." :
+             progress < 65 ? "Separando voces del instrumental (1-2 min)..." :
+             progress < 88 ? "Extrayendo segundas voces (coros)..." :
+             "Sincronizando letra con Gemini IA..."}
           </p>
         </div>
       </div>

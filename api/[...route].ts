@@ -3151,64 +3151,11 @@ notify pgrst, 'reload schema';`;
     }
   }
 
-  async function syncLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string, lyrics: string) {
-    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
-    if (!apiKey) {
-      return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
-    }
+  // ------------------------------------------------------------------
+  // KARAOKE ASYNC 3-STEP FLOW (Vercel Hobby compatible)
+  // ------------------------------------------------------------------
 
-    try {
-      const mod: any = await import("@google/genai");
-      const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
-      if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
-
-      const ai = new GoogleGenAI({ apiKey });
-      const partAudio = {
-        inlineData: {
-          data: Buffer.from(audioBuf).toString("base64"),
-          mimeType
-        }
-      };
-
-      const prompt = `Listen to the audio and read the following lyrics:\n\n${lyrics}\n\nReturn a JSON array representing the exact timing of each line of the lyrics in the audio. The start_time and end_time should be in seconds (float). Use this exact format:\n[\n  { "text": "line of lyrics", "start_time": 0.0, "end_time": 2.5 }\n]\nOutput ONLY valid JSON without markdown wrapping.`;
-
-      const baseModels = [
-        "gemini-3.1-flash-lite-preview",
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-1.5-flash"
-      ];
-      
-      let response: any = null;
-      let lastErr: any = null;
-      for (const model of baseModels) {
-        try {
-          response = await ai.models.generateContent({
-            model,
-            contents: [prompt, partAudio],
-            config: {
-              responseMimeType: "application/json"
-            }
-          });
-          if (response?.text) break;
-        } catch (err) {
-          lastErr = err;
-        }
-      }
-
-      if (!response?.text) {
-        return { ok: false as const, error: lastErr instanceof Error ? lastErr.message : String(lastErr || "Error llamando a Gemini") };
-      }
-
-      const textOut = response.text;
-      const parsed = JSON.parse(textOut);
-      return { ok: true as const, data: parsed };
-    } catch (error: any) {
-      return { ok: false as const, error: error.message || String(error) };
-    }
-  }
-
-  async function handleKaraokeSync(req: any, res: any) {
+  async function handleKaraokeStart(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
     const auth = await requireUser(req);
@@ -3219,10 +3166,8 @@ notify pgrst, 'reload schema';`;
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
-    const lyrics = firstString(payload, ["lyrics", "text"]) || "";
 
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
-    if (!lyrics.trim()) return send(res, 400, { error: "Falta la letra para sincronizar" });
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
@@ -3239,145 +3184,206 @@ notify pgrst, 'reload schema';`;
         try {
           const signedUrl = await getSignedR2Url(uploadPath, 7200);
           if (signedUrl) sourceAudioUrl = signedUrl;
-        } catch (e) {
-          console.error("Error signing R2 URL:", e);
-        }
+        } catch {}
       }
-
       if (!sourceAudioUrl) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 400, { error: "Falta audio de origen" });
       }
 
-      const audioRes = await fetch(sourceAudioUrl);
-      if (!audioRes.ok) {
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        throw new Error(`Error descargando audio: ${audioRes.status}`);
-      }
-      
-      const replicateToken = process.env.REPLICATE_API_TOKEN;
+      const replicateToken = (process.env.REPLICATE_API_TOKEN || "").trim();
       if (!replicateToken) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        throw new Error("Falta REPLICATE_API_TOKEN para la separación de voz.");
+        return send(res, 500, { error: "Falta REPLICATE_API_TOKEN en el servidor" });
       }
 
-      console.log("Iniciando separación principal en Replicate (Kim Vocal 2)...");
-      const initRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
-        method: 'POST',
+      // Start Replicate prediction (Kim Vocal 2 stem separation)
+      const initRes = await fetch("https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions", {
+        method: "POST",
         headers: {
-          'Authorization': `Token ${replicateToken}`,
-          'Content-Type': 'application/json',
+          Authorization: `Token ${replicateToken}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          input: { 
-            music_input: sourceAudioUrl, 
+          input: {
+            music_input: sourceAudioUrl,
             audioSeparator: true,
-            audioSeparatorModel: 'Kim_Vocal_2.onnx'
-          }
-        })
+            audioSeparatorModel: "Kim_Vocal_2.onnx",
+          },
+        }),
       });
 
-      const initData = await initRes.json();
+      const initData = await initRes.json().catch(() => ({}));
       if (!initRes.ok) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        throw new Error(initData.detail || "Error iniciando separación en Replicate");
+        return send(res, 502, { error: initData?.detail || "Error iniciando separación en Replicate" });
       }
 
-      let separatedUrls = null;
-      let predictionUrl = initData.urls.get;
-
-      while (true) {
-        await new Promise(r => setTimeout(r, 4000));
-        const pollRes = await fetch(predictionUrl, {
-          headers: { 'Authorization': `Token ${replicateToken}` }
-        });
-        const pollData = await pollRes.json();
-
-        if (pollData.status === 'succeeded') {
-          separatedUrls = pollData.output;
-          break;
-        } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
-          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-          throw new Error("La separación de voz falló en Replicate: " + pollData.error);
-        }
-      }
-
-      console.log("Separación completada:", separatedUrls);
-      let vocalUrl = separatedUrls.mdx_vocals || separatedUrls.vocals;
-      const instrumentalUrl = separatedUrls.mdx_other || separatedUrls.instrumental || separatedUrls.no_vocals;
-
-      if (!vocalUrl || !instrumentalUrl) {
+      const predictionId = initData?.id;
+      const predictionUrl = initData?.urls?.get;
+      if (!predictionId || !predictionUrl) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        throw new Error("No se obtuvieron las pistas separadas correctamente.");
+        return send(res, 502, { error: "Respuesta inválida de Replicate al iniciar" });
       }
 
-      let backingVocalUrl = null;
-
-      console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
-      const bveRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${replicateToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: { 
-            music_input: vocalUrl, 
-            audioSeparator: true,
-            audioSeparatorModel: 'UVR-BVE-4B_SN-44100-1.pth'
-          }
-        })
+      return send(res, 200, {
+        ok: true,
+        predictionId,
+        predictionUrl,
+        stage: "separating",
       });
+    } catch (e: any) {
+      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost).catch(() => {});
+      return send(res, 500, { error: "Error iniciando karaoke", detail: e?.message || String(e) });
+    }
+  }
 
-      const bveData = await bveRes.json();
-      if (bveRes.ok) {
-        let bvePredUrl = bveData.urls.get;
-        let bveUrls = null;
-        while (true) {
-          await new Promise(r => setTimeout(r, 4000));
-          const pollRes = await fetch(bvePredUrl, {
-            headers: { 'Authorization': `Token ${replicateToken}` }
+  async function handleKaraokeStatus(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const predictionId = pickQuery(req, "predictionId");
+    const stage = pickQuery(req, "stage") || "separating"; // "separating" | "backing"
+    const vocalUrlForBacking = pickQuery(req, "vocalUrl"); // Only for "backing" stage
+
+    if (!predictionId) return send(res, 400, { error: "Falta predictionId" });
+
+    const replicateToken = (process.env.REPLICATE_API_TOKEN || "").trim();
+    if (!replicateToken) return send(res, 500, { error: "Falta REPLICATE_API_TOKEN" });
+
+    try {
+      const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
+        headers: { Authorization: `Token ${replicateToken}` },
+      });
+      const pollData = await pollRes.json().catch(() => ({}));
+
+      const status = pollData?.status; // starting | processing | succeeded | failed | canceled
+
+      if (status === "succeeded") {
+        const output = pollData?.output || {};
+
+        if (stage === "separating") {
+          // Main separation done — extract URLs and kick off BVE
+          const vocalUrl = output?.mdx_vocals || output?.vocals || null;
+          const instrumentalUrl = output?.mdx_other || output?.instrumental || output?.no_vocals || null;
+
+          if (!vocalUrl || !instrumentalUrl) {
+            return send(res, 200, { ok: false, error: "No se obtuvieron pistas separadas" });
+          }
+
+          // Start BVE (backing vocal extraction) as a new Replicate prediction
+          const bveRes = await fetch("https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions", {
+            method: "POST",
+            headers: {
+              Authorization: `Token ${replicateToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              input: {
+                music_input: vocalUrl,
+                audioSeparator: true,
+                audioSeparatorModel: "UVR-BVE-4B_SN-44100-1.pth",
+              },
+            }),
           });
-          const pollData = await pollRes.json();
 
-          if (pollData.status === 'succeeded') {
-            bveUrls = pollData.output;
-            break;
-          } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
-            console.error("Separación BVE falló, usando voces originales.");
-            break;
+          const bveData = await bveRes.json().catch(() => ({}));
+          if (bveRes.ok && bveData?.id) {
+            return send(res, 200, {
+              ok: true,
+              status: "progressing",
+              stage: "backing",
+              predictionId: bveData.id,
+              vocalUrl,
+              instrumentalUrl,
+              message: "Extrayendo segundas voces...",
+            });
+          } else {
+            // BVE failed to start → skip it, go straight to finalize
+            return send(res, 200, {
+              ok: true,
+              status: "ready_for_finalize",
+              stage: "done",
+              vocalUrl,
+              instrumentalUrl,
+              backingVocalUrl: null,
+              message: "Separación lista.",
+            });
           }
         }
 
-        if (bveUrls && bveUrls.mdx_vocals) {
-          vocalUrl = bveUrls.mdx_vocals;
-          backingVocalUrl = bveUrls.mdx_other;
-          console.log("Segundas voces extraídas correctamente.");
+        if (stage === "backing") {
+          // BVE done
+          const bveVocalUrl = output?.mdx_vocals || null;
+          const backingVocalUrl = output?.mdx_other || null;
+          const instrumentalUrl = null; // passed through from frontend store
+
+          return send(res, 200, {
+            ok: true,
+            status: "ready_for_finalize",
+            stage: "done",
+            vocalUrl: bveVocalUrl || vocalUrlForBacking || null,
+            backingVocalUrl,
+            message: "Listo para sincronizar.",
+          });
         }
-      } else {
-        console.error("Fallo al iniciar BVE:", bveData.detail);
       }
 
-      console.log("Descargando pista vocal para Gemini...");
+      if (status === "failed" || status === "canceled") {
+        return send(res, 200, { ok: false, error: `Replicate: ${status}. ${pollData?.error || ""}` });
+      }
+
+      // Still processing
+      return send(res, 200, {
+        ok: true,
+        status: "processing",
+        stage,
+        message: stage === "separating" ? "Separando voz e instrumental..." : "Extrayendo segundas voces...",
+      });
+    } catch (e: any) {
+      return send(res, 500, { error: "Error consultando estado", detail: e?.message || String(e) });
+    }
+  }
+
+  async function handleKaraokeFinalize(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const vocalUrl = firstString(payload, ["vocalUrl", "vocal_url"]);
+    const instrumentalUrl = firstString(payload, ["instrumentalUrl", "instrumental_url"]);
+    const backingVocalUrl = firstString(payload, ["backingVocalUrl", "backing_vocal_url"]);
+    const lyrics = firstString(payload, ["lyrics", "text"]) || "";
+
+    if (!vocalUrl) return send(res, 400, { error: "Falta vocalUrl" });
+    if (!lyrics.trim()) return send(res, 400, { error: "Falta la letra para sincronizar" });
+
+    try {
+      // Download vocal track for Gemini (must fit in memory — vocal tracks are usually < 10MB)
       const vocalRes = await fetch(vocalUrl);
-      if (!vocalRes.ok) throw new Error("Error descargando voz separada.");
+      if (!vocalRes.ok) return send(res, 502, { error: `No pude descargar la pista vocal (HTTP ${vocalRes.status})` });
       const vocalBuffer = await vocalRes.arrayBuffer();
 
-      console.log("Sincronizando con Gemini...");
       const syncResult = await syncLyricsWithGemini(vocalBuffer, "audio/mpeg", lyrics);
-      if (!syncResult.ok) throw new Error(syncResult.error);
+      if (!syncResult.ok) {
+        return send(res, 500, { error: syncResult.error || "Error sincronizando con Gemini" });
+      }
 
       return send(res, 200, {
         ok: true,
         syncData: syncResult.data,
-        instrumentalUrl,
+        instrumentalUrl: instrumentalUrl || null,
         vocalUrl,
-        backingVocalUrl
+        backingVocalUrl: backingVocalUrl || null,
       });
-    } catch (e) {
-      console.error("Error en handleKaraokeSync:", e);
-      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost).catch(() => {});
-      return send(res, 500, { error: "Error en sincronización de Karaoke", detail: e instanceof Error ? e.message : String(e) });
+    } catch (e: any) {
+      return send(res, 500, { error: "Error finalizando karaoke", detail: e?.message || String(e) });
     }
   }
 
@@ -3412,7 +3418,11 @@ notify pgrst, 'reload schema';`;
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
       if (a === "create-cover") return handleCreateCover(req, res);
-      if (a === "karaoke-sync") return handleKaraokeSync(req, res);
+      if (a === "karaoke-start") return handleKaraokeStart(req, res);
+      if (a === "karaoke-status") return handleKaraokeStatus(req, res);
+      if (a === "karaoke-finalize") return handleKaraokeFinalize(req, res);
+      // Legacy compat (kept for localhost server.js which still has its own route)
+      if (a === "karaoke-sync") return handleKaraokeStart(req, res);
 
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
     } catch (e) {
