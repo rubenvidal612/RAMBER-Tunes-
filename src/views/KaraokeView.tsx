@@ -214,12 +214,15 @@ export function KaraokeView() {
 
     // Step C: Backend proxy — send as JSON byte array (works for files ≤ 3MB)
     if (file.size <= 3 * 1024 * 1024) {
-      const arrayBuffer = await file.arrayBuffer();
-      const fileArray = Array.from(new Uint8Array(arrayBuffer));
+      const base64Str = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+      });
       const response = await fetch('/api/upload-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${t.token}` },
-        body: JSON.stringify({ title: file.name, contentType, file: fileArray, path: key }),
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ title: file.name, contentType, file: base64Str, path: key }),
       });
       const out = await response.json().catch(() => ({}));
       if (!response.ok || out?.ok === false) {

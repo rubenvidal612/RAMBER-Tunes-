@@ -459,29 +459,64 @@ app.get('/api/rvc/cover-status', authenticate, async (req, res) => {
 });
 
 // 2.5 Karaoke Sync
-app.post('/api/suno/karaoke-sync', authenticate, async (req, res) => {
-  const { uploadUrl, uploadPath, lyrics } = req.body;
+async function refundUserCredits(userId, costCredits) {
+  const cost = round2(Number(costCredits));
+  if (!Number.isFinite(cost) || cost <= 0) return { ok: true };
+
+  try {
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (!profile) return { ok: false, error: "Perfil no encontrado" };
+
+    const current = creditsFromProfile(profile);
+    const next = round2(current + cost);
+    
+    let col = null;
+    if (Object.prototype.hasOwnProperty.call(profile, "ramber_credits")) col = "ramber_credits";
+    else if (Object.prototype.hasOwnProperty.call(profile, "zingy_credits")) col = "zingy_credits";
+    else if (Object.prototype.hasOwnProperty.call(profile, "credits")) col = "credits";
+
+    if (!col) return { ok: false, error: "No se encontró columna de créditos" };
+
+    const { error: updErr } = await supabase.from("profiles").update({ [col]: next }).eq("id", userId);
+    if (updErr) return { ok: false, error: updErr.message };
+    return { ok: true, credits: next };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+// 2.5 Karaoke Async 3-Step Flow (Vercel Hobby compatible)
+app.post('/api/suno/karaoke-start', authenticate, async (req, res) => {
+  const { uploadUrl, uploadPath } = req.body;
   const user = req.user;
 
   try {
     const cost = CREDIT_COSTS.karaoke_generation || 12.5;
-    const creditResult = await consumeUserCredits(user.id, cost);
-    if (!creditResult.ok) return res.status(402).json({ error: creditResult.error });
+    const isAdmin = isAdminEmail(user.email);
+    
+    if (!isAdmin) {
+      const creditResult = await consumeUserCredits(user.id, cost);
+      if (!creditResult.ok) return res.status(402).json({ error: creditResult.error });
+    }
 
     let sourceAudioUrl = uploadUrl;
-    if (uploadPath) sourceAudioUrl = await getSignedR2Url(uploadPath, 7200);
-    if (!sourceAudioUrl) return res.status(400).json({ error: "Falta audio de origen" });
+    if (uploadPath) {
+      try {
+        const signedUrl = await getSignedR2Url(uploadPath, 7200);
+        if (signedUrl) sourceAudioUrl = signedUrl;
+      } catch {}
+    }
+    if (!sourceAudioUrl) {
+      if (!isAdmin) await refundUserCredits(user.id, cost);
+      return res.status(400).json({ error: "Falta audio de origen" });
+    }
 
-    const audioRes = await fetch(sourceAudioUrl);
-    if (!audioRes.ok) throw new Error(`Error descargando audio: ${audioRes.status}`);
-    const audioBuffer = await audioRes.arrayBuffer();
-
-    const mimeType = audioRes.headers.get("content-type") || "audio/mpeg";
-
-    // 1. Send to Replicate for Separation (MDX-Net / Kim Vocal 2)
     const replicateToken = process.env.REPLICATE_API_TOKEN;
-    if (!replicateToken) throw new Error("Falta REPLICATE_API_TOKEN para la separación de voz.");
-    
+    if (!replicateToken) {
+      if (!isAdmin) await refundUserCredits(user.id, cost);
+      return res.status(500).json({ error: "Falta REPLICATE_API_TOKEN para la separación de voz." });
+    }
+
     console.log("Iniciando separación principal en Replicate (Kim Vocal 2)...");
     const initRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
       method: 'POST',
@@ -499,84 +534,143 @@ app.post('/api/suno/karaoke-sync', authenticate, async (req, res) => {
     });
     
     const initData = await initRes.json();
-    if (!initRes.ok) throw new Error(initData.detail || "Error iniciando separación en Replicate");
-    
-    let separatedUrls = null;
-    let predictionUrl = initData.urls.get;
-    
-    while (true) {
-      await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
-      const pollRes = await fetch(predictionUrl, {
-        headers: { 'Authorization': `Token ${replicateToken}` }
-      });
-      const pollData = await pollRes.json();
-      
-      if (pollData.status === 'succeeded') {
-        separatedUrls = pollData.output;
-        break;
-      } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
-        throw new Error("La separación de voz falló en Replicate: " + pollData.error);
-      }
+    if (!initRes.ok) {
+      if (!isAdmin) await refundUserCredits(user.id, cost);
+      return res.status(502).json({ error: initData.detail || "Error iniciando separación en Replicate" });
     }
-    
-    console.log("Separación completada:", separatedUrls);
-    let vocalUrl = separatedUrls.mdx_vocals || separatedUrls.vocals;
-    const instrumentalUrl = separatedUrls.mdx_other || separatedUrls.instrumental || separatedUrls.no_vocals;
 
-    if (!vocalUrl || !instrumentalUrl) {
-      throw new Error("No se obtuvieron las pistas separadas correctamente.");
+    const predictionId = initData?.id;
+    const predictionUrl = initData?.urls?.get;
+    if (!predictionId || !predictionUrl) {
+      if (!isAdmin) await refundUserCredits(user.id, cost);
+      return res.status(502).json({ error: "Respuesta inválida de Replicate al iniciar" });
     }
-    
-    let backingVocalUrl = null;
 
-    // 2. Extracción de segundas voces siempre
-    console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
-    const bveRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${replicateToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: { 
-          music_input: vocalUrl, 
-          audioSeparator: true,
-          audioSeparatorModel: 'UVR-BVE-4B_SN-44100-1.pth'
-        }
-      })
+    return res.json({
+      ok: true,
+      predictionId,
+      predictionUrl,
+      stage: "separating"
     });
+  } catch (error) {
+    console.error("Error en karaoke-start:", error);
+    // Attempt refund just in case
+    const cost = CREDIT_COSTS.karaoke_generation || 12.5;
+    const isAdmin = isAdminEmail(user?.email);
+    if (user?.id && !isAdmin) {
+      await refundUserCredits(user.id, cost).catch(console.error);
+    }
+    return res.status(500).json({ error: 'Error iniciando Karaoke', detail: error.message });
+  }
+});
 
-    const bveData = await bveRes.json();
-    if (bveRes.ok) {
-      let bvePredUrl = bveData.urls.get;
-      let bveUrls = null;
-      while (true) {
-        await new Promise(r => setTimeout(r, 5000));
-        const pollRes = await fetch(bvePredUrl, {
-          headers: { 'Authorization': `Token ${replicateToken}` }
+app.get('/api/suno/karaoke-status', authenticate, async (req, res) => {
+  const predictionId = req.query.predictionId;
+  const stage = req.query.stage || "separating";
+  const vocalUrlForBacking = req.query.vocalUrl;
+
+  if (!predictionId) return res.status(400).json({ error: "Falta predictionId" });
+
+  const replicateToken = process.env.REPLICATE_API_TOKEN;
+  if (!replicateToken) return res.status(500).json({ error: "Falta REPLICATE_API_TOKEN" });
+
+  try {
+    const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
+      headers: { 'Authorization': `Token ${replicateToken}` }
+    });
+    const pollData = await pollRes.json();
+    const status = pollData?.status;
+
+    if (status === 'succeeded') {
+      const output = pollData?.output || {};
+
+      if (stage === 'separating') {
+        const vocalUrl = output?.mdx_vocals || output?.vocals || null;
+        const instrumentalUrl = output?.mdx_other || output?.instrumental || output?.no_vocals || null;
+
+        if (!vocalUrl || !instrumentalUrl) {
+          return res.json({ ok: false, error: "No se obtuvieron pistas separadas" });
+        }
+
+        console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
+        const bveRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${replicateToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            input: { 
+              music_input: vocalUrl, 
+              audioSeparator: true,
+              audioSeparatorModel: 'UVR-BVE-4B_SN-44100-1.pth'
+            }
+          })
         });
-        const pollData = await pollRes.json();
-        
-        if (pollData.status === 'succeeded') {
-          bveUrls = pollData.output;
-          break;
-        } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
-          console.error("Separación BVE falló, usando voces originales.");
-          break;
+
+        const bveData = await bveRes.json();
+        if (bveRes.ok && bveData?.id) {
+          return res.json({
+            ok: true,
+            status: "progressing",
+            stage: "backing",
+            predictionId: bveData.id,
+            vocalUrl,
+            instrumentalUrl,
+            message: "Extrayendo segundas voces..."
+          });
+        } else {
+          // BVE failed to start -> skip and finalize
+          return res.json({
+            ok: true,
+            status: "ready_for_finalize",
+            stage: "done",
+            vocalUrl,
+            instrumentalUrl,
+            backingVocalUrl: null,
+            message: "Separación lista."
+          });
         }
       }
 
-      if (bveUrls && bveUrls.mdx_vocals) {
-        // mdx_vocals = Voz Principal, mdx_other = Segundas Voces
-        vocalUrl = bveUrls.mdx_vocals;
-        backingVocalUrl = bveUrls.mdx_other;
-        console.log("Segundas voces extraídas correctamente.");
+      if (stage === 'backing') {
+        const bveVocalUrl = output?.mdx_vocals || null;
+        const backingVocalUrl = output?.mdx_other || null;
+
+        return res.json({
+          ok: true,
+          status: "ready_for_finalize",
+          stage: "done",
+          vocalUrl: bveVocalUrl || vocalUrlForBacking || null,
+          backingVocalUrl,
+          message: "Listo para sincronizar."
+        });
       }
-    } else {
-      console.error("Fallo al iniciar BVE:", bveData.detail);
     }
 
-    // 3. Fetch the vocal track for Gemini
+    if (status === 'failed' || status === 'canceled') {
+      return res.json({ ok: false, error: `Replicate: ${status}. ${pollData?.error || ""}` });
+    }
+
+    return res.json({
+      ok: true,
+      status: "processing",
+      stage,
+      message: stage === "separating" ? "Separando voz e instrumental..." : "Extrayendo segundas voces..."
+    });
+  } catch (error) {
+    console.error("Error en karaoke-status:", error);
+    return res.status(500).json({ error: 'Error consultando estado', detail: error.message });
+  }
+});
+
+app.post('/api/suno/karaoke-finalize', authenticate, async (req, res) => {
+  const { vocalUrl, instrumentalUrl, backingVocalUrl, lyrics } = req.body;
+
+  if (!vocalUrl) return res.status(400).json({ error: "Falta vocalUrl" });
+  if (!lyrics?.trim()) return res.status(400).json({ error: "Falta la letra para sincronizar" });
+
+  try {
     console.log("Descargando pista vocal para Gemini...");
     const vocalRes = await fetch(vocalUrl);
     if (!vocalRes.ok) throw new Error("Error descargando voz separada.");
@@ -586,11 +680,23 @@ app.post('/api/suno/karaoke-sync', authenticate, async (req, res) => {
     const syncResult = await syncLyricsWithGemini(vocalBuffer, "audio/mpeg", lyrics);
     if (!syncResult.ok) throw new Error(syncResult.error);
 
-    return res.json({ syncData: syncResult.data, instrumentalUrl, vocalUrl, backingVocalUrl });
+    return res.json({
+      ok: true,
+      syncData: syncResult.data,
+      instrumentalUrl: instrumentalUrl || null,
+      vocalUrl,
+      backingVocalUrl: backingVocalUrl || null
+    });
   } catch (error) {
-    console.error("Error en karaoke-sync:", error);
-    return res.status(500).json({ error: 'Error en sincronización de Karaoke', detail: error.message });
+    console.error("Error en karaoke-finalize:", error);
+    return res.status(500).json({ error: 'Error finalizando karaoke', detail: error.message });
   }
+});
+
+// Legacy compatibility mapping
+app.post('/api/suno/karaoke-sync', authenticate, async (req, res) => {
+  // Redirect locally to karaoke-start
+  res.status(400).json({ error: "Este endpoint es legado. Por favor usa el flujo de 3 pasos (karaoke-start)." });
 });
 
 // 2.6 Upload Audio to R2 (Helper for both Clone Voice and Karaoke)

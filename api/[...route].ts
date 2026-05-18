@@ -3348,6 +3348,71 @@ notify pgrst, 'reload schema';`;
     }
   }
 
+  async function syncLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string, lyrics: string) {
+    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    if (!apiKey) {
+      return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
+    }
+
+    try {
+      const mod: any = await import("@google/genai");
+      const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
+      if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
+
+      const ai = new GoogleGenAI({ apiKey });
+      const base64Audio = Buffer.from(audioBuf).toString("base64");
+
+      const prompt =
+        `Listen to the audio and read the following lyrics:\n\n${lyrics}\n\n` +
+        `Return a JSON array representing the exact timing of each line of the lyrics in the audio. ` +
+        `The start_time and end_time should be in seconds (float). Use this exact format:\n` +
+        `[\n  { "text": "line of lyrics", "start_time": 0.0, "end_time": 2.5 }\n]\n` +
+        `Output ONLY valid JSON without markdown wrapping.`;
+
+      const baseModels = [
+        "gemini-3-flash-preview",
+        "gemini-1.5-flash",
+        "gemini-3.1-flash-lite-preview",
+      ];
+
+      let lastErr: any = null;
+      for (const base of baseModels) {
+        const modelsToTry = base.startsWith("models/") ? [base] : [base, `models/${base}`];
+        for (const model of modelsToTry) {
+          try {
+            const r = await ai.models.generateContent({
+              model,
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    { text: prompt },
+                    { inlineData: { mimeType, data: base64Audio } }
+                  ]
+                }
+              ],
+              config: {
+                responseMimeType: "application/json"
+              }
+            });
+
+            const textOut = String(r?.text || "").trim();
+            if (!textOut) continue;
+
+            const parsed = JSON.parse(textOut);
+            return { ok: true as const, data: parsed };
+          } catch (e: any) {
+            lastErr = e?.message || String(e);
+          }
+        }
+      }
+
+      return { ok: false as const, error: lastErr || "No se pudo sincronizar con ningún modelo de Gemini" };
+    } catch (error: any) {
+      return { ok: false as const, error: error?.message || String(error) };
+    }
+  }
+
   async function handleKaraokeFinalize(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -9522,7 +9587,13 @@ const uploadAudioHandler = (() => {
     const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
 
     try {
-      const inline = fileArrayToUint8(payload?.file);
+      let inline: Uint8Array | null = null;
+      if (typeof payload?.file === "string") {
+        const b64 = payload.file.includes(",") ? payload.file.split(",")[1] : payload.file;
+        inline = new Uint8Array(Buffer.from(b64, "base64"));
+      } else {
+        inline = fileArrayToUint8(payload?.file);
+      }
       if (inline) {
         const maxBytes = 25 * 1024 * 1024;
         if (inline.byteLength > maxBytes) {

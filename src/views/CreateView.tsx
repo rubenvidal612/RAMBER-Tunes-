@@ -608,7 +608,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           }
         });
       } catch (putErr) {
-        const canFallback = file.size <= 4 * 1024 * 1024;
+        const canFallback = file.size <= 3.2 * 1024 * 1024;
         if (!canFallback) {
           const msg =
             'No se pudo subir el audio desde el navegador. ' +
@@ -619,9 +619,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           return;
         }
 
-        setUploadProgress(0);
-        const fileBuffer = await file.arrayBuffer();
-        const fileArray = Array.from(new Uint8Array(fileBuffer));
+        const base64Str = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+        });
         const resp2 = await fetch('/api/upload-audio', {
           method: 'POST',
           headers: {
@@ -631,7 +633,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           body: JSON.stringify({
             title: file.name,
             contentType: file.type || 'audio/mpeg',
-            file: fileArray,
+            file: base64Str,
           }),
         });
         const raw2 = await resp2.text().catch(() => '');

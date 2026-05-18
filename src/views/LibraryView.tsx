@@ -4235,8 +4235,11 @@ function SongOptionsSheet({
             uid = '';
           }
           const blob = await compressImage(personaPhoto);
-          const arrayBuffer = await blob.arrayBuffer();
-          const fileArray = Array.from(new Uint8Array(arrayBuffer));
+          const base64Str = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+          });
           const safePersona = (personaId || '').toString().replaceAll(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 120) || 'persona';
           const path = `personas/${uid || 'unknown'}/${safePersona}.webp`;
           
@@ -4248,7 +4251,7 @@ function SongOptionsSheet({
             },
             body: JSON.stringify({
               path,
-              data: fileArray,
+              data: base64Str,
               contentType: 'image/webp',
             }),
           });
