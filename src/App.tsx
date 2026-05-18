@@ -1332,7 +1332,8 @@ export default function App() {
       }
       return;
     }
-    setShowIosHelp(true);
+    // On iOS, native prompt is not available. User says instructions are already on page.
+    setShowInstallBanner(false);
   };
 
   const addVibe = async (vibe: VibeItem) => {
@@ -3180,32 +3181,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {showIosHelp && (
-        <div className="fixed inset-0 z-[300] bg-black/70 flex items-end md:hidden">
-          <div className="w-full bg-[#0a0a0a] rounded-t-3xl p-5 border-t border-white/10">
-            <div className="flex items-center justify-between">
-              <div className="text-base font-bold text-white">Instalar como app</div>
-              <button
-                onClick={() => setShowIosHelp(false)}
-                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 text-slate-200 flex items-center justify-center"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="mt-3 text-sm text-slate-300 space-y-2">
-              <div>1) Toca el botón Compartir (cuadrado con flecha)</div>
-              <div>2) Elige “Agregar a pantalla de inicio”</div>
-              <div>3) Confirma “Agregar”</div>
-            </div>
-            <button
-              onClick={() => setShowIosHelp(false)}
-              className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors"
-            >
-              Listo
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );
