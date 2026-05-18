@@ -3206,14 +3206,18 @@ notify pgrst, 'reload schema';`;
         return send(res, 500, { error: "Falta REPLICATE_API_TOKEN en el servidor" });
       }
 
-      // Start Replicate prediction (Kim Vocal 2 stem separation)
-      const initRes = await fetch("https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions", {
+      const replicateVersion =
+        (process.env.REPLICATE_ALL_IN_ONE_AUDIO_VERSION || "").toString().trim() ||
+        "f2a8516c9084ef460592deaa397acd4a97f60f18c3d15d273644c72500cdff0e";
+
+      const initRes = await fetch("https://api.replicate.com/v1/predictions", {
         method: "POST",
         headers: {
           Authorization: `Token ${replicateToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          version: replicateVersion,
           input: {
             music_input: sourceAudioUrl,
             audioSeparator: true,
@@ -3283,13 +3287,14 @@ notify pgrst, 'reload schema';`;
           }
 
           // Start BVE (backing vocal extraction) as a new Replicate prediction
-          const bveRes = await fetch("https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions", {
+          const bveRes = await fetch("https://api.replicate.com/v1/predictions", {
             method: "POST",
             headers: {
               Authorization: `Token ${replicateToken}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
+              version: replicateVersion,
               input: {
                 music_input: vocalUrl,
                 audioSeparator: true,

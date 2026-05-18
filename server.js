@@ -526,14 +526,19 @@ app.post('/api/suno/karaoke-start', authenticate, async (req, res) => {
       return res.status(500).json({ error: "Falta REPLICATE_API_TOKEN para la separación de voz." });
     }
 
+    const replicateVersion =
+      (process.env.REPLICATE_ALL_IN_ONE_AUDIO_VERSION || "").toString().trim() ||
+      "f2a8516c9084ef460592deaa397acd4a97f60f18c3d15d273644c72500cdff0e";
+
     console.log("Iniciando separación principal en Replicate (Kim Vocal 2)...");
-    const initRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+    const initRes = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${replicateToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        version: replicateVersion,
         input: { 
           music_input: sourceAudioUrl, 
           audioSeparator: true,
@@ -602,13 +607,14 @@ app.get('/api/suno/karaoke-status', authenticate, async (req, res) => {
         }
 
         console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
-        const bveRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+        const bveRes = await fetch('https://api.replicate.com/v1/predictions', {
           method: 'POST',
           headers: {
             'Authorization': `Token ${replicateToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            version: replicateVersion,
             input: { 
               music_input: vocalUrl, 
               audioSeparator: true,
