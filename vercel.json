@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "functions": {
+    "api/[...route].ts": {
+      "maxDuration": 300
+    }
+  },
   "headers": [
     {
       "source": "/",
