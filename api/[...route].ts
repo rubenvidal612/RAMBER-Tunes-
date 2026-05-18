@@ -6367,15 +6367,8 @@ const shareSongAudioHandler = (() => {
     const s = (raw || "").toString().trim();
     if (!s) return "";
     if (/^https?:\/\//i.test(s)) {
-      try {
-        const u = new URL(s);
-        const host = (u.hostname || "").toLowerCase();
-        const isR2 = host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
-        if (!isR2) return "";
-        return (u.pathname || "").replace(/^\/+/, "");
-      } catch {
-        return "";
-      }
+      const loc = parseR2LocationFromUrlString(s);
+      return loc?.key || "";
     }
     return s.includes("/") ? s.replace(/^\/+/, "") : "";
   }
@@ -6386,13 +6379,14 @@ const shareSongAudioHandler = (() => {
     return cleaned || fallback;
   }
 
-  async function serveR2Object(req: any, res: any, key: string, downloadName?: string) {
+  async function serveR2Object(req: any, res: any, key: string, downloadName?: string, bucketOverride?: string) {
     const env = getR2Env();
     const client = await getR2Client();
     const { GetObjectCommand } = await getR2AwsSdk();
     const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
+    const bucket = (bucketOverride || env.bucketName || "").toString().trim() || env.bucketName;
     const command = new GetObjectCommand({
-      Bucket: env.bucketName,
+      Bucket: bucket,
       Key: key,
       ...(range ? { Range: range } : {}),
     });
@@ -6578,6 +6572,48 @@ const shareSongAudioHandler = (() => {
     }
   }
 
+  function parseR2LocationFromUrlString(rawUrl: string): { bucket: string; key: string } | null {
+    const env = getR2Env();
+    const s = (rawUrl || "").toString().trim();
+    if (!/^https?:\/\//i.test(s)) return null;
+    try {
+      const u = new URL(s);
+      const host = (u.hostname || "").toLowerCase();
+      const path = (u.pathname || "").replace(/^\/+/, "");
+      const endsCloudflareStorage = host.endsWith(".r2.cloudflarestorage.com");
+      const endsDev = host.endsWith(".r2.dev");
+      const isR2 = endsCloudflareStorage || endsDev;
+      if (!isR2) return null;
+
+      const parts = path.split("/").filter(Boolean);
+      if (endsCloudflareStorage) {
+        const accountHost = `${String(env.accountId || "").toLowerCase()}.r2.cloudflarestorage.com`;
+        if (host === accountHost) {
+          const bucket = parts[0] || "";
+          const key = parts.slice(1).join("/");
+          if (!bucket || !key) return null;
+          return { bucket, key };
+        }
+        const labels = host.split(".");
+        const bucket = labels[0] || "";
+        const key = path;
+        if (!bucket || !key) return null;
+        return { bucket, key };
+      }
+
+      if (endsDev) {
+        const bucket = parts[0] || "";
+        const key = parts.slice(1).join("/");
+        if (!bucket || !key) return null;
+        return { bucket, key };
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   return async function handler(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
     if (method === "OPTIONS") {
@@ -6641,14 +6677,13 @@ const shareSongAudioHandler = (() => {
       const downloadName = wantDownload ? sanitizeDispositionName(dlName, `${fallbackName}.mp3`) : "";
 
       const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
-      const audioLooksR2 =
-        Boolean(r2Key) &&
-        ((typeof audioUrl === "string" && audioUrl.includes(".r2.cloudflarestorage.com/")) ||
-          (typeof audioUrl === "string" && /https?:\/\/[^/]+\.r2\.dev\//i.test(audioUrl)) ||
-          !/^https?:\/\//i.test((audioUrl || "").toString().trim()));
-      if (audioLooksR2 && r2Key) {
+      const r2Loc = /^https?:\/\//i.test((audioUrl || "").toString().trim()) ? parseR2LocationFromUrlString(audioUrl) : null;
+      const audioLooksR2 = Boolean(r2Loc?.key || r2Key);
+      if (audioLooksR2 && (r2Loc?.key || r2Key)) {
         try {
-          await serveR2Object(req, res, r2Key, downloadName || undefined);
+          const keyToServe = r2Loc?.key || r2Key;
+          const bucketToServe = r2Loc?.bucket || undefined;
+          await serveR2Object(req, res, keyToServe, downloadName || undefined, bucketToServe);
           return;
         } catch (e) {
           return sendJson(res, 502, { error: "No pude cargar el audio", detail: e instanceof Error ? e.message : String(e) });
