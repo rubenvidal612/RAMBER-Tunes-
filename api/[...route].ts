@@ -192,8 +192,20 @@ function getR2Env(): R2Env {
   const accessKeyId = (process.env.R2_ACCESS_KEY_ID || "").toString().trim();
   const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || "").toString().trim();
   const bucketName = (process.env.R2_BUCKET_NAME || "").toString().trim();
-  const endpoint =
-    ((process.env.R2_ENDPOINT || "") as string).toString().trim() || `https://${accountId}.r2.cloudflarestorage.com`;
+  const normalizeEndpoint = (raw: string) => {
+    const s = (raw || "").toString().trim();
+    if (!s) return "";
+    try {
+      const u = new URL(s);
+      const bucket = (bucketName || "").toString().trim();
+      const p = (u.pathname || "").replace(/\/+$/, "");
+      if (bucket && p.toLowerCase() === `/${bucket.toLowerCase()}`) u.pathname = "/";
+      return u.toString().replace(/\/$/, "");
+    } catch {
+      return s;
+    }
+  };
+  const endpoint = normalizeEndpoint(((process.env.R2_ENDPOINT || "") as string).toString()) || `https://${accountId}.r2.cloudflarestorage.com`;
   if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
     throw new Error("Missing required R2 environment variables");
   }

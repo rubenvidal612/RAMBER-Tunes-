@@ -358,12 +358,15 @@ export function KaraokeView() {
         }
 
         const newSyncData = Array.isArray(finalData.syncData) ? finalData.syncData : [];
+        const finalInstrumentalUrl = finalData.instrumentalUrl || instrumentalUrl || null;
+        const finalVocalUrl = finalData.vocalUrl || vocalUrl || null;
+        const finalBackingUrl = finalData.backingVocalUrl || backingVocalUrl || null;
         karaokeStore.set({
           syncData: newSyncData,
-          instrumentalUrl: finalData.instrumentalUrl || instrumentalUrl,
-          vocalUrl: finalData.vocalUrl || vocalUrl,
-          backingVocalUrl: finalData.backingVocalUrl || backingVocalUrl || null,
-          audioMode: 'backing',
+          instrumentalUrl: finalInstrumentalUrl,
+          vocalUrl: finalVocalUrl,
+          backingVocalUrl: finalBackingUrl,
+          audioMode: finalBackingUrl ? 'backing' : finalInstrumentalUrl ? 'instrumental' : 'vocals',
           progress: 100
         });
 

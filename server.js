@@ -73,14 +73,25 @@ function creditsFromProfile(profile) {
   return 0;
 }
 
-const getR2Env = () => ({
-  accountId: process.env.R2_ACCOUNT_ID,
-  accessKeyId: process.env.R2_ACCESS_KEY_ID,
-  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  bucketName: process.env.R2_BUCKET_NAME || 'ramber-tunes-audio',
-  endpoint: process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  publicBaseUrl: `https://${process.env.R2_BUCKET_NAME || 'ramber-tunes-audio'}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-});
+const getR2Env = () => {
+  const bucketName = process.env.R2_BUCKET_NAME || 'ramber-tunes-audio';
+  const rawEndpoint = process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+  let endpoint = rawEndpoint;
+  try {
+    const u = new URL(String(rawEndpoint));
+    const p = (u.pathname || "").replace(/\/+$/, "");
+    if (bucketName && p.toLowerCase() === `/${String(bucketName).toLowerCase()}`) u.pathname = "/";
+    endpoint = u.toString().replace(/\/$/, "");
+  } catch {}
+  return {
+    accountId: process.env.R2_ACCOUNT_ID,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    bucketName,
+    endpoint,
+    publicBaseUrl: `https://${bucketName}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  };
+};
 
 async function getR2Client() {
   const { S3Client } = await import("@aws-sdk/client-s3");
