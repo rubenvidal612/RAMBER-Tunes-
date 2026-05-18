@@ -3283,6 +3283,9 @@ notify pgrst, 'reload schema';`;
     const predictionId = pickQuery(req, "predictionId");
     const stage = pickQuery(req, "stage") || "separating"; // "separating" | "backing"
     const vocalUrlForBacking = pickQuery(req, "vocalUrl"); // Only for "backing" stage
+    const instrumentalUrlForBacking = pickQuery(req, "instrumentalUrl"); // Only for "backing" stage
+    const skipBackingRaw = (pickQuery(req, "skipBacking") || "").toString().trim().toLowerCase();
+    const skipBacking = skipBackingRaw === "1" || skipBackingRaw === "true" || skipBackingRaw === "yes";
 
     if (!predictionId) return send(res, 400, { error: "Falta predictionId" });
 
@@ -3310,6 +3313,18 @@ notify pgrst, 'reload schema';`;
 
           if (!vocalUrl || !instrumentalUrl) {
             return send(res, 200, { ok: false, error: "No se obtuvieron pistas separadas" });
+          }
+
+          if (skipBacking) {
+            return send(res, 200, {
+              ok: true,
+              status: "ready_for_finalize",
+              stage: "done",
+              vocalUrl,
+              instrumentalUrl,
+              backingVocalUrl: null,
+              message: "Separación lista.",
+            });
           }
 
           // Start BVE (backing vocal extraction) as a new Replicate prediction
@@ -3358,21 +3373,35 @@ notify pgrst, 'reload schema';`;
           // BVE done
           const bveVocalUrl = output?.mdx_vocals || null;
           const backingVocalUrl = output?.mdx_other || null;
-          const instrumentalUrl = null; // passed through from frontend store
-
           return send(res, 200, {
             ok: true,
             status: "ready_for_finalize",
             stage: "done",
             vocalUrl: bveVocalUrl || vocalUrlForBacking || null,
             backingVocalUrl,
+            instrumentalUrl: instrumentalUrlForBacking || null,
             message: "Listo para sincronizar.",
           });
         }
       }
 
       if (status === "failed" || status === "canceled") {
-        return send(res, 200, { ok: false, error: `Replicate: ${status}. ${pollData?.error || ""}` });
+        const rawErr = String(pollData?.error || "").trim();
+        const errLower = rawErr.toLowerCase();
+        if (stage === "backing") {
+          return send(res, 200, {
+            ok: true,
+            status: "ready_for_finalize",
+            stage: "done",
+            vocalUrl: vocalUrlForBacking || null,
+            instrumentalUrl: instrumentalUrlForBacking || null,
+            backingVocalUrl: null,
+            message: errLower.includes("audio buffer is not finite")
+              ? "Coros fallaron, continuando sin coros."
+              : "Coros fallaron, continuando sin coros.",
+          });
+        }
+        return send(res, 200, { ok: false, error: `Replicate: ${status}. ${rawErr}` });
       }
 
       // Still processing

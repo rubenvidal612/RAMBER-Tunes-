@@ -601,6 +601,9 @@ app.get('/api/suno/karaoke-status', authenticate, async (req, res) => {
   const predictionId = req.query.predictionId;
   const stage = req.query.stage || "separating";
   const vocalUrlForBacking = req.query.vocalUrl;
+  const instrumentalUrlForBacking = req.query.instrumentalUrl;
+  const skipBackingRaw = String(req.query.skipBacking || "").trim().toLowerCase();
+  const skipBacking = skipBackingRaw === "1" || skipBackingRaw === "true" || skipBackingRaw === "yes";
 
   if (!predictionId) return res.status(400).json({ error: "Falta predictionId" });
 
@@ -626,6 +629,18 @@ app.get('/api/suno/karaoke-status', authenticate, async (req, res) => {
 
         if (!vocalUrl || !instrumentalUrl) {
           return res.json({ ok: false, error: "No se obtuvieron pistas separadas" });
+        }
+
+        if (skipBacking) {
+          return res.json({
+            ok: true,
+            status: "ready_for_finalize",
+            stage: "done",
+            vocalUrl,
+            instrumentalUrl,
+            backingVocalUrl: null,
+            message: "Separación lista."
+          });
         }
 
         console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
@@ -680,13 +695,26 @@ app.get('/api/suno/karaoke-status', authenticate, async (req, res) => {
           stage: "done",
           vocalUrl: bveVocalUrl || vocalUrlForBacking || null,
           backingVocalUrl,
+          instrumentalUrl: instrumentalUrlForBacking || null,
           message: "Listo para sincronizar."
         });
       }
     }
 
     if (status === 'failed' || status === 'canceled') {
-      return res.json({ ok: false, error: `Replicate: ${status}. ${pollData?.error || ""}` });
+      const rawErr = String(pollData?.error || "").trim();
+      if (stage === 'backing') {
+        return res.json({
+          ok: true,
+          status: "ready_for_finalize",
+          stage: "done",
+          vocalUrl: vocalUrlForBacking || null,
+          instrumentalUrl: instrumentalUrlForBacking || null,
+          backingVocalUrl: null,
+          message: "Coros fallaron, continuando sin coros."
+        });
+      }
+      return res.json({ ok: false, error: `Replicate: ${status}. ${rawErr}` });
     }
 
     return res.json({

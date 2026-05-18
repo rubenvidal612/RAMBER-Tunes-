@@ -288,6 +288,7 @@ export function KaraokeView() {
 
               const params = new URLSearchParams({ predictionId, stage });
               if (stage === 'backing' && vocalUrl) params.set('vocalUrl', vocalUrl);
+              if (stage === 'backing' && instrumentalUrl) params.set('instrumentalUrl', instrumentalUrl);
 
               const statusRes = await fetch(`/api/karaoke/status?${params.toString()}`, {
                 headers: { 'Authorization': `Bearer ${t.token}` }
