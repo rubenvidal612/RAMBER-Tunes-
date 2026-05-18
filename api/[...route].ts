@@ -3210,6 +3210,29 @@ notify pgrst, 'reload schema';`;
         (process.env.REPLICATE_ALL_IN_ONE_AUDIO_VERSION || "").toString().trim() ||
         "f2a8516c9084ef460592deaa397acd4a97f60f18c3d15d273644c72500cdff0e";
 
+      try {
+        const probeRes = await fetch(sourceAudioUrl, {
+          method: "GET",
+          headers: {
+            Range: "bytes=0-2047",
+            Accept: "*/*",
+          },
+        });
+        if (!probeRes.ok) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          return send(res, 502, { error: `No pude leer el audio desde R2 (HTTP ${probeRes.status}).` });
+        }
+        const ct = (probeRes.headers.get("content-type") || "").toString().toLowerCase();
+        const buf = Buffer.from(await probeRes.arrayBuffer());
+        const headText = buf.slice(0, 256).toString("utf8").toLowerCase();
+        const looksHtml = headText.includes("<html") || headText.includes("<!doctype html") || headText.includes("access denied");
+        if (looksHtml || (ct && !ct.includes("audio") && !ct.includes("octet-stream"))) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          return send(res, 502, { error: "El archivo en R2 no parece ser un audio válido. Revisa la subida y el tipo de archivo." });
+        }
+      } catch {
+      }
+
       const initRes = await fetch("https://api.replicate.com/v1/predictions", {
         method: "POST",
         headers: {

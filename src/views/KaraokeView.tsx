@@ -285,9 +285,15 @@ export function KaraokeView() {
               });
               const statusData = await statusRes.json().catch(() => ({}));
 
-              if (!statusData?.ok) {
+            if (!statusData?.ok) {
                 clearInterval(interval);
-                reject(new Error(statusData?.error || 'Error consultando estado del karaoke'));
+              const raw = (statusData?.error || 'Error consultando estado del karaoke').toString();
+              const lower = raw.toLowerCase();
+              if (lower.includes('audio buffer is not finite')) {
+                reject(new Error('Replicate no pudo procesar ese audio (archivo corrupto o codificación rara). Convierte el archivo a MP3 estándar (128/192 kbps) o WAV y vuelve a intentar.'));
+                return;
+              }
+              reject(new Error(raw));
                 return;
               }
 
