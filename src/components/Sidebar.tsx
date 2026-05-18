@@ -30,16 +30,16 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
           </button>
 
           <button
-            onClick={() => onChange('convertidor')}
+            onClick={() => onChange('karaoke')}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'convertidor'
+              currentTab === 'karaoke'
                 ? "bg-indigo-500/20 text-indigo-400 font-bold"
                 : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
             )}
           >
             <Repeat2 className="w-5 h-5" />
-            <span className="text-sm">Clonar Voz</span>
+            <span className="text-sm">Karaoke</span>
           </button>
 
           <button

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import { GoogleGenAI } from '@google/genai';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -19,7 +20,7 @@ app.use(cors({
 }));
 
 // Middleware para parsear JSON
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Inicializar cliente de Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -54,6 +55,7 @@ const CREDIT_COSTS = {
   generate_persona: 0,
   music_cover: 0,
   clone_voice: 15,
+  karaoke_generation: 12.5,
 };
 
 function round2(n) {
@@ -215,6 +217,46 @@ async function getReferredUsers(admin, affiliateUserId) {
     return (data || []).map(r => r.referred_user_id);
   } catch {
     return [];
+  }
+}
+
+// --- GEMINI HELPERS ---
+
+async function syncLyricsWithGemini(audioBuf, mimeType, lyrics) {
+  const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+  if (!apiKey) {
+    return { ok: false, error: "Falta GEMINI_API_KEY en el entorno" };
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const partAudio = {
+      inlineData: {
+        data: Buffer.from(audioBuf).toString("base64"),
+        mimeType
+      }
+    };
+
+    const prompt = `Listen to the audio and read the following lyrics:\n\n${lyrics}\n\nReturn a JSON array representing the exact timing of each line of the lyrics in the audio. The start_time and end_time should be in seconds (float). Use this exact format:\n[\n  { "text": "line of lyrics", "start_time": 0.0, "end_time": 2.5 }\n]\nOutput ONLY valid JSON without markdown wrapping.`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+            prompt,
+            partAudio
+        ],
+        config: {
+            responseMimeType: "application/json"
+        }
+    });
+
+    const textOut = response.text;
+    if (!textOut) return { ok: false, error: "Gemini no devolvió texto" };
+
+    const parsed = JSON.parse(textOut);
+    return { ok: true, data: parsed };
+  } catch (error) {
+    return { ok: false, error: error.message };
   }
 }
 
@@ -413,6 +455,194 @@ app.get('/api/rvc/cover-status', authenticate, async (req, res) => {
     return res.json({ ok: true, status: status === 'succeeded' ? 'ready' : status, replicateStatus: status, outputUrl });
   } catch (error) {
     return res.status(500).json({ error: 'Error consultando estado' });
+  }
+});
+
+// 2.5 Karaoke Sync
+app.post('/api/suno/karaoke-sync', authenticate, async (req, res) => {
+  const { uploadUrl, uploadPath, lyrics } = req.body;
+  const user = req.user;
+
+  try {
+    const cost = CREDIT_COSTS.karaoke_generation || 12.5;
+    const creditResult = await consumeUserCredits(user.id, cost);
+    if (!creditResult.ok) return res.status(402).json({ error: creditResult.error });
+
+    let sourceAudioUrl = uploadUrl;
+    if (uploadPath) sourceAudioUrl = await getSignedR2Url(uploadPath, 7200);
+    if (!sourceAudioUrl) return res.status(400).json({ error: "Falta audio de origen" });
+
+    const audioRes = await fetch(sourceAudioUrl);
+    if (!audioRes.ok) throw new Error(`Error descargando audio: ${audioRes.status}`);
+    const audioBuffer = await audioRes.arrayBuffer();
+
+    const mimeType = audioRes.headers.get("content-type") || "audio/mpeg";
+
+    // 1. Send to Replicate for Separation (MDX-Net / Kim Vocal 2)
+    const replicateToken = process.env.REPLICATE_API_TOKEN;
+    if (!replicateToken) throw new Error("Falta REPLICATE_API_TOKEN para la separación de voz.");
+    
+    console.log("Iniciando separación principal en Replicate (Kim Vocal 2)...");
+    const initRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${replicateToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: { 
+          music_input: sourceAudioUrl, 
+          audioSeparator: true,
+          audioSeparatorModel: 'Kim_Vocal_2.onnx'
+        }
+      })
+    });
+    
+    const initData = await initRes.json();
+    if (!initRes.ok) throw new Error(initData.detail || "Error iniciando separación en Replicate");
+    
+    let separatedUrls = null;
+    let predictionUrl = initData.urls.get;
+    
+    while (true) {
+      await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
+      const pollRes = await fetch(predictionUrl, {
+        headers: { 'Authorization': `Token ${replicateToken}` }
+      });
+      const pollData = await pollRes.json();
+      
+      if (pollData.status === 'succeeded') {
+        separatedUrls = pollData.output;
+        break;
+      } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+        throw new Error("La separación de voz falló en Replicate: " + pollData.error);
+      }
+    }
+    
+    console.log("Separación completada:", separatedUrls);
+    let vocalUrl = separatedUrls.mdx_vocals || separatedUrls.vocals;
+    const instrumentalUrl = separatedUrls.mdx_other || separatedUrls.instrumental || separatedUrls.no_vocals;
+
+    if (!vocalUrl || !instrumentalUrl) {
+      throw new Error("No se obtuvieron las pistas separadas correctamente.");
+    }
+    
+    let backingVocalUrl = null;
+
+    // 2. Extracción de segundas voces siempre
+    console.log("Iniciando extracción de segundas voces (UVR-BVE)...");
+    const bveRes = await fetch('https://api.replicate.com/v1/models/erickluis00/all-in-one-audio/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${replicateToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: { 
+          music_input: vocalUrl, 
+          audioSeparator: true,
+          audioSeparatorModel: 'UVR-BVE-4B_SN-44100-1.pth'
+        }
+      })
+    });
+
+    const bveData = await bveRes.json();
+    if (bveRes.ok) {
+      let bvePredUrl = bveData.urls.get;
+      let bveUrls = null;
+      while (true) {
+        await new Promise(r => setTimeout(r, 5000));
+        const pollRes = await fetch(bvePredUrl, {
+          headers: { 'Authorization': `Token ${replicateToken}` }
+        });
+        const pollData = await pollRes.json();
+        
+        if (pollData.status === 'succeeded') {
+          bveUrls = pollData.output;
+          break;
+        } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+          console.error("Separación BVE falló, usando voces originales.");
+          break;
+        }
+      }
+
+      if (bveUrls && bveUrls.mdx_vocals) {
+        // mdx_vocals = Voz Principal, mdx_other = Segundas Voces
+        vocalUrl = bveUrls.mdx_vocals;
+        backingVocalUrl = bveUrls.mdx_other;
+        console.log("Segundas voces extraídas correctamente.");
+      }
+    } else {
+      console.error("Fallo al iniciar BVE:", bveData.detail);
+    }
+
+    // 3. Fetch the vocal track for Gemini
+    console.log("Descargando pista vocal para Gemini...");
+    const vocalRes = await fetch(vocalUrl);
+    if (!vocalRes.ok) throw new Error("Error descargando voz separada.");
+    const vocalBuffer = await vocalRes.arrayBuffer();
+
+    console.log("Sincronizando con Gemini...");
+    const syncResult = await syncLyricsWithGemini(vocalBuffer, "audio/mpeg", lyrics);
+    if (!syncResult.ok) throw new Error(syncResult.error);
+
+    return res.json({ syncData: syncResult.data, instrumentalUrl, vocalUrl, backingVocalUrl });
+  } catch (error) {
+    console.error("Error en karaoke-sync:", error);
+    return res.status(500).json({ error: 'Error en sincronización de Karaoke', detail: error.message });
+  }
+});
+
+// 2.6 Upload Audio to R2 (Helper for both Clone Voice and Karaoke)
+app.post('/api/upload-audio', authenticate, async (req, res) => {
+  try {
+    const { title, contentType, file, path } = req.body;
+    const user = req.user;
+    
+    const ext = contentType === 'audio/wav' ? 'wav' : 'mp3';
+    const key = path || `uploads/${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+    
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    
+    const r2Client = await getR2Client();
+    const env = getR2Env();
+    
+    if (file && Array.isArray(file)) {
+      // Fallback: upload directly from buffer
+      const uint8 = new Uint8Array(file.length);
+      for (let i = 0; i < file.length; i++) {
+        uint8[i] = file[i];
+      }
+      
+      const putCommand = new PutObjectCommand({
+        Bucket: env.bucketName,
+        Key: key,
+        Body: uint8,
+        ContentLength: uint8.length,
+        ContentType: contentType || 'audio/mpeg',
+      });
+      
+      await r2Client.send(putCommand);
+      
+      const url = `${env.publicBaseUrl}/${key}`;
+      return res.json({ ok: true, url, key });
+    } else {
+      // Normal: generate pre-signed URL for direct upload
+      const command = new PutObjectCommand({
+        Bucket: env.bucketName,
+        Key: key,
+        ContentType: contentType || 'audio/mpeg',
+      });
+      
+      const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+      const url = `${env.publicBaseUrl}/${key}`;
+      
+      return res.json({ ok: true, uploadUrl, url, key });
+    }
+  } catch (error) {
+    console.error("Error en upload-audio:", error);
+    return res.status(500).json({ ok: false, error: 'Error procesando subida de audio', detail: error.message });
   }
 });
 
