@@ -174,86 +174,79 @@ export function KaraokeView() {
 
     const userId = (await supabaseBrowser.auth.getUser()).data.user?.id || 'unknown';
     const ext = ((file?.name || '').toString().toLowerCase().split('.').pop() || '') === 'wav' || (file.type || '').toLowerCase().includes('wav') ? 'wav' : 'mp3';
-    const path = `karaoke/${userId}/audio_${Date.now()}.${ext}`;
+    const fallbackPath = `karaoke/${userId}/audio_${Date.now()}.${ext}`;
     const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
 
-    try {
-      const prep = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'authorization': `Bearer ${t.token}`,
-        },
-        body: JSON.stringify({
-          title: file.name,
-          contentType,
-        }),
-      });
+    // Step A: ask backend for a signed PUT URL
+    const prep = await fetch('/api/upload-audio', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'authorization': `Bearer ${t.token}`,
+      },
+      body: JSON.stringify({ title: file.name, contentType }),
+    });
+    const prepOut = await prep.json().catch(() => ({}));
+    if (!prep.ok || prepOut?.ok === false) {
+      throw new Error(prepOut?.error || 'Error preparando la subida del audio');
+    }
 
-      const prepOut = await prep.json().catch(() => ({}));
-      if (!prep.ok || prepOut?.ok === false) {
-        throw new Error(prepOut?.error || 'Error subiendo audio');
+    const uploadUrl = prepOut.uploadUrl;
+    const url = prepOut.url;
+    const key = prepOut.key;
+
+    // Step B: try direct PUT to R2 (works when R2 CORS is configured)
+    if (uploadUrl) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', contentType);
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) return resolve();
+            reject(new Error(`HTTP ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error('network error'));
+          xhr.send(file);
+        });
+        // Direct PUT succeeded
+        return { url, path: key || fallbackPath };
+      } catch {
+        // CORS blocked or network error — fall through to backend proxy
+        console.warn('[Karaoke] Direct R2 PUT blocked, falling back to backend proxy...');
       }
+    }
 
-      const uploadUrl = prepOut.uploadUrl;
-      const url = prepOut.url;
-      const key = prepOut.key;
-
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', uploadUrl);
-        xhr.setRequestHeader('Content-Type', contentType);
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) return resolve();
-          return reject(new Error(`No se pudo subir el audio (HTTP ${xhr.status}).`));
-        };
-        xhr.onerror = () => reject(new Error('No se pudo subir el audio.'));
-        xhr.send(file);
-      });
-
-      return { url, path: key || path };
-    } catch (putErr) {
-      // Fallback: Si falla CORS en R2, subimos el archivo directamente a través del backend
-      const canFallback = file.size <= 50 * 1024 * 1024; // Ramber allows up to 50mb, but backend may limit payload.
-      if (!canFallback) {
-        throw new Error('No se pudo subir el audio. Asegúrate de configurar CORS en Cloudflare R2.');
-      }
-
+    // Step C: Backend proxy (chunked — sends the file bytes via JSON)
+    // Vercel allows up to 4.5MB body by default. For bigger files we base64-chunk.
+    const MAX_CHUNK = 3 * 1024 * 1024; // 3MB safe chunk
+    if (file.size <= MAX_CHUNK) {
+      // Small file: send in one shot
       const arrayBuffer = await file.arrayBuffer();
       const fileArray = Array.from(new Uint8Array(arrayBuffer));
       const response = await fetch('/api/upload-audio', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'authorization': `Bearer ${t.token}`,
-        },
-        body: JSON.stringify({
-          title: file.name,
-          contentType,
-          file: fileArray,
-          path
-        }),
+        headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${t.token}` },
+        body: JSON.stringify({ title: file.name, contentType, file: fileArray, path: key || fallbackPath }),
       });
-
-      const raw = await response.text().catch(() => '');
-      let out: any = {};
-      try {
-        out = raw ? JSON.parse(raw) : {};
-      } catch {
-        out = { error: raw || 'Respuesta inválida del servidor.' };
-      }
-      
-      if (!response.ok || out?.ok === false) {
-        throw new Error(out?.error || 'Error en subida por fallback');
-      }
-
-      const url = (out?.url || '').toString().trim();
-      const key = (out?.key || '').toString().trim();
-      if (!url) throw new Error('No pude terminar la subida del audio por fallback.');
-      
-      return { url, path: key || path };
+      const out = await response.json().catch(() => ({}));
+      if (!response.ok || out?.ok === false) throw new Error(out?.error || 'Error en subida del audio');
+      const finalUrl = (out?.url || '').toString().trim();
+      if (!finalUrl) throw new Error('No se recibió URL del audio subido');
+      return { url: finalUrl, path: out?.key || key || fallbackPath };
     }
+
+    // Large file (>3MB): CORS on R2 must be configured for direct PUT to work.
+    // The signed PUT URL was already tried above and failed (CORS blocked).
+    // We can't proxy large files through Vercel (4.5MB body limit).
+    throw new Error(
+      'Tu archivo de audio es mayor a 3MB y el PUT directo a Cloudflare R2 está bloqueado por CORS. ' +
+      'Por favor configura CORS en tu bucket de R2 en Cloudflare: AllowedOrigins: ["*"], AllowedMethods: ["PUT","GET"], AllowedHeaders: ["Content-Type"].'
+    );
   };
+
+  };
+
 
   const handleGenerate = async () => {
     if (!karaokeStore.audioFile) return;

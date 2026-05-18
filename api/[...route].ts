@@ -9523,7 +9523,7 @@ const uploadAudioHandler = (() => {
     try {
       const inline = fileArrayToUint8(payload?.file);
       if (inline) {
-        const maxBytes = 4 * 1024 * 1024;
+        const maxBytes = 25 * 1024 * 1024;
         if (inline.byteLength > maxBytes) {
           return send(res, 413, {
             ok: false,
