@@ -3265,6 +3265,9 @@ notify pgrst, 'reload schema';`;
 
     const replicateToken = (process.env.REPLICATE_API_TOKEN || "").trim();
     if (!replicateToken) return send(res, 500, { error: "Falta REPLICATE_API_TOKEN" });
+    const replicateVersion =
+      (process.env.REPLICATE_ALL_IN_ONE_AUDIO_VERSION || "").toString().trim() ||
+      "f2a8516c9084ef460592deaa397acd4a97f60f18c3d15d273644c72500cdff0e";
 
     try {
       const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(predictionId)}`, {
