@@ -177,71 +177,63 @@ export function KaraokeView() {
     const fallbackPath = `karaoke/${userId}/audio_${Date.now()}.${ext}`;
     const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
 
-    // Step A: ask backend for a signed PUT URL
+    // Step A: get signed PUT URL from our backend
     const prep = await fetch('/api/upload-audio', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'authorization': `Bearer ${t.token}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${t.token}` },
       body: JSON.stringify({ title: file.name, contentType }),
     });
     const prepOut = await prep.json().catch(() => ({}));
     if (!prep.ok || prepOut?.ok === false) {
-      throw new Error(prepOut?.error || 'Error preparando la subida del audio');
+      throw new Error(prepOut?.error || prepOut?.detail || 'Error preparando la subida del audio');
     }
 
-    const uploadUrl = prepOut.uploadUrl;
-    const url = prepOut.url;
-    const key = prepOut.key;
+    const uploadUrl: string = prepOut.uploadUrl || '';
+    const url: string = prepOut.url || '';
+    const key: string = prepOut.key || fallbackPath;
 
-    // Step B: try direct PUT to R2 (works when R2 CORS is configured)
+    // Step B: try direct PUT to R2 using fetch (clearer errors than XHR)
     if (uploadUrl) {
       try {
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', uploadUrl);
-          xhr.setRequestHeader('Content-Type', contentType);
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) return resolve();
-            reject(new Error(`HTTP ${xhr.status}`));
-          };
-          xhr.onerror = () => reject(new Error('network error'));
-          xhr.send(file);
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': contentType },
+          body: file,
         });
-        // Direct PUT succeeded
-        return { url, path: key || fallbackPath };
-      } catch {
-        // CORS blocked or network error — fall through to backend proxy
-        console.warn('[Karaoke] Direct R2 PUT blocked, falling back to backend proxy...');
+        if (putRes.ok) {
+          return { url, path: key };
+        }
+        const errBody = await putRes.text().catch(() => `HTTP ${putRes.status}`);
+        console.warn('[Karaoke] R2 PUT failed:', putRes.status, errBody);
+        // Fall through to backend proxy
+      } catch (putErr) {
+        console.warn('[Karaoke] R2 PUT network error:', putErr);
+        // Fall through to backend proxy
       }
     }
 
-    // Step C: Backend proxy (chunked — sends the file bytes via JSON)
-    // Vercel allows up to 4.5MB body by default. For bigger files we base64-chunk.
-    const MAX_CHUNK = 3 * 1024 * 1024; // 3MB safe chunk
-    if (file.size <= MAX_CHUNK) {
-      // Small file: send in one shot
+    // Step C: Backend proxy — send as JSON byte array (works for files ≤ 3MB)
+    if (file.size <= 3 * 1024 * 1024) {
       const arrayBuffer = await file.arrayBuffer();
       const fileArray = Array.from(new Uint8Array(arrayBuffer));
       const response = await fetch('/api/upload-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${t.token}` },
-        body: JSON.stringify({ title: file.name, contentType, file: fileArray, path: key || fallbackPath }),
+        body: JSON.stringify({ title: file.name, contentType, file: fileArray, path: key }),
       });
       const out = await response.json().catch(() => ({}));
-      if (!response.ok || out?.ok === false) throw new Error(out?.error || 'Error en subida del audio');
+      if (!response.ok || out?.ok === false) {
+        throw new Error(out?.error || out?.detail || `Error subiendo audio (HTTP ${response.status})`);
+      }
       const finalUrl = (out?.url || '').toString().trim();
       if (!finalUrl) throw new Error('No se recibió URL del audio subido');
-      return { url: finalUrl, path: out?.key || key || fallbackPath };
+      return { url: finalUrl, path: out?.key || key };
     }
 
-    // Large file (>3MB): CORS on R2 must be configured for direct PUT to work.
-    // The signed PUT URL was already tried above and failed (CORS blocked).
-    // We can't proxy large files through Vercel (4.5MB body limit).
+    // File > 3MB and direct PUT failed → can't proxy through Vercel body limit
     throw new Error(
-      'Tu archivo de audio es mayor a 3MB y el PUT directo a Cloudflare R2 está bloqueado por CORS. ' +
-      'Por favor configura CORS en tu bucket de R2 en Cloudflare: AllowedOrigins: ["*"], AllowedMethods: ["PUT","GET"], AllowedHeaders: ["Content-Type"].'
+      'El audio pesa más de 3MB y no se pudo subir directamente a R2. ' +
+      'Verifica que CORS esté configurado en Cloudflare R2: AllowedOrigins ["*"], AllowedMethods ["PUT","GET","HEAD"].'
     );
   };
 
