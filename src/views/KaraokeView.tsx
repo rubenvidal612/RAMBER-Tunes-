@@ -245,9 +245,6 @@ export function KaraokeView() {
     );
   };
 
-  };
-
-
   const handleGenerate = async () => {
     if (!karaokeStore.audioFile) return;
     karaokeStore.set({ step: 'generating', progress: 0 });
