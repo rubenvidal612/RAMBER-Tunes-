@@ -385,6 +385,28 @@ export function KaraokeView() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
       
+      // Draw Title and Author
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      
+      if (title) {
+        ctx.font = 'bold 28px "Inter", sans-serif';
+        ctx.fillStyle = textColor;
+        ctx.fillText(`Canción: ${title}`, 30, 50);
+      }
+      
+      if (author) {
+        ctx.font = 'bold 20px "Inter", sans-serif';
+        ctx.fillStyle = textColor;
+        ctx.globalAlpha = 0.8;
+        ctx.fillText(`Autor: ${author}`, 30, 85);
+      }
+      ctx.restore();
+      
       // Draw Lyrics
       const time = audioRef.current.currentTime;
       const totalTime = audioRef.current.duration || 1;

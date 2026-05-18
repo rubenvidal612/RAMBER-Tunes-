@@ -15,12 +15,12 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
+    { id: 'karaoke', label: 'Karaoke', icon: Repeat2 },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
   ];
 
   const menuItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
-    { id: 'karaoke', label: 'Karaoke', icon: Repeat2 },
     { id: 'afiliados', label: 'Afiliados', icon: Coins },
     { id: 'perfil', label: 'Perfil', icon: User },
   ];
