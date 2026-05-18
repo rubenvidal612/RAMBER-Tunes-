@@ -716,7 +716,7 @@ export function KaraokeView() {
         {/* Encabezado */}
         <div className="mb-8 border-b border-white/10 pb-6">
           <h1 className="font-display font-extrabold text-3xl md:text-5xl mb-3 tracking-tight bg-gradient-to-r from-indigo-400 to-purple-500 bg-clip-text text-transparent">
-            Crear Video de Karaoke
+            Crear Video Karaoke
           </h1>
           <p className="text-slate-400 text-lg">
             Sube tu audio y letra para generar un video de karaoke dinámico con IA
