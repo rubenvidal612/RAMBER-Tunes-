@@ -205,10 +205,17 @@ export function KaraokeView() {
         }
         const errBody = await putRes.text().catch(() => `HTTP ${putRes.status}`);
         console.warn('[Karaoke] R2 PUT failed:', putRes.status, errBody);
-        // Fall through to backend proxy
+        const bodyLower = (errBody || '').toString().toLowerCase();
+        if (putRes.status === 404 && bodyLower.includes('requested resource could not be found')) {
+          throw new Error(
+            'Cloudflare R2 respondió 404 (no encontró el recurso). ' +
+            'Esto casi siempre es por configuración de endpoint/bucket. ' +
+            'Revisa en Vercel: R2_BUCKET_NAME y R2_ENDPOINT.'
+          );
+        }
+        throw new Error(`La subida a R2 falló (HTTP ${putRes.status}). Revisa CORS en R2 y que el bucket exista.`);
       } catch (putErr) {
         console.warn('[Karaoke] R2 PUT network error:', putErr);
-        // Fall through to backend proxy
       }
     }
 
@@ -227,124 +234,127 @@ export function KaraokeView() {
       const progressInterval = setInterval(() => {
         karaokeStore.set({ progress: Math.min(20, karaokeStore.progress + Math.random() * 4) });
       }, 400);
-      const { url: uploadUrl, path: uploadPath } = await uploadAudioToR2(karaokeStore.audioFile);
-      clearInterval(progressInterval);
-      karaokeStore.set({ progress: 22 });
+      try {
+        const { url: uploadUrl, path: uploadPath } = await uploadAudioToR2(karaokeStore.audioFile);
+        karaokeStore.set({ progress: 22 });
 
-      // STEP 2: Start Replicate separation job (returns immediately with a predictionId)
-      const t = await getAccessToken();
-      const startRes = await fetch('/api/karaoke/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
-        body: JSON.stringify({ uploadUrl, uploadPath, lyrics: karaokeStore.lyrics })
-      });
-      const startData = await startRes.json().catch(() => ({}));
-      if (!startRes.ok || !startData?.predictionId) {
-        throw new Error(startData?.error || 'No se pudo iniciar la separación de audio');
+        // STEP 2: Start Replicate separation job (returns immediately with a predictionId)
+        const t = await getAccessToken();
+        const startRes = await fetch('/api/karaoke/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
+          body: JSON.stringify({ uploadUrl, uploadPath, lyrics: karaokeStore.lyrics })
+        });
+        const startData = await startRes.json().catch(() => ({}));
+        if (!startRes.ok || !startData?.predictionId) {
+          throw new Error(startData?.error || 'No se pudo iniciar la separación de audio');
+        }
+
+        karaokeStore.set({ progress: 25 });
+
+        // STEP 3: Poll karaoke-status until Replicate finishes
+        // State we accumulate across polls:
+        let predictionId: string = startData.predictionId;
+        let stage: string = 'separating';
+        let instrumentalUrl: string | null = null;
+        let vocalUrl: string | null = null;
+        let backingVocalUrl: string | null = null;
+
+        await new Promise<void>((resolve, reject) => {
+          let dots = 0;
+          const MAX_POLLS = 120; // 120 polls × 5s = 10 minutes safety cap
+          let pollCount = 0;
+
+          const interval = setInterval(async () => {
+            try {
+              pollCount++;
+              if (pollCount > MAX_POLLS) {
+                clearInterval(interval);
+                reject(new Error('El procesamiento tardó demasiado. Intenta con una canción más corta.'));
+                return;
+              }
+
+              // Advance fake progress slowly from 25 → 88
+              karaokeStore.set({ progress: Math.min(88, karaokeStore.progress + (Math.random() * 0.8)) });
+
+              const params = new URLSearchParams({ predictionId, stage });
+              if (stage === 'backing' && vocalUrl) params.set('vocalUrl', vocalUrl);
+
+              const statusRes = await fetch(`/api/karaoke/status?${params.toString()}`, {
+                headers: { 'Authorization': `Bearer ${t.token}` }
+              });
+              const statusData = await statusRes.json().catch(() => ({}));
+
+              if (!statusData?.ok) {
+                clearInterval(interval);
+                reject(new Error(statusData?.error || 'Error consultando estado del karaoke'));
+                return;
+              }
+
+              if (statusData.status === 'processing' || statusData.status === 'starting') {
+                // Still going, update stage label
+                stage = statusData.stage || stage;
+                return;
+              }
+
+              if (statusData.status === 'progressing') {
+                // Main separation done, now polling BVE (backing vocal extraction)
+                predictionId = statusData.predictionId;
+                stage = 'backing';
+                instrumentalUrl = statusData.instrumentalUrl || instrumentalUrl;
+                vocalUrl = statusData.vocalUrl || vocalUrl;
+                karaokeStore.set({ progress: 65 });
+                return;
+              }
+
+              if (statusData.status === 'ready_for_finalize') {
+                // All Replicate work done
+                clearInterval(interval);
+                if (statusData.instrumentalUrl) instrumentalUrl = statusData.instrumentalUrl;
+                if (statusData.vocalUrl) vocalUrl = statusData.vocalUrl;
+                if (statusData.backingVocalUrl) backingVocalUrl = statusData.backingVocalUrl;
+                resolve();
+              }
+            } catch (err) {
+              clearInterval(interval);
+              reject(err);
+            }
+          }, 5000);
+        });
+
+        if (!vocalUrl) throw new Error('No se obtuvo la pista vocal de Replicate');
+        karaokeStore.set({ progress: 90 });
+
+        // STEP 4: Finalize — call Gemini for lyric sync (< 30s, fits Hobby plan)
+        const finalRes = await fetch('/api/karaoke/finalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
+          body: JSON.stringify({
+            vocalUrl,
+            instrumentalUrl,
+            backingVocalUrl,
+            lyrics: karaokeStore.lyrics
+          })
+        });
+        const finalData = await finalRes.json().catch(() => ({}));
+        if (!finalRes.ok || !finalData?.ok) {
+          throw new Error(finalData?.error || 'Error sincronizando con Gemini');
+        }
+
+        const newSyncData = Array.isArray(finalData.syncData) ? finalData.syncData : [];
+        karaokeStore.set({
+          syncData: newSyncData,
+          instrumentalUrl: finalData.instrumentalUrl || instrumentalUrl,
+          vocalUrl: finalData.vocalUrl || vocalUrl,
+          backingVocalUrl: finalData.backingVocalUrl || backingVocalUrl || null,
+          audioMode: 'backing',
+          progress: 100
+        });
+
+        setTimeout(() => karaokeStore.set({ step: 'result' }), 500);
+      } finally {
+        clearInterval(progressInterval);
       }
-
-      karaokeStore.set({ progress: 25 });
-
-      // STEP 3: Poll karaoke-status until Replicate finishes
-      // State we accumulate across polls:
-      let predictionId: string = startData.predictionId;
-      let stage: string = 'separating';
-      let instrumentalUrl: string | null = null;
-      let vocalUrl: string | null = null;
-      let backingVocalUrl: string | null = null;
-
-      await new Promise<void>((resolve, reject) => {
-        let dots = 0;
-        const MAX_POLLS = 120; // 120 polls × 5s = 10 minutes safety cap
-        let pollCount = 0;
-
-        const interval = setInterval(async () => {
-          try {
-            pollCount++;
-            if (pollCount > MAX_POLLS) {
-              clearInterval(interval);
-              reject(new Error('El procesamiento tardó demasiado. Intenta con una canción más corta.'));
-              return;
-            }
-
-            // Advance fake progress slowly from 25 → 88
-            karaokeStore.set({ progress: Math.min(88, karaokeStore.progress + (Math.random() * 0.8)) });
-
-            const params = new URLSearchParams({ predictionId, stage });
-            if (stage === 'backing' && vocalUrl) params.set('vocalUrl', vocalUrl);
-
-            const statusRes = await fetch(`/api/karaoke/status?${params.toString()}`, {
-              headers: { 'Authorization': `Bearer ${t.token}` }
-            });
-            const statusData = await statusRes.json().catch(() => ({}));
-
-            if (!statusData?.ok) {
-              clearInterval(interval);
-              reject(new Error(statusData?.error || 'Error consultando estado del karaoke'));
-              return;
-            }
-
-            if (statusData.status === 'processing' || statusData.status === 'starting') {
-              // Still going, update stage label
-              stage = statusData.stage || stage;
-              return;
-            }
-
-            if (statusData.status === 'progressing') {
-              // Main separation done, now polling BVE (backing vocal extraction)
-              predictionId = statusData.predictionId;
-              stage = 'backing';
-              instrumentalUrl = statusData.instrumentalUrl || instrumentalUrl;
-              vocalUrl = statusData.vocalUrl || vocalUrl;
-              karaokeStore.set({ progress: 65 });
-              return;
-            }
-
-            if (statusData.status === 'ready_for_finalize') {
-              // All Replicate work done
-              clearInterval(interval);
-              if (statusData.instrumentalUrl) instrumentalUrl = statusData.instrumentalUrl;
-              if (statusData.vocalUrl) vocalUrl = statusData.vocalUrl;
-              if (statusData.backingVocalUrl) backingVocalUrl = statusData.backingVocalUrl;
-              resolve();
-            }
-          } catch (err) {
-            clearInterval(interval);
-            reject(err);
-          }
-        }, 5000);
-      });
-
-      if (!vocalUrl) throw new Error('No se obtuvo la pista vocal de Replicate');
-      karaokeStore.set({ progress: 90 });
-
-      // STEP 4: Finalize — call Gemini for lyric sync (< 30s, fits Hobby plan)
-      const finalRes = await fetch('/api/karaoke/finalize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
-        body: JSON.stringify({
-          vocalUrl,
-          instrumentalUrl,
-          backingVocalUrl,
-          lyrics: karaokeStore.lyrics
-        })
-      });
-      const finalData = await finalRes.json().catch(() => ({}));
-      if (!finalRes.ok || !finalData?.ok) {
-        throw new Error(finalData?.error || 'Error sincronizando con Gemini');
-      }
-
-      const newSyncData = Array.isArray(finalData.syncData) ? finalData.syncData : [];
-      karaokeStore.set({
-        syncData: newSyncData,
-        instrumentalUrl: finalData.instrumentalUrl || instrumentalUrl,
-        vocalUrl: finalData.vocalUrl || vocalUrl,
-        backingVocalUrl: finalData.backingVocalUrl || backingVocalUrl || null,
-        audioMode: 'backing',
-        progress: 100
-      });
-
-      setTimeout(() => karaokeStore.set({ step: 'result' }), 500);
     } catch (e) {
       console.error(e);
       alert(e instanceof Error ? e.message : 'Error desconocido');
