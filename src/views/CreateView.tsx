@@ -1397,7 +1397,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {isAudioModalOpen && audioFile && (
         <div className="fixed inset-0 md:absolute md:inset-0 z-[130] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsAudioModalOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="text-white font-extrabold">Crear desde tu audio</div>
               <button
@@ -1408,7 +1408,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
             </div>
 
-            <div className="p-4">
+            <div className="p-4 overflow-y-auto min-h-0">
               {(() => {
                 const pct = Math.max(0, Math.min(100, Math.round(Number(uploadProgress || 0))));
                 const hot = pct >= 87 && pct < 100;
