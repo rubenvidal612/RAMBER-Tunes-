@@ -3543,6 +3543,38 @@ const karaokeHandler = (() => {
     res.end(JSON.stringify(body));
   }
 
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || req.headers.Authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+    if (!supabaseUrl || !supabaseAnon) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY)" };
+    }
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    return { ok: true as const, user };
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const u = new URL(req.url, "http://localhost");
@@ -3560,6 +3592,50 @@ const karaokeHandler = (() => {
           return await uploadAudioHandler(req, res);
         } finally {
           req.url = oldUrl;
+        }
+      }
+
+      if (next === "verify") {
+        if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+        const auth = await requireUser(req);
+        if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+        const payload = parseJsonBody(req);
+        if (!payload) return send(res, 400, { error: "Body inválido" });
+
+        const key = String(payload?.key || "").trim().replace(/^\/+/, "");
+        const expectedSizeRaw = payload?.expectedSize ?? payload?.size ?? null;
+        const expectedSize = expectedSizeRaw == null ? null : Number(expectedSizeRaw);
+        if (!key) return send(res, 400, { error: "Falta key" });
+
+        const uid = String((auth as any).user?.id || "").trim();
+        const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+        if (!allowedPrefixes.some((p) => key.startsWith(p))) {
+          return send(res, 403, { error: "No autorizado para verificar este archivo" });
+        }
+
+        try {
+          const env = getR2Env();
+          const client = await getR2Client();
+          const { HeadObjectCommand } = await getR2AwsSdk();
+          const head = await client.send(new HeadObjectCommand({ Bucket: env.bucketName, Key: key }));
+          const contentLength = Number((head as any)?.ContentLength ?? NaN);
+          const etag = String((head as any)?.ETag || "").replaceAll('"', "").trim() || null;
+          if (!Number.isFinite(contentLength) || contentLength <= 0) {
+            return send(res, 404, { ok: false, error: "No se encontró el archivo en R2", key });
+          }
+          if (expectedSize != null && Number.isFinite(expectedSize) && expectedSize > 0 && contentLength !== expectedSize) {
+            return send(res, 409, {
+              ok: false,
+              error: "La subida a R2 quedó incompleta (tamaño no coincide). Reintenta la subida.",
+              expectedSize,
+              contentLength,
+              key,
+            });
+          }
+          return send(res, 200, { ok: true, key, contentLength, etag, matches: expectedSize == null ? null : contentLength === expectedSize });
+        } catch (e: any) {
+          return send(res, 404, { ok: false, error: "No se pudo verificar el archivo en R2", detail: e?.message || String(e) });
         }
       }
 

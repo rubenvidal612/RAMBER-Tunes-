@@ -802,6 +802,43 @@ app.post('/api/karaoke/finalize', authenticate, async (req, res) => {
   }
 });
 
+app.post('/api/karaoke/verify', authenticate, async (req, res) => {
+  try {
+    const key = String(req.body?.key || '').trim().replace(/^\/+/, '');
+    const expectedSizeRaw = req.body?.expectedSize ?? req.body?.size ?? null;
+    const expectedSize = expectedSizeRaw == null ? null : Number(expectedSizeRaw);
+    if (!key) return res.status(400).json({ ok: false, error: 'Falta key' });
+
+    const uid = String(req.user?.id || '').trim();
+    const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+    if (!allowedPrefixes.some((p) => key.startsWith(p))) {
+      return res.status(403).json({ ok: false, error: 'No autorizado para verificar este archivo' });
+    }
+
+    const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+    const env = getR2Env();
+    const client = await getR2Client();
+    const head = await client.send(new HeadObjectCommand({ Bucket: env.bucketName, Key: key }));
+    const contentLength = Number(head?.ContentLength ?? NaN);
+    const etag = String(head?.ETag || '').replaceAll('"', '').trim() || null;
+    if (!Number.isFinite(contentLength) || contentLength <= 0) {
+      return res.status(404).json({ ok: false, error: 'No se encontró el archivo en R2', key });
+    }
+    if (expectedSize != null && Number.isFinite(expectedSize) && expectedSize > 0 && contentLength !== expectedSize) {
+      return res.status(409).json({
+        ok: false,
+        error: 'La subida a R2 quedó incompleta (tamaño no coincide). Reintenta la subida.',
+        expectedSize,
+        contentLength,
+        key,
+      });
+    }
+    return res.json({ ok: true, key, contentLength, etag, matches: expectedSize == null ? null : contentLength === expectedSize });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No se pudo verificar el archivo en R2', detail: error.message });
+  }
+});
+
 // 2.6 Upload Audio to R2 (Helper for both Clone Voice and Karaoke)
 app.post('/api/upload-audio', authenticate, async (req, res) => {
   try {

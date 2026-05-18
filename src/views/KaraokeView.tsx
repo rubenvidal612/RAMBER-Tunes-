@@ -201,6 +201,15 @@ export function KaraokeView() {
           body: file,
         });
         if (putRes.ok) {
+          const verifyRes = await fetch('/api/karaoke/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
+            body: JSON.stringify({ key, expectedSize: file.size }),
+          });
+          const verifyData = await verifyRes.json().catch(() => ({}));
+          if (!verifyRes.ok || verifyData?.ok === false) {
+            throw new Error(verifyData?.error || verifyData?.detail || 'La subida a R2 no se pudo verificar');
+          }
           return { url, path: key };
         }
         const errBody = await putRes.text().catch(() => `HTTP ${putRes.status}`);
