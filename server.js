@@ -85,9 +85,18 @@ const getR2Env = () => ({
 async function getR2Client() {
   const { S3Client } = await import("@aws-sdk/client-s3");
   const env = getR2Env();
+  const hostname = (() => {
+    try {
+      return new URL(env.endpoint).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  const shouldForcePathStyle = hostname ? !hostname.startsWith(`${String(env.bucketName || "").toLowerCase()}.`) : true;
   return new S3Client({
     region: "auto",
     endpoint: env.endpoint,
+    forcePathStyle: shouldForcePathStyle,
     credentials: {
       accessKeyId: env.accessKeyId,
       secretAccessKey: env.secretAccessKey,
@@ -697,6 +706,72 @@ app.post('/api/suno/karaoke-finalize', authenticate, async (req, res) => {
 app.post('/api/suno/karaoke-sync', authenticate, async (req, res) => {
   // Redirect locally to karaoke-start
   res.status(400).json({ error: "Este endpoint es legado. Por favor usa el flujo de 3 pasos (karaoke-start)." });
+});
+
+app.post('/api/karaoke/upload-url', authenticate, async (req, res) => {
+  try {
+    const forwardRes = await fetch(`http://localhost:${PORT}/api/upload-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: req.headers.authorization || '',
+      },
+      body: JSON.stringify(req.body || {}),
+    });
+    const out = await forwardRes.json().catch(() => ({}));
+    return res.status(forwardRes.status).json(out);
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Error procesando upload-url', detail: error.message });
+  }
+});
+
+app.post('/api/karaoke/start', authenticate, async (req, res) => {
+  try {
+    const forwardRes = await fetch(`http://localhost:${PORT}/api/suno/karaoke-start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: req.headers.authorization || '',
+      },
+      body: JSON.stringify(req.body || {}),
+    });
+    const out = await forwardRes.json().catch(() => ({}));
+    return res.status(forwardRes.status).json(out);
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Error procesando karaoke/start', detail: error.message });
+  }
+});
+
+app.get('/api/karaoke/status', authenticate, async (req, res) => {
+  try {
+    const qs = (req.originalUrl || '').split('?')[1] || '';
+    const forwardRes = await fetch(`http://localhost:${PORT}/api/suno/karaoke-status${qs ? `?${qs}` : ''}`, {
+      headers: {
+        authorization: req.headers.authorization || '',
+      },
+    });
+    const out = await forwardRes.json().catch(() => ({}));
+    return res.status(forwardRes.status).json(out);
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Error procesando karaoke/status', detail: error.message });
+  }
+});
+
+app.post('/api/karaoke/finalize', authenticate, async (req, res) => {
+  try {
+    const forwardRes = await fetch(`http://localhost:${PORT}/api/suno/karaoke-finalize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: req.headers.authorization || '',
+      },
+      body: JSON.stringify(req.body || {}),
+    });
+    const out = await forwardRes.json().catch(() => ({}));
+    return res.status(forwardRes.status).json(out);
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Error procesando karaoke/finalize', detail: error.message });
+  }
 });
 
 // 2.6 Upload Audio to R2 (Helper for both Clone Voice and Karaoke)

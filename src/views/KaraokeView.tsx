@@ -178,7 +178,7 @@ export function KaraokeView() {
     const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
 
     // Step A: get signed PUT URL from our backend
-    const prep = await fetch('/api/upload-audio', {
+    const prep = await fetch('/api/karaoke/upload-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'authorization': `Bearer ${t.token}` },
       body: JSON.stringify({ title: file.name, contentType }),
@@ -212,31 +212,9 @@ export function KaraokeView() {
       }
     }
 
-    // Step C: Backend proxy — send as JSON byte array (works for files ≤ 3MB)
-    if (file.size <= 3 * 1024 * 1024) {
-      const base64Str = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
-      });
-      const response = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ title: file.name, contentType, file: base64Str, path: key }),
-      });
-      const out = await response.json().catch(() => ({}));
-      if (!response.ok || out?.ok === false) {
-        throw new Error(out?.error || out?.detail || `Error subiendo audio (HTTP ${response.status})`);
-      }
-      const finalUrl = (out?.url || '').toString().trim();
-      if (!finalUrl) throw new Error('No se recibió URL del audio subido');
-      return { url: finalUrl, path: out?.key || key };
-    }
-
-    // File > 3MB and direct PUT failed → can't proxy through Vercel body limit
     throw new Error(
-      'El audio pesa más de 3MB y no se pudo subir directamente a R2. ' +
-      'Verifica que CORS esté configurado en Cloudflare R2: AllowedOrigins ["*"], AllowedMethods ["PUT","GET","HEAD"].'
+      'No se pudo subir el audio directamente a R2 desde el navegador. ' +
+      'Verifica CORS en Cloudflare R2 para permitir PUT/GET/HEAD desde tu dominio (ramber-tunes.vercel.app) y localhost.'
     );
   };
 
@@ -255,7 +233,7 @@ export function KaraokeView() {
 
       // STEP 2: Start Replicate separation job (returns immediately with a predictionId)
       const t = await getAccessToken();
-      const startRes = await fetch('/api/suno/karaoke-start', {
+      const startRes = await fetch('/api/karaoke/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
         body: JSON.stringify({ uploadUrl, uploadPath, lyrics: karaokeStore.lyrics })
@@ -295,7 +273,7 @@ export function KaraokeView() {
             const params = new URLSearchParams({ predictionId, stage });
             if (stage === 'backing' && vocalUrl) params.set('vocalUrl', vocalUrl);
 
-            const statusRes = await fetch(`/api/suno/karaoke-status?${params.toString()}`, {
+            const statusRes = await fetch(`/api/karaoke/status?${params.toString()}`, {
               headers: { 'Authorization': `Bearer ${t.token}` }
             });
             const statusData = await statusRes.json().catch(() => ({}));
@@ -341,7 +319,7 @@ export function KaraokeView() {
       karaokeStore.set({ progress: 90 });
 
       // STEP 4: Finalize — call Gemini for lyric sync (< 30s, fits Hobby plan)
-      const finalRes = await fetch('/api/suno/karaoke-finalize', {
+      const finalRes = await fetch('/api/karaoke/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${t.token}` },
         body: JSON.stringify({

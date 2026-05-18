@@ -224,10 +224,18 @@ async function getR2Client() {
   if (cachedR2Client) return cachedR2Client;
   const env = getR2Env();
   const { S3Client } = await getR2AwsSdk();
+  const hostname = (() => {
+    try {
+      return new URL(env.endpoint).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  const shouldForcePathStyle = hostname ? !hostname.startsWith(`${env.bucketName.toLowerCase()}.`) : true;
   cachedR2Client = new S3Client({
     region: "auto",
     endpoint: env.endpoint,
-    forcePathStyle: true,
+    forcePathStyle: shouldForcePathStyle,
     credentials: {
       accessKeyId: env.accessKeyId,
       secretAccessKey: env.secretAccessKey,
@@ -3493,6 +3501,70 @@ notify pgrst, 'reload schema';`;
       return send(res, 404, { error: "Ruta no encontrada", action: a || null });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const karaokeHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  return async function handler(req: any, res: any) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      const parts = u.pathname.split("/").filter(Boolean);
+      const isApi = parts[0] === "api";
+      const head = isApi ? parts[1] : parts[0];
+      const next = isApi ? parts[2] : parts[1];
+
+      if (head !== "karaoke") return send(res, 404, { error: "Ruta no encontrada" });
+
+      if (next === "upload-url") {
+        const oldUrl = req.url;
+        req.url = `/api/upload-audio${u.search || ""}`;
+        try {
+          return await uploadAudioHandler(req, res);
+        } finally {
+          req.url = oldUrl;
+        }
+      }
+
+      if (next === "start") {
+        const oldUrl = req.url;
+        req.url = `/api/suno/karaoke-start${u.search || ""}`;
+        try {
+          return await sunoHandler(req, res);
+        } finally {
+          req.url = oldUrl;
+        }
+      }
+
+      if (next === "status") {
+        const oldUrl = req.url;
+        req.url = `/api/suno/karaoke-status${u.search || ""}`;
+        try {
+          return await sunoHandler(req, res);
+        } finally {
+          req.url = oldUrl;
+        }
+      }
+
+      if (next === "finalize") {
+        const oldUrl = req.url;
+        req.url = `/api/suno/karaoke-finalize${u.search || ""}`;
+        try {
+          return await sunoHandler(req, res);
+        } finally {
+          req.url = oldUrl;
+        }
+      }
+
+      return send(res, 404, { error: "Ruta no encontrada" });
+    } catch (e: any) {
+      return send(res, 500, { error: "Error interno", detail: e?.message || String(e) });
     }
   };
 })();
@@ -9985,6 +10057,7 @@ export default async function handler(req: any, res: any) {
     const next = isApi ? parts[2] : parts[1];
     const third = isApi ? parts[3] : parts[2];
 
+    if (head === "karaoke") return karaokeHandler(req, res);
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
