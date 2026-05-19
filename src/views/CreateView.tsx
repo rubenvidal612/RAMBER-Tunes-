@@ -1653,7 +1653,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {isVoicesPickerOpen && (
         <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+          <div className="relative w-full md:max-w-[640px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[86dvh]">
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <div className="text-white font-extrabold">Voces</div>
               <button
@@ -1663,7 +1663,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 max-h-[60vh] overflow-y-auto">
+            <div className="p-4 overflow-y-auto min-h-0">
               <button
                 type="button"
                 onClick={() => {
@@ -1687,7 +1687,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   <Plus className="w-5 h-5" />
                 </div>
                 <div className="flex-1 text-left min-w-0">
-                  <div className="text-white font-extrabold truncate">Crear nueva voz</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-white font-extrabold truncate">Crear nueva voz</div>
+                    <div className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 border border-emerald-500/25 text-emerald-200">
+                      NUEVO
+                    </div>
+                  </div>
                   <div className="text-slate-500 text-xs truncate">Graba o sube tu voz</div>
                 </div>
                 <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
@@ -1812,10 +1817,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </div>
               </div>
 
-              <div className="mt-4">
-                <div className="text-slate-200 font-extrabold text-sm">Paso: {voiceCreateStep.replaceAll('_', ' ')}</div>
-              </div>
-
               {voiceLibraryMode !== 'none' ? (
                 <div className="mt-4">
                   <div className="flex items-center justify-between">
@@ -1883,44 +1884,118 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </div>
               ) : (
                 <>
-                  {(voiceCreateStep === 'pick_source' || voiceCreateStep === 'segment' || voiceCreateStep === 'generating_phrase' || voiceCreateStep === 'phrase_ready' || voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done') && (
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (voiceCreateStep === 'pick_verify') voiceVerifyRecordInputRef.current?.click?.();
-                          else voiceRecordInputRef.current?.click?.();
-                        }}
-                        disabled={voiceBusy}
-                        className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
-                      >
-                        Grabar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (voiceCreateStep === 'pick_verify') voiceVerifyUploadInputRef.current?.click?.();
-                          else voiceUploadInputRef.current?.click?.();
-                        }}
-                        disabled={voiceBusy}
-                        className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
-                      >
-                        Subir audio
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setVoiceCreateError('');
-                          setVoiceLibraryMode(voiceCreateStep === 'pick_verify' ? 'verify' : 'source');
-                          if (voiceLibrarySongs.length === 0) loadVoiceLibrary().catch((e) => setVoiceCreateError(e instanceof Error ? e.message : String(e)));
-                        }}
-                        disabled={voiceBusy}
-                        className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
-                      >
-                        Seleccionar de Biblioteca
-                      </button>
-                    </div>
-                  )}
+                  {(() => {
+                    const isVerifyStep = voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done';
+                    const title = isVerifyStep ? 'Sube la grabación de la frase' : 'Agrega tu voz';
+                    const subtitle = isVerifyStep
+                      ? 'Graba o sube la frase para validar tu voz.'
+                      : 'Graba o sube un audio (ideal: voz limpia, sin ruido).';
+                    const fileName = isVerifyStep ? voiceVerifyFile?.name : voiceSourceFile?.name;
+                    const previewUrl = isVerifyStep ? voiceVerifyPreviewUrl : voiceSourcePreviewUrl;
+
+                    const pickRecord = () => {
+                      if (isVerifyStep) voiceVerifyRecordInputRef.current?.click?.();
+                      else voiceRecordInputRef.current?.click?.();
+                    };
+                    const pickUpload = () => {
+                      if (isVerifyStep) voiceVerifyUploadInputRef.current?.click?.();
+                      else voiceUploadInputRef.current?.click?.();
+                    };
+                    const pickLibrary = () => {
+                      setVoiceCreateError('');
+                      setVoiceLibraryMode(isVerifyStep ? 'verify' : 'source');
+                      if (voiceLibrarySongs.length === 0) loadVoiceLibrary().catch((e) => setVoiceCreateError(e instanceof Error ? e.message : String(e)));
+                    };
+
+                    const onDropFile = (f: File) => {
+                      if (isVerifyStep) {
+                        setVoiceVerifyFile(f);
+                        setVoiceCreateStep('pick_verify');
+                      } else {
+                        setVoiceSourceFile(f);
+                        setVoiceVerifyFile(null);
+                        setVoiceCreateStep('segment');
+                      }
+                      setVoiceCreateError('');
+                    };
+
+                    return (
+                      <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
+                        <div className="text-white font-extrabold">{title}</div>
+                        <div className="mt-1 text-slate-400 text-sm">{subtitle}</div>
+
+                        <div
+                          className="mt-3 rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-center"
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const f = e.dataTransfer?.files?.[0] || null;
+                            if (!f) return;
+                            onDropFile(f);
+                          }}
+                        >
+                          <div className="text-slate-300 text-sm">{fileName ? `Seleccionado: ${fileName}` : 'Arrastra un archivo de audio aquí.'}</div>
+                          <div className="mt-2 text-slate-500 text-xs">o usa una opción de abajo</div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <button
+                            type="button"
+                            onClick={pickRecord}
+                            disabled={voiceBusy}
+                            className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                          >
+                            Grabar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={pickUpload}
+                            disabled={voiceBusy}
+                            className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                          >
+                            Subir audio
+                          </button>
+                          <button
+                            type="button"
+                            onClick={pickLibrary}
+                            disabled={voiceBusy}
+                            className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                          >
+                            Seleccionar de Biblioteca
+                          </button>
+                        </div>
+
+                        {previewUrl ? (
+                          <div className="mt-3">
+                            <audio
+                              controls
+                              preload="metadata"
+                              src={previewUrl}
+                              className="w-full"
+                              onLoadedMetadata={
+                                isVerifyStep
+                                  ? undefined
+                                  : (e) => {
+                                      const d = Number((e.currentTarget as any)?.duration);
+                                      if (!Number.isFinite(d) || d <= 0) return;
+                                      setVoiceSourceDurationSec(d);
+                                      setVoiceStartSec((prev) => (Number.isFinite(prev) ? Math.max(0, prev) : 0));
+                                      setVoiceEndSec((prev) => {
+                                        const next = Number.isFinite(prev) && prev > 0 ? prev : Math.min(15, Math.floor(d));
+                                        return Math.max(1, Math.min(Math.floor(d), Math.floor(next)));
+                                      });
+                                    }
+                              }
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
 
                   <input
                     ref={voiceRecordInputRef}
@@ -1983,29 +2058,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     }}
                   />
 
-                  {voiceSourceFile && (voiceCreateStep === 'segment' || voiceCreateStep === 'generating_phrase' || voiceCreateStep === 'phrase_ready' || voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done') ? (
+                  {voiceSourceFile && (voiceCreateStep === 'segment' || voiceCreateStep === 'generating_phrase' || voiceCreateStep === 'phrase_ready') ? (
                     <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
-                      <div className="text-white font-bold truncate">Audio base: {voiceSourceFile.name}</div>
-                      {voiceSourcePreviewUrl ? (
-                        <div className="mt-3">
-                          <audio
-                            controls
-                            preload="metadata"
-                            src={voiceSourcePreviewUrl}
-                            className="w-full"
-                            onLoadedMetadata={(e) => {
-                              const d = Number((e.currentTarget as any)?.duration);
-                              if (!Number.isFinite(d) || d <= 0) return;
-                              setVoiceSourceDurationSec(d);
-                              setVoiceStartSec((prev) => (Number.isFinite(prev) ? Math.max(0, prev) : 0));
-                              setVoiceEndSec((prev) => {
-                                const next = Number.isFinite(prev) && prev > 0 ? prev : Math.min(15, Math.floor(d));
-                                return Math.max(1, Math.min(Math.floor(d), Math.floor(next)));
-                              });
-                            }}
-                          />
-                        </div>
-                      ) : null}
+                      <div className="text-white font-extrabold">Recorte de voz (segundos)</div>
+                      <div className="mt-1 text-slate-400 text-sm">Elige un pedazo donde se escuche clara la voz.</div>
 
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <div>
