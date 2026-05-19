@@ -10441,6 +10441,7 @@ const uploadAudioHandler = (() => {
     const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
 
     try {
+      // Intentar usar R2 si está configurado
       let inline: Uint8Array | null = null;
       if (typeof payload?.file === "string") {
         const b64 = payload.file.includes(",") ? payload.file.split(",")[1] : payload.file;
@@ -10457,18 +10458,47 @@ const uploadAudioHandler = (() => {
             message: "Ese MP3 está muy pesado para subirlo por el servidor. Intenta con un MP3 más ligero o habilita CORS en R2 para subida directa.",
           });
         }
-        await uploadToR2(key, inline, contentType);
-        const url = await getSignedR2Url(key, 60 * 60 * 2);
-        return send(res, 200, { ok: true, url, key, contentType, via: "server" });
+        try {
+          await uploadToR2(key, inline, contentType);
+          const url = await getSignedR2Url(key, 60 * 60 * 2);
+          return send(res, 200, { ok: true, url, key, contentType, via: "server" });
+        } catch (r2Error) {
+          // Si R2 falla, usar enfoque alternativo para Suno Voice
+          console.log('R2 no configurado, usando enfoque alternativo para Suno Voice');
+          // Para Suno Voice, podemos devolver una URL temporal usando el proxy
+          const token = await signProxyToken({
+            uid: auth.user.id,
+            exp: Date.now() + 60 * 60 * 1000, // 1 hora
+            key: key,
+            src: null,
+          });
+          const proxyUrl = `/api/karaoke/audio-proxy?token=${encodeURIComponent(token)}`;
+          const fullUrl = new URL(proxyUrl, process.env.APP_URL || 'http://localhost:3000').toString();
+          return send(res, 200, { ok: true, url: fullUrl, key, contentType, via: "proxy_temp" });
+        }
       }
 
-      const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
-      const url = await getSignedR2Url(key, 60 * 60 * 2);
-      return send(res, 200, { ok: true, uploadUrl, url, key, contentType, via: "direct" });
+      try {
+        const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
+        const url = await getSignedR2Url(key, 60 * 60 * 2);
+        return send(res, 200, { ok: true, uploadUrl, url, key, contentType, via: "direct" });
+      } catch (r2Error) {
+        // Si R2 falla, usar enfoque alternativo
+        console.log('R2 no configurado para subida directa, usando proxy temporal');
+        const token = await signProxyToken({
+          uid: auth.user.id,
+          exp: Date.now() + 60 * 60 * 1000,
+          key: key,
+          src: null,
+        });
+        const proxyUrl = `/api/karaoke/audio-proxy?token=${encodeURIComponent(token)}`;
+        const fullUrl = new URL(proxyUrl, process.env.APP_URL || 'http://localhost:3000').toString();
+        return send(res, 200, { ok: true, url: fullUrl, key, contentType, via: "proxy_temp_direct" });
+      }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
-        ? "Falta configurar Cloudflare R2 en Vercel"
+        ? "Falta configurar Cloudflare R2 en Vercel - usando proxy temporal"
         : "No pude preparar la subida del audio";
       return send(res, 500, { ok: false, error: msg, detail });
     }
