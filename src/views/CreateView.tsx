@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles } from 'lucide-react';
+import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -124,9 +124,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceSourcePreviewUrl, setVoiceSourcePreviewUrl] = useState('');
   const [voiceSourceDurationSec, setVoiceSourceDurationSec] = useState(0);
   const [voiceStartSec, setVoiceStartSec] = useState(0);
-  const [voiceEndSec, setVoiceEndSec] = useState(15);
+  const [voiceEndSec, setVoiceEndSec] = useState(240);
   const [voiceCreateStep, setVoiceCreateStep] = useState<
-    'pick_source' | 'segment' | 'generating_phrase' | 'phrase_ready' | 'pick_verify' | 'generating_voice' | 'done'
+    'pick_source' | 'trim' | 'segment' | 'generating_phrase' | 'phrase_ready' | 'pick_verify' | 'generating_voice' | 'done'
   >('pick_source');
   const [voiceCreateError, setVoiceCreateError] = useState('');
   const [voiceValidateTaskId, setVoiceValidateTaskId] = useState('');
@@ -141,6 +141,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceLibraryMode, setVoiceLibraryMode] = useState<'none' | 'source' | 'verify'>('none');
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [voiceConsent, setVoiceConsent] = useState(false);
+  const [voiceWaveBars, setVoiceWaveBars] = useState<number[]>([]);
   const voiceRecordInputRef = useRef<HTMLInputElement | null>(null);
   const voiceUploadInputRef = useRef<HTMLInputElement | null>(null);
   const voiceVerifyRecordInputRef = useRef<HTMLInputElement | null>(null);
@@ -342,7 +343,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setVoiceSourceFile(null);
     setVoiceSourceDurationSec(0);
     setVoiceStartSec(0);
-    setVoiceEndSec(15);
+    setVoiceEndSec(240);
     setVoiceValidateTaskId('');
     setVoiceValidateInfo('');
     setVoiceVerifyFile(null);
@@ -359,6 +360,63 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (voiceVerifyRecordInputRef.current) voiceVerifyRecordInputRef.current.value = '';
     if (voiceVerifyUploadInputRef.current) voiceVerifyUploadInputRef.current.value = '';
   };
+
+  const voiceTrimMaxSec = 240;
+  const formatMmSs = (sec: number) => {
+    const s = Math.max(0, Math.floor(Number(sec || 0)));
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
+  const clampVoiceTrim = (start: number, end: number, duration: number) => {
+    const d = Math.max(0, Math.floor(Number(duration || 0)));
+    const s0 = Math.max(0, Math.min(d > 0 ? d : 0, Math.floor(Number(start || 0))));
+    const e0 = Math.max(0, Math.min(d > 0 ? d : 0, Math.floor(Number(end || 0))));
+    let s = Math.min(s0, e0);
+    let e = Math.max(s0, e0);
+    if (d > 0) {
+      if (e - s > voiceTrimMaxSec) {
+        e = s + voiceTrimMaxSec;
+        if (e > d) {
+          e = d;
+          s = Math.max(0, e - voiceTrimMaxSec);
+        }
+      }
+      if (e <= s) {
+        e = Math.min(d, s + 1);
+        if (e <= s) s = Math.max(0, e - 1);
+      }
+    }
+    return { start: s, end: e, duration: d };
+  };
+
+  useEffect(() => {
+    const file = voiceSourceFile;
+    const d = Number(voiceSourceDurationSec || 0);
+    if (!file || !Number.isFinite(d) || d <= 0) {
+      setVoiceWaveBars([]);
+      return;
+    }
+    try {
+      const name = (file.name || '').toString();
+      let seed = Number(file.size || 0) + Math.floor(d * 1000);
+      for (let i = 0; i < name.length; i++) seed = (seed + name.charCodeAt(i) * (i + 1)) >>> 0;
+      const count = 140;
+      let x = seed >>> 0;
+      const nextBars: number[] = [];
+      for (let i = 0; i < count; i++) {
+        x = (x * 1664525 + 1013904223) >>> 0;
+        const r = x / 4294967296;
+        const wave = (Math.sin(i / 7) + 1) / 2;
+        const h = 18 + Math.floor((Math.pow(r, 0.35) * 0.7 + wave * 0.3) * 82);
+        nextBars.push(Math.max(10, Math.min(100, h)));
+      }
+      setVoiceWaveBars(nextBars);
+    } catch {
+      setVoiceWaveBars([]);
+    }
+  }, [voiceSourceFile, voiceSourceDurationSec]);
 
   const upsertLocalVoice = (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
     try {
@@ -473,10 +531,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoiceCreateError('Selecciona un audio para crear la voz.');
       return;
     }
-    const start = Math.max(0, Math.floor(Number(voiceStartSec || 0)));
-    const end = Math.max(0, Math.floor(Number(voiceEndSec || 0)));
+    const d = Number(voiceSourceDurationSec || 0);
+    if (!Number.isFinite(d) || d <= 0) {
+      setVoiceCreateError('No pude leer la duración del audio. Prueba con otro archivo.');
+      return;
+    }
+    const trimmed = clampVoiceTrim(Number(voiceStartSec || 0), Number(voiceEndSec || voiceTrimMaxSec), d);
+    const start = Math.max(0, Math.floor(Number(trimmed.start || 0)));
+    const end = Math.max(0, Math.floor(Number(trimmed.end || 0)));
     if (end <= start) {
-      setVoiceCreateError('El final debe ser mayor que el inicio.');
+      setVoiceCreateError('El recorte es inválido. Ajusta el inicio y el final.');
       return;
     }
 
@@ -1853,7 +1917,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               if (voiceLibraryMode === 'source') {
                                 setVoiceSourceFile(f);
                                 setVoiceVerifyFile(null);
-                                setVoiceCreateStep('segment');
+                                setVoiceCreateStep('trim');
                               } else {
                                 setVoiceVerifyFile(f);
                                 setVoiceCreateStep('pick_verify');
@@ -1882,6 +1946,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 <>
                   {(() => {
                     const isVerifyStep = voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done';
+                    if (!isVerifyStep && voiceCreateStep === 'trim') return null;
                     const title = isVerifyStep ? 'Sube la grabación de la frase' : 'Agrega tu voz';
                     const subtitle = isVerifyStep
                       ? 'Graba o sube la frase para validar tu voz.'
@@ -1910,7 +1975,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       } else {
                         setVoiceSourceFile(f);
                         setVoiceVerifyFile(null);
-                        setVoiceCreateStep('segment');
+                        setVoiceCreateStep('trim');
                       }
                       setVoiceCreateError('');
                     };
@@ -1978,12 +2043,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                   : (e) => {
                                       const d = Number((e.currentTarget as any)?.duration);
                                       if (!Number.isFinite(d) || d <= 0) return;
+                                      const next = clampVoiceTrim(voiceStartSec, voiceEndSec || Math.min(voiceTrimMaxSec, Math.floor(d)), d);
                                       setVoiceSourceDurationSec(d);
-                                      setVoiceStartSec((prev) => (Number.isFinite(prev) ? Math.max(0, prev) : 0));
-                                      setVoiceEndSec((prev) => {
-                                        const next = Number.isFinite(prev) && prev > 0 ? prev : Math.min(15, Math.floor(d));
-                                        return Math.max(1, Math.min(Math.floor(d), Math.floor(next)));
-                                      });
+                                      setVoiceStartSec(next.start);
+                                      setVoiceEndSec(next.end || Math.min(voiceTrimMaxSec, Math.floor(d)));
                                     }
                               }
                             />
@@ -1993,59 +2056,219 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     );
                   })()}
 
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-slate-300 text-xs font-semibold mb-1">Nombre de la voz</div>
-                      <input
-                        value={newVoiceName}
-                        onChange={(e) => setNewVoiceName(e.target.value)}
-                        placeholder="Ej: RUBEN"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
-                      />
-                    </div>
-                    <div>
-                      <div className="text-slate-300 text-xs font-semibold mb-1">Descripción (opcional)</div>
-                      <input
-                        value={newVoiceDescription}
-                        onChange={(e) => setNewVoiceDescription(e.target.value)}
-                        placeholder="Ej: Voz cantada en español"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setVoiceConsent((v) => !v)}
-                    className="mt-4 w-full glass-card rounded-2xl p-4 border border-white/10 flex items-start gap-3 text-left hover:bg-white/10 transition-colors"
-                  >
-                    <div
-                      className={cn(
-                        "mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0",
-                        voiceConsent ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/15 text-transparent"
-                      )}
-                    >
-                      <BadgeCheck className="w-4 h-4" />
-                    </div>
-                    <div className="text-slate-200 text-sm">
-                      Entiendo que la creación de una voz implica el procesamiento de datos de voz que pueden considerarse información biométrica según ciertas leyes, y doy mi consentimiento para la recopilación y procesamiento de dicha información de acuerdo con los Términos de Servicio y la Política de Privacidad de RAMBER Tunes
-                    </div>
-                  </button>
-
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="glass-card rounded-2xl p-4 border border-white/10">
-                      <div className="flex items-center gap-2 text-white font-bold text-sm">
-                        <Sparkles className="w-4 h-4 text-emerald-200" /> Canta o habla claro
+                  {voiceCreateStep === 'trim' && voiceSourceFile ? (
+                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
+                      <div className="text-center">
+                        <div className="text-white font-extrabold">Recorta tu grabación</div>
+                        <div className="mt-1 text-slate-400 text-sm">Mantén la parte donde más se parezca a tu voz.</div>
                       </div>
-                      <div className="mt-1 text-slate-400 text-sm">Sin ruido, sin eco, y con buena pronunciación.</div>
-                    </div>
-                    <div className="glass-card rounded-2xl p-4 border border-white/10">
-                      <div className="flex items-center gap-2 text-white font-bold text-sm">
-                        <ShieldCheck className="w-4 h-4 text-emerald-200" /> Mínimo 10 segundos
+
+                      <div className="mt-4 flex items-center justify-center">
+                        <div className="px-3 py-1 rounded-full bg-fuchsia-500/20 border border-fuchsia-400/30 text-fuchsia-200 text-xs font-extrabold">
+                          {formatMmSs(voiceTrimMaxSec)}
+                        </div>
                       </div>
-                      <div className="mt-1 text-slate-400 text-sm">Entre más limpio el audio, mejor sale la voz.</div>
+
+                      {voiceSourcePreviewUrl ? (
+                        <div className="mt-4">
+                          <audio
+                            controls
+                            preload="metadata"
+                            src={voiceSourcePreviewUrl}
+                            className="w-full"
+                            onLoadedMetadata={(e) => {
+                              const d = Number((e.currentTarget as any)?.duration);
+                              if (!Number.isFinite(d) || d <= 0) return;
+                              const next = clampVoiceTrim(voiceStartSec, voiceEndSec || Math.min(voiceTrimMaxSec, Math.floor(d)), d);
+                              setVoiceSourceDurationSec(d);
+                              setVoiceStartSec(next.start);
+                              setVoiceEndSec(next.end || Math.min(voiceTrimMaxSec, Math.floor(d)));
+                            }}
+                          />
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 rounded-2xl bg-black/20 border border-white/10 p-4">
+                        <div className="h-14 rounded-xl bg-white/5 border border-white/10 relative overflow-hidden">
+                          <div
+                            className="absolute inset-0 grid items-end gap-[2px] px-2"
+                            style={{
+                              gridTemplateColumns: `repeat(${Math.max(1, voiceWaveBars.length || 140)}, minmax(0, 1fr))`,
+                            }}
+                          >
+                            {(voiceWaveBars.length ? voiceWaveBars : new Array(140).fill(22)).map((h, i) => (
+                              <div
+                                key={i}
+                                className="rounded-sm bg-white/15"
+                                style={{ height: `${Math.max(8, Math.min(100, Number(h) || 20))}%` }}
+                              />
+                            ))}
+                          </div>
+                          {(() => {
+                            const d = Math.max(0, Number(voiceSourceDurationSec || 0));
+                            const s = Math.max(0, Math.min(d || 0, Number(voiceStartSec || 0)));
+                            const e = Math.max(0, Math.min(d || 0, Number(voiceEndSec || 0)));
+                            const left = d > 0 ? (Math.min(s, e) / d) * 100 : 0;
+                            const right = d > 0 ? (Math.max(s, e) / d) * 100 : 0;
+                            const center = left + (right - left) / 2;
+                            return (
+                              <>
+                                <div className="absolute inset-0 bg-black/30" />
+                                <div className="absolute top-0 bottom-0 left-0 bg-black/35" style={{ width: `${left}%` }} />
+                                <div className="absolute top-0 bottom-0 bg-black/35" style={{ left: `${right}%`, right: 0 }} />
+                                <div className="absolute top-0 bottom-0 bg-fuchsia-500/10 border border-fuchsia-400/60" style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }} />
+                                <div className="absolute -top-7" style={{ left: `${center}%`, transform: 'translateX(-50%)' }}>
+                                  <div className="px-3 py-1 rounded-full bg-fuchsia-500/25 border border-fuchsia-400/40 text-fuchsia-200 text-[11px] font-extrabold">
+                                    {formatMmSs(voiceTrimMaxSec)}
+                                  </div>
+                                </div>
+                                <div className="absolute top-0 bottom-0 w-[10px]" style={{ left: `${left}%` }}>
+                                  <div className="absolute inset-y-0 left-0 w-[3px] bg-fuchsia-400" />
+                                  <div className="absolute inset-y-0 left-[5px] w-[1px] bg-white/50" />
+                                </div>
+                                <div className="absolute top-0 bottom-0 w-[10px]" style={{ left: `${right}%`, transform: 'translateX(-100%)' }}>
+                                  <div className="absolute inset-y-0 right-0 w-[3px] bg-fuchsia-400" />
+                                  <div className="absolute inset-y-0 right-[5px] w-[1px] bg-white/50" />
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="mt-4 relative">
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
+                            value={Math.max(0, Math.min(Math.floor(voiceSourceDurationSec || 0), Math.floor(voiceStartSec || 0)))}
+                            onChange={(e) => {
+                              const d = Number(voiceSourceDurationSec || 0);
+                              const next = clampVoiceTrim(Number(e.target.value), voiceEndSec, d);
+                              setVoiceStartSec(next.start);
+                              setVoiceEndSec(next.end);
+                            }}
+                            className="absolute inset-0 w-full h-10 opacity-0"
+                          />
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
+                            value={Math.max(0, Math.min(Math.floor(voiceSourceDurationSec || 0), Math.floor(voiceEndSec || 0)))}
+                            onChange={(e) => {
+                              const d = Number(voiceSourceDurationSec || 0);
+                              const next = clampVoiceTrim(voiceStartSec, Number(e.target.value), d);
+                              setVoiceStartSec(next.start);
+                              setVoiceEndSec(next.end);
+                            }}
+                            className="absolute inset-0 w-full h-10 opacity-0"
+                          />
+                          <div className="h-10" />
+                        </div>
+
+                        <div className="mt-2 text-center text-slate-400 text-xs">
+                          {formatMmSs(voiceStartSec)} — {formatMmSs(voiceEndSec)}
+                        </div>
+
+                        <div className="mt-4 flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (voiceBusy) return;
+                              setVoiceSourceFile(null);
+                              setVoiceSourceDurationSec(0);
+                              setVoiceStartSec(0);
+                              setVoiceEndSec(voiceTrimMaxSec);
+                              setVoiceCreateStep('pick_source');
+                            }}
+                            disabled={voiceBusy}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                          >
+                            Volver a empezar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (voiceBusy) return;
+                              setVoiceCreateStep('segment');
+                            }}
+                            disabled={voiceBusy}
+                            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                          >
+                            Usar voz
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
+
+                  {voiceCreateStep !== 'trim' ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-slate-300 text-xs font-semibold mb-1">Nombre de la voz</div>
+                          <input
+                            value={newVoiceName}
+                            onChange={(e) => setNewVoiceName(e.target.value)}
+                            placeholder="Ej: RUBEN"
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                          />
+                        </div>
+                        <div>
+                          <div className="text-slate-300 text-xs font-semibold mb-1">Descripción (opcional)</div>
+                          <input
+                            value={newVoiceDescription}
+                            onChange={(e) => setNewVoiceDescription(e.target.value)}
+                            placeholder="Ej: Voz cantada en español"
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setVoiceConsent((v) => !v)}
+                        className="mt-4 w-full glass-card rounded-2xl p-4 border border-white/10 flex items-start gap-3 text-left hover:bg-white/10 transition-colors"
+                      >
+                        <div
+                          className={cn(
+                            "mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0",
+                            voiceConsent ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/15 text-transparent"
+                          )}
+                        >
+                          <BadgeCheck className="w-4 h-4" />
+                        </div>
+                        <div className="text-slate-200 text-sm">
+                          Entiendo que la creación de una voz implica el procesamiento de datos de voz que pueden considerarse información biométrica según ciertas leyes, y doy mi consentimiento para la recopilación y procesamiento de dicha información de acuerdo con los Términos de Servicio y la Política de Privacidad de RAMBER Tunes
+                        </div>
+                      </button>
+
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="glass-card rounded-2xl p-4 border border-white/10">
+                          <div className="flex items-center gap-2 text-white font-bold text-sm">
+                            <Sparkles className="w-4 h-4 text-emerald-200" /> Canta o habla claro
+                          </div>
+                          <div className="mt-1 text-slate-400 text-sm">Sin ruido, sin eco, y con buena pronunciación.</div>
+                        </div>
+                        <div className="glass-card rounded-2xl p-4 border border-white/10">
+                          <div className="flex items-center gap-2 text-white font-bold text-sm">
+                            <ShieldCheck className="w-4 h-4 text-emerald-200" /> Mínimo 10 segundos
+                          </div>
+                          <div className="mt-1 text-slate-400 text-sm">Entre más limpio el audio, mejor sale la voz.</div>
+                        </div>
+                      </div>
+
+                      {voiceSourceFile && voiceCreateStep === 'segment' ? (
+                        <button
+                          type="button"
+                          onClick={() => generateValidationPhrase().catch(() => {})}
+                          disabled={voiceBusy}
+                          className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                        >
+                          Generar frase de validación
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
 
                   <input
                     ref={voiceRecordInputRef}
@@ -2059,7 +2282,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       if (!f) return;
                       setVoiceSourceFile(f);
                       setVoiceVerifyFile(null);
-                      setVoiceCreateStep('segment');
+                      setVoiceCreateStep('trim');
                       setVoiceCreateError('');
                     }}
                   />
@@ -2074,7 +2297,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       if (!f) return;
                       setVoiceSourceFile(f);
                       setVoiceVerifyFile(null);
-                      setVoiceCreateStep('segment');
+                      setVoiceCreateStep('trim');
                       setVoiceCreateError('');
                     }}
                   />
@@ -2107,49 +2330,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       setVoiceCreateError('');
                     }}
                   />
-
-                  {voiceSourceFile && (voiceCreateStep === 'segment' || voiceCreateStep === 'generating_phrase' || voiceCreateStep === 'phrase_ready') ? (
-                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
-                      <div className="text-white font-extrabold">Recorte de voz (segundos)</div>
-                      <div className="mt-1 text-slate-400 text-sm">Elige un pedazo donde se escuche clara la voz.</div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-3">
-                        <div>
-                          <div className="text-slate-300 text-xs font-semibold mb-1">Inicio (seg)</div>
-                          <input
-                            type="number"
-                            min={0}
-                            max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
-                            value={voiceStartSec}
-                            onChange={(e) => setVoiceStartSec(Number(e.target.value))}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none"
-                          />
-                        </div>
-                        <div>
-                          <div className="text-slate-300 text-xs font-semibold mb-1">Final (seg)</div>
-                          <input
-                            type="number"
-                            min={1}
-                            max={Math.max(1, Math.floor(voiceSourceDurationSec || 0))}
-                            value={voiceEndSec}
-                            onChange={(e) => setVoiceEndSec(Number(e.target.value))}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      {voiceCreateStep === 'segment' ? (
-                        <button
-                          type="button"
-                          onClick={() => generateValidationPhrase().catch(() => {})}
-                          disabled={voiceBusy}
-                          className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
-                        >
-                          Generar frase de validación
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
 
                   {voiceCreateStep === 'generating_phrase' ? (
                     <div className="mt-4 flex items-center gap-3 text-slate-200">
