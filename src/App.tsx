@@ -1343,11 +1343,6 @@ export default function App() {
   };
 
   const handleTabChange = (tab: ViewTab) => {
-    if (tab === 'voces') {
-      setCurrentTab('voces');
-      setPersonaPickerNonce((n) => n + 1);
-      return;
-    }
     setCurrentTab(tab);
   };
 
@@ -2347,13 +2342,26 @@ export default function App() {
                />
              )
            )}
-           {(currentTab === 'studio' || currentTab === 'voces') && (
+           {currentTab === 'studio' && (
              <CreateView
                onSongCreated={addCancion}
                credits={displayCredits}
                openPersonaPickerSignal={personaPickerNonce}
+               onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')}
                onGoLibrary={() => setCurrentTab('biblioteca')}
                onOpenBalance={() => setIsBalanceOpen(true)}
+               prefill={studioPrefill || undefined}
+               prefillNonce={studioPrefillNonce}
+             />
+           )}
+           {currentTab === 'voces' && (
+             <CreateView
+               onSongCreated={addCancion}
+               credits={displayCredits}
+               onGoLibrary={() => setCurrentTab('biblioteca')}
+               onOpenBalance={() => setIsBalanceOpen(true)}
+               standaloneVoices
+               onExitVoices={() => setCurrentTab('studio')}
                prefill={studioPrefill || undefined}
                prefillNonce={studioPrefillNonce}
              />
@@ -2405,15 +2413,26 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-               {currentTab !== 'karaoke' && (
+               {currentTab !== 'karaoke' && currentTab !== 'voces' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                   <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
+                   <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
                )}
 
                {/* Library / Results View (Right) */}
                <div className="flex-1 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30 relative z-10 w-full min-w-[300px]">
-                {currentTab === 'perfil' ? (
+                {currentTab === 'voces' ? (
+                  <CreateView
+                    onSongCreated={addCancion}
+                    credits={displayCredits}
+                    onGoLibrary={() => setCurrentTab('biblioteca')}
+                    onOpenBalance={() => setIsBalanceOpen(true)}
+                    standaloneVoices
+                    onExitVoices={() => setCurrentTab('studio')}
+                    prefill={studioPrefill || undefined}
+                    prefillNonce={studioPrefillNonce}
+                  />
+                ) : currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
               ) : currentTab === 'karaoke' ? (
                  <div className="flex-1 flex items-center justify-center px-6">

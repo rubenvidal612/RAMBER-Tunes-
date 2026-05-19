@@ -67,11 +67,15 @@ interface CreateViewProps {
   openPersonaPickerSignal?: number;
   onGoLibrary?: () => void;
   onOpenBalance?: () => void;
+  standaloneVoices?: boolean;
+  onExitVoices?: () => void;
+  onOpenCreateVoiceFullScreen?: () => void;
+  openCreateVoiceSignal?: number;
   prefill?: { type: 'cover'; song: SongItem };
   prefillNonce?: number;
 }
 
-export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance, prefill, prefillNonce }: CreateViewProps) {
+export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance, standaloneVoices, onExitVoices, onOpenCreateVoiceFullScreen, openCreateVoiceSignal, prefill, prefillNonce }: CreateViewProps) {
   const [mode, setMode] = useState<CreateMode>('personalizado');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
@@ -254,7 +258,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   }, [prefillNonce, prefill]);
 
   useEffect(() => {
-    if (!isVoicesPickerOpen) return;
+    if (!isVoicesPickerOpen && !standaloneVoices) return;
     try {
       const raw = localStorage.getItem('ramber.suno_voices_v1');
       const parsed = raw ? JSON.parse(raw) : null;
@@ -272,7 +276,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch {
       setVoices([]);
     }
-  }, [isVoicesPickerOpen]);
+  }, [isVoicesPickerOpen, standaloneVoices]);
 
   useEffect(() => {
     if (!isModelMenuOpen) return;
@@ -453,6 +457,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoiceWaveBars([]);
     }
   }, [voiceSourceFile, voiceSourceDurationSec]);
+
+  useEffect(() => {
+    if (!standaloneVoices) return;
+    resetVoiceWizard();
+    setIsCreateVoiceOpen(true);
+  }, [standaloneVoices, openCreateVoiceSignal]);
 
   const upsertLocalVoice = (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
     try {
@@ -1761,9 +1771,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       </div>
 
       {isVoicesPickerOpen && (
-        <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center p-4">
-          <button className="absolute inset-0 w-full h-full cursor-default" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full h-[90dvh] md:w-11/12 md:h-[85vh] md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
+        <div className="absolute inset-0 z-[120] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
             <div className="flex items-center justify-center p-5 border-b border-white/10 relative">
               <div className="text-white font-extrabold text-lg">Voces</div>
               <button
@@ -1810,6 +1818,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               <button
                 type="button"
                 onClick={() => {
+                  setIsVoicesPickerOpen(false);
+                  if (onOpenCreateVoiceFullScreen) {
+                    onOpenCreateVoiceFullScreen();
+                    return;
+                  }
                   setVoiceCreateError('');
                   setVoiceCreateStep('pick_source');
                   setVoiceSourceFile(null);
@@ -1828,7 +1841,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   }
                   setVoiceTrimIsPlaying(false);
                   setIsCreateVoiceOpen(true);
-                  setIsVoicesPickerOpen(false);
                 }}
                 className="w-full rounded-2xl p-[1px] bg-gradient-to-r from-amber-500/40 via-rose-500/25 to-fuchsia-500/35"
               >
@@ -1861,7 +1873,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     return <div className="mt-6 text-slate-400 text-sm text-center">No tienes voces todavía.</div>;
                   }
                   return (
-                    <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="mt-5 grid grid-cols-2 gap-4">
                       {list.slice(0, 20).map((v) => (
                         <button
                           key={v.voiceId}
@@ -1889,7 +1901,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       )}
 
       {isCreateVoiceOpen && (
-        <div className="fixed inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center p-4">
+        <div className={`${standaloneVoices ? 'absolute' : 'fixed'} inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center p-4`}>
           <button
             className="absolute inset-0 w-full h-full cursor-default"
             onClick={() => {
