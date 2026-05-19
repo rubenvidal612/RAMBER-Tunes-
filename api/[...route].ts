@@ -2299,6 +2299,106 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleVoiceGenerate(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const validationTaskId = firstString(payload, ["taskId", "task_id"]);
+    const verifyUrl = firstString(payload, ["verifyUrl", "verify_url"]);
+    const voiceName = firstString(payload, ["voiceName", "voice_name"]);
+    const description = firstString(payload, ["description"]);
+    const style = firstString(payload, ["style"]);
+    const singerSkillLevel = firstString(payload, ["singerSkillLevel", "singer_skill_level"]);
+    const callBackUrl = firstString(payload, ["callBackUrl", "call_back_url"]) || absoluteUrlFromReq(req, "/api/webhooks/suno");
+
+    if (!validationTaskId) return send(res, 400, { error: "Falta taskId" });
+    if (!verifyUrl) return send(res, 400, { error: "Falta verifyUrl" });
+
+    try {
+      const body: any = {
+        taskId: validationTaskId,
+        verifyUrl,
+        callBackUrl,
+      };
+      if (voiceName) body.voiceName = voiceName.slice(0, 120);
+      if (description) body.description = description.slice(0, 2000);
+      if (style) body.style = style.slice(0, 1000);
+      if (singerSkillLevel) body.singerSkillLevel = singerSkillLevel.slice(0, 40);
+
+      const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/generate", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        return send(res, 502, { error: "Error creando voz personalizada", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        return send(res, 502, { error: "Error creando voz personalizada", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (!taskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+
+      try {
+        await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-generate", cost: 0, consumed: false });
+      } catch {
+      }
+
+      return send(res, 200, { taskId });
+    } catch (e) {
+      return send(res, 502, { error: "Error creando voz personalizada", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleVoiceRecordInfo(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const taskId = (pickQuery(req, "taskId") || pickQuery(req, "task_id") || "").toString().trim();
+    if (!taskId) return send(res, 400, { error: "Falta taskId" });
+
+    try {
+      const enc = encodeURIComponent(taskId);
+      const { res: r, data, text } = await sunoFetchJson(`/api/v1/voice/record-info?taskId=${enc}`, { method: "GET" });
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        return send(res, 502, { error: "Error consultando estado de voz", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        return send(res, 502, { error: "Error consultando estado de voz", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const d = data?.data ?? {};
+      return send(res, 200, {
+        ok: true,
+        taskId: String(d?.taskId || taskId).trim() || taskId,
+        voiceId: typeof d?.voiceId === "string" ? d.voiceId : "",
+        status: typeof d?.status === "string" ? d.status : "",
+        errorCode: Number.isFinite(Number(d?.errorCode)) ? Number(d.errorCode) : null,
+        errorMessage: typeof d?.errorMessage === "string" ? d.errorMessage : "",
+        data: d,
+      });
+    } catch (e) {
+      return send(res, 502, { error: "Error consultando estado de voz", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleCloneVoice(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -3659,6 +3759,8 @@ notify pgrst, 'reload schema';`;
       if (a === "credits") return handleCredits(req, res);
       if (a === "voice-validate") return handleVoiceValidate(req, res);
       if (a === "voice-validate-info") return handleVoiceValidateInfo(req, res);
+      if (a === "voice-generate") return handleVoiceGenerate(req, res);
+      if (a === "voice-record-info") return handleVoiceRecordInfo(req, res);
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
       if (a === "create-cover") return handleCreateCover(req, res);

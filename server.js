@@ -471,6 +471,79 @@ app.get('/api/suno/voice-validate-info', authenticate, async (req, res) => {
   }
 });
 
+app.post('/api/suno/voice-generate', authenticate, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const validationTaskId = String(payload.taskId || payload.task_id || "").trim();
+    const verifyUrl = String(payload.verifyUrl || payload.verify_url || "").trim();
+    const voiceName = String(payload.voiceName || payload.voice_name || "").trim();
+    const description = String(payload.description || "").trim();
+    const style = String(payload.style || "").trim();
+    const singerSkillLevel = String(payload.singerSkillLevel || payload.singer_skill_level || "").trim();
+
+    if (!validationTaskId) return res.status(400).json({ error: "Falta taskId" });
+    if (!verifyUrl) return res.status(400).json({ error: "Falta verifyUrl" });
+
+    const callBackUrl =
+      String(payload.callBackUrl || payload.call_back_url || "").trim() ||
+      `${req.protocol}://${req.get("host")}/api/webhooks/suno`;
+
+    const body = {
+      taskId: validationTaskId,
+      verifyUrl,
+      voiceName: voiceName || undefined,
+      description: description || undefined,
+      style: style || undefined,
+      singerSkillLevel: singerSkillLevel || undefined,
+      callBackUrl,
+    };
+
+    const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/generate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) return res.status(502).json({ error: "Error creando voz personalizada", code: r.status, detail: data || text });
+    const code = Number(data?.code);
+    if (code && code !== 200) return res.status(502).json({ error: "Error creando voz personalizada", code, detail: data?.msg || data?.error || "Error del proveedor" });
+
+    const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+    if (!taskId) return res.status(502).json({ error: "Respuesta inválida del proveedor" });
+
+    return res.json({ taskId });
+  } catch (error) {
+    return res.status(500).json({ error: "Error creando voz personalizada", detail: error.message });
+  }
+});
+
+app.get('/api/suno/voice-record-info', authenticate, async (req, res) => {
+  try {
+    const taskId = String(req.query.taskId || req.query.task_id || "").trim();
+    if (!taskId) return res.status(400).json({ error: "Falta taskId" });
+
+    const { res: r, data, text } = await sunoFetchJson(`/api/v1/voice/record-info?taskId=${encodeURIComponent(taskId)}`, {
+      method: "GET",
+    });
+
+    if (!r.ok) return res.status(502).json({ error: "Error consultando estado de voz", code: r.status, detail: data || text });
+    const code = Number(data?.code);
+    if (code && code !== 200) return res.status(502).json({ error: "Error consultando estado de voz", code, detail: data?.msg || data?.error || "Error del proveedor" });
+
+    const d = data?.data || {};
+    return res.json({
+      ok: true,
+      taskId: String(d.taskId || taskId),
+      voiceId: typeof d.voiceId === "string" ? d.voiceId : "",
+      status: typeof d.status === "string" ? d.status : "",
+      errorCode: Number.isFinite(Number(d.errorCode)) ? Number(d.errorCode) : null,
+      errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : "",
+      data: d,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Error consultando estado de voz", detail: error.message });
+  }
+});
+
 app.post('/api/voices/create', (req, res) => res.redirect(307, '/api/suno/clone-voice'));
 
 // 2. Covers
