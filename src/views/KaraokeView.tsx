@@ -17,6 +17,8 @@ class KaraokeStore {
   instrumentalUrl: string | null = null;
   vocalUrl: string | null = null;
   backingVocalUrl: string | null = null;
+  uploadPath: string | null = null;
+  originalPlayUrl: string | null = null;
   title = '';
   author = '';
   audioMode: AudioMode = 'backing';
@@ -58,6 +60,8 @@ export function KaraokeView() {
   const instrumentalUrl = karaokeStore.instrumentalUrl;
   const vocalUrl = karaokeStore.vocalUrl;
   const backingVocalUrl = karaokeStore.backingVocalUrl;
+  const uploadPath = karaokeStore.uploadPath;
+  const originalPlayUrl = karaokeStore.originalPlayUrl;
   const keepBackingVocals = karaokeStore.keepBackingVocals;
   const title = karaokeStore.title;
   const author = karaokeStore.author;
@@ -72,6 +76,8 @@ export function KaraokeView() {
   const setInstrumentalUrl = (v: string | null) => karaokeStore.set({ instrumentalUrl: v });
   const setVocalUrl = (v: string | null) => karaokeStore.set({ vocalUrl: v });
   const setBackingVocalUrl = (v: string | null) => karaokeStore.set({ backingVocalUrl: v });
+  const setUploadPath = (v: string | null) => karaokeStore.set({ uploadPath: v });
+  const setOriginalPlayUrl = (v: string | null) => karaokeStore.set({ originalPlayUrl: v });
   const setKeepBackingVocals = (v: boolean) => karaokeStore.set({ keepBackingVocals: v });
   const setTitle = (v: string) => karaokeStore.set({ title: v });
   const setAuthor = (v: string) => karaokeStore.set({ author: v });
@@ -195,11 +201,15 @@ export function KaraokeView() {
     // Step B: try direct PUT to R2 using fetch (clearer errors than XHR)
     if (uploadUrl) {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3 * 60 * 1000);
         const putRes = await fetch(uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Type': contentType },
           body: file,
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
         if (putRes.ok) {
           const verifyRes = await fetch('/api/karaoke/verify', {
             method: 'POST',
@@ -234,6 +244,23 @@ export function KaraokeView() {
     );
   };
 
+  const ensureOriginalPlayableUrl = async (): Promise<string | null> => {
+    if (karaokeStore.originalPlayUrl) return karaokeStore.originalPlayUrl;
+    const key = karaokeStore.uploadPath;
+    if (!key) return null;
+    const t = await getAccessToken();
+    if (!t.ok) return null;
+    const res = await fetch(`/api/karaoke/play-url?key=${encodeURIComponent(key)}`, {
+      headers: { 'Authorization': `Bearer ${t.token}` }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) return null;
+    const url = String(data?.url || '').trim();
+    if (!url) return null;
+    karaokeStore.set({ originalPlayUrl: url });
+    return url;
+  };
+
   const handleGenerate = async () => {
     if (!karaokeStore.audioFile) return;
     karaokeStore.set({ step: 'generating', progress: 0 });
@@ -245,7 +272,7 @@ export function KaraokeView() {
       }, 400);
       try {
         const { url: uploadUrl, path: uploadPath } = await uploadAudioToR2(karaokeStore.audioFile);
-        karaokeStore.set({ progress: 22 });
+        karaokeStore.set({ progress: 22, uploadPath, originalPlayUrl: null });
 
         // STEP 2: Start Replicate separation job (returns immediately with a predictionId)
         const t = await getAccessToken();
@@ -398,11 +425,13 @@ export function KaraokeView() {
         targetSrc = URL.createObjectURL(audioFile);
       }
 
-      if (targetSrc && audioRef.current.src !== targetSrc) {
-        audioRef.current.src = targetSrc;
-        audioRef.current.load();
-        audioRef.current.currentTime = currentTime;
-        
+      const applySources = (mainSrc: string) => {
+        if (!audioRef.current) return;
+        if (mainSrc && audioRef.current.src !== mainSrc) {
+          audioRef.current.src = mainSrc;
+          audioRef.current.load();
+          audioRef.current.currentTime = currentTime;
+        }
         if (backingAudioRef.current) {
           if (audioMode === 'backing' && backingVocalUrl) {
             backingAudioRef.current.src = backingVocalUrl;
@@ -413,16 +442,24 @@ export function KaraokeView() {
             backingAudioRef.current.src = '';
           }
         }
-
         if (wasPlaying) {
           audioRef.current.play().catch(console.error);
           if (backingAudioRef.current && audioMode === 'backing' && backingVocalUrl) {
              backingAudioRef.current.play().catch(console.error);
           }
         }
+      };
+
+      if (targetSrc) {
+        applySources(targetSrc);
+      } else if (!targetSrc && karaokeStore.uploadPath) {
+        (async () => {
+          const fallback = await ensureOriginalPlayableUrl();
+          if (fallback) applySources(fallback);
+        })();
       }
     }
-  }, [step, audioMode, instrumentalUrl, vocalUrl, audioFile, backingVocalUrl, keepBackingVocals]);
+  }, [step, audioMode, instrumentalUrl, vocalUrl, audioFile, backingVocalUrl, keepBackingVocals, uploadPath, originalPlayUrl]);
 
   const applyAudioMode = (mode: AudioMode) => {
     setAudioMode(mode);
@@ -596,11 +633,20 @@ export function KaraokeView() {
       audioRef.current.pause();
       if (shouldPlayBacking) backingAudioRef.current.pause();
     } else {
-      audioRef.current.play().catch(console.error);
-      if (shouldPlayBacking) {
-        backingAudioRef.current.currentTime = audioRef.current.currentTime;
-        backingAudioRef.current.play().catch(console.error);
-      }
+      (async () => {
+        if (audioRef.current && !audioRef.current.src) {
+          const fallback = await ensureOriginalPlayableUrl();
+          if (fallback) {
+            audioRef.current.src = fallback;
+            audioRef.current.load();
+          }
+        }
+        audioRef.current?.play().catch(console.error);
+        if (shouldPlayBacking && backingAudioRef.current && audioRef.current) {
+          backingAudioRef.current.currentTime = audioRef.current.currentTime;
+          backingAudioRef.current.play().catch(console.error);
+        }
+      })();
     }
     setIsPlaying(!isPlaying);
   };

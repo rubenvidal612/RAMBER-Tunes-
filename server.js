@@ -878,6 +878,24 @@ app.post('/api/karaoke/verify', authenticate, async (req, res) => {
   }
 });
 
+app.get('/api/karaoke/play-url', authenticate, async (req, res) => {
+  try {
+    const key = String(req.query?.key || '').trim().replace(/^\/+/, '');
+    if (!key) return res.status(400).json({ ok: false, error: 'Falta key' });
+
+    const uid = String(req.user?.id || '').trim();
+    const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+    if (!allowedPrefixes.some((p) => key.startsWith(p))) {
+      return res.status(403).json({ ok: false, error: 'No autorizado para este archivo' });
+    }
+
+    const url = await getSignedR2Url(key, 3600);
+    return res.json({ ok: true, key, url });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No pude generar URL de reproducción', detail: error.message });
+  }
+});
+
 // 2.6 Upload Audio to R2 (Helper for both Clone Voice and Karaoke)
 app.post('/api/upload-audio', authenticate, async (req, res) => {
   try {

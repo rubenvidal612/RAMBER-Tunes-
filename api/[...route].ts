@@ -3680,6 +3680,28 @@ const karaokeHandler = (() => {
         }
       }
 
+      if (next === "play-url") {
+        if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+        const auth = await requireUser(req);
+        if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+        const key = pickQuery(req, "key").trim().replace(/^\/+/, "");
+        if (!key) return send(res, 400, { ok: false, error: "Falta key" });
+
+        const uid = String((auth as any).user?.id || "").trim();
+        const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+        if (!allowedPrefixes.some((p) => key.startsWith(p))) {
+          return send(res, 403, { ok: false, error: "No autorizado para este archivo" });
+        }
+
+        try {
+          const url = await getSignedR2Url(key, 3600);
+          return send(res, 200, { ok: true, key, url });
+        } catch (e: any) {
+          return send(res, 500, { ok: false, error: "No pude generar URL de reproducción", detail: e?.message || String(e) });
+        }
+      }
+
       if (next === "start") {
         const oldUrl = req.url;
         req.url = `/api/suno/karaoke-start${u.search || ""}`;
