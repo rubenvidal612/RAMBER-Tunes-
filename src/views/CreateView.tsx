@@ -1793,7 +1793,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       )}
 
       {isVoicesPickerOpen && (
-        <div className="absolute inset-0 z-[120] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
+        <div className="fixed inset-0 md:absolute md:inset-0 z-[120]">
+          <div className="absolute inset-0 bg-black/55 backdrop-blur-md" />
+          <div className="absolute inset-0 bg-[#0b0f16] border border-white/10 rounded-none md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
             <div className="flex items-center justify-center p-5 border-b border-white/10 relative">
               <div className="text-white font-extrabold text-lg">Voces</div>
               <button
@@ -1919,6 +1921,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               )}
             </div>
           </div>
+        </div>
       )}
 
       {isCreateVoiceOpen && (
