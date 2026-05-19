@@ -94,6 +94,7 @@ export function KaraokeView() {
   const [duration, setDuration] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDownloadingVideo, setIsDownloadingVideo] = useState(false);
+  const [readyVideo, setReadyVideo] = useState<{ url: string; name: string } | null>(null);
   const videoRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<BlobPart[]>([]);
   const proxyUrlCacheRef = useRef<Map<string, string>>(new Map());
@@ -162,6 +163,22 @@ export function KaraokeView() {
     } catch {}
   };
 
+  const downloadReadyVideo = () => {
+    if (!readyVideo?.url) return;
+    const a = document.createElement('a');
+    a.href = readyVideo.url;
+    a.download = readyVideo.name || 'karaoke.webm';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(readyVideo.url);
+      } catch {}
+      setReadyVideo(null);
+    }, 1500);
+  };
+
   const handleDownloadVideo = async () => {
     if (!canvasRef.current) {
       alert('No hay video listo para grabar.');
@@ -173,6 +190,7 @@ export function KaraokeView() {
     }
 
     setIsDownloadingVideo(true);
+    setReadyVideo(null);
     videoChunksRef.current = [];
 
     try {
@@ -274,13 +292,7 @@ export function KaraokeView() {
         recorder.removeEventListener('dataavailable', onData);
         const blob = new Blob(videoChunksRef.current, { type: recorder.mimeType || 'video/webm' });
         const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        setReadyVideo({ url: blobUrl, name: fileName });
         setIsDownloadingVideo(false);
       };
       recorder.addEventListener('stop', onStop, { once: true });
@@ -1007,6 +1019,18 @@ export function KaraokeView() {
               )}
             </button>
             <p className="text-center text-slate-500 text-sm mt-3">Se graba lo que ves en pantalla con el audio. Al terminar, se descargará el video.</p>
+
+            {readyVideo?.url && (
+              <>
+                <button
+                  onClick={downloadReadyVideo}
+                  className="w-full h-14 font-extrabold text-base rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl cursor-pointer mt-4 bg-emerald-500 text-white hover:bg-emerald-400 active:scale-[0.98]"
+                >
+                  <Download className="w-5 h-5" /> Descargar Video Listo
+                </button>
+                <p className="text-center text-slate-500 text-sm mt-3">Si tu navegador bloquea descargas automáticas, usa este botón.</p>
+              </>
+            )}
           </div>
 
         </div>
