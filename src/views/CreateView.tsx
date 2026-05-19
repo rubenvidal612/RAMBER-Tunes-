@@ -1763,7 +1763,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {isVoicesPickerOpen && (
         <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center p-4">
           <button className="absolute inset-0 w-full h-full cursor-default" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[540px] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[86dvh]">
+          <div className="relative w-full h-[90dvh] md:w-11/12 md:h-[85vh] md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
             <div className="flex items-center justify-center p-5 border-b border-white/10 relative">
               <div className="text-white font-extrabold text-lg">Voces</div>
               <button
@@ -1774,7 +1774,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
             </div>
             <div className="p-6 overflow-y-auto min-h-0">
-              <div className="flex bg-white/5 rounded-full p-1 border border-white/5 mb-6 mx-auto max-w-[300px]">
+              <div className="flex bg-white/5 rounded-full p-1 border border-white/5 mb-6 w-full">
                 <button
                   type="button"
                   onClick={() => setVoicesTab('mine')}
@@ -1861,7 +1861,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     return <div className="mt-6 text-slate-400 text-sm text-center">No tienes voces todavía.</div>;
                   }
                   return (
-                    <div className="mt-5 grid grid-cols-2 gap-4">
+                    <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4">
                       {list.slice(0, 20).map((v) => (
                         <button
                           key={v.voiceId}
@@ -1899,7 +1899,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full h-[90dvh] md:w-[90vw] md:h-[85vh] md:max-w-[1200px] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
+          <div className="relative w-full h-[90dvh] md:w-[80vw] md:h-[85vh] md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
             <div className="p-5 border-b border-white/10 flex items-center justify-center relative">
               <div className="text-white font-extrabold text-lg">Crear nueva voz</div>
               <button
@@ -1915,7 +1915,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center">
-              <div className="w-full max-w-[800px]">
+              <div className="w-full">
               {voiceCreateError ? (
                 <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-3 text-sm text-red-200">
                   {voiceCreateError}
@@ -2203,7 +2203,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       />
 
                       <div className="mt-6 rounded-2xl bg-black/20 border border-white/10 px-4 pt-6 pb-4">
-                        <div className="relative w-full h-[160px] rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                        <div className="relative w-full h-[180px] rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
                           <div className="absolute inset-0 flex items-center gap-[2px] px-3">
                             {(voiceWaveBars.length ? voiceWaveBars : new Array(140).fill(22)).map((h, i) => (
                               <div
@@ -2303,7 +2303,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           </button>
                         </div>
 
-                        <div className="mt-6 flex gap-3">
+                        <div className="mt-6 grid grid-cols-2 gap-3">
                           <button
                             type="button"
                             onClick={() => {
@@ -2574,7 +2574,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {isAudioModalOpen && audioFile && (
         <div className="fixed inset-0 md:absolute md:inset-0 z-[130] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsAudioModalOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
+          <div className="relative w-full md:w-11/12 md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="text-white font-extrabold">Crear desde tu audio</div>
               <button
@@ -3135,7 +3135,7 @@ function CustomForm({
       {isLyricsExpanded && (
         <div className="fixed inset-0 z-[140] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsLyricsExpanded(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+          <div className="relative w-full md:w-11/12 md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="text-white font-extrabold">Letras</div>
               <button
