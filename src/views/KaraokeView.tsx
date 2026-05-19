@@ -96,6 +96,7 @@ export function KaraokeView() {
   const [isDownloadingVideo, setIsDownloadingVideo] = useState(false);
   const videoRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<BlobPart[]>([]);
+  const proxyUrlCacheRef = useRef<Map<string, string>>(new Map());
 
   const handleDownload = async () => {
     let targetUrl = '';
@@ -175,6 +176,25 @@ export function KaraokeView() {
     videoChunksRef.current = [];
 
     try {
+      const getProxyUrlForSrc = async (src: string): Promise<string | null> => {
+        const raw = (src || '').toString().trim();
+        if (!raw) return null;
+        if (!/^https?:\/\//i.test(raw)) return raw;
+        const cached = proxyUrlCacheRef.current.get(raw);
+        if (cached) return cached;
+        const t = await getAccessToken();
+        if (!t.ok) return null;
+        const r = await fetch(`/api/karaoke/proxy-url?src=${encodeURIComponent(raw)}`, {
+          headers: { 'Authorization': `Bearer ${t.token}` }
+        });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok || out?.ok === false) return null;
+        const url = String(out?.url || '').trim();
+        if (!url) return null;
+        proxyUrlCacheRef.current.set(raw, url);
+        return url;
+      };
+
       if (!audioRef.current.src) {
         const fallback = await ensureOriginalPlayableUrl();
         if (fallback) {
@@ -187,8 +207,9 @@ export function KaraokeView() {
       if (backingAudioRef.current) backingAudioRef.current.currentTime = 0;
 
       const sourceUrl = audioRef.current.src;
-      const proxiedUrl = sourceUrl ? `/api/karaoke/audio-proxy?src=${encodeURIComponent(sourceUrl)}` : '';
+      const proxiedUrl = sourceUrl ? await getProxyUrlForSrc(sourceUrl) : '';
       if (proxiedUrl) {
+        (audioRef.current as any).crossOrigin = 'anonymous';
         audioRef.current.src = proxiedUrl;
         audioRef.current.load();
       }
@@ -379,7 +400,7 @@ export function KaraokeView() {
     if (!key) return null;
     const t = await getAccessToken();
     if (!t.ok) return null;
-    const res = await fetch(`/api/karaoke/play-url?key=${encodeURIComponent(key)}`, {
+    const res = await fetch(`/api/karaoke/proxy-url?key=${encodeURIComponent(key)}`, {
       headers: { 'Authorization': `Bearer ${t.token}` }
     });
     const data = await res.json().catch(() => ({}));
@@ -554,16 +575,40 @@ export function KaraokeView() {
         targetSrc = URL.createObjectURL(audioFile);
       }
 
-      const applySources = (mainSrc: string) => {
+      const applySources = async (mainSrc: string) => {
         if (!audioRef.current) return;
-        if (mainSrc && audioRef.current.src !== mainSrc) {
-          audioRef.current.src = mainSrc;
+        const resolveProxy = async (raw: string): Promise<string> => {
+          const s = (raw || '').toString().trim();
+          if (!s) return '';
+          if (!/^https?:\/\//i.test(s)) return s;
+          const cached = proxyUrlCacheRef.current.get(s);
+          if (cached) return cached;
+          const t = await getAccessToken();
+          if (!t.ok) return s;
+          const r = await fetch(`/api/karaoke/proxy-url?src=${encodeURIComponent(s)}`, {
+            headers: { 'Authorization': `Bearer ${t.token}` }
+          });
+          const out = await r.json().catch(() => ({}));
+          const url = r.ok && out?.ok !== false ? String(out?.url || '').trim() : '';
+          if (url) {
+            proxyUrlCacheRef.current.set(s, url);
+            return url;
+          }
+          return s;
+        };
+
+        const main = await resolveProxy(mainSrc);
+        if (main && audioRef.current.src !== main) {
+          (audioRef.current as any).crossOrigin = 'anonymous';
+          audioRef.current.src = main;
           audioRef.current.load();
           audioRef.current.currentTime = currentTime;
         }
         if (backingAudioRef.current) {
           if (audioMode === 'backing' && backingVocalUrl) {
-            backingAudioRef.current.src = backingVocalUrl;
+            const backing = await resolveProxy(backingVocalUrl);
+            (backingAudioRef.current as any).crossOrigin = 'anonymous';
+            backingAudioRef.current.src = backing;
             backingAudioRef.current.load();
             backingAudioRef.current.currentTime = currentTime;
           } else {

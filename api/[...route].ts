@@ -3702,6 +3702,102 @@ const karaokeHandler = (() => {
         }
       }
 
+      const encodeB64Url = (buf: Buffer) =>
+        buf
+          .toString("base64")
+          .replaceAll("+", "-")
+          .replaceAll("/", "_")
+          .replaceAll("=", "");
+
+      const decodeB64UrlToBuf = (s: string) => {
+        const clean = (s || "").toString().replaceAll("-", "+").replaceAll("_", "/");
+        const pad = clean.length % 4 === 0 ? "" : "=".repeat(4 - (clean.length % 4));
+        return Buffer.from(clean + pad, "base64");
+      };
+
+      const getProxySecret = () => {
+        const direct = (process.env.KARAOKE_PROXY_SECRET || "").toString().trim();
+        if (direct) return direct;
+        const r2 = (process.env.R2_SECRET_ACCESS_KEY || "").toString().trim();
+        if (r2) return r2;
+        return (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+      };
+
+      const signProxyToken = async (payload: any) => {
+        const secret = getProxySecret();
+        if (!secret) throw new Error("Falta KARAOKE_PROXY_SECRET (o R2_SECRET_ACCESS_KEY) para firmar");
+        const cryptoMod: any = await import("crypto");
+        const raw = Buffer.from(JSON.stringify(payload), "utf8");
+        const body = encodeB64Url(raw);
+        const sig = cryptoMod.createHmac("sha256", secret).update(body).digest("base64").replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+        return `${body}.${sig}`;
+      };
+
+      const verifyProxyToken = async (token: string) => {
+        const t = (token || "").toString().trim();
+        if (!t.includes(".")) return null;
+        const [body, sig] = t.split(".", 2);
+        if (!body || !sig) return null;
+        const secret = getProxySecret();
+        if (!secret) return null;
+        const cryptoMod: any = await import("crypto");
+        const expected = cryptoMod.createHmac("sha256", secret).update(body).digest("base64").replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+        const a = Buffer.from(expected);
+        const b = Buffer.from(sig);
+        if (a.length !== b.length) return null;
+        if (!cryptoMod.timingSafeEqual(a, b)) return null;
+        try {
+          const json = JSON.parse(decodeB64UrlToBuf(body).toString("utf8"));
+          const expMs = Number(json?.exp ?? 0);
+          if (!Number.isFinite(expMs) || expMs <= Date.now()) return null;
+          return json;
+        } catch {
+          return null;
+        }
+      };
+
+      if (next === "proxy-url") {
+        if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+        const auth = await requireUser(req);
+        if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+        const uid = String((auth as any).user?.id || "").trim();
+        const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+        const key = pickQuery(req, "key").trim().replace(/^\/+/, "");
+        const src = pickQuery(req, "src").trim();
+
+        if (!key && !src) return send(res, 400, { ok: false, error: "Falta key o src" });
+
+        if (key) {
+          if (!allowedPrefixes.some((p) => key.startsWith(p))) return send(res, 403, { ok: false, error: "No autorizado para este archivo" });
+        }
+        if (src) {
+          let u: URL | null = null;
+          try {
+            u = new URL(src);
+          } catch {
+            u = null;
+          }
+          if (!u || u.protocol !== "https:") return send(res, 400, { ok: false, error: "URL inválida" });
+          const host = (u.hostname || "").toLowerCase();
+          const allow = host.endsWith("replicate.delivery") || host.endsWith(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+          if (!allow) return send(res, 403, { ok: false, error: "Origen no permitido" });
+        }
+
+        try {
+          const token = await signProxyToken({
+            uid,
+            exp: Date.now() + 60 * 60 * 1000,
+            key: key || null,
+            src: src || null,
+          });
+          const url = `/api/karaoke/audio-proxy?token=${encodeURIComponent(token)}`;
+          return send(res, 200, { ok: true, url });
+        } catch (e: any) {
+          return send(res, 500, { ok: false, error: "No pude crear URL proxy", detail: e?.message || String(e) });
+        }
+      }
+
       if (next === "audio-proxy") {
         const method = (req.method || "").toUpperCase();
         if (method === "OPTIONS") {
@@ -3714,13 +3810,20 @@ const karaokeHandler = (() => {
           return;
         }
         if (method !== "GET" && method !== "HEAD") return send(res, 405, { error: "Método no permitido" });
-        const auth = await requireUser(req);
-        if (!auth.ok) return send(res, auth.status, { error: auth.error });
+        const tokenRaw = pickQuery(req, "token") || pickQuery(req, "t") || "";
+        const token = (tokenRaw || "").toString().trim();
+        const verified = await verifyProxyToken(token);
+        if (!verified) {
+          res.statusCode = 403;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ ok: false, error: "Token inválido" }));
+          return;
+        }
 
-        const src = pickQuery(req, "src").trim();
-        const keyRaw = pickQuery(req, "key").trim();
-        const uid = String((auth as any).user?.id || "").trim();
+        const uid = String(verified?.uid || "").trim();
         const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+        const src = typeof verified?.src === "string" ? verified.src.trim() : "";
+        const keyRaw = typeof verified?.key === "string" ? verified.key.trim() : "";
 
         const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
 
