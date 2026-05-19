@@ -93,6 +93,9 @@ export function KaraokeView() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingVideo, setIsDownloadingVideo] = useState(false);
+  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoChunksRef = useRef<BlobPart[]>([]);
 
   const handleDownload = async () => {
     let targetUrl = '';
@@ -148,6 +151,106 @@ export function KaraokeView() {
       setTimeout(() => {
         setIsDownloading(false);
       }, 1500);
+    }
+  };
+
+  const stopVideoRecording = () => {
+    try {
+      const rec = videoRecorderRef.current;
+      if (rec && rec.state !== 'inactive') rec.stop();
+    } catch {}
+  };
+
+  const handleDownloadVideo = async () => {
+    if (!canvasRef.current) {
+      alert('No hay video listo para grabar.');
+      return;
+    }
+    if (!audioRef.current) {
+      alert('No hay audio listo para grabar.');
+      return;
+    }
+
+    setIsDownloadingVideo(true);
+    videoChunksRef.current = [];
+
+    try {
+      if (!audioRef.current.src) {
+        const fallback = await ensureOriginalPlayableUrl();
+        if (fallback) {
+          audioRef.current.src = fallback;
+          audioRef.current.load();
+        }
+      }
+
+      audioRef.current.currentTime = 0;
+      if (backingAudioRef.current) backingAudioRef.current.currentTime = 0;
+
+      const canvasStream = canvasRef.current.captureStream(30);
+      const audioCapture = (audioRef.current as any).captureStream?.();
+      if (!audioCapture || !audioCapture.getAudioTracks || audioCapture.getAudioTracks().length === 0) {
+        throw new Error('Tu navegador no permite capturar el audio para el video. Prueba en Chrome en computadora.');
+      }
+      const audioTrack = audioCapture.getAudioTracks()[0];
+
+      const mixed = new MediaStream();
+      for (const t of canvasStream.getVideoTracks()) mixed.addTrack(t);
+      mixed.addTrack(audioTrack);
+
+      const pickMime = () => {
+        const candidates = [
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+        ];
+        for (const m of candidates) {
+          try {
+            if ((window as any).MediaRecorder?.isTypeSupported?.(m)) return m;
+          } catch {}
+        }
+        return '';
+      };
+
+      const mimeType = pickMime();
+      const recorder = new MediaRecorder(mixed, mimeType ? { mimeType } : undefined);
+      videoRecorderRef.current = recorder;
+
+      const onData = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) videoChunksRef.current.push(e.data);
+      };
+      recorder.addEventListener('dataavailable', onData);
+
+      const cleanTitle = (title || 'karaoke').toLowerCase().replace(/[^a-z0-9]/gi, '_');
+      const fileName = `${cleanTitle}_karaoke.webm`;
+
+      const onStop = () => {
+        recorder.removeEventListener('dataavailable', onData);
+        const blob = new Blob(videoChunksRef.current, { type: recorder.mimeType || 'video/webm' });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        setIsDownloadingVideo(false);
+      };
+      recorder.addEventListener('stop', onStop, { once: true });
+
+      const onEnded = () => stopVideoRecording();
+      audioRef.current.addEventListener('ended', onEnded, { once: true });
+
+      recorder.start(1000);
+
+      await audioRef.current.play();
+      if (backingAudioRef.current && audioMode === 'backing' && backingVocalUrl) {
+        backingAudioRef.current.play().catch(() => {});
+      }
+    } catch (e) {
+      console.error(e);
+      setIsDownloadingVideo(false);
+      alert(e instanceof Error ? e.message : 'No se pudo crear el video.');
     }
   };
 
@@ -814,6 +917,25 @@ export function KaraokeView() {
               )}
             </button>
             <p className="text-center text-slate-500 text-sm mt-4">El archivo se descargará con la pista de audio que tengas seleccionada arriba.</p>
+
+            <button
+              onClick={isDownloadingVideo ? stopVideoRecording : handleDownloadVideo}
+              className={cn(
+                "w-full h-16 font-extrabold text-lg rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl cursor-pointer mt-4",
+                isDownloadingVideo ? "bg-fuchsia-600 text-white animate-pulse scale-[0.98]" : "bg-fuchsia-500 text-white hover:bg-fuchsia-400 active:scale-[0.98]"
+              )}
+            >
+              {isDownloadingVideo ? (
+                <>
+                  <Loader2 className="w-6 h-6 animate-spin" /> Grabando Video... (toca para detener)
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="w-6 h-6" /> Descargar Video Karaoke (WEBM)
+                </>
+              )}
+            </button>
+            <p className="text-center text-slate-500 text-sm mt-3">Se graba lo que ves en pantalla con el audio. Al terminar, se descargará el video.</p>
           </div>
 
         </div>
