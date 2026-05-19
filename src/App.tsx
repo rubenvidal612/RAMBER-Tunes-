@@ -5,6 +5,7 @@ import { MiniPlayer } from './components/MiniPlayer';
 import { CreateView } from './views/CreateView';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
+import { KaraokeView } from './views/KaraokeView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { AffiliatesView } from './views/AffiliatesView';
@@ -1341,9 +1342,13 @@ export default function App() {
     await store.saveData({ canciones, vibes: updatedVibes });
   };
 
-  const openPersonaPicker = () => {
-    setCurrentTab('studio');
-    setPersonaPickerNonce((n) => n + 1);
+  const handleTabChange = (tab: ViewTab) => {
+    if (tab === 'voces') {
+      setCurrentTab('voces');
+      setPersonaPickerNonce((n) => n + 1);
+      return;
+    }
+    setCurrentTab(tab);
   };
 
   const addCancion = async (cancion: SongItem) => {
@@ -2342,14 +2347,19 @@ export default function App() {
                />
              )
            )}
-           {currentTab === 'studio' && <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />}
+           {(currentTab === 'studio' || currentTab === 'voces') && (
+             <CreateView
+               onSongCreated={addCancion}
+               credits={displayCredits}
+               openPersonaPickerSignal={personaPickerNonce}
+               onGoLibrary={() => setCurrentTab('biblioteca')}
+               onOpenBalance={() => setIsBalanceOpen(true)}
+               prefill={studioPrefill || undefined}
+               prefillNonce={studioPrefillNonce}
+             />
+           )}
            {currentTab === 'karaoke' && (
-             <div className="flex-1 flex items-center justify-center px-6">
-               <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
-                 <div className="text-white font-extrabold">Video Karaoke</div>
-                 <div className="mt-2 text-sm text-slate-300">Proximamente</div>
-               </div>
-             </div>
+             <KaraokeView />
            )}
            {currentTab === 'afiliados' && <AffiliatesView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
@@ -2369,7 +2379,7 @@ export default function App() {
         <div className="hidden md:flex flex-1 min-h-0 overflow-hidden">
            {/* Sidebar */}
            <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col">
-             <Sidebar currentTab={currentTab} onChange={setCurrentTab} />
+             <Sidebar currentTab={currentTab} onChange={handleTabChange} />
            </div>
 
            {currentTab === 'inicio' ? (
@@ -2401,12 +2411,7 @@ export default function App() {
                 {currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
               ) : currentTab === 'karaoke' ? (
-                 <div className="flex-1 flex items-center justify-center px-6">
-                   <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
-                     <div className="text-white font-extrabold">Video Karaoke</div>
-                     <div className="mt-2 text-sm text-slate-300">Proximamente</div>
-                   </div>
-                 </div>
+                 <KaraokeView />
                ) : currentTab === 'afiliados' ? (
                  <AffiliatesView />
                 ) : (
@@ -2850,7 +2855,7 @@ export default function App() {
         </div>
       )}
       <div className="md:hidden">
-        <BottomNav currentTab={currentTab} onChange={setCurrentTab} />
+        <BottomNav currentTab={currentTab} onChange={handleTabChange} />
       </div>
       
       <audio 

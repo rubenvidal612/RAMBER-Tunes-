@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Sparkles, Library, User, Repeat2, Coins, Menu, X } from 'lucide-react';
+import { Home, Sparkles, Library, User, Repeat2, Coins, Menu, X, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -15,17 +15,18 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
-    { id: 'karaoke', label: 'Karaoke', icon: Repeat2 },
+    { id: 'voces', label: 'Voces', icon: Users },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
   ];
 
   const menuItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
+    { id: 'karaoke', label: 'Video Karaoke', icon: Repeat2 },
     { id: 'afiliados', label: 'Afiliados', icon: Coins },
     { id: 'perfil', label: 'Perfil', icon: User },
   ];
 
-  const isMenuTab = currentTab === 'afiliados' || currentTab === 'perfil';
+  const isMenuTab = currentTab === 'afiliados' || currentTab === 'perfil' || currentTab === 'karaoke';
 
   return (
     <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-3 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">

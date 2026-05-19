@@ -256,16 +256,13 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
       ) : voices.length === 0 ? (
         <div className="glass-card rounded-2xl p-6 text-center border border-white/10">
           <AudioLines className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-          <div className="text-white font-bold mb-2">No tienes voces clonadas</div>
+          <div className="text-white font-bold mb-2">No tienes voces</div>
           <div className="text-slate-400 text-sm mb-4">
-            Ve a la sección "Clonar voz" para entrenar tu primera voz
+            Ve a Studio → Voces para crear tu primera voz
           </div>
-          <a
-            href="#clonar-voz"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 px-6 rounded-full transition-colors"
-          >
+          <div className="inline-block bg-emerald-500/15 border border-emerald-500/25 text-emerald-200 font-bold py-2 px-6 rounded-full">
             Crear primera voz
-          </a>
+          </div>
         </div>
       ) : (
         <div className="max-h-96 overflow-y-auto pr-2">

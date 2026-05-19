@@ -113,9 +113,37 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioInfluence, setAudioInfluence] = useState(25);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
-  const [isPersonaPickerOpen, setIsPersonaPickerOpen] = useState(false);
-  const [personas, setPersonas] = useState<Array<{ persona_id: string; name: string; photo_url?: string }>>([]);
-  const [selectedPersona, setSelectedPersona] = useState<{ persona_id: string; name: string; photo_url?: string } | null>(null);
+  const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
+  const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }>>([]);
+  const [selectedVoice, setSelectedVoice] = useState<{ voiceId: string; name: string } | null>(null);
+  const [isCreateVoiceOpen, setIsCreateVoiceOpen] = useState(false);
+  const [voiceSearch, setVoiceSearch] = useState('');
+  const [newVoiceName, setNewVoiceName] = useState('');
+  const [newVoiceDescription, setNewVoiceDescription] = useState('');
+  const [voiceSourceFile, setVoiceSourceFile] = useState<File | null>(null);
+  const [voiceSourcePreviewUrl, setVoiceSourcePreviewUrl] = useState('');
+  const [voiceSourceDurationSec, setVoiceSourceDurationSec] = useState(0);
+  const [voiceStartSec, setVoiceStartSec] = useState(0);
+  const [voiceEndSec, setVoiceEndSec] = useState(15);
+  const [voiceCreateStep, setVoiceCreateStep] = useState<
+    'pick_source' | 'segment' | 'generating_phrase' | 'phrase_ready' | 'pick_verify' | 'generating_voice' | 'done'
+  >('pick_source');
+  const [voiceCreateError, setVoiceCreateError] = useState('');
+  const [voiceValidateTaskId, setVoiceValidateTaskId] = useState('');
+  const [voiceValidateInfo, setVoiceValidateInfo] = useState('');
+  const [voiceVerifyFile, setVoiceVerifyFile] = useState<File | null>(null);
+  const [voiceVerifyPreviewUrl, setVoiceVerifyPreviewUrl] = useState('');
+  const [voiceGenerateTaskId, setVoiceGenerateTaskId] = useState('');
+  const [voiceGeneratedVoiceId, setVoiceGeneratedVoiceId] = useState('');
+  const [voiceIsAvailable, setVoiceIsAvailable] = useState<boolean | null>(null);
+  const [voiceLibrarySongs, setVoiceLibrarySongs] = useState<Array<{ id: string; title: string; audioUrl: string }>>([]);
+  const [voiceLibraryLoading, setVoiceLibraryLoading] = useState(false);
+  const [voiceLibraryMode, setVoiceLibraryMode] = useState<'none' | 'source' | 'verify'>('none');
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const voiceRecordInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceVerifyRecordInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceVerifyUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const uploadXhrRef = useRef<XMLHttpRequest | null>(null);
@@ -140,9 +168,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (Number.isFinite(w)) setWeirdness(Math.max(0, Math.min(100, Math.round(w))));
       if (Number.isFinite(si)) setStyleInfluence(Math.max(0, Math.min(100, Math.round(si))));
       if (Number.isFinite(ai)) setAudioInfluence(Math.max(0, Math.min(100, Math.round(ai))));
-      const pid = typeof d?.persona_id === 'string' ? d.persona_id : '';
-      const pn = typeof d?.persona_name === 'string' ? d.persona_name : '';
-      if (pid) setSelectedPersona({ persona_id: pid, name: pn || 'Persona' });
+      const vid = typeof d?.voice_id === 'string' ? d.voice_id : '';
+      const vn = typeof d?.voice_name === 'string' ? d.voice_name : '';
+      if (vid) setSelectedVoice({ voiceId: vid, name: vn || 'Voz' });
       const draftAudioUrl = typeof d?.audioUploadUrl === 'string' ? d.audioUploadUrl : '';
       const draftAudioPath = typeof d?.audioUploadPath === 'string' ? d.audioUploadPath : '';
       const draftAudioLabel = typeof d?.audioLabel === 'string' ? d.audioLabel : '';
@@ -176,8 +204,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           weirdness,
           styleInfluence,
           audioInfluence,
-          persona_id: selectedPersona?.persona_id || '',
-          persona_name: selectedPersona?.name || '',
+          voice_id: selectedVoice?.voiceId || '',
+          voice_name: selectedVoice?.name || '',
           audioUploadUrl: (audioUploadUrl || '').toString(),
           audioUploadPath: (audioUploadPath || '').toString(),
           audioLabel: (audioFile?.name || externalAudioLabel || '').toString().slice(0, 200),
@@ -187,11 +215,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       );
     } catch {
     }
-  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedPersona, weirdness, styleInfluence, audioInfluence, audioUploadUrl, audioUploadPath, externalAudioLabel, audioAction, audioDurationSec, audioFile]);
+  }, [mode, instrumental, description, instructions, title, lyrics, gender, model, selectedVoice, weirdness, styleInfluence, audioInfluence, audioUploadUrl, audioUploadPath, externalAudioLabel, audioAction, audioDurationSec, audioFile]);
 
   useEffect(() => {
     if (!openPersonaPickerSignal) return;
-    setIsPersonaPickerOpen(true);
+    setIsVoicesPickerOpen(true);
   }, [openPersonaPickerSignal]);
 
   useEffect(() => {
@@ -220,41 +248,25 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   }, [prefillNonce, prefill]);
 
   useEffect(() => {
-    if (!isPersonaPickerOpen) return;
-    if (!supabaseBrowser) return;
-    ensureAnonSession()
-      .then(async (s) => {
-        if (!s.ok) return;
-        const { data } = await supabaseBrowser.auth.getUser();
-        const user = data?.user;
-        if (!user) return;
-        const { data: rows } = await supabaseBrowser
-          .from('suno_personas')
-          .select('persona_id, name, photo_url')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        const list = Array.isArray(rows)
-          ? rows
-              .map((r: any) => ({
-                persona_id: String(r?.persona_id || '').trim(),
-                name: String(r?.name || '').trim(),
-                photo_url: typeof r?.photo_url === 'string' ? r.photo_url : '',
-              }))
-              .filter((x: any) => x.persona_id)
-          : [];
-        setPersonas(list);
-        setSelectedPersona((prev) => {
-          if (!prev?.persona_id) return prev;
-          const match = list.find((p) => p.persona_id === prev.persona_id);
-          if (!match) return prev;
-          if (prev.photo_url) return prev;
-          if (!match.photo_url) return prev;
-          return { ...prev, photo_url: match.photo_url };
-        });
-      })
-      .catch(() => {});
-  }, [isPersonaPickerOpen]);
+    if (!isVoicesPickerOpen) return;
+    try {
+      const raw = localStorage.getItem('ramber.suno_voices_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const clean = list
+        .map((v: any) => ({
+          voiceId: String(v?.voiceId || v?.voice_id || '').trim(),
+          name: String(v?.name || v?.voice_name || 'Voz').trim(),
+          createdAt: String(v?.createdAt || v?.created_at || new Date().toISOString()).trim() || new Date().toISOString(),
+          taskId: typeof v?.taskId === 'string' ? v.taskId : typeof v?.task_id === 'string' ? v.task_id : undefined,
+          status: typeof v?.status === 'string' ? v.status : undefined,
+        }))
+        .filter((v: any) => v.voiceId);
+      setVoices(clean);
+    } catch {
+      setVoices([]);
+    }
+  }, [isVoicesPickerOpen]);
 
   useEffect(() => {
     if (!isModelMenuOpen) return;
@@ -269,6 +281,37 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [isModelMenuOpen]);
+
+  useEffect(() => {
+    if (!voiceSourceFile) {
+      setVoiceSourcePreviewUrl('');
+      setVoiceSourceDurationSec(0);
+      return;
+    }
+    const url = URL.createObjectURL(voiceSourceFile);
+    setVoiceSourcePreviewUrl(url);
+    return () => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+      }
+    };
+  }, [voiceSourceFile]);
+
+  useEffect(() => {
+    if (!voiceVerifyFile) {
+      setVoiceVerifyPreviewUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(voiceVerifyFile);
+    setVoiceVerifyPreviewUrl(url);
+    return () => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+      }
+    };
+  }, [voiceVerifyFile]);
 
   const clearAudio = () => {
     try {
@@ -288,6 +331,288 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioLyricsStatus('');
     lastTranscribedKeyRef.current = '';
     if (audioInputRef.current) audioInputRef.current.value = '';
+  };
+
+  const resetVoiceWizard = () => {
+    setVoiceCreateError('');
+    setVoiceCreateStep('pick_source');
+    setNewVoiceName('');
+    setNewVoiceDescription('');
+    setVoiceSourceFile(null);
+    setVoiceSourceDurationSec(0);
+    setVoiceStartSec(0);
+    setVoiceEndSec(15);
+    setVoiceValidateTaskId('');
+    setVoiceValidateInfo('');
+    setVoiceVerifyFile(null);
+    setVoiceGenerateTaskId('');
+    setVoiceGeneratedVoiceId('');
+    setVoiceIsAvailable(null);
+    setVoiceLibrarySongs([]);
+    setVoiceLibraryLoading(false);
+    setVoiceLibraryMode('none');
+    setVoiceBusy(false);
+    if (voiceRecordInputRef.current) voiceRecordInputRef.current.value = '';
+    if (voiceUploadInputRef.current) voiceUploadInputRef.current.value = '';
+    if (voiceVerifyRecordInputRef.current) voiceVerifyRecordInputRef.current.value = '';
+    if (voiceVerifyUploadInputRef.current) voiceVerifyUploadInputRef.current.value = '';
+  };
+
+  const upsertLocalVoice = (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
+    try {
+      const raw = localStorage.getItem('ramber.suno_voices_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const next = [
+        v,
+        ...list.filter((x: any) => String(x?.voiceId || x?.voice_id || '').trim() !== v.voiceId),
+      ].slice(0, 50);
+      localStorage.setItem('ramber.suno_voices_v1', JSON.stringify(next));
+      const clean = next
+        .map((x: any) => ({
+          voiceId: String(x?.voiceId || x?.voice_id || '').trim(),
+          name: String(x?.name || x?.voice_name || 'Voz').trim(),
+          createdAt: String(x?.createdAt || x?.created_at || new Date().toISOString()).trim() || new Date().toISOString(),
+          taskId: typeof x?.taskId === 'string' ? x.taskId : typeof x?.task_id === 'string' ? x.task_id : undefined,
+          status: typeof x?.status === 'string' ? x.status : undefined,
+        }))
+        .filter((x: any) => x.voiceId);
+      setVoices(clean);
+    } catch {
+    }
+  };
+
+  const uploadAudioForVoice = async (token: string, file: File) => {
+    const name = (file?.name || 'audio').toString().trim() || 'audio';
+    const ext = name.toLowerCase().split('.').pop() || '';
+    const contentType =
+      (file?.type || '').toString().trim() ||
+      (ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'aac' ? 'audio/aac' : ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : 'audio/mpeg');
+
+    const prep = await fetch('/api/upload-audio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: name, contentType }),
+    });
+    const prepText = await prep.text().catch(() => '');
+    const prepOut = (() => {
+      try {
+        return prepText ? JSON.parse(prepText) : {};
+      } catch {
+        return { error: prepText || 'Respuesta inválida del servidor.' };
+      }
+    })();
+    if (!prep.ok || prepOut?.ok === false) {
+      const msg = (prepOut?.error || 'No pude preparar la subida.').toString();
+      const detail = (prepOut?.detail || prepOut?.message || '').toString();
+      throw new Error([msg, detail].filter(Boolean).join('\n'));
+    }
+
+    const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+    const url = (prepOut?.url || '').toString().trim();
+    if (uploadUrl) {
+      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
+      if (!put.ok) {
+        throw new Error('No pude subir el audio. Si sale un error de CORS, hay que habilitar CORS en Cloudflare R2.');
+      }
+    }
+    if (!url) throw new Error((prepOut?.error || 'No recibí URL del audio subido.').toString());
+    return { url };
+  };
+
+  const loadVoiceLibrary = async () => {
+    setVoiceLibraryLoading(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+      const r = await fetch('/api/library/list?deleted=0', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude cargar tu biblioteca.').toString());
+      const rows = Array.isArray(out?.songs) ? out.songs : [];
+      const mapped = rows
+        .map((s: any) => ({
+          id: String(s?.id || '').trim(),
+          title: String(s?.title || '').trim() || 'Canción',
+          audioUrl: String(s?.audio_url || s?.audioUrl || '').trim(),
+        }))
+        .filter((x: any) => x.id);
+      setVoiceLibrarySongs(mapped);
+    } finally {
+      setVoiceLibraryLoading(false);
+    }
+  };
+
+  const pickFromLibrary = async (songId: string) => {
+    const sid = (songId || '').toString().trim();
+    if (!sid) return;
+    const r = await fetch(`/api/share/song/audio?id=${encodeURIComponent(sid)}&t=${Date.now()}`);
+    if (!r.ok) throw new Error(`No pude descargar el audio de la biblioteca (HTTP ${r.status})`);
+    const ct = (r.headers.get('content-type') || '').toString().trim();
+    const ab = await r.arrayBuffer();
+    const blob = new Blob([ab], { type: ct || 'audio/mpeg' });
+    const ext = ct.includes('wav') ? 'wav' : ct.includes('ogg') ? 'ogg' : ct.includes('aac') ? 'aac' : ct.includes('mp4') ? 'm4a' : 'mp3';
+    const name = `biblioteca_${sid}.${ext}`;
+    return new File([blob], name, { type: ct || 'audio/mpeg' });
+  };
+
+  const generateValidationPhrase = async () => {
+    if (voiceBusy) return;
+    setVoiceCreateError('');
+    const name = (newVoiceName || '').toString().trim();
+    if (!name) {
+      setVoiceCreateError('Ponle un nombre a tu voz.');
+      return;
+    }
+    if (!voiceSourceFile) {
+      setVoiceCreateError('Selecciona un audio para crear la voz.');
+      return;
+    }
+    const start = Math.max(0, Math.floor(Number(voiceStartSec || 0)));
+    const end = Math.max(0, Math.floor(Number(voiceEndSec || 0)));
+    if (end <= start) {
+      setVoiceCreateError('El final debe ser mayor que el inicio.');
+      return;
+    }
+
+    setVoiceBusy(true);
+    setVoiceCreateStep('generating_phrase');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+
+      const uploaded = await uploadAudioForVoice(t.token, voiceSourceFile);
+      const r = await fetch('/api/suno/voice-validate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ voiceUrl: uploaded.url, vocalStartS: start, vocalEndS: end, language: 'es' }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude iniciar la validación.').toString());
+      const taskId = String(out?.taskId || '').trim();
+      if (!taskId) throw new Error('No recibí taskId para la frase de validación.');
+      setVoiceValidateTaskId(taskId);
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 3 * 60 * 1000) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const qr = await fetch(`/api/suno/voice-validate-info?taskId=${encodeURIComponent(taskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const qout = await qr.json().catch(() => ({}));
+        if (!qr.ok) continue;
+        const status = String(qout?.status || '').trim();
+        const validateInfo = String(qout?.validateInfo || '').trim();
+        if (status === 'wait_validating' && validateInfo) {
+          setVoiceValidateInfo(validateInfo);
+          setVoiceCreateStep('phrase_ready');
+          return;
+        }
+        if (status === 'processing_validate_fail' || status === 'fail') {
+          throw new Error(String(qout?.errorMessage || qout?.detail || qout?.error || 'No se pudo generar la frase de validación.').trim() || 'No se pudo generar la frase de validación.');
+        }
+      }
+      throw new Error('La frase está tardando demasiado. Intenta de nuevo.');
+    } catch (e) {
+      setVoiceCreateError(e instanceof Error ? e.message : String(e));
+      setVoiceCreateStep('segment');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  const generateCustomVoice = async () => {
+    if (voiceBusy) return;
+    setVoiceCreateError('');
+    const name = (newVoiceName || '').toString().trim();
+    if (!name) {
+      setVoiceCreateError('Ponle un nombre a tu voz.');
+      return;
+    }
+    const validationTaskId = (voiceValidateTaskId || '').toString().trim();
+    if (!validationTaskId) {
+      setVoiceCreateError('Falta el taskId de validación.');
+      return;
+    }
+    if (!voiceVerifyFile) {
+      setVoiceCreateError('Graba o sube la frase para validar.');
+      return;
+    }
+
+    setVoiceBusy(true);
+    setVoiceCreateStep('generating_voice');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+
+      const uploadedVerify = await uploadAudioForVoice(t.token, voiceVerifyFile);
+      const r = await fetch('/api/suno/voice-generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          taskId: validationTaskId,
+          verifyUrl: uploadedVerify.url,
+          voiceName: name,
+          description: (newVoiceDescription || '').toString().trim() || undefined,
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude iniciar la creación de voz.').toString());
+      const genTaskId = String(out?.taskId || '').trim();
+      if (!genTaskId) throw new Error('No recibí taskId de creación de voz.');
+      setVoiceGenerateTaskId(genTaskId);
+
+      let foundVoiceId = '';
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 25 * 60 * 1000) {
+        await new Promise((r) => setTimeout(r, 4500));
+        const qr = await fetch(`/api/suno/voice-record-info?taskId=${encodeURIComponent(genTaskId)}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const qout = await qr.json().catch(() => ({}));
+        if (!qr.ok) continue;
+        const status = String(qout?.status || '').trim();
+        const voiceId = String(qout?.voiceId || '').trim();
+        if (status === 'success' && voiceId) {
+          foundVoiceId = voiceId;
+          setVoiceGeneratedVoiceId(voiceId);
+          break;
+        }
+        if (status === 'processing_validate_fail' || status === 'fail') {
+          throw new Error(String(qout?.errorMessage || qout?.detail || qout?.error || 'La creación de voz falló.').trim() || 'La creación de voz falló.');
+        }
+      }
+
+      const finalVoiceId = foundVoiceId || '';
+      if (!finalVoiceId) {
+        throw new Error('La voz está tardando demasiado. Intenta más tarde.');
+      }
+
+      let available: boolean | null = null;
+      const availStarted = Date.now();
+      while (Date.now() - availStarted < 3 * 60 * 1000) {
+        const ar = await fetch('/api/suno/voice-check-voice', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({ task_id: genTaskId }),
+        });
+        const aout = await ar.json().catch(() => ({}));
+        if (ar.ok) {
+          available = Boolean(aout?.isAvailable);
+          if (available) break;
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+      setVoiceIsAvailable(available);
+
+      upsertLocalVoice({ voiceId: finalVoiceId, name, createdAt: new Date().toISOString(), taskId: genTaskId, status: available ? 'ready' : 'processing' });
+      setSelectedVoice({ voiceId: finalVoiceId, name });
+      setVoiceCreateStep('done');
+    } catch (e) {
+      setVoiceCreateError(e instanceof Error ? e.message : String(e));
+      setVoiceCreateStep('pick_verify');
+    } finally {
+      setVoiceBusy(false);
+    }
   };
 
   const transcribeLyricsFromAudio = async (auto?: boolean) => {
@@ -1000,10 +1325,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         styleWeight: styleInfluence / 100,
         audioWeight: audioInfluence / 100,
       };
-      if (selectedPersona?.persona_id) {
-        payload.personaId = selectedPersona.persona_id;
-        payload.personaModel = 'voice_persona';
-      }
 
       const r = await fetch('/api/suno/upload-cover', {
         method: 'POST',
@@ -1096,10 +1417,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         payload.weirdnessConstraint = weirdness / 100;
         payload.styleWeight = styleInfluence / 100;
         payload.audioWeight = audioInfluence / 100;
-      }
-      if (selectedPersona?.persona_id) {
-        payload.personaId = selectedPersona.persona_id;
-        payload.personaModel = 'voice_persona';
       }
 
       const r = await fetch('/api/suno/generate', {
@@ -1283,12 +1600,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onCoverFromAudio={handleCoverFromAudio}
             onOpenBalance={onOpenBalance}
             credits={credits}
-            onOpenPersonaPicker={() => setIsPersonaPickerOpen(true)}
+            onOpenPersonaPicker={() => setIsVoicesPickerOpen(true)}
             onPickAudio={pickAudio}
             uploadProgress={uploadProgress}
             onOpenAudioModal={() => setIsAudioModalOpen(true)}
-            selectedPersona={selectedPersona}
-            onClearPersona={() => setSelectedPersona(null)}
+            selectedPersona={selectedVoice}
+            onClearPersona={() => setSelectedVoice(null)}
             isTranscribingAudioLyrics={isTranscribingAudioLyrics}
             onTranscribeAudioLyrics={transcribeLyricsFromAudio}
             setAudioUploadError={setAudioUploadError}
@@ -1333,61 +1650,473 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         </button>
       </div>
 
-      {isPersonaPickerOpen && (
+      {isVoicesPickerOpen && (
         <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setIsPersonaPickerOpen(false)} aria-label="Cerrar" />
+          <button className="absolute inset-0 w-full h-full" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
           <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <div className="text-white font-extrabold">Persona</div>
+              <div className="text-white font-extrabold">Voces</div>
               <button
-                onClick={() => setIsPersonaPickerOpen(false)}
+                onClick={() => setIsVoicesPickerOpen(false)}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4 max-h-[60vh] overflow-y-auto">
-              {personas.length === 0 ? (
-                <div className="text-slate-400 text-sm">No tienes Personas todavía.</div>
-              ) : (
-                <div className="space-y-2">
-                  {personas.map((p) => (
-                    <button
-                      key={p.persona_id}
-                      onClick={() => {
-                        setSelectedPersona(p);
-                        setIsPersonaPickerOpen(false);
-                      }}
-                      className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors"
-                    >
-                      {p.photo_url ? (
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                          <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
-                          <User className="w-5 h-5" />
-                        </div>
-                      )}
-                      <div className="flex-1 text-left min-w-0">
-                        <div className="text-white font-bold truncate">{p.name || 'Persona'}</div>
-                        <div className="text-slate-500 text-xs truncate">Voz guardada</div>
-                      </div>
-                      <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
-                    </button>
-                  ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setVoiceCreateError('');
+                  setVoiceCreateStep('pick_source');
+                  setVoiceSourceFile(null);
+                  setVoiceVerifyFile(null);
+                  setVoiceValidateTaskId('');
+                  setVoiceValidateInfo('');
+                  setVoiceGenerateTaskId('');
+                  setVoiceGeneratedVoiceId('');
+                  setVoiceIsAvailable(null);
+                  setVoiceStartSec(0);
+                  setVoiceEndSec(15);
+                  setIsCreateVoiceOpen(true);
+                  setIsVoicesPickerOpen(false);
+                }}
+                className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors border border-white/10"
+              >
+                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                  <Plus className="w-5 h-5" />
                 </div>
-              )}
-              {selectedPersona?.persona_id && (
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-white font-extrabold truncate">Crear nueva voz</div>
+                  <div className="text-slate-500 text-xs truncate">Graba o sube tu voz</div>
+                </div>
+                <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
+              </button>
+
+              <div className="mt-3">
+                <input
+                  value={voiceSearch}
+                  onChange={(e) => setVoiceSearch(e.target.value)}
+                  placeholder="Buscar por nombre de voz"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                />
+              </div>
+
+              {(() => {
+                const q = (voiceSearch || '').toString().trim().toLowerCase();
+                const list = q
+                  ? voices.filter((v) => `${v.name} ${v.voiceId}`.toLowerCase().includes(q))
+                  : voices;
+                if (!list.length) {
+                  return <div className="mt-4 text-slate-400 text-sm">No tienes voces todavía.</div>;
+                }
+                return (
+                  <div className="space-y-2 mt-4">
+                    {list.map((v) => {
+                      const active = selectedVoice?.voiceId === v.voiceId;
+                      return (
+                        <button
+                          key={v.voiceId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedVoice({ voiceId: v.voiceId, name: v.name });
+                            setIsVoicesPickerOpen(false);
+                          }}
+                          className={cn(
+                            "w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors border",
+                            active ? "border-emerald-500/30" : "border-white/10"
+                          )}
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                            <User className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 text-left min-w-0">
+                            <div className="text-white font-bold truncate">{v.name || 'Voz'}</div>
+                            <div className="text-slate-500 text-xs truncate">{v.status ? String(v.status) : 'Guardada'}</div>
+                          </div>
+                          <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {selectedVoice?.voiceId && (
                 <button
                   onClick={() => {
-                    setSelectedPersona(null);
-                    setIsPersonaPickerOpen(false);
+                    setSelectedVoice(null);
+                    setIsVoicesPickerOpen(false);
                   }}
                   className="w-full mt-3 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
                 >
-                  Quitar Persona
+                  Quitar voz
                 </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCreateVoiceOpen && (
+        <div className="fixed inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center">
+          <button
+            className="absolute inset-0 w-full h-full"
+            onClick={() => {
+              if (voiceBusy) return;
+              setIsCreateVoiceOpen(false);
+              resetVoiceWizard();
+            }}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full md:max-w-[720px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Crear nueva voz</div>
+              <button
+                onClick={() => {
+                  if (voiceBusy) return;
+                  setIsCreateVoiceOpen(false);
+                  resetVoiceWizard();
+                }}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto min-h-0">
+              {voiceCreateError ? (
+                <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-3 text-sm text-red-200">
+                  {voiceCreateError}
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-slate-300 text-xs font-semibold mb-1">Nombre de la voz</div>
+                  <input
+                    value={newVoiceName}
+                    onChange={(e) => setNewVoiceName(e.target.value)}
+                    placeholder="Ej: RUBEN"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                  />
+                </div>
+                <div>
+                  <div className="text-slate-300 text-xs font-semibold mb-1">Descripción (opcional)</div>
+                  <input
+                    value={newVoiceDescription}
+                    onChange={(e) => setNewVoiceDescription(e.target.value)}
+                    placeholder="Ej: Voz cantada en español"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-slate-200 font-extrabold text-sm">Paso: {voiceCreateStep.replaceAll('_', ' ')}</div>
+              </div>
+
+              {voiceLibraryMode !== 'none' ? (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-white font-bold">Selecciona de tu Biblioteca</div>
+                    <button
+                      type="button"
+                      onClick={() => setVoiceLibraryMode('none')}
+                      className="text-slate-300 text-sm hover:text-white"
+                    >
+                      Volver
+                    </button>
+                  </div>
+
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => loadVoiceLibrary().catch((e) => setVoiceCreateError(e instanceof Error ? e.message : String(e)))}
+                      disabled={voiceLibraryLoading}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                    >
+                      {voiceLibraryLoading ? 'Cargando…' : 'Actualizar lista'}
+                    </button>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {voiceLibrarySongs.length === 0 ? (
+                      <div className="text-slate-400 text-sm">No encontré canciones en tu Biblioteca.</div>
+                    ) : (
+                      voiceLibrarySongs.slice(0, 60).map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              setVoiceCreateError('');
+                              const f = await pickFromLibrary(s.id);
+                              if (!f) return;
+                              if (voiceLibraryMode === 'source') {
+                                setVoiceSourceFile(f);
+                                setVoiceVerifyFile(null);
+                                setVoiceCreateStep('segment');
+                              } else {
+                                setVoiceVerifyFile(f);
+                                setVoiceCreateStep('pick_verify');
+                              }
+                              setVoiceLibraryMode('none');
+                            } catch (e) {
+                              setVoiceCreateError(e instanceof Error ? e.message : String(e));
+                            }
+                          }}
+                          className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors border border-white/10"
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                            <Music className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 text-left min-w-0">
+                            <div className="text-white font-bold truncate">{s.title}</div>
+                            <div className="text-slate-500 text-xs truncate">Biblioteca</div>
+                          </div>
+                          <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {(voiceCreateStep === 'pick_source' || voiceCreateStep === 'segment' || voiceCreateStep === 'generating_phrase' || voiceCreateStep === 'phrase_ready' || voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done') && (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (voiceCreateStep === 'pick_verify') voiceVerifyRecordInputRef.current?.click?.();
+                          else voiceRecordInputRef.current?.click?.();
+                        }}
+                        disabled={voiceBusy}
+                        className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                      >
+                        Grabar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (voiceCreateStep === 'pick_verify') voiceVerifyUploadInputRef.current?.click?.();
+                          else voiceUploadInputRef.current?.click?.();
+                        }}
+                        disabled={voiceBusy}
+                        className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                      >
+                        Subir audio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVoiceCreateError('');
+                          setVoiceLibraryMode(voiceCreateStep === 'pick_verify' ? 'verify' : 'source');
+                          if (voiceLibrarySongs.length === 0) loadVoiceLibrary().catch((e) => setVoiceCreateError(e instanceof Error ? e.message : String(e)));
+                        }}
+                        disabled={voiceBusy}
+                        className="bg-white/5 border border-white/10 rounded-2xl py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                      >
+                        Seleccionar de Biblioteca
+                      </button>
+                    </div>
+                  )}
+
+                  <input
+                    ref={voiceRecordInputRef}
+                    type="file"
+                    accept="audio/*"
+                    capture="microphone"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      e.currentTarget.value = '';
+                      if (!f) return;
+                      setVoiceSourceFile(f);
+                      setVoiceVerifyFile(null);
+                      setVoiceCreateStep('segment');
+                      setVoiceCreateError('');
+                    }}
+                  />
+                  <input
+                    ref={voiceUploadInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      e.currentTarget.value = '';
+                      if (!f) return;
+                      setVoiceSourceFile(f);
+                      setVoiceVerifyFile(null);
+                      setVoiceCreateStep('segment');
+                      setVoiceCreateError('');
+                    }}
+                  />
+                  <input
+                    ref={voiceVerifyRecordInputRef}
+                    type="file"
+                    accept="audio/*"
+                    capture="microphone"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      e.currentTarget.value = '';
+                      if (!f) return;
+                      setVoiceVerifyFile(f);
+                      setVoiceCreateStep('pick_verify');
+                      setVoiceCreateError('');
+                    }}
+                  />
+                  <input
+                    ref={voiceVerifyUploadInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      e.currentTarget.value = '';
+                      if (!f) return;
+                      setVoiceVerifyFile(f);
+                      setVoiceCreateStep('pick_verify');
+                      setVoiceCreateError('');
+                    }}
+                  />
+
+                  {voiceSourceFile && (voiceCreateStep === 'segment' || voiceCreateStep === 'generating_phrase' || voiceCreateStep === 'phrase_ready' || voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done') ? (
+                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
+                      <div className="text-white font-bold truncate">Audio base: {voiceSourceFile.name}</div>
+                      {voiceSourcePreviewUrl ? (
+                        <div className="mt-3">
+                          <audio
+                            controls
+                            preload="metadata"
+                            src={voiceSourcePreviewUrl}
+                            className="w-full"
+                            onLoadedMetadata={(e) => {
+                              const d = Number((e.currentTarget as any)?.duration);
+                              if (!Number.isFinite(d) || d <= 0) return;
+                              setVoiceSourceDurationSec(d);
+                              setVoiceStartSec((prev) => (Number.isFinite(prev) ? Math.max(0, prev) : 0));
+                              setVoiceEndSec((prev) => {
+                                const next = Number.isFinite(prev) && prev > 0 ? prev : Math.min(15, Math.floor(d));
+                                return Math.max(1, Math.min(Math.floor(d), Math.floor(next)));
+                              });
+                            }}
+                          />
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-slate-300 text-xs font-semibold mb-1">Inicio (seg)</div>
+                          <input
+                            type="number"
+                            min={0}
+                            max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
+                            value={voiceStartSec}
+                            onChange={(e) => setVoiceStartSec(Number(e.target.value))}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none"
+                          />
+                        </div>
+                        <div>
+                          <div className="text-slate-300 text-xs font-semibold mb-1">Final (seg)</div>
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, Math.floor(voiceSourceDurationSec || 0))}
+                            value={voiceEndSec}
+                            onChange={(e) => setVoiceEndSec(Number(e.target.value))}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {voiceCreateStep === 'segment' ? (
+                        <button
+                          type="button"
+                          onClick={() => generateValidationPhrase().catch(() => {})}
+                          disabled={voiceBusy}
+                          className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                        >
+                          Generar frase de validación
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {voiceCreateStep === 'generating_phrase' ? (
+                    <div className="mt-4 flex items-center gap-3 text-slate-200">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <div>Generando frase…</div>
+                    </div>
+                  ) : null}
+
+                  {voiceCreateStep === 'phrase_ready' ? (
+                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
+                      <div className="text-white font-extrabold">Frase lista</div>
+                      <div className="mt-2 text-slate-200 text-sm whitespace-pre-wrap">{voiceValidateInfo}</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVoiceCreateStep('pick_verify');
+                          setVoiceCreateError('');
+                        }}
+                        className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+                      >
+                        Ya la grabé / subir grabación
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {voiceCreateStep === 'pick_verify' ? (
+                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
+                      <div className="text-white font-extrabold">Sube la grabación de la frase</div>
+                      <div className="mt-2 text-slate-400 text-sm">Recomendación: canta o habla claro, sin ruido.</div>
+                      {voiceVerifyFile && voiceVerifyPreviewUrl ? (
+                        <div className="mt-3">
+                          <div className="text-slate-300 text-xs font-semibold mb-1">Tu grabación</div>
+                          <audio controls preload="metadata" src={voiceVerifyPreviewUrl} className="w-full" />
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => generateCustomVoice().catch(() => {})}
+                        disabled={voiceBusy || !voiceVerifyFile}
+                        className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                      >
+                        Crear voz
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {voiceCreateStep === 'generating_voice' ? (
+                    <div className="mt-4 flex items-center gap-3 text-slate-200">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <div>Creando tu voz…</div>
+                    </div>
+                  ) : null}
+
+                  {voiceCreateStep === 'done' ? (
+                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
+                      <div className="text-white font-extrabold">Voz creada</div>
+                      <div className="mt-2 text-slate-200 text-sm">voiceId: {voiceGeneratedVoiceId || '—'}</div>
+                      <div className="mt-1 text-slate-400 text-sm">
+                        Disponible: {voiceIsAvailable == null ? 'verificando…' : voiceIsAvailable ? 'sí' : 'todavía no'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreateVoiceOpen(false);
+                          resetVoiceWizard();
+                        }}
+                        className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+                      >
+                        Listo
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
@@ -1769,7 +2498,7 @@ function CustomForm({
           onClick={onOpenPersonaPicker}
           className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner"
         >
-          <Plus className="w-5 h-5 text-slate-400" /> Persona
+          <Plus className="w-5 h-5 text-slate-400" /> Voces
         </button>
       </div>
 
@@ -1841,20 +2570,14 @@ function CustomForm({
         </div>
       )}
 
-      {selectedPersona?.persona_id && (
+      {selectedPersona?.voiceId && (
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            {selectedPersona.photo_url ? (
-              <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                <img src={selectedPersona.photo_url} alt="" className="w-full h-full object-cover" />
-              </div>
-            ) : (
-              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
-                <User className="w-5 h-5" />
-              </div>
-            )}
+            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+              <User className="w-5 h-5" />
+            </div>
             <div className="min-w-0">
-              <div className="text-white font-bold truncate">{selectedPersona.name || 'Persona'}</div>
+              <div className="text-white font-bold truncate">{selectedPersona.name || 'Voz'}</div>
               <div className="text-slate-500 text-xs">Usando voz</div>
             </div>
           </div>

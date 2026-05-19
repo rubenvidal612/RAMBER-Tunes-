@@ -2299,6 +2299,53 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleVoiceRegenerate(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const taskId = firstString(payload, ["taskId", "task_id"]);
+    const calBackUrl =
+      firstString(payload, ["calBackUrl", "cal_back_url", "callBackUrl", "call_back_url"]) || absoluteUrlFromReq(req, "/api/webhooks/suno");
+
+    if (!taskId) return send(res, 400, { error: "Falta taskId" });
+
+    try {
+      const body: any = { taskId, calBackUrl };
+      const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/regenerate", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        return send(res, 502, { error: "Error regenerando frase de validación", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        return send(res, 502, { error: "Error regenerando frase de validación", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (!outTaskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+
+      try {
+        await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: auth.user.id, kind: "voice-regenerate", cost: 0, consumed: false });
+      } catch {
+      }
+
+      return send(res, 200, { taskId: outTaskId });
+    } catch (e) {
+      return send(res, 502, { error: "Error regenerando frase de validación", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleVoiceGenerate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -2396,6 +2443,44 @@ const sunoHandler = (() => {
       });
     } catch (e) {
       return send(res, 502, { error: "Error consultando estado de voz", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleVoiceCheckVoice(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const taskId = firstString(payload, ["task_id", "taskId"]);
+    if (!taskId) return send(res, 400, { error: "Falta task_id" });
+
+    try {
+      const body: any = { task_id: taskId };
+      const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/check-voice", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      if (!r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        return send(res, 502, { error: "Error consultando disponibilidad de voz", code: r.status, detail: String(msg).slice(0, 1200) });
+      }
+
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        return send(res, 502, { error: "Error consultando disponibilidad de voz", code, detail: String(msg).slice(0, 1200) });
+      }
+
+      const d = data?.data ?? {};
+      const isAvailable = Boolean(d?.isAvailable);
+      return send(res, 200, { ok: true, taskId, isAvailable, data: d });
+    } catch (e) {
+      return send(res, 502, { error: "Error consultando disponibilidad de voz", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -3759,8 +3844,10 @@ notify pgrst, 'reload schema';`;
       if (a === "credits") return handleCredits(req, res);
       if (a === "voice-validate") return handleVoiceValidate(req, res);
       if (a === "voice-validate-info") return handleVoiceValidateInfo(req, res);
+      if (a === "voice-regenerate") return handleVoiceRegenerate(req, res);
       if (a === "voice-generate") return handleVoiceGenerate(req, res);
       if (a === "voice-record-info") return handleVoiceRecordInfo(req, res);
+      if (a === "voice-check-voice") return handleVoiceCheckVoice(req, res);
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
       if (a === "create-cover") return handleCreateCover(req, res);
@@ -6618,6 +6705,42 @@ const sunoWebhookHandler = (() => {
         const isCover = kind.includes("cover");
         const isMusicCover = kind.startsWith("music-cover:");
         const isWav = kind.startsWith("wav:");
+        const isVoiceTask = kind === "voice-validate" || kind === "voice-regenerate" || kind === "voice-generate";
+
+        if (isVoiceTask && userId) {
+          const status = String(data?.status || "").trim();
+          const validateInfo = typeof data?.validateInfo === "string" ? data.validateInfo : "";
+          const voiceId = typeof data?.voiceId === "string" ? data.voiceId : "";
+          const errorCode = Number.isFinite(Number(data?.errorCode)) ? Number(data.errorCode) : null;
+          const errorMessage = typeof data?.errorMessage === "string" ? data.errorMessage : "";
+
+          const snapshot = {
+            code: Number.isFinite(code) ? code : null,
+            msg: msg ? msg.slice(0, 500) : "",
+            data: {
+              taskId,
+              status,
+              validateInfo,
+              voiceId,
+              errorCode,
+              errorMessage,
+            },
+            raw: body,
+          };
+
+          try {
+            const out = JSON.stringify(snapshot);
+            const { error } = await admin
+              .from("suno_tasks")
+              .update({ output: out })
+              .eq("task_id", taskId)
+              .eq("user_id", userId);
+            if (error && !isMissingColumnError(error)) {
+              throw error;
+            }
+          } catch {
+          }
+        }
 
         if (isWav && userId) {
           if (Number.isFinite(code) && code !== 200) {

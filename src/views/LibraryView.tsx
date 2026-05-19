@@ -4364,17 +4364,6 @@ function SongOptionsSheet({
                 <Music2 className="w-5 h-5 text-emerald-300" /> <span className="text-slate-200 font-extrabold">Cover (nueva versión)</span>
               </button>
             )}
-            {isDev && !isDeleted && (
-              <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5 bg-gradient-to-r from-purple-500/10 to-transparent"
-                onClick={() => {
-                  setShowVoiceClone(true);
-                }}
-                disabled={isBusy}
-              >
-                <AudioLines className="w-5 h-5 text-purple-300" /> <span className="text-slate-200 font-extrabold">Clonar voz</span>
-              </button>
-            )}
             {!isDeleted && (
               <button
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5"
