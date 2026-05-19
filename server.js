@@ -208,15 +208,19 @@ function normalizeSunoBaseUrl(url) {
   return s.replace(/\/+$/, "");
 }
 
-async function sunoFetchJson(path) {
+async function sunoFetchJson(path, init = {}) {
   const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
   const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
   const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
   if (!apiKey) throw new Error("Falta SUNO_API_KEY");
 
+  const headers = new Headers(init?.headers || {});
+  if (!headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
+  if (!headers.has("content-type")) headers.set("content-type", "application/json");
+
   const r = await fetch(new URL(path, base).toString(), {
-    method: "GET",
-    headers: { authorization: `Bearer ${apiKey}` },
+    ...init,
+    headers,
   });
   const text = await r.text();
   let data = null;
@@ -397,6 +401,73 @@ app.post('/api/suno/clone-voice', authenticate, async (req, res) => {
     return res.status(201).json({ message: 'Entrenamiento iniciado', voice, prediction: repData });
   } catch (error) {
     return res.status(500).json({ error: 'Error interno del servidor', detail: error.message });
+  }
+});
+
+app.post('/api/suno/voice-validate', authenticate, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const voiceUrl = String(payload.voiceUrl || payload.voice_url || "").trim();
+    const vocalStartSRaw = Number(payload.vocalStartS ?? payload.vocal_start_s ?? payload.vocalStart ?? payload.vocal_start);
+    const vocalEndSRaw = Number(payload.vocalEndS ?? payload.vocal_end_s ?? payload.vocalEnd ?? payload.vocal_end);
+    const language = String(payload.language || "es").trim() || "es";
+
+    if (!voiceUrl) return res.status(400).json({ error: "Falta voiceUrl" });
+    if (!Number.isFinite(vocalStartSRaw) || !Number.isFinite(vocalEndSRaw)) {
+      return res.status(400).json({ error: "vocalStartS y vocalEndS deben ser números (segundos)" });
+    }
+    const vocalStartS = Math.max(0, Math.floor(vocalStartSRaw));
+    const vocalEndS = Math.max(0, Math.floor(vocalEndSRaw));
+    if (vocalEndS <= vocalStartS) return res.status(400).json({ error: "vocalEndS debe ser mayor que vocalStartS" });
+
+    const callBackUrl =
+      String(payload.callBackUrl || payload.call_back_url || "").trim() ||
+      `${req.protocol}://${req.get("host")}/api/webhooks/suno`;
+
+    const body = { voiceUrl, vocalStartS, vocalEndS, language, callBackUrl };
+    const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/validate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!r.ok) return res.status(502).json({ error: "Error iniciando validación de voz", code: r.status, detail: data || text });
+    const code = Number(data?.code);
+    if (code && code !== 200) return res.status(502).json({ error: "Error iniciando validación de voz", code, detail: data?.msg || data?.error || "Error del proveedor" });
+
+    const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+    if (!taskId) return res.status(502).json({ error: "Respuesta inválida del proveedor" });
+
+    return res.json({ taskId });
+  } catch (error) {
+    return res.status(500).json({ error: "Error iniciando validación de voz", detail: error.message });
+  }
+});
+
+app.get('/api/suno/voice-validate-info', authenticate, async (req, res) => {
+  try {
+    const taskId = String(req.query.taskId || req.query.task_id || "").trim();
+    if (!taskId) return res.status(400).json({ error: "Falta taskId" });
+
+    const { res: r, data, text } = await sunoFetchJson(`/api/v1/voice/validate-info?taskId=${encodeURIComponent(taskId)}`, {
+      method: "GET",
+    });
+
+    if (!r.ok) return res.status(502).json({ error: "Error consultando validación de voz", code: r.status, detail: data || text });
+    const code = Number(data?.code);
+    if (code && code !== 200) return res.status(502).json({ error: "Error consultando validación de voz", code, detail: data?.msg || data?.error || "Error del proveedor" });
+
+    const d = data?.data || {};
+    return res.json({
+      ok: true,
+      taskId: String(d.taskId || taskId),
+      validateInfo: typeof d.validateInfo === "string" ? d.validateInfo : "",
+      status: typeof d.status === "string" ? d.status : "",
+      errorCode: Number.isFinite(Number(d.errorCode)) ? Number(d.errorCode) : null,
+      errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : "",
+      data: d,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Error consultando validación de voz", detail: error.message });
   }
 });
 
