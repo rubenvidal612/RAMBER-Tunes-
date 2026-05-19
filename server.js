@@ -896,6 +896,89 @@ app.get('/api/karaoke/play-url', authenticate, async (req, res) => {
   }
 });
 
+app.get('/api/karaoke/audio-proxy', authenticate, async (req, res) => {
+  try {
+    const method = String(req.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') return res.status(405).json({ ok: false, error: 'Método no permitido' });
+
+    const range = String(req.headers?.range || req.headers?.Range || '').trim();
+    const setCommonHeaders = () => {
+      res.setHeader('cache-control', 'no-store, max-age=0, s-maxage=0, must-revalidate');
+      res.setHeader('access-control-allow-origin', '*');
+      res.setHeader('access-control-allow-headers', 'range, content-type');
+      res.setHeader('access-control-expose-headers', 'accept-ranges, content-length, content-range, content-type');
+      res.setHeader('accept-ranges', 'bytes');
+    };
+
+    const keyRaw = String(req.query?.key || '').trim().replace(/^\/+/, '');
+    if (keyRaw) {
+      const uid = String(req.user?.id || '').trim();
+      const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+      if (!allowedPrefixes.some((p) => keyRaw.startsWith(p))) {
+        return res.status(403).json({ ok: false, error: 'No autorizado para este archivo' });
+      }
+
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const env = getR2Env();
+      const client = await getR2Client();
+      const out = await client.send(new GetObjectCommand({
+        Bucket: env.bucketName,
+        Key: keyRaw,
+        ...(range ? { Range: range } : {}),
+      }));
+
+      res.status(range ? 206 : 200);
+      setCommonHeaders();
+      const ct = String(out?.ContentType || 'audio/mpeg');
+      res.setHeader('content-type', ct);
+      if (out?.ContentLength != null) res.setHeader('content-length', String(out.ContentLength));
+      if (out?.ContentRange) res.setHeader('content-range', String(out.ContentRange));
+      if (method === 'HEAD') return res.end();
+
+      const body = out?.Body;
+      if (body?.pipe) return body.pipe(res);
+      const ab = await (body?.arrayBuffer?.() ?? Promise.resolve(null)).catch(() => null);
+      if (!ab) return res.status(502).json({ ok: false, error: 'No pude leer el audio' });
+      return res.end(Buffer.from(ab));
+    }
+
+    const src = String(req.query?.src || '').trim();
+    if (!src) return res.status(400).json({ ok: false, error: 'Falta src' });
+
+    let u = null;
+    try { u = new URL(src); } catch {}
+    if (!u || u.protocol !== 'https:') return res.status(400).json({ ok: false, error: 'URL inválida' });
+    const host = String(u.hostname || '').toLowerCase();
+    const allow = host.endsWith('replicate.delivery') || host.endsWith('.r2.cloudflarestorage.com') || host.endsWith('.r2.dev');
+    if (!allow) return res.status(403).json({ ok: false, error: 'Origen no permitido' });
+
+    const headers = { accept: '*/*', ...(range ? { range } : {}) };
+    const upstream = await fetch(u.toString(), { method: 'GET', headers });
+    if (!upstream.ok) {
+      const txt = await upstream.text().catch(() => '');
+      return res.status(502).json({ ok: false, error: 'No pude descargar el audio', detail: txt || `HTTP ${upstream.status}` });
+    }
+
+    res.status(upstream.status);
+    setCommonHeaders();
+    const upstreamCt = upstream.headers.get('content-type') || 'audio/mpeg';
+    const cl = upstream.headers.get('content-length') || '';
+    const cr = upstream.headers.get('content-range') || '';
+    res.setHeader('content-type', upstreamCt);
+    if (cl) res.setHeader('content-length', cl);
+    if (cr) res.setHeader('content-range', cr);
+    if (method === 'HEAD') return res.end();
+
+    const body = upstream.body;
+    if (body && body.pipe) return body.pipe(res);
+    const ab = await upstream.arrayBuffer().catch(() => null);
+    if (!ab) return res.status(502).json({ ok: false, error: 'No pude leer el audio' });
+    return res.end(Buffer.from(ab));
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Error en audio-proxy', detail: error.message });
+  }
+});
+
 // 2.6 Upload Audio to R2 (Helper for both Clone Voice and Karaoke)
 app.post('/api/upload-audio', authenticate, async (req, res) => {
   try {

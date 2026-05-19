@@ -186,12 +186,38 @@ export function KaraokeView() {
       audioRef.current.currentTime = 0;
       if (backingAudioRef.current) backingAudioRef.current.currentTime = 0;
 
-      const canvasStream = canvasRef.current.captureStream(30);
-      const audioCapture = (audioRef.current as any).captureStream?.();
-      if (!audioCapture || !audioCapture.getAudioTracks || audioCapture.getAudioTracks().length === 0) {
-        throw new Error('Tu navegador no permite capturar el audio para el video. Prueba en Chrome en computadora.');
+      const sourceUrl = audioRef.current.src;
+      const proxiedUrl = sourceUrl ? `/api/karaoke/audio-proxy?src=${encodeURIComponent(sourceUrl)}` : '';
+      if (proxiedUrl) {
+        audioRef.current.src = proxiedUrl;
+        audioRef.current.load();
       }
-      const audioTrack = audioCapture.getAudioTracks()[0];
+
+      const canvasStream = canvasRef.current.captureStream(30);
+
+      const getAudioTrack = async () => {
+        const el: any = audioRef.current as any;
+        if (!el) return null;
+        const cap = el.captureStream?.();
+        if (!cap || !cap.getAudioTracks) return null;
+        const tracks = cap.getAudioTracks();
+        if (tracks && tracks.length > 0) return tracks[0];
+        return null;
+      };
+
+      await audioRef.current.play().catch(() => {});
+      await new Promise(r => setTimeout(r, 250));
+      let audioTrack = await getAudioTrack();
+      if (!audioTrack) {
+        await new Promise(r => setTimeout(r, 750));
+        audioTrack = await getAudioTrack();
+      }
+      if (!audioTrack) {
+        throw new Error('No pude capturar el audio para el video. Prueba en Chrome (no incógnito) o descarga el WEBM sin audio y lo juntamos con el MP3.');
+      }
+
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
 
       const mixed = new MediaStream();
       for (const t of canvasStream.getVideoTracks()) mixed.addTrack(t);

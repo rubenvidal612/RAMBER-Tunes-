@@ -3702,6 +3702,157 @@ const karaokeHandler = (() => {
         }
       }
 
+      if (next === "audio-proxy") {
+        const method = (req.method || "").toUpperCase();
+        if (method === "OPTIONS") {
+          res.statusCode = 204;
+          res.setHeader("access-control-allow-origin", "*");
+          res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS");
+          res.setHeader("access-control-allow-headers", "range, content-type");
+          res.setHeader("access-control-max-age", "86400");
+          res.end();
+          return;
+        }
+        if (method !== "GET" && method !== "HEAD") return send(res, 405, { error: "Método no permitido" });
+        const auth = await requireUser(req);
+        if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+        const src = pickQuery(req, "src").trim();
+        const keyRaw = pickQuery(req, "key").trim();
+        const uid = String((auth as any).user?.id || "").trim();
+        const allowedPrefixes = [`uploads/audio/${uid}/`, `karaoke/${uid}/`];
+
+        const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
+
+        const sendErr = (status: number, msg: string, detail?: string) => {
+          res.statusCode = status;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ ok: false, error: msg, detail: detail || undefined }));
+        };
+
+        const pipeWebToNode = async (body: any, res: any) => {
+          if (!body) return false;
+          if (body?.pipe) {
+            body.pipe(res);
+            return true;
+          }
+          if (body?.transformToWebStream) {
+            try {
+              const mod = await import("stream");
+              const Readable = (mod as any).Readable;
+              if (Readable?.fromWeb) {
+                Readable.fromWeb(body.transformToWebStream()).pipe(res);
+                return true;
+              }
+            } catch {
+            }
+          }
+          return false;
+        };
+
+        const setCommonHeaders = () => {
+          res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+          res.setHeader("access-control-allow-origin", "*");
+          res.setHeader("access-control-allow-headers", "range, content-type");
+          res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type");
+          res.setHeader("accept-ranges", "bytes");
+        };
+
+        if (keyRaw) {
+          const key = keyRaw.replace(/^\/+/, "");
+          if (!allowedPrefixes.some((p) => key.startsWith(p))) return sendErr(403, "No autorizado para este archivo");
+          try {
+            const env = getR2Env();
+            const client = await getR2Client();
+            const { GetObjectCommand } = await getR2AwsSdk();
+            const out: any = await client.send(
+              new GetObjectCommand({
+                Bucket: env.bucketName,
+                Key: key,
+                ...(range ? { Range: range } : {}),
+              })
+            );
+
+            const isPartial = Boolean(range);
+            res.statusCode = isPartial ? 206 : 200;
+            setCommonHeaders();
+            const ct = typeof out?.ContentType === "string" && out.ContentType.trim() ? out.ContentType.trim() : "audio/mpeg";
+            res.setHeader("content-type", ct);
+            if (out?.ContentLength != null) res.setHeader("content-length", String(out.ContentLength));
+            if (out?.ContentRange) res.setHeader("content-range", String(out.ContentRange));
+            if (method === "HEAD") {
+              res.end();
+              return;
+            }
+            const piped = await pipeWebToNode(out?.Body, res);
+            if (piped) return;
+            const ab = await (out?.Body?.arrayBuffer?.() ?? Promise.resolve(null)).catch(() => null);
+            if (!ab) return sendErr(502, "No pude leer el audio");
+            res.end(Buffer.from(ab));
+            return;
+          } catch (e: any) {
+            return sendErr(502, "No pude cargar el audio", e?.message || String(e));
+          }
+        }
+
+        if (!src) return sendErr(400, "Falta src");
+        let u: URL | null = null;
+        try {
+          u = new URL(src);
+        } catch {
+          u = null;
+        }
+        if (!u || u.protocol !== "https:") return sendErr(400, "URL inválida");
+        const host = (u.hostname || "").toLowerCase();
+        const allow =
+          host.endsWith("replicate.delivery") ||
+          host.endsWith(".r2.cloudflarestorage.com") ||
+          host.endsWith(".r2.dev");
+        if (!allow) return sendErr(403, "Origen no permitido");
+
+        try {
+          const headers: Record<string, string> = { accept: "*/*" };
+          if (range) headers.range = range;
+          const upstream = await fetch(u.toString(), { method: "GET", headers }).catch(() => null as any);
+          if (!upstream) return sendErr(502, "No pude descargar el audio");
+          const status = Number((upstream as any).status || 502);
+          if (status >= 400) {
+            const txt = await (upstream as any).text?.().catch(() => "") || "";
+            return sendErr(502, "No pude descargar el audio", txt.slice(0, 800) || `HTTP ${status}`);
+          }
+          res.statusCode = status;
+          setCommonHeaders();
+          const upstreamCt = (upstream as any).headers?.get?.("content-type") || "";
+          if (upstreamCt) res.setHeader("content-type", upstreamCt);
+          const cl = (upstream as any).headers?.get?.("content-length") || "";
+          const cr = (upstream as any).headers?.get?.("content-range") || "";
+          if (cl) res.setHeader("content-length", cl);
+          if (cr) res.setHeader("content-range", cr);
+          if (method === "HEAD") {
+            res.end();
+            return;
+          }
+          const body = (upstream as any).body;
+          if (body) {
+            try {
+              const mod = await import("stream");
+              const Readable = (mod as any).Readable;
+              if (Readable?.fromWeb) {
+                Readable.fromWeb(body).pipe(res);
+                return;
+              }
+            } catch {
+            }
+          }
+          const ab = await (upstream as any).arrayBuffer?.().catch(() => null);
+          if (!ab) return sendErr(502, "No pude leer el audio");
+          res.end(Buffer.from(ab));
+          return;
+        } catch (e: any) {
+          return sendErr(502, "No pude descargar el audio", e?.message || String(e));
+        }
+      }
+
       if (next === "start") {
         const oldUrl = req.url;
         req.url = `/api/suno/karaoke-start${u.search || ""}`;
