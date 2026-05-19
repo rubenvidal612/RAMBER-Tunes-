@@ -523,7 +523,23 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
     if (!url) throw new Error((prepOut?.error || 'No recibí URL del audio subido.').toString());
-    return { url };
+    const key = (prepOut?.key || '').toString().trim();
+    return { url, key };
+  };
+
+  const getPublicAudioUrlForSuno = async (token: string, uploaded: { url: string; key?: string }) => {
+    const direct = (uploaded?.url || '').toString().trim();
+    const key = (uploaded?.key || '').toString().trim();
+    if (!direct) return '';
+    if (!key) return direct;
+    try {
+      const r = await fetch(`/api/karaoke/proxy-url?key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } });
+      const out = await r.json().catch(() => ({}));
+      const rel = (out?.url || '').toString().trim();
+      if (r.ok && out?.ok && rel) return new URL(rel, window.location.origin).toString();
+    } catch {
+    }
+    return direct;
   };
 
   const loadVoiceLibrary = async () => {
@@ -597,10 +613,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
 
       const uploaded = await uploadAudioForVoice(t.token, voiceSourceFile);
+      const voiceUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploaded);
       const r = await fetch('/api/suno/voice-validate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ voiceUrl: uploaded.url, vocalStartS: start, vocalEndS: end, language: 'es' }),
+        body: JSON.stringify({ voiceUrl: voiceUrlForSuno || uploaded.url, vocalStartS: start, vocalEndS: end, language: 'es' }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude iniciar la validación.').toString());
@@ -665,12 +682,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
 
       const uploadedVerify = await uploadAudioForVoice(t.token, voiceVerifyFile);
+      const verifyUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploadedVerify);
       const r = await fetch('/api/suno/voice-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
         body: JSON.stringify({
           taskId: validationTaskId,
-          verifyUrl: uploadedVerify.url,
+          verifyUrl: verifyUrlForSuno || uploadedVerify.url,
           voiceName: name,
           description: (newVoiceDescription || '').toString().trim() || undefined,
         }),
