@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause } from 'lucide-react';
+import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -118,6 +118,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [selectedVoice, setSelectedVoice] = useState<{ voiceId: string; name: string } | null>(null);
   const [isCreateVoiceOpen, setIsCreateVoiceOpen] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
+  const [voicesTab, setVoicesTab] = useState<'mine' | 'favorites'>('mine');
   const [newVoiceName, setNewVoiceName] = useState('');
   const [newVoiceDescription, setNewVoiceDescription] = useState('');
   const [voiceSourceFile, setVoiceSourceFile] = useState<File | null>(null);
@@ -1762,7 +1763,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       {isVoicesPickerOpen && (
         <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[640px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[86dvh]">
+          <div className="relative w-full md:max-w-[560px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[86dvh]">
             <div className="flex items-center justify-center p-4 border-b border-white/10 relative">
               <div className="text-white font-extrabold">Voces</div>
               <button
@@ -1773,6 +1774,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
             </div>
             <div className="p-4 overflow-y-auto min-h-0">
+              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full p-1">
+                <button
+                  type="button"
+                  onClick={() => setVoicesTab('mine')}
+                  className={cn(
+                    "flex-1 py-2 rounded-full text-xs font-extrabold transition-colors",
+                    voicesTab === 'mine' ? "bg-white/10 text-white" : "text-slate-300 hover:text-white"
+                  )}
+                >
+                  Mis Voces
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVoicesTab('favorites')}
+                  className={cn(
+                    "flex-1 py-2 rounded-full text-xs font-extrabold transition-colors flex items-center justify-center gap-2",
+                    voicesTab === 'favorites' ? "bg-white/10 text-white" : "text-slate-300 hover:text-white"
+                  )}
+                >
+                  <Heart className="w-4 h-4" /> Favoritos
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    value={voiceSearch}
+                    onChange={(e) => setVoiceSearch(e.target.value)}
+                    placeholder="Buscar"
+                    className="w-full bg-white/5 border border-white/10 rounded-full pl-11 pr-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                  />
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -1786,52 +1822,49 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   setVoiceGeneratedVoiceId('');
                   setVoiceIsAvailable(null);
                   setVoiceStartSec(0);
-                  setVoiceEndSec(15);
+                  setVoiceEndSec(voiceTrimMaxSec);
+                  setVoiceTrimNowSec(0);
+                  try {
+                    voiceTrimAudioRef.current?.pause?.();
+                  } catch {
+                  }
+                  setVoiceTrimIsPlaying(false);
                   setIsCreateVoiceOpen(true);
                   setIsVoicesPickerOpen(false);
                 }}
-                className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors border border-white/10"
+                className="mt-3 w-full rounded-2xl p-[1px] bg-gradient-to-r from-amber-500/40 via-rose-500/25 to-fuchsia-500/35"
               >
-                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <div className="flex-1 text-left min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="text-white font-extrabold truncate">Crear nueva voz</div>
-                    <div className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 border border-emerald-500/25 text-emerald-200">
-                      NUEVO
-                    </div>
+                <div className="w-full rounded-2xl p-4 bg-[#0b0f16] border border-white/10 flex items-center gap-3 hover:bg-white/5 transition-colors">
+                  <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                    <Plus className="w-5 h-5" />
                   </div>
-                  <div className="text-slate-500 text-xs truncate">Graba o sube tu voz</div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="text-white font-extrabold truncate">Crear voz</div>
+                      <div className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-fuchsia-500/20 border border-fuchsia-400/30 text-fuchsia-200">
+                        NUEVO
+                      </div>
+                    </div>
+                    <div className="text-slate-400 text-xs truncate">Graba o sube tu voz</div>
+                  </div>
+                  <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
                 </div>
-                <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
               </button>
 
-              <div className="mt-3">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    value={voiceSearch}
-                    onChange={(e) => setVoiceSearch(e.target.value)}
-                    placeholder="Buscar por nombre de voz"
-                    className="w-full bg-white/5 border border-white/10 rounded-full pl-11 pr-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
-                  />
-                </div>
-              </div>
-
-              {(() => {
-                const q = (voiceSearch || '').toString().trim().toLowerCase();
-                const list = q
-                  ? voices.filter((v) => `${v.name} ${v.voiceId}`.toLowerCase().includes(q))
-                  : voices;
-                if (!list.length) {
-                  return <div className="mt-4 text-slate-400 text-sm">No tienes voces todavía.</div>;
-                }
-                return (
-                  <div className="space-y-2 mt-4">
-                    {list.map((v) => {
-                      const active = selectedVoice?.voiceId === v.voiceId;
-                      return (
+              {voicesTab === 'favorites' ? (
+                <div className="mt-6 text-slate-400 text-sm text-center">Próximamente</div>
+              ) : (
+                (() => {
+                  const q = (voiceSearch || '').toString().trim().toLowerCase();
+                  const list = q
+                    ? voices.filter((v) => `${v.name} ${v.voiceId}`.toLowerCase().includes(q))
+                    : voices;
+                  if (!list.length) {
+                    return <div className="mt-6 text-slate-400 text-sm text-center">No tienes voces todavía.</div>;
+                  }
+                  return (
+                    <div className="mt-5 grid grid-cols-2 gap-4">
+                      {list.slice(0, 20).map((v) => (
                         <button
                           key={v.voiceId}
                           type="button"
@@ -1839,40 +1872,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                             setSelectedVoice({ voiceId: v.voiceId, name: v.name });
                             setIsVoicesPickerOpen(false);
                           }}
-                          className={cn(
-                            "w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors border",
-                            active ? "border-emerald-500/30" : "border-white/10"
-                          )}
+                          className="group text-left"
                         >
-                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                            <img
-                              src={makeAudioCoverSvgUrl((v.name || 'Voz').toString())}
-                              alt=""
-                              className="w-full h-full object-cover"
-                            />
+                          <div className="aspect-square rounded-[28px] bg-white/5 border border-white/10 overflow-hidden">
+                            <img src={makeAudioCoverSvgUrl((v.name || 'Voz').toString())} alt="" className="w-full h-full object-cover opacity-95 group-hover:opacity-100 transition-opacity" />
                           </div>
-                          <div className="flex-1 text-left min-w-0">
-                            <div className="text-white font-bold truncate">{v.name || 'Voz'}</div>
-                            <div className="text-slate-500 text-xs truncate">{v.status ? String(v.status) : 'Sin descripción.'}</div>
-                          </div>
-                          <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
+                          <div className="mt-3 text-white font-extrabold text-sm truncate">{v.name || 'Voz'}</div>
+                          <div className="text-slate-500 text-xs truncate">{v.status ? String(v.status) : 'Sin descripción.'}</div>
                         </button>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-
-              {selectedVoice?.voiceId && (
-                <button
-                  onClick={() => {
-                    setSelectedVoice(null);
-                    setIsVoicesPickerOpen(false);
-                  }}
-                  className="w-full mt-3 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
-                >
-                  Quitar voz
-                </button>
+                      ))}
+                    </div>
+                  );
+                })()
               )}
             </div>
           </div>
@@ -1890,7 +1901,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full md:max-w-[820px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
+          <div className="relative w-full md:max-w-[980px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
             <div className="p-4 border-b border-white/10 flex items-center justify-center relative">
               <div className="text-white font-extrabold">Crear nueva voz</div>
               <button
@@ -2032,77 +2043,120 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     };
 
                     return (
-                      <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10 bg-gradient-to-b from-white/5 to-transparent">
-                        <div className="text-white font-extrabold text-center">{title}</div>
-                        <div className="mt-1 text-slate-400 text-sm text-center">{subtitle}</div>
+                      <div className="mt-4">
+                        {isVerifyStep ? (
+                          <div className="glass-card rounded-2xl p-4 border border-white/10 bg-gradient-to-b from-white/5 to-transparent">
+                            <div className="text-white font-extrabold text-center">{title}</div>
+                            <div className="mt-1 text-slate-400 text-sm text-center">{subtitle}</div>
 
-                        <div
-                          className="mt-4 rounded-2xl border border-dashed border-white/15 bg-black/20 p-6 text-center"
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const f = e.dataTransfer?.files?.[0] || null;
-                            if (!f) return;
-                            onDropFile(f);
-                          }}
-                        >
-                          <div className="text-slate-300 text-sm">{fileName ? `Seleccionado: ${fileName}` : 'Arrastra un archivo de audio aquí.'}</div>
-                          <div className="mt-2 text-slate-500 text-xs">o usa una opción de abajo</div>
-                        </div>
+                            <div
+                              className="mt-4 rounded-2xl border border-dashed border-white/15 bg-black/20 p-6 text-center"
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const f = e.dataTransfer?.files?.[0] || null;
+                                if (!f) return;
+                                onDropFile(f);
+                              }}
+                            >
+                              <div className="text-slate-300 text-sm">{fileName ? `Seleccionado: ${fileName}` : 'Arrastra un archivo de audio aquí.'}</div>
+                              <div className="mt-2 text-slate-500 text-xs">o usa una opción de abajo</div>
+                            </div>
 
-                        <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                          <button
-                            type="button"
-                            onClick={pickRecord}
-                            disabled={voiceBusy}
-                            className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
-                          >
-                            <Mic className="w-4 h-4" /> Grabar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={pickUpload}
-                            disabled={voiceBusy}
-                            className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
-                          >
-                            <Upload className="w-4 h-4" /> Subir audio
-                          </button>
-                          <button
-                            type="button"
-                            onClick={pickLibrary}
-                            disabled={voiceBusy}
-                            className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
-                          >
-                            <Library className="w-4 h-4" /> Seleccionar de Biblioteca
-                          </button>
-                        </div>
+                            <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                              <button
+                                type="button"
+                                onClick={pickRecord}
+                                disabled={voiceBusy}
+                                className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
+                              >
+                                <Mic className="w-4 h-4" /> Grabar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={pickUpload}
+                                disabled={voiceBusy}
+                                className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
+                              >
+                                <Upload className="w-4 h-4" /> Subir audio
+                              </button>
+                              <button
+                                type="button"
+                                onClick={pickLibrary}
+                                disabled={voiceBusy}
+                                className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
+                              >
+                                <Library className="w-4 h-4" /> Seleccionar de Biblioteca
+                              </button>
+                            </div>
 
-                        {previewUrl ? (
-                          <div className="mt-3">
-                            <audio
-                              controls
-                              preload="metadata"
-                              src={previewUrl}
-                              className="w-full"
-                              onLoadedMetadata={
-                                isVerifyStep
-                                  ? undefined
-                                  : (e) => {
-                                      const d = Number((e.currentTarget as any)?.duration);
-                                      if (!Number.isFinite(d) || d <= 0) return;
-                                      const next = clampVoiceTrim(voiceStartSec, voiceEndSec || Math.min(voiceTrimMaxSec, Math.floor(d)), d);
-                                      setVoiceSourceDurationSec(d);
-                                      setVoiceStartSec(next.start);
-                                      setVoiceEndSec(next.end || Math.min(voiceTrimMaxSec, Math.floor(d)));
-                                    }
-                              }
-                            />
+                            {previewUrl ? (
+                              <div className="mt-3">
+                                <audio controls preload="metadata" src={previewUrl} className="w-full" />
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="rounded-3xl p-[1px] bg-gradient-to-r from-amber-500/35 via-rose-500/20 to-fuchsia-500/30">
+                            <div className="rounded-3xl bg-[#0b0f16] border border-white/10 px-6 py-10 md:px-10">
+                              <div className="text-center">
+                                <div className="text-white font-extrabold text-lg">Agrega tu voz a la mezcla.</div>
+                                <div className="mt-1 text-slate-400 text-sm">
+                                  Graba o sube una muestra y usaremos ese contenido para influir en cómo sonarán tus canciones.
+                                </div>
+                              </div>
+
+                              <div
+                                className="mt-6 rounded-2xl bg-black/20 border border-white/10 px-6 py-10 text-center"
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const f = e.dataTransfer?.files?.[0] || null;
+                                  if (!f) return;
+                                  onDropFile(f);
+                                }}
+                              >
+                                <div className="text-slate-300 text-sm">{fileName ? `Seleccionado: ${fileName}` : 'Arrastra un archivo de audio aquí.'}</div>
+                                <div className="mt-2 text-slate-500 text-xs">o usa una opción de abajo</div>
+
+                                <div className="mt-6 flex flex-col md:flex-row gap-3 justify-center">
+                                  <button
+                                    type="button"
+                                    onClick={pickRecord}
+                                    disabled={voiceBusy}
+                                    className="bg-white/5 border border-white/10 rounded-full px-6 py-2.5 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                                  >
+                                    <Mic className="w-4 h-4" /> Grabar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={pickUpload}
+                                    disabled={voiceBusy}
+                                    className="bg-white/5 border border-white/10 rounded-full px-6 py-2.5 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                                  >
+                                    <Upload className="w-4 h-4" /> Subir audio
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={pickLibrary}
+                                    disabled={voiceBusy}
+                                    className="bg-white/5 border border-white/10 rounded-full px-6 py-2.5 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                                  >
+                                    <Library className="w-4 h-4" /> Seleccionar de Biblioteca
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -2284,7 +2338,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               setVoiceCreateStep('segment');
                             }}
                             disabled={voiceBusy}
-                            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                            className="flex-1 bg-white hover:bg-white/90 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
                           >
                             Usar voz
                           </button>
