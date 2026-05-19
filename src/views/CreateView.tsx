@@ -1591,7 +1591,27 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   return (
-    <div className="flex-1 flex flex-col relative overflow-y-auto">
+    <div
+      className={cn(
+        "flex-1 flex flex-col relative",
+        standaloneVoices ? "overflow-hidden w-full bg-[#030303] text-white" : "overflow-y-auto"
+      )}
+    >
+      {standaloneVoices ? (
+        <div className="p-4 border-b border-white/10 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => onExitVoices?.()}
+            className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10 transition-colors"
+          >
+            <ChevronDown className="w-6 h-6 rotate-90" />
+          </button>
+          <div className="text-white font-extrabold text-lg">Voces</div>
+        </div>
+      ) : null}
+
+      {!standaloneVoices && (
+        <>
       {/* Top Header Tabs */}
       <div className="flex items-center justify-between px-4 mt-4 mb-4">
         <div className="flex bg-white/5 rounded-full p-1 border border-white/5">
@@ -1769,6 +1789,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           </span>
         </button>
       </div>
+        </>
+      )}
 
       {isVoicesPickerOpen && (
         <div className="absolute inset-0 z-[120] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
@@ -1897,7 +1919,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               )}
             </div>
           </div>
-        </div>
       )}
 
       {isCreateVoiceOpen && (
