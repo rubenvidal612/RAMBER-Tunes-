@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2 } from 'lucide-react';
+import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -142,6 +142,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [voiceConsent, setVoiceConsent] = useState(false);
   const [voiceWaveBars, setVoiceWaveBars] = useState<number[]>([]);
+  const voiceTrimAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [voiceTrimIsPlaying, setVoiceTrimIsPlaying] = useState(false);
+  const [voiceTrimNowSec, setVoiceTrimNowSec] = useState(0);
   const voiceRecordInputRef = useRef<HTMLInputElement | null>(null);
   const voiceUploadInputRef = useRef<HTMLInputElement | null>(null);
   const voiceVerifyRecordInputRef = useRef<HTMLInputElement | null>(null);
@@ -390,6 +393,38 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
     return { start: s, end: e, duration: d };
   };
+
+  const toggleTrimPlay = () => {
+    const el = voiceTrimAudioRef.current;
+    if (!el) return;
+    const d = Number(voiceSourceDurationSec || 0);
+    const range = clampVoiceTrim(voiceStartSec, voiceEndSec || voiceTrimMaxSec, d);
+    const start = Number(range.start || 0);
+    const end = Number(range.end || 0);
+    if (!Number.isFinite(end) || end <= start) return;
+
+    const now = Number(el.currentTime || 0);
+    if (!Number.isFinite(now) || now < start || now >= end) {
+      try {
+        el.currentTime = start;
+        setVoiceTrimNowSec(start);
+      } catch {
+      }
+    }
+
+    if (el.paused) {
+      el.play().then(() => setVoiceTrimIsPlaying(true)).catch(() => {});
+    } else {
+      el.pause();
+      setVoiceTrimIsPlaying(false);
+    }
+  };
+
+  useEffect(() => {
+    const el = voiceTrimAudioRef.current;
+    if (!el) return;
+    if (el.paused) setVoiceTrimIsPlaying(false);
+  }, [voiceCreateStep]);
 
   useEffect(() => {
     const file = voiceSourceFile;
@@ -1917,6 +1952,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               if (voiceLibraryMode === 'source') {
                                 setVoiceSourceFile(f);
                                 setVoiceVerifyFile(null);
+                                setVoiceStartSec(0);
+                                setVoiceEndSec(voiceTrimMaxSec);
+                                setVoiceTrimNowSec(0);
+                                try {
+                                  voiceTrimAudioRef.current?.pause?.();
+                                } catch {
+                                }
+                                setVoiceTrimIsPlaying(false);
                                 setVoiceCreateStep('trim');
                               } else {
                                 setVoiceVerifyFile(f);
@@ -1975,6 +2018,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       } else {
                         setVoiceSourceFile(f);
                         setVoiceVerifyFile(null);
+                        setVoiceStartSec(0);
+                        setVoiceEndSec(voiceTrimMaxSec);
+                        setVoiceTrimNowSec(0);
+                        try {
+                          voiceTrimAudioRef.current?.pause?.();
+                        } catch {
+                        }
+                        setVoiceTrimIsPlaying(false);
                         setVoiceCreateStep('trim');
                       }
                       setVoiceCreateError('');
@@ -2063,121 +2114,157 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         <div className="mt-1 text-slate-400 text-sm">Mantén la parte donde más se parezca a tu voz.</div>
                       </div>
 
-                      <div className="mt-4 flex items-center justify-center">
-                        <div className="px-3 py-1 rounded-full bg-fuchsia-500/20 border border-fuchsia-400/30 text-fuchsia-200 text-xs font-extrabold">
-                          {formatMmSs(voiceTrimMaxSec)}
-                        </div>
-                      </div>
+                      <audio
+                        ref={voiceTrimAudioRef}
+                        src={voiceSourcePreviewUrl}
+                        preload="metadata"
+                        className="hidden"
+                        onLoadedMetadata={(e) => {
+                          const d = Number((e.currentTarget as any)?.duration);
+                          if (!Number.isFinite(d) || d <= 0) return;
+                          const next = clampVoiceTrim(voiceStartSec, voiceEndSec || voiceTrimMaxSec, d);
+                          setVoiceSourceDurationSec(d);
+                          setVoiceStartSec(next.start);
+                          setVoiceEndSec(next.end || Math.min(voiceTrimMaxSec, Math.floor(d)));
+                          setVoiceTrimNowSec(next.start);
+                        }}
+                        onTimeUpdate={(e) => {
+                          const el = e.currentTarget as any;
+                          const now = Number(el?.currentTime || 0);
+                          if (!Number.isFinite(now)) return;
+                          setVoiceTrimNowSec(now);
+                          const d = Number(voiceSourceDurationSec || 0);
+                          const range = clampVoiceTrim(voiceStartSec, voiceEndSec || voiceTrimMaxSec, d);
+                          const end = Number(range.end || 0);
+                          if (end > 0 && now >= end) {
+                            try {
+                              el.pause();
+                            } catch {
+                            }
+                            setVoiceTrimIsPlaying(false);
+                          }
+                        }}
+                        onEnded={() => {
+                          setVoiceTrimIsPlaying(false);
+                        }}
+                      />
 
-                      {voiceSourcePreviewUrl ? (
-                        <div className="mt-4">
-                          <audio
-                            controls
-                            preload="metadata"
-                            src={voiceSourcePreviewUrl}
-                            className="w-full"
-                            onLoadedMetadata={(e) => {
-                              const d = Number((e.currentTarget as any)?.duration);
-                              if (!Number.isFinite(d) || d <= 0) return;
-                              const next = clampVoiceTrim(voiceStartSec, voiceEndSec || Math.min(voiceTrimMaxSec, Math.floor(d)), d);
-                              setVoiceSourceDurationSec(d);
-                              setVoiceStartSec(next.start);
-                              setVoiceEndSec(next.end || Math.min(voiceTrimMaxSec, Math.floor(d)));
-                            }}
-                          />
-                        </div>
-                      ) : null}
-
-                      <div className="mt-4 rounded-2xl bg-black/20 border border-white/10 p-4">
-                        <div className="h-14 rounded-xl bg-white/5 border border-white/10 relative overflow-hidden">
-                          <div
-                            className="absolute inset-0 grid items-end gap-[2px] px-2"
-                            style={{
-                              gridTemplateColumns: `repeat(${Math.max(1, voiceWaveBars.length || 140)}, minmax(0, 1fr))`,
-                            }}
-                          >
+                      <div className="mt-6 rounded-2xl bg-black/20 border border-white/10 px-4 pt-6 pb-4">
+                        <div className="relative w-full h-[160px] rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                          <div className="absolute inset-0 flex items-center gap-[2px] px-3">
                             {(voiceWaveBars.length ? voiceWaveBars : new Array(140).fill(22)).map((h, i) => (
                               <div
                                 key={i}
-                                className="rounded-sm bg-white/15"
-                                style={{ height: `${Math.max(8, Math.min(100, Number(h) || 20))}%` }}
+                                className="w-[2px] rounded-full bg-white/35"
+                                style={{ height: `${Math.max(10, Math.min(130, Math.round((Number(h) || 20) * 1.35)))}px` }}
                               />
                             ))}
                           </div>
+
                           {(() => {
                             const d = Math.max(0, Number(voiceSourceDurationSec || 0));
-                            const s = Math.max(0, Math.min(d || 0, Number(voiceStartSec || 0)));
-                            const e = Math.max(0, Math.min(d || 0, Number(voiceEndSec || 0)));
+                            const range = clampVoiceTrim(voiceStartSec, voiceEndSec || voiceTrimMaxSec, d);
+                            const s = Math.max(0, Math.min(d || 0, Number(range.start || 0)));
+                            const e = Math.max(0, Math.min(d || 0, Number(range.end || 0)));
                             const left = d > 0 ? (Math.min(s, e) / d) * 100 : 0;
                             const right = d > 0 ? (Math.max(s, e) / d) * 100 : 0;
                             const center = left + (right - left) / 2;
                             return (
                               <>
-                                <div className="absolute inset-0 bg-black/30" />
-                                <div className="absolute top-0 bottom-0 left-0 bg-black/35" style={{ width: `${left}%` }} />
-                                <div className="absolute top-0 bottom-0 bg-black/35" style={{ left: `${right}%`, right: 0 }} />
-                                <div className="absolute top-0 bottom-0 bg-fuchsia-500/10 border border-fuchsia-400/60" style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }} />
-                                <div className="absolute -top-7" style={{ left: `${center}%`, transform: 'translateX(-50%)' }}>
-                                  <div className="px-3 py-1 rounded-full bg-fuchsia-500/25 border border-fuchsia-400/40 text-fuchsia-200 text-[11px] font-extrabold">
+                                <div className="absolute inset-0 bg-black/20" />
+                                <div className="absolute inset-y-0 left-0 bg-black/45" style={{ width: `${left}%` }} />
+                                <div className="absolute inset-y-0 bg-black/45" style={{ left: `${right}%`, right: 0 }} />
+                                <div
+                                  className="absolute inset-y-2 border-2 border-fuchsia-400/90 rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04)]"
+                                  style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }}
+                                />
+                                <div className="absolute inset-y-2" style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }}>
+                                  <div className="absolute inset-y-0 left-0 w-[8px] bg-fuchsia-400 rounded-l-xl" />
+                                  <div className="absolute inset-y-0 right-0 w-[8px] bg-fuchsia-400 rounded-r-xl" />
+                                </div>
+                                <div className="absolute -top-4" style={{ left: `${center}%`, transform: 'translateX(-50%)' }}>
+                                  <div className="px-3 py-1 rounded-full bg-fuchsia-500 border border-fuchsia-300/40 text-black text-[11px] font-extrabold">
                                     {formatMmSs(voiceTrimMaxSec)}
                                   </div>
                                 </div>
-                                <div className="absolute top-0 bottom-0 w-[10px]" style={{ left: `${left}%` }}>
-                                  <div className="absolute inset-y-0 left-0 w-[3px] bg-fuchsia-400" />
-                                  <div className="absolute inset-y-0 left-[5px] w-[1px] bg-white/50" />
-                                </div>
-                                <div className="absolute top-0 bottom-0 w-[10px]" style={{ left: `${right}%`, transform: 'translateX(-100%)' }}>
-                                  <div className="absolute inset-y-0 right-0 w-[3px] bg-fuchsia-400" />
-                                  <div className="absolute inset-y-0 right-[5px] w-[1px] bg-white/50" />
-                                </div>
+                                {(() => {
+                                  const now = Math.max(0, Math.min(d || 0, Number(voiceTrimNowSec || 0)));
+                                  const pos = d > 0 ? (now / d) * 100 : 0;
+                                  return <div className="absolute top-0 bottom-0 w-[2px] bg-white/40" style={{ left: `${pos}%` }} />;
+                                })()}
                               </>
                             );
                           })()}
+
+                          <div className="absolute inset-0">
+                            <input
+                              type="range"
+                              min={0}
+                              max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
+                              value={Math.max(0, Math.min(Math.floor(voiceSourceDurationSec || 0), Math.floor(voiceStartSec || 0)))}
+                              onChange={(e) => {
+                                const d = Number(voiceSourceDurationSec || 0);
+                                const next = clampVoiceTrim(Number(e.target.value), voiceEndSec, d);
+                                setVoiceStartSec(next.start);
+                                setVoiceEndSec(next.end);
+                                setVoiceTrimNowSec(next.start);
+                                try {
+                                  if (voiceTrimAudioRef.current) voiceTrimAudioRef.current.currentTime = next.start;
+                                } catch {
+                                }
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0"
+                            />
+                            <input
+                              type="range"
+                              min={0}
+                              max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
+                              value={Math.max(0, Math.min(Math.floor(voiceSourceDurationSec || 0), Math.floor(voiceEndSec || 0)))}
+                              onChange={(e) => {
+                                const d = Number(voiceSourceDurationSec || 0);
+                                const next = clampVoiceTrim(voiceStartSec, Number(e.target.value), d);
+                                setVoiceStartSec(next.start);
+                                setVoiceEndSec(next.end);
+                                setVoiceTrimNowSec(next.start);
+                                try {
+                                  if (voiceTrimAudioRef.current) voiceTrimAudioRef.current.currentTime = next.start;
+                                } catch {
+                                }
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0"
+                            />
+                          </div>
                         </div>
 
-                        <div className="mt-4 relative">
-                          <input
-                            type="range"
-                            min={0}
-                            max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
-                            value={Math.max(0, Math.min(Math.floor(voiceSourceDurationSec || 0), Math.floor(voiceStartSec || 0)))}
-                            onChange={(e) => {
-                              const d = Number(voiceSourceDurationSec || 0);
-                              const next = clampVoiceTrim(Number(e.target.value), voiceEndSec, d);
-                              setVoiceStartSec(next.start);
-                              setVoiceEndSec(next.end);
-                            }}
-                            className="absolute inset-0 w-full h-10 opacity-0"
-                          />
-                          <input
-                            type="range"
-                            min={0}
-                            max={Math.max(0, Math.floor(voiceSourceDurationSec || 0))}
-                            value={Math.max(0, Math.min(Math.floor(voiceSourceDurationSec || 0), Math.floor(voiceEndSec || 0)))}
-                            onChange={(e) => {
-                              const d = Number(voiceSourceDurationSec || 0);
-                              const next = clampVoiceTrim(voiceStartSec, Number(e.target.value), d);
-                              setVoiceStartSec(next.start);
-                              setVoiceEndSec(next.end);
-                            }}
-                            className="absolute inset-0 w-full h-10 opacity-0"
-                          />
-                          <div className="h-10" />
+                        <div className="mt-4 text-center text-slate-400 text-xs">
+                          {formatMmSs(voiceStartSec)} — {formatMmSs(Math.min(voiceEndSec, voiceStartSec + voiceTrimMaxSec))}
                         </div>
 
-                        <div className="mt-2 text-center text-slate-400 text-xs">
-                          {formatMmSs(voiceStartSec)} — {formatMmSs(voiceEndSec)}
+                        <div className="mt-5 flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={toggleTrimPlay}
+                            className="w-14 h-14 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-white hover:bg-black/20 transition-colors"
+                          >
+                            {voiceTrimIsPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+                          </button>
                         </div>
 
-                        <div className="mt-4 flex gap-3">
+                        <div className="mt-6 flex gap-3">
                           <button
                             type="button"
                             onClick={() => {
                               if (voiceBusy) return;
+                              try {
+                                voiceTrimAudioRef.current?.pause?.();
+                              } catch {
+                              }
+                              setVoiceTrimIsPlaying(false);
                               setVoiceSourceFile(null);
                               setVoiceSourceDurationSec(0);
                               setVoiceStartSec(0);
                               setVoiceEndSec(voiceTrimMaxSec);
+                              setVoiceTrimNowSec(0);
                               setVoiceCreateStep('pick_source');
                             }}
                             disabled={voiceBusy}
@@ -2189,6 +2276,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                             type="button"
                             onClick={() => {
                               if (voiceBusy) return;
+                              try {
+                                voiceTrimAudioRef.current?.pause?.();
+                              } catch {
+                              }
+                              setVoiceTrimIsPlaying(false);
                               setVoiceCreateStep('segment');
                             }}
                             disabled={voiceBusy}
@@ -2282,6 +2374,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       if (!f) return;
                       setVoiceSourceFile(f);
                       setVoiceVerifyFile(null);
+                      setVoiceStartSec(0);
+                      setVoiceEndSec(voiceTrimMaxSec);
+                      setVoiceTrimNowSec(0);
+                      try {
+                        voiceTrimAudioRef.current?.pause?.();
+                      } catch {
+                      }
+                      setVoiceTrimIsPlaying(false);
                       setVoiceCreateStep('trim');
                       setVoiceCreateError('');
                     }}
@@ -2297,6 +2397,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       if (!f) return;
                       setVoiceSourceFile(f);
                       setVoiceVerifyFile(null);
+                      setVoiceStartSec(0);
+                      setVoiceEndSec(voiceTrimMaxSec);
+                      setVoiceTrimNowSec(0);
+                      try {
+                        voiceTrimAudioRef.current?.pause?.();
+                      } catch {
+                      }
+                      setVoiceTrimIsPlaying(false);
                       setVoiceCreateStep('trim');
                       setVoiceCreateError('');
                     }}
