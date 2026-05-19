@@ -2359,7 +2359,12 @@ export default function App() {
              />
            )}
            {currentTab === 'karaoke' && (
-             <KaraokeView />
+             <div className="flex-1 flex items-center justify-center px-6">
+               <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
+                 <div className="text-white font-extrabold">Video Karaoke</div>
+                 <div className="mt-2 text-sm text-slate-300">Próximamente</div>
+               </div>
+             </div>
            )}
            {currentTab === 'afiliados' && <AffiliatesView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
@@ -2411,7 +2416,12 @@ export default function App() {
                 {currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
               ) : currentTab === 'karaoke' ? (
-                 <KaraokeView />
+                 <div className="flex-1 flex items-center justify-center px-6">
+                   <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
+                     <div className="text-white font-extrabold">Video Karaoke</div>
+                     <div className="mt-2 text-sm text-slate-300">Próximamente</div>
+                   </div>
+                 </div>
                ) : currentTab === 'afiliados' ? (
                  <AffiliatesView />
                 ) : (
