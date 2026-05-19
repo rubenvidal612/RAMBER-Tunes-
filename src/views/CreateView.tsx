@@ -1761,26 +1761,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       </div>
 
       {isVoicesPickerOpen && (
-        <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[560px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[86dvh]">
-            <div className="flex items-center justify-center p-4 border-b border-white/10 relative">
-              <div className="text-white font-extrabold">Voces</div>
+        <div className="fixed inset-0 z-[120] bg-black/70 flex items-end md:items-center justify-center p-4">
+          <button className="absolute inset-0 w-full h-full cursor-default" onClick={() => setIsVoicesPickerOpen(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[540px] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[86dvh]">
+            <div className="flex items-center justify-center p-5 border-b border-white/10 relative">
+              <div className="text-white font-extrabold text-lg">Voces</div>
               <button
                 onClick={() => setIsVoicesPickerOpen(false)}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 absolute right-4 top-1/2 -translate-y-1/2"
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 absolute right-5 top-1/2 -translate-y-1/2 hover:bg-white/10 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 overflow-y-auto min-h-0">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full p-1">
+            <div className="p-6 overflow-y-auto min-h-0">
+              <div className="flex bg-white/5 rounded-full p-1 border border-white/5 mb-6 mx-auto max-w-[300px]">
                 <button
                   type="button"
                   onClick={() => setVoicesTab('mine')}
                   className={cn(
-                    "flex-1 py-2 rounded-full text-xs font-extrabold transition-colors",
-                    voicesTab === 'mine' ? "bg-white/10 text-white" : "text-slate-300 hover:text-white"
+                    "flex-1 px-4 py-2 rounded-full text-sm font-semibold transition-colors",
+                    voicesTab === 'mine' ? "bg-white text-black" : "text-slate-300 hover:text-white"
                   )}
                 >
                   Mis Voces
@@ -1789,24 +1789,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   type="button"
                   onClick={() => setVoicesTab('favorites')}
                   className={cn(
-                    "flex-1 py-2 rounded-full text-xs font-extrabold transition-colors flex items-center justify-center gap-2",
-                    voicesTab === 'favorites' ? "bg-white/10 text-white" : "text-slate-300 hover:text-white"
+                    "flex-1 px-4 py-2 rounded-full text-sm font-semibold transition-colors flex items-center justify-center gap-2",
+                    voicesTab === 'favorites' ? "bg-white text-black" : "text-slate-300 hover:text-white"
                   )}
                 >
                   <Heart className="w-4 h-4" /> Favoritos
                 </button>
               </div>
 
-              <div className="mt-3">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    value={voiceSearch}
-                    onChange={(e) => setVoiceSearch(e.target.value)}
-                    placeholder="Buscar"
-                    className="w-full bg-white/5 border border-white/10 rounded-full pl-11 pr-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
-                  />
-                </div>
+              <div className="relative mb-6">
+                <Search className="w-5 h-5 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  value={voiceSearch}
+                  onChange={(e) => setVoiceSearch(e.target.value)}
+                  placeholder="Buscar"
+                  className="w-full bg-white/5 border border-white/10 rounded-full pl-12 pr-4 py-3.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/40"
+                />
               </div>
 
               <button
@@ -1832,20 +1830,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   setIsCreateVoiceOpen(true);
                   setIsVoicesPickerOpen(false);
                 }}
-                className="mt-3 w-full rounded-2xl p-[1px] bg-gradient-to-r from-amber-500/40 via-rose-500/25 to-fuchsia-500/35"
+                className="w-full rounded-2xl p-[1px] bg-gradient-to-r from-amber-500/40 via-rose-500/25 to-fuchsia-500/35"
               >
-                <div className="w-full rounded-2xl p-4 bg-[#0b0f16] border border-white/10 flex items-center gap-3 hover:bg-white/5 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
+                <div className="w-full rounded-2xl p-4 bg-[#0b0f16] border border-white/10 flex items-center gap-4 hover:bg-white/5 transition-colors">
+                  <div className="w-12 h-12 rounded-full border border-white/20 flex items-center justify-center text-slate-200 shrink-0 border-dashed">
                     <Plus className="w-5 h-5" />
                   </div>
                   <div className="flex-1 text-left min-w-0">
                     <div className="flex items-center gap-2">
-                      <div className="text-white font-extrabold truncate">Crear voz</div>
+                      <div className="text-white font-extrabold text-base truncate">Crear voz</div>
                       <div className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-fuchsia-500/20 border border-fuchsia-400/30 text-fuchsia-200">
                         NUEVO
                       </div>
                     </div>
-                    <div className="text-slate-400 text-xs truncate">Graba o sube tu voz</div>
+                    <div className="text-slate-400 text-sm truncate">Graba o sube tu voz</div>
                   </div>
                   <ChevronDown className="w-5 h-5 text-slate-500 rotate-[-90deg]" />
                 </div>
@@ -1891,9 +1889,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       )}
 
       {isCreateVoiceOpen && (
-        <div className="fixed inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center">
+        <div className="fixed inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center p-4">
           <button
-            className="absolute inset-0 w-full h-full"
+            className="absolute inset-0 w-full h-full cursor-default"
             onClick={() => {
               if (voiceBusy) return;
               setIsCreateVoiceOpen(false);
@@ -1901,22 +1899,23 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full md:max-w-[980px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
-            <div className="p-4 border-b border-white/10 flex items-center justify-center relative">
-              <div className="text-white font-extrabold">Crear nueva voz</div>
+          <div className="relative w-full h-[90dvh] md:w-[90vw] md:h-[85vh] md:max-w-[1200px] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
+            <div className="p-5 border-b border-white/10 flex items-center justify-center relative">
+              <div className="text-white font-extrabold text-lg">Crear nueva voz</div>
               <button
                 onClick={() => {
                   if (voiceBusy) return;
                   setIsCreateVoiceOpen(false);
                   resetVoiceWizard();
                 }}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 absolute right-4 top-1/2 -translate-y-1/2"
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 absolute right-5 top-1/2 -translate-y-1/2 hover:bg-white/10 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto min-h-0">
+            <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center">
+              <div className="w-full max-w-[800px]">
               {voiceCreateError ? (
                 <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-3 text-sm text-red-200">
                   {voiceCreateError}
@@ -2102,16 +2101,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           </div>
                         ) : (
                           <div className="rounded-3xl p-[1px] bg-gradient-to-r from-amber-500/35 via-rose-500/20 to-fuchsia-500/30">
-                            <div className="rounded-3xl bg-[#0b0f16] border border-white/10 px-6 py-10 md:px-10">
+                            <div className="rounded-3xl bg-[#0b0f16] border border-transparent px-6 py-16 md:px-12">
                               <div className="text-center">
-                                <div className="text-white font-extrabold text-lg">Agrega tu voz a la mezcla.</div>
-                                <div className="mt-1 text-slate-400 text-sm">
+                                <div className="text-white font-extrabold text-2xl">Agrega tu voz a la mezcla.</div>
+                                <div className="mt-3 text-slate-400 text-base max-w-[400px] mx-auto">
                                   Graba o sube una muestra y usaremos ese contenido para influir en cómo sonarán tus canciones.
                                 </div>
                               </div>
 
                               <div
-                                className="mt-6 rounded-2xl bg-black/20 border border-white/10 px-6 py-10 text-center"
+                                className="mt-8 rounded-2xl bg-black/20 border border-white/10 px-6 py-12 text-center"
                                 onDragOver={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -2566,6 +2565,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   ) : null}
                 </>
               )}
+              </div>
             </div>
           </div>
         </div>
