@@ -441,6 +441,26 @@ app.post('/api/suno/voices', authenticate, async (req, res) => {
   }
 });
 
+app.delete('/api/suno/voices', authenticate, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const sunoVoiceId = String(payload.sunoVoiceId || payload.suno_voice_id || payload.voiceId || payload.voice_id || '').trim();
+    if (!sunoVoiceId) return res.status(400).json({ error: 'Falta sunoVoiceId' });
+
+    const { error } = await supabase
+      .from('suno_voices')
+      .delete()
+      .eq('user_id', req.user.id)
+      .eq('suno_voice_id', sunoVoiceId);
+
+    if (error) throw error;
+    return res.json({ ok: true });
+  } catch (error) {
+    const detail = (error && typeof error === 'object' ? (error.message || error.details || error.hint) : String(error || '')).toString();
+    return res.status(500).json({ error: 'Error eliminando voz de Suno', detail });
+  }
+});
+
 app.post('/api/suno/clone-voice', authenticate, async (req, res) => {
   const payload = req.body;
   const { uploadUrl, uploadPath, voiceName, voiceProfileName, description, profileImageUrl, category, language, gender, tags, isPublic } = payload;

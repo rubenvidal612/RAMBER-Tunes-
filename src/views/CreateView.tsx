@@ -118,7 +118,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
-  const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }>>([]);
+  const [voices, setVoices] = useState<
+    Array<{
+      voiceId: string;
+      name: string;
+      createdAt: string;
+      taskId?: string;
+      status?: string;
+      profileImageUrl?: string;
+      isPublic?: boolean;
+      tags?: string[];
+      description?: string;
+      singerSkillLevel?: string;
+    }>
+  >([]);
   const [selectedVoice, setSelectedVoice] = useState<{ voiceId: string; name: string } | null>(null);
   const [isCreateVoiceOpen, setIsCreateVoiceOpen] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
@@ -131,7 +144,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceStartSec, setVoiceStartSec] = useState(0);
   const [voiceEndSec, setVoiceEndSec] = useState(240);
   const [voiceCreateStep, setVoiceCreateStep] = useState<
-    'pick_source' | 'trim' | 'segment' | 'generating_phrase' | 'phrase_ready' | 'pick_verify' | 'generating_voice' | 'done'
+    | 'pick_source'
+    | 'trim'
+    | 'segment'
+    | 'generating_phrase'
+    | 'phrase_ready'
+    | 'recording_verify'
+    | 'pick_verify'
+    | 'generating_voice'
+    | 'skill'
+    | 'details'
+    | 'done'
   >('pick_source');
   const [voiceCreateError, setVoiceCreateError] = useState('');
   const [voiceValidateTaskId, setVoiceValidateTaskId] = useState('');
@@ -165,6 +188,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
   const voiceRecorderChunksRef = useRef<Blob[]>([]);
   const voiceRecorderTimerRef = useRef<number | null>(null);
+
+  const [voiceSkillLevel, setVoiceSkillLevel] = useState('');
+  const [voiceDetailsName, setVoiceDetailsName] = useState('');
+  const [voiceDetailsTags, setVoiceDetailsTags] = useState('');
+  const [voiceDetailsDescription, setVoiceDetailsDescription] = useState('');
+  const [voiceDetailsIsPublic, setVoiceDetailsIsPublic] = useState(false);
+  const [voiceDetailsImageKey, setVoiceDetailsImageKey] = useState('');
+  const [voiceDetailsSaving, setVoiceDetailsSaving] = useState(false);
+  const voiceDetailsImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [sunoVoiceDetailsOpen, setSunoVoiceDetailsOpen] = useState(false);
+  const [sunoVoiceDetailsId, setSunoVoiceDetailsId] = useState('');
 
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const uploadXhrRef = useRef<XMLHttpRequest | null>(null);
@@ -270,8 +304,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
         if (voiceRecorderMode === 'verify') {
           setVoiceVerifyFile(file);
-          setVoiceCreateStep('pick_verify');
           setVoiceCreateError('');
+          setVoiceCreateStep('generating_voice');
+          setTimeout(() => {
+            generateCustomVoice(file).catch(() => {});
+          }, 0);
         } else {
           setVoiceSourceFile(file);
           setVoiceVerifyFile(null);
@@ -432,6 +469,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             createdAt: String(v?.createdAt || v?.created_at || new Date().toISOString()).trim() || new Date().toISOString(),
             taskId: typeof v?.taskId === 'string' ? v.taskId : typeof v?.task_id === 'string' ? v.task_id : undefined,
             status: typeof v?.status === 'string' ? v.status : undefined,
+            profileImageUrl: typeof v?.profileImageUrl === 'string' ? v.profileImageUrl : undefined,
+            isPublic: typeof v?.isPublic === 'boolean' ? v.isPublic : undefined,
+            tags: Array.isArray(v?.tags) ? v.tags.filter((x: any) => typeof x === 'string' && x.trim()).map((x: any) => String(x).trim()) : undefined,
+            description: typeof v?.description === 'string' ? v.description : undefined,
+            singerSkillLevel: typeof v?.singerSkillLevel === 'string' ? v.singerSkillLevel : undefined,
           }))
           .filter((v: any) => v.voiceId);
         if (!cancelled) setVoices(clean);
@@ -454,13 +496,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
       const rows = Array.isArray((out as any)?.voices) ? (out as any).voices : [];
       const clean = rows
-        .map((v: any) => ({
-          voiceId: String(v?.suno_voice_id || v?.voiceId || v?.voice_id || '').trim(),
-          name: String(v?.name || v?.voice_name || 'Voz').trim(),
-          createdAt: String(v?.created_at || v?.createdAt || new Date().toISOString()).trim() || new Date().toISOString(),
-          taskId: String(v?.last_task_id || v?.task_id || v?.taskId || '').trim() || undefined,
-          status: String(v?.status || '').trim() || undefined,
-        }))
+        .map((v: any) => {
+          const meta = v?.meta && typeof v.meta === 'object' && !Array.isArray(v.meta) ? v.meta : null;
+          return {
+            voiceId: String(v?.suno_voice_id || v?.voiceId || v?.voice_id || '').trim(),
+            name: String(v?.name || v?.voice_name || 'Voz').trim(),
+            createdAt: String(v?.created_at || v?.createdAt || new Date().toISOString()).trim() || new Date().toISOString(),
+            taskId: String(v?.last_task_id || v?.task_id || v?.taskId || '').trim() || undefined,
+            status: String(v?.status || '').trim() || undefined,
+            profileImageUrl: meta && typeof meta?.profileImageUrl === 'string' ? String(meta.profileImageUrl).trim() : undefined,
+            isPublic: meta && typeof meta?.isPublic === 'boolean' ? Boolean(meta.isPublic) : undefined,
+            tags: meta && Array.isArray(meta?.tags) ? meta.tags.filter((x: any) => typeof x === 'string' && x.trim()).map((x: any) => String(x).trim()) : undefined,
+            description: meta && typeof meta?.description === 'string' ? String(meta.description) : undefined,
+            singerSkillLevel: meta && typeof meta?.singerSkillLevel === 'string' ? String(meta.singerSkillLevel) : undefined,
+          };
+        })
         .filter((v: any) => v.voiceId);
 
       if (!cancelled) setVoices(clean);
@@ -662,7 +712,36 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setIsCreateVoiceOpen(true);
   }, [standaloneVoices, openCreateVoiceSignal]);
 
-  const saveSunoVoiceToDb = async (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
+  const r2ValueToProxyUrl = (raw: any) => {
+    const url = (raw || '').toString().trim();
+    if (!url) return '';
+    if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+    const keyish = url.replace(/^\/+/, '');
+    const allowed = ['avatars/', 'profile-covers/', 'personas/', 'covers/'];
+    if (!/^https?:\/\//i.test(url) && allowed.some((p) => keyish.startsWith(p))) {
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(keyish)}`;
+    }
+    try {
+      const u = new URL(url);
+      const host = (u.hostname || '').toLowerCase();
+      const isR2 =
+        host.includes('.r2.cloudflarestorage.com') ||
+        host.endsWith('.r2.dev') ||
+        host.includes('.r2') ||
+        url.includes('.r2.cloudflarestorage.com/');
+      if (!isR2) return url;
+      const key = (u.pathname || '').replace(/^\/+/, '');
+      if (!key) return url;
+      return `${window.location.origin}/api/r2/object?key=${encodeURIComponent(key)}`;
+    } catch {
+      return url;
+    }
+  };
+
+  const saveSunoVoiceToDb = async (
+    v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string },
+    meta?: any
+  ) => {
     const t = await getAccessToken();
     if (!t.ok) return;
     await fetch('/api/suno/voices', {
@@ -673,6 +752,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         name: v.name,
         status: v.status || null,
         taskId: v.taskId || null,
+        meta: meta || undefined,
       }),
     }).catch(() => {});
   };
@@ -700,6 +780,111 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch {
     }
     saveSunoVoiceToDb(v).catch(() => {});
+  };
+
+  const openSunoVoiceDetails = (v: {
+    voiceId: string;
+    name: string;
+    profileImageUrl?: string;
+    isPublic?: boolean;
+    tags?: string[];
+    description?: string;
+    singerSkillLevel?: string;
+  }) => {
+    setSunoVoiceDetailsId(v.voiceId);
+    setVoiceGeneratedVoiceId(v.voiceId);
+    setVoiceDetailsName((v.name || '').toString());
+    setVoiceDetailsTags(Array.isArray(v.tags) ? v.tags.join(', ') : '');
+    setVoiceDetailsDescription((v.description || '').toString());
+    setVoiceDetailsIsPublic(Boolean(v.isPublic));
+    setVoiceDetailsImageKey((v.profileImageUrl || '').toString());
+    setVoiceSkillLevel((v.singerSkillLevel || '').toString());
+    setVoiceCreateError('');
+    setSunoVoiceDetailsOpen(true);
+  };
+
+  const persistSunoVoiceProfile = async (voiceId: string) => {
+    const id = (voiceId || '').toString().trim();
+    if (!id) return;
+    const nm = (voiceDetailsName || 'Mi voz').toString().trim().slice(0, 120) || 'Mi voz';
+    const tags = (voiceDetailsTags || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    const meta = {
+      profileImageUrl: voiceDetailsImageKey || null,
+      tags,
+      description: (voiceDetailsDescription || '').toString().trim().slice(0, 800) || null,
+      isPublic: Boolean(voiceDetailsIsPublic),
+      singerSkillLevel: (voiceSkillLevel || '').toString().trim() || null,
+    };
+    const existing = voices.find((x) => x.voiceId === id);
+    await saveSunoVoiceToDb(
+      { voiceId: id, name: nm, createdAt: new Date().toISOString(), taskId: existing?.taskId || voiceGenerateTaskId || undefined, status: existing?.status || (voiceIsAvailable ? 'ready' : 'processing') },
+      meta
+    );
+    setVoices((prev) =>
+      prev.map((x) =>
+        x.voiceId === id
+          ? {
+              ...x,
+              name: nm,
+              profileImageUrl: voiceDetailsImageKey || undefined,
+              isPublic: voiceDetailsIsPublic,
+              tags,
+              description: (voiceDetailsDescription || '').toString().trim() || undefined,
+              singerSkillLevel: (voiceSkillLevel || '').toString().trim() || undefined,
+            }
+          : x
+      )
+    );
+    try {
+      const raw = localStorage.getItem('ramber.suno_voices_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const next = [
+        {
+          voiceId: id,
+          name: nm,
+          createdAt: new Date().toISOString(),
+          taskId: existing?.taskId || voiceGenerateTaskId || undefined,
+          status: existing?.status || (voiceIsAvailable ? 'ready' : 'processing'),
+          profileImageUrl: voiceDetailsImageKey || undefined,
+          isPublic: voiceDetailsIsPublic,
+          tags,
+          description: (voiceDetailsDescription || '').toString().trim() || undefined,
+          singerSkillLevel: (voiceSkillLevel || '').toString().trim() || undefined,
+        },
+        ...list.filter((x: any) => String(x?.voiceId || x?.voice_id || '').trim() !== id),
+      ].slice(0, 50);
+      localStorage.setItem('ramber.suno_voices_v1', JSON.stringify(next));
+    } catch {
+    }
+  };
+
+  const deleteSunoVoice = async (voiceId: string) => {
+    const id = (voiceId || '').toString().trim();
+    if (!id) return;
+    const ok = window.confirm('¿Eliminar esta voz?');
+    if (!ok) return;
+    const t = await getAccessToken();
+    if (!t.ok) return;
+    await fetch('/api/suno/voices', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+      body: JSON.stringify({ sunoVoiceId: id }),
+    }).catch(() => {});
+    setVoices((prev) => prev.filter((x) => x.voiceId !== id));
+    if (selectedVoice?.voiceId === id) setSelectedVoice(null);
+    try {
+      const raw = localStorage.getItem('ramber.suno_voices_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const next = list.filter((x: any) => String(x?.voiceId || x?.voice_id || '').trim() !== id);
+      localStorage.setItem('ramber.suno_voices_v1', JSON.stringify(next.slice(0, 50)));
+    } catch {
+    }
   };
 
   const uploadAudioForVoice = async (token: string, file: File) => {
@@ -865,7 +1050,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const validateInfo = String(qout?.validateInfo || '').trim();
         if (status === 'wait_validating' && validateInfo) {
           setVoiceValidateInfo(validateInfo);
-          setVoiceCreateStep('phrase_ready');
+          setVoiceCreateStep('recording_verify');
+          startVoiceRecorder('verify', 15).catch((e) => {
+            setVoiceCreateError(e instanceof Error ? e.message : String(e));
+            setVoiceCreateStep('phrase_ready');
+          });
           return;
         }
         if (status === 'processing_validate_fail' || status === 'fail') {
@@ -881,24 +1070,23 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
   };
 
-  const generateCustomVoice = async () => {
+  const generateCustomVoice = async (verifyFileArg?: File) => {
     if (voiceBusy) return;
     setVoiceCreateError('');
     if (!voiceConsent) {
       setVoiceCreateError('Marca la casilla de consentimiento para continuar.');
       return;
     }
-    const name = (newVoiceName || '').toString().trim();
-    if (!name) {
-      setVoiceCreateError('Ponle un nombre a tu voz.');
-      return;
-    }
+    const rawName = (newVoiceName || '').toString().trim();
+    const defaultName = `Mi voz - ${new Date().toLocaleDateString('es-MX')}`.slice(0, 120);
+    const name = (rawName || defaultName).toString().trim().slice(0, 120) || 'Mi voz';
     const validationTaskId = (voiceValidateTaskId || '').toString().trim();
     if (!validationTaskId) {
       setVoiceCreateError('Falta el taskId de validación.');
       return;
     }
-    if (!voiceVerifyFile) {
+    const verifyFile = verifyFileArg || voiceVerifyFile;
+    if (!verifyFile) {
       setVoiceCreateError('Graba o sube la frase para validar.');
       return;
     }
@@ -909,7 +1097,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const t = await getAccessToken();
       if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
 
-      const uploadedVerify = await uploadAudioForVoice(t.token, voiceVerifyFile);
+      const uploadedVerify = await uploadAudioForVoice(t.token, verifyFile);
       const verifyUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploadedVerify);
       const cleanVerifyUrl = sanitizeExternalUrl(verifyUrlForSuno || uploadedVerify.url);
       const r = await fetch('/api/suno/voice-generate', {
@@ -919,7 +1107,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           taskId: validationTaskId,
           verifyUrl: cleanVerifyUrl,
           voiceName: name,
-          description: (newVoiceDescription || '').toString().trim() || undefined,
         }),
       });
       const out = await r.json().catch(() => ({}));
@@ -973,7 +1160,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       upsertLocalVoice({ voiceId: finalVoiceId, name, createdAt: new Date().toISOString(), taskId: genTaskId, status: available ? 'ready' : 'processing' });
       setSelectedVoice({ voiceId: finalVoiceId, name });
-      setVoiceCreateStep('done');
+      setVoiceDetailsName(name);
+      setVoiceDetailsTags('');
+      setVoiceDetailsDescription('');
+      setVoiceDetailsIsPublic(false);
+      setVoiceDetailsImageKey('');
+      setVoiceSkillLevel('');
+      setVoiceCreateStep('skill');
     } catch (e) {
       setVoiceCreateError(e instanceof Error ? e.message : String(e));
       setVoiceCreateStep('pick_verify');
@@ -2162,11 +2355,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           }}
                           className="group text-left"
                         >
-                          <div className="aspect-square rounded-[28px] bg-white/5 border border-white/10 overflow-hidden">
-                            <img src={makeAudioCoverSvgUrl((v.name || 'Voz').toString())} alt="" className="w-full h-full object-cover opacity-95 group-hover:opacity-100 transition-opacity" />
+                          <div className="relative aspect-square rounded-[28px] bg-white/5 border border-white/10 overflow-hidden">
+                            <img
+                              src={v.profileImageUrl ? r2ValueToProxyUrl(v.profileImageUrl) : makeAudioCoverSvgUrl((v.name || 'Voz').toString())}
+                              alt=""
+                              className="w-full h-full object-cover opacity-95 group-hover:opacity-100 transition-opacity"
+                            />
+                            <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openSunoVoiceDetails(v);
+                                }}
+                                className="w-9 h-9 rounded-full bg-black/50 border border-white/10 flex items-center justify-center text-white hover:bg-black/70"
+                                aria-label="Editar"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  deleteSunoVoice(v.voiceId).catch(() => {});
+                                }}
+                                className="w-9 h-9 rounded-full bg-black/50 border border-white/10 flex items-center justify-center text-white hover:bg-black/70"
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-3 text-white font-extrabold text-sm truncate">{v.name || 'Voz'}</div>
-                          <div className="text-slate-500 text-xs truncate">{v.status ? String(v.status) : 'Sin descripción.'}</div>
+                          <div className="text-slate-500 text-xs truncate">{v.description ? String(v.description) : v.status ? String(v.status) : 'Sin descripción.'}</div>
                         </button>
                       ))}
                     </div>
@@ -2177,6 +2400,192 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           </div>
         </div>
       )}
+
+      {sunoVoiceDetailsOpen ? (
+        <div className="fixed inset-0 z-[124] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 w-full h-full cursor-default"
+            onClick={() => {
+              if (voiceDetailsSaving) return;
+              setSunoVoiceDetailsOpen(false);
+              setSunoVoiceDetailsId('');
+            }}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full max-w-3xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-5 border-b border-white/10 flex items-center justify-center relative">
+              <div className="text-white font-extrabold text-lg">Detalles de la voz</div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (voiceDetailsSaving) return;
+                  setSunoVoiceDetailsOpen(false);
+                  setSunoVoiceDetailsId('');
+                }}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 absolute right-5 top-1/2 -translate-y-1/2 hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 md:p-8">
+              <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5 items-start">
+                <div className="flex flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={() => voiceDetailsImageInputRef.current?.click()}
+                    className="w-[140px] h-[140px] rounded-[36px] bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center"
+                    disabled={voiceDetailsSaving}
+                  >
+                    {voiceDetailsImageKey ? (
+                      <img src={r2ValueToProxyUrl(voiceDetailsImageKey)} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={makeAudioCoverSvgUrl((voiceDetailsName || 'Voz').toString())} alt="" className="w-full h-full object-cover opacity-95" />
+                    )}
+                  </button>
+                  <input
+                    ref={voiceDetailsImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      e.currentTarget.value = '';
+                      if (!f) return;
+                      if (f.size > 25 * 1024 * 1024) {
+                        setVoiceCreateError('La imagen es muy pesada. Usa una menor a 25 MB.');
+                        return;
+                      }
+                      (async () => {
+                        setVoiceCreateError('');
+                        const t = await getAccessToken();
+                        if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+                        const ab = await f.arrayBuffer();
+                        const fileArray = Array.from(new Uint8Array(ab));
+                        const safeCt = (f.type || 'image/jpeg').toString().slice(0, 120);
+                        const userId = (await supabaseBrowser.auth.getUser()).data.user?.id || 'unknown';
+                        const id = (sunoVoiceDetailsId || voiceGeneratedVoiceId || '').toString().trim() || `temp_${Date.now()}`;
+                        const path = `personas/${userId}/suno_voice_${id}_${Date.now()}.jpg`;
+                        const r = await fetch('/api/account/upload-profile-image', {
+                          method: 'POST',
+                          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                          body: JSON.stringify({ path, data: fileArray, contentType: safeCt }),
+                        });
+                        const out = await r.json().catch(() => ({}));
+                        if (!r.ok) throw new Error((out?.error || out?.detail || 'No pude subir la imagen.').toString());
+                        const key = (out?.key || path).toString().trim() || path;
+                        setVoiceDetailsImageKey(key);
+                      })().catch((e) => setVoiceCreateError(e instanceof Error ? e.message : String(e)));
+                    }}
+                  />
+                  <div className="mt-3 text-slate-400 text-xs">Toca para cambiar la imagen</div>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="glass-card rounded-2xl p-4 border border-white/10">
+                    <div className="text-slate-400 text-xs font-semibold">Nombre de la voz</div>
+                    <input
+                      value={voiceDetailsName}
+                      onChange={(e) => setVoiceDetailsName(e.target.value)}
+                      placeholder="Ponle un nombre"
+                      className="mt-2 w-full bg-transparent outline-none text-white font-extrabold"
+                      maxLength={120}
+                    />
+                  </div>
+
+                  <div className="mt-3 glass-card rounded-2xl p-4 border border-white/10">
+                    <div className="text-slate-400 text-xs font-semibold">Tags de estilo (opcional)</div>
+                    <input
+                      value={voiceDetailsTags}
+                      onChange={(e) => setVoiceDetailsTags(e.target.value)}
+                      placeholder="Ej: regional, mariachi, norteño"
+                      className="mt-2 w-full bg-transparent outline-none text-white"
+                      maxLength={220}
+                    />
+                  </div>
+
+                  <div className="mt-3 glass-card rounded-2xl p-4 border border-white/10">
+                    <div className="text-slate-400 text-xs font-semibold">Descripción (opcional)</div>
+                    <textarea
+                      value={voiceDetailsDescription}
+                      onChange={(e) => setVoiceDetailsDescription(e.target.value)}
+                      placeholder="Agrega una descripción"
+                      className="mt-2 w-full bg-transparent outline-none text-white resize-none"
+                      rows={3}
+                      maxLength={800}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setVoiceDetailsIsPublic((v) => !v)}
+                    className={cn(
+                      "mt-3 w-full rounded-2xl p-4 border text-left transition-colors",
+                      voiceDetailsIsPublic ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-200" : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+                    )}
+                  >
+                    <div className="font-extrabold">Público</div>
+                    <div className="text-xs opacity-80">Permite que otros usuarios encuentren esta voz</div>
+                  </button>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (voiceDetailsSaving) return;
+                        setSunoVoiceDetailsOpen(false);
+                        setSunoVoiceDetailsId('');
+                      }}
+                      className="h-[46px] rounded-full bg-white/5 border border-white/10 text-slate-200 font-extrabold hover:bg-white/10"
+                    >
+                      Volver
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = (sunoVoiceDetailsId || '').toString().trim();
+                        if (!id) return;
+                        setVoiceDetailsSaving(true);
+                        persistSunoVoiceProfile(id)
+                          .then(() => {
+                            setSunoVoiceDetailsOpen(false);
+                            setSunoVoiceDetailsId('');
+                          })
+                          .catch(() => {})
+                          .finally(() => setVoiceDetailsSaving(false));
+                      }}
+                      disabled={voiceDetailsSaving || !(sunoVoiceDetailsId || '').toString().trim()}
+                      className="h-[46px] rounded-full bg-white text-black font-extrabold disabled:opacity-60"
+                    >
+                      Guardar
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = (sunoVoiceDetailsId || '').toString().trim();
+                      if (!id) return;
+                      setVoiceDetailsSaving(true);
+                      deleteSunoVoice(id)
+                        .then(() => {
+                          setSunoVoiceDetailsOpen(false);
+                          setSunoVoiceDetailsId('');
+                        })
+                        .catch(() => {})
+                        .finally(() => setVoiceDetailsSaving(false));
+                    }}
+                    disabled={voiceDetailsSaving || !(sunoVoiceDetailsId || '').toString().trim()}
+                    className="mt-3 w-full h-[46px] rounded-full bg-red-500/20 border border-red-500/30 text-red-200 font-extrabold hover:bg-red-500/25 disabled:opacity-60"
+                  >
+                    Eliminar voz
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isCreateVoiceOpen && (
         <div className={`${standaloneVoices ? 'absolute' : 'fixed'} inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center p-4`}>
@@ -2801,30 +3210,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           );
                         })()}
 
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setVoiceRecorderOpen(false);
-                              setVoiceRecorderState('idle');
-                              stopVoiceRecorder(false).catch(() => {});
-                            }}
-                            className="h-[44px] rounded-full bg-white/5 border border-white/10 text-slate-200 font-bold hover:bg-white/10"
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setVoiceRecorderState('stopping');
-                              stopVoiceRecorder(true).catch(() => {});
-                            }}
-                            disabled={voiceRecorderState !== 'recording'}
-                            className="h-[44px] rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold disabled:opacity-60"
-                          >
-                            Detener
-                          </button>
-                        </div>
+                        <div className="mt-4" />
                       </div>
                     </div>
                   ) : null}
@@ -2887,8 +3273,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       e.currentTarget.value = '';
                       if (!f) return;
                       setVoiceVerifyFile(f);
-                      setVoiceCreateStep('pick_verify');
                       setVoiceCreateError('');
+                      setVoiceCreateStep('generating_voice');
+                      setTimeout(() => {
+                        generateCustomVoice(f).catch(() => {});
+                      }, 0);
                     }}
                   />
                   <input
@@ -2901,8 +3290,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       e.currentTarget.value = '';
                       if (!f) return;
                       setVoiceVerifyFile(f);
-                      setVoiceCreateStep('pick_verify');
                       setVoiceCreateError('');
+                      setVoiceCreateStep('generating_voice');
+                      setTimeout(() => {
+                        generateCustomVoice(f).catch(() => {});
+                      }, 0);
                     }}
                   />
 
@@ -2915,19 +3307,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
                   {voiceCreateStep === 'phrase_ready' ? (
                     <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
-                      <div className="text-white font-extrabold">Frase lista</div>
+                      <div className="text-white font-extrabold">Lee esto en voz alta</div>
                       <div className="mt-2 text-slate-200 text-sm whitespace-pre-wrap">{voiceValidateInfo}</div>
                       <button
                         type="button"
                         onClick={() => {
                           setVoiceCreateError('');
-                          startVoiceRecorder('verify', 10).catch((e) => {
+                          startVoiceRecorder('verify', 15).catch((e) => {
                             setVoiceCreateError(e instanceof Error ? e.message : String(e));
                           });
                         }}
                         className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm"
                       >
-                        Grabar frase (10s)
+                        Empezar grabación
                       </button>
                       <button
                         type="button"
@@ -2937,7 +3329,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         }}
                         className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
                       >
-                        Ya la grabé / subir grabación
+                        Ya la grabé / subir archivo
                       </button>
                     </div>
                   ) : null}
@@ -2954,39 +3346,197 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => generateCustomVoice().catch(() => {})}
+                        onClick={() => generateCustomVoice(voiceVerifyFile || undefined).catch(() => {})}
                         disabled={voiceBusy || !voiceVerifyFile}
                         className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
                       >
-                        Crear voz
+                        Continuar
                       </button>
                     </div>
                   ) : null}
 
                   {voiceCreateStep === 'generating_voice' ? (
-                    <div className="mt-4 flex items-center gap-3 text-slate-200">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <div>Creando tu voz…</div>
+                    <div className="mt-4 glass-card rounded-2xl p-6 border border-white/10 text-center">
+                      <div className="text-emerald-300 font-extrabold text-lg">¡Listo!</div>
+                      <div className="mt-3 flex items-center justify-center gap-3 text-slate-200">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <div>Verificando tu voz…</div>
+                      </div>
                     </div>
                   ) : null}
 
-                  {voiceCreateStep === 'done' ? (
-                    <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
-                      <div className="text-white font-extrabold">Voz creada</div>
-                      <div className="mt-2 text-slate-200 text-sm">voiceId: {voiceGeneratedVoiceId || '—'}</div>
-                      <div className="mt-1 text-slate-400 text-sm">
-                        Disponible: {voiceIsAvailable == null ? 'verificando…' : voiceIsAvailable ? 'sí' : 'todavía no'}
+                  {voiceCreateStep === 'skill' ? (
+                    <div className="mt-4 glass-card rounded-2xl p-6 border border-white/10 text-center">
+                      <div className="text-white font-extrabold text-lg">Preparando tu voz</div>
+                      <div className="mt-2 text-slate-400 text-sm">Pregunta rápida mientras terminamos.</div>
+                      <div className="mt-4 text-white font-extrabold text-xl">¿Cómo describirías tu canto?</div>
+                      <div className="mt-5 space-y-3">
+                        {[
+                          { key: 'beginner', label: 'Principiante', desc: 'Todavía estoy encontrando mi voz' },
+                          { key: 'intermediate', label: 'Intermedio', desc: 'Puedo sostener la melodía' },
+                          { key: 'advanced', label: 'Avanzado', desc: 'La gente lo nota' },
+                          { key: 'professional', label: 'Profesional', desc: 'Es a lo que me dedico' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => {
+                              const next = String(opt.key);
+                              setVoiceSkillLevel(next);
+                              const id = (voiceGeneratedVoiceId || '').toString().trim();
+                              const nm = (voiceDetailsName || newVoiceName || 'Mi voz').toString().trim() || 'Mi voz';
+                              if (id) {
+                                saveSunoVoiceToDb(
+                                  { voiceId: id, name: nm, createdAt: new Date().toISOString(), taskId: voiceGenerateTaskId || undefined, status: voiceIsAvailable ? 'ready' : 'processing' },
+                                  { singerSkillLevel: next }
+                                ).catch(() => {});
+                              }
+                              setVoiceCreateStep('details');
+                            }}
+                            className="w-full rounded-2xl bg-white/5 border border-white/10 px-5 py-4 text-left hover:bg-white/10 transition-colors"
+                          >
+                            <div className="text-white font-extrabold">{opt.label}</div>
+                            <div className="text-slate-400 text-sm">{opt.desc}</div>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVoiceSkillLevel('');
+                            setVoiceCreateStep('details');
+                          }}
+                          className="w-full rounded-2xl bg-white/5 border border-white/10 px-5 py-4 text-white font-extrabold hover:bg-white/10 transition-colors"
+                        >
+                          Omitir
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCreateVoiceOpen(false);
-                          resetVoiceWizard();
-                        }}
-                        className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
-                      >
-                        Listo
-                      </button>
+                    </div>
+                  ) : null}
+
+                  {voiceCreateStep === 'details' ? (
+                    <div className="mt-4 glass-card rounded-2xl p-5 border border-white/10">
+                      <div className="text-white font-extrabold text-lg text-center">Detalles de la voz</div>
+
+                      <div className="mt-5 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5 items-start">
+                        <div className="flex flex-col items-center">
+                          <button
+                            type="button"
+                            onClick={() => voiceDetailsImageInputRef.current?.click()}
+                            className="w-[140px] h-[140px] rounded-[36px] bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center"
+                            disabled={voiceDetailsSaving}
+                          >
+                            {voiceDetailsImageKey ? (
+                              <img src={r2ValueToProxyUrl(voiceDetailsImageKey)} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <img src={makeAudioCoverSvgUrl((voiceDetailsName || 'Voz').toString())} alt="" className="w-full h-full object-cover opacity-95" />
+                            )}
+                          </button>
+                          <input
+                            ref={voiceDetailsImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] || null;
+                              e.currentTarget.value = '';
+                              if (!f) return;
+                              if (f.size > 25 * 1024 * 1024) {
+                                setVoiceCreateError('La imagen es muy pesada. Usa una menor a 25 MB.');
+                                return;
+                              }
+                              (async () => {
+                                setVoiceCreateError('');
+                                const t = await getAccessToken();
+                                if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+                                const ab = await f.arrayBuffer();
+                                const fileArray = Array.from(new Uint8Array(ab));
+                                const safeCt = (f.type || 'image/jpeg').toString().slice(0, 120);
+                                const userId = (await supabaseBrowser.auth.getUser()).data.user?.id || 'unknown';
+                                const id = (voiceGeneratedVoiceId || '').toString().trim() || `temp_${Date.now()}`;
+                                const path = `personas/${userId}/suno_voice_${id}_${Date.now()}.jpg`;
+                                const r = await fetch('/api/account/upload-profile-image', {
+                                  method: 'POST',
+                                  headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                                  body: JSON.stringify({ path, data: fileArray, contentType: safeCt }),
+                                });
+                                const out = await r.json().catch(() => ({}));
+                                if (!r.ok) throw new Error((out?.error || out?.detail || 'No pude subir la imagen.').toString());
+                                const key = (out?.key || path).toString().trim() || path;
+                                setVoiceDetailsImageKey(key);
+                              })().catch((e) => setVoiceCreateError(e instanceof Error ? e.message : String(e)));
+                            }}
+                          />
+                          <div className="mt-3 text-slate-400 text-xs">Toca para cambiar la imagen</div>
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="glass-card rounded-2xl p-4 border border-white/10">
+                            <div className="text-slate-400 text-xs font-semibold">Nombre de la voz</div>
+                            <input
+                              value={voiceDetailsName}
+                              onChange={(e) => setVoiceDetailsName(e.target.value)}
+                              placeholder="Ponle un nombre"
+                              className="mt-2 w-full bg-transparent outline-none text-white font-extrabold"
+                              maxLength={120}
+                            />
+                          </div>
+
+                          <div className="mt-3 glass-card rounded-2xl p-4 border border-white/10">
+                            <div className="text-slate-400 text-xs font-semibold">Tags de estilo (opcional)</div>
+                            <input
+                              value={voiceDetailsTags}
+                              onChange={(e) => setVoiceDetailsTags(e.target.value)}
+                              placeholder="Ej: regional, mariachi, norteño"
+                              className="mt-2 w-full bg-transparent outline-none text-white"
+                              maxLength={220}
+                            />
+                          </div>
+
+                          <div className="mt-3 glass-card rounded-2xl p-4 border border-white/10">
+                            <div className="text-slate-400 text-xs font-semibold">Descripción (opcional)</div>
+                            <textarea
+                              value={voiceDetailsDescription}
+                              onChange={(e) => setVoiceDetailsDescription(e.target.value)}
+                              placeholder="Agrega una descripción"
+                              className="mt-2 w-full bg-transparent outline-none text-white resize-none"
+                              rows={3}
+                              maxLength={800}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setVoiceDetailsIsPublic((v) => !v)}
+                            className={cn(
+                              "mt-3 w-full rounded-2xl p-4 border text-left transition-colors",
+                              voiceDetailsIsPublic ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-200" : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+                            )}
+                          >
+                            <div className="font-extrabold">Público</div>
+                            <div className="text-xs opacity-80">Permite que otros usuarios encuentren esta voz</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const id = (voiceGeneratedVoiceId || '').toString().trim();
+                              if (!id) return;
+                              setVoiceDetailsSaving(true);
+                              persistSunoVoiceProfile(id)
+                                .then(() => {
+                                  setIsCreateVoiceOpen(false);
+                                  resetVoiceWizard();
+                                })
+                                .catch(() => {})
+                                .finally(() => setVoiceDetailsSaving(false));
+                            }}
+                            disabled={voiceDetailsSaving || !(voiceGeneratedVoiceId || '').toString().trim()}
+                            className="mt-4 w-full bg-white text-black h-[48px] rounded-full font-extrabold disabled:opacity-60"
+                          >
+                            Guardar
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ) : null}
                 </>
