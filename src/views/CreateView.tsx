@@ -154,9 +154,155 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const voiceUploadInputRef = useRef<HTMLInputElement | null>(null);
   const voiceVerifyRecordInputRef = useRef<HTMLInputElement | null>(null);
   const voiceVerifyUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [voiceRecorderOpen, setVoiceRecorderOpen] = useState(false);
+  const [voiceRecorderMode, setVoiceRecorderMode] = useState<'source' | 'verify'>('source');
+  const [voiceRecorderState, setVoiceRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
+  const [voiceRecorderError, setVoiceRecorderError] = useState('');
+  const [voiceRecorderElapsedMs, setVoiceRecorderElapsedMs] = useState(0);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
+  const voiceRecorderChunksRef = useRef<Blob[]>([]);
+  const voiceRecorderTimerRef = useRef<number | null>(null);
 
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const uploadXhrRef = useRef<XMLHttpRequest | null>(null);
+
+  const stopVoiceRecorder = async (finalize: boolean) => {
+    try {
+      if (voiceRecorderTimerRef.current) {
+        window.clearInterval(voiceRecorderTimerRef.current);
+      }
+    } catch {
+    }
+    voiceRecorderTimerRef.current = null;
+
+    const mr = voiceRecorderRef.current;
+    const stream = voiceRecorderStreamRef.current;
+    voiceRecorderRef.current = null;
+    voiceRecorderStreamRef.current = null;
+
+    if (finalize && mr && mr.state !== 'inactive') {
+      try {
+        mr.stop();
+      } catch {
+      }
+    }
+
+    try {
+      stream?.getTracks?.().forEach((t) => {
+        try {
+          t.stop();
+        } catch {
+        }
+      });
+    } catch {
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopVoiceRecorder(false).catch(() => {});
+    };
+  }, []);
+
+  const startVoiceRecorder = async (mode: 'source' | 'verify') => {
+    setVoiceRecorderError('');
+
+    const navAny = navigator as any;
+    const canMedia =
+      typeof window !== 'undefined' &&
+      typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
+      typeof (window as any).MediaRecorder === 'function';
+
+    if (!canMedia) {
+      if (mode === 'verify') voiceVerifyRecordInputRef.current?.click?.();
+      else voiceRecordInputRef.current?.click?.();
+      return;
+    }
+
+    try {
+      await stopVoiceRecorder(false);
+      setVoiceRecorderMode(mode);
+      setVoiceRecorderElapsedMs(0);
+      setVoiceRecorderState('idle');
+      setVoiceRecorderOpen(true);
+
+      const stream = await navAny.mediaDevices.getUserMedia({ audio: true });
+      voiceRecorderStreamRef.current = stream;
+      voiceRecorderChunksRef.current = [];
+
+      const MR = (window as any).MediaRecorder as typeof MediaRecorder;
+      const pickMime = () => {
+        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+        for (const t of types) {
+          try {
+            if (MR.isTypeSupported(t)) return t;
+          } catch {
+          }
+        }
+        return '';
+      };
+      const mimeType = pickMime();
+      const mr = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
+      voiceRecorderRef.current = mr;
+
+      mr.ondataavailable = (e: BlobEvent) => {
+        const b = e.data;
+        if (!b) return;
+        if (!b.size) return;
+        voiceRecorderChunksRef.current.push(b);
+      };
+
+      mr.onstop = () => {
+        const chunks = voiceRecorderChunksRef.current;
+        voiceRecorderChunksRef.current = [];
+
+        const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+        const ct = (blob.type || mr.mimeType || 'audio/webm').toLowerCase();
+        const ext = ct.includes('mp4') ? 'm4a' : ct.includes('webm') ? 'webm' : 'webm';
+        const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
+
+        if (voiceRecorderMode === 'verify') {
+          setVoiceVerifyFile(file);
+          setVoiceCreateStep('pick_verify');
+          setVoiceCreateError('');
+        } else {
+          setVoiceSourceFile(file);
+          setVoiceVerifyFile(null);
+          setVoiceStartSec(0);
+          setVoiceEndSec(voiceTrimMaxSec);
+          setVoiceTrimNowSec(0);
+          try {
+            voiceTrimAudioRef.current?.pause?.();
+          } catch {
+          }
+          setVoiceTrimIsPlaying(false);
+          setVoiceCreateStep('trim');
+          setVoiceCreateError('');
+        }
+
+        setVoiceRecorderState('idle');
+        setVoiceRecorderOpen(false);
+        stopVoiceRecorder(false).catch(() => {});
+      };
+
+      setVoiceRecorderState('recording');
+      mr.start(250);
+
+      const startedAt = Date.now();
+      voiceRecorderTimerRef.current = window.setInterval(() => {
+        setVoiceRecorderElapsedMs(Date.now() - startedAt);
+      }, 200);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setVoiceRecorderError(msg || 'No pude acceder al micrófono.');
+      setVoiceRecorderState('idle');
+      try {
+        await stopVoiceRecorder(false);
+      } catch {
+      }
+    }
+  };
 
   useEffect(() => {
     try {
@@ -2086,8 +2232,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     const previewUrl = isVerifyStep ? voiceVerifyPreviewUrl : voiceSourcePreviewUrl;
 
                     const pickRecord = () => {
-                      if (isVerifyStep) voiceVerifyRecordInputRef.current?.click?.();
-                      else voiceRecordInputRef.current?.click?.();
+                      startVoiceRecorder(isVerifyStep ? 'verify' : 'source').catch((e) => {
+                        setVoiceCreateError(e instanceof Error ? e.message : String(e));
+                      });
                     };
                     const pickUpload = () => {
                       if (isVerifyStep) voiceVerifyUploadInputRef.current?.click?.();
@@ -2491,6 +2638,70 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         </button>
                       ) : null}
                     </>
+                  ) : null}
+
+                  {voiceRecorderOpen ? (
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+                      <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0b0f16] p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-white font-extrabold">Grabadora</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceRecorderOpen(false);
+                              setVoiceRecorderState('idle');
+                              stopVoiceRecorder(false).catch(() => {});
+                            }}
+                            className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 text-slate-400 text-sm">
+                          {voiceRecorderMode === 'verify' ? 'Graba la frase de validación (solo voz).' : 'Graba una muestra de tu voz (solo voz, sin música).'}
+                        </div>
+
+                        {voiceRecorderError ? <div className="mt-3 text-red-300 text-sm">{voiceRecorderError}</div> : null}
+
+                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 text-slate-200 font-semibold">
+                              <span className={cn('w-2.5 h-2.5 rounded-full', voiceRecorderState === 'recording' ? 'bg-red-500' : 'bg-slate-600')} />
+                              {voiceRecorderState === 'recording' ? 'Grabando…' : 'Listo'}
+                            </div>
+                            <div className="text-slate-300 text-sm tabular-nums">
+                              {Math.floor(voiceRecorderElapsedMs / 1000)}s
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceRecorderOpen(false);
+                              setVoiceRecorderState('idle');
+                              stopVoiceRecorder(false).catch(() => {});
+                            }}
+                            className="h-[44px] rounded-full bg-white/5 border border-white/10 text-slate-200 font-bold hover:bg-white/10"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceRecorderState('stopping');
+                              stopVoiceRecorder(true).catch(() => {});
+                            }}
+                            disabled={voiceRecorderState !== 'recording'}
+                            className="h-[44px] rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold disabled:opacity-60"
+                          >
+                            Detener
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
 
                   <input
