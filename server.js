@@ -208,6 +208,11 @@ function normalizeSunoBaseUrl(url) {
   return s.replace(/\/+$/, "");
 }
 
+function sanitizeExternalUrl(raw) {
+  const s = (raw || "").toString().trim();
+  return s.replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+}
+
 async function sunoFetchJson(path, init = {}) {
   const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
   const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
@@ -407,7 +412,7 @@ app.post('/api/suno/clone-voice', authenticate, async (req, res) => {
 app.post('/api/suno/voice-validate', authenticate, async (req, res) => {
   try {
     const payload = req.body || {};
-    const voiceUrl = String(payload.voiceUrl || payload.voice_url || "").trim();
+    const voiceUrl = sanitizeExternalUrl(String(payload.voiceUrl || payload.voice_url || "").trim());
     const vocalStartSRaw = Number(payload.vocalStartS ?? payload.vocal_start_s ?? payload.vocalStart ?? payload.vocal_start);
     const vocalEndSRaw = Number(payload.vocalEndS ?? payload.vocal_end_s ?? payload.vocalEnd ?? payload.vocal_end);
     const language = String(payload.language || "es").trim() || "es";
@@ -475,7 +480,7 @@ app.post('/api/suno/voice-generate', authenticate, async (req, res) => {
   try {
     const payload = req.body || {};
     const validationTaskId = String(payload.taskId || payload.task_id || "").trim();
-    const verifyUrl = String(payload.verifyUrl || payload.verify_url || "").trim();
+    const verifyUrl = sanitizeExternalUrl(String(payload.verifyUrl || payload.verify_url || "").trim());
     const voiceName = String(payload.voiceName || payload.voice_name || "").trim();
     const description = String(payload.description || "").trim();
     const style = String(payload.style || "").trim();
