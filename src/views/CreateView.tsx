@@ -1993,7 +1993,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           />
           <div className="relative w-full h-[90dvh] md:w-[80vw] md:h-[85vh] md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
             <div className="p-5 border-b border-white/10 flex items-center justify-center relative">
-              <div className="text-white font-extrabold text-lg">Crear nueva voz</div>
+              <div className="text-white font-extrabold text-lg">En Construccion ... No Subir Audios</div>
               <button
                 onClick={() => {
                   if (voiceBusy) return;
