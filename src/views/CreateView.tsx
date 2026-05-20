@@ -504,11 +504,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
 
     const uploadInline = async () => {
-      const dataUrl = await readAsDataUrl(file);
+      const arrayBuffer = await file.arrayBuffer();
+      const fileArray = Array.from(new Uint8Array(arrayBuffer));
       const r = await fetch('/api/upload-audio', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: name, contentType, file: dataUrl }),
+        body: JSON.stringify({ title: name, contentType, file: fileArray }),
       });
       const out = await r.json().catch(() => ({}));
       const url = (out?.url || '').toString().trim();
@@ -523,38 +524,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ title: name, contentType }),
       });
-      const prepText = await prep.text().catch(() => '');
-      const prepOut = (() => {
-        try {
-          return prepText ? JSON.parse(prepText) : {};
-        } catch {
-          return { error: prepText || 'Respuesta inválida del servidor.' };
-        }
-      })();
+      const prepOut = await prep.json().catch(() => ({}));
       
       if (prep.ok && prepOut?.ok) {
         const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
         const url = (prepOut?.url || '').toString().trim();
         if (uploadUrl) {
           const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
-          if (!put.ok) {
-            throw new Error('No pude subir el audio. Si sale un error de CORS, hay que habilitar CORS en Cloudflare R2.');
-          }
+          if (!put.ok) throw new Error('Error en subida directa a R2');
         }
-        if (!url) throw new Error((prepOut?.error || 'No recibí URL del audio subido.').toString());
         const key = (prepOut?.key || '').toString().trim();
         return { url, key };
       }
 
+      // Si el servidor dice que R2 no está listo o hay un error, usamos la subida inline (buffer)
       return await uploadInline();
     } catch (error) {
-      console.log('Error en uploadAudioForVoice:', error);
-      try {
-        return await uploadInline();
-      } catch {
-        const dataUrl = await readAsDataUrl(file);
-        return { url: dataUrl, key: '' };
-      }
+      console.log('Error en uploadAudioForVoice, intentando respaldo...', error);
+      return await uploadInline();
     }
   };
 

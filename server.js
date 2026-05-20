@@ -425,7 +425,8 @@ app.post('/api/suno/voice-validate', authenticate, async (req, res) => {
     // Si la URL es relativa (ej: /api/...), la convertimos en absoluta para Suno
     if (voiceUrl.startsWith("/")) {
       const host = req.get("host") || "ramber-tunes.vercel.app";
-      const protocol = req.protocol || "https";
+      // Forzamos HTTPS a menos que sea localhost
+      const protocol = host.includes("localhost") ? "http" : "https";
       voiceUrl = `${protocol}://${host}${voiceUrl}`;
     }
     const vocalStartSRaw = Number(payload.vocalStartS ?? payload.vocal_start_s ?? payload.vocalStart ?? payload.vocal_start);
@@ -500,7 +501,8 @@ app.post('/api/suno/voice-generate', authenticate, async (req, res) => {
     // Si la URL es relativa, la convertimos en absoluta para Suno
     if (verifyUrl.startsWith("/")) {
       const host = req.get("host") || "ramber-tunes.vercel.app";
-      const protocol = req.protocol || "https";
+      // Forzamos HTTPS a menos que sea localhost
+      const protocol = host.includes("localhost") ? "http" : "https";
       verifyUrl = `${protocol}://${host}${verifyUrl}`;
     }
     const voiceName = String(payload.voiceName || payload.voice_name || "").trim();
@@ -1247,8 +1249,14 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
     const { title, contentType, file, path } = req.body;
     const user = req.user;
     
+    // Limpiamos el nombre del archivo: minúsculas, sin espacios, solo caracteres seguros
+    const cleanTitle = (title || 'audio').toString().toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9._-]/g, '')
+      .slice(0, 100);
+    
     const ext = contentType === 'audio/wav' ? 'wav' : 'mp3';
-    const key = path || `uploads/${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+    const key = path || `uploads/${user.id}/${Date.now()}_${cleanTitle}.${ext}`;
     
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
     const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
@@ -1263,30 +1271,54 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
         uint8[i] = file[i];
       }
       
-      const putCommand = new PutObjectCommand({
-        Bucket: env.bucketName,
-        Key: key,
-        Body: uint8,
-        ContentLength: uint8.length,
-        ContentType: contentType || 'audio/mpeg',
-      });
-      
-      await r2Client.send(putCommand);
-      
-      const url = `${env.publicBaseUrl}/${key}`;
-      return res.json({ ok: true, url, key });
+      try {
+        const r2Client = await getR2Client();
+        const env = getR2Env();
+        
+        const putCommand = new PutObjectCommand({
+          Bucket: env.bucketName,
+          Key: key,
+          Body: uint8,
+          ContentLength: uint8.length,
+          ContentType: contentType || 'audio/mpeg',
+        });
+        
+        await r2Client.send(putCommand);
+        const url = `${env.publicBaseUrl}/${key}`;
+        return res.json({ ok: true, url, key });
+      } catch (r2Error) {
+        // Si falla R2, usamos Supabase Storage como respaldo automático
+        console.log("R2 falló, usando Supabase Storage...");
+        const bucket = "ramber-tunes";
+        const { error: upErr } = await supabase.storage.from(bucket).upload(key, uint8, {
+          contentType: contentType || 'audio/mpeg',
+          upsert: true
+        });
+        if (upErr) throw upErr;
+        
+        const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(key);
+        return res.json({ ok: true, url: publicUrl, key: "", via: "supabase" });
+      }
     } else {
       // Normal: generate pre-signed URL for direct upload
-      const command = new PutObjectCommand({
-        Bucket: env.bucketName,
-        Key: key,
-        ContentType: contentType || 'audio/mpeg',
-      });
-      
-      const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
-      const url = `${env.publicBaseUrl}/${key}`;
-      
-      return res.json({ ok: true, uploadUrl, url, key });
+      try {
+        const r2Client = await getR2Client();
+        const env = getR2Env();
+        
+        const command = new PutObjectCommand({
+          Bucket: env.bucketName,
+          Key: key,
+          ContentType: contentType || 'audio/mpeg',
+        });
+        
+        const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+        const url = `${env.publicBaseUrl}/${key}`;
+        
+        return res.json({ ok: true, uploadUrl, url, key });
+      } catch (r2Error) {
+        // Si falla R2 al preparar la subida directa, devolvemos error para que el front use el buffer
+        return res.status(200).json({ ok: false, error: "R2 no configurado", useBuffer: true });
+      }
     }
   } catch (error) {
     console.error("Error en upload-audio:", error);
