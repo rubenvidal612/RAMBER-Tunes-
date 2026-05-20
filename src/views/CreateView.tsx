@@ -159,6 +159,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceRecorderState, setVoiceRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
   const [voiceRecorderError, setVoiceRecorderError] = useState('');
   const [voiceRecorderElapsedMs, setVoiceRecorderElapsedMs] = useState(0);
+  const [voiceRecorderMaxMs, setVoiceRecorderMaxMs] = useState<number | null>(null);
+  const voiceRecorderMaxMsRef = useRef<number | null>(null);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
   const voiceRecorderChunksRef = useRef<Blob[]>([]);
@@ -180,6 +182,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const stream = voiceRecorderStreamRef.current;
     voiceRecorderRef.current = null;
     voiceRecorderStreamRef.current = null;
+    voiceRecorderMaxMsRef.current = null;
 
     if (finalize && mr && mr.state !== 'inactive') {
       try {
@@ -205,7 +208,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     };
   }, []);
 
-  const startVoiceRecorder = async (mode: 'source' | 'verify') => {
+  const startVoiceRecorder = async (mode: 'source' | 'verify', maxSeconds?: number) => {
     setVoiceRecorderError('');
 
     const navAny = navigator as any;
@@ -224,6 +227,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       await stopVoiceRecorder(false);
       setVoiceRecorderMode(mode);
       setVoiceRecorderElapsedMs(0);
+      const maxMs = Number.isFinite(Number(maxSeconds)) ? Math.max(1, Math.floor(Number(maxSeconds))) * 1000 : null;
+      voiceRecorderMaxMsRef.current = maxMs;
+      setVoiceRecorderMaxMs(maxMs);
       setVoiceRecorderState('idle');
       setVoiceRecorderOpen(true);
 
@@ -291,12 +297,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const startedAt = Date.now();
       voiceRecorderTimerRef.current = window.setInterval(() => {
-        setVoiceRecorderElapsedMs(Date.now() - startedAt);
+        const elapsed = Date.now() - startedAt;
+        setVoiceRecorderElapsedMs(elapsed);
+        const maxMs = voiceRecorderMaxMsRef.current;
+        if (maxMs && elapsed >= maxMs) {
+          setVoiceRecorderState('stopping');
+          stopVoiceRecorder(true).catch(() => {});
+        }
       }, 200);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setVoiceRecorderError(msg || 'No pude acceder al micrófono.');
       setVoiceRecorderState('idle');
+      setVoiceRecorderMaxMs(null);
       try {
         await stopVoiceRecorder(false);
       } catch {
@@ -692,8 +705,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const getPublicAudioUrlForSuno = async (token: string, uploaded: { url: string; key?: string }) => {
-    // Como no usas Cloudflare R2, vamos a usar la URL directa de Supabase
-    // Esto evita el error 500 del proxy-url y el 502 de Suno
     const direct = (uploaded?.url || '').toString().trim();
     return direct;
   };
@@ -2232,7 +2243,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     const previewUrl = isVerifyStep ? voiceVerifyPreviewUrl : voiceSourcePreviewUrl;
 
                     const pickRecord = () => {
-                      startVoiceRecorder(isVerifyStep ? 'verify' : 'source').catch((e) => {
+                      startVoiceRecorder(isVerifyStep ? 'verify' : 'source', isVerifyStep ? 10 : undefined).catch((e) => {
                         setVoiceCreateError(e instanceof Error ? e.message : String(e));
                       });
                     };
@@ -2664,17 +2675,76 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
                         {voiceRecorderError ? <div className="mt-3 text-red-300 text-sm">{voiceRecorderError}</div> : null}
 
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 text-slate-200 font-semibold">
-                              <span className={cn('w-2.5 h-2.5 rounded-full', voiceRecorderState === 'recording' ? 'bg-red-500' : 'bg-slate-600')} />
-                              {voiceRecorderState === 'recording' ? 'Grabando…' : 'Listo'}
-                            </div>
-                            <div className="text-slate-300 text-sm tabular-nums">
-                              {Math.floor(voiceRecorderElapsedMs / 1000)}s
-                            </div>
+                        {voiceRecorderMode === 'verify' && voiceValidateInfo ? (
+                          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-center">
+                            <div className="text-slate-400 text-xs font-semibold">LEE ESTO EN VOZ ALTA</div>
+                            <div className="mt-2 text-white font-extrabold text-lg md:text-2xl leading-snug">“{voiceValidateInfo}”</div>
                           </div>
-                        </div>
+                        ) : null}
+
+                        {(() => {
+                          const maxMs = voiceRecorderMaxMs || 0;
+                          const elapsed = Math.max(0, voiceRecorderElapsedMs || 0);
+                          const remainingSec = maxMs ? Math.max(0, Math.ceil((maxMs - elapsed) / 1000)) : Math.floor(elapsed / 1000);
+                          const pct = maxMs ? Math.max(0, Math.min(1, elapsed / maxMs)) : 0;
+                          const radius = 44;
+                          const stroke = 8;
+                          const circumference = 2 * Math.PI * radius;
+                          const dash = circumference * pct;
+                          const gap = Math.max(0, circumference - dash);
+                          const canStop = voiceRecorderState === 'recording';
+                          return (
+                            <div className="mt-4 flex flex-col items-center">
+                              <div className="relative w-[130px] h-[130px] flex items-center justify-center">
+                                <svg width="130" height="130" viewBox="0 0 130 130" className="absolute inset-0">
+                                  <circle
+                                    cx="65"
+                                    cy="65"
+                                    r={radius}
+                                    fill="none"
+                                    stroke="rgba(255,255,255,0.12)"
+                                    strokeWidth={stroke}
+                                  />
+                                  {maxMs ? (
+                                    <circle
+                                      cx="65"
+                                      cy="65"
+                                      r={radius}
+                                      fill="none"
+                                      stroke="rgb(16 185 129)"
+                                      strokeWidth={stroke}
+                                      strokeLinecap="round"
+                                      strokeDasharray={`${dash} ${gap}`}
+                                      transform="rotate(-90 65 65)"
+                                    />
+                                  ) : null}
+                                </svg>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVoiceRecorderState('stopping');
+                                    stopVoiceRecorder(true).catch(() => {});
+                                  }}
+                                  disabled={!canStop}
+                                  className={cn(
+                                    'w-[78px] h-[78px] rounded-full flex items-center justify-center border font-extrabold',
+                                    canStop ? 'bg-emerald-500 hover:bg-emerald-400 text-black border-emerald-300/30' : 'bg-white/5 text-slate-400 border-white/10'
+                                  )}
+                                >
+                                  <BadgeCheck className="w-7 h-7" />
+                                </button>
+                              </div>
+
+                              <div className="mt-2 text-slate-300 text-sm tabular-nums">
+                                {voiceRecorderMaxMs ? `${remainingSec}s` : `${remainingSec}s`}
+                              </div>
+                              <div className="mt-1 text-slate-500 text-xs">
+                                {voiceRecorderMaxMs ? 'Presiona el botón antes de que termine el contador.' : voiceRecorderState === 'recording' ? 'Grabando…' : 'Listo'}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className="mt-4 grid grid-cols-2 gap-3">
                           <button
@@ -2792,6 +2862,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
                       <div className="text-white font-extrabold">Frase lista</div>
                       <div className="mt-2 text-slate-200 text-sm whitespace-pre-wrap">{voiceValidateInfo}</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVoiceCreateError('');
+                          startVoiceRecorder('verify', 10).catch((e) => {
+                            setVoiceCreateError(e instanceof Error ? e.message : String(e));
+                          });
+                        }}
+                        className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm"
+                      >
+                        Grabar frase (10s)
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
