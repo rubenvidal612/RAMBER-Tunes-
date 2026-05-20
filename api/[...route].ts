@@ -2212,8 +2212,18 @@ const sunoHandler = (() => {
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
-    const voiceUrlRaw = firstString(payload, ["voiceUrl", "voice_url"]);
-    const voiceUrl = (voiceUrlRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+    function cleanExternalUrl(raw: any) {
+      return (raw || "")
+        .toString()
+        .trim()
+        .replaceAll("`", "")
+        .replace(/^[\"' ]+/, "")
+        .replace(/[\"' ]+$/, "")
+        .trim();
+    }
+
+    const voiceUrlRaw = firstString(payload, ["voiceUrl", "voice_url", "uploadUrl", "upload_url"]);
+    const voiceUrl = cleanExternalUrl(voiceUrlRaw);
     const vocalStartSRaw = Number(payload?.vocalStartS ?? payload?.vocal_start_s ?? payload?.vocalStart ?? payload?.vocal_start);
     const vocalEndSRaw = Number(payload?.vocalEndS ?? payload?.vocal_end_s ?? payload?.vocalEnd ?? payload?.vocal_end);
     const language = firstString(payload, ["language"]) || "es";
@@ -2229,10 +2239,45 @@ const sunoHandler = (() => {
     if (vocalEndS <= vocalStartS) return send(res, 400, { error: "vocalEndS debe ser mayor que vocalStartS" });
 
     try {
+      // Si Suno falla descargando URLs externas (aun siendo accesibles), subimos el archivo a su
+      // servicio temporal (File Upload API) y usamos ese downloadUrl.
+      let voiceUrlForSuno = voiceUrl;
+      try {
+        const base = "https://sunoapiorg.redpandaai.co";
+        const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+        if (apiKey) {
+          const u = new URL("/api/file-url-upload", base).toString();
+          const up = await fetch(u, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              fileUrl: voiceUrl,
+              uploadPath: "ramber-voice",
+              fileName: `voice_${Date.now()}.mp3`,
+            }),
+          });
+          const upText = await up.text().catch(() => "");
+          let upData: any = null;
+          try {
+            upData = upText ? JSON.parse(upText) : null;
+          } catch {
+            upData = null;
+          }
+          const downloadUrl = cleanExternalUrl(upData?.data?.downloadUrl);
+          if (up.ok && upData?.success && upData?.code === 200 && downloadUrl) {
+            voiceUrlForSuno = downloadUrl;
+          }
+        }
+      } catch {
+      }
+
       const body: any = {
-        voiceUrl,
-        voice_url: voiceUrl,
-        uploadUrl: voiceUrl,
+        voiceUrl: voiceUrlForSuno,
+        voice_url: voiceUrlForSuno,
+        uploadUrl: voiceUrlForSuno,
         vocalStartS,
         vocal_start_s: vocalStartS,
         vocalEndS,
@@ -2255,7 +2300,7 @@ const sunoHandler = (() => {
           code: r.status,
           detail: {
             msg: String(msg).slice(0, 1200),
-            attemptedUrl: voiceUrl,
+            attemptedUrl: voiceUrlForSuno,
           },
         });
       }
@@ -2268,7 +2313,7 @@ const sunoHandler = (() => {
           code,
           detail: {
             msg: String(msg).slice(0, 1200),
-            attemptedUrl: voiceUrl,
+            attemptedUrl: voiceUrlForSuno,
           },
         });
       }
