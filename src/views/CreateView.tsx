@@ -495,8 +495,29 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       (file?.type || '').toString().trim() ||
       (ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'aac' ? 'audio/aac' : ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : 'audio/mpeg');
 
+    const readAsDataUrl = (f: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('No pude leer el archivo de audio'));
+        reader.readAsDataURL(f);
+      });
+
+    const uploadInline = async () => {
+      const dataUrl = await readAsDataUrl(file);
+      const r = await fetch('/api/upload-audio', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: name, contentType, file: dataUrl }),
+      });
+      const out = await r.json().catch(() => ({}));
+      const url = (out?.url || '').toString().trim();
+      const key = (out?.key || '').toString().trim();
+      if (r.ok && out?.ok && url) return { url, key };
+      throw new Error((out?.detail || out?.error || 'No pude subir el audio al servidor.').toString());
+    };
+
     try {
-      // Intentar subir el audio al servidor
       const prep = await fetch('/api/upload-audio', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -524,33 +545,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const key = (prepOut?.key || '').toString().trim();
         return { url, key };
       }
-      
-      // Si la subida falla, usar una data URL como alternativa para Suno Voice
-      console.log('Subida de audio falló, usando data URL como alternativa');
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          // Para Suno Voice, necesitamos una URL que Suno pueda descargar
-          // Como no tenemos un servidor, usaremos un enfoque diferente
-          // En lugar de pasar la URL a Suno, modificaremos el flujo
-          resolve({ url: dataUrl, key: '' });
-        };
-        reader.onerror = () => reject(new Error('No pude leer el archivo de audio'));
-        reader.readAsDataURL(file);
-      });
+
+      return await uploadInline();
     } catch (error) {
       console.log('Error en uploadAudioForVoice:', error);
-      // Si todo falla, usar data URL
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          resolve({ url: dataUrl, key: '' });
-        };
-        reader.onerror = () => reject(new Error('No pude leer el archivo de audio'));
-        reader.readAsDataURL(file);
-      });
+      try {
+        return await uploadInline();
+      } catch {
+        const dataUrl = await readAsDataUrl(file);
+        return { url: dataUrl, key: '' };
+      }
     }
   };
 
@@ -1570,19 +1574,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       const wantsCustomMode = mode === 'personalizado';
-      const payload: any = {
-        prompt,
-        instrumental,
-        customMode: wantsCustomMode,
-        model,
-      };
-      if (wantsCustomMode) {
-        payload.style = (instructions || 'General').trim();
-        payload.title = (title || 'Nueva Canción').trim();
-        payload.weirdnessConstraint = weirdness / 100;
-        payload.styleWeight = styleInfluence / 100;
-        payload.audioWeight = audioInfluence / 100;
-      }
+    const payload: any = {
+      prompt,
+      instrumental,
+      customMode: wantsCustomMode,
+      model,
+    };
+    if (wantsCustomMode) {
+      payload.style = (instructions || 'General').trim();
+      payload.title = (title || 'Nueva Canción').trim();
+      payload.weirdnessConstraint = weirdness / 100;
+      payload.styleWeight = styleInfluence / 100;
+      payload.audioWeight = audioInfluence / 100;
+    }
+    
+    // DEBUG: Mostrar qué se está enviando
+    console.log('DEBUG handleCreate:');
+    console.log('Mode:', mode);
+    console.log('Instructions:', instructions);
+    console.log('Style being sent:', payload.style);
+    console.log('Full payload:', payload);
 
       const r = await fetch('/api/suno/generate', {
         method: 'POST',
