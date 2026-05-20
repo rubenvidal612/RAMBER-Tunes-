@@ -455,7 +455,14 @@ app.post('/api/suno/voice-validate', authenticate, async (req, res) => {
       body: JSON.stringify(body),
     });
 
-    if (!r.ok) return res.status(502).json({ error: "Error iniciando validación de voz", code: r.status, detail: data || text });
+    if (!r.ok) {
+      console.error(`Suno Voice Validate falló para la URL: ${voiceUrl}`);
+      return res.status(502).json({ 
+        error: data?.detail || data?.error || "Suno no pudo descargar tu audio. Por favor intenta de nuevo.", 
+        code: r.status, 
+        detail: { sunoResponse: data || text, attemptedUrl: voiceUrl } 
+      });
+    }
     const code = Number(data?.code);
     if (code && code !== 200) return res.status(502).json({ error: "Error iniciando validación de voz", code, detail: data?.msg || data?.error || "Error del proveedor" });
 
@@ -1300,8 +1307,14 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
         });
         if (upErr) throw upErr;
         
-        const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(key);
-        return res.json({ ok: true, url: publicUrl, key: "", via: "supabase" });
+        // Generamos una URL firmada que dure 1 hora para que Suno pueda descargarla sin problemas
+        const { data: signedData, error: signErr } = await supabase.storage.from(bucket).createSignedUrl(key, 3600);
+        if (signErr) {
+          const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(key);
+          return res.json({ ok: true, url: publicUrl, key: "", via: "supabase" });
+        }
+        
+        return res.json({ ok: true, url: signedData.signedUrl, key: "", via: "supabase-signed" });
       }
     } else {
       // Normal: generate pre-signed URL for direct upload
