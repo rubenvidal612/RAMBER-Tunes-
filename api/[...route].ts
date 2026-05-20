@@ -4082,6 +4082,14 @@ const karaokeHandler = (() => {
           const url = `/api/karaoke/audio-proxy?token=${encodeURIComponent(token)}`;
           return send(res, 200, { ok: true, url });
         } catch (e: any) {
+          try {
+            if (key) {
+              const signed = await getSignedR2Url(key, 60 * 60);
+              if (typeof signed === "string" && signed.trim()) return send(res, 200, { ok: true, url: signed.trim(), via: "signed_r2" });
+            }
+            if (src) return send(res, 200, { ok: true, url: src, via: "direct_src" });
+          } catch {
+          }
           return send(res, 500, { ok: false, error: "No pude crear URL proxy", detail: e?.message || String(e) });
         }
       }
