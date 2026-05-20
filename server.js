@@ -420,7 +420,14 @@ app.post('/api/suno/clone-voice', authenticate, async (req, res) => {
 app.post('/api/suno/voice-validate', authenticate, async (req, res) => {
   try {
     const payload = req.body || {};
-    const voiceUrl = sanitizeExternalUrl(String(payload.voiceUrl || payload.voice_url || "").trim());
+    let voiceUrl = sanitizeExternalUrl(String(payload.voiceUrl || payload.voice_url || "").trim());
+
+    // Si la URL es relativa (ej: /api/...), la convertimos en absoluta para Suno
+    if (voiceUrl.startsWith("/")) {
+      const host = req.get("host") || "ramber-tunes.vercel.app";
+      const protocol = req.protocol || "https";
+      voiceUrl = `${protocol}://${host}${voiceUrl}`;
+    }
     const vocalStartSRaw = Number(payload.vocalStartS ?? payload.vocal_start_s ?? payload.vocalStart ?? payload.vocal_start);
     const vocalEndSRaw = Number(payload.vocalEndS ?? payload.vocal_end_s ?? payload.vocalEnd ?? payload.vocal_end);
     const language = String(payload.language || "es").trim() || "es";
@@ -488,7 +495,14 @@ app.post('/api/suno/voice-generate', authenticate, async (req, res) => {
   try {
     const payload = req.body || {};
     const validationTaskId = String(payload.taskId || payload.task_id || "").trim();
-    const verifyUrl = sanitizeExternalUrl(String(payload.verifyUrl || payload.verify_url || "").trim());
+    let verifyUrl = sanitizeExternalUrl(String(payload.verifyUrl || payload.verify_url || "").trim());
+
+    // Si la URL es relativa, la convertimos en absoluta para Suno
+    if (verifyUrl.startsWith("/")) {
+      const host = req.get("host") || "ramber-tunes.vercel.app";
+      const protocol = req.protocol || "https";
+      verifyUrl = `${protocol}://${host}${verifyUrl}`;
+    }
     const voiceName = String(payload.voiceName || payload.voice_name || "").trim();
     const description = String(payload.description || "").trim();
     const style = String(payload.style || "").trim();
