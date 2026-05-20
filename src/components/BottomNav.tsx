@@ -15,7 +15,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
-    { id: 'voces', label: 'Voces', icon: Users },
+    { id: 'voces', label: 'Clonador', icon: Users },
     { id: 'studio', label: 'Studio', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
   ];

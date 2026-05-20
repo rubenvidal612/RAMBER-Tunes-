@@ -143,7 +143,7 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
             <Globe className="w-6 h-6 text-emerald-300" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">Catálogo de Voces</h2>
+            <h2 className="text-2xl font-bold text-white">Catálogo de Clones de Voz</h2>
             <p className="text-slate-400 text-sm">
               Explora voces clonadas creadas por usuarios de la comunidad
             </p>
@@ -155,7 +155,7 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
             <span className="text-slate-300 text-sm">
-              <span className="font-bold text-white">{totalVoices}</span> voces disponibles
+              <span className="font-bold text-white">{totalVoices}</span> clones disponibles
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -177,7 +177,7 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
               type="text"
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
-              placeholder="Buscar voces por nombre, descripción o etiquetas..."
+              placeholder="Buscar clones por nombre, descripción o etiquetas..."
               className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3 text-white placeholder-slate-500 outline-none focus:border-emerald-500/50 transition-colors"
             />
           </div>

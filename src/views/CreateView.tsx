@@ -1405,7 +1405,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       return;
     }
     const style = (instructions || 'General').trim() || 'General';
-    const titleFromFile = (audioFile?.name || title || 'Voces').toString().slice(0, 100);
+    const titleFromFile = (audioFile?.name || title || 'Clonador de Voz').toString().slice(0, 100);
     setIsSubmitting(true);
     try {
       const t = await getAccessToken();
@@ -1805,7 +1805,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           >
             <ChevronDown className="w-6 h-6 rotate-90" />
           </button>
-          <div className="text-white font-extrabold text-lg">Voces</div>
+          <div className="text-white font-extrabold text-lg">Clonador de Voz</div>
         </div>
       ) : null}
 
@@ -1996,7 +1996,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           <div className="absolute inset-0 bg-black/55 backdrop-blur-md" />
           <div className="absolute inset-0 bg-[#0b0f16] border border-white/10 rounded-none md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
             <div className="flex items-center justify-center p-5 border-b border-white/10 relative">
-              <div className="text-white font-extrabold text-lg">Voces</div>
+              <div className="text-white font-extrabold text-lg">Clonador de Voz</div>
               <button
                 onClick={() => setIsVoicesPickerOpen(false)}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 absolute right-5 top-1/2 -translate-y-1/2 hover:bg-white/10 transition-colors"
@@ -2014,7 +2014,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     voicesTab === 'mine' ? "bg-white text-black" : "text-slate-300 hover:text-white"
                   )}
                 >
-                  Mis Voces
+                  Mis Clones
                 </button>
                 <button
                   type="button"
@@ -3051,7 +3051,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
                     <User className="w-5 h-5" />
                   </div>
-                  <div className="mt-3 text-white font-bold">Voces</div>
+                  <div className="mt-3 text-white font-bold">Clonador</div>
                 </button>
 
                 <button
@@ -3317,7 +3317,7 @@ function CustomForm({
           onClick={onOpenPersonaPicker}
           className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner"
         >
-          <Plus className="w-5 h-5 text-slate-400" /> Voces
+          <Plus className="w-5 h-5 text-slate-400" /> Clonador
         </button>
       </div>
 
@@ -3347,7 +3347,7 @@ function CustomForm({
                         : audioAction === 'instrumental'
                           ? 'Instrumental'
                           : audioAction === 'vocals'
-                            ? 'Voces'
+                            ? 'Clonador'
                             : audioAction === 'extend'
                               ? 'Extender'
                               : audioAction === 'library'

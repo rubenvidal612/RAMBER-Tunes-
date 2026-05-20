@@ -52,7 +52,7 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
             )}
           >
             <Users className="w-5 h-5" />
-            <span className="text-sm">Voces</span>
+            <span className="text-sm">Clonador de Voz</span>
           </button>
 
           <button

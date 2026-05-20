@@ -258,10 +258,10 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
           <AudioLines className="w-12 h-12 text-slate-500 mx-auto mb-3" />
           <div className="text-white font-bold mb-2">No tienes voces</div>
           <div className="text-slate-400 text-sm mb-4">
-            Ve a Studio → Voces para crear tu primera voz
+            Ve a Studio → Clonador para crear tu primer clon
           </div>
           <div className="inline-block bg-emerald-500/15 border border-emerald-500/25 text-emerald-200 font-bold py-2 px-6 rounded-full">
-            Crear primera voz
+            Crear primer clon
           </div>
         </div>
       ) : (
