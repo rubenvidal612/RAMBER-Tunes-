@@ -216,25 +216,33 @@ function sanitizeExternalUrl(raw) {
 async function sunoFetchJson(path, init = {}) {
   const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
   const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
-  const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
-  if (!apiKey) throw new Error("Falta SUNO_API_KEY");
+  const apiKey = (process.env.SUNO_API_KEY || process.env.SUNO_KEY || "").toString().trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "");
+  
+  if (!apiKey) throw new Error("Falta SUNO_API_KEY en las variables de entorno.");
 
   const headers = new Headers(init?.headers || {});
   if (!headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`);
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
 
-  const r = await fetch(new URL(path, base).toString(), {
-    ...init,
-    headers,
-  });
-  const text = await r.text();
-  let data = null;
+  const fullUrl = new URL(path.replace(/^\/+/, ""), base + (base.endsWith("/") ? "" : "/")).toString();
+  
   try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = null;
+    const r = await fetch(fullUrl, {
+      ...init,
+      headers,
+    });
+    const text = await r.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    return { res: r, data, text };
+  } catch (err) {
+    console.error(`Error en sunoFetchJson (${fullUrl}):`, err);
+    throw err;
   }
-  return { res: r, data, text };
 }
 
 async function getReferredUsers(admin, affiliateUserId) {
@@ -252,7 +260,7 @@ async function getReferredUsers(admin, affiliateUserId) {
 // --- GEMINI HELPERS ---
 
 async function syncLyricsWithGemini(audioBuf, mimeType, lyrics) {
-  const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+  const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "");
   if (!apiKey) {
     return { ok: false, error: "Falta GEMINI_API_KEY en el entorno" };
   }
