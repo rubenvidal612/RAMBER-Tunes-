@@ -573,6 +573,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     return direct;
   };
 
+  const sanitizeExternalUrl = (raw: string) => {
+    const s = (raw || '').toString().trim();
+    return s.replace(/^[`"' ]+/, '').replace(/[`"' ]+$/, '').trim();
+  };
+
   const loadVoiceLibrary = async () => {
     setVoiceLibraryLoading(true);
     try {
@@ -645,10 +650,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const uploaded = await uploadAudioForVoice(t.token, voiceSourceFile);
       const voiceUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploaded);
+      const cleanVoiceUrl = sanitizeExternalUrl(voiceUrlForSuno || uploaded.url);
       const r = await fetch('/api/suno/voice-validate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ voiceUrl: voiceUrlForSuno || uploaded.url, vocalStartS: start, vocalEndS: end, language: 'es' }),
+        body: JSON.stringify({ voiceUrl: cleanVoiceUrl, vocalStartS: start, vocalEndS: end, language: 'es' }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude iniciar la validación.').toString());
@@ -714,12 +720,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const uploadedVerify = await uploadAudioForVoice(t.token, voiceVerifyFile);
       const verifyUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploadedVerify);
+      const cleanVerifyUrl = sanitizeExternalUrl(verifyUrlForSuno || uploadedVerify.url);
       const r = await fetch('/api/suno/voice-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
         body: JSON.stringify({
           taskId: validationTaskId,
-          verifyUrl: verifyUrlForSuno || uploadedVerify.url,
+          verifyUrl: cleanVerifyUrl,
           voiceName: name,
           description: (newVoiceDescription || '').toString().trim() || undefined,
         }),

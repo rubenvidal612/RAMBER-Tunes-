@@ -2212,7 +2212,8 @@ const sunoHandler = (() => {
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
-    const voiceUrl = firstString(payload, ["voiceUrl", "voice_url"]);
+    const voiceUrlRaw = firstString(payload, ["voiceUrl", "voice_url"]);
+    const voiceUrl = (voiceUrlRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
     const vocalStartSRaw = Number(payload?.vocalStartS ?? payload?.vocal_start_s ?? payload?.vocalStart ?? payload?.vocal_start);
     const vocalEndSRaw = Number(payload?.vocalEndS ?? payload?.vocal_end_s ?? payload?.vocalEnd ?? payload?.vocal_end);
     const language = firstString(payload, ["language"]) || "es";
