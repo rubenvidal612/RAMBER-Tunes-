@@ -546,23 +546,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const getPublicAudioUrlForSuno = async (token: string, uploaded: { url: string; key?: string }) => {
+    // Como no usas Cloudflare R2, vamos a usar la URL directa de Supabase
+    // Esto evita el error 500 del proxy-url y el 502 de Suno
     const direct = (uploaded?.url || '').toString().trim();
-    const key = (uploaded?.key || '').toString().trim();
-    if (!direct) return '';
-    
-    // Si no hay key de R2, devolvemos la URL de Supabase directamente
-    if (!key) return direct;
-
-    try {
-      const r = await fetch(`/api/karaoke/proxy-url?key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${token}` } });
-      const out = await r.json().catch(() => ({}));
-      const rel = (out?.url || '').toString().trim();
-      
-      // Si el proxy nos da una URL, la usamos. Si no, usamos la directa.
-      if (r.ok && out?.ok && rel) return rel;
-    } catch (e) {
-      console.error('Error obteniendo proxy-url:', e);
-    }
     return direct;
   };
 

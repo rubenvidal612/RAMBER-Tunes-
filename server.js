@@ -94,8 +94,12 @@ const getR2Env = () => {
 };
 
 async function getR2Client() {
-  const { S3Client } = await import("@aws-sdk/client-s3");
   const env = getR2Env();
+  // Si falta configuración de R2, lanzamos error para usar Supabase
+  if (!env.endpoint || !env.accessKeyId || !env.secretAccessKey) {
+    throw new Error("Configuración de Cloudflare R2 incompleta.");
+  }
+  const { S3Client } = await import("@aws-sdk/client-s3");
   const hostname = (() => {
     try {
       return new URL(env.endpoint).hostname.toLowerCase();
