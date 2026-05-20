@@ -158,6 +158,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   >('pick_source');
   const [voiceCreateError, setVoiceCreateError] = useState('');
   const [voiceValidateTaskId, setVoiceValidateTaskId] = useState('');
+  const voiceValidateTaskIdRef = useRef<string>('');
   const [voiceValidateInfo, setVoiceValidateInfo] = useState('');
   const [voiceVerifyFile, setVoiceVerifyFile] = useState<File | null>(null);
   const [voiceVerifyPreviewUrl, setVoiceVerifyPreviewUrl] = useState('');
@@ -661,6 +662,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setVoiceStartSec(0);
     setVoiceEndSec(240);
     setVoiceValidateTaskId('');
+    voiceValidateTaskIdRef.current = '';
     setVoiceValidateInfo('');
     setVoiceVerifyFile(null);
     setVoiceGenerateTaskId('');
@@ -1097,6 +1099,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const taskId = String(out?.taskId || '').trim();
       if (!taskId) throw new Error('No recibí taskId para la frase de validación.');
       setVoiceValidateTaskId(taskId);
+      voiceValidateTaskIdRef.current = taskId;
 
       const startedAt = Date.now();
       while (Date.now() - startedAt < 3 * 60 * 1000) {
@@ -1140,9 +1143,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const rawName = (newVoiceName || '').toString().trim();
     const defaultName = `Mi voz - ${new Date().toLocaleDateString('es-MX')}`.slice(0, 120);
     const name = (rawName || defaultName).toString().trim().slice(0, 120) || 'Mi voz';
-    const validationTaskId = (voiceValidateTaskId || '').toString().trim();
+    const validationTaskId = (voiceValidateTaskIdRef.current || voiceValidateTaskId || '').toString().trim();
     if (!validationTaskId) {
-      setVoiceCreateError('Falta el taskId de validación.');
+      setVoiceCreateError('Falta el taskId de validación. Regresa y genera la frase de validación otra vez.');
+      setVoiceCreateStep('segment');
       return;
     }
     const verifyFile = verifyFileArg || voiceVerifyFile;
@@ -2359,9 +2363,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   setVoiceSourceFile(null);
                   setVoiceVerifyFile(null);
                   setVoiceValidateTaskId('');
+                  voiceValidateTaskIdRef.current = '';
                   setVoiceValidateInfo('');
                   setVoiceGenerateTaskId('');
                   setVoiceGeneratedVoiceId('');
+                  setVoiceIsAvailable(null);
                   setVoiceIsAvailable(null);
                   setVoiceStartSec(0);
                   setVoiceEndSec(voiceTrimMaxSec);
