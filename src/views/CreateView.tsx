@@ -183,11 +183,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceRecorderError, setVoiceRecorderError] = useState('');
   const [voiceRecorderElapsedMs, setVoiceRecorderElapsedMs] = useState(0);
   const [voiceRecorderMaxMs, setVoiceRecorderMaxMs] = useState<number | null>(null);
+  const [voiceRecorderBars, setVoiceRecorderBars] = useState<number[]>([]);
   const voiceRecorderMaxMsRef = useRef<number | null>(null);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
   const voiceRecorderChunksRef = useRef<Blob[]>([]);
   const voiceRecorderTimerRef = useRef<number | null>(null);
+  const voiceRecorderBarsTimerRef = useRef<number | null>(null);
+  const voiceRecorderAudioCtxRef = useRef<AudioContext | null>(null);
+  const voiceRecorderAnalyserRef = useRef<AnalyserNode | null>(null);
 
   const [voiceSkillLevel, setVoiceSkillLevel] = useState('');
   const [voiceDetailsName, setVoiceDetailsName] = useState('');
@@ -211,6 +215,25 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch {
     }
     voiceRecorderTimerRef.current = null;
+
+    try {
+      if (voiceRecorderBarsTimerRef.current) {
+        window.clearInterval(voiceRecorderBarsTimerRef.current);
+      }
+    } catch {
+    }
+    voiceRecorderBarsTimerRef.current = null;
+
+    try {
+      voiceRecorderAnalyserRef.current = null;
+      const ctx = voiceRecorderAudioCtxRef.current;
+      voiceRecorderAudioCtxRef.current = null;
+      try {
+        await ctx?.close?.();
+      } catch {
+      }
+    } catch {
+    }
 
     const mr = voiceRecorderRef.current;
     const stream = voiceRecorderStreamRef.current;
@@ -259,8 +282,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
     try {
       await stopVoiceRecorder(false);
+      const modeAtStart = mode;
       setVoiceRecorderMode(mode);
       setVoiceRecorderElapsedMs(0);
+      setVoiceRecorderBars([]);
       const maxMs = Number.isFinite(Number(maxSeconds)) ? Math.max(1, Math.floor(Number(maxSeconds))) * 1000 : null;
       voiceRecorderMaxMsRef.current = maxMs;
       setVoiceRecorderMaxMs(maxMs);
@@ -270,6 +295,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const stream = await navAny.mediaDevices.getUserMedia({ audio: true });
       voiceRecorderStreamRef.current = stream;
       voiceRecorderChunksRef.current = [];
+
+      try {
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (typeof AC === 'function') {
+          const ctx: AudioContext = new AC();
+          voiceRecorderAudioCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.7;
+          src.connect(analyser);
+          voiceRecorderAnalyserRef.current = analyser;
+
+          const freq = new Uint8Array(analyser.frequencyBinCount);
+          const barsCount = 48;
+          voiceRecorderBarsTimerRef.current = window.setInterval(() => {
+            const a = voiceRecorderAnalyserRef.current;
+            if (!a) return;
+            a.getByteFrequencyData(freq);
+            const binSize = Math.max(1, Math.floor(freq.length / barsCount));
+            const next: number[] = [];
+            for (let i = 0; i < barsCount; i++) {
+              let sum = 0;
+              const start = i * binSize;
+              const end = Math.min(freq.length, start + binSize);
+              for (let j = start; j < end; j++) sum += freq[j] || 0;
+              const avg = sum / Math.max(1, end - start);
+              const h = Math.max(6, Math.min(100, Math.round((avg / 255) * 100)));
+              next.push(h);
+            }
+            setVoiceRecorderBars(next);
+          }, 80);
+        }
+      } catch {
+      }
 
       const MR = (window as any).MediaRecorder as typeof MediaRecorder;
       const pickMime = () => {
@@ -302,7 +362,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const ext = ct.includes('mp4') ? 'm4a' : ct.includes('webm') ? 'webm' : 'webm';
         const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
 
-        if (voiceRecorderMode === 'verify') {
+        if (modeAtStart === 'verify') {
           setVoiceVerifyFile(file);
           setVoiceCreateError('');
           setVoiceCreateStep('generating_voice');
@@ -1051,7 +1111,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (status === 'wait_validating' && validateInfo) {
           setVoiceValidateInfo(validateInfo);
           setVoiceCreateStep('recording_verify');
-          startVoiceRecorder('verify', 15).catch((e) => {
+          startVoiceRecorder('verify', 10).catch((e) => {
             setVoiceCreateError(e instanceof Error ? e.message : String(e));
             setVoiceCreateStep('phrase_ready');
           });
@@ -3146,6 +3206,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           </div>
                         ) : null}
 
+                        <div className="mt-4 h-10 rounded-2xl border border-white/10 bg-black/20 px-3 flex items-end justify-center gap-[2px] overflow-hidden">
+                          {(voiceRecorderBars.length ? voiceRecorderBars : Array.from({ length: 48 }).map(() => 6)).map((h, idx) => (
+                            <div
+                              key={idx}
+                              className="w-[3px] rounded-full bg-white/30"
+                              style={{ height: `${Math.max(6, Math.min(100, Number(h) || 6))}%` }}
+                            />
+                          ))}
+                        </div>
+
                         {(() => {
                           const maxMs = voiceRecorderMaxMs || 0;
                           const elapsed = Math.max(0, voiceRecorderElapsedMs || 0);
@@ -3313,7 +3383,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         type="button"
                         onClick={() => {
                           setVoiceCreateError('');
-                          startVoiceRecorder('verify', 15).catch((e) => {
+                          startVoiceRecorder('verify', 10).catch((e) => {
                             setVoiceCreateError(e instanceof Error ? e.message : String(e));
                           });
                         }}
