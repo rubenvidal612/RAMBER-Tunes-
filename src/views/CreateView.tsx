@@ -418,23 +418,62 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   useEffect(() => {
     if (!isVoicesPickerOpen && !standaloneVoices) return;
-    try {
-      const raw = localStorage.getItem('ramber.suno_voices_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const list = Array.isArray(parsed) ? parsed : [];
-      const clean = list
+    let cancelled = false;
+
+    const loadFromLocalCache = () => {
+      try {
+        const raw = localStorage.getItem('ramber.suno_voices_v1');
+        const parsed = raw ? JSON.parse(raw) : null;
+        const list = Array.isArray(parsed) ? parsed : [];
+        const clean = list
+          .map((v: any) => ({
+            voiceId: String(v?.voiceId || v?.voice_id || v?.suno_voice_id || '').trim(),
+            name: String(v?.name || v?.voice_name || 'Voz').trim(),
+            createdAt: String(v?.createdAt || v?.created_at || new Date().toISOString()).trim() || new Date().toISOString(),
+            taskId: typeof v?.taskId === 'string' ? v.taskId : typeof v?.task_id === 'string' ? v.task_id : undefined,
+            status: typeof v?.status === 'string' ? v.status : undefined,
+          }))
+          .filter((v: any) => v.voiceId);
+        if (!cancelled) setVoices(clean);
+      } catch {
+        if (!cancelled) setVoices([]);
+      }
+    };
+
+    const loadFromDb = async () => {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        loadFromLocalCache();
+        return;
+      }
+      const r = await fetch('/api/suno/voices', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        loadFromLocalCache();
+        return;
+      }
+      const rows = Array.isArray((out as any)?.voices) ? (out as any).voices : [];
+      const clean = rows
         .map((v: any) => ({
-          voiceId: String(v?.voiceId || v?.voice_id || '').trim(),
+          voiceId: String(v?.suno_voice_id || v?.voiceId || v?.voice_id || '').trim(),
           name: String(v?.name || v?.voice_name || 'Voz').trim(),
-          createdAt: String(v?.createdAt || v?.created_at || new Date().toISOString()).trim() || new Date().toISOString(),
-          taskId: typeof v?.taskId === 'string' ? v.taskId : typeof v?.task_id === 'string' ? v.task_id : undefined,
-          status: typeof v?.status === 'string' ? v.status : undefined,
+          createdAt: String(v?.created_at || v?.createdAt || new Date().toISOString()).trim() || new Date().toISOString(),
+          taskId: String(v?.last_task_id || v?.task_id || v?.taskId || '').trim() || undefined,
+          status: String(v?.status || '').trim() || undefined,
         }))
         .filter((v: any) => v.voiceId);
-      setVoices(clean);
-    } catch {
-      setVoices([]);
-    }
+
+      if (!cancelled) setVoices(clean);
+      try {
+        localStorage.setItem('ramber.suno_voices_v1', JSON.stringify(clean.slice(0, 50)));
+      } catch {
+      }
+    };
+
+    loadFromDb().catch(() => loadFromLocalCache());
+    return () => {
+      cancelled = true;
+    };
   }, [isVoicesPickerOpen, standaloneVoices]);
 
   useEffect(() => {
@@ -623,6 +662,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setIsCreateVoiceOpen(true);
   }, [standaloneVoices, openCreateVoiceSignal]);
 
+  const saveSunoVoiceToDb = async (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
+    const t = await getAccessToken();
+    if (!t.ok) return;
+    await fetch('/api/suno/voices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+      body: JSON.stringify({
+        sunoVoiceId: v.voiceId,
+        name: v.name,
+        status: v.status || null,
+        taskId: v.taskId || null,
+      }),
+    }).catch(() => {});
+  };
+
   const upsertLocalVoice = (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
     try {
       const raw = localStorage.getItem('ramber.suno_voices_v1');
@@ -645,6 +699,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoices(clean);
     } catch {
     }
+    saveSunoVoiceToDb(v).catch(() => {});
   };
 
   const uploadAudioForVoice = async (token: string, file: File) => {

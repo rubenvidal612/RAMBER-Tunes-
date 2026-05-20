@@ -3526,6 +3526,158 @@ notify pgrst, 'reload schema';`;
     }
   }
 
+  async function handleSunoVoices(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "GET") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      try {
+        const { data: voices, error } = await auth.admin
+          .from("suno_voices")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        return send(res, 200, { voices: voices || [] });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        const lower = detail.toLowerCase();
+        const missingTable = lower.includes("could not find the table") && lower.includes("suno_voices");
+        const createTableSql = `create extension if not exists pgcrypto;
+
+create table if not exists public.suno_voices (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  suno_voice_id text not null,
+  name text not null,
+  status text default 'processing',
+  last_task_id text,
+  meta jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists suno_voices_user_suno_voice_id_key
+on public.suno_voices (user_id, suno_voice_id);
+
+alter table public.suno_voices enable row level security;
+
+drop policy if exists "suno_voices_select_own" on public.suno_voices;
+create policy "suno_voices_select_own"
+on public.suno_voices for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "suno_voices_insert_own" on public.suno_voices;
+create policy "suno_voices_insert_own"
+on public.suno_voices for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "suno_voices_update_own" on public.suno_voices;
+create policy "suno_voices_update_own"
+on public.suno_voices for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "suno_voices_delete_own" on public.suno_voices;
+create policy "suno_voices_delete_own"
+on public.suno_voices for delete
+to authenticated
+using (auth.uid() = user_id);
+
+notify pgrst, 'reload schema';`;
+
+        return send(res, 500, {
+          error: "Error obteniendo voces de Suno",
+          detail,
+          hint: missingTable
+            ? "Falta la tabla suno_voices en Supabase. Crea la tabla y recarga el schema cache (incluyo el SQL)."
+            : undefined,
+          sql: missingTable ? createTableSql : undefined,
+        });
+      }
+    }
+
+    if (method === "POST") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      if (!payload) return send(res, 400, { error: "Body inválido" });
+
+      const sunoVoiceId =
+        firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]) ||
+        "";
+      const name = firstString(payload, ["name", "voiceName", "voice_name"]) || "Voz";
+      const status = firstString(payload, ["status"]) || "";
+      const taskId = firstString(payload, ["taskId", "task_id"]) || "";
+      const meta = typeof payload?.meta === "object" && payload?.meta && !Array.isArray(payload.meta) ? payload.meta : null;
+
+      if (!sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId" });
+
+      try {
+        const row: any = {
+          user_id: auth.user.id,
+          suno_voice_id: sunoVoiceId.slice(0, 200),
+          name: name.slice(0, 160),
+          updated_at: new Date().toISOString(),
+        };
+        if (status) row.status = status.slice(0, 60);
+        if (taskId) row.last_task_id = taskId.slice(0, 200);
+        if (meta) row.meta = meta;
+
+        const { data: saved, error } = await auth.admin
+          .from("suno_voices")
+          .upsert(row, { onConflict: "user_id,suno_voice_id" })
+          .select("*")
+          .single();
+
+        if (error) throw error;
+        return send(res, 200, { ok: true, voice: saved });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        const lower = detail.toLowerCase();
+        const missingTable = lower.includes("could not find the table") && lower.includes("suno_voices");
+        return send(res, 500, {
+          error: "Error guardando voz de Suno",
+          detail,
+          hint: missingTable
+            ? "Falta la tabla suno_voices en Supabase. Crea la tabla y recarga el schema cache."
+            : undefined,
+        });
+      }
+    }
+
+    if (method === "DELETE") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      if (!payload) return send(res, 400, { error: "Body inválido" });
+
+      const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]);
+      if (!sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId" });
+
+      try {
+        const { error } = await auth.admin
+          .from("suno_voices")
+          .delete()
+          .eq("user_id", auth.user.id)
+          .eq("suno_voice_id", sunoVoiceId);
+        if (error) throw error;
+        return send(res, 200, { ok: true });
+      } catch (e) {
+        return send(res, 500, { error: "Error eliminando voz de Suno", detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    return send(res, 405, { error: "Método no permitido" });
+  }
+
   // ------------------------------------------------------------------
   // KARAOKE ASYNC 3-STEP FLOW (Vercel Hobby compatible)
   // ------------------------------------------------------------------
@@ -3921,6 +4073,7 @@ notify pgrst, 'reload schema';`;
       if (a === "voice-generate") return handleVoiceGenerate(req, res);
       if (a === "voice-record-info") return handleVoiceRecordInfo(req, res);
       if (a === "voice-check-voice") return handleVoiceCheckVoice(req, res);
+      if (a === "voices") return handleSunoVoices(req, res);
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
       if (a === "create-cover") return handleCreateCover(req, res);

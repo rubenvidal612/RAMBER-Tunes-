@@ -338,6 +338,109 @@ app.get('/api/voices/list', authenticate, async (req, res) => {
   }
 });
 
+app.get('/api/suno/voices', authenticate, async (req, res) => {
+  try {
+    const { data: voices, error } = await supabase
+      .from('suno_voices')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return res.json({ voices: voices || [] });
+  } catch (error) {
+    const detail = (error && typeof error === 'object' ? (error.message || error.details || error.hint) : String(error || '')).toString();
+    const lower = detail.toLowerCase();
+    const missingTable = lower.includes('could not find the table') && lower.includes('suno_voices');
+    const sql = `create extension if not exists pgcrypto;
+
+create table if not exists public.suno_voices (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  suno_voice_id text not null,
+  name text not null,
+  status text default 'processing',
+  last_task_id text,
+  meta jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists suno_voices_user_suno_voice_id_key
+on public.suno_voices (user_id, suno_voice_id);
+
+alter table public.suno_voices enable row level security;
+
+drop policy if exists "suno_voices_select_own" on public.suno_voices;
+create policy "suno_voices_select_own"
+on public.suno_voices for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "suno_voices_insert_own" on public.suno_voices;
+create policy "suno_voices_insert_own"
+on public.suno_voices for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "suno_voices_update_own" on public.suno_voices;
+create policy "suno_voices_update_own"
+on public.suno_voices for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "suno_voices_delete_own" on public.suno_voices;
+create policy "suno_voices_delete_own"
+on public.suno_voices for delete
+to authenticated
+using (auth.uid() = user_id);
+
+notify pgrst, 'reload schema';`;
+
+    return res.status(500).json({
+      error: 'Error listando voces de Suno',
+      detail,
+      sql: missingTable ? sql : undefined,
+    });
+  }
+});
+
+app.post('/api/suno/voices', authenticate, async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const sunoVoiceId = String(payload.sunoVoiceId || payload.suno_voice_id || payload.voiceId || payload.voice_id || '').trim();
+    const name = String(payload.name || payload.voiceName || payload.voice_name || 'Voz').trim() || 'Voz';
+    const status = String(payload.status || '').trim();
+    const taskId = String(payload.taskId || payload.task_id || '').trim();
+    const meta = payload && typeof payload.meta === 'object' && payload.meta && !Array.isArray(payload.meta) ? payload.meta : null;
+
+    if (!sunoVoiceId) return res.status(400).json({ error: 'Falta sunoVoiceId' });
+
+    const row = {
+      user_id: req.user.id,
+      suno_voice_id: sunoVoiceId.slice(0, 200),
+      name: name.slice(0, 160),
+      updated_at: new Date().toISOString(),
+      ...(status ? { status: status.slice(0, 60) } : {}),
+      ...(taskId ? { last_task_id: taskId.slice(0, 200) } : {}),
+      ...(meta ? { meta } : {}),
+    };
+
+    const { data: voice, error } = await supabase
+      .from('suno_voices')
+      .upsert(row, { onConflict: 'user_id,suno_voice_id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return res.json({ ok: true, voice });
+  } catch (error) {
+    const detail = (error && typeof error === 'object' ? (error.message || error.details || error.hint) : String(error || '')).toString();
+    return res.status(500).json({ error: 'Error guardando voz de Suno', detail });
+  }
+});
+
 app.post('/api/suno/clone-voice', authenticate, async (req, res) => {
   const payload = req.body;
   const { uploadUrl, uploadPath, voiceName, voiceProfileName, description, profileImageUrl, category, language, gender, tags, isPublic } = payload;
