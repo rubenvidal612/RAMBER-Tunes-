@@ -2229,7 +2229,20 @@ const sunoHandler = (() => {
     if (vocalEndS <= vocalStartS) return send(res, 400, { error: "vocalEndS debe ser mayor que vocalStartS" });
 
     try {
-      const body: any = { voiceUrl, vocalStartS, vocalEndS, language, callBackUrl };
+      const body: any = {
+        voiceUrl,
+        voice_url: voiceUrl,
+        uploadUrl: voiceUrl,
+        vocalStartS,
+        vocal_start_s: vocalStartS,
+        vocalEndS,
+        vocal_end_s: vocalEndS,
+        language,
+        callBackUrl,
+        call_back_url: callBackUrl,
+        calBackUrl: callBackUrl,
+        cal_back_url: callBackUrl,
+      };
       const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/validate", {
         method: "POST",
         body: JSON.stringify(body),
@@ -2237,13 +2250,27 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        return send(res, 502, { error: "Error iniciando validación de voz", code: r.status, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, {
+          error: "Error iniciando validación de voz",
+          code: r.status,
+          detail: {
+            msg: String(msg).slice(0, 1200),
+            attemptedUrl: voiceUrl,
+          },
+        });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
-        return send(res, 502, { error: "Error iniciando validación de voz", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, {
+          error: "Error iniciando validación de voz",
+          code,
+          detail: {
+            msg: String(msg).slice(0, 1200),
+            attemptedUrl: voiceUrl,
+          },
+        });
       }
 
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
