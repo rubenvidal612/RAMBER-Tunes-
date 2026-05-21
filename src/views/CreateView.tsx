@@ -1948,6 +1948,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const baseLyrics = normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
       const promptRaw = (baseLyrics || description || '').trim();
       const prompt = promptRaw || ' ';
+      const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
       const payload: any = {
         uploadUrl: audioUploadUrl,
         uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
@@ -1956,11 +1957,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         prompt,
         style: (instructions || 'General').trim(),
         title: (title || 'Cover').trim(),
-        model,
+        model: hasSelectedVoice && !(model === 'V5' || model === 'V5_5') ? 'V5' : model,
         weirdnessConstraint: weirdness / 100,
         styleWeight: styleInfluence / 100,
         audioWeight: audioInfluence / 100,
       };
+      if (hasSelectedVoice) {
+        payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
+        payload.personaModel = 'voice_persona';
+      }
 
       const r = await fetch('/api/suno/upload-cover', {
         method: 'POST',
@@ -2057,6 +2062,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
       if (hasSelectedVoice) {
         payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
+        payload.personaModel = 'voice_persona';
       }
 
       const r = await fetch('/api/suno/generate', {
