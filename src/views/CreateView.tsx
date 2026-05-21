@@ -363,43 +363,59 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       };
 
       mr.onstop = () => {
-        const chunks = voiceRecorderChunksRef.current;
-        voiceRecorderChunksRef.current = [];
+        window.setTimeout(() => {
+          const chunks = Array.isArray(voiceRecorderChunksRef.current) ? voiceRecorderChunksRef.current.slice() : [];
+          voiceRecorderChunksRef.current = [];
 
-        const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
-        const ct = (blob.type || mr.mimeType || 'audio/webm').toLowerCase();
-        const ext = ct.includes('mp4') ? 'm4a' : ct.includes('webm') ? 'webm' : 'webm';
-        const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
-
-        if (modeAtStart === 'verify') {
-          setVoiceVerifyFile(file);
-          setVoiceCreateError('');
-          setVoiceCreateStep('generating_voice');
-          setTimeout(() => {
-            generateCustomVoice(file).catch(() => {});
-          }, 0);
-        } else {
-          setVoiceSourceFile(file);
-          setVoiceVerifyFile(null);
-          setVoiceStartSec(0);
-          setVoiceEndSec(voiceTrimMaxSec);
-          setVoiceTrimNowSec(0);
-          try {
-            voiceTrimAudioRef.current?.pause?.();
-          } catch {
+          const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+          if (!blob.size || blob.size < 1024) {
+            if (modeAtStart === 'verify') {
+              setVoiceCreateError('No se grabó audio de la frase. Intenta de nuevo y asegúrate de permitir el micrófono.');
+              setVoiceCreateStep('pick_verify');
+            } else {
+              setVoiceCreateError('No se grabó audio. Intenta de nuevo y asegúrate de permitir el micrófono.');
+              setVoiceCreateStep('pick_source');
+            }
+            setVoiceRecorderState('idle');
+            setVoiceRecorderOpen(false);
+            stopVoiceRecorder(false).catch(() => {});
+            return;
           }
-          setVoiceTrimIsPlaying(false);
-          setVoiceCreateStep('trim');
-          setVoiceCreateError('');
-        }
 
-        setVoiceRecorderState('idle');
-        setVoiceRecorderOpen(false);
-        stopVoiceRecorder(false).catch(() => {});
+          const ct = (blob.type || mr.mimeType || 'audio/webm').toLowerCase();
+          const ext = ct.includes('mp4') ? 'm4a' : ct.includes('webm') ? 'webm' : 'webm';
+          const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
+
+          if (modeAtStart === 'verify') {
+            setVoiceVerifyFile(file);
+            setVoiceCreateError('');
+            setVoiceCreateStep('generating_voice');
+            setTimeout(() => {
+              generateCustomVoice(file).catch(() => {});
+            }, 0);
+          } else {
+            setVoiceSourceFile(file);
+            setVoiceVerifyFile(null);
+            setVoiceStartSec(0);
+            setVoiceEndSec(voiceTrimMaxSec);
+            setVoiceTrimNowSec(0);
+            try {
+              voiceTrimAudioRef.current?.pause?.();
+            } catch {
+            }
+            setVoiceTrimIsPlaying(false);
+            setVoiceCreateStep('trim');
+            setVoiceCreateError('');
+          }
+
+          setVoiceRecorderState('idle');
+          setVoiceRecorderOpen(false);
+          stopVoiceRecorder(false).catch(() => {});
+        }, 80);
       };
 
       setVoiceRecorderState('recording');
-      mr.start(250);
+      mr.start();
 
       const startedAt = Date.now();
       voiceRecorderTimerRef.current = window.setInterval(() => {
