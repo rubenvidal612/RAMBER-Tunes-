@@ -186,6 +186,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceRecorderMaxMs, setVoiceRecorderMaxMs] = useState<number | null>(null);
   const [voiceRecorderBars, setVoiceRecorderBars] = useState<number[]>([]);
   const voiceRecorderMaxMsRef = useRef<number | null>(null);
+  const voiceRecorderElapsedMsRef = useRef<number>(0);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
   const voiceRecorderChunksRef = useRef<Blob[]>([]);
@@ -296,6 +297,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const modeAtStart = mode;
       setVoiceRecorderMode(mode);
       setVoiceRecorderElapsedMs(0);
+      voiceRecorderElapsedMsRef.current = 0;
       setVoiceRecorderBars([]);
       const maxMs = Number.isFinite(Number(maxSeconds)) ? Math.max(1, Math.floor(Number(maxSeconds))) * 1000 : null;
       voiceRecorderMaxMsRef.current = maxMs;
@@ -396,8 +398,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               generateCustomVoice(file).catch(() => {});
             }, 0);
           } else {
-            const startedAt = voiceRecorderStartedAtRef.current;
-            const elapsedMs = Number.isFinite(Number(startedAt)) && startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+            const elapsedMs =
+              Math.max(0, Number(voiceRecorderElapsedMsRef.current || 0)) ||
+              (() => {
+                const startedAt = voiceRecorderStartedAtRef.current;
+                return Number.isFinite(Number(startedAt)) && startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+              })();
             const approxDurationSec = elapsedMs ? Math.max(1, Math.ceil(elapsedMs / 1000)) : 0;
             setVoiceSourceFile(file);
             if (approxDurationSec) setVoiceSourceDurationSec(approxDurationSec);
@@ -428,6 +434,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       voiceRecorderTimerRef.current = window.setInterval(() => {
         const elapsed = Date.now() - startedAt;
         setVoiceRecorderElapsedMs(elapsed);
+        voiceRecorderElapsedMsRef.current = elapsed;
         const maxMs = voiceRecorderMaxMsRef.current;
         if (maxMs && elapsed >= maxMs) {
           setVoiceRecorderState('stopping');
