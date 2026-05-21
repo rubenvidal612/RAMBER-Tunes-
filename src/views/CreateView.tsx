@@ -862,8 +862,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setVoiceDetailsImageKey((v.profileImageUrl || '').toString());
     setVoiceSkillLevel((v.singerSkillLevel || '').toString());
     setVoiceCreateError('');
+    setVoiceDetailsSaving(false);
     setSunoVoiceDetailsOpen(true);
   };
+
+  useEffect(() => {
+    if (!sunoVoiceDetailsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setSunoVoiceDetailsOpen(false);
+      setSunoVoiceDetailsId('');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sunoVoiceDetailsOpen]);
 
   const persistSunoVoiceProfile = async (voiceId: string) => {
     const id = (voiceId || '').toString().trim();
@@ -2465,23 +2477,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       )}
 
       {sunoVoiceDetailsOpen ? (
-        <div className="fixed inset-0 z-[124] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10050] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <button
             className="absolute inset-0 w-full h-full cursor-default"
             onClick={() => {
-              if (voiceDetailsSaving) return;
               setSunoVoiceDetailsOpen(false);
               setSunoVoiceDetailsId('');
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full max-w-3xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-            <div className="p-5 border-b border-white/10 flex items-center justify-center relative">
+          <div className="relative w-11/12 max-w-5xl max-h-[90dvh] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
+            <div className="p-5 border-b border-white/10 flex items-center justify-center relative shrink-0">
               <div className="text-white font-extrabold text-lg">Detalles de la voz</div>
               <button
                 type="button"
                 onClick={() => {
-                  if (voiceDetailsSaving) return;
                   setSunoVoiceDetailsOpen(false);
                   setSunoVoiceDetailsId('');
                 }}
@@ -2491,7 +2501,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
             </div>
 
-            <div className="p-6 md:p-8">
+            <div className="p-6 md:p-8 overflow-y-auto min-h-0">
               <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5 items-start">
                 <div className="flex flex-col items-center">
                   <button
@@ -2591,39 +2601,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     <div className="text-xs opacity-80">Permite que otros usuarios encuentren esta voz</div>
                   </button>
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (voiceDetailsSaving) return;
-                        setSunoVoiceDetailsOpen(false);
-                        setSunoVoiceDetailsId('');
-                      }}
-                      className="h-[46px] rounded-full bg-white/5 border border-white/10 text-slate-200 font-extrabold hover:bg-white/10"
-                    >
-                      Volver
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const id = (sunoVoiceDetailsId || '').toString().trim();
-                        if (!id) return;
-                        setVoiceDetailsSaving(true);
-                        persistSunoVoiceProfile(id)
-                          .then(() => {
-                            setSunoVoiceDetailsOpen(false);
-                            setSunoVoiceDetailsId('');
-                          })
-                          .catch(() => {})
-                          .finally(() => setVoiceDetailsSaving(false));
-                      }}
-                      disabled={voiceDetailsSaving || !(sunoVoiceDetailsId || '').toString().trim()}
-                      className="h-[46px] rounded-full bg-white text-black font-extrabold disabled:opacity-60"
-                    >
-                      Guardar
-                    </button>
-                  </div>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -2644,6 +2621,40 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     Eliminar voz
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-white/10 bg-[#0b0f16] shrink-0">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSunoVoiceDetailsOpen(false);
+                    setSunoVoiceDetailsId('');
+                  }}
+                  className="h-[46px] rounded-full bg-white/5 border border-white/10 text-slate-200 font-extrabold hover:bg-white/10"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = (sunoVoiceDetailsId || '').toString().trim();
+                    if (!id) return;
+                    setVoiceDetailsSaving(true);
+                    persistSunoVoiceProfile(id)
+                      .then(() => {
+                        setSunoVoiceDetailsOpen(false);
+                        setSunoVoiceDetailsId('');
+                      })
+                      .catch(() => {})
+                      .finally(() => setVoiceDetailsSaving(false));
+                  }}
+                  disabled={voiceDetailsSaving || !(sunoVoiceDetailsId || '').toString().trim()}
+                  className="h-[46px] rounded-full bg-white text-black font-extrabold disabled:opacity-60"
+                >
+                  Guardar
+                </button>
               </div>
             </div>
           </div>
