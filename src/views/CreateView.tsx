@@ -3082,7 +3082,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       ) : null}
 
       {isCreateVoiceOpen && (
-        <div className={`${standaloneVoices ? 'absolute' : 'fixed'} inset-0 z-[125] bg-black/70 flex items-end md:items-center justify-center p-4`}>
+        <div className={`${standaloneVoices ? 'absolute' : 'fixed'} inset-0 z-[125] bg-black/65 backdrop-blur-sm flex items-end md:items-center justify-center p-4`}>
           <button
             className="absolute inset-0 w-full h-full cursor-default"
             onClick={() => {
@@ -3092,9 +3092,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             }}
             aria-label="Cerrar"
           />
-          <div className="relative w-full h-[90dvh] md:w-[80vw] md:h-[85vh] md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col">
-            <div className="p-5 border-b border-white/10 flex items-center justify-center relative">
-              <div className="text-white font-extrabold text-lg">En Construccion ... No Subir Audios</div>
+          <div className="relative w-full h-[90dvh] md:w-[80vw] md:h-[85vh] md:max-w-5xl bg-gradient-to-br from-[#0b0f16] via-[#0b0f16] to-indigo-950/60 border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(99,102,241,0.12)] flex flex-col">
+            <div className="p-5 border-b border-white/10 bg-gradient-to-r from-emerald-500/10 via-fuchsia-500/10 to-indigo-500/10 flex items-center justify-center relative">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-emerald-200" />
+                </div>
+                <div className="text-center">
+                  <div className="text-white font-extrabold text-lg leading-tight">Clonador de Voz</div>
+                  <div className="text-slate-300 text-xs">Graba o sube una muestra para crear tu voz</div>
+                </div>
+              </div>
               <button
                 onClick={() => {
                   if (voiceBusy) return;
@@ -3107,7 +3115,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center">
+            <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center bg-gradient-to-b from-white/5 to-transparent">
               <div className="w-full">
               {voiceCreateError ? (
                 <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-3 text-sm text-red-200">
