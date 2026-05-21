@@ -106,6 +106,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
   const savedUploadsKey = 'ramber.saved_uploads_v1';
   const [savedUploadKey, setSavedUploadKey] = useState<string>('');
+  const [studioRecorderOpen, setStudioRecorderOpen] = useState(false);
+  const [studioRecorderState, setStudioRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
+  const [studioRecorderError, setStudioRecorderError] = useState('');
+  const [studioRecorderElapsedMs, setStudioRecorderElapsedMs] = useState(0);
+  const [studioRecorderBars, setStudioRecorderBars] = useState<number[]>([]);
+  const studioRecorderElapsedMsRef = useRef<number>(0);
+  const studioRecorderRef = useRef<MediaRecorder | null>(null);
+  const studioRecorderStreamRef = useRef<MediaStream | null>(null);
+  const studioRecorderChunksRef = useRef<Blob[]>([]);
+  const studioRecorderStopRequestedAtRef = useRef<number>(0);
+  const studioRecorderLastChunkAtRef = useRef<number>(0);
+  const studioRecorderTimerRef = useRef<number | null>(null);
+  const studioRecorderBarsTimerRef = useRef<number | null>(null);
+  const studioRecorderStartedAtRef = useRef<number | null>(null);
+  const studioRecorderAudioCtxRef = useRef<AudioContext | null>(null);
+  const studioRecorderAnalyserRef = useRef<AnalyserNode | null>(null);
 
   const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
@@ -1078,7 +1094,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const ext = name.toLowerCase().split('.').pop() || '';
     const contentType =
       (file?.type || '').toString().trim() ||
-      (ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'aac' ? 'audio/aac' : ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : 'audio/mpeg');
+      (ext === 'wav'
+        ? 'audio/wav'
+        : ext === 'ogg'
+          ? 'audio/ogg'
+          : ext === 'webm'
+            ? 'audio/webm'
+            : ext === 'aac'
+              ? 'audio/aac'
+              : ext === 'm4a' || ext === 'mp4'
+                ? 'audio/mp4'
+                : 'audio/mpeg');
 
     const readAsDataUrl = (f: File) =>
       new Promise<string>((resolve, reject) => {
@@ -1753,16 +1779,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const pickAudio = async (file: File) => {
-    const n = (file?.name || '').toString().trim().toLowerCase();
-    if (!n.endsWith('.mp3')) {
-      const msg = 'Solo se puede subir formato MP3. Usa el Convertidor a MP3.';
-      setAudioUploadError(msg);
-      alert(msg);
-      try {
-        if (audioInputRef.current) audioInputRef.current.value = '';
-      } catch {}
-      return;
-    }
     setAudioFile(file);
     setAudioUploadUrl('');
     setAudioAction('cover');
@@ -1771,6 +1787,226 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioUploadError(null);
     getAudioDurationSeconds(file).then((d) => setAudioDurationSec(d)).catch(() => {});
     uploadAudio(file).catch(() => {});
+  };
+
+  const stopStudioRecorder = async (finalize: boolean) => {
+    try {
+      if (studioRecorderTimerRef.current) window.clearInterval(studioRecorderTimerRef.current);
+    } catch {
+    }
+    studioRecorderTimerRef.current = null;
+
+    try {
+      if (studioRecorderBarsTimerRef.current) window.clearInterval(studioRecorderBarsTimerRef.current);
+    } catch {
+    }
+    studioRecorderBarsTimerRef.current = null;
+
+    try {
+      studioRecorderAnalyserRef.current = null;
+      const ctx = studioRecorderAudioCtxRef.current;
+      studioRecorderAudioCtxRef.current = null;
+      try {
+        await ctx?.close?.();
+      } catch {
+      }
+    } catch {
+    }
+
+    const mr = studioRecorderRef.current;
+    const stream = studioRecorderStreamRef.current;
+
+    if (finalize) {
+      studioRecorderStopRequestedAtRef.current = Date.now();
+      if (mr && mr.state !== 'inactive') {
+        try {
+          (mr as any).requestData?.();
+        } catch {
+        }
+        try {
+          mr.stop();
+        } catch {
+        }
+      }
+      return;
+    }
+
+    studioRecorderRef.current = null;
+    studioRecorderStreamRef.current = null;
+    studioRecorderStartedAtRef.current = null;
+
+    try {
+      stream?.getTracks?.().forEach((t) => {
+        try {
+          t.stop();
+        } catch {
+        }
+      });
+    } catch {
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopStudioRecorder(false).catch(() => {});
+    };
+  }, []);
+
+  const startStudioRecorder = async () => {
+    setStudioRecorderError('');
+    const navAny = navigator as any;
+    const canMedia =
+      typeof window !== 'undefined' &&
+      typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
+      typeof (window as any).MediaRecorder === 'function';
+
+    if (!canMedia) {
+      audioInputRef.current?.click?.();
+      return;
+    }
+
+    try {
+      await stopStudioRecorder(false);
+      setStudioRecorderElapsedMs(0);
+      studioRecorderElapsedMsRef.current = 0;
+      studioRecorderStopRequestedAtRef.current = 0;
+      studioRecorderLastChunkAtRef.current = 0;
+      setStudioRecorderBars([]);
+      setStudioRecorderState('idle');
+      setStudioRecorderOpen(true);
+
+      const stream = await navAny.mediaDevices.getUserMedia({ audio: true });
+      studioRecorderStreamRef.current = stream;
+      studioRecorderChunksRef.current = [];
+
+      try {
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (typeof AC === 'function') {
+          const ctx: AudioContext = new AC();
+          studioRecorderAudioCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.7;
+          src.connect(analyser);
+          studioRecorderAnalyserRef.current = analyser;
+
+          const freq = new Uint8Array(analyser.frequencyBinCount);
+          const barsCount = 48;
+          studioRecorderBarsTimerRef.current = window.setInterval(() => {
+            const a = studioRecorderAnalyserRef.current;
+            if (!a) return;
+            a.getByteFrequencyData(freq);
+            const binSize = Math.max(1, Math.floor(freq.length / barsCount));
+            const next: number[] = [];
+            for (let i = 0; i < barsCount; i++) {
+              let sum = 0;
+              const start = i * binSize;
+              const end = Math.min(freq.length, start + binSize);
+              for (let j = start; j < end; j++) sum += freq[j] || 0;
+              const avg = sum / Math.max(1, end - start);
+              const h = Math.max(6, Math.min(100, Math.round((avg / 255) * 100)));
+              next.push(h);
+            }
+            setStudioRecorderBars(next);
+          }, 80);
+        }
+      } catch {
+      }
+
+      const MR = (window as any).MediaRecorder as typeof MediaRecorder;
+      const pickMime = () => {
+        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
+        for (const t of types) {
+          try {
+            if (MR.isTypeSupported(t)) return t;
+          } catch {
+          }
+        }
+        return '';
+      };
+      const mimeType = pickMime();
+      const mr = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
+      studioRecorderRef.current = mr;
+
+      mr.ondataavailable = (e: BlobEvent) => {
+        const b = e.data;
+        if (!b) return;
+        if (!b.size) return;
+        studioRecorderChunksRef.current.push(b);
+        studioRecorderLastChunkAtRef.current = Date.now();
+      };
+
+      mr.onstop = () => {
+        const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+        const run = async () => {
+          const stopRequestedAt = Number(studioRecorderStopRequestedAtRef.current || 0) || Date.now();
+          const deadline = Date.now() + 1500;
+          while (Date.now() < deadline) {
+            const chunksNow = Array.isArray(studioRecorderChunksRef.current) ? studioRecorderChunksRef.current.length : 0;
+            const lastAt = Number(studioRecorderLastChunkAtRef.current || 0) || 0;
+            if (chunksNow > 0 && lastAt && Date.now() - lastAt > 180) break;
+            if (chunksNow === 0) {
+              if (Date.now() - stopRequestedAt > 900) break;
+            } else {
+              if (Date.now() - stopRequestedAt > 1200) break;
+            }
+            await sleep(80);
+          }
+
+          const chunks = Array.isArray(studioRecorderChunksRef.current) ? studioRecorderChunksRef.current.slice() : [];
+          studioRecorderChunksRef.current = [];
+          const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+          if (!blob.size || blob.size < 1024) {
+            setStudioRecorderError('No se grabó audio. Intenta de nuevo y asegúrate de permitir el micrófono.');
+            setStudioRecorderState('idle');
+            setStudioRecorderOpen(false);
+            stopStudioRecorder(false).catch(() => {});
+            return;
+          }
+
+          const ct = (blob.type || mr.mimeType || 'audio/webm').toLowerCase();
+          const ext = ct.includes('mp4') ? 'm4a' : ct.includes('ogg') ? 'ogg' : ct.includes('webm') ? 'webm' : 'webm';
+          const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
+          setStudioRecorderState('idle');
+          setStudioRecorderOpen(false);
+          stopStudioRecorder(false).catch(() => {});
+          pickAudio(file).catch(() => {});
+        };
+        run().catch(() => {
+          setStudioRecorderState('idle');
+          setStudioRecorderOpen(false);
+          stopStudioRecorder(false).catch(() => {});
+        });
+      };
+
+      mr.onerror = () => {
+        setStudioRecorderError('Falló la grabación. Intenta de nuevo o sube un archivo.');
+      };
+
+      setStudioRecorderState('recording');
+      studioRecorderStartedAtRef.current = Date.now();
+      try {
+        mr.start(1000);
+      } catch {
+        mr.start();
+      }
+
+      const startedAt = Date.now();
+      studioRecorderTimerRef.current = window.setInterval(() => {
+        const elapsed = Date.now() - startedAt;
+        setStudioRecorderElapsedMs(elapsed);
+        studioRecorderElapsedMsRef.current = elapsed;
+      }, 200);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStudioRecorderError(msg || 'No pude acceder al micrófono.');
+      setStudioRecorderState('idle');
+      try {
+        await stopStudioRecorder(false);
+      } catch {
+      }
+    }
   };
 
   const saveUploadedAudioToLibrary = async () => {
@@ -2391,9 +2627,75 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             generateLyricsWithAI={generateLyricsWithAI}
             isGeneratingLyrics={isGeneratingLyrics}
             isDev={isDev}
+            onRecordStudioAudio={() => startStudioRecorder().catch(() => {})}
           />
         )}
       </div>
+
+      {studioRecorderOpen ? (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0b0f16] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-white font-extrabold">Grabadora de audio</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setStudioRecorderOpen(false);
+                  setStudioRecorderState('idle');
+                  stopStudioRecorder(false).catch(() => {});
+                }}
+                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 text-slate-400 text-sm">Graba con el micrófono (PC o celular). Luego se sube automáticamente.</div>
+
+            {studioRecorderError ? <div className="mt-3 text-red-300 text-sm">{studioRecorderError}</div> : null}
+
+            <div className="mt-4 h-10 rounded-2xl border border-white/10 bg-black/20 px-3 flex items-end justify-center gap-[2px] overflow-hidden">
+              {(studioRecorderBars.length ? studioRecorderBars : Array.from({ length: 48 }).map(() => 6)).map((h, idx) => (
+                <div key={idx} className="w-[3px] rounded-full bg-white/30" style={{ height: `${Math.max(6, Math.min(100, Number(h) || 6))}%` }} />
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-col items-center">
+              <div className="text-slate-300 text-sm tabular-nums">{Math.floor(Math.max(0, studioRecorderElapsedMs || 0) / 1000)}s</div>
+              <div className="mt-1 text-slate-500 text-xs">{studioRecorderState === 'recording' ? 'Grabando…' : 'Listo'}</div>
+            </div>
+
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setStudioRecorderOpen(false);
+                  setStudioRecorderState('idle');
+                  stopStudioRecorder(false).catch(() => {});
+                }}
+                className="flex-1 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (studioRecorderState !== 'recording') return;
+                  setStudioRecorderState('stopping');
+                  stopStudioRecorder(true).catch(() => {});
+                }}
+                disabled={studioRecorderState !== 'recording'}
+                className={cn(
+                  'flex-1 h-[44px] rounded-full font-extrabold text-sm',
+                  studioRecorderState === 'recording' ? 'bg-emerald-500 hover:bg-emerald-400 text-black' : 'bg-white/5 border border-white/10 text-slate-400'
+                )}
+              >
+                Detener
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Action Buttons & Sticky Create */}
       <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
@@ -4105,7 +4407,8 @@ function CustomForm({
   openMp3Converter,
   generateLyricsWithAI,
   isGeneratingLyrics,
-  isDev
+  isDev,
+  onRecordStudioAudio
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
@@ -4164,6 +4467,15 @@ function CustomForm({
           >
             <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
           </button>
+          <button
+            type="button"
+            onClick={() => onRecordStudioAudio?.()}
+            className="w-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-slate-200"
+            aria-label="Grabar audio"
+            title="Grabar audio"
+          >
+            <Mic className="w-5 h-5" />
+          </button>
           {!!audioUploadUrl && (
             <button
               type="button"
@@ -4178,20 +4490,13 @@ function CustomForm({
         </div>
         <input 
           type="file" 
-          accept=".mp3,audio/mpeg" 
+          accept="audio/*" 
           className="hidden" 
           ref={audioInputRef}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               const f = e.target.files[0];
               e.currentTarget.value = '';
-              const n = (f?.name || '').toString().trim().toLowerCase();
-              if (!n.endsWith('.mp3')) {
-                const msg = 'Solo se puede subir formato MP3. Usa el Convertidor a MP3.';
-                setAudioUploadError(msg);
-                alert(msg);
-                return;
-              }
               onPickAudio(f);
             }
           }}
@@ -4211,7 +4516,7 @@ function CustomForm({
             onClick={openMp3Converter}
             className="text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
           >
-            ¿Tu audio no es MP3? Convertir a MP3
+            Si tu audio no se sube, convertir a MP3
           </button>
         </div>
       )}

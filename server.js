@@ -1389,7 +1389,23 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
       .replace(/[^a-z0-9._-]/g, '')
       .slice(0, 100);
     
-    const ext = contentType === 'audio/wav' ? 'wav' : 'mp3';
+    const ct = (contentType || '').toString().toLowerCase().split(';')[0].trim();
+    const ext =
+      ct === 'audio/wav' || ct === 'audio/x-wav'
+        ? 'wav'
+        : ct === 'audio/webm' || ct === 'video/webm'
+          ? 'webm'
+          : ct === 'audio/ogg' || ct === 'audio/opus'
+            ? 'ogg'
+            : ct === 'audio/mp4' || ct === 'video/mp4' || ct === 'audio/x-m4a'
+              ? 'm4a'
+              : ct === 'audio/aac'
+                ? 'aac'
+                : ct === 'audio/flac' || ct === 'audio/x-flac'
+                  ? 'flac'
+                  : ct === 'audio/mpeg' || ct === 'audio/mp3'
+                    ? 'mp3'
+                    : 'bin';
     const key = path || `uploads/${user.id}/${Date.now()}_${cleanTitle}.${ext}`;
     
     const { PutObjectCommand } = await import("@aws-sdk/client-s3");
