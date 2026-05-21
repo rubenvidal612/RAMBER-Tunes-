@@ -2028,27 +2028,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return;
       }
 
-      const wantsCustomMode = mode === 'personalizado';
-    const payload: any = {
-      prompt,
-      instrumental,
-      customMode: wantsCustomMode,
-      model,
-    };
-    if (wantsCustomMode) {
-      payload.style = (instructions || 'General').trim();
-      payload.title = (title || 'Nueva Canción').trim();
-      payload.weirdnessConstraint = weirdness / 100;
-      payload.styleWeight = styleInfluence / 100;
-      payload.audioWeight = audioInfluence / 100;
-    }
-    
-    // DEBUG: Mostrar qué se está enviando
-    console.log('DEBUG handleCreate:');
-    console.log('Mode:', mode);
-    console.log('Instructions:', instructions);
-    console.log('Style being sent:', payload.style);
-    console.log('Full payload:', payload);
+      const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      const wantsCustomMode = mode === 'personalizado' || hasSelectedVoice;
+      const payload: any = {
+        prompt,
+        instrumental,
+        customMode: wantsCustomMode,
+        model: hasSelectedVoice && !(model === 'V5' || model === 'V5_5') ? 'V5' : model,
+      };
+      if (wantsCustomMode) {
+        payload.style = (instructions || 'General').trim() || 'General';
+        payload.title = (title || 'Nueva Canción').trim() || 'Nueva Canción';
+        payload.weirdnessConstraint = weirdness / 100;
+        payload.styleWeight = styleInfluence / 100;
+        payload.audioWeight = audioInfluence / 100;
+      }
+      if (hasSelectedVoice) {
+        payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
+      }
 
       const r = await fetch('/api/suno/generate', {
         method: 'POST',
