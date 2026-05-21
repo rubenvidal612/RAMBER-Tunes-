@@ -238,16 +238,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
     const mr = voiceRecorderRef.current;
     const stream = voiceRecorderStreamRef.current;
+
+    if (finalize) {
+      if (mr && mr.state !== 'inactive') {
+        try {
+          (mr as any).requestData?.();
+        } catch {
+        }
+        try {
+          mr.stop();
+        } catch {
+        }
+      }
+      return;
+    }
+
     voiceRecorderRef.current = null;
     voiceRecorderStreamRef.current = null;
     voiceRecorderMaxMsRef.current = null;
-
-    if (finalize && mr && mr.state !== 'inactive') {
-      try {
-        mr.stop();
-      } catch {
-      }
-    }
 
     try {
       stream?.getTracks?.().forEach((t) => {
@@ -3300,7 +3308,36 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           );
                         })()}
 
-                        <div className="mt-4" />
+                        <div className="mt-5 flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceRecorderOpen(false);
+                              setVoiceRecorderState('idle');
+                              stopVoiceRecorder(false).catch(() => {});
+                            }}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (voiceRecorderState !== 'recording') return;
+                              setVoiceRecorderState('stopping');
+                              stopVoiceRecorder(true).catch(() => {});
+                            }}
+                            disabled={voiceRecorderState !== 'recording'}
+                            className={cn(
+                              "flex-1 h-[44px] rounded-full font-extrabold text-sm",
+                              voiceRecorderState === 'recording'
+                                ? "bg-emerald-500 hover:bg-emerald-400 text-black"
+                                : "bg-white/5 border border-white/10 text-slate-400"
+                            )}
+                          >
+                            Detener
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : null}
