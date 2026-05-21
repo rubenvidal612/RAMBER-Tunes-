@@ -190,6 +190,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
   const voiceRecorderChunksRef = useRef<Blob[]>([]);
+  const voiceRecorderStopRequestedAtRef = useRef<number>(0);
+  const voiceRecorderLastChunkAtRef = useRef<number>(0);
   const voiceRecorderTimerRef = useRef<number | null>(null);
   const voiceRecorderStartedAtRef = useRef<number | null>(null);
   const voiceRecorderBarsTimerRef = useRef<number | null>(null);
@@ -242,6 +244,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const stream = voiceRecorderStreamRef.current;
 
     if (finalize) {
+      voiceRecorderStopRequestedAtRef.current = Date.now();
       if (mr && mr.state !== 'inactive') {
         try {
           (mr as any).requestData?.();
@@ -298,6 +301,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoiceRecorderMode(mode);
       setVoiceRecorderElapsedMs(0);
       voiceRecorderElapsedMsRef.current = 0;
+      voiceRecorderStopRequestedAtRef.current = 0;
+      voiceRecorderLastChunkAtRef.current = 0;
       setVoiceRecorderBars([]);
       const maxMs = Number.isFinite(Number(maxSeconds)) ? Math.max(1, Math.floor(Number(maxSeconds))) * 1000 : null;
       voiceRecorderMaxMsRef.current = maxMs;
@@ -346,7 +351,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const MR = (window as any).MediaRecorder as typeof MediaRecorder;
       const pickMime = () => {
-        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
         for (const t of types) {
           try {
             if (MR.isTypeSupported(t)) return t;
@@ -364,10 +369,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (!b) return;
         if (!b.size) return;
         voiceRecorderChunksRef.current.push(b);
+        voiceRecorderLastChunkAtRef.current = Date.now();
       };
 
       mr.onstop = () => {
-        window.setTimeout(() => {
+        const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+        const run = async () => {
+          const stopRequestedAt = Number(voiceRecorderStopRequestedAtRef.current || 0) || Date.now();
+          const deadline = Date.now() + 1500;
+          while (Date.now() < deadline) {
+            const chunksNow = Array.isArray(voiceRecorderChunksRef.current) ? voiceRecorderChunksRef.current.length : 0;
+            const lastAt = Number(voiceRecorderLastChunkAtRef.current || 0) || 0;
+            if (chunksNow > 0 && lastAt && Date.now() - lastAt > 180) break;
+            if (chunksNow === 0) {
+              if (Date.now() - stopRequestedAt > 900) break;
+            } else {
+              if (Date.now() - stopRequestedAt > 1200) break;
+            }
+            await sleep(80);
+          }
+
           const chunks = Array.isArray(voiceRecorderChunksRef.current) ? voiceRecorderChunksRef.current.slice() : [];
           voiceRecorderChunksRef.current = [];
 
@@ -398,15 +419,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               generateCustomVoice(file).catch(() => {});
             }, 0);
           } else {
+            const startedAt = voiceRecorderStartedAtRef.current;
+            const stopAt = Number(voiceRecorderStopRequestedAtRef.current || 0) || Date.now();
             const elapsedMs =
-              Math.max(0, Number(voiceRecorderElapsedMsRef.current || 0)) ||
-              (() => {
-                const startedAt = voiceRecorderStartedAtRef.current;
-                return Number.isFinite(Number(startedAt)) && startedAt ? Math.max(0, Date.now() - startedAt) : 0;
-              })();
+              (Number.isFinite(Number(startedAt)) && startedAt ? Math.max(0, stopAt - startedAt) : 0) ||
+              Math.max(0, Number(voiceRecorderElapsedMsRef.current || 0));
             const approxDurationSec = elapsedMs ? Math.max(1, Math.ceil(elapsedMs / 1000)) : 0;
             setVoiceSourceFile(file);
-            if (approxDurationSec) setVoiceSourceDurationSec(approxDurationSec);
+            setVoiceSourceDurationSec(approxDurationSec || 0);
             setVoiceVerifyFile(null);
             setVoiceStartSec(0);
             setVoiceEndSec(approxDurationSec ? Math.min(voiceTrimMaxSec, approxDurationSec) : voiceTrimMaxSec);
@@ -423,12 +443,25 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           setVoiceRecorderState('idle');
           setVoiceRecorderOpen(false);
           stopVoiceRecorder(false).catch(() => {});
-        }, 80);
+        };
+        run().catch(() => {
+          setVoiceRecorderState('idle');
+          setVoiceRecorderOpen(false);
+          stopVoiceRecorder(false).catch(() => {});
+        });
+      };
+
+      mr.onerror = () => {
+        setVoiceRecorderError('Falló la grabación. Prueba la “Grabación alternativa”.');
       };
 
       setVoiceRecorderState('recording');
       voiceRecorderStartedAtRef.current = Date.now();
-      mr.start();
+      try {
+        mr.start(1000);
+      } catch {
+        mr.start();
+      }
 
       const startedAt = Date.now();
       voiceRecorderTimerRef.current = window.setInterval(() => {
@@ -452,6 +485,47 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const f = voiceSourceFile;
+    if (!f) return;
+    if (Number(voiceSourceDurationSec || 0) > 0) return;
+    const run = async () => {
+      try {
+        const buf = await f.arrayBuffer();
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (typeof AC !== 'function') return;
+        const ctx: AudioContext = new AC();
+        const decode = (ab: ArrayBuffer) =>
+          new Promise<AudioBuffer>((resolve, reject) => {
+            const anyCtx: any = ctx as any;
+            const p = anyCtx.decodeAudioData(ab, resolve, reject);
+            if (p && typeof p.then === 'function') {
+              p.then(resolve).catch(reject);
+            }
+          });
+        const audioBuf = await decode(buf.slice(0));
+        const d = Math.floor(Number(audioBuf?.duration || 0));
+        try {
+          await ctx.close?.();
+        } catch {
+        }
+        if (cancelled) return;
+        if (!Number.isFinite(d) || d <= 0) return;
+        const next = clampVoiceTrim(voiceStartSec, voiceEndSec || voiceTrimMaxSec, d);
+        setVoiceSourceDurationSec(d);
+        setVoiceStartSec(next.start);
+        setVoiceEndSec(next.end || Math.min(voiceTrimMaxSec, Math.floor(d)));
+        setVoiceTrimNowSec(next.start);
+      } catch {
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [voiceSourceFile, voiceSourceDurationSec, voiceStartSec, voiceEndSec]);
 
   useEffect(() => {
     try {
@@ -2829,6 +2903,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         setVoiceCreateError(e instanceof Error ? e.message : String(e));
                       });
                     };
+                    const pickAltRecord = () => {
+                      if (isVerifyStep) voiceVerifyRecordInputRef.current?.click?.();
+                      else voiceRecordInputRef.current?.click?.();
+                    };
                     const pickUpload = () => {
                       if (isVerifyStep) voiceVerifyUploadInputRef.current?.click?.();
                       else voiceUploadInputRef.current?.click?.();
@@ -2895,6 +2973,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               </button>
                               <button
                                 type="button"
+                                onClick={pickAltRecord}
+                                disabled={voiceBusy}
+                                className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
+                              >
+                                <Mic className="w-4 h-4" /> Grabación alternativa
+                              </button>
+                              <button
+                                type="button"
                                 onClick={pickUpload}
                                 disabled={voiceBusy}
                                 className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center gap-2"
@@ -2955,6 +3041,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={pickAltRecord}
+                                    disabled={voiceBusy}
+                                    className="bg-white/5 border border-white/10 rounded-full px-6 py-2.5 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                                  >
+                                    <Mic className="w-4 h-4" /> Grabación alternativa
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={pickUpload}
                                     disabled={voiceBusy}
                                     className="bg-white/5 border border-white/10 rounded-full px-6 py-2.5 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
@@ -2984,6 +3078,33 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         <div className="text-white font-extrabold">Recorta tu grabación</div>
                         <div className="mt-1 text-slate-400 text-sm">Mantén la parte donde más se parezca a tu voz.</div>
                       </div>
+
+                      {Number(voiceSourceDurationSec || 0) <= 0 ? (
+                        <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-amber-100 text-sm">
+                          <div className="font-bold">No pude leer la duración del audio.</div>
+                          <div className="mt-1 text-amber-100/80">
+                            Si estás en Android y el recorte se queda en 00:00, usa “Grabación alternativa”.
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (voiceBusy) return;
+                              setVoiceSourceFile(null);
+                              setVoiceSourceDurationSec(0);
+                              setVoiceStartSec(0);
+                              setVoiceEndSec(voiceTrimMaxSec);
+                              setVoiceTrimNowSec(0);
+                              setVoiceCreateStep('pick_source');
+                              setVoiceCreateError('');
+                              window.setTimeout(() => voiceRecordInputRef.current?.click?.(), 0);
+                            }}
+                            disabled={voiceBusy}
+                            className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-100 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                          >
+                            Abrir Grabación alternativa
+                          </button>
+                        </div>
+                      ) : null}
 
                       <audio
                         ref={voiceTrimAudioRef}
