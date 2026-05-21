@@ -190,6 +190,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const voiceRecorderStreamRef = useRef<MediaStream | null>(null);
   const voiceRecorderChunksRef = useRef<Blob[]>([]);
   const voiceRecorderTimerRef = useRef<number | null>(null);
+  const voiceRecorderStartedAtRef = useRef<number | null>(null);
   const voiceRecorderBarsTimerRef = useRef<number | null>(null);
   const voiceRecorderAudioCtxRef = useRef<AudioContext | null>(null);
   const voiceRecorderAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -256,6 +257,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     voiceRecorderRef.current = null;
     voiceRecorderStreamRef.current = null;
     voiceRecorderMaxMsRef.current = null;
+    voiceRecorderStartedAtRef.current = null;
 
     try {
       stream?.getTracks?.().forEach((t) => {
@@ -394,10 +396,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               generateCustomVoice(file).catch(() => {});
             }, 0);
           } else {
+            const startedAt = voiceRecorderStartedAtRef.current;
+            const elapsedMs = Number.isFinite(Number(startedAt)) && startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+            const approxDurationSec = elapsedMs ? Math.max(1, Math.ceil(elapsedMs / 1000)) : 0;
             setVoiceSourceFile(file);
+            if (approxDurationSec) setVoiceSourceDurationSec(approxDurationSec);
             setVoiceVerifyFile(null);
             setVoiceStartSec(0);
-            setVoiceEndSec(voiceTrimMaxSec);
+            setVoiceEndSec(approxDurationSec ? Math.min(voiceTrimMaxSec, approxDurationSec) : voiceTrimMaxSec);
             setVoiceTrimNowSec(0);
             try {
               voiceTrimAudioRef.current?.pause?.();
@@ -415,6 +421,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       };
 
       setVoiceRecorderState('recording');
+      voiceRecorderStartedAtRef.current = Date.now();
       mr.start();
 
       const startedAt = Date.now();
