@@ -867,7 +867,9 @@ const sunoHandler = (() => {
     const instrumental = Boolean(payload?.instrumental);
     const mv = typeof payload?.mv === "string" ? payload.mv.trim() : "";
     const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
-    const model = normalizeModel(modelRaw || mv);
+    const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
+    let model = normalizeModel(modelRaw || mv);
+    if (personaModelHint === "voice_persona") model = "V5";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     if (!prompt) return send(res, 400, { error: "Falta prompt" });
 
@@ -981,7 +983,9 @@ const sunoHandler = (() => {
     const style = typeof payload?.style === "string" ? payload.style.trim() : "";
     const mv = typeof payload?.mv === "string" ? payload.mv.trim() : "";
     const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
-    const model = normalizeModel(modelRaw || mv);
+    const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
+    let model = normalizeModel(modelRaw || mv);
+    if (personaModelHint === "voice_persona") model = "V5";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     if (!audioId) return send(res, 400, { error: "Falta audioId" });
 
@@ -1089,7 +1093,9 @@ const sunoHandler = (() => {
     const title = firstString(payload, ["title"]) || "Cover";
     const mv = firstString(payload, ["mv"]);
     const modelRaw = firstString(payload, ["model"]);
-    const model = normalizeModel(modelRaw || mv);
+    const personaModelHint = firstString(payload, ["personaModel", "persona_model"]);
+    let model = normalizeModel(modelRaw || mv);
+    if (personaModelHint === "voice_persona") model = "V5";
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
@@ -1130,7 +1136,7 @@ const sunoHandler = (() => {
       if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
       body.personaId = personaId.slice(0, 200);
     }
-    const personaModel = firstString(payload, ["personaModel", "persona_model"]);
+    const personaModel = personaModelHint;
     if (personaModel) body.personaModel = personaModel.slice(0, 200);
 
     const user = auth.user;

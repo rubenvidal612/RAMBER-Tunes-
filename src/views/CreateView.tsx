@@ -1957,7 +1957,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         prompt,
         style: (instructions || 'General').trim(),
         title: (title || 'Cover').trim(),
-        model: hasSelectedVoice && !(model === 'V5' || model === 'V5_5') ? 'V5' : model,
+        model: hasSelectedVoice ? 'V5' : model,
         weirdnessConstraint: weirdness / 100,
         styleWeight: styleInfluence / 100,
         audioWeight: audioInfluence / 100,
@@ -2051,7 +2051,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         prompt,
         instrumental,
         customMode: wantsCustomMode,
-        model: hasSelectedVoice && !(model === 'V5' || model === 'V5_5') ? 'V5' : model,
+        model: hasSelectedVoice ? 'V5' : model,
       };
       if (wantsCustomMode) {
         payload.style = (instructions || 'General').trim() || 'General';
