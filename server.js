@@ -1787,6 +1787,7 @@ app.get('/api/app/version', (req, res) => {
 });
 
 // Server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend RAMBER Tunes en http://localhost:${PORT}`);
+  console.log(`Backend RAMBER Tunes en http://0.0.0.0:${PORT}`);
 });
