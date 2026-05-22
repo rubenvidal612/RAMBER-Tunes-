@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, Bell } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -49,6 +49,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const [userDetailError, setUserDetailError] = useState('');
   const [userDetailData, setUserDetailData] = useState<any>(null);
+  const officeCreditosRef = useRef<HTMLDivElement | null>(null);
 
   const TELEGRAM_GROUP_URL = 'https://t.me/+sgw5bsAX9utmZDEx';
   const TELEGRAM_INVITE_HASH = 'sgw5bsAX9utmZDEx';
@@ -109,6 +110,26 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       if (document.hidden) return;
       openExternalUrl(TELEGRAM_GROUP_URL);
     }, 900);
+  };
+
+  const focusCreditos = (mode: 'grant' | 'take', email: string) => {
+    const e = (email || '').toString().trim().toLowerCase();
+    if (!e) return;
+    setIsUserDetailOpen(false);
+    setUserDetailEmail(e);
+    setOfficeCreditosOpen(true);
+    if (mode === 'grant') setGrantEmail(e);
+    if (mode === 'take') setTakeEmail(e);
+    window.setTimeout(() => {
+      try {
+        officeCreditosRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' } as any);
+      } catch {
+        try {
+          officeCreditosRef.current?.scrollIntoView?.();
+        } catch {
+        }
+      }
+    }, 80);
   };
 
   useEffect(() => {
@@ -926,7 +947,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
             ) : null}
           </div>
 
-          <div className="bg-gradient-to-r from-rose-500/10 via-white/5 to-transparent border border-rose-400/15 rounded-3xl p-5">
+          <div ref={officeCreditosRef} className="bg-gradient-to-r from-rose-500/10 via-white/5 to-transparent border border-rose-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeCreditosOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Créditos de usuarios</div>
@@ -1138,9 +1159,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
                             <button
                               onClick={() => {
                                 if (!email) return;
-                                setOfficeCreditosOpen(true);
-                                setGrantEmail(email);
-                                setUserDetailEmail(email);
+                                focusCreditos('grant', email);
                               }}
                               className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm"
                             >
@@ -1149,9 +1168,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
                             <button
                               onClick={() => {
                                 if (!email) return;
-                                setOfficeCreditosOpen(true);
-                                setTakeEmail(email);
-                                setUserDetailEmail(email);
+                                focusCreditos('take', email);
                               }}
                               className="flex-1 bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm"
                             >
