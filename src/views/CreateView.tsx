@@ -132,11 +132,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [studioRecorderElapsedMs, setStudioRecorderElapsedMs] = useState(0);
   const [studioRecorderBars, setStudioRecorderBars] = useState<number[]>([]);
   const studioRecorderElapsedMsRef = useRef<number>(0);
+  const studioRecorderStateRef = useRef<'idle' | 'recording' | 'stopping'>('idle');
   const studioRecorderRef = useRef<MediaRecorder | null>(null);
   const studioRecorderStreamRef = useRef<MediaStream | null>(null);
   const studioRecorderChunksRef = useRef<Blob[]>([]);
   const studioRecorderStopRequestedAtRef = useRef<number>(0);
   const studioRecorderLastChunkAtRef = useRef<number>(0);
+  const studioRecorderFinalizeIdRef = useRef<number>(0);
+  const studioRecorderStopFallbackTimerRef = useRef<number | null>(null);
   const studioRecorderTimerRef = useRef<number | null>(null);
   const studioRecorderBarsTimerRef = useRef<number | null>(null);
   const studioRecorderStartedAtRef = useRef<number | null>(null);
@@ -1847,6 +1850,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const stopStudioRecorder = async (finalize: boolean) => {
     try {
+      if (studioRecorderStopFallbackTimerRef.current) window.clearTimeout(studioRecorderStopFallbackTimerRef.current);
+    } catch {
+    }
+    studioRecorderStopFallbackTimerRef.current = null;
+
+    try {
       if (studioRecorderTimerRef.current) window.clearInterval(studioRecorderTimerRef.current);
     } catch {
     }
@@ -1873,7 +1882,57 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const stream = studioRecorderStreamRef.current;
 
     if (finalize) {
+      const finalizeId = Date.now();
+      studioRecorderFinalizeIdRef.current = finalizeId;
       studioRecorderStopRequestedAtRef.current = Date.now();
+      try {
+        if (studioRecorderStopFallbackTimerRef.current) window.clearTimeout(studioRecorderStopFallbackTimerRef.current);
+      } catch {
+      }
+      studioRecorderStopFallbackTimerRef.current = window.setTimeout(() => {
+        if (studioRecorderFinalizeIdRef.current !== finalizeId) return;
+        if (studioRecorderStateRef.current !== 'stopping') return;
+        const chunksNow = Array.isArray(studioRecorderChunksRef.current) ? studioRecorderChunksRef.current.slice() : [];
+        if (chunksNow.length === 0) {
+          setStudioRecorderError('No se pudo guardar la grabación. Usa “Grabación alternativa” o prueba de nuevo.');
+          setStudioRecorderState('idle');
+          studioRecorderStateRef.current = 'idle';
+          stopStudioRecorder(false).catch(() => {});
+          return;
+        }
+        try {
+          const ct = (mr?.mimeType || chunksNow[0]?.type || 'audio/webm').toLowerCase();
+          const blob = new Blob(chunksNow, { type: ct || 'audio/webm' });
+          if (!blob.size || blob.size < 1024) {
+            setStudioRecorderError('No se grabó audio. Intenta de nuevo y asegúrate de permitir el micrófono.');
+            setStudioRecorderState('idle');
+            studioRecorderStateRef.current = 'idle';
+            stopStudioRecorder(false).catch(() => {});
+            return;
+          }
+          const ext = ct.includes('mp4') ? 'm4a' : ct.includes('ogg') ? 'ogg' : ct.includes('webm') ? 'webm' : 'webm';
+          const name = `grabacion_${Date.now()}.${ext}`;
+          let file: File;
+          try {
+            file = new File([blob], name, { type: blob.type || 'audio/webm' });
+          } catch {
+            const b: any = blob;
+            b.name = name;
+            b.lastModified = Date.now();
+            file = b as File;
+          }
+          setStudioRecorderState('idle');
+          studioRecorderStateRef.current = 'idle';
+          setStudioRecorderOpen(false);
+          stopStudioRecorder(false).catch(() => {});
+          window.setTimeout(() => pickAudio(file).catch(() => {}), 180);
+        } catch {
+          setStudioRecorderError('No se pudo guardar la grabación. Usa “Grabación alternativa” o sube un archivo.');
+          setStudioRecorderState('idle');
+          studioRecorderStateRef.current = 'idle';
+          stopStudioRecorder(false).catch(() => {});
+        }
+      }, 3500);
       if (mr && mr.state !== 'inactive') {
         try {
           (mr as any).requestData?.();
@@ -1927,8 +1986,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       studioRecorderElapsedMsRef.current = 0;
       studioRecorderStopRequestedAtRef.current = 0;
       studioRecorderLastChunkAtRef.current = 0;
+      studioRecorderFinalizeIdRef.current = 0;
+      try {
+        if (studioRecorderStopFallbackTimerRef.current) window.clearTimeout(studioRecorderStopFallbackTimerRef.current);
+      } catch {
+      }
+      studioRecorderStopFallbackTimerRef.current = null;
       setStudioRecorderBars([]);
       setStudioRecorderState('idle');
+      studioRecorderStateRef.current = 'idle';
       setStudioRecorderOpen(true);
 
       const stream = await navAny.mediaDevices.getUserMedia({ audio: true });
@@ -1996,6 +2062,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       mr.onstop = () => {
         const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
         const run = async () => {
+          try {
+            if (studioRecorderStopFallbackTimerRef.current) window.clearTimeout(studioRecorderStopFallbackTimerRef.current);
+          } catch {
+          }
+          studioRecorderStopFallbackTimerRef.current = null;
           const stopRequestedAt = Number(studioRecorderStopRequestedAtRef.current || 0) || Date.now();
           const deadline = Date.now() + 1500;
           while (Date.now() < deadline) {
@@ -2016,22 +2087,33 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           if (!blob.size || blob.size < 1024) {
             setStudioRecorderError('No se grabó audio. Intenta de nuevo y asegúrate de permitir el micrófono.');
             setStudioRecorderState('idle');
-            setStudioRecorderOpen(false);
+            studioRecorderStateRef.current = 'idle';
             stopStudioRecorder(false).catch(() => {});
             return;
           }
 
           const ct = (blob.type || mr.mimeType || 'audio/webm').toLowerCase();
           const ext = ct.includes('mp4') ? 'm4a' : ct.includes('ogg') ? 'ogg' : ct.includes('webm') ? 'webm' : 'webm';
-          const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
+          const name = `grabacion_${Date.now()}.${ext}`;
+          let file: File;
+          try {
+            file = new File([blob], name, { type: blob.type || 'audio/webm' });
+          } catch {
+            const b: any = blob;
+            b.name = name;
+            b.lastModified = Date.now();
+            file = b as File;
+          }
           setStudioRecorderState('idle');
+          studioRecorderStateRef.current = 'idle';
           setStudioRecorderOpen(false);
           stopStudioRecorder(false).catch(() => {});
-          pickAudio(file).catch(() => {});
+          window.setTimeout(() => pickAudio(file).catch(() => {}), 180);
         };
         run().catch(() => {
+          setStudioRecorderError('No se pudo guardar la grabación. Usa “Grabación alternativa” o sube un archivo.');
           setStudioRecorderState('idle');
-          setStudioRecorderOpen(false);
+          studioRecorderStateRef.current = 'idle';
           stopStudioRecorder(false).catch(() => {});
         });
       };
@@ -2041,6 +2123,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       };
 
       setStudioRecorderState('recording');
+      studioRecorderStateRef.current = 'recording';
       studioRecorderStartedAtRef.current = Date.now();
       try {
         mr.start(1000);
@@ -2058,6 +2141,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const msg = e instanceof Error ? e.message : String(e);
       setStudioRecorderError(msg || 'No pude acceder al micrófono.');
       setStudioRecorderState('idle');
+      studioRecorderStateRef.current = 'idle';
       try {
         await stopStudioRecorder(false);
       } catch {
@@ -2698,6 +2782,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 onClick={() => {
                   setStudioRecorderOpen(false);
                   setStudioRecorderState('idle');
+                  studioRecorderStateRef.current = 'idle';
                   stopStudioRecorder(false).catch(() => {});
                 }}
                 className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10"
@@ -2718,7 +2803,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
             <div className="mt-4 flex flex-col items-center">
               <div className="text-slate-300 text-sm tabular-nums">{Math.floor(Math.max(0, studioRecorderElapsedMs || 0) / 1000)}s</div>
-              <div className="mt-1 text-slate-500 text-xs">{studioRecorderState === 'recording' ? 'Grabando…' : 'Listo'}</div>
+              <div className="mt-1 text-slate-500 text-xs">
+                {studioRecorderState === 'recording' ? 'Grabando…' : studioRecorderState === 'stopping' ? 'Guardando…' : 'Listo'}
+              </div>
             </div>
 
             <div className="mt-5 flex items-center gap-3">
@@ -2727,6 +2814,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 onClick={() => {
                   setStudioRecorderOpen(false);
                   setStudioRecorderState('idle');
+                  studioRecorderStateRef.current = 'idle';
                   stopStudioRecorder(false).catch(() => {});
                 }}
                 className="flex-1 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
@@ -2738,6 +2826,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 onClick={() => {
                   if (studioRecorderState !== 'recording') return;
                   setStudioRecorderState('stopping');
+                  studioRecorderStateRef.current = 'stopping';
                   stopStudioRecorder(true).catch(() => {});
                 }}
                 disabled={studioRecorderState !== 'recording'}
