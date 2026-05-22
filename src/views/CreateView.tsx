@@ -99,6 +99,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioUploadPath, setAudioUploadPath] = useState<string>('');
   const [externalAudioLabel, setExternalAudioLabel] = useState<string>('');
   const [audioDurationSec, setAudioDurationSec] = useState<number>(0);
+  const [audioPlayableUrl, setAudioPlayableUrl] = useState<string>('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [audioAction, setAudioAction] = useState<'cover' | 'instrumental' | 'vocals' | 'extend' | 'library'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -760,6 +761,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     };
   }, [voiceVerifyFile]);
 
+  useEffect(() => {
+    if (!audioUploadUrl) {
+      setAudioPlayableUrl('');
+      return;
+    }
+    refreshAudioPlayableUrl().catch(() => setAudioPlayableUrl((audioUploadUrl || '').toString().trim()));
+  }, [audioUploadUrl, audioUploadPath]);
+
   const clearAudio = () => {
     try {
       uploadXhrRef.current?.abort();
@@ -768,6 +777,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioFile(null);
     setAudioUploadUrl('');
     setAudioUploadPath('');
+    setAudioPlayableUrl('');
     setExternalAudioLabel('');
     setAudioDurationSec(0);
     setIsUploadingAudio(false);
@@ -778,6 +788,33 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setAudioLyricsStatus('');
     lastTranscribedKeyRef.current = '';
     if (audioInputRef.current) audioInputRef.current.value = '';
+  };
+
+  const refreshAudioPlayableUrl = async () => {
+    const fallback = (audioUploadUrl || '').toString().trim();
+    const key = (audioUploadPath || '').toString().trim().replace(/^\/+/, '');
+    if (!key) {
+      setAudioPlayableUrl(fallback);
+      return;
+    }
+    const allowed = key.startsWith('uploads/audio/') || key.startsWith('uploads/');
+    if (!allowed) {
+      setAudioPlayableUrl(fallback);
+      return;
+    }
+    const t = await getAccessToken();
+    if (!t.ok) {
+      setAudioPlayableUrl(fallback);
+      return;
+    }
+    const r = await fetch(`/api/upload-audio?action=sign&key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${t.token}` } });
+    const out = await r.json().catch(() => ({}));
+    const url = (out?.url || '').toString().trim();
+    if (r.ok && url) {
+      setAudioPlayableUrl(url);
+      return;
+    }
+    setAudioPlayableUrl(fallback);
   };
 
   const resetVoiceWizard = () => {
@@ -4579,7 +4616,15 @@ function CustomForm({
           </div>
           {!!audioUploadUrl && !isUploadingAudio && (
             <div className="mt-3">
-              <audio controls preload="metadata" src={audioUploadUrl} className="w-full" />
+              <audio
+                controls
+                preload="metadata"
+                src={(audioPlayableUrl || audioUploadUrl).toString()}
+                className="w-full"
+                onError={() => {
+                  refreshAudioPlayableUrl().catch(() => {});
+                }}
+              />
             </div>
           )}
         </div>

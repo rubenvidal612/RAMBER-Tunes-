@@ -1482,6 +1482,22 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
   }
 });
 
+app.get('/api/upload-audio', authenticate, async (req, res) => {
+  try {
+    const action = String(req.query?.action || '').trim().toLowerCase();
+    if (action !== 'sign' && action !== 'play') return res.status(400).json({ ok: false, error: 'Falta action=sign' });
+    const key = String(req.query?.key || '').trim().replace(/^\/+/, '');
+    if (!key) return res.status(400).json({ ok: false, error: 'Falta key' });
+    const uid = String(req.user?.id || '').trim();
+    const allowedPrefixes = [`uploads/audio/${uid}/`, `uploads/${uid}/`];
+    if (!allowedPrefixes.some((p) => key.startsWith(p))) return res.status(403).json({ ok: false, error: 'No autorizado para este archivo' });
+    const url = await getSignedR2Url(key, 60 * 60 * 2);
+    return res.json({ ok: true, url, key });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'No pude firmar el audio', detail: error.message });
+  }
+});
+
 // 3. Afiliados
 app.get('/api/affiliates/me', authenticate, async (req, res) => {
   try {

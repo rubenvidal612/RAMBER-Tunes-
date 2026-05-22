@@ -6384,10 +6384,28 @@ const uploadProfileImageHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const method = (req.method || "").toUpperCase();
+    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    if (method === "GET") {
+      const key = pickQuery(req, "key").toString().trim().replace(/^\/+/, "");
+      const action = (pickQuery(req, "action") || "").toString().trim().toLowerCase();
+      if (action !== "sign" && action !== "play") return send(res, 400, { error: "Falta action=sign" });
+      if (!key) return send(res, 400, { error: "Falta key" });
+      const uid = String(auth.user.id || "").trim();
+      const allowedPrefixes = [`uploads/audio/${uid}/`, `uploads/${uid}/`];
+      if (!allowedPrefixes.some((p) => key.startsWith(p))) return send(res, 403, { error: "No autorizado para este archivo" });
+      try {
+        const url = await getSignedR2Url(key, 60 * 60 * 2);
+        return send(res, 200, { ok: true, url, key });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        return send(res, 500, { ok: false, error: "No pude firmar el audio", detail: String(detail || "").slice(0, 500) });
+      }
+    }
 
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
