@@ -77,12 +77,22 @@ function stripTitleFromLyrics(title: string, lyrics: string) {
 function toUserFriendlySunoError(out: any, fallback: string) {
   const raw = (out?.detail || out?.error || out?.message || fallback || '').toString().trim();
   const lower = raw.toLowerCase();
+  const looksLikeVoiceExpired =
+    lower.includes('voice has expired') ||
+    (lower.includes('voice') && lower.includes('expired')) ||
+    (lower.includes('persona') && lower.includes('expired'));
   const looksLikeCopyright =
     lower.includes('copyright') ||
     lower.includes('copyrighted') ||
     lower.includes('dmca') ||
     lower.includes('rights') ||
     lower.includes('infring');
+  if (looksLikeVoiceExpired) {
+    return (
+      'La voz seleccionada expiró.\n\n' +
+      'Solución: abre “Clonador” y selecciona otra voz (o vuelve a crearla).'
+    );
+  }
   if (looksLikeCopyright) {
     return 'Error por Copyright.\n\nEse audio parece ser de una canción protegida. Sube un audio original o usa otro audio.';
   }
@@ -185,6 +195,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [isCreateVoiceOpen, setIsCreateVoiceOpen] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
   const [voicesTab, setVoicesTab] = useState<'mine' | 'favorites'>('mine');
+
+  useEffect(() => {
+    try {
+      const flag = (window.localStorage.getItem('ramber.voice_expired_v1') || '').toString().trim();
+      if (flag) {
+        window.localStorage.removeItem('ramber.voice_expired_v1');
+        setSelectedVoice(null);
+      }
+    } catch {
+    }
+  }, []);
   const [newVoiceName, setNewVoiceName] = useState('');
   const [newVoiceDescription, setNewVoiceDescription] = useState('');
   const [voiceSourceFile, setVoiceSourceFile] = useState<File | null>(null);
@@ -2537,7 +2558,62 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert(toUserFriendlySunoError(out, 'No se pudo hacer el cover.'));
+        const msg = toUserFriendlySunoError(out, 'No se pudo hacer el cover.');
+        const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
+        const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
+        if (hasSelectedVoice && looksLikeVoiceExpired) {
+          setSelectedVoice(null);
+          const retryPayload: any = { ...payload };
+          delete retryPayload.personaId;
+          delete retryPayload.personaModel;
+          retryPayload.model = model;
+          const rr = await fetch('/api/suno/upload-cover', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${t.token}`,
+            },
+            body: JSON.stringify(retryPayload),
+          });
+          const out2 = await rr.json().catch(() => ({}));
+          if (!rr.ok) {
+            alert(toUserFriendlySunoError(out2, 'No se pudo hacer el cover.'));
+            return;
+          }
+          const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
+          if (!taskId2) {
+            alert('No recibí taskId del servidor.');
+            return;
+          }
+          try {
+            const rawPending = window.localStorage.getItem(pendingListKey);
+            const arrPending = rawPending ? JSON.parse(rawPending) : [];
+            const listPending = Array.isArray(arrPending) ? arrPending : [];
+            listPending.push({
+              taskId: taskId2,
+              kind: 'upload-cover',
+              startedAt: Date.now(),
+              draft: {
+                title: (title || 'Cover').toString(),
+                description: (instructions || 'Cover').toString(),
+                lyrics: promptRaw ? promptRaw : null,
+                prompt: promptRaw ? promptRaw : null,
+                genre: gender,
+                isCover: true,
+              },
+            });
+            window.localStorage.setItem(pendingListKey, JSON.stringify(listPending));
+            try {
+              window.localStorage.removeItem(pendingLegacyKey);
+            } catch {
+            }
+          } catch {
+          }
+          alert('La voz que elegiste expiró. Se generará el cover sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
+          onGoLibrary?.();
+          return;
+        }
+        alert(msg);
         return;
       }
       const taskId = typeof out?.taskId === 'string' ? out.taskId : '';
@@ -2635,7 +2711,72 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert(toUserFriendlySunoError(out, 'No se pudo crear la canción.'));
+        const msg = toUserFriendlySunoError(out, 'No se pudo crear la canción.');
+        const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
+        const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
+        if (hasSelectedVoice && looksLikeVoiceExpired) {
+          setSelectedVoice(null);
+          const retryWantsCustomMode = mode === 'personalizado';
+          const retryPayload: any = {
+            prompt,
+            instrumental,
+            customMode: retryWantsCustomMode,
+            model,
+          };
+          if (retryWantsCustomMode) {
+            retryPayload.style = (instructions || 'General').trim() || 'General';
+            retryPayload.title = (title || 'Nueva Canción').trim() || 'Nueva Canción';
+            retryPayload.weirdnessConstraint = weirdness / 100;
+            retryPayload.styleWeight = styleInfluence / 100;
+            retryPayload.audioWeight = audioInfluence / 100;
+          }
+          const rr = await fetch('/api/suno/generate', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${t.token}`,
+            },
+            body: JSON.stringify(retryPayload),
+          });
+          const out2 = await rr.json().catch(() => ({}));
+          if (!rr.ok) {
+            alert(toUserFriendlySunoError(out2, 'No se pudo crear la canción.'));
+            return;
+          }
+          const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
+          if (!taskId2) {
+            alert('No recibí taskId del servidor.');
+            return;
+          }
+          try {
+            const rawPending = window.localStorage.getItem(pendingListKey);
+            const arrPending = rawPending ? JSON.parse(rawPending) : [];
+            const listPending = Array.isArray(arrPending) ? arrPending : [];
+            listPending.push({
+              taskId: taskId2,
+              kind: 'generate',
+              startedAt: Date.now(),
+              draft: {
+                title: (title || 'Nueva Canción').toString(),
+                description: (mode === 'simple' ? description : instructions).toString(),
+                lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
+                prompt: prompt,
+                genre: gender,
+                isCover: Boolean(audioFile || audioUploadUrl),
+              },
+            });
+            window.localStorage.setItem(pendingListKey, JSON.stringify(listPending));
+            try {
+              window.localStorage.removeItem(pendingLegacyKey);
+            } catch {
+            }
+          } catch {
+          }
+          alert('La voz que elegiste expiró. Se generará la canción sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
+          onGoLibrary?.();
+          return;
+        }
+        alert(msg);
         return;
       }
 

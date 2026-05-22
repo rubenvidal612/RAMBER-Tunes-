@@ -1876,7 +1876,20 @@ export default function App() {
           const list = migrateLegacyIfNeeded();
           const rest = Array.isArray(list) ? list.slice(1) : [];
           writeList(rest);
-          showToast(msg);
+          const raw = String(msg || '').trim();
+          const lower = raw.toLowerCase();
+          const looksLikeVoiceExpired =
+            lower.includes('voice has expired') ||
+            (lower.includes('voice') && lower.includes('expired')) ||
+            (lower.includes('persona') && lower.includes('expired'));
+          if (looksLikeVoiceExpired) {
+            try {
+              window.localStorage.setItem('ramber.voice_expired_v1', String(Date.now()));
+            } catch {}
+            showToast('La voz seleccionada expiró. Entra a “Clonador” y elige otra voz (o vuelve a crearla).');
+          } else {
+            showToast(raw || 'Error en la generación');
+          }
           return;
         }
       } finally {
