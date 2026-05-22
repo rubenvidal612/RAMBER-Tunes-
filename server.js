@@ -1414,13 +1414,23 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
     const r2Client = await getR2Client();
     const env = getR2Env();
     
-    if (file && Array.isArray(file)) {
-      // Fallback: upload directly from buffer
+    let inlineBytes = null;
+    if (typeof file === 'string' && file.trim()) {
+      try {
+        const raw = String(file || '').trim();
+        const b64 = raw.includes(',') ? raw.split(',')[1] : raw;
+        if (b64) inlineBytes = Buffer.from(b64, 'base64');
+      } catch {}
+    } else if (file && Array.isArray(file)) {
       const uint8 = new Uint8Array(file.length);
       for (let i = 0; i < file.length; i++) {
         uint8[i] = file[i];
       }
-      
+      inlineBytes = uint8;
+    }
+
+    if (inlineBytes) {
+      // Fallback: upload directly from buffer
       try {
         const r2Client = await getR2Client();
         const env = getR2Env();
@@ -1428,8 +1438,8 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
         const putCommand = new PutObjectCommand({
           Bucket: env.bucketName,
           Key: key,
-          Body: uint8,
-          ContentLength: uint8.length,
+          Body: inlineBytes,
+          ContentLength: inlineBytes.length,
           ContentType: contentType || 'audio/mpeg',
         });
         
@@ -1440,7 +1450,7 @@ app.post('/api/upload-audio', authenticate, async (req, res) => {
         // Si falla R2, usamos Supabase Storage como respaldo automático
         console.log("R2 falló, usando Supabase Storage...");
         const bucket = "ramber-tunes";
-        const { error: upErr } = await supabase.storage.from(bucket).upload(key, uint8, {
+        const { error: upErr } = await supabase.storage.from(bucket).upload(key, inlineBytes, {
           contentType: contentType || 'audio/mpeg',
           upsert: true
         });
