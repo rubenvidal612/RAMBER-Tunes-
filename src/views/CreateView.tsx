@@ -4364,7 +4364,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   }}
                 >
                   <div className="w-full h-full rounded-full bg-[#0b0f16] border border-white/10 flex items-center justify-center">
-                    <div className={cn("text-xs font-extrabold", hot ? "text-red-400" : "text-slate-100")}>{pctText}</div>
+                    {pct >= 100 && audioUploadUrl && !isUploadingAudio ? (
+                      <BadgeCheck className="w-6 h-6 text-emerald-400 drop-shadow-[0_0_14px_rgba(34,197,94,0.85)]" />
+                    ) : (
+                      <div className={cn("text-xs font-extrabold", hot ? "text-red-400" : "text-slate-100")}>{pctText}</div>
+                    )}
                   </div>
                 </div>
                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
