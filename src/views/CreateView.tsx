@@ -124,6 +124,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+  const [audioJustPickedAt, setAudioJustPickedAt] = useState<number>(0);
   const savedUploadsKey = 'ramber.saved_uploads_v1';
   const [savedUploadKey, setSavedUploadKey] = useState<string>('');
   const [studioRecorderOpen, setStudioRecorderOpen] = useState(false);
@@ -1839,6 +1840,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const pickAudio = async (file: File) => {
+    const now = Date.now();
+    setAudioJustPickedAt(now);
+    window.setTimeout(() => {
+      setAudioJustPickedAt((v) => (v === now ? 0 : v));
+    }, 900);
     setAudioFile(file);
     setAudioUploadUrl('');
     setAudioAction('cover');
@@ -4289,16 +4295,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           <button
             className="absolute inset-0 w-full h-full"
             onClick={() => {
+              if (audioJustPickedAt) return;
               if (isUploadingAudio || !audioUploadUrl) return;
               setIsAudioModalOpen(false);
             }}
             aria-label="Cerrar"
           />
           <div className="relative w-full md:w-11/12 md:max-w-5xl bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] flex flex-col max-h-[90dvh]">
+            {audioJustPickedAt ? <div className="absolute inset-0 z-[10]" /> : null}
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="text-white font-extrabold">Crear desde tu audio</div>
               <button
-                onClick={() => setIsAudioModalOpen(false)}
+                onClick={() => {
+                  if (audioJustPickedAt) return;
+                  if (isUploadingAudio || !audioUploadUrl) return;
+                  setIsAudioModalOpen(false);
+                }}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
                 <X className="w-5 h-5" />
@@ -4434,6 +4446,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
               <button
                 onClick={() => {
+                  if (audioJustPickedAt) return;
                   continueFromAudio().catch(() => {});
                 }}
                 disabled={
