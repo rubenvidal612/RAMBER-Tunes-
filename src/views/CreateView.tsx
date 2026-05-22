@@ -2819,6 +2819,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             audioInputRef={audioInputRef}
             audioCaptureInputRef={audioCaptureInputRef}
             audioUploadUrl={audioUploadUrl}
+            audioPlayableUrl={audioPlayableUrl}
             externalAudioLabel={externalAudioLabel}
             audioLyricsStatus={audioLyricsStatus}
             isUploadingAudio={isUploadingAudio}
@@ -2848,6 +2849,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 setStudioRecorderError(e instanceof Error ? e.message : String(e));
               });
             }}
+            onRefreshAudioPlayableUrl={() => refreshAudioPlayableUrl().catch(() => {})}
           />
         )}
       </div>
@@ -4652,6 +4654,7 @@ function CustomForm({
   audioInputRef,
   audioCaptureInputRef,
   audioUploadUrl,
+  audioPlayableUrl,
   externalAudioLabel,
   audioLyricsStatus,
   isUploadingAudio,
@@ -4674,7 +4677,8 @@ function CustomForm({
   generateLyricsWithAI,
   isGeneratingLyrics,
   isDev,
-  onRecordStudioAudio
+  onRecordStudioAudio,
+  onRefreshAudioPlayableUrl
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
@@ -4882,7 +4886,7 @@ function CustomForm({
                 src={(audioPlayableUrl || audioUploadUrl).toString()}
                 className="w-full"
                 onError={() => {
-                  refreshAudioPlayableUrl().catch(() => {});
+                  onRefreshAudioPlayableUrl?.();
                 }}
               />
             </div>
