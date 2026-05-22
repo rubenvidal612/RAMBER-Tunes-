@@ -2016,14 +2016,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const startStudioRecorder = async () => {
     setStudioRecorderError('');
     const navAny = navigator as any;
-    const ua = (typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '').toLowerCase();
-    const isMobileUa = /android|iphone|ipad|ipod/.test(ua);
     const canMedia =
       typeof window !== 'undefined' &&
       typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
       typeof (window as any).MediaRecorder === 'function';
 
-    if (!canMedia || isMobileUa) {
+    if (!canMedia) {
       audioCaptureInputRef.current?.click?.();
       return;
     }
@@ -4745,7 +4743,7 @@ function CustomForm({
           <button
             type="button"
             onClick={() => {
-              if (isDev && typeof onRecordStudioAudio === 'function') {
+              if (typeof onRecordStudioAudio === 'function') {
                 onRecordStudioAudio?.();
                 return;
               }
