@@ -1698,6 +1698,76 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
+
+      const ua = (typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '').toLowerCase();
+      const isMobileUa = /android|iphone|ipad|ipod/.test(ua);
+      const guessAudioContentType = (f: File) => {
+        const ct = (f?.type || '').toString().trim();
+        if (ct) return ct;
+        const name = (f?.name || '').toString().toLowerCase();
+        const ext = name.includes('.') ? name.split('.').pop() || '' : '';
+        if (ext === 'wav') return 'audio/wav';
+        if (ext === 'ogg' || ext === 'opus') return 'audio/ogg';
+        if (ext === 'webm') return 'audio/webm';
+        if (ext === 'aac') return 'audio/aac';
+        if (ext === 'm4a' || ext === 'mp4') return 'audio/mp4';
+        if (ext === '3gp' || ext === '3gpp') return 'audio/3gpp';
+        if (ext === 'mp3' || ext === 'mpeg') return 'audio/mpeg';
+        return 'audio/mpeg';
+      };
+      const contentType = guessAudioContentType(file);
+
+      const uploadViaServer = async () => {
+        const maxServerBytes = 12 * 1024 * 1024;
+        if ((file?.size || 0) > maxServerBytes) {
+          throw new Error(
+            'Tu audio es muy pesado para subirlo por el servidor.\n\n' +
+              'En celular normalmente se sube directo a Cloudflare R2, pero eso requiere CORS.\n' +
+              'Si quieres, te paso los pasos para activar CORS en R2.'
+          );
+        }
+        setUploadProgress((p) => (p > 0 ? p : 1));
+        const base64Str = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('No pude leer el audio.'));
+          reader.onload = () => resolve((String(reader.result || '').split(',')[1] || '').trim());
+          reader.readAsDataURL(file);
+        });
+        if (!base64Str) throw new Error('No pude leer el audio.');
+        setUploadProgress((p) => Math.max(p, 8));
+        const resp = await fetch('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({ title: file.name, contentType, file: base64Str }),
+        });
+        const raw = await resp.text().catch(() => '');
+        let out: any = {};
+        try {
+          out = raw ? JSON.parse(raw) : {};
+        } catch {
+          out = { error: raw || 'Respuesta inválida del servidor.' };
+        }
+        if (!resp.ok || out?.ok === false) {
+          throw new Error((out?.message || out?.error || 'No pude subir el audio.').toString());
+        }
+        const url = (out?.url || '').toString().trim();
+        const key = (out?.key || '').toString().trim();
+        if (!url) throw new Error((out?.error || 'No pude terminar la subida del audio.').toString());
+        return { url, key };
+      };
+
+      if (isMobileUa) {
+        try {
+          const uploaded = await uploadViaServer();
+          setAudioUploadUrl(uploaded.url);
+          setAudioUploadPath(uploaded.key);
+          setAudioFile(file);
+          setExternalAudioLabel('');
+          setUploadProgress(100);
+          return;
+        } catch {
+        }
+      }
       
       const response = await fetch('/api/upload-audio', {
         method: 'POST',
@@ -1707,7 +1777,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         },
         body: JSON.stringify({
           title: file.name,
-          contentType: file.type || 'audio/mpeg',
+          contentType,
         }),
       });
       
@@ -1751,7 +1821,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const xhr = new XMLHttpRequest();
             uploadXhrRef.current = xhr;
             xhr.open('PUT', uploadUrl);
-            xhr.setRequestHeader('Content-Type', (file.type || 'audio/mpeg').toString());
+            xhr.setRequestHeader('Content-Type', contentType);
             xhr.upload.onprogress = (e) => {
               if (!e.lengthComputable) return;
               const pct = Math.max(0, Math.min(100, Math.round((e.loaded / e.total) * 100)));
@@ -1769,61 +1839,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           }
         });
       } catch (putErr) {
-        const canFallback = file.size <= 3.2 * 1024 * 1024;
-        if (!canFallback) {
-          const msg =
-            'No se pudo subir el audio desde el navegador. ' +
-            'Tu MP3 es pesado y requiere configuración CORS en Cloudflare R2. ' +
-            'Prueba con un MP3 más ligero o dime y te paso los pasos para activar CORS.';
-          setAudioUploadError(msg);
-          alert(msg);
-          return;
-        }
-
-        const base64Str = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
-        });
-        const resp2 = await fetch('/api/upload-audio', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'authorization': `Bearer ${t.token}`,
-          },
-          body: JSON.stringify({
-            title: file.name,
-            contentType: file.type || 'audio/mpeg',
-            file: base64Str,
-          }),
-        });
-        const raw2 = await resp2.text().catch(() => '');
-        let out2: any = {};
         try {
-          out2 = raw2 ? JSON.parse(raw2) : {};
-        } catch {
-          out2 = { error: raw2 || 'Respuesta inválida del servidor.' };
-        }
-        if (!resp2.ok || out2?.ok === false) {
-          const msg = (out2?.message || out2?.error || (putErr instanceof Error ? putErr.message : 'No se pudo subir el audio.')).toString();
+          const uploaded = await uploadViaServer();
+          setAudioUploadUrl(uploaded.url);
+          setAudioUploadPath(uploaded.key);
+          setAudioFile(file);
+          setExternalAudioLabel('');
+          setUploadProgress(100);
+          return;
+        } catch (serverErr) {
+          const msg = (serverErr instanceof Error ? serverErr.message : '') || (putErr instanceof Error ? putErr.message : 'No se pudo subir el audio.');
           setAudioUploadError(msg);
           alert(msg);
           return;
         }
-        const url2 = (out2?.url || '').toString().trim();
-        const key2 = (out2?.key || '').toString().trim();
-        if (!url2 || !key2) {
-          const msg = (out2?.error || 'No pude terminar la subida del audio.').toString();
-          setAudioUploadError(msg);
-          alert(msg);
-          return;
-        }
-        setAudioUploadUrl(url2);
-        setAudioUploadPath(key2);
-        setAudioFile(file);
-        setExternalAudioLabel('');
-        setUploadProgress(100);
-        return;
       }
 
       setAudioUploadUrl(url);
