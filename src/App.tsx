@@ -1861,6 +1861,34 @@ export default function App() {
     }
   };
 
+  const purgeCancion = async (songId: string) => {
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/purge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id: songId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(out?.error || 'No pude eliminar definitivamente.');
+        return;
+      }
+      await refreshLibrary();
+      if (activeSong?.id === songId) {
+        setActiveSong(null);
+        setIsPlaying(false);
+        if (audioRef.current) audioRef.current.src = '';
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error eliminando definitivamente');
+    }
+  };
+
   const playSong = async (song: SongItem, opts?: { openMode?: 'normal' | 'elenco' | 'none' }) => {
     const openMode = opts?.openMode ?? 'normal';
     if (activeSong?.id === song.id) {
@@ -2375,7 +2403,7 @@ export default function App() {
              </div>
            )}
            {currentTab === 'afiliados' && <AffiliatesView />}
-           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
+           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
            
            {/* Placeholders */}
@@ -2453,6 +2481,7 @@ export default function App() {
                     onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })}
                     onDeleteSong={deleteCancion}
                     onRestoreSong={restoreCancion}
+                    onPurgeSong={purgeCancion}
                     onRefreshSongs={refreshLibrary}
                     activeSongId={activeSong?.id}
                     isPlaying={isPlaying}

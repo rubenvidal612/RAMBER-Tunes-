@@ -18,13 +18,14 @@ interface LibraryViewProps {
   onOpenElenco?: (s: SongItem) => void;
   onDeleteSong?: (id: string) => void;
   onRestoreSong?: (id: string) => void;
+  onPurgeSong?: (id: string) => void;
   onRefreshSongs?: () => void;
   activeSongId?: string;
   isPlaying?: boolean;
   onStartCover?: (song: SongItem) => void;
 }
 
-export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onOpenElenco, onDeleteSong, onRestoreSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
+export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onOpenElenco, onDeleteSong, onRestoreSong, onPurgeSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -2178,6 +2179,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             setMenuSong(null);
             onDeleteSong?.(id);
           }}
+          onPurge={() => {
+            const id = menuSong.id;
+            setMenuSong(null);
+            onPurgeSong?.(id);
+          }}
         />
       )}
 
@@ -2609,6 +2615,7 @@ function SongOptionsSheet({
   onMoveToFolder,
   onRestore,
   onDelete,
+  onPurge,
   onRefreshSongs,
 }: {
   song: SongItem;
@@ -2621,6 +2628,7 @@ function SongOptionsSheet({
   onMoveToFolder?: () => void;
   onRestore: () => void;
   onDelete: () => void;
+  onPurge: () => void;
   onRefreshSongs?: () => void;
 }) {
   const [isBusy, setIsBusy] = useState(false);
@@ -4512,13 +4520,24 @@ function SongOptionsSheet({
           </div>
 
           {isDeleted ? (
-            <button
-              className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-emerald-300 hover:bg-emerald-500/10 transition-colors"
-              onClick={() => onRestore()}
-              disabled={isBusy}
-            >
-              <Repeat2 className="w-5 h-5" /> <span className="font-extrabold">Recuperar</span>
-            </button>
+            <>
+              <button
+                className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+                onClick={() => onRestore()}
+                disabled={isBusy}
+              >
+                <Repeat2 className="w-5 h-5" /> <span className="font-extrabold">Recuperar</span>
+              </button>
+              <button
+                className="w-full mt-3 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"
+                onClick={() => {
+                  if (confirm('¿Eliminar definitivamente? Esta acción no se puede deshacer.')) onPurge();
+                }}
+                disabled={isBusy}
+              >
+                <Trash2 className="w-5 h-5" /> <span className="font-extrabold">Eliminar definitivamente</span>
+              </button>
+            </>
           ) : (
             <button
               className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"

@@ -5650,6 +5650,48 @@ const libraryHandler = (() => {
     });
   }
 
+  async function handlePurge(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const id = typeof body?.id === "string" ? body.id.trim().slice(0, 200) : "";
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const { data: song, error } = await auth.admin
+      .from(TABLE)
+      .select("id, user_id, deleted_at, type, audio_url, cover_url")
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .eq("type", ITEM_TYPE)
+      .maybeSingle();
+    if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
+    if (!song) return send(res, 404, { error: "Canción no encontrada" });
+    if (!(song as any).deleted_at) return send(res, 400, { error: "Primero elimínala (Papelera) y luego elimínala definitivamente." });
+
+    try {
+      await auth.admin.from(PUBLIC_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", id);
+    } catch {
+    }
+    try {
+      await auth.admin.from("profile_pins").delete().eq("user_id", auth.user.id).eq("song_id", id);
+    } catch {
+    }
+
+    let filesDeleted = 0;
+    try {
+      filesDeleted = await deletePhysicalFiles(auth.admin, auth.supabaseUrl, [song]);
+    } catch {
+      filesDeleted = 0;
+    }
+
+    const { error: delErr } = await auth.admin.from(TABLE).delete().eq("id", id).eq("user_id", auth.user.id).eq("type", ITEM_TYPE);
+    if (delErr) return send(res, 500, { error: "No pude eliminar definitivamente", detail: delErr.message });
+
+    return send(res, 200, { ok: true, files_deleted: filesDeleted });
+  }
+
   async function handleUpdateAudio(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -5946,6 +5988,7 @@ const libraryHandler = (() => {
     if (a === "zip-stems") return handleZipStems(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);
+    if (a === "purge") return handlePurge(req, res);
     if (a === "update-audio") return handleUpdateAudio(req, res);
     if (a === "update-lyrics") return handleUpdateLyrics(req, res);
     if (a === "set-cover") return handleSetCover(req, res);

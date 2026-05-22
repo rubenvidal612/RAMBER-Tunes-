@@ -1716,6 +1716,54 @@ app.get('/api/library/list', authenticate, async (req, res) => {
   }
 });
 
+app.post('/api/library/delete', authenticate, async (req, res) => {
+  try {
+    const id = String(req.body?.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Falta id' });
+    const { error } = await supabase.from('library_items').update({ deleted_at: new Date().toISOString(), deleted_reason: 'user_deleted' }).eq('id', id).eq('user_id', req.user.id).eq('type', 'song');
+    if (error) throw error;
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: 'No pude eliminar', detail: error.message });
+  }
+});
+
+app.post('/api/library/restore', authenticate, async (req, res) => {
+  try {
+    const id = String(req.body?.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Falta id' });
+    const { error } = await supabase.from('library_items').update({ deleted_at: null, deleted_reason: null }).eq('id', id).eq('user_id', req.user.id).eq('type', 'song');
+    if (error) throw error;
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: 'No pude recuperar', detail: error.message });
+  }
+});
+
+app.post('/api/library/purge', authenticate, async (req, res) => {
+  try {
+    const id = String(req.body?.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Falta id' });
+    const { data: song, error: selErr } = await supabase.from('library_items').select('id, deleted_at').eq('id', id).eq('user_id', req.user.id).eq('type', 'song').maybeSingle();
+    if (selErr) throw selErr;
+    if (!song) return res.status(404).json({ error: 'Canción no encontrada' });
+    if (!song.deleted_at) return res.status(400).json({ error: 'Primero elimínala (Papelera) y luego elimínala definitivamente.' });
+    try {
+      await supabase.from('public_songs').delete().eq('user_id', req.user.id).eq('song_id', id);
+    } catch {
+    }
+    try {
+      await supabase.from('profile_pins').delete().eq('user_id', req.user.id).eq('song_id', id);
+    } catch {
+    }
+    const { error: delErr } = await supabase.from('library_items').delete().eq('id', id).eq('user_id', req.user.id).eq('type', 'song');
+    if (delErr) throw delErr;
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: 'No pude eliminar definitivamente', detail: error.message });
+  }
+});
+
 // Health
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
