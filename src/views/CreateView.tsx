@@ -11,6 +11,25 @@ function normalizeLyricsTags(t: string) {
   const mapped = lines.map((line) => {
     const s = line.trim();
     if (!s) return '';
+    const paren = /^\(([^)]+)\)\s*$/.exec(s) || /^\(([^)]+)\)\s*:\s*$/.exec(s);
+    if (paren && paren[1]) {
+      const inner = paren[1].toString().trim().replaceAll(':', '').trim();
+      const innerLower = inner.toLowerCase();
+      const innerIsTag =
+        innerLower === 'coro' ||
+        innerLower.startsWith('coro ') ||
+        innerLower === 'chorus' ||
+        innerLower.startsWith('chorus ') ||
+        innerLower.startsWith('verso') ||
+        innerLower.startsWith('verse') ||
+        innerLower.startsWith('pre-coro') ||
+        innerLower.startsWith('pre coro') ||
+        innerLower.startsWith('bridge') ||
+        innerLower.startsWith('puente') ||
+        innerLower.startsWith('outro') ||
+        innerLower.startsWith('intro');
+      if (innerIsTag || inner.length < 30) return `[${inner}]`;
+    }
     const lower = s.toLowerCase();
     const isTag =
       lower === 'coro' ||
@@ -1477,7 +1496,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (auto) setAudioLyricsStatus('No pude detectar letra en ese audio.');
         return;
       }
-      setLyrics(text);
+      setLyrics(normalizeLyricsTags(text));
       if (auto) setAudioLyricsStatus('');
     } catch (e) {
       if (!auto) alert(e instanceof Error ? e.message : 'Error transcribiendo la letra.');
@@ -1526,7 +1545,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       
       const nextLyrics = (result?.lyrics || '').toString().trim();
       if (nextLyrics) {
-        setLyrics(nextLyrics);
+        setLyrics(normalizeLyricsTags(nextLyrics));
         return;
       }
       alert((result?.message || 'La IA no devolvió letra. Intenta con un tema más específico o espera unos minutos.').toString());
