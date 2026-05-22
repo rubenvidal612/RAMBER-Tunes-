@@ -65,8 +65,8 @@ export function EditProfileView({ onClose }: { onClose: () => void }) {
         setCity((meta?.city || '').toString());
         setContactEmail((meta?.contact_email || '').toString());
         setContactPhone((meta?.contact_phone || '').toString());
-        setAvatarUrl((meta?.avatar_url || '').toString());
-        setCoverUrl((meta?.cover_url || '').toString());
+        setAvatarUrl((meta?.avatar_url || meta?.avatarUrl || '').toString());
+        setCoverUrl((meta?.cover_url || meta?.coverUrl || '').toString());
       })
       .catch(() => {})
       .finally(() => {

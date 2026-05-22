@@ -116,8 +116,8 @@ export function ProfileView({
     setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
     setAvatarLoadFailed(false);
     setCoverLoadFailed(false);
-    setUserAvatarUrl(normalizeR2PublicToProxy(meta?.avatar_url || ''));
-    setUserCoverUrl(normalizeR2PublicToProxy(meta?.cover_url || ''));
+    setUserAvatarUrl(normalizeR2PublicToProxy(meta?.avatar_url || meta?.avatarUrl || ''));
+    setUserCoverUrl(normalizeR2PublicToProxy(meta?.cover_url || meta?.coverUrl || ''));
     setCountry((meta?.country || '').toString());
     setCity((meta?.city || '').toString());
     setContactEmail((meta?.contact_email || '').toString());
