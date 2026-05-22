@@ -2243,6 +2243,32 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch {}
   };
 
+  const openMp3ConverterAlt = () => {
+    const url = 'https://online-audio-converter.com/sp/';
+    try {
+      const w = window.open(url, '_blank', 'noopener,noreferrer');
+      if (w) {
+        try {
+          (w as any).opener = null;
+        } catch {}
+        return;
+      }
+    } catch {}
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    } catch {}
+    try {
+      window.location.href = url;
+    } catch {}
+  };
+
   const handleAddVocalsFromAudio = async () => {
     if (!onSongCreated) return;
     if (!audioUploadUrl) {
@@ -2804,10 +2830,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onTranscribeAudioLyrics={transcribeLyricsFromAudio}
             setAudioUploadError={setAudioUploadError}
             openMp3Converter={openMp3Converter}
+            openMp3ConverterAlt={openMp3ConverterAlt}
             generateLyricsWithAI={generateLyricsWithAI}
             isGeneratingLyrics={isGeneratingLyrics}
             isDev={isDev}
-            onRecordStudioAudio={() => startStudioRecorder().catch(() => {})}
           />
         )}
       </div>
@@ -4386,13 +4412,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">
                   <div>{audioUploadError}</div>
                   {String(audioUploadError || '').toLowerCase().includes('mp3') ? (
-                    <button
-                      type="button"
-                      onClick={openMp3Converter}
-                      className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
-                    >
-                      Abrir Convertidor a MP3
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={openMp3Converter}
+                        className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
+                      >
+                        Abrir Convertidor a MP3 (Opción 1)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openMp3ConverterAlt}
+                        className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
+                      >
+                        Abrir Convertidor a MP3 (Opción 2)
+                      </button>
+                    </>
                   ) : null}
                 </div>
               )}
@@ -4621,6 +4656,7 @@ function CustomForm({
   onTranscribeAudioLyrics,
   setAudioUploadError,
   openMp3Converter,
+  openMp3ConverterAlt,
   generateLyricsWithAI,
   isGeneratingLyrics,
   isDev,
@@ -4683,15 +4719,6 @@ function CustomForm({
           >
             <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
           </button>
-          <button
-            type="button"
-            onClick={() => onRecordStudioAudio?.()}
-            className="w-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-slate-200"
-            aria-label="Grabar audio"
-            title="Grabar audio"
-          >
-            <Mic className="w-5 h-5" />
-          </button>
           {!!audioUploadUrl && (
             <button
               type="button"
@@ -4746,7 +4773,14 @@ function CustomForm({
             onClick={openMp3Converter}
             className="text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
           >
-            Si tu audio no se sube, convertir a MP3
+            Si tu audio no se sube, convertir a MP3 (Opción 1)
+          </button>
+          <button
+            type="button"
+            onClick={openMp3ConverterAlt}
+            className="mt-2 text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
+          >
+            Convertir a MP3 (Opción 2)
           </button>
         </div>
       )}
