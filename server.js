@@ -1771,7 +1771,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().
 app.get('/api/app/version', (req, res) => {
   res.json({
     ok: true,
-    version: 'local-dev-' + Date.now(),
+    version: 'local-dev',
     deployed_at: new Date().toISOString()
   });
 });

@@ -550,6 +550,15 @@ export default function App() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateVersion, setUpdateVersion] = useState('');
   const [updateNote, setUpdateNote] = useState('');
+  const isLocalNetworkHost = (h: string) => {
+    const host = (h || '').toString().trim().toLowerCase();
+    if (!host) return false;
+    if (host === 'localhost' || host === '127.0.0.1') return true;
+    if (/^192\.168\./.test(host)) return true;
+    if (/^10\./.test(host)) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
+    return false;
+  };
   const [updatesSeenKey, setUpdatesSeenKey] = useState(() => {
     try {
       return (window.localStorage.getItem('ramber.updates_seen_v1') || '').toString();
@@ -1050,6 +1059,7 @@ export default function App() {
 
   const refreshAppVersion = async () => {
     try {
+      if (typeof window !== 'undefined' && isLocalNetworkHost(window.location.hostname)) return null;
       const r = await fetch('/api/app/version', {
         method: 'GET',
         cache: 'no-store',
@@ -2382,7 +2392,7 @@ export default function App() {
 
   return (
     <div ref={appRootRef} className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
-      {updateAvailable ? (
+      {updateAvailable && !(typeof window !== 'undefined' && isLocalNetworkHost(window.location.hostname)) ? (
         <div className="absolute inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5">
           <div className="w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
             <div className="text-white font-extrabold text-lg">Actualización disponible</div>
@@ -2393,6 +2403,12 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  setUpdateNote('Actualizando…');
+                  window.setTimeout(() => {
+                    try {
+                      window.location.reload();
+                    } catch {}
+                  }, 5000);
                   hardRefreshNow(updateVersion || latestVersionRef.current || null).catch(() => {});
                 }}
                 className="flex-1 bg-white text-black h-[44px] rounded-full font-extrabold text-sm"
