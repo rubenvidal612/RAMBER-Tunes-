@@ -547,6 +547,9 @@ export default function App() {
   const pendingReloadRef = useRef(false);
   const latestVersionRef = useRef('');
   const wasHiddenRef = useRef(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState('');
+  const [updateNote, setUpdateNote] = useState('');
   const [updatesSeenKey, setUpdatesSeenKey] = useState(() => {
     try {
       return (window.localStorage.getItem('ramber.updates_seen_v1') || '').toString();
@@ -554,6 +557,44 @@ export default function App() {
       return '';
     }
   });
+
+  const hardRefreshNow = async (nextVersion?: string | null) => {
+    try {
+      const v = (nextVersion || '').toString().trim();
+      if (v) window.localStorage.setItem('ramber.app_version_v1', v);
+    } catch {}
+    try {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.allSettled(regs.map((r) => r.unregister()));
+      }
+    } catch {}
+    try {
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        const keys = await caches.keys();
+        await Promise.allSettled(keys.map((k) => caches.delete(k)));
+      }
+    } catch {}
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set('__refresh', String(Date.now()));
+      window.location.replace(u.toString());
+      return;
+    } catch {}
+    try {
+      window.location.reload();
+    } catch {}
+  };
+
+  const markUpdateAvailable = (v: string, note?: string) => {
+    const ver = (v || '').toString().trim();
+    if (!ver) return;
+    pendingReloadRef.current = true;
+    latestVersionRef.current = ver;
+    setUpdateAvailable(true);
+    setUpdateVersion(ver);
+    if (note) setUpdateNote(note);
+  };
 
   const showToast = (message: string) => {
     setToast(message);
@@ -907,13 +948,13 @@ export default function App() {
           try {
             const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
             if (prev && prev !== v) {
-              pendingReloadRef.current = true;
-              latestVersionRef.current = v;
               if (wasHiddenRef.current) {
                 wasHiddenRef.current = false;
-                showToast('Hay una actualización. Si algo falla, cierra y vuelve a abrir la app.');
+                markUpdateAvailable(v, 'Hay una actualización lista.');
+                showToast('Actualización lista. Toca “ACTUALIZAR”.');
                 return;
               }
+              markUpdateAvailable(v, 'Hay una actualización lista.');
             }
           } catch {
           }
@@ -939,8 +980,7 @@ export default function App() {
           try {
             const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
             if (prev && prev !== v) {
-              pendingReloadRef.current = true;
-              latestVersionRef.current = v;
+              markUpdateAvailable(v, 'Hay una actualización lista.');
             }
           } catch {
           }
@@ -1062,12 +1102,45 @@ export default function App() {
           return;
         }
         if (prev !== v) {
-          pendingReloadRef.current = true;
-          latestVersionRef.current = v;
+          markUpdateAvailable(v, 'Hay una actualización lista.');
         }
       } catch {
       }
     });
+  }, []);
+
+  useEffect(() => {
+    const onErr = (e: any) => {
+      const msg = String(e?.message || e?.error?.message || '').trim();
+      const lower = msg.toLowerCase();
+      const looksLikeChunk =
+        lower.includes('chunkloaderror') ||
+        lower.includes('loading chunk') ||
+        lower.includes('importing a module script failed') ||
+        lower.includes('failed to fetch dynamically imported module');
+      if (!looksLikeChunk) return;
+      setUpdateNote('La app necesita actualizarse para seguir funcionando.');
+      setUpdateAvailable(true);
+    };
+    const onRej = (e: any) => {
+      const reason = (e && 'reason' in e ? (e as any).reason : null) as any;
+      const msg = String(reason?.message || reason || '').trim();
+      const lower = msg.toLowerCase();
+      const looksLikeChunk =
+        lower.includes('chunkloaderror') ||
+        lower.includes('loading chunk') ||
+        lower.includes('importing a module script failed') ||
+        lower.includes('failed to fetch dynamically imported module');
+      if (!looksLikeChunk) return;
+      setUpdateNote('La app necesita actualizarse para seguir funcionando.');
+      setUpdateAvailable(true);
+    };
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onRej);
+    return () => {
+      window.removeEventListener('error', onErr);
+      window.removeEventListener('unhandledrejection', onRej);
+    };
   }, []);
 
   useEffect(() => {
@@ -1153,9 +1226,8 @@ export default function App() {
           try {
             const prev = (window.localStorage.getItem('ramber.app_version_v1') || '').toString().trim();
             if (prev && prev !== v.trim()) {
-              pendingReloadRef.current = true;
-              latestVersionRef.current = v.trim();
-              showToast('Actualización lista. Sal de la app y vuelve a entrar.');
+              markUpdateAvailable(v.trim(), 'Hay una actualización lista.');
+              showToast('Actualización lista. Toca “ACTUALIZAR”.');
               return;
             }
             if (!prev) window.localStorage.setItem('ramber.app_version_v1', v.trim());
@@ -2310,6 +2382,37 @@ export default function App() {
 
   return (
     <div ref={appRootRef} className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
+      {updateAvailable ? (
+        <div className="absolute inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5">
+          <div className="w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+            <div className="text-white font-extrabold text-lg">Actualización disponible</div>
+            <div className="mt-2 text-sm text-slate-300">
+              {updateNote || 'Para evitar pantalla negra, actualiza la app ahora.'}
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  hardRefreshNow(updateVersion || latestVersionRef.current || null).catch(() => {});
+                }}
+                className="flex-1 bg-white text-black h-[44px] rounded-full font-extrabold text-sm"
+              >
+                ACTUALIZAR
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUpdateAvailable(false);
+                  setUpdateNote('');
+                }}
+                className="flex-1 bg-white/5 border border-white/10 text-white h-[44px] rounded-full font-extrabold text-sm"
+              >
+                Más tarde
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
