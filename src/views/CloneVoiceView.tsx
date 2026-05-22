@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp, Edit, Pencil, Construction } from 'lucide-react';
+import { Upload, Mic, Play, Pause, Trash2, Loader2, CheckCircle, XCircle, User, Info, ChevronDown, ChevronUp, Edit, Pencil, Construction, BadgeCheck } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 
@@ -2241,11 +2241,15 @@ export function CloneVoiceView() {
               </div>
             )}
 
-            {isUploading && (
+            {(isUploading || (uploadProgress >= 100 && selectedFile)) && (
               <div className="mt-4">
                 <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
-                  <span>Subiendo audio…</span>
-                  <span>{uploadProgress}%</span>
+                  <span>{uploadProgress >= 100 && !isUploading ? 'Audio subido' : 'Subiendo audio…'}</span>
+                  {uploadProgress >= 100 && !isUploading ? (
+                    <BadgeCheck className="w-5 h-5 text-emerald-400 drop-shadow-[0_0_14px_rgba(34,197,94,0.85)]" />
+                  ) : (
+                    <span>{uploadProgress}%</span>
+                  )}
                 </div>
                 <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                   <div
