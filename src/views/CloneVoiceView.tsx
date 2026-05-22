@@ -64,6 +64,7 @@ export function CloneVoiceView() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const captureInputRef = useRef<HTMLInputElement>(null);
   const editImageInputRef = useRef<HTMLInputElement>(null);
 
   const [librarySongs, setLibrarySongs] = useState<LibrarySongItem[]>([]);
@@ -282,6 +283,9 @@ export function CloneVoiceView() {
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
+    try {
+      e.currentTarget.value = '';
+    } catch {}
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
@@ -2154,18 +2158,33 @@ export function CloneVoiceView() {
           </div>
 
           <div className="space-y-4">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <button
+                onClick={() => captureInputRef.current?.click()}
+                className="flex-1 py-3 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-100 font-semibold flex items-center justify-center gap-2 transition-colors"
+                disabled={isLoading}
+              >
+                <Mic className="w-4 h-4" /> Grabar (micrófono)
+              </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="flex-1 py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-semibold flex items-center justify-center gap-2 transition-colors"
                 disabled={isLoading}
               >
-                <Mic className="w-4 h-4" /> Seleccionar archivo
+                <Upload className="w-4 h-4" /> Seleccionar archivo
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".mp3,.wav,.m4a,.aac,.ogg,.webm,audio/*"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <input
+                ref={captureInputRef}
+                type="file"
+                accept="audio/*"
+                capture="microphone"
                 className="hidden"
                 onChange={handleFileSelect}
               />
