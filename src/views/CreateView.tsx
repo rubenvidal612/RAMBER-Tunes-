@@ -4724,7 +4724,7 @@ function CustomForm({
             }}
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
           >
-            <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'MP3 cargado' : 'Abrir archivo MP3'}
+            <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
           </button>
           {!!audioUploadUrl && (
             <button
