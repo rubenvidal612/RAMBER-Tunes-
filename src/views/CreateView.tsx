@@ -794,6 +794,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   }, [audioUploadUrl, audioUploadPath]);
 
   const clearAudio = () => {
+    if (audioJustPickedAt && isUploadingAudio) return;
     try {
       uploadXhrRef.current?.abort();
     } catch {}
@@ -4450,7 +4451,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   continueFromAudio().catch(() => {});
                 }}
                 disabled={
-                  (audioAction === 'library' && (!audioUploadUrl || isUploadingAudio))
+                  audioJustPickedAt || isUploadingAudio || !audioUploadUrl || (audioAction === 'library' && (!audioUploadUrl || isUploadingAudio))
                 }
                 className="mt-4 w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[52px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
@@ -4471,7 +4472,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
 
               <button
-                onClick={clearAudio}
+                onClick={() => {
+                  if (audioJustPickedAt) return;
+                  if (isUploadingAudio) return;
+                  clearAudio();
+                }}
+                disabled={audioJustPickedAt || isUploadingAudio}
                 className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
               >
                 Eliminar audio
@@ -4479,9 +4485,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
               <button
                 onClick={() => {
+                  if (audioJustPickedAt) return;
+                  if (isUploadingAudio) return;
                   clearAudio();
                   window.setTimeout(() => audioInputRef.current?.click(), 0);
                 }}
+                disabled={audioJustPickedAt || isUploadingAudio}
                 className="mt-3 w-full bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
               >
                 Subir otro audio
