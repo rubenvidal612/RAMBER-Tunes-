@@ -249,6 +249,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [sunoVoiceDetailsId, setSunoVoiceDetailsId] = useState('');
 
   const audioInputRef = useRef<HTMLInputElement | null>(null);
+  const audioCaptureInputRef = useRef<HTMLInputElement | null>(null);
   const uploadXhrRef = useRef<XMLHttpRequest | null>(null);
 
   const stopVoiceRecorder = async (finalize: boolean) => {
@@ -1970,13 +1971,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const startStudioRecorder = async () => {
     setStudioRecorderError('');
     const navAny = navigator as any;
+    const ua = (typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '').toLowerCase();
+    const isMobileUa = /android|iphone|ipad|ipod/.test(ua);
     const canMedia =
       typeof window !== 'undefined' &&
       typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
       typeof (window as any).MediaRecorder === 'function';
 
-    if (!canMedia) {
-      audioInputRef.current?.click?.();
+    if (!canMedia || isMobileUa) {
+      audioCaptureInputRef.current?.click?.();
       return;
     }
 
@@ -4646,6 +4649,20 @@ function CustomForm({
           accept="audio/*" 
           className="hidden" 
           ref={audioInputRef}
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              const f = e.target.files[0];
+              e.currentTarget.value = '';
+              onPickAudio(f);
+            }
+          }}
+        />
+        <input
+          type="file"
+          accept="audio/*"
+          capture="microphone"
+          className="hidden"
+          ref={audioCaptureInputRef}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               const f = e.target.files[0];
