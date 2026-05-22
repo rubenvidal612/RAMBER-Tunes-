@@ -4700,6 +4700,13 @@ function CustomForm({
     setLyrics(n);
   };
 
+  const isMp3File = (f: File) => {
+    const type = (f?.type || '').toString().toLowerCase();
+    const name = (f?.name || '').toString().toLowerCase();
+    if (type.includes('audio/mpeg') || type.includes('audio/mp3') || type.includes('mpeg')) return true;
+    if (name.endsWith('.mp3')) return true;
+    return false;
+  };
   
 
   return (
@@ -4717,7 +4724,7 @@ function CustomForm({
             }}
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
           >
-            <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
+            <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'MP3 cargado' : 'Abrir archivo MP3'}
           </button>
           {!!audioUploadUrl && (
             <button
@@ -4733,27 +4740,18 @@ function CustomForm({
         </div>
         <input 
           type="file" 
-          accept="audio/*" 
+          accept=".mp3,audio/mpeg,audio/mp3" 
           className="hidden" 
           ref={audioInputRef}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               const f = e.target.files[0];
               e.currentTarget.value = '';
-              onPickAudio(f);
-            }
-          }}
-        />
-        <input
-          type="file"
-          accept="audio/*"
-          capture="microphone"
-          className="hidden"
-          ref={audioCaptureInputRef}
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              const f = e.target.files[0];
-              e.currentTarget.value = '';
+              if (!isMp3File(f)) {
+                setAudioUploadError('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
+                alert('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
+                return;
+              }
               onPickAudio(f);
             }
           }}
