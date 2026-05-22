@@ -2748,6 +2748,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             audioFile={audioFile}
             setAudioFile={setAudioFile}
             audioInputRef={audioInputRef}
+            audioCaptureInputRef={audioCaptureInputRef}
             audioUploadUrl={audioUploadUrl}
             externalAudioLabel={externalAudioLabel}
             audioLyricsStatus={audioLyricsStatus}
@@ -4542,6 +4543,7 @@ function CustomForm({
   audioFile,
   setAudioFile,
   audioInputRef,
+  audioCaptureInputRef,
   audioUploadUrl,
   externalAudioLabel,
   audioLyricsStatus,
