@@ -4,7 +4,16 @@ import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 
-const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const isDev =
+  typeof window !== 'undefined' &&
+  (() => {
+    const host = String(window.location.hostname || '').toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1') return true;
+    if (/^192\.168\./.test(host)) return true;
+    if (/^10\./.test(host)) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
+    return false;
+  })();
 
 function normalizeLyricsTags(t: string) {
   const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
@@ -2834,6 +2843,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             generateLyricsWithAI={generateLyricsWithAI}
             isGeneratingLyrics={isGeneratingLyrics}
             isDev={isDev}
+            onRecordStudioAudio={() => {
+              setStudioRecorderOpen(true);
+              startStudioRecorder().catch((e) => {
+                setStudioRecorderOpen(false);
+                setStudioRecorderError(e instanceof Error ? e.message : String(e));
+              });
+            }}
           />
         )}
       </div>
@@ -4726,6 +4742,17 @@ function CustomForm({
           >
             <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
           </button>
+          {isDev && typeof onRecordStudioAudio === 'function' ? (
+            <button
+              type="button"
+              onClick={() => onRecordStudioAudio?.()}
+              className="w-12 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center text-emerald-100"
+              aria-label="Grabar con micrófono"
+              title="Grabar con micrófono"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
+          ) : null}
           {!!audioUploadUrl && (
             <button
               type="button"
@@ -4748,6 +4775,25 @@ function CustomForm({
               const f = e.target.files[0];
               e.currentTarget.value = '';
               if (!isMp3File(f)) {
+                setAudioUploadError('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
+                alert('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
+                return;
+              }
+              onPickAudio(f);
+            }
+          }}
+        />
+        <input
+          type="file"
+          accept="audio/*"
+          capture="microphone"
+          className="hidden"
+          ref={audioCaptureInputRef}
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              const f = e.target.files[0];
+              e.currentTarget.value = '';
+              if (!isDev && !isMp3File(f)) {
                 setAudioUploadError('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
                 alert('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
                 return;
