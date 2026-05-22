@@ -4742,17 +4742,21 @@ function CustomForm({
           >
             <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
           </button>
-          {isDev && typeof onRecordStudioAudio === 'function' ? (
-            <button
-              type="button"
-              onClick={() => onRecordStudioAudio?.()}
-              className="w-12 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center text-emerald-100"
-              aria-label="Grabar con micrófono"
-              title="Grabar con micrófono"
-            >
-              <Mic className="w-5 h-5" />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (isDev && typeof onRecordStudioAudio === 'function') {
+                onRecordStudioAudio?.();
+                return;
+              }
+              audioCaptureInputRef?.current?.click?.();
+            }}
+            className="w-12 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center text-emerald-100"
+            aria-label="Grabar con micrófono"
+            title="Grabar con micrófono"
+          >
+            <Mic className="w-5 h-5" />
+          </button>
           {!!audioUploadUrl && (
             <button
               type="button"
@@ -4793,11 +4797,6 @@ function CustomForm({
             if (e.target.files && e.target.files.length > 0) {
               const f = e.target.files[0];
               e.currentTarget.value = '';
-              if (!isDev && !isMp3File(f)) {
-                setAudioUploadError('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
-                alert('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
-                return;
-              }
               onPickAudio(f);
             }
           }}
