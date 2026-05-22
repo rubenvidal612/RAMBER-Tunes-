@@ -911,7 +911,7 @@ export default function App() {
               latestVersionRef.current = v;
               if (wasHiddenRef.current) {
                 wasHiddenRef.current = false;
-                forceReload(v);
+                showToast('Hay una actualización. Si algo falla, cierra y vuelve a abrir la app.');
                 return;
               }
             }
