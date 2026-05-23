@@ -49,10 +49,12 @@ export function ProfileView({
   onGoStudio,
   songs,
   onPlaySong,
+  onRefreshSongs,
 }: {
   onGoStudio?: () => void;
   songs?: SongItem[];
   onPlaySong?: (song: SongItem) => void;
+  onRefreshSongs?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'canciones' | 'listas'>('canciones');
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -72,6 +74,9 @@ export function ProfileView({
   const [pinnedSongIds, setPinnedSongIds] = useState<string[]>([]);
   const [pinnedSongsFull, setPinnedSongsFull] = useState<Array<{ id: string; title: string; audioUrl: string; coverUrl?: string }>>([]);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
+  const [showEditTitle, setShowEditTitle] = useState(false);
+  const [editTitleText, setEditTitleText] = useState('');
+  const [editTitleBusy, setEditTitleBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ id: string; full_name: string; last_name: string; username: string; avatar_url: string }>>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -198,6 +203,39 @@ export function ProfileView({
   }, []);
 
   useEffect(() => {
+    if (!Array.isArray(songs) || songs.length === 0) return;
+    const byId = new Map<string, SongItem>();
+    for (const s of songs) {
+      const id = String((s as any)?.id || '').trim();
+      if (id) byId.set(id, s);
+    }
+    if (byId.size === 0) return;
+    setPinnedSongsFull((prev) =>
+      prev.map((p) => {
+        const match = byId.get(String(p.id || '').trim());
+        if (!match) return p;
+        const nextTitle = (match.title || p.title || 'Canción').toString();
+        const nextAudioUrl = (match.audioUrl || p.audioUrl || '').toString();
+        const nextCoverUrl = ((match as any)?.coverUrl || p.coverUrl || '').toString() || undefined;
+        if (p.title === nextTitle && p.audioUrl === nextAudioUrl && p.coverUrl === nextCoverUrl) return p;
+        return { ...p, title: nextTitle, audioUrl: nextAudioUrl, coverUrl: nextCoverUrl };
+      })
+    );
+  }, [songs]);
+
+  useEffect(() => {
+    if (!menuSong) {
+      setShowEditTitle(false);
+      setEditTitleText('');
+      setEditTitleBusy(false);
+      return;
+    }
+    setShowEditTitle(false);
+    setEditTitleText((menuSong.title || '').toString());
+    setEditTitleBusy(false);
+  }, [menuSong?.id]);
+
+  useEffect(() => {
     refreshFollowCounts().catch(() => {});
   }, [userId]);
 
@@ -245,6 +283,42 @@ export function ProfileView({
       alert('Link copiado al portapapeles.');
     } catch {
       alert(url);
+    }
+  };
+
+  const saveSongTitle = async () => {
+    if (editTitleBusy) return;
+    const id = String(menuSong?.id || '').trim();
+    const title = String(editTitleText || '').trim().slice(0, 100);
+    if (!id) return;
+    if (!title) {
+      alert('Escribe el nombre primero.');
+      return;
+    }
+    setEditTitleBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/update-title', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id, title }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        alert((out?.error || out?.detail || 'No pude guardar el nombre.').toString());
+        return;
+      }
+      setPinnedSongsFull((prev) => prev.map((p) => (String(p.id || '').trim() === id ? { ...p, title } : p)));
+      setMenuSong((prev) => (prev ? ({ ...prev, title } as any as SongItem) : prev));
+      onRefreshSongs?.();
+      setShowEditTitle(false);
+      alert('Listo. Nombre guardado.');
+    } finally {
+      setEditTitleBusy(false);
     }
   };
 
@@ -623,6 +697,13 @@ export function ProfileView({
             <div className="p-4 space-y-2">
               <button
                 className="w-full flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
+                onClick={() => setShowEditTitle(true)}
+              >
+                <Edit2 className="w-5 h-5 text-slate-200" />
+                <div className="text-slate-100 font-extrabold">Editar nombre</div>
+              </button>
+              <button
+                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
                 onClick={() => shareSong(menuSong).catch(() => {})}
               >
                 <Share2 className="w-5 h-5 text-slate-200" />
@@ -635,6 +716,52 @@ export function ProfileView({
                 <XCircle className="w-5 h-5 text-slate-200" />
                 <div className="text-slate-100 font-extrabold">Quitar de mi perfil</div>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {menuSong && showEditTitle && (
+        <div className="fixed inset-0 z-[260] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowEditTitle(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Editar nombre</div>
+              <button
+                onClick={() => setShowEditTitle(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Nombre de la canción</div>
+              <input
+                value={editTitleText}
+                onChange={(e) => setEditTitleText(e.target.value)}
+                placeholder="Ej: Mi canción"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[15px] text-slate-100 placeholder:text-slate-500 outline-none"
+                maxLength={100}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowEditTitle(false)}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full h-[46px] text-slate-200 font-extrabold"
+                  disabled={editTitleBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveSongTitle().catch(() => {})}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  disabled={editTitleBusy}
+                >
+                  {editTitleBusy ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-500">Máximo 100 caracteres.</div>
             </div>
           </div>
         </div>

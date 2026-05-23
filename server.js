@@ -1726,6 +1726,29 @@ app.get('/api/library/list', authenticate, async (req, res) => {
   }
 });
 
+app.post('/api/library/update-title', authenticate, async (req, res) => {
+  try {
+    const id = String(req.body?.id || '').trim();
+    const title = String(req.body?.title || '').trim().slice(0, 100);
+    if (!id) return res.status(400).json({ error: 'Falta id' });
+    if (!title) return res.status(400).json({ error: 'Falta title' });
+    const { data: song, error } = await supabase
+      .from('library_items')
+      .update({ title })
+      .eq('id', id)
+      .eq('user_id', req.user.id)
+      .eq('type', 'song')
+      .is('deleted_at', null)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!song) return res.status(404).json({ error: 'Canción no encontrada' });
+    return res.json({ ok: true, song });
+  } catch (error) {
+    return res.status(500).json({ error: 'No pude actualizar nombre', detail: error.message });
+  }
+});
+
 app.post('/api/library/delete', authenticate, async (req, res) => {
   try {
     const id = String(req.body?.id || '').trim();

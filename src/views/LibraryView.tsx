@@ -2640,6 +2640,9 @@ function SongOptionsSheet({
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyricsText, setLyricsText] = useState<string>(((song as any)?.lyrics || '').toString());
   const [lyricsBusy, setLyricsBusy] = useState(false);
+  const [showEditTitle, setShowEditTitle] = useState(false);
+  const [titleText, setTitleText] = useState<string>(((song as any)?.title || '').toString());
+  const [titleBusy, setTitleBusy] = useState(false);
   const [showStems, setShowStems] = useState(false);
   const [showMp4, setShowMp4] = useState(false);
   const [mp4Author, setMp4Author] = useState('');
@@ -2693,6 +2696,8 @@ function SongOptionsSheet({
     setPublished(Boolean((song as any)?.isPublic));
     setPublishGenre(((song as any)?.publicGenre || '').toString());
     setShowPublish(false);
+    setShowEditTitle(false);
+    setTitleText(((song as any)?.title || '').toString());
     setIsPinnedToProfile(false);
     let alive = true;
     (async () => {
@@ -2748,6 +2753,42 @@ function SongOptionsSheet({
       alert('Listo. Letra guardada.');
     } finally {
       setLyricsBusy(false);
+    }
+  };
+
+  const saveTitle = async () => {
+    if (titleBusy) return;
+    if (isDeleted) return;
+    const id = String((song as any)?.id || '').trim();
+    const text = String(titleText || '').trim().slice(0, 100);
+    if (!id) return;
+    if (!text) {
+      alert('Escribe el nombre antes de guardar.');
+      return;
+    }
+    setTitleBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/update-title', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ id, title: text }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        alert((out?.error || out?.detail || 'No pude guardar el nombre.').toString());
+        return;
+      }
+      onRefreshSongs?.();
+      setShowEditTitle(false);
+      onClose();
+      alert('Listo. Nombre guardado.');
+    } finally {
+      setTitleBusy(false);
     }
   };
   useEffect(() => {
@@ -4441,6 +4482,13 @@ function SongOptionsSheet({
 
           <div className="glass-card rounded-2xl overflow-hidden mt-4">
             <button
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5"
+              onClick={() => setShowEditTitle(true)}
+              disabled={isBusy || isDeleted}
+            >
+              <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Editar nombre</span>
+            </button>
+            <button
               className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors"
               onClick={() => setShowLyrics(true)}
               disabled={isBusy}
@@ -5021,6 +5069,52 @@ function SongOptionsSheet({
                 Publicar
               </button>
               <div className="text-[11px] text-slate-500">Por defecto, tus canciones son privadas. Solo se verán en Inicio si las publicas.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditTitle && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShowEditTitle(false)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Editar nombre</div>
+              <button
+                onClick={() => setShowEditTitle(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Nombre de la canción</div>
+              <input
+                value={titleText}
+                onChange={(e) => setTitleText(e.target.value)}
+                placeholder="Ej: Mi canción"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[15px] text-slate-100 placeholder:text-slate-500 outline-none"
+                maxLength={100}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowEditTitle(false)}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full h-[46px] text-slate-200 font-extrabold"
+                  disabled={titleBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveTitle().catch(() => {})}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  disabled={titleBusy}
+                >
+                  {titleBusy ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-500">Máximo 100 caracteres.</div>
             </div>
           </div>
         </div>

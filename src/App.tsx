@@ -2536,7 +2536,7 @@ export default function App() {
            )}
            {currentTab === 'afiliados' && <AffiliatesView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
-          {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />}
+          {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
            
            {/* Placeholders */}
            {currentTab === 'mv' && (
@@ -2593,7 +2593,7 @@ export default function App() {
                     prefillNonce={studioPrefillNonce}
                   />
                 ) : currentTab === 'perfil' ? (
-                  <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} />
+                  <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />
               ) : currentTab === 'karaoke' ? (
                  <div className="flex-1 flex items-center justify-center px-6">
                    <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
