@@ -23,6 +23,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [officeData, setOfficeData] = useState<any>(null);
   const [grantEmail, setGrantEmail] = useState('');
   const [grantCredits, setGrantCredits] = useState('50');
+  const [grantPackage, setGrantPackage] = useState<string>('custom');
   const [grantBusy, setGrantBusy] = useState(false);
   const [takeEmail, setTakeEmail] = useState('');
   const [takeCredits, setTakeCredits] = useState('50');
@@ -54,6 +55,16 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const TELEGRAM_GROUP_URL = 'https://t.me/+sgw5bsAX9utmZDEx';
   const TELEGRAM_INVITE_HASH = 'sgw5bsAX9utmZDEx';
   const TELEGRAM_APP_URL = `tg://join?invite=${TELEGRAM_INVITE_HASH}`;
+
+  // Paquetes predefinidos de créditos
+  const creditPackages = [
+    { id: 'custom', name: 'Personalizado', credits: 0, description: 'Ingresa cantidad manual' },
+    { id: 'inicio', name: 'Pack Inicio', credits: 1200, description: '$375 MXN - 100 canciones' },
+    { id: 'productor', name: 'Pack Productor', credits: 2400, description: '$750 MXN - 200 canciones' },
+    { id: 'small', name: 'Paquete Pequeño', credits: 100, description: '$31 MXN - 8 canciones' },
+    { id: 'medium', name: 'Paquete Mediano', credits: 500, description: '$156 MXN - 41 canciones' },
+    { id: 'large', name: 'Paquete Grande', credits: 1000, description: '$312 MXN - 83 canciones' },
+  ];
 
   const openExternalUrl = (url: string) => {
     const safe = (url || '').toString().trim();
@@ -196,6 +207,19 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       window.clearInterval(id);
     };
   }, [isAdmin]);
+
+  // Actualizar créditos cuando se selecciona un paquete
+  useEffect(() => {
+    if (grantPackage === 'custom') {
+      // Mantener el valor personalizado
+      return;
+    }
+    
+    const selectedPackage = creditPackages.find(pkg => pkg.id === grantPackage);
+    if (selectedPackage && selectedPackage.credits > 0) {
+      setGrantCredits(selectedPackage.credits.toString());
+    }
+  }, [grantPackage]);
 
   const signOut = async () => {
     if (!supabaseBrowser) return;
@@ -961,27 +985,49 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
             {officeCreditosOpen ? (
               <>
                 <div className="mt-4 text-white font-extrabold">Enviar créditos</div>
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
                   <input
                     value={grantEmail}
                     onChange={(e) => setGrantEmail(e.target.value)}
                     placeholder="correo@gmail.com"
-                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 md:col-span-2"
                   />
+                  <select
+                    value={grantPackage}
+                    onChange={(e) => setGrantPackage(e.target.value)}
+                    style={{ colorScheme: 'dark' }}
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+                  >
+                    {creditPackages.map(pkg => (
+                      <option key={pkg.id} value={pkg.id} className="bg-[#0b0f16] text-slate-200">
+                        {pkg.name}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     value={grantCredits}
                     onChange={(e) => setGrantCredits(e.target.value)}
                     placeholder="Créditos"
                     className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
                   />
+                </div>
+                
+                <div className="mt-3 flex justify-between items-center">
+                  <div className="text-[11px] text-slate-400">
+                    {grantPackage === 'custom' 
+                      ? 'Ingresa la cantidad de créditos manualmente' 
+                      : `Paquete seleccionado: ${creditPackages.find(p => p.id === grantPackage)?.description || ''}`}
+                  </div>
                   <button
                     onClick={() => grant().catch(() => {})}
                     disabled={grantBusy}
-                    className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-6 py-3 font-extrabold text-sm disabled:opacity-60"
                   >
-                    {grantBusy ? 'Enviando…' : 'Enviar'}
+                    {grantBusy ? 'Enviando…' : 'Enviar créditos'}
                   </button>
                 </div>
+                
                 <div className="mt-3 text-[11px] text-slate-400">Se suma al saldo interno del usuario.</div>
 
                 <div className="mt-6 text-white font-extrabold">Quitar créditos (regresármelos)</div>

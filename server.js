@@ -1691,6 +1691,80 @@ app.get('/api/account/balance', authenticate, async (req, res) => {
   }
 });
 
+// Endpoint para enviar créditos manualmente (admin)
+app.post('/api/admin/grant-credits', authenticate, async (req, res) => {
+  try {
+    const user = req.user;
+    const isAdmin = isAdminEmail(user.email);
+    
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Solo administradores pueden enviar créditos' });
+    }
+
+    const { email, credits } = req.body;
+    
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return res.status(400).json({ error: 'Falta correo electrónico válido' });
+    }
+    
+    const n = Number(credits);
+    if (!Number.isFinite(n) || n <= 0) {
+      return res.status(400).json({ error: 'Cantidad de créditos inválida' });
+    }
+
+    // Buscar usuario por email
+    const { data: targetUser, error: userError } = await supabase
+      .from('profiles')
+      .select('id, ramber_credits, zingy_credits, credits')
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle();
+
+    if (userError) {
+      return res.status(500).json({ error: 'Error buscando usuario', detail: userError.message });
+    }
+    
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Determinar columna de créditos a usar
+    let col = null;
+    if (Object.prototype.hasOwnProperty.call(targetUser, 'ramber_credits')) {
+      col = 'ramber_credits';
+    } else if (Object.prototype.hasOwnProperty.call(targetUser, 'zingy_credits')) {
+      col = 'zingy_credits';
+    } else if (Object.prototype.hasOwnProperty.call(targetUser, 'credits')) {
+      col = 'credits';
+    } else {
+      return res.status(500).json({ error: 'No se encontró columna de créditos en el perfil' });
+    }
+
+    const current = targetUser[col] || 0;
+    const next = round2(current + n);
+
+    // Actualizar créditos
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ [col]: next })
+      .eq('id', targetUser.id);
+
+    if (updateError) {
+      return res.status(500).json({ error: 'Error actualizando créditos', detail: updateError.message });
+    }
+
+    return res.json({ 
+      ok: true, 
+      email: email.trim().toLowerCase(),
+      credits_added: n,
+      previous_credits: current,
+      new_credits: next
+    });
+    
+  } catch (error) {
+    return res.status(500).json({ error: 'Error interno del servidor', detail: error.message });
+  }
+});
+
 // 7. Biblioteca
 app.get('/api/library/list', authenticate, async (req, res) => {
   try {
