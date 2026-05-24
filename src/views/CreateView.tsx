@@ -227,6 +227,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     | 'done'
   >('pick_source');
   const [voiceCreateError, setVoiceCreateError] = useState('');
+  const [voiceVerifyFailed, setVoiceVerifyFailed] = useState(false);
   const [voiceValidateTaskId, setVoiceValidateTaskId] = useState('');
   const voiceValidateTaskIdRef = useRef<string>('');
   const [voiceValidateInfo, setVoiceValidateInfo] = useState('');
@@ -874,6 +875,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const resetVoiceWizard = () => {
     setVoiceCreateError('');
+    setVoiceVerifyFailed(false);
     setVoiceCreateStep('pick_source');
     setNewVoiceName('');
     setNewVoiceDescription('');
@@ -1378,6 +1380,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const generateCustomVoice = async (verifyFileArg?: File) => {
     if (voiceBusy) return;
     setVoiceCreateError('');
+    setVoiceVerifyFailed(false);
     if (!voiceConsent) {
       setVoiceCreateError('Marca la casilla de consentimiento para continuar.');
       return;
@@ -1474,11 +1477,50 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoiceSkillLevel('');
       setVoiceCreateStep('skill');
     } catch (e) {
-      setVoiceCreateError(e instanceof Error ? e.message : String(e));
+      const raw = e instanceof Error ? e.message : String(e);
+      const lower = (raw || '').toString().toLowerCase();
+      const isValidateFail =
+        lower.includes('validate record is not in valid status') ||
+        lower.includes('processing_validate_fail') ||
+        lower.includes('validate_fail');
+      if (isValidateFail) {
+        setVoiceVerifyFailed(true);
+        setVoiceCreateError('No se pudo validar la grabación.');
+      } else {
+        setVoiceVerifyFailed(false);
+        setVoiceCreateError(raw);
+      }
       setVoiceCreateStep('pick_verify');
     } finally {
       setVoiceBusy(false);
     }
+  };
+
+  const repeatVoiceValidation = () => {
+    if (voiceBusy) return;
+    setVoiceVerifyFailed(false);
+    setVoiceCreateError('');
+    setVoiceVerifyFile(null);
+    setVoiceVerifyPreviewUrl('');
+    setVoiceValidateTaskId('');
+    voiceValidateTaskIdRef.current = '';
+    setVoiceValidateInfo('');
+    setVoiceCreateStep('segment');
+    window.setTimeout(() => {
+      generateValidationPhrase().catch(() => {});
+    }, 0);
+  };
+
+  const cancelVoiceValidation = () => {
+    if (voiceBusy) return;
+    setVoiceVerifyFailed(false);
+    setVoiceCreateError('');
+    setVoiceVerifyFile(null);
+    setVoiceVerifyPreviewUrl('');
+    setVoiceValidateTaskId('');
+    voiceValidateTaskIdRef.current = '';
+    setVoiceValidateInfo('');
+    setVoiceCreateStep('segment');
   };
 
   const transcribeLyricsFromAudio = async (auto?: boolean) => {
@@ -3486,9 +3528,36 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center bg-gradient-to-b from-white/5 to-transparent">
               <div className="w-full">
               {voiceCreateError ? (
-                <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-3 text-sm text-red-200">
-                  {voiceCreateError}
-                </div>
+                voiceVerifyFailed ? (
+                  <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-4 text-red-200">
+                    <div className="font-extrabold">No se pudo validar.</div>
+                    <div className="mt-1 text-sm text-red-200/90">
+                      Presiona “Repetir” para generar otra frase o “Cancelar” para volver.
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={repeatVoiceValidation}
+                        disabled={voiceBusy}
+                        className="bg-white hover:bg-white/90 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                      >
+                        Repetir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelVoiceValidation}
+                        disabled={voiceBusy}
+                        className="bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors disabled:opacity-60"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-3 text-sm text-red-200">
+                    {voiceCreateError}
+                  </div>
+                )
               ) : null}
 
               {voiceLibraryMode !== 'none' ? (
@@ -3565,6 +3634,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   </div>
                 </div>
               ) : (
+                voiceVerifyFailed ? null : (
                 <>
                   {(() => {
                     const isVerifyStep = voiceCreateStep === 'pick_verify' || voiceCreateStep === 'generating_voice' || voiceCreateStep === 'done';
@@ -4229,6 +4299,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       e.currentTarget.value = '';
                       if (!f) return;
                       setVoiceVerifyFile(f);
+                      setVoiceVerifyFailed(false);
                       setVoiceCreateError('');
                       setVoiceCreateStep('generating_voice');
                       setTimeout(() => {
@@ -4246,6 +4317,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       e.currentTarget.value = '';
                       if (!f) return;
                       setVoiceVerifyFile(f);
+                      setVoiceVerifyFailed(false);
                       setVoiceCreateError('');
                       setVoiceCreateStep('generating_voice');
                       setTimeout(() => {
@@ -4496,6 +4568,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     </div>
                   ) : null}
                 </>
+                )
               )}
               </div>
             </div>
