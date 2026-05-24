@@ -4554,6 +4554,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                 .then(() => {
                                   setIsCreateVoiceOpen(false);
                                   resetVoiceWizard();
+                                  if (standaloneVoices) {
+                                    setVoicesTab('mine');
+                                    setIsVoicesPickerOpen(true);
+                                  }
                                 })
                                 .catch(() => {})
                                 .finally(() => setVoiceDetailsSaving(false));
