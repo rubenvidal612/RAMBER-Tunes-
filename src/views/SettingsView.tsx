@@ -56,14 +56,10 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const TELEGRAM_INVITE_HASH = 'sgw5bsAX9utmZDEx';
   const TELEGRAM_APP_URL = `tg://join?invite=${TELEGRAM_INVITE_HASH}`;
 
-  // Paquetes predefinidos de créditos
+  // Paquetes predefinidos de créditos - SOLO Pack Inicio de $375
   const creditPackages = [
     { id: 'custom', name: 'Personalizado', credits: 0, description: 'Ingresa cantidad manual' },
     { id: 'inicio', name: 'Pack Inicio', credits: 1200, description: '$375 MXN - 100 canciones' },
-    { id: 'productor', name: 'Pack Productor', credits: 2400, description: '$750 MXN - 200 canciones' },
-    { id: 'small', name: 'Paquete Pequeño', credits: 100, description: '$31 MXN - 8 canciones' },
-    { id: 'medium', name: 'Paquete Mediano', credits: 500, description: '$156 MXN - 41 canciones' },
-    { id: 'large', name: 'Paquete Grande', credits: 1000, description: '$312 MXN - 83 canciones' },
   ];
 
   const openExternalUrl = (url: string) => {
