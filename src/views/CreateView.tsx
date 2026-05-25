@@ -2732,11 +2732,43 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         model: hasSelectedVoice ? 'V5' : model,
       };
       if (wantsCustomMode) {
-        payload.style = (instructions || 'General').trim() || 'General';
+        const mergedLower = `${(instructions || '').toString().trim().toLowerCase()}\n${(prompt || '').toString().trim().toLowerCase()}`;
+        const genrePhrases = [
+          'regional mexicano',
+          'corrido tumbado',
+          'corridos tumbados',
+          'corridos',
+          'corrido',
+          'banda',
+          'norteño',
+          'norteno',
+          'sierreño',
+          'sierreño',
+          'mariachi',
+          'cumbia',
+          'reggaetón',
+          'reggaeton',
+          'salsa',
+          'bachata',
+          'merengue',
+        ];
+        const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
+        const baseStyle = (instructions || '').toString().trim();
+        const hasJazzMention = mergedLower.includes('jazz');
+        let finalStyle = baseStyle;
+        if (!finalStyle) {
+          finalStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
+        } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
+          finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
+        }
+        payload.style = finalStyle.slice(0, 1000);
         payload.title = (title || 'Nueva Canción').trim() || 'Nueva Canción';
         payload.weirdnessConstraint = weirdness / 100;
         payload.styleWeight = styleInfluence / 100;
         payload.audioWeight = audioInfluence / 100;
+        if (inferredGenre && !hasJazzMention) {
+          payload.negativeTags = 'jazz, swing, bebop, saxophone';
+        }
       }
       if (hasSelectedVoice) {
         payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
