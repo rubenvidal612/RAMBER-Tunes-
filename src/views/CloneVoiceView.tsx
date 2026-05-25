@@ -2160,7 +2160,25 @@ export function CloneVoiceView() {
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <button
-                onClick={() => captureInputRef.current?.click()}
+                onClick={() => {
+                  // Primero intentar detectar si el permiso está bloqueado
+                  navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                      // Si tiene permiso, abrir el selector de grabación
+                      stream.getTracks().forEach(track => track.stop());
+                      captureInputRef.current?.click();
+                    })
+                    .catch(err => {
+                      // Si falla, mostrar guía de permisos
+                      setError('Permiso de micrófono bloqueado. Para grabar:');
+                      setSuccess(`
+1. Toca el candadito arriba en la barra de dirección
+2. Ve a "Permisos del sitio"
+3. Activa "Micrófono"
+4. Recarga la página
+`);
+                    });
+                }}
                 className="flex-1 py-3 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-100 font-semibold flex items-center justify-center gap-2 transition-colors"
                 disabled={isLoading}
               >
