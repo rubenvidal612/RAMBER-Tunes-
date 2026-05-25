@@ -10,6 +10,7 @@ export function useUserCredits() {
   const [source, setSource] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const cacheKey = 'ramber.cached_balance_v1';
 
   const refreshCredits = async () => {
     setLoading(true);
@@ -36,6 +37,20 @@ export function useUserCredits() {
       setIsAdmin(Boolean(out?.is_admin));
       setSource(String(out?.source || ''));
       setError('');
+      try {
+        window.localStorage.setItem(
+          cacheKey,
+          JSON.stringify({
+            credits: Number.isFinite(c) ? c : null,
+            internal_credits: Number.isFinite(ic) ? ic : null,
+            provider_credits: Number.isFinite(pc) ? pc : null,
+            is_admin: Boolean(out?.is_admin),
+            source: String(out?.source || ''),
+            saved_at: new Date().toISOString(),
+          }),
+        );
+      } catch {
+      }
     } finally {
       setLoading(false);
     }
@@ -56,6 +71,21 @@ export function useUserCredits() {
   };
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(cacheKey);
+      if (raw) {
+        const cached: any = JSON.parse(raw);
+        const c = Number(cached?.credits);
+        if (Number.isFinite(c) && c >= 0) setCredits(c);
+        const ic = Number(cached?.internal_credits);
+        setInternalCredits(Number.isFinite(ic) ? ic : null);
+        const pc = Number(cached?.provider_credits);
+        setProviderCredits(Number.isFinite(pc) ? pc : null);
+        setIsAdmin(Boolean(cached?.is_admin));
+        setSource(String(cached?.source || ''));
+      }
+    } catch {
+    }
     refreshCredits().catch(() => {});
 
     const { data } = supabaseBrowser?.auth.onAuthStateChange(() => {
