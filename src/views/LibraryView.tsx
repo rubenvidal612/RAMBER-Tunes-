@@ -232,6 +232,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               startedAt: Number.isFinite(Number(x?.startedAt || 0)) ? Number(x.startedAt || 0) : 0,
               providerStatus: typeof x?.providerStatus === 'string' ? x.providerStatus.trim() : undefined,
               progressPct: Number.isFinite(Number(x?.progressPct)) ? Number(x.progressPct) : undefined,
+              failCount: Number.isFinite(Number(x?.failCount)) ? Number(x.failCount) : 0,
+              lastError: typeof x?.lastError === 'string' ? x.lastError.trim() : '',
+              lastErrorAt: Number.isFinite(Number(x?.lastErrorAt)) ? Number(x.lastErrorAt) : 0,
             }))
             .filter((x: any) => x.taskId);
         }
@@ -1369,7 +1372,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
                       <button
-                        onClick={() => onRefreshSongs?.()}
+                        onClick={() => {
+                          try {
+                            window.dispatchEvent(new CustomEvent('ramber:forcePendingSync'));
+                          } catch {
+                          }
+                          onRefreshSongs?.();
+                        }}
                         className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                       >
                         Actualizar
@@ -1393,6 +1402,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
                 {(() => {
                   const first = pendingTasks[0];
+                  const showErr = (() => {
+                    const msg = (first as any)?.lastError ? String((first as any).lastError).trim() : '';
+                    if (!msg) return '';
+                    const n = Number.isFinite(Number((first as any)?.failCount)) ? Number((first as any).failCount) : 0;
+                    return `${msg}${n > 1 ? ` (intentos: ${n})` : ''}`.slice(0, 220);
+                  })();
                   const base = Math.max(0, Number(first?.startedAt || 0));
                   const now = Date.now();
                   const step = Math.max(0, Math.floor((now - base) / 3500));
@@ -1413,6 +1428,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         <div className="flex-1 min-w-0 pt-1">
                           <div className="h-3 w-[70%] bg-white/10 rounded-full animate-pulse" />
                           <div className="h-3 w-[90%] bg-white/10 rounded-full mt-3 animate-pulse" />
+                          {k === 0 && showErr ? (
+                            <div className="mt-3 text-[11px] text-red-200 break-words">{showErr}</div>
+                          ) : null}
                         </div>
                       </div>
                     );

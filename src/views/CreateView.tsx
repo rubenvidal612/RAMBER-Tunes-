@@ -678,7 +678,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (!prefill) return;
     if (prefill.type !== 'cover') return;
     const song = prefill.song;
-    const url = (song?.audioUrl || '').toString().trim();
+    const songId = (song?.id || '').toString().trim();
+    const rawUrl = (song?.audioUrl || '').toString().trim();
+    const proxyUrl = songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '';
+    const url = (() => {
+      if (rawUrl.startsWith('/api/share/song/audio')) return rawUrl;
+      if (proxyUrl) return proxyUrl;
+      return rawUrl;
+    })();
     if (!url) return;
     setMode('personalizado');
     setAudioAction('cover');

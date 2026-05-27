@@ -1467,12 +1467,19 @@ export default function App() {
   };
 
   const startCoverFromSong = (song: SongItem) => {
-    const url = (song?.audioUrl || '').toString().trim();
+    const songId = (song?.id || '').toString().trim();
+    const rawUrl = (song?.audioUrl || '').toString().trim();
+    const proxyUrl = songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '';
+    const url = (() => {
+      if (rawUrl.startsWith('/api/share/song/audio')) return rawUrl;
+      if (proxyUrl) return proxyUrl;
+      return rawUrl;
+    })();
     if (!url) {
       alert('Esta canción no tiene audio para hacer cover.');
       return;
     }
-    setStudioPrefill({ type: 'cover', song });
+    setStudioPrefill({ type: 'cover', song: { ...song, audioUrl: url } });
     setStudioPrefillNonce((n) => n + 1);
     setCurrentTab('studio');
   };
@@ -1562,6 +1569,35 @@ export default function App() {
             })
           : [];
         writeList(next);
+      } catch {
+      }
+    };
+
+    const bumpTaskError = (taskId: string, errorMsg: string) => {
+      try {
+        const list = migrateLegacyIfNeeded();
+        const next = Array.isArray(list)
+          ? list.map((x: any) => {
+              const id = typeof x?.taskId === 'string' ? x.taskId.trim() : '';
+              if (!id || id !== taskId) return x;
+              const prevFail = Number.isFinite(Number(x?.failCount)) ? Number(x.failCount) : 0;
+              const failCount = Math.min(999, prevFail + 1);
+              const lastError = (errorMsg || '').toString().trim().slice(0, 500);
+              const lastErrorAt = Date.now();
+              return { ...x, failCount, lastError, lastErrorAt };
+            })
+          : [];
+        writeList(next);
+        const it = Array.isArray(next) ? next.find((x: any) => String(x?.taskId || '').trim() === taskId) : null;
+        const failCount = Number.isFinite(Number(it?.failCount)) ? Number(it.failCount) : 1;
+        if (failCount === 1 || failCount === 4) {
+          const msg = (errorMsg || '').toString().trim();
+          showToast(
+            msg
+              ? `No pude actualizar tu canción.\n\nDetalle: ${msg.slice(0, 140)}\n\nTip: toca “Actualizar” otra vez o cierra y abre la app.`
+              : 'No pude actualizar tu canción. Toca “Actualizar” otra vez o cierra y abre la app.',
+          );
+        }
       } catch {
       }
     };
@@ -1758,6 +1794,11 @@ export default function App() {
           headers: { authorization: `Bearer ${t.token}` },
         });
         const out = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const msg = (out?.detail || out?.error || out?.message || `HTTP ${Number(r.status || 0)}`).toString();
+          bumpTaskError(pending.taskId, msg);
+          return;
+        }
         const data = out?.data || out?.data?.data || out?.data;
         const status = String(data?.data?.status || data?.data?.successFlag || data?.status || data?.successFlag || '').toUpperCase();
 
@@ -1776,6 +1817,7 @@ export default function App() {
                       : null;
           patchTask(pending.taskId, { providerStatus: status, progressPct: typeof pct === 'number' ? pct : undefined });
         }
+        patchTask(pending.taskId, { lastError: '', failCount: 0, lastErrorAt: null });
 
         if (status === 'SUCCESS') {
           const kind = (pending.kind || 'generate').toLowerCase();
@@ -1901,7 +1943,12 @@ export default function App() {
       tick().catch(() => {});
     }, 4000);
     tick().catch(() => {});
-    return () => window.clearInterval(id);
+    const onForce = () => tick().catch(() => {});
+    window.addEventListener('ramber:forcePendingSync', onForce as any);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('ramber:forcePendingSync', onForce as any);
+    };
   }, [isAuthed]);
 
   const deleteCancion = async (songId: string) => {
