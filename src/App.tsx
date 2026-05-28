@@ -1694,6 +1694,18 @@ export default function App() {
             track?.coverUrl ||
             track?.thumbnail_url ||
             track?.thumbnailUrl ||
+            track?.metadata?.image_url ||
+            track?.metadata?.imageUrl ||
+            track?.metadata?.image_large_url ||
+            track?.metadata?.imageLargeUrl ||
+            track?.metadata?.cover_url ||
+            track?.metadata?.coverUrl ||
+            track?.metadata?.thumbnail_url ||
+            track?.metadata?.thumbnailUrl ||
+            track?.image?.url ||
+            track?.image?.src ||
+            track?.cover?.url ||
+            track?.cover?.src ||
             ''
         );
       return (Array.isArray(list) ? list : []).map((track: any) => {
@@ -2154,6 +2166,18 @@ export default function App() {
                   track?.coverUrl ||
                   track?.thumbnail_url ||
                   track?.thumbnailUrl ||
+                  track?.metadata?.image_url ||
+                  track?.metadata?.imageUrl ||
+                  track?.metadata?.image_large_url ||
+                  track?.metadata?.imageLargeUrl ||
+                  track?.metadata?.cover_url ||
+                  track?.metadata?.coverUrl ||
+                  track?.metadata?.thumbnail_url ||
+                  track?.metadata?.thumbnailUrl ||
+                  track?.image?.url ||
+                  track?.image?.src ||
+                  track?.cover?.url ||
+                  track?.cover?.src ||
                   ''
               );
             const pickLyrics = (track: any) => {
@@ -2178,6 +2202,31 @@ export default function App() {
             if (tracks.length > 0) {
               const wantsB = /\sB$/i.test((song.title || '').toString().trim());
               const chosen = wantsB && tracks.length > 1 ? tracks[1] : tracks[0];
+              try {
+                const cover = (song.coverUrl || '').toString().trim();
+                const nextCover = (chosen.coverUrl || '').toString().trim();
+                if (!cover && nextCover) {
+                  await fetch('/api/library/set-cover', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                    body: JSON.stringify({ id: song.id, fileUrl: nextCover, fileName: 'cover.jpg' }),
+                  }).catch(() => null as any);
+                  refreshLibrary().catch(() => {});
+                }
+              } catch {}
+              try {
+                const l = (song.lyrics || '').toString().trim();
+                const nextL = (chosen.lyrics || '').toString().trim();
+                if (!l && nextL) {
+                  await fetch('/api/library/update-lyrics', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                    body: JSON.stringify({ id: song.id, lyrics: nextL }),
+                  }).catch(() => null as any);
+                  refreshLibrary().catch(() => {});
+                }
+              } catch {}
+
               const ok = await tryPlay(chosen.audioUrl);
               if (ok) {
                 try {
@@ -2191,30 +2240,6 @@ export default function App() {
                       sunoAudioId: chosen.audioId || song.sunoAudioId || null,
                     }),
                   }).catch(() => null as any);
-                } catch {}
-                try {
-                  const cover = (song.coverUrl || '').toString().trim();
-                  const nextCover = (chosen.coverUrl || '').toString().trim();
-                  if (!cover && nextCover) {
-                    await fetch('/api/library/set-cover', {
-                      method: 'POST',
-                      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-                      body: JSON.stringify({ id: song.id, fileUrl: nextCover, fileName: 'cover.jpg' }),
-                    }).catch(() => null as any);
-                    refreshLibrary().catch(() => {});
-                  }
-                } catch {}
-                try {
-                  const l = (song.lyrics || '').toString().trim();
-                  const nextL = (chosen.lyrics || '').toString().trim();
-                  if (!l && nextL) {
-                    await fetch('/api/library/update-lyrics', {
-                      method: 'POST',
-                      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-                      body: JSON.stringify({ id: song.id, lyrics: nextL }),
-                    }).catch(() => null as any);
-                    refreshLibrary().catch(() => {});
-                  }
                 } catch {}
                 return;
               }

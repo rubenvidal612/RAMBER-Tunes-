@@ -69,6 +69,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState('');
   const [openVideoMenuId, setOpenVideoMenuId] = useState<string | null>(null);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [brokenCovers, setBrokenCovers] = useState<Record<string, boolean>>({});
 
   const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
     try {
@@ -96,6 +99,27 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const m = Math.floor(s / 60);
     const r = s % 60;
     return `${m}:${String(r).padStart(2, '0')}`;
+  };
+
+  const normalizeSearchText = (raw: string) => {
+    const s = (raw || '').toString().trim().toLowerCase();
+    if (!s) return '';
+    try {
+      return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    } catch {
+      return s;
+    }
+  };
+
+  const makeFallbackCoverSvgUrl = (seed: string) => {
+    const s = (seed || 'cancion').toString().slice(0, 80);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    const hue1 = h % 360;
+    const hue2 = (hue1 + 55) % 360;
+    const label = (seed || 'Canción').toString().trim().slice(0, 22);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue1} 85% 55%)"/><stop offset="1" stop-color="hsl(${hue2} 85% 45%)"/></linearGradient></defs><rect width="512" height="512" rx="56" fill="url(#g)"/><rect width="512" height="512" rx="56" fill="rgba(0,0,0,0.28)"/><text x="256" y="290" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="220" font-weight="300" fill="rgba(255,255,255,0.92)">L</text><text x="40" y="468" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="42" font-weight="800" fill="rgba(255,255,255,0.92)">${label.replaceAll('&', 'y').replaceAll('<', '').replaceAll('>', '')}</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   };
 
   const loadDurationFromUrl = (url: string) =>
@@ -1348,13 +1372,31 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         {activeTab === 'canciones' && (
           <div className="p-4 space-y-4">
             {/* Search Bar */}
-            <div className="relative">
+            <div className="relative flex items-center gap-2">
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                <input 
                  type="text" 
                  placeholder="Buscar" 
-                 className="w-full bg-white/5 border border-white/5 rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
+                 value={searchDraft}
+                 onChange={(e) => setSearchDraft(e.target.value)}
+                 onKeyDown={(e) => {
+                   if (e.key === 'Enter') {
+                     const q = normalizeSearchText(searchDraft);
+                     setSearchQuery(q);
+                   }
+                 }}
+                 className="w-full bg-white/5 border border-white/5 rounded-full py-2.5 pl-10 pr-[92px] text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
                />
+               <button
+                 type="button"
+                 onClick={() => {
+                   const q = normalizeSearchText(searchDraft);
+                   setSearchQuery(q);
+                 }}
+                 className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/15 active:bg-white/20 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-100 transition-colors"
+               >
+                 Buscar
+               </button>
             </div>
 
             {pendingTasks.length > 0 && !showTrash && (
@@ -1840,6 +1882,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               const fromMs = filterFrom ? new Date(`${filterFrom}T00:00:00`).getTime() : null;
               const toMs = filterTo ? new Date(`${filterTo}T23:59:59.999`).getTime() : null;
               const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
+              const q = normalizeSearchText(searchQuery);
               const list = baseList
                 .filter((song) => {
                   if (!filterFrom && !filterTo) return true;
@@ -1847,6 +1890,21 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   if (fromMs !== null && (ms === null || ms < fromMs)) return false;
                   if (toMs !== null && (ms === null || ms > toMs)) return false;
                   return true;
+                })
+                .filter((song) => {
+                  if (!q) return true;
+                  const hay = normalizeSearchText(
+                    [
+                      song.title,
+                      song.genre,
+                      (song as any)?.description,
+                      (song as any)?.lyrics,
+                      (song as any)?.publicGenre,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                  );
+                  return hay.includes(q);
                 })
                 .slice()
                 .sort((a, b) => {
@@ -1876,7 +1934,22 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   <div key={song.id} className="flex items-start gap-4 p-2 rounded-xl hover:bg-white/5 transition-colors group">
                     {/* Thumbnail */}
                     <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-800 shrink-0 cursor-pointer" onClick={() => !showTrash && onPlaySong(song)}>
-                      <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
+                      <img
+                        src={(() => {
+                          const sid = String(song.id || '').trim();
+                          const broken = Boolean(brokenCovers[sid]);
+                          const raw = (song.coverUrl || '').toString().trim();
+                          if (!raw || broken) return makeFallbackCoverSvgUrl(song.title || sid);
+                          return raw;
+                        })()}
+                        onError={() => {
+                          const sid = String(song.id || '').trim();
+                          if (!sid) return;
+                          setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+                        }}
+                        alt="Cover"
+                        className="w-full h-full object-cover"
+                      />
                       {(() => {
                         const d = Number(songDurationsSec[song.id] || 0);
                         if (!Number.isFinite(d) || d <= 0) return null;
@@ -1966,8 +2039,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     {/* Options Menu */}
                     <button
                       onClick={() => setMenuSong(song)}
-                      className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors shrink-0"
+                      className={cn(
+                        "w-8 h-8 rounded-full flex items-center justify-center border transition-all shrink-0 active:scale-95",
+                        menuSong?.id === song.id ? "bg-white/15 border-white/25" : "bg-white/5 border-white/10 hover:bg-white/10"
+                      )}
                       aria-label="Opciones"
+                      aria-pressed={menuSong?.id === song.id}
                     >
                       <MoreVertical className="w-4 h-4 text-slate-400" />
                     </button>
@@ -2027,7 +2104,22 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           className="w-full glass-card rounded-2xl p-4 flex items-center gap-3 hover:bg-white/10 transition-colors text-left"
                         >
                           <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                            <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/150/150`).toString()} alt="Cover" className="w-full h-full object-cover" />
+                            <img
+                              src={(() => {
+                                const sid = String(song.id || '').trim();
+                                const broken = Boolean(brokenCovers[sid]);
+                                const raw = (song.coverUrl || '').toString().trim();
+                                if (!raw || broken) return makeFallbackCoverSvgUrl(song.title || sid);
+                                return raw;
+                              })()}
+                              onError={() => {
+                                const sid = String(song.id || '').trim();
+                                if (!sid) return;
+                                setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+                              }}
+                              alt="Cover"
+                              className="w-full h-full object-cover"
+                            />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-white font-bold truncate">{song.title || 'Pista sin título'}</div>
@@ -2039,7 +2131,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               e.stopPropagation();
                               setMenuSong(song);
                             }}
-                            className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
+                            className={cn(
+                              "w-9 h-9 rounded-full border flex items-center justify-center text-slate-200 transition-all active:scale-95",
+                              menuSong?.id === song.id ? "bg-white/15 border-white/25" : "bg-white/5 border-white/10 hover:bg-white/10"
+                            )}
                             aria-label="Opciones"
                           >
                             <MoreVertical className="w-4 h-4 text-slate-300" />
@@ -4357,7 +4452,22 @@ function SongOptionsSheet({
         <div className="px-5 pb-4">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-              <img src={(song.coverUrl || `https://picsum.photos/seed/${song.id}/200/200`).toString()} alt="Cover" className="w-full h-full object-cover" />
+              <img
+                src={(() => {
+                  const sid = String(song.id || '').trim();
+                  const broken = Boolean(brokenCovers[sid]);
+                  const raw = (song.coverUrl || '').toString().trim();
+                  if (!raw || broken) return makeFallbackCoverSvgUrl(song.title || sid);
+                  return raw;
+                })()}
+                onError={() => {
+                  const sid = String(song.id || '').trim();
+                  if (!sid) return;
+                  setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+                }}
+                alt="Cover"
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
@@ -4373,7 +4483,7 @@ function SongOptionsSheet({
         <div className="px-5 pb-4">
           <div className="grid grid-cols-3 gap-3">
             <button
-              className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors"
+              className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 active:bg-white/15 active:scale-[0.99] transition-all"
               onClick={() => {
                 onClose();
                 onOpenLists?.();
@@ -4384,13 +4494,13 @@ function SongOptionsSheet({
                 <div className="text-slate-200 font-semibold text-sm">Agregar a lista</div>
               </div>
             </button>
-            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => share().catch(() => {})}>
+            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 active:bg-white/15 active:scale-[0.99] transition-all" onClick={() => share().catch(() => {})}>
               <div className="flex items-center gap-3">
                 <Share2 className="w-5 h-5 text-slate-200" />
                 <div className="text-slate-200 font-semibold text-sm">Compartir</div>
               </div>
             </button>
-            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors" onClick={() => alert('Próximamente')}>
+            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 active:bg-white/15 active:scale-[0.99] transition-all" onClick={() => alert('Próximamente')}>
               <div className="flex items-center gap-3">
                 <MessageCircle className="w-5 h-5 text-slate-200" />
                 <div className="text-slate-200 font-semibold text-sm">Comentar</div>
@@ -4417,7 +4527,7 @@ function SongOptionsSheet({
           <div className="glass-card rounded-2xl overflow-hidden">
             {!isDeleted && (
               <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5 bg-gradient-to-r from-emerald-500/10 to-transparent"
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-b border-white/5 bg-gradient-to-r from-emerald-500/10 to-transparent"
                 onClick={() => {
                   if (!song.audioUrl) {
                     alert('Esta canción no tiene audio para hacer cover.');
@@ -4433,7 +4543,7 @@ function SongOptionsSheet({
             )}
             {!isDeleted && (
               <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5"
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-b border-white/5"
                 onClick={() => onMoveToFolder?.()}
                 disabled={isBusy}
               >
@@ -4443,21 +4553,21 @@ function SongOptionsSheet({
             {!isDeleted && (
               <>
                 <button
-                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5 bg-gradient-to-r from-indigo-500/10 to-transparent"
+                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-indigo-500/10 to-transparent"
                   onClick={() => generateCoverImage().catch(() => {})}
                   disabled={isBusy || !song.sunoTaskId}
                 >
                   <ImageIcon className="w-5 h-5 text-indigo-300" /> <span className="text-slate-200 font-extrabold">Generar portada IA</span>
                 </button>
                 <button
-                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5 bg-gradient-to-r from-amber-500/10 to-transparent"
+                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-amber-500/10 to-transparent"
                   onClick={() => coverPhotoInputRef.current?.click()}
                   disabled={isBusy}
                 >
                   <ImageIcon className="w-5 h-5 text-amber-300" /> <span className="text-slate-200 font-extrabold">Subir foto de portada</span>
                 </button>
                 <button
-                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
                   onClick={() => setShowCoverUrl(true)}
                   disabled={isBusy}
                 >
@@ -4478,7 +4588,7 @@ function SongOptionsSheet({
               </>
             )}
             <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
               onClick={() => setShowPersonaSave(true)}
               disabled={isBusy || isDeleted}
             >
@@ -4486,7 +4596,7 @@ function SongOptionsSheet({
             </button>
           {!isDeleted && (
             <button
-              className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+              className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
               onClick={() => ensureCommercialPlanOrWarn().then((ok) => ok && setShowLicense(true))}
               disabled={isBusy}
             >
@@ -4500,25 +4610,25 @@ function SongOptionsSheet({
 
           <div className="glass-card rounded-2xl overflow-hidden mt-4">
             <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-b border-white/5"
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-b border-white/5"
               onClick={() => setShowEditTitle(true)}
               disabled={isBusy || isDeleted}
             >
               <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Editar nombre</span>
             </button>
             <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all"
               onClick={() => setShowLyrics(true)}
               disabled={isBusy}
             >
               <FileText className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Letra</span>
             </button>
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors" onClick={share} disabled={isBusy}>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
             {!isDeleted && (
               <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
                 onClick={() => togglePinToProfile().catch(() => {})}
                 disabled={isBusy}
               >
@@ -4528,7 +4638,7 @@ function SongOptionsSheet({
             )}
             {!isDeleted && (
               <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
                 onClick={() => setShowTrim(true)}
                 disabled={isBusy || !(song.audioUrl || '').toString().trim()}
               >
@@ -4536,36 +4646,36 @@ function SongOptionsSheet({
               </button>
             )}
             {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={download} disabled={isBusy}>
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={download} disabled={isBusy}>
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
               </button>
             )}
             {canShowWav && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
                 <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar WAV</span>
               </button>
             )}
             {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
                 <Video className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Video (MP4)</span>
               </button>
             )}
             {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
                 <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Eliminar voz (Karaoke)</span>
               </button>
             )}
             {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
+              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
                 <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Instrumentos y voces (Stems)</span>
               </button>
             )}
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
+            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
               <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
             </button>
             {!isDeleted && (
               <button
-                className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors border-t border-white/5"
+                className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
                 onClick={() => {
                   if (published) {
                     setSongPublic(false, '').catch(() => {});

@@ -5789,6 +5789,65 @@ const libraryHandler = (() => {
     return cleaned || "cover";
   }
 
+  function isHttpUrl(url: string) {
+    return /^https?:\/\//i.test((url || "").toString().trim());
+  }
+
+  function isDataImage(url: string) {
+    return /^data:image\//i.test((url || "").toString().trim());
+  }
+
+  function isR2Url(url: string) {
+    try {
+      const u = new URL(url);
+      const host = (u.hostname || "").toLowerCase();
+      return host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+    } catch {
+      return false;
+    }
+  }
+
+  function extFromCover(contentTypeRaw: string, urlHint: string) {
+    const ct = (contentTypeRaw || "").toString().toLowerCase().trim();
+    if (ct.includes("image/png")) return { ext: "png", contentType: "image/png" };
+    if (ct.includes("image/webp")) return { ext: "webp", contentType: "image/webp" };
+    if (ct.includes("image/jpeg") || ct.includes("image/jpg")) return { ext: "jpg", contentType: "image/jpeg" };
+    const u = (urlHint || "").toString().toLowerCase();
+    if (u.includes(".png")) return { ext: "png", contentType: "image/png" };
+    if (u.includes(".webp")) return { ext: "webp", contentType: "image/webp" };
+    return { ext: "jpg", contentType: "image/jpeg" };
+  }
+
+  async function mirrorCoverToR2(userId: string, songId: string, coverUrl: string, fileNameHint: string) {
+    const u = (coverUrl || "").toString().trim();
+    if (!userId || !songId || !u) return "";
+    if (!isHttpUrl(u)) return "";
+    if (isDataImage(u)) return "";
+    if (isR2Url(u)) return "";
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25_000);
+    try {
+      const r = await fetch(u, { method: "GET", signal: ctrl.signal as any });
+      if (!r.ok) return "";
+      const ctRaw = (r.headers.get("content-type") || "").toString().slice(0, 120);
+      const { ext, contentType } = extFromCover(ctRaw, u);
+      const lenRaw = (r.headers.get("content-length") || "").toString().trim();
+      const len = lenRaw ? Number(lenRaw) : NaN;
+      if (Number.isFinite(len) && len > 8 * 1024 * 1024) return "";
+      const ab = await r.arrayBuffer();
+      if ((ab?.byteLength || 0) <= 0) return "";
+      if (ab.byteLength > 8 * 1024 * 1024) return "";
+      const buf = Buffer.from(ab);
+      const path = `covers/${userId}/${songId}/${Date.now()}_${safeFileBase(fileNameHint)}.${ext}`.slice(0, 500);
+      const finalCt = ctRaw && ctRaw.toLowerCase().startsWith("image/") ? ctRaw : contentType;
+      return await uploadToR2(path, buf, finalCt);
+    } catch {
+      return "";
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   function parseBase64Data(raw: string) {
     const s = (raw || "").toString().trim();
     if (!s) return null;
@@ -5828,8 +5887,8 @@ const libraryHandler = (() => {
     if (!body) return send(res, 400, { error: "Body inválido" });
 
     const id = typeof body?.id === "string" ? body.id.trim() : "";
-    const base64DataRaw = typeof body?.base64Data === "string" ? body.base64Data : "";
-    const fileUrlRaw = typeof body?.fileUrl === "string" ? body.fileUrl.trim() : "";
+    let base64DataRaw = typeof body?.base64Data === "string" ? body.base64Data : "";
+    let fileUrlRaw = typeof body?.fileUrl === "string" ? body.fileUrl.trim() : "";
     const fileName = typeof body?.fileName === "string" ? body.fileName.trim() : "cover.jpg";
     if (!id) return send(res, 400, { error: "Falta id" });
     if (!base64DataRaw && !fileUrlRaw) return send(res, 400, { error: "Falta base64Data o fileUrl" });
@@ -5844,122 +5903,61 @@ const libraryHandler = (() => {
     if (rowErr) return send(res, 500, { error: "No pude validar la canción", detail: rowErr.message });
     if (!row || row.deleted_at) return send(res, 404, { error: "Canción no encontrada" });
 
-    const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
-    if (!apiKey) return send(res, 500, { error: "Falta SUNO_API_KEY en variables de entorno" });
+    if (!base64DataRaw && fileUrlRaw && isDataImage(fileUrlRaw)) {
+      base64DataRaw = fileUrlRaw;
+      fileUrlRaw = "";
+    }
 
-    const uploadPath = `covers/${auth.user.id}/${id}`.slice(0, 200);
+    if (!base64DataRaw && fileUrlRaw && isR2Url(fileUrlRaw)) {
+      const { error: updErr } = await auth.admin
+        .from(TABLE)
+        .update({ cover_url: fileUrlRaw })
+        .eq("id", id)
+        .eq("user_id", auth.user.id)
+        .eq("type", ITEM_TYPE);
+      if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
+      return send(res, 200, { ok: true, coverUrl: fileUrlRaw });
+    }
+
+    if (!base64DataRaw && fileUrlRaw) {
+      if (!isHttpUrl(fileUrlRaw)) return send(res, 400, { error: "fileUrl inválido" });
+      const mirrored = await mirrorCoverToR2(auth.user.id, id, fileUrlRaw, fileName || "cover.jpg");
+      if (!mirrored) return send(res, 400, { error: "No pude descargar la imagen" });
+
+      const { error: updErr } = await auth.admin
+        .from(TABLE)
+        .update({ cover_url: mirrored })
+        .eq("id", id)
+        .eq("user_id", auth.user.id)
+        .eq("type", ITEM_TYPE);
+      if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
+
+      return send(res, 200, { ok: true, coverUrl: mirrored });
+    }
+
+    const base64Parsed = parseBase64Data(base64DataRaw);
+    if (!base64Parsed) return send(res, 400, { error: "base64Data inválido" });
 
     let buf: Buffer | null = null;
-    let contentType = "";
-    const isClientUpload = Boolean(base64DataRaw);
-
-    if (base64DataRaw) {
-      const base64Parsed = parseBase64Data(base64DataRaw);
-      if (!base64Parsed) return send(res, 400, { error: "base64Data inválido" });
-      contentType = base64Parsed.mime || "";
-      try {
-        const b = Buffer.from(base64Parsed.base64, "base64");
-        if (b && b.length > 0) buf = b;
-      } catch {
-        buf = null;
-      }
+    try {
+      const b = Buffer.from(base64Parsed.base64, "base64");
+      if (b && b.length > 0) buf = b;
+    } catch {
+      buf = null;
     }
-
-    if (!buf && fileUrlRaw) {
-      let downloadUrl = "";
-      try {
-        new URL(fileUrlRaw);
-      } catch {
-        return send(res, 400, { error: "fileUrl inválido" });
-      }
-      try {
-        const r = await fetch("https://sunoapiorg.redpandaai.co/api/file-url-upload", {
-          method: "POST",
-          headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({
-            fileUrl: fileUrlRaw,
-            uploadPath,
-            fileName: fileName ? `${safeFileBase(fileName)}.jpg` : undefined,
-          }),
-        });
-        const text = await r.text();
-        const data = text ? JSON.parse(text) : null;
-        if (r.ok && data?.success && Number(data?.code) === 200) {
-          downloadUrl = String(data?.data?.downloadUrl || "").trim();
-          const mt = String(data?.data?.mimeType || "").trim();
-          if (mt) contentType = mt;
-        }
-      } catch {
-        downloadUrl = "";
-      }
-
-      if (downloadUrl) {
-        try {
-          const r = await fetch(downloadUrl, { method: "GET" });
-          if (r.ok) {
-            const ct = (r.headers.get("content-type") || "").toString();
-            const b = Buffer.from(await r.arrayBuffer());
-            if (b && b.length > 0) {
-              buf = b;
-              if (ct) contentType = ct;
-            }
-          }
-        } catch {
-        }
-      }
-    }
-
     if (!buf || buf.length === 0) return send(res, 400, { error: "No pude procesar la imagen" });
     if (buf.length > 25_000_000) return send(res, 413, { error: "La imagen está muy pesada. Usa una foto más pequeña." });
 
-    await ensureCoversBucket(auth.admin);
+    const { ext, contentType } = extFromCover(base64Parsed.mime || "", fileName || "");
+    const path = `covers/${auth.user.id}/${id}/${Date.now()}_${safeFileBase(fileName)}.${ext}`.slice(0, 500);
+    const coverUrl = await uploadToR2(path, buf, contentType);
 
-    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
-    const finalCt = contentType || (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
-    const path = `${auth.user.id}/${id}/${Date.now()}_${safeFileBase(fileName)}.${ext}`.slice(0, 500);
-
-    if (isClientUpload) {
-      let downloadUrl = "";
-      try {
-        const fileBlob = new Blob([buf], { type: finalCt });
-        const form = new FormData();
-        form.append("file", fileBlob, `${safeFileBase(fileName)}.${ext}`);
-        form.append("uploadPath", uploadPath);
-        form.append("fileName", `${safeFileBase(fileName)}.${ext}`);
-
-        const r = await fetch("https://sunoapiorg.redpandaai.co/api/file-stream-upload", {
-          method: "POST",
-          headers: { authorization: `Bearer ${apiKey}` },
-          body: form as any,
-        });
-        const text = await r.text();
-        const data = text ? JSON.parse(text) : null;
-        if (r.ok && data?.success && Number(data?.code) === 200) {
-          downloadUrl = String(data?.data?.downloadUrl || "").trim();
-        }
-      } catch {
-        downloadUrl = "";
-      }
-
-      if (downloadUrl) {
-        try {
-          const r = await fetch(downloadUrl, { method: "GET" });
-          if (r.ok) {
-            const ct = (r.headers.get("content-type") || "").toString();
-            const b = Buffer.from(await r.arrayBuffer());
-            if (b && b.length > 0) {
-              buf = b;
-              if (ct) contentType = ct;
-            }
-          }
-        } catch {
-        }
-      }
-    }
-
-    const coverUrl = await uploadToR2(path, buf, finalCt);
-
-    const { error: updErr } = await auth.admin.from(TABLE).update({ cover_url: coverUrl }).eq("id", id).eq("user_id", auth.user.id).eq("type", ITEM_TYPE);
+    const { error: updErr } = await auth.admin
+      .from(TABLE)
+      .update({ cover_url: coverUrl })
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .eq("type", ITEM_TYPE);
     if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
 
     return send(res, 200, { ok: true, coverUrl });
