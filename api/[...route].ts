@@ -1167,6 +1167,10 @@ const sunoHandler = (() => {
       }
     }
 
+    if (typeof body.uploadUrl === "string" && body.uploadUrl.trim().startsWith("/")) {
+      body.uploadUrl = absoluteUrlFromReq(req, body.uploadUrl.trim());
+    }
+
     const styleWeight = Number(payload?.styleWeight);
     if (Number.isFinite(styleWeight)) body.styleWeight = clamp01(styleWeight);
     const weirdnessConstraint = Number(payload?.weirdnessConstraint);
@@ -1206,7 +1210,7 @@ const sunoHandler = (() => {
 
       let last: any = null;
       for (const p of paths) {
-        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        const r = await sunoFetchJsonWithRetry(p, { method: "POST", body: JSON.stringify(body) });
         last = r;
         if (r.res.status !== 404) break;
       }
@@ -1282,6 +1286,10 @@ const sunoHandler = (() => {
       }
     }
 
+    if (typeof body.uploadUrl === "string" && body.uploadUrl.trim().startsWith("/")) {
+      body.uploadUrl = absoluteUrlFromReq(req, body.uploadUrl.trim());
+    }
+
     const vocalGender = firstString(payload, ["vocalGender", "vocal_gender"]).toLowerCase();
     if (vocalGender === "m" || vocalGender === "f") body.vocalGender = vocalGender;
 
@@ -1305,7 +1313,7 @@ const sunoHandler = (() => {
       const paths = ["/api/v1/generate/add-instrumental", "/api/v1/suno/generate/add-instrumental"];
       let last: any = null;
       for (const p of paths) {
-        const r = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(body) });
+        const r = await sunoFetchJsonWithRetry(p, { method: "POST", body: JSON.stringify(body) });
         last = r;
         if (r.res.status !== 404) break;
       }
