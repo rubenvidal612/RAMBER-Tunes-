@@ -5921,7 +5921,11 @@ function SongOptionsSheet({
       )}
     </div>
     );
-  } catch {
+  } catch (e) {
+    try {
+      console.error('SongOptionsSheet render error', e);
+    } catch {}
+    const detail = (e instanceof Error ? e.message : String(e || '')).toString().trim();
     sheet = (
       <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70" style={{ zIndex: 2147483647 }}>
         <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
@@ -5935,6 +5939,11 @@ function SongOptionsSheet({
           <div className="p-4 text-slate-200 text-sm">
             No pude abrir el menú de opciones. Recarga la página y vuelve a intentar.
           </div>
+          {detail ? (
+            <div className="px-4 pb-4 text-[11px] text-slate-400 break-words">
+              Detalle: {detail.slice(0, 220)}
+            </div>
+          ) : null}
         </div>
       </div>
     );
