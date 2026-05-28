@@ -271,7 +271,7 @@ export function ElencoPresentationView() {
         </div>
 
         <div className="mt-8 text-center text-slate-400 text-sm">
-          Conectado desde Luciana AI - Presentación en pantalla externa
+          Conectado desde LucIAna IA - Presentación en pantalla externa
         </div>
       </div>
 

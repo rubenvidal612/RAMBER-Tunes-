@@ -4121,7 +4121,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           <BadgeCheck className="w-4 h-4" />
                         </div>
                         <div className="text-slate-200 text-sm">
-                          Entiendo que la creación de una voz implica el procesamiento de datos de voz que pueden considerarse información biométrica según ciertas leyes, y doy mi consentimiento para la recopilación y procesamiento de dicha información de acuerdo con los Términos de Servicio y la Política de Privacidad de Luciana AI
+                          Entiendo que la creación de una voz implica el procesamiento de datos de voz que pueden considerarse información biométrica según ciertas leyes, y doy mi consentimiento para la recopilación y procesamiento de dicha información de acuerdo con los Términos de Servicio y la Política de Privacidad de LucIAna IA
                         </div>
                       </button>
 
