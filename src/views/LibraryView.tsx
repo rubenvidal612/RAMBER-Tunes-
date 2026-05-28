@@ -4440,45 +4440,47 @@ function SongOptionsSheet({
     }
   };
 
-  const sheet = (
-    <div className="fixed inset-0 z-[2147483647] flex items-end md:items-center justify-center bg-black/60" style={{ zIndex: 2147483647 }}>
-      <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
-      <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
-        <div className="flex justify-center py-3 shrink-0">
-          <div className="w-12 h-1 bg-white/20 rounded-full" />
-        </div>
-
-        <div className="flex-1 overflow-y-auto overscroll-contain pb-6">
-        <div className="px-5 pb-4">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-              <img
-                src={(() => {
-                  const sid = String(song.id || '').trim();
-                  const broken = Boolean(brokenCovers[sid]);
-                  const raw = (song.coverUrl || '').toString().trim();
-                  if (!raw || broken) return makeFallbackCoverSvgUrl(song.title || sid);
-                  return raw;
-                })()}
-                onError={() => {
-                  const sid = String(song.id || '').trim();
-                  if (!sid) return;
-                  setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
-                }}
-                alt="Cover"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
-              <div className="text-slate-400 text-sm truncate">Ruben</div>
-              <div className="text-slate-500 text-xs mt-1">{isDeleted ? `Eliminada: ${fmt(song.deletedAt || undefined)}` : `Creada: ${fmt(song.createdAt || undefined)}`}</div>
-            </div>
-            <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10" onClick={onClose}>
-              ✕
-            </button>
+  let sheet: any = null;
+  try {
+    sheet = (
+      <div className="fixed inset-0 z-[2147483647] flex items-end md:items-center justify-center bg-black/60" style={{ zIndex: 2147483647 }}>
+        <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
+        <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
+          <div className="flex justify-center py-3 shrink-0">
+            <div className="w-12 h-1 bg-white/20 rounded-full" />
           </div>
-        </div>
+
+          <div className="flex-1 overflow-y-auto overscroll-contain pb-6">
+          <div className="px-5 pb-4">
+            <div className="flex items-start gap-4">
+              <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                <img
+                  src={(() => {
+                    const sid = String(song.id || '').trim();
+                    const broken = Boolean(brokenCovers[sid]);
+                    const raw = (song.coverUrl || '').toString().trim();
+                    if (!raw || broken) return makeFallbackCoverSvgUrl(song.title || sid);
+                    return raw;
+                  })()}
+                  onError={() => {
+                    const sid = String(song.id || '').trim();
+                    if (!sid) return;
+                    setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+                  }}
+                  alt="Cover"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
+                <div className="text-slate-400 text-sm truncate">Ruben</div>
+                <div className="text-slate-500 text-xs mt-1">{isDeleted ? `Eliminada: ${fmt(song.deletedAt || undefined)}` : `Creada: ${fmt(song.createdAt || undefined)}`}</div>
+              </div>
+              <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10" onClick={onClose} type="button">
+                ✕
+              </button>
+            </div>
+          </div>
 
         <div className="px-5 pb-4">
           <div className="grid grid-cols-3 gap-3">
@@ -5918,10 +5920,32 @@ function SongOptionsSheet({
         </div>
       )}
     </div>
-  );
+    );
+  } catch {
+    sheet = (
+      <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70" style={{ zIndex: 2147483647 }}>
+        <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
+        <div className="relative w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
+            <div className="text-white font-extrabold">Opciones</div>
+            <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200" type="button">
+              ✕
+            </button>
+          </div>
+          <div className="p-4 text-slate-200 text-sm">
+            No pude abrir el menú de opciones. Recarga la página y vuelve a intentar.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  if (typeof document === 'undefined') return null;
-  return createPortal(sheet, document.body);
+  if (typeof document === 'undefined' || !document.body) return sheet;
+  try {
+    return createPortal(sheet, document.body);
+  } catch {
+    return sheet;
+  }
 }
 
 function CreateVibeModal({ onClose, canciones, onAddVibe }: { onClose: () => void, canciones: SongItem[], onAddVibe: (v: VibeItem) => void }) {
