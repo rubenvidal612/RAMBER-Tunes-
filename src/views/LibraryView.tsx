@@ -2273,6 +2273,18 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           song={menuSong}
           onClose={() => setMenuSong(null)}
           isDeleted={showTrash}
+          coverSrc={(() => {
+            const sid = String(menuSong.id || '').trim();
+            const broken = Boolean(brokenCovers[sid]);
+            const raw = (menuSong.coverUrl || '').toString().trim();
+            if (!raw || broken) return makeFallbackCoverSvgUrl(menuSong.title || sid);
+            return raw;
+          })()}
+          onCoverError={() => {
+            const sid = String(menuSong.id || '').trim();
+            if (!sid) return;
+            setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+          }}
           onPlay={() => onPlaySong(menuSong)}
           onElenco={() => onOpenElenco?.(menuSong)}
           onStartCover={() => onStartCover?.(menuSong)}
@@ -2721,6 +2733,8 @@ function SongOptionsSheet({
   song,
   onClose,
   isDeleted,
+  coverSrc,
+  onCoverError,
   onPlay,
   onElenco,
   onStartCover,
@@ -2734,6 +2748,8 @@ function SongOptionsSheet({
   song: SongItem;
   onClose: () => void;
   isDeleted: boolean;
+  coverSrc: string;
+  onCoverError?: () => void;
   onPlay: () => void;
   onElenco?: () => void;
   onStartCover?: () => void;
@@ -4455,18 +4471,8 @@ function SongOptionsSheet({
             <div className="flex items-start gap-4">
               <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
                 <img
-                  src={(() => {
-                    const sid = String(song.id || '').trim();
-                    const broken = Boolean(brokenCovers[sid]);
-                    const raw = (song.coverUrl || '').toString().trim();
-                    if (!raw || broken) return makeFallbackCoverSvgUrl(song.title || sid);
-                    return raw;
-                  })()}
-                  onError={() => {
-                    const sid = String(song.id || '').trim();
-                    if (!sid) return;
-                    setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
-                  }}
+                  src={coverSrc}
+                  onError={() => onCoverError?.()}
                   alt="Cover"
                   className="w-full h-full object-cover"
                 />
