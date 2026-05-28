@@ -2813,6 +2813,14 @@ function SongOptionsSheet({
   const trimPointerIdRef = useRef<number | null>(null);
   const trimRootRef = useRef<HTMLDivElement | null>(null);
   const trimDragOffsetSecRef = useRef<number>(0);
+  const trimAudioUrl = (() => {
+    const id = (song?.id || '').toString().trim();
+    const raw = (song?.audioUrl || '').toString().trim();
+    const proxy = id ? `/api/share/song/audio?id=${encodeURIComponent(id)}` : '';
+    if (raw.startsWith('/api/share/song/audio')) return raw;
+    if (proxy) return proxy;
+    return raw;
+  })();
   const [showVoiceClone, setShowVoiceClone] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
   const [voiceCloneProgress, setVoiceCloneProgress] = useState<string>('');
@@ -2996,7 +3004,7 @@ function SongOptionsSheet({
       a.removeEventListener('loadedmetadata', onMeta);
       a.removeEventListener('durationchange', onMeta);
     };
-  }, [showTrim, song?.audioUrl]);
+  }, [showTrim, trimAudioUrl]);
   useEffect(() => {
     if (!showTrim) return;
     const a = trimAudioRef.current;
@@ -3059,7 +3067,7 @@ function SongOptionsSheet({
   }, [showTrim, trimPeaks, trimWaveSize.w, trimWaveSize.h]);
   useEffect(() => {
     if (!showTrim) return;
-    const url = (song.audioUrl || '').toString().trim();
+    const url = (trimAudioUrl || '').toString().trim();
     const dur = Number(trimDurationSec || 0);
     const w = Number(trimWaveSize.w || 0);
     if (!url || !(dur > 0) || !(w > 0)) return;
@@ -3115,7 +3123,7 @@ function SongOptionsSheet({
         ac.abort();
       } catch {}
     };
-  }, [showTrim, song?.audioUrl, trimDurationSec, trimWaveSize.w]);
+  }, [showTrim, trimAudioUrl, trimDurationSec, trimWaveSize.w]);
   useEffect(() => {
     if (!showLicense) return;
     if (licensePdfUrl) URL.revokeObjectURL(licensePdfUrl);
@@ -3581,7 +3589,7 @@ function SongOptionsSheet({
   };
 
   const makeTrimWavBlob = async () => {
-    const url = (song.audioUrl || '').toString().trim();
+    const url = (trimAudioUrl || '').toString().trim();
     if (!url) throw new Error('No hay audio para recortar.');
     const start = clamp(Number(trimStartSec || 0), 0, Number.isFinite(trimDurationSec) && trimDurationSec > 0 ? trimDurationSec : 1e9);
     const end = clamp(Number(trimEndSec || 0), 0, Number.isFinite(trimDurationSec) && trimDurationSec > 0 ? trimDurationSec : 1e9);
@@ -5381,7 +5389,7 @@ function SongOptionsSheet({
             </div>
 
             <div className="p-4 md:p-5 flex-1 overflow-y-auto overscroll-contain">
-              <audio ref={trimAudioRef} src={(song.audioUrl || '').toString()} preload="metadata" crossOrigin="anonymous" className="hidden" />
+              <audio ref={trimAudioRef} src={(trimAudioUrl || '').toString()} preload="metadata" className="hidden" />
               {trimError ? (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200 mb-4">{trimError}</div>
               ) : null}
