@@ -429,7 +429,9 @@ function parseProviderCreditsValue(raw: any) {
 
 function normalizeSunoBaseUrl(rawBase: string) {
   let base = (rawBase || "").toString().trim();
+  base = base.replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
   if (!base) return "";
+  if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
   while (base.endsWith("/")) base = base.slice(0, -1);
   if (base.toLowerCase().endsWith("/api/v1")) base = base.slice(0, -"/api/v1".length);
   while (base.endsWith("/")) base = base.slice(0, -1);
@@ -440,7 +442,9 @@ async function providerFetchJson(path: string, init?: RequestInit) {
   const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
   const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
 
-  const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+  const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+  const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+  if (!apiKey) throw new Error("Falta SUNO_API_KEY en variables de entorno");
 
   const headers = new Headers(init?.headers);
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
@@ -766,7 +770,9 @@ const sunoHandler = (() => {
     const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
     const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
 
-    const apiKey = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+    const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+    const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+    if (!apiKey) throw new Error("Falta SUNO_API_KEY en variables de entorno");
 
     const headers = new Headers(init?.headers);
     if (!headers.has("content-type")) headers.set("content-type", "application/json");
@@ -782,6 +788,40 @@ const sunoHandler = (() => {
       data = null;
     }
     return { res, data, text };
+  }
+
+  async function sunoFetchJsonWithRetry(path: string, init?: RequestInit) {
+    const maxAttempts = 3;
+    let last: any = null;
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const r = await sunoFetchJson(path, init);
+        last = r;
+        const status = Number(r?.res?.status || 0);
+        const msg = sunoErrorMessage(r?.data, r?.text || "").toLowerCase();
+        const shouldRetry =
+          (status >= 500 && status <= 599) ||
+          msg.includes("internal error") ||
+          msg.includes("try again later") ||
+          msg.includes("please try again later");
+        if (!shouldRetry) return r;
+      } catch (e) {
+        last = e;
+        const m = (e instanceof Error ? e.message : String(e)).toLowerCase();
+        const shouldRetry =
+          m.includes("fetch") ||
+          m.includes("timeout") ||
+          m.includes("econnreset") ||
+          m.includes("etimedout") ||
+          m.includes("socket") ||
+          m.includes("network");
+        if (!shouldRetry || i === maxAttempts - 1) throw e;
+      }
+      const delayMs = 350 * (i + 1) * (i + 1);
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+    if (last && typeof last?.res?.status === "number") return last;
+    throw last instanceof Error ? last : new Error("No pude contactar al proveedor");
   }
 
   function parseJsonBody(req: any) {
@@ -931,10 +971,18 @@ const sunoHandler = (() => {
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/generate", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const paths = ["/api/v1/generate", "/api/v1/suno/generate"];
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJsonWithRetry(p, { method: "POST", body: JSON.stringify(body) });
+        last = r;
+        if (r?.res?.status !== 404) break;
+      }
+      const { res: r, data, text } = last || {};
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error creando música", detail: "No pude contactar al proveedor" });
+      }
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);

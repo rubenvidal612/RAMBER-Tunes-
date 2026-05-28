@@ -87,6 +87,12 @@ function toUserFriendlySunoError(out: any, fallback: string) {
     lower.includes('dmca') ||
     lower.includes('rights') ||
     lower.includes('infring');
+  const looksLikeTemporaryProviderIssue =
+    lower.includes('internal error') ||
+    lower.includes('try again later') ||
+    lower.includes('please try again later') ||
+    lower.includes('temporarily') ||
+    lower.includes('rate limit');
   if (looksLikeVoiceExpired) {
     return (
       'La voz seleccionada expiró.\n\n' +
@@ -95,6 +101,12 @@ function toUserFriendlySunoError(out: any, fallback: string) {
   }
   if (looksLikeCopyright) {
     return 'Error por Copyright.\n\nEse audio parece ser de una canción protegida. Sube un audio original o usa otro audio.';
+  }
+  if (looksLikeTemporaryProviderIssue) {
+    return (
+      'Ahorita el servidor que crea la música está fallando o saturado.\n\n' +
+      'Solución: inténtalo otra vez en 1–2 minutos. Si sigue igual, cambia un poco el texto o prueba con otro modelo.'
+    );
   }
   return raw || fallback;
 }
