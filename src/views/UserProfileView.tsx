@@ -121,7 +121,7 @@ export function UserProfileView({
       if (navigator.share) {
         await navigator.share({
           title: `Perfil de ${userData.full_name}`,
-          text: `Mira el perfil de ${userData.full_name} en RAMBER Tunes`,
+          text: `Mira el perfil de ${userData.full_name} en Luciana AI`,
           url,
         });
         return;

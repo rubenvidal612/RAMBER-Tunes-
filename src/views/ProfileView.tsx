@@ -249,8 +249,8 @@ export function ProfileView({
     try {
       if (navigator.share && url) {
         await navigator.share({
-          title: 'RAMBER Tunes',
-          text: 'Mira mi perfil en RAMBER Tunes',
+          title: 'Luciana AI',
+          text: 'Mira mi perfil en Luciana AI',
           url,
         });
         return;
@@ -273,7 +273,7 @@ export function ProfileView({
     }
     try {
       if (navigator.share) {
-        await navigator.share({ title: `RAMBER Tunes - ${title}`, url });
+        await navigator.share({ title: `Luciana AI - ${title}`, url });
         return;
       }
     } catch {

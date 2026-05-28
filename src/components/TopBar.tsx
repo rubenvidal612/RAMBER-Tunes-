@@ -17,9 +17,9 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
         <span className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
           {/* Logo mock replacing SVG */}
           <div className="w-9 h-9 rounded-lg bg-yellow-400 text-black flex items-center justify-center font-light text-2xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
-            R
+            L
           </div>
-          <span className="text-base font-bold text-slate-100">RAMBER Tunes</span>
+          <span className="text-base font-bold text-slate-100">Luciana AI</span>
         </span>
       </div>
       

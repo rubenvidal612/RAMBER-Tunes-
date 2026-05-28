@@ -24,7 +24,7 @@ const isDev = typeof window !== 'undefined' && (window.location.hostname === 'lo
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
   { date: '2026-05-04', title: 'Mejoras en Biblioteca', detail: 'Carpetas, filtros por fecha y mejoras de scroll en PC.' },
-  { date: '2026-05-04', title: 'Compartir canciones', detail: 'Los links compartidos ahora abren un reproductor dentro de RAMBER Tunes.' },
+  { date: '2026-05-04', title: 'Compartir canciones', detail: 'Los links compartidos ahora abren un reproductor dentro de Luciana AI.' },
 ];
 
 type BeforeInstallPromptEvent = Event & {
@@ -69,7 +69,7 @@ function InicioLanding({
         </g>
         <g transform="translate(140,305)" opacity="0.95">
           <rect x="0" y="-90" width="520" height="190" rx="26" fill="rgba(0,0,0,0.35)" stroke="rgba(255,255,255,0.14)"/>
-          <text x="26" y="-34" fill="rgba(255,255,255,0.92)" font-family="ui-sans-serif,system-ui" font-size="28" font-weight="800">RAMBER Tunes</text>
+          <text x="26" y="-34" fill="rgba(255,255,255,0.92)" font-family="ui-sans-serif,system-ui" font-size="28" font-weight="800">Luciana AI</text>
           <text x="26" y="6" fill="rgba(226,232,240,0.9)" font-family="ui-sans-serif,system-ui" font-size="16">Crea canciones con IA en segundos</text>
           <g transform="translate(26,48)">
             <rect width="468" height="10" rx="6" fill="rgba(255,255,255,0.10)"/>
@@ -169,7 +169,7 @@ function InicioLanding({
           <div className="relative">
             <div className="absolute -inset-6 bg-gradient-to-br from-cyan-400/10 via-indigo-500/10 to-purple-500/10 blur-2xl rounded-[48px]" />
             <div className="relative bg-white/5 border border-white/10 rounded-[32px] overflow-hidden shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
-              <img src={heroImage} alt="RAMBER Tunes" className="w-full h-auto block" />
+              <img src={heroImage} alt="Luciana AI" className="w-full h-auto block" />
             </div>
           </div>
         </div>
@@ -2414,9 +2414,9 @@ export default function App() {
     return (
       <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-center px-6 text-center bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
         <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
-          R
+          L
         </div>
-        <div className="mt-4 text-xl font-extrabold">RAMBER Tunes</div>
+        <div className="mt-4 text-xl font-extrabold">Luciana AI</div>
         {showLoading ? (
           <div className="mt-2 text-sm text-slate-300">Cargando…</div>
         ) : (
@@ -2515,10 +2515,10 @@ export default function App() {
               ✕
             </button>
             <div className="shrink-0 w-11 h-11 rounded-xl bg-yellow-400 border border-yellow-300/40 flex items-center justify-center font-light text-3xl text-black shadow-[0_0_18px_rgba(250,204,21,0.35)]">
-              R
+              L
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-white leading-tight">RAMBER Tunes</div>
+              <div className="text-sm font-bold text-white leading-tight">Luciana AI</div>
               <div className="text-xs text-slate-200/90 leading-tight">Descarga tu App en tu Celular</div>
             </div>
             <button
@@ -2707,7 +2707,7 @@ export default function App() {
                     const shareUrl = `${window.location.origin}/share/${encodeURIComponent(id)}`;
                     try {
                       if (navigator.share) {
-                        await navigator.share({ title: `RAMBER Tunes - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
+                        await navigator.share({ title: `Luciana AI - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
                         return;
                       }
                     } catch {
@@ -2747,7 +2747,7 @@ export default function App() {
 
               <div className="min-w-0 flex-1 text-center">
                 <div className="text-white font-extrabold truncate">{(activeSong.title || 'Canción').toString()}</div>
-                <div className="text-[11px] text-slate-300 truncate">{((activeSong as any)?.authorName || 'RAMBER Tunes').toString()}</div>
+                <div className="text-[11px] text-slate-300 truncate">{((activeSong as any)?.authorName || 'Luciana AI').toString()}</div>
               </div>
 
               <button
@@ -3581,7 +3581,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
     const url = window.location.href;
     try {
       if (navigator.share) {
-        await navigator.share({ title: data?.title ? `RAMBER Tunes - ${data.title}` : 'RAMBER Tunes', url });
+        await navigator.share({ title: data?.title ? `Luciana AI - ${data.title}` : 'Luciana AI', url });
         return;
       }
     } catch {
@@ -3598,9 +3598,9 @@ function SharedSongPage({ shareId }: { shareId: string }) {
     <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
       <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
         <a href="/" className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">R</div>
+          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">L</div>
           <div className="min-w-0">
-            <div className="font-extrabold leading-tight truncate">RAMBER Tunes</div>
+            <div className="font-extrabold leading-tight truncate">Luciana AI</div>
             <div className="text-[11px] text-slate-400 leading-tight truncate">Reproductor oficial</div>
           </div>
         </a>
@@ -3647,7 +3647,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-2xl md:text-3xl font-extrabold break-words">{data.title}</div>
-                <div className="mt-1 text-sm text-slate-400">Disponible en RAMBER Tunes</div>
+                <div className="mt-1 text-sm text-slate-400">Disponible en Luciana AI</div>
 
                 <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
                   <button
@@ -3669,7 +3669,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
 
       {showPlayer && data ? (
         <MiniPlayer
-          song={{ id: data.id, title: data.title, description: 'Disponible en RAMBER Tunes', audioUrl: data.audioUrl } as any}
+          song={{ id: data.id, title: data.title, description: 'Disponible en Luciana AI', audioUrl: data.audioUrl } as any}
           isPlaying={isPlaying}
           onPlayPause={() => togglePlay().catch(() => {})}
           onClose={() => {
@@ -3897,7 +3897,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     const url = window.location.href;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'RAMBER Tunes - Perfil', url });
+        await navigator.share({ title: 'Luciana AI - Perfil', url });
         return;
       }
     } catch {
@@ -3916,7 +3916,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     if (!url) return;
     try {
       if (navigator.share) {
-        await navigator.share({ title: `RAMBER Tunes - ${title}`, url });
+        await navigator.share({ title: `Luciana AI - ${title}`, url });
         return;
       }
     } catch {
@@ -4012,9 +4012,9 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     <div className="min-h-[100dvh] w-full text-white flex flex-col bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
       <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
         <a href="/" className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">R</div>
+          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">L</div>
           <div className="min-w-0">
-            <div className="font-extrabold leading-tight truncate">RAMBER Tunes</div>
+            <div className="font-extrabold leading-tight truncate">Luciana AI</div>
             <div className="text-[11px] text-slate-400 leading-tight truncate">Perfil público</div>
           </div>
         </a>
@@ -4137,7 +4137,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
                           <button onClick={() => playSong(s).catch(() => {})} className="text-left w-full">
                             <div className="text-white font-extrabold truncate">{s.title || 'Pista sin título'}</div>
                           </button>
-                          <div className="text-slate-400 text-xs truncate">RAMBER Tunes</div>
+                          <div className="text-slate-400 text-xs truncate">Luciana AI</div>
                         </div>
                         <button
                           type="button"
@@ -4169,7 +4169,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
 
       {showPlayer && currentSong ? (
         <MiniPlayer
-          song={{ id: currentSong.id, title: currentSong.title, description: 'Disponible en RAMBER Tunes', audioUrl: currentSong.audioUrl, coverUrl: currentSong.coverUrl } as any}
+          song={{ id: currentSong.id, title: currentSong.title, description: 'Disponible en Luciana AI', audioUrl: currentSong.audioUrl, coverUrl: currentSong.coverUrl } as any}
           isPlaying={isPlaying}
           onPlayPause={() => togglePlayPause().catch(() => {})}
           onClose={() => {

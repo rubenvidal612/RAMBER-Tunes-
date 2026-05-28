@@ -1032,7 +1032,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
     try {
       if ((navigator as any).share) {
-        await (navigator as any).share({ title: 'RAMBER Tunes - Video', url: videoUrl });
+        await (navigator as any).share({ title: 'Luciana AI - Video', url: videoUrl });
         return;
       }
     } catch {
@@ -3127,7 +3127,7 @@ function SongOptionsSheet({
       doc.setTextColor(accent.r, accent.g, accent.b);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
-      doc.text('RAMBER Tunes', margin + 14, margin + 32);
+      doc.text('Luciana AI', margin + 14, margin + 32);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(muted.r, muted.g, muted.b);
@@ -3137,7 +3137,7 @@ function SongOptionsSheet({
       doc.setTextColor(accent.r, accent.g, accent.b);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13.5);
-      doc.text('CERTIFICADO DE LICENCIA COMERCIAL - RAMBER TUNES AI MUSIC', margin + 14, y);
+      doc.text('CERTIFICADO DE LICENCIA COMERCIAL - LUCIANA AI', margin + 14, y);
 
       y += 12;
       doc.setDrawColor(border.r, border.g, border.b);
@@ -3168,16 +3168,16 @@ function SongOptionsSheet({
       y += 6;
       const paragraphs = [
         'I. CONCESIÓN DE LICENCIA',
-        'RAMBER Tunes AI Music, en su calidad de Licenciante, otorga al Licenciatario arriba mencionado una licencia comercial mundial, perpetua, no exclusiva e intransferible para utilizar el Contenido Generado (Audio) descrito en este documento. Esta licencia permite la reproducción, distribución, streaming, sincronización y monetización de la obra en todas las plataformas digitales y medios físicos.',
+        'Luciana AI, en su calidad de Licenciante, otorga al Licenciatario arriba mencionado una licencia comercial mundial, perpetua, no exclusiva e intransferible para utilizar el Contenido Generado (Audio) descrito en este documento. Esta licencia permite la reproducción, distribución, streaming, sincronización y monetización de la obra en todas las plataformas digitales y medios físicos.',
         'II. PROPIEDAD Y DERECHOS DE AUTOR',
         'Letras: El Licenciatario conserva el 100% de la propiedad y los derechos de autor de cualquier letra original proporcionada para la creación de la obra.',
-        'Composición de Audio: La composición musical y el archivo de audio generado se otorgan bajo licencia comercial ilimitada, respaldada por la suscripción profesional de RAMBER Tunes ante sus proveedores tecnológicos (Suno AI).',
+        'Composición de Audio: La composición musical y el archivo de audio generado se otorgan bajo licencia comercial ilimitada, respaldada por la suscripción profesional de Luciana AI ante sus proveedores tecnológicos (Suno AI).',
         'III. VALIDEZ Y PERMANENCIA',
-        'Esta licencia es legalmente vinculante siempre que el Licenciatario haya mantenido una suscripción activa (Plan Creador, Pro o similar) en la plataforma RAMBER Tunes al momento de la creación de la obra. Los derechos comerciales aquí otorgados son permanentes y no expiran aunque el usuario decida cancelar su suscripción en el futuro.',
+        'Esta licencia es legalmente vinculante siempre que el Licenciatario haya mantenido una suscripción activa (Plan Creador, Pro o similar) en la plataforma Luciana AI al momento de la creación de la obra. Los derechos comerciales aquí otorgados son permanentes y no expiran aunque el usuario decida cancelar su suscripción en el futuro.',
         'IV. LIMITACIONES',
-        'El Licenciatario reconoce que el contenido es generado por Inteligencia Artificial y que RAMBER Tunes no garantiza la exclusividad absoluta de las secuencias melódicas ante registros de propiedad intelectual de terceros, aunque se otorga el derecho de uso comercial total sobre el archivo específico generado.',
+        'El Licenciatario reconoce que el contenido es generado por Inteligencia Artificial y que Luciana AI no garantiza la exclusividad absoluta de las secuencias melódicas ante registros de propiedad intelectual de terceros, aunque se otorga el derecho de uso comercial total sobre el archivo específico generado.',
         'V. FIRMA DIGITAL',
-        'Este documento ha sido generado electrónicamente y es válido sin firma manuscrita. Los registros de esta transacción y la validez de la membresía están archivados en los sistemas digitales de RAMBER Tunes.',
+        'Este documento ha sido generado electrónicamente y es válido sin firma manuscrita. Los registros de esta transacción y la validez de la membresía están archivados en los sistemas digitales de Luciana AI.',
       ];
 
       const writePara = (text: string, bold?: boolean) => {
@@ -3245,10 +3245,10 @@ function SongOptionsSheet({
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(muted.r, muted.g, muted.b);
-      doc.text('Documento generado electrónicamente por RAMBER Tunes AI Music', margin + 14, y + rowH + 18);
+      doc.text('Documento generado electrónicamente por Luciana AI', margin + 14, y + rowH + 18);
       doc.text(`Fecha de emisión: ${dateStr}`, margin + 14, y + rowH + 32);
 
-      const file = `Licencia_RAMBER_${sanitizeFileName(songTitle) || 'Cancion'}.pdf`;
+      const file = `Licencia_LucianaAI_${sanitizeFileName(songTitle) || 'Cancion'}.pdf`;
       const blob = doc.output('blob');
       const url = URL.createObjectURL(blob);
       setLicensePdfName(file);
@@ -3272,7 +3272,7 @@ function SongOptionsSheet({
     try {
       if (navigator.share && shareUrl) {
         await navigator.share({
-          title: `RAMBER Tunes - ${title}`,
+          title: `Luciana AI - ${title}`,
           url: shareUrl,
         });
         return;
@@ -3532,7 +3532,7 @@ function SongOptionsSheet({
         typeof (navigator as any).canShare === 'function' ? (navigator as any).canShare({ files: [file] }) : Boolean((navigator as any).share);
       if ((navigator as any).share && can) {
         await (navigator as any).share({
-          title: `RAMBER Tunes - ${base} (recorte)`,
+          title: `Luciana AI - ${base} (recorte)`,
           files: [file],
         });
         return;
@@ -3703,7 +3703,7 @@ function SongOptionsSheet({
         const derivedHint =
           a.startsWith('stem_') || /\s-\s(voz|instrumental)/i.test((song.title || '').toString())
             ? 'Parece que esta es una pista derivada (Voz/Instrumental). Abre la canción original y ahí sí podrás descargar WAV.'
-            : 'WAV solo está disponible para canciones generadas dentro de RAMBER Tunes.';
+            : 'WAV solo está disponible para canciones generadas dentro de Luciana AI.';
         alert(`Este audio no se puede convertir a WAV aquí.\n\n${derivedHint}`);
         return;
       }
@@ -3717,7 +3717,7 @@ function SongOptionsSheet({
       if (!start.ok) {
         const msg = (startedOut?.detail || startedOut?.error || 'No pude iniciar la conversión a WAV.').toString();
         if (msg.toLowerCase().includes('record does not exist')) {
-          alert('Este audio no se puede convertir a WAV (el proveedor no encontró el registro). Prueba con una canción generada dentro de RAMBER Tunes o una canción más reciente.');
+          alert('Este audio no se puede convertir a WAV (el proveedor no encontró el registro). Prueba con una canción generada dentro de Luciana AI o una canción más reciente.');
         } else {
           alert(msg);
         }
@@ -5582,10 +5582,10 @@ function SongOptionsSheet({
                 <>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                     <div className="text-slate-200 font-extrabold">Vista previa del certificado</div>
-                    <div className="mt-1 text-[11px] text-slate-500 break-words">{licensePdfName || 'Licencia_RAMBER.pdf'}</div>
+                    <div className="mt-1 text-[11px] text-slate-500 break-words">{licensePdfName || 'Licencia_LucianaAI.pdf'}</div>
                   </div>
                   <div className="mt-4 bg-black/20 border border-white/10 rounded-2xl overflow-hidden">
-                    <iframe title="Certificado RAMBER Tunes" src={licensePdfUrl} className="w-full h-[62vh] bg-black" />
+                    <iframe title="Certificado Luciana AI" src={licensePdfUrl} className="w-full h-[62vh] bg-black" />
                   </div>
                   <div className="mt-3 text-[11px] text-slate-500">
                     Si no ves la vista previa, usa el botón de descargar.
@@ -5753,7 +5753,7 @@ function SongOptionsSheet({
                 className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
               />
               <div className="text-slate-400 text-xs">
-                {mp4WatermarkDisabled ? 'Marca de agua: sin RAMBER Tunes (Plan Productor).' : 'Marca de agua: RAMBER Tunes.'}
+                {mp4WatermarkDisabled ? 'Marca de agua: sin Luciana AI (Plan Productor).' : 'Marca de agua: Luciana AI.'}
               </div>
               <button
                 onClick={() => {
@@ -5801,7 +5801,7 @@ function SongOptionsSheet({
                 Guardar portada
               </button>
               <div className="text-[11px] text-slate-500">
-                El link debe ser público. La app guardará la imagen permanente en RAMBER Tunes (bucket covers).
+                El link debe ser público. La app guardará la imagen permanente en Luciana AI (bucket covers).
               </div>
             </div>
           </div>

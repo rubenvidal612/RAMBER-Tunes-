@@ -119,7 +119,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               </div>
               <div className="flex items-start gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                <span>Video MP4 con autor (opcional)<br/>Marca de agua: RAMBER Tunes</span>
+                <span>Video MP4 con autor (opcional)<br/>Marca de agua: Luciana AI</span>
               </div>
             </div>
 
@@ -163,7 +163,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               </div>
               <div className="flex items-start gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-                <span>Video MP4 con autor (opcional)<br/>Sin marca de agua RAMBER Tunes</span>
+                <span>Video MP4 con autor (opcional)<br/>Sin marca de agua Luciana AI</span>
               </div>
             </div>
 

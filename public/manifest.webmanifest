@@ -1,7 +1,7 @@
 {
-  "name": "Ramber Tunes",
-  "short_name": "Ramber",
-  "description": "Ramber Tunes - creador de canciones con IA",
+  "name": "Luciana AI",
+  "short_name": "Luciana",
+  "description": "Luciana AI - creador de canciones con IA",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

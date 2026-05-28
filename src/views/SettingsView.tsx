@@ -1273,7 +1273,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
         <div className="glass-card rounded-2xl overflow-hidden">
           <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors border-b border-white/5">
             <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
-              <Share className="w-5 h-5 text-slate-400" /> Compartir RAMBER Tunes
+              <Share className="w-5 h-5 text-slate-400" /> Compartir Luciana AI
             </div>
             <ChevronRight className="w-5 h-5 text-slate-500" />
           </button>
