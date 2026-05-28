@@ -1378,8 +1378,11 @@ export default function App() {
       window.matchMedia?.('(display-mode: standalone)')?.matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
     const isMobile = window.matchMedia?.('(max-width: 768px)')?.matches ?? false;
+    const ua = (navigator.userAgent || '').toString();
+    const isIos = /iphone|ipad|ipod/i.test(ua);
+    const isInApp = /(wv|fbav|fban|instagram|whatsapp)/i.test(ua);
 
-    if (isMobile && !isStandalone) {
+    if (isMobile && !isStandalone && (isIos || isInApp)) {
       setShowInstallBanner(true);
     }
 
@@ -1406,16 +1409,40 @@ export default function App() {
 
   const onInstallClick = async () => {
     if (installPromptEvent) {
-      await installPromptEvent.prompt();
-      const choice = await installPromptEvent.userChoice;
-      setInstallPromptEvent(null);
-      if (choice.outcome === 'accepted') {
-        setShowInstallBanner(false);
+      try {
+        await installPromptEvent.prompt();
+        const choice = await installPromptEvent.userChoice;
+        setInstallPromptEvent(null);
+        if (choice.outcome === 'accepted') {
+          setShowInstallBanner(false);
+          return;
+        }
+        showToast('Si no se instaló, abre el menú ⋮ del navegador y toca “Instalar app”.');
+        return;
+      } catch (e: any) {
+        const msg = (e instanceof Error ? e.message : String(e || '')).toString().trim();
+        setInstallPromptEvent(null);
+        showToast(msg ? `No pude abrir la instalación.\n\nDetalle: ${msg}` : 'No pude abrir la instalación. Abre el menú ⋮ del navegador y toca “Instalar app”.');
+        return;
       }
-      return;
     }
-    // On iOS, native prompt is not available. User says instructions are already on page.
-    setShowInstallBanner(false);
+
+    try {
+      const ua = (navigator.userAgent || '').toString();
+      const isIos = /iphone|ipad|ipod/i.test(ua);
+      if (isIos) {
+        setShowIosHelp(true);
+        return;
+      }
+      const isInApp = /(wv|fbav|fban|instagram|whatsapp)/i.test(ua);
+      if (isInApp) {
+        showToast('Para instalar: abre esta página en Chrome (no dentro de WhatsApp/Facebook/Instagram). Luego menú ⋮ → “Instalar app”.');
+        return;
+      }
+      showToast('Si no aparece el botón de instalar: abre el menú ⋮ del navegador y toca “Instalar app” o “Agregar a pantalla principal”.');
+    } catch {
+      showToast('Si no aparece el botón de instalar: abre el menú ⋮ del navegador y toca “Instalar app”.');
+    }
   };
 
   const addVibe = async (vibe: VibeItem) => {
@@ -2489,6 +2516,33 @@ export default function App() {
           </div>
         </div>
       ) : null}
+      {showIosHelp ? (
+        <div className="absolute inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5">
+          <div className="w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+            <div className="text-white font-extrabold text-lg">Instalar Luciana AI</div>
+            <div className="mt-2 text-sm text-slate-300">
+              En iPhone/iPad no sale el botón automático. Instálala así:
+              <div className="mt-3 space-y-2 text-slate-200">
+                <div>1) Abre esta página en Safari.</div>
+                <div>2) Toca “Compartir” (cuadro con flecha).</div>
+                <div>3) Toca “Agregar a pantalla de inicio”.</div>
+              </div>
+              <div className="mt-4 text-[12px] text-slate-400">
+                Si estás dentro de WhatsApp/Facebook/Instagram, primero toca “Abrir en navegador”.
+              </div>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowIosHelp(false)}
+                className="flex-1 bg-white text-black h-[44px] rounded-full font-extrabold text-sm"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
@@ -2525,7 +2579,7 @@ export default function App() {
               onClick={onInstallClick}
               className="shrink-0 bg-white text-black px-4 py-2 rounded-full text-xs font-extrabold"
             >
-              DESCARGAR
+              {installPromptEvent ? 'INSTALAR' : 'CÓMO INSTALAR'}
             </button>
           </div>
         </div>
