@@ -1,7 +1,7 @@
 {
-  "name": "LucIAna IA",
+  "name": "LucIAna",
   "short_name": "LucIAna",
-  "description": "LucIAna IA - creador de canciones con IA",
+  "description": "LucIAna - creador de canciones con IA",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

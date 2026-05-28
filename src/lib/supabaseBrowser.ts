@@ -11,7 +11,7 @@ export async function ensureAnonSession() {
 
   const { data: sessionData } = await supabaseBrowser.auth.getSession();
   if (sessionData?.session) return { ok: true as const, session: sessionData.session };
-  return { ok: false as const, error: "Necesitas iniciar sesión con Google para usar LucIAna IA." };
+  return { ok: false as const, error: "Necesitas iniciar sesión con Google para usar LucIAna." };
 }
 
 export async function getAccessToken() {
@@ -23,7 +23,7 @@ export async function getAccessToken() {
       await supabaseBrowser?.auth?.signOut?.();
     } catch {
     }
-    return { ok: false as const, error: "Necesitas entrar con una cuenta Gmail (Google) para usar LucIAna IA." };
+    return { ok: false as const, error: "Necesitas entrar con una cuenta Gmail (Google) para usar LucIAna." };
   }
   return { ok: true as const, token: s.session.access_token };
 }
