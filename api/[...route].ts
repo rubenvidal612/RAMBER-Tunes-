@@ -1663,7 +1663,7 @@ const sunoHandler = (() => {
       if (hasProductor) {
         if (domainName) body.domainName = domainName.slice(0, 50);
       } else {
-        body.domainName = "RAMBER Tunes";
+        body.domainName = "LucIAna | Music";
       }
 
       const paths = ["/api/v1/mp4/generate", "/api/v1/suno/mp4/generate", "/api/v1/mp4", "/api/v1/suno/mp4"];
@@ -2631,7 +2631,7 @@ const sunoHandler = (() => {
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
     const voiceName = firstString(payload, ["voiceName", "voice_name"]) || "Mi Voz";
-    const description = firstString(payload, ["description"]) || "Voz clonada desde RAMBER Tunes";
+    const description = firstString(payload, ["description"]) || "Voz clonada desde LucIAna | Music";
     const profileImageUrl = firstString(payload, ["profileImageUrl", "profile_image_url"]);
     const voiceProfileName = firstString(payload, ["voiceProfileName", "voice_profile_name"]) || voiceName;
     const category = firstString(payload, ["category"]) || "personal";
@@ -4736,7 +4736,7 @@ const mercadoPagoHandler = (() => {
         },
         body: JSON.stringify({
           transaction_amount: commission,
-          description: "Comisión Afiliados - RAMBER Tunes",
+          description: "Comisión Afiliados - LucIAna | Music",
           payment_method_id: "account_money",
           operation_type: "money_transfer",
           external_reference: `ramber_aff:${paymentId}`,
