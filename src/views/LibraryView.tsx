@@ -1056,7 +1056,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
     try {
       if ((navigator as any).share) {
-        await (navigator as any).share({ title: 'LucIAna - Video', url: videoUrl });
+        await (navigator as any).share({ title: 'LucIAna | Music - Video', url: videoUrl });
         return;
       }
     } catch {
@@ -3391,7 +3391,7 @@ function SongOptionsSheet({
     try {
       if (navigator.share && shareUrl) {
         await navigator.share({
-          title: `LucIAna - ${title}`,
+          title: `LucIAna | Music - ${title}`,
           url: shareUrl,
         });
         return;
@@ -3651,7 +3651,7 @@ function SongOptionsSheet({
         typeof (navigator as any).canShare === 'function' ? (navigator as any).canShare({ files: [file] }) : Boolean((navigator as any).share);
       if ((navigator as any).share && can) {
         await (navigator as any).share({
-          title: `LucIAna - ${base} (recorte)`,
+          title: `LucIAna | Music - ${base} (recorte)`,
           files: [file],
         });
         return;

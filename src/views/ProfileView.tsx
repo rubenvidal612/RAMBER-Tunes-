@@ -249,8 +249,8 @@ export function ProfileView({
     try {
       if (navigator.share && url) {
         await navigator.share({
-          title: 'LucIAna',
-          text: 'Mira mi perfil en LucIAna',
+          title: 'LucIAna | Music',
+          text: 'Mira mi perfil en LucIAna | Music',
           url,
         });
         return;
@@ -273,7 +273,7 @@ export function ProfileView({
     }
     try {
       if (navigator.share) {
-        await navigator.share({ title: `LucIAna - ${title}`, url });
+        await navigator.share({ title: `LucIAna | Music - ${title}`, url });
         return;
       }
     } catch {

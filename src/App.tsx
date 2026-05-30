@@ -2786,7 +2786,7 @@ export default function App() {
                     const shareUrl = `${window.location.origin}/share/${encodeURIComponent(id)}`;
                     try {
                       if (navigator.share) {
-                        await navigator.share({ title: `LucIAna - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
+                        await navigator.share({ title: `LucIAna | Music - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
                         return;
                       }
                     } catch {
@@ -3660,7 +3660,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
     const url = window.location.href;
     try {
       if (navigator.share) {
-        await navigator.share({ title: data?.title ? `LucIAna - ${data.title}` : 'LucIAna', url });
+        await navigator.share({ title: data?.title ? `LucIAna | Music - ${data.title}` : 'LucIAna | Music', url });
         return;
       }
     } catch {
@@ -3726,7 +3726,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-2xl md:text-3xl font-extrabold break-words">{data.title}</div>
-                <div className="mt-1 text-sm text-slate-400">Disponible en LucIAna</div>
+                <div className="mt-1 text-sm text-slate-400">Disponible en LucIAna | Music</div>
 
                 <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
                   <button
@@ -3748,7 +3748,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
 
       {showPlayer && data ? (
         <MiniPlayer
-          song={{ id: data.id, title: data.title, description: 'Disponible en LucIAna', audioUrl: data.audioUrl } as any}
+          song={{ id: data.id, title: data.title, description: 'Disponible en LucIAna | Music', audioUrl: data.audioUrl } as any}
           isPlaying={isPlaying}
           onPlayPause={() => togglePlay().catch(() => {})}
           onClose={() => {
@@ -3976,7 +3976,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     const url = window.location.href;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'LucIAna - Perfil', url });
+        await navigator.share({ title: 'LucIAna | Music - Perfil', url });
         return;
       }
     } catch {
@@ -3995,7 +3995,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     if (!url) return;
     try {
       if (navigator.share) {
-        await navigator.share({ title: `LucIAna - ${title}`, url });
+        await navigator.share({ title: `LucIAna | Music - ${title}`, url });
         return;
       }
     } catch {
@@ -4248,7 +4248,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
 
       {showPlayer && currentSong ? (
         <MiniPlayer
-          song={{ id: currentSong.id, title: currentSong.title, description: 'Disponible en LucIAna', audioUrl: currentSong.audioUrl, coverUrl: currentSong.coverUrl } as any}
+          song={{ id: currentSong.id, title: currentSong.title, description: 'Disponible en LucIAna | Music', audioUrl: currentSong.audioUrl, coverUrl: currentSong.coverUrl } as any}
           isPlaying={isPlaying}
           onPlayPause={() => togglePlayPause().catch(() => {})}
           onClose={() => {
