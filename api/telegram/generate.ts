@@ -1,5 +1,99 @@
 import { createClient } from "@supabase/supabase-js";
-import { adjustUserCredits, consumeUserCredits, CREDIT_COSTS } from "../../src/lib/credits";
+
+const CREDIT_COSTS = {
+  generate_music: 12,
+  extend_music: 12,
+  upload_and_cover: 12,
+  upload_and_extend: 12,
+  add_instrumental: 12,
+  add_vocals: 12,
+  sounds: 2.5,
+  separate_vocal: 10,
+  split_stem: 50,
+  music_video: 2,
+  replace_section: 5,
+  wav: 0.4,
+  lyrics: 0.4,
+  timestamped_lyrics: 0.5,
+  boost_style: 0.4,
+  midi: 0,
+  generate_persona: 0,
+  music_cover: 0,
+  clone_voice: 15,
+} as const;
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function creditsFromProfile(profile: any): number {
+  const p = profile ?? {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
+
+  for (const k of ["ramber_credits", "zingy_credits", "credits"]) {
+    if (!has(k)) continue;
+    const v = (p as any)[k];
+    if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Number(v));
+  }
+
+  if (has("song_balance")) {
+    const songBal = typeof p?.song_balance === "number" && Number.isFinite(p.song_balance) ? Number(p.song_balance) : 0;
+    if (songBal > 0) return Math.max(0, songBal) * CREDIT_COSTS.generate_music;
+  }
+
+  return 0;
+}
+
+function pickWritableCreditsColumn(profile: any): "zingy_credits" | "ramber_credits" | "credits" | null {
+  const p = profile ?? {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
+  if (has("ramber_credits")) return "ramber_credits";
+  if (has("zingy_credits")) return "zingy_credits";
+  if (has("credits")) return "credits";
+  return null;
+}
+
+async function adjustUserCredits(admin: any, userId: string, deltaCredits: number) {
+  const delta = Number(deltaCredits);
+  if (!Number.isFinite(delta) || !delta) return { ok: true as const };
+
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
+
+    const current = creditsFromProfile(profile);
+    const next = round2(Math.max(0, current + delta));
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
+
+    const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
+    if (!updErr) return { ok: true as const, credits: next };
+  }
+
+  return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
+}
+
+async function consumeUserCredits(admin: any, userId: string, costCredits: number) {
+  const cost = round2(Number(costCredits));
+  if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
+
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
+
+    const current = creditsFromProfile(profile);
+    if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
+
+    const next = round2(Math.max(0, current - cost));
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
+
+    const { error: updErr } = await admin.from("profiles").update({ [col]: next }).eq("id", userId);
+    if (!updErr) return { ok: true as const, credits: next };
+  }
+
+  return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
+}
 
 function send(res: any, status: number, body: any) {
   res.statusCode = status;
@@ -133,10 +227,9 @@ export default async function handler(req: any, res: any) {
   if (telegram_user_id == null || telegram_user_id === "") return send(res, 400, { error: "Falta telegram_user_id" });
 
   const secret = (process.env.TELEGRAM_BOT_SECRET || "").toString().trim();
-  if (secret) {
-    const got = String(req?.headers?.["x-telegram-bot-secret"] || "").trim();
-    if (!got || got !== secret) return send(res, 401, { error: "No autorizado" });
-  }
+  if (!secret) return send(res, 500, { error: "TELEGRAM_BOT_SECRET no configurado" });
+  const got = String(req?.headers?.["x-telegram-secret"] || "").trim();
+  if (!got || got !== secret) return send(res, 401, { error: "No autorizado" });
 
   const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
   const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
@@ -214,9 +307,7 @@ export default async function handler(req: any, res: any) {
     if (Number.isFinite(audioWeight)) body.audioWeight = clamp01(audioWeight);
   }
 
-  const cost = CREDIT_COSTS.generate_music;
-
-  const consumed = await consumeUserCredits(admin, userId, cost);
+  const consumed = await consumeUserCredits(admin, userId, CREDIT_COSTS.generate_music);
   if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
 
   try {
@@ -229,39 +320,40 @@ export default async function handler(req: any, res: any) {
     }
     const { res: r, data, text } = last || {};
     if (!r) {
-      await adjustUserCredits(admin, userId, cost);
+      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Error creando música", detail: "No pude contactar al proveedor" });
     }
 
     if (!r.ok) {
       const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-      await adjustUserCredits(admin, userId, cost);
+      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Error creando música", code: r.status, detail: String(msg).slice(0, 1200) });
     }
 
     const code = Number(data?.code);
     if (code && code !== 200) {
       const msg = sunoErrorMessage(data, "Error del proveedor");
-      await adjustUserCredits(admin, userId, cost);
+      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Error creando música", code, detail: String(msg).slice(0, 1200) });
     }
 
     const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
     if (!taskId) {
-      await adjustUserCredits(admin, userId, cost);
+      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Respuesta inválida del proveedor" });
     }
 
-    const { error: insErr } = await admin.from("suno_tasks").insert({ task_id: taskId, user_id: userId, kind: "generate", cost, consumed: true });
+    const { error: insErr } = await admin
+      .from("suno_tasks")
+      .insert({ task_id: taskId, user_id: userId, kind: "generate", cost: CREDIT_COSTS.generate_music, consumed: true });
     if (insErr) {
-      await adjustUserCredits(admin, userId, cost);
+      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 500, { error: "No pude guardar tarea", detail: insErr.message });
     }
 
     return send(res, 200, { taskId });
   } catch (e) {
-    await adjustUserCredits(admin, userId, cost);
+    await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
     return send(res, 502, { error: "Error creando música", detail: e instanceof Error ? e.message : String(e) });
   }
 }
-
