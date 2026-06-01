@@ -58,6 +58,17 @@ function send(res: any, status: number, body: any) {
 }
 
 async function readJsonBody(req: any) {
+  const direct = req?.body;
+  if (direct != null) {
+    if (typeof direct === "object") return direct;
+    if (typeof direct === "string") {
+      try {
+        return direct ? JSON.parse(direct) : null;
+      } catch {
+        return null;
+      }
+    }
+  }
   try {
     const chunks: any[] = [];
     for await (const chunk of req) chunks.push(chunk);
