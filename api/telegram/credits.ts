@@ -6,6 +6,10 @@ function send(res: any, status: number, body: any) {
   res.end(JSON.stringify(body));
 }
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 async function readJsonBody(req: any) {
   const direct = req?.body;
   if (direct != null) {
@@ -46,6 +50,73 @@ function creditsFromProfile(profile: any): number {
   return 0;
 }
 
+function isAdminEmail(email?: string | null) {
+  const e = (email || "").trim().toLowerCase();
+  if (!e) return false;
+
+  const hardcoded = ["rubenfiverr612@gmail.com", "rubenvidal612@gmail.com"];
+
+  const raw = (typeof process !== "undefined" && (process as any)?.env && ((process as any).env.ADMIN_EMAILS || (process as any).env.ADMIN_EMAIL)) || "";
+  const list = String(raw)
+    .split(/[,\s]+/g)
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (list.length === 0) {
+    return hardcoded.includes(e);
+  }
+  return list.includes(e) || hardcoded.includes(e);
+}
+
+function normalizeSunoBaseUrl(url: string) {
+  let s = (url || "").trim();
+  if (!s) return "";
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  return s.replace(/\/+$/, "");
+}
+
+function sanitizeExternalUrl(raw: string) {
+  const s = (raw || "").toString().trim();
+  return s.replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+}
+
+function sunoErrorMessage(data: any, fallback: string) {
+  const msg =
+    (typeof data?.message === "string" && data.message) ||
+    (typeof data?.error === "string" && data.error) ||
+    (typeof data?.msg === "string" && data.msg) ||
+    fallback;
+  return String(msg);
+}
+
+function parseCreditsValue(raw: any) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const cleaned = raw.trim().replaceAll("Credits", "").replaceAll("credits", "").replaceAll("CR", "").replaceAll(" ", "").replaceAll(",", ".");
+    const n = Number(cleaned);
+    if (Number.isFinite(n)) return n;
+  }
+  return NaN;
+}
+
+async function sunoFetchJson(path: string) {
+  const baseEnv = (process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "").toString().trim();
+  const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
+  const apiKey = sanitizeExternalUrl((process.env.SUNO_API_KEY || process.env.SUNO_KEY || "").toString().trim());
+  if (!apiKey) throw new Error("Falta SUNO_API_KEY en las variables de entorno.");
+
+  const fullUrl = new URL(path.replace(/^\/+/, ""), base + (base.endsWith("/") ? "" : "/")).toString();
+  const res = await fetch(fullUrl, { method: "GET", headers: { authorization: `Bearer ${apiKey}` } });
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  return { res, data, text };
+}
+
 export default async function handler(req: any, res: any) {
   if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -78,6 +149,46 @@ export default async function handler(req: any, res: any) {
   const { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
   if (profErr) return send(res, 500, { error: "Error leyendo perfil", detail: profErr.message });
 
-  const credits = creditsFromProfile(profile);
-  return send(res, 200, { credits });
+  const internalCredits = round2(creditsFromProfile(profile));
+  const email = typeof profile?.email === "string" ? profile.email : "";
+  const isAdmin = isAdminEmail(email);
+
+  if (isAdmin) {
+    try {
+      const paths = [
+        "/api/v1/generate/credit",
+        "/api/v1/get-credits",
+        "/api/v1/generate/credit",
+        "/api/v1/suno/get-credits",
+        "/api/v1/suno/generate/credit",
+        "/api/v1/suno/credits",
+        "/api/v1/suno/credit",
+      ];
+
+      let last: any = null;
+      for (const p of paths) {
+        const r = await sunoFetchJson(p);
+        last = r;
+        if (r.res.status !== 404) break;
+      }
+
+      const r = last;
+      if (r?.res?.ok) {
+        const code = Number(r.data?.code);
+        if (!code || code === 200) {
+          const raw = r.data?.data?.credits ?? r.data?.data;
+          const parsed = parseCreditsValue(raw);
+          const providerCredits = round2(Number.isFinite(parsed) ? parsed : 0);
+          if (Number.isFinite(providerCredits) && providerCredits >= 0) return send(res, 200, { credits: providerCredits });
+        }
+      }
+
+      const msg = sunoErrorMessage(r?.data, r?.text || `HTTP ${r?.res?.status || 0}`);
+      return send(res, 200, { credits: internalCredits, provider_error: String(msg).slice(0, 1200) });
+    } catch (e) {
+      return send(res, 200, { credits: internalCredits, provider_error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return send(res, 200, { credits: internalCredits });
 }
