@@ -220,16 +220,16 @@ async function sunoFetchJsonWithRetry(path: string, init: any = {}) {
 export default async function handler(req: any, res: any) {
   if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
+  const secret = (process.env.TELEGRAM_BOT_SECRET || "").toString().trim();
+  if (!secret) return send(res, 500, { error: "TELEGRAM_BOT_SECRET no configurado" });
+  const got = String(req?.headers?.["x-telegram-secret"] || "").trim();
+  if (!got || got !== secret) return send(res, 401, { error: "No autorizado" });
+
   const payload = await readJsonBody(req);
   if (!payload) return send(res, 400, { error: "Body inválido" });
 
   const telegram_user_id = payload.telegram_user_id;
   if (telegram_user_id == null || telegram_user_id === "") return send(res, 400, { error: "Falta telegram_user_id" });
-
-  const secret = (process.env.TELEGRAM_BOT_SECRET || "").toString().trim();
-  if (!secret) return send(res, 500, { error: "TELEGRAM_BOT_SECRET no configurado" });
-  const got = String(req?.headers?.["x-telegram-secret"] || "").trim();
-  if (!got || got !== secret) return send(res, 401, { error: "No autorizado" });
 
   const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
   const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
