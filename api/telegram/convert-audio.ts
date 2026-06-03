@@ -1,9 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
-import Busboy from "busboy";
-import crypto from "crypto";
-import fs from "fs";
-import os from "os";
-import path from "path";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 function send(res: any, status: number, body: any) {
   res.statusCode = status;
@@ -67,7 +66,9 @@ export default async function handler(req: any, res: any) {
   let outputFilePath = path.join(tmpDir, `tg_${outId}.mp3`);
 
   try {
-    const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 30 * 1024 * 1024 } });
+    const busboyMod = await import("busboy");
+    const BusboyCtor = (busboyMod as any)?.default || busboyMod;
+    const bb = BusboyCtor({ headers: req.headers, limits: { files: 1, fileSize: 30 * 1024 * 1024 } });
     let didGetFile = false;
     let fileWriteDone: Promise<void> | null = null;
     let fileWriteErr: any = null;
