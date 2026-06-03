@@ -472,7 +472,7 @@ bot.catch(async (err, ctx) => {
   }
 });
 
-bot.launch();
+bot.launch({ dropPendingUpdates: true });
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
