@@ -458,10 +458,48 @@ bot.command("cancion", (ctx) => ctx.scene.enter("song"));
 bot.command("cover", (ctx) => ctx.scene.enter("cover"));
 
 bot.on("text", async (ctx, next) => {
-  const t = cleanText(ctx.message?.text || "").toLowerCase();
-  if (t.includes("quiero una canción") || t === "cancion" || t === "canción") return ctx.scene.enter("song");
-  if (t.includes("quiero un cover") || t === "cover") return ctx.scene.enter("cover");
-  return next();
+  const raw = cleanText(ctx.message?.text || "");
+  if (!raw) return next();
+  if (raw.trim().startsWith("/")) return next();
+  const currentScene =
+    ctx.scene?.current?.id ||
+    ctx.scene?.current ||
+    ctx.scene?.session?.current ||
+    ctx.session?.__scenes?.current ||
+    "";
+  if (currentScene) return next();
+
+  const n = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const hasAny = (arr) => arr.some((k) => n.includes(k));
+  const isCredits = hasAny(["creditos", "credito", "saldo", "cuanto tengo", "cuantos tengo"]);
+  const isCover = hasAny(["cover", "cubre", "version"]);
+  const isSong = hasAny(["cancion", "musica", "quiero", "hacer", "crea", "crear", "genera", "generar"]);
+  const isHello = hasAny(["hola", "buenas", "hey", "hi"]);
+
+  if (isCredits) {
+    const telegram_user_id = ctx.from?.id;
+    const r = await apiPostJson("/api/telegram/credits", { telegram_user_id });
+    if (!r.ok) return handleApiError(ctx, r);
+    const credits = Number(r.data?.credits ?? 0);
+    if (!Number.isFinite(credits)) return ctx.reply("No pude leer tus créditos.");
+    return ctx.reply(`Créditos disponibles: ${credits}`);
+  }
+
+  if (isCover) return ctx.scene.enter("cover");
+  if (isSong) return ctx.scene.enter("song");
+
+  if (isHello) {
+    return ctx.reply("Hola. Puedes pedirme: una canción, un cover, o ver tus créditos. Usa /cancion, /cover o /creditos.");
+  }
+
+  return ctx.reply("No entendí. Puedes pedirme: una canción, un cover, o ver tus créditos");
 });
 
 bot.catch(async (err, ctx) => {
