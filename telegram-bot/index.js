@@ -48,6 +48,45 @@ async function apiPostMultipart(pathname, formData) {
   return { ok: r.ok, status: r.status, data: out };
 }
 
+// Función para convertir audio a MP3 descargándolo primero
+async function convertAudioToMp3(telegram_user_id, audioUrl) {
+  try {
+    // Descargar el audio desde la URL
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      return { ok: false, status: audioResponse.status, data: { error: "Error descargando audio" } };
+    }
+    
+    // Obtener el buffer del audio
+    const audioBuffer = await audioResponse.arrayBuffer();
+    
+    // Crear FormData
+    const formData = new FormData();
+    
+    // Crear un blob con el audio
+    const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+    
+    // Agregar el archivo al FormData
+    // Usar un nombre de archivo genérico ya que no tenemos el nombre original
+    formData.append("file", audioBlob, "audio.mp3");
+    
+    // Llamar al endpoint de conversión
+    const url = `${BASE_URL}/api/telegram/convert-audio`;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "x-telegram-secret": TELEGRAM_BOT_SECRET },
+      body: formData,
+    });
+    
+    const out = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, data: out };
+    
+  } catch (error) {
+    console.error("Error en convertAudioToMp3:", error);
+    return { ok: false, status: 500, data: { error: "Error interno al convertir audio" } };
+  }
+}
+
 function extractStatus(providerResponse) {
   const d = providerResponse?.data ?? providerResponse ?? {};
   const statusRaw = d?.data?.status ?? d?.data?.successFlag ?? d?.data?.data?.status ?? d?.data?.data?.successFlag ?? "";
@@ -833,14 +872,11 @@ bot.on("voice", async (ctx) => {
     // Guardar URL del audio en la sesión
     ctx.session.audioUrl = fileLink.href;
     
-    // Convertir audio a MP3 primero
-    const convertResult = await apiPostJson("/api/telegram/convert-audio", {
-      telegram_user_id: ctx.from.id,
-      audioUrl: fileLink.href
-    });
+    // Convertir audio a MP3 primero usando la nueva función
+    const convertResult = await convertAudioToMp3(ctx.from.id, fileLink.href);
     
-    if (convertResult.ok && convertResult.data.convertedUrl) {
-      ctx.session.audioUrl = convertResult.data.convertedUrl;
+    if (convertResult.ok && convertResult.data.url) {
+      ctx.session.audioUrl = convertResult.data.url;
       await ctx.reply("🎵 ¡Recibí tu audio de voz! Ahora dime: ¿qué género musical quieres para el cover? (ej: reggaeton, cumbia, pop, banda)");
     } else {
       await ctx.reply("🎵 ¡Recibí tu audio de voz! Hubo un problema al convertir el audio. Ahora dime: ¿qué género musical quieres para el cover?");
@@ -863,14 +899,11 @@ bot.on("audio", async (ctx) => {
     // Guardar URL del audio en la sesión
     ctx.session.audioUrl = fileLink.href;
     
-    // Convertir audio a MP3 primero
-    const convertResult = await apiPostJson("/api/telegram/convert-audio", {
-      telegram_user_id: ctx.from.id,
-      audioUrl: fileLink.href
-    });
+    // Convertir audio a MP3 primero usando la nueva función
+    const convertResult = await convertAudioToMp3(ctx.from.id, fileLink.href);
     
-    if (convertResult.ok && convertResult.data.convertedUrl) {
-      ctx.session.audioUrl = convertResult.data.convertedUrl;
+    if (convertResult.ok && convertResult.data.url) {
+      ctx.session.audioUrl = convertResult.data.url;
       await ctx.reply("🎵 ¡Recibí tu archivo de audio! Ahora dime: ¿qué género musical quieres para el cover? (ej: reggaeton, cumbia, pop, banda)");
     } else {
       await ctx.reply("🎵 ¡Recibí tu archivo de audio! Hubo un problema al convertir el audio. Ahora dime: ¿qué género musical quieres para el cover?");
@@ -905,14 +938,11 @@ bot.on("document", async (ctx) => {
     // Guardar URL del audio en la sesión
     ctx.session.audioUrl = fileLink.href;
     
-    // Convertir audio a MP3 primero
-    const convertResult = await apiPostJson("/api/telegram/convert-audio", {
-      telegram_user_id: ctx.from.id,
-      audioUrl: fileLink.href
-    });
+    // Convertir audio a MP3 primero usando la nueva función
+    const convertResult = await convertAudioToMp3(ctx.from.id, fileLink.href);
     
-    if (convertResult.ok && convertResult.data.convertedUrl) {
-      ctx.session.audioUrl = convertResult.data.convertedUrl;
+    if (convertResult.ok && convertResult.data.url) {
+      ctx.session.audioUrl = convertResult.data.url;
       await ctx.reply("🎵 ¡Recibí tu archivo de audio! Ahora dime: ¿qué género musical quieres para el cover? (ej: reggaeton, cumbia, pop, banda)");
     } else {
       await ctx.reply("🎵 ¡Recibí tu archivo de audio! Hubo un problema al convertir el audio. Ahora dime: ¿qué género musical quieres para el cover?");
