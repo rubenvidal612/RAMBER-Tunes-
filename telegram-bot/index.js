@@ -379,6 +379,12 @@ async function chatWithOpenAI(userId, userMessage, ctx) {
     });
     
     const message = response.choices[0].message;
+    
+    // Debugging: ver qué responde GPT
+    console.log('GPT finish_reason:', response.choices[0].finish_reason);
+    console.log('GPT tool_calls:', JSON.stringify(message.tool_calls));
+    console.log('GPT content:', message.content?.substring(0, 100));
+    
     let finalResponse = message.content || "";
     let toolCalls = message.tool_calls || [];
     
