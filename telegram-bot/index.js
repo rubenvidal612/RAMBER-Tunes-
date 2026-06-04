@@ -228,6 +228,23 @@ const OPENAI_TOOLS = [
   {
     type: "function",
     function: {
+      name: "separate_vocals",
+      description: "Separa las vocales de un audio para obtener la pista instrumental y la vocal",
+      parameters: {
+        type: "object",
+        properties: {
+          audioUrl: {
+            type: "string",
+            description: "URL del audio a procesar"
+          }
+        },
+        required: ["audioUrl"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "check_status",
       description: "Consulta el estado de una tarea en proceso",
       parameters: {
@@ -278,6 +295,13 @@ async function processToolCall(toolName, input, ctx) {
         telegram_user_id: input.telegram_user_id || telegram_user_id
       });
       return r4;
+      
+    case "separate_vocals":
+      const r6 = await apiPostJson("/api/telegram/separate-vocals", {
+        telegram_user_id,
+        audioUrl: input.audioUrl
+      });
+      return r6;
       
     case "check_status":
       const r5 = await apiPostJson("/api/telegram/status", {
@@ -771,6 +795,16 @@ bot.on("text", async (ctx, next) => {
   const userId = String(ctx.from?.id || "");
   const userMessage = raw;
   
+  // Detectar palabras clave para vinculación automática
+  const lowerMessage = raw.toLowerCase();
+  if (lowerMessage.includes("vincular") || lowerMessage.includes("conectar mi cuenta") || 
+      lowerMessage.includes("enlazar") || lowerMessage.includes("link")) {
+    // Iniciar el proceso de vinculación automáticamente
+    await ctx.reply("¡Perfecto! Para vincular tu cuenta, necesito tu código de 6 dígitos. " +
+                   "Ve a ramber-tunes.vercel.app → Perfil → genera tu código y envíamelo aquí.");
+    return;
+  }
+  
   try {
     // Obtener respuesta de OpenAI
     const openaiResponse = await chatWithOpenAI(userId, userMessage, ctx);
@@ -785,6 +819,108 @@ bot.on("text", async (ctx, next) => {
   } catch (error) {
     console.error("Error en handler de texto:", error);
     await ctx.reply("Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo.");
+  }
+});
+
+// Handler para recibir audios de voz (voice messages)
+bot.on("voice", async (ctx) => {
+  console.log('Audio de voz recibido:', ctx.from.id);
+  
+  try {
+    const fileId = ctx.message.voice.file_id;
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    
+    // Guardar URL del audio en la sesión
+    ctx.session.audioUrl = fileLink.href;
+    
+    // Convertir audio a MP3 primero
+    const convertResult = await apiPostJson("/api/telegram/convert-audio", {
+      telegram_user_id: ctx.from.id,
+      audioUrl: fileLink.href
+    });
+    
+    if (convertResult.ok && convertResult.data.convertedUrl) {
+      ctx.session.audioUrl = convertResult.data.convertedUrl;
+      await ctx.reply("🎵 ¡Recibí tu audio de voz! Ahora dime: ¿qué género musical quieres para el cover? (ej: reggaeton, cumbia, pop, banda)");
+    } else {
+      await ctx.reply("🎵 ¡Recibí tu audio de voz! Hubo un problema al convertir el audio. Ahora dime: ¿qué género musical quieres para el cover?");
+    }
+    
+  } catch (error) {
+    console.error("Error procesando audio de voz:", error);
+    await ctx.reply("Lo siento, hubo un error al procesar tu audio. Por favor, intenta enviarlo de nuevo.");
+  }
+});
+
+// Handler para recibir audios (audio files)
+bot.on("audio", async (ctx) => {
+  console.log('Archivo de audio recibido:', ctx.from.id);
+  
+  try {
+    const fileId = ctx.message.audio.file_id;
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    
+    // Guardar URL del audio en la sesión
+    ctx.session.audioUrl = fileLink.href;
+    
+    // Convertir audio a MP3 primero
+    const convertResult = await apiPostJson("/api/telegram/convert-audio", {
+      telegram_user_id: ctx.from.id,
+      audioUrl: fileLink.href
+    });
+    
+    if (convertResult.ok && convertResult.data.convertedUrl) {
+      ctx.session.audioUrl = convertResult.data.convertedUrl;
+      await ctx.reply("🎵 ¡Recibí tu archivo de audio! Ahora dime: ¿qué género musical quieres para el cover? (ej: reggaeton, cumbia, pop, banda)");
+    } else {
+      await ctx.reply("🎵 ¡Recibí tu archivo de audio! Hubo un problema al convertir el audio. Ahora dime: ¿qué género musical quieres para el cover?");
+    }
+    
+  } catch (error) {
+    console.error("Error procesando archivo de audio:", error);
+    await ctx.reply("Lo siento, hubo un error al procesar tu audio. Por favor, intenta enviarlo de nuevo.");
+  }
+});
+
+// Handler para recibir documentos (document files)
+bot.on("document", async (ctx) => {
+  console.log('Documento recibido:', ctx.from.id);
+  
+  // Verificar si es un archivo de audio por la extensión
+  const fileName = ctx.message.document.file_name || "";
+  const mimeType = ctx.message.document.mime_type || "";
+  
+  const isAudioFile = fileName.match(/\.(mp3|wav|m4a|ogg|flac)$/i) || 
+                     mimeType.includes("audio");
+  
+  if (!isAudioFile) {
+    await ctx.reply("Por favor, envía un archivo de audio (MP3, WAV, M4A, etc.) para hacer un cover.");
+    return;
+  }
+  
+  try {
+    const fileId = ctx.message.document.file_id;
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    
+    // Guardar URL del audio en la sesión
+    ctx.session.audioUrl = fileLink.href;
+    
+    // Convertir audio a MP3 primero
+    const convertResult = await apiPostJson("/api/telegram/convert-audio", {
+      telegram_user_id: ctx.from.id,
+      audioUrl: fileLink.href
+    });
+    
+    if (convertResult.ok && convertResult.data.convertedUrl) {
+      ctx.session.audioUrl = convertResult.data.convertedUrl;
+      await ctx.reply("🎵 ¡Recibí tu archivo de audio! Ahora dime: ¿qué género musical quieres para el cover? (ej: reggaeton, cumbia, pop, banda)");
+    } else {
+      await ctx.reply("🎵 ¡Recibí tu archivo de audio! Hubo un problema al convertir el audio. Ahora dime: ¿qué género musical quieres para el cover?");
+    }
+    
+  } catch (error) {
+    console.error("Error procesando documento de audio:", error);
+    await ctx.reply("Lo siento, hubo un error al procesar tu audio. Por favor, intenta enviarlo de nuevo.");
   }
 });
 
