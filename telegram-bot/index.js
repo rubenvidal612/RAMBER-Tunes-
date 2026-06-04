@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { Telegraf, session } from "telegraf";
 import { Scenes } from "telegraf";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
 function mustEnv(name) {
   const v = String(process.env[name] || "").trim();
@@ -11,7 +11,7 @@ function mustEnv(name) {
 
 const BOT_TOKEN = mustEnv("TELEGRAM_BOT_TOKEN");
 const TELEGRAM_BOT_SECRET = mustEnv("TELEGRAM_BOT_SECRET");
-const ANTHROPIC_API_KEY = mustEnv("ANTHROPIC_API_KEY");
+const OPENAI_API_KEY = mustEnv("OPENAI_API_KEY");
 const BASE_URL = String(process.env.BASE_URL || "https://ramber-tunes.vercel.app").trim().replace(/\/+$/, "");
 
 function isOkText(raw) {
@@ -100,12 +100,12 @@ function extractLyricsText(providerResponse) {
   return likely[0];
 }
 
-// Configuración de Claude API
-const anthropic = new Anthropic({
-  apiKey: ANTHROPIC_API_KEY,
+// Configuración de OpenAI API
+const openai = new OpenAI({
+  apiKey: OPENAI_API_KEY,
 });
 
-// System prompt para Claude
+// System prompt para OpenAI
 const SYSTEM_PROMPT = `Eres LucianaMusic, el asistente musical de RamberTunes. 
 - Hablas en español de manera natural y amigable
 - Eres experto en música y ayudas a los usuarios con:
@@ -140,85 +140,100 @@ function getHistory(userId) {
   return conversationHistory.get(userId) || [];
 }
 
-// Tools para Claude
-const CLAUDE_TOOLS = [
+// Tools para OpenAI
+const OPENAI_TOOLS = [
   {
-    name: "generate_song",
-    description: "Genera una canción original basada en una descripción o tema",
-    input_schema: {
-      type: "object",
-      properties: {
-        description: {
-          type: "string",
-          description: "Descripción de la canción que el usuario quiere crear"
-        }
-      },
-      required: ["description"]
-    }
-  },
-  {
-    name: "check_credits",
-    description: "Consulta los créditos disponibles del usuario",
-    input_schema: {
-      type: "object",
-      properties: {
-        telegram_user_id: {
-          type: "string",
-          description: "ID del usuario de Telegram"
-        }
-      },
-      required: ["telegram_user_id"]
-    }
-  },
-  {
-    name: "make_cover",
-    description: "Crea un cover de una canción existente",
-    input_schema: {
-      type: "object",
-      properties: {
-        song_description: {
-          type: "string",
-          description: "Descripción de la canción original para hacer el cover"
-        }
-      },
-      required: ["song_description"]
-    }
-  },
-  {
-    name: "link_account",
-    description: "Vincula la cuenta de Telegram con RamberTunes",
-    input_schema: {
-      type: "object",
-      properties: {
-        telegram_user_id: {
-          type: "string",
-          description: "ID del usuario de Telegram"
-        }
-      },
-      required: ["telegram_user_id"]
-    }
-  },
-  {
-    name: "check_status",
-    description: "Consulta el estado de una tarea en proceso",
-    input_schema: {
-      type: "object",
-      properties: {
-        telegram_user_id: {
-          type: "string",
-          description: "ID del usuario de Telegram"
+    type: "function",
+    function: {
+      name: "generate_song",
+      description: "Genera una canción original basada en una descripción o tema",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description: "Descripción de la canción que el usuario quiere crear"
+          }
         },
-        taskId: {
-          type: "string",
-          description: "ID de la tarea a consultar"
-        }
-      },
-      required: ["telegram_user_id", "taskId"]
+        required: ["description"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_credits",
+      description: "Consulta los créditos disponibles del usuario",
+      parameters: {
+        type: "object",
+        properties: {
+          telegram_user_id: {
+            type: "string",
+            description: "ID del usuario de Telegram"
+          }
+        },
+        required: ["telegram_user_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "make_cover",
+      description: "Crea un cover de una canción existente",
+      parameters: {
+        type: "object",
+        properties: {
+          song_description: {
+            type: "string",
+            description: "Descripción de la canción original para hacer el cover"
+          }
+        },
+        required: ["song_description"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "link_account",
+      description: "Vincula la cuenta de Telegram con RamberTunes",
+      parameters: {
+        type: "object",
+        properties: {
+          telegram_user_id: {
+            type: "string",
+            description: "ID del usuario de Telegram"
+          }
+        },
+        required: ["telegram_user_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_status",
+      description: "Consulta el estado de una tarea en proceso",
+      parameters: {
+        type: "object",
+        properties: {
+          telegram_user_id: {
+            type: "string",
+            description: "ID del usuario de Telegram"
+          },
+          taskId: {
+            type: "string",
+            description: "ID de la tarea a consultar"
+          }
+        },
+        required: ["telegram_user_id", "taskId"]
+      }
     }
   }
 ];
 
-// Función para procesar tool calls de Claude
+// Función para procesar tool calls de OpenAI
 async function processToolCall(toolName, input, ctx) {
   const telegram_user_id = String(ctx.from?.id || "");
   
@@ -261,8 +276,8 @@ async function processToolCall(toolName, input, ctx) {
   }
 }
 
-// Función principal para interactuar con Claude
-async function chatWithClaude(userId, userMessage, ctx) {
+// Función principal para interactuar con OpenAI
+async function chatWithOpenAI(userId, userMessage, ctx) {
   try {
     // Agregar mensaje del usuario al historial
     addToHistory(userId, "user", userMessage);
@@ -270,45 +285,34 @@ async function chatWithClaude(userId, userMessage, ctx) {
     // Obtener historial de conversación
     const history = getHistory(userId);
     
-    // Preparar mensajes para Claude
+    // Preparar mensajes para OpenAI
     const messages = [
       { role: "system", content: SYSTEM_PROMPT },
       ...history.map(msg => ({ role: msg.role, content: msg.content }))
     ];
     
-    // Llamar a Claude API
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+    // Llamar a OpenAI API
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
       max_tokens: 1024,
       messages: messages,
-      tools: CLAUDE_TOOLS
+      tools: OPENAI_TOOLS,
+      tool_choice: "auto"
     });
     
-    // Procesar la respuesta de Claude
-    let finalResponse = "";
-    let toolCalls = [];
+    const message = response.choices[0].message;
+    let finalResponse = message.content || "";
+    let toolCalls = message.tool_calls || [];
     
-    for (const content of response.content) {
-      if (content.type === "text") {
-        finalResponse += content.text;
-      } else if (content.type === "tool_use") {
-        toolCalls.push({
-          id: content.id,
-          name: content.name,
-          input: content.input
-        });
-      }
-    }
-    
-    // Si Claude usó tools, procesarlas
+    // Si OpenAI usó tools, procesarlas
     if (toolCalls.length > 0) {
       const toolResults = [];
       
       for (const toolCall of toolCalls) {
         // Ejecutar la tool
-        const toolResult = await processToolCall(toolCall.name, toolCall.input, ctx);
+        const toolResult = await processToolCall(toolCall.function.name, JSON.parse(toolCall.function.arguments), ctx);
         
-        // Formatear resultado para Claude
+        // Formatear resultado para OpenAI
         let resultText = "";
         if (toolResult.ok) {
           resultText = `Éxito: ${JSON.stringify(toolResult.data, null, 2)}`;
@@ -318,45 +322,46 @@ async function chatWithClaude(userId, userMessage, ctx) {
         
         toolResults.push({
           tool_call_id: toolCall.id,
+          role: "tool",
+          name: toolCall.function.name,
           content: resultText
         });
       }
       
-      // Si hay tool results, hacer un segundo turno con Claude
+      // Si hay tool results, hacer un segundo turno con OpenAI
       if (toolResults.length > 0) {
         // Agregar tool calls al historial
-        addToHistory(userId, "assistant", `[Usé tools: ${toolCalls.map(t => t.name).join(', ')}]`);
+        addToHistory(userId, "assistant", `[Usé tools: ${toolCalls.map(t => t.function.name).join(', ')}]`);
         
         // Preparar mensajes para el segundo turno
         const secondTurnMessages = [
           { role: "system", content: SYSTEM_PROMPT },
           ...getHistory(userId),
+          { role: "assistant", content: "", tool_calls: toolCalls },
           ...toolResults.map(tr => ({
-            role: "user",
-            content: `Resultado de tool ${tr.tool_call_id}: ${tr.content}`
+            role: tr.role,
+            content: tr.content,
+            tool_call_id: tr.tool_call_id,
+            name: tr.name
           }))
         ];
         
-        // Segundo turno con Claude
-        const secondResponse = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20241022",
+        // Segundo turno con OpenAI
+        const secondResponse = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
           max_tokens: 1024,
           messages: secondTurnMessages,
-          tools: CLAUDE_TOOLS
+          tools: OPENAI_TOOLS,
+          tool_choice: "auto"
         });
         
         // Procesar segunda respuesta
-        let secondFinalResponse = "";
-        for (const content of secondResponse.content) {
-          if (content.type === "text") {
-            secondFinalResponse += content.text;
-          }
-        }
+        const secondMessage = secondResponse.choices[0].message;
+        finalResponse = secondMessage.content || "";
         
         // Agregar respuesta final al historial
-        if (secondFinalResponse.trim()) {
-          addToHistory(userId, "assistant", secondFinalResponse);
-          finalResponse = secondFinalResponse;
+        if (finalResponse.trim()) {
+          addToHistory(userId, "assistant", finalResponse);
         }
       }
     }
@@ -369,7 +374,7 @@ async function chatWithClaude(userId, userMessage, ctx) {
     return finalResponse || "Recibí tu mensaje. ¿En qué más puedo ayudarte?";
     
   } catch (error) {
-    console.error("Error al chat con Claude:", error);
+    console.error("Error al chat con OpenAI:", error);
     return "Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo.";
   }
 }
@@ -752,12 +757,12 @@ bot.on("text", async (ctx, next) => {
   const userMessage = raw;
   
   try {
-    // Obtener respuesta de Claude
-    const claudeResponse = await chatWithClaude(userId, userMessage, ctx);
+    // Obtener respuesta de OpenAI
+    const openaiResponse = await chatWithOpenAI(userId, userMessage, ctx);
     
     // Enviar respuesta al usuario
-    if (claudeResponse && claudeResponse.trim()) {
-      await ctx.reply(claudeResponse);
+    if (openaiResponse && openaiResponse.trim()) {
+      await ctx.reply(openaiResponse);
     } else {
       await ctx.reply("No recibí una respuesta clara. ¿Podrías reformular tu pregunta?");
     }
