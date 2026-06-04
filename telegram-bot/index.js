@@ -458,6 +458,7 @@ bot.command("cancion", (ctx) => ctx.scene.enter("song"));
 bot.command("cover", (ctx) => ctx.scene.enter("cover"));
 
 bot.on("text", async (ctx, next) => {
+  console.log('Mensaje recibido:', ctx.from.id, ctx.message.text);
   const raw = cleanText(ctx.message?.text || "");
   if (!raw) return next();
   if (raw.trim().startsWith("/")) return next();
@@ -511,6 +512,7 @@ bot.catch(async (err, ctx) => {
 });
 
 bot.launch({ dropPendingUpdates: true });
+console.log('Bot LucianaMusic iniciado correctamente');
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
