@@ -844,6 +844,65 @@ bot.on("text", async (ctx, next) => {
     return;
   }
   
+  // Si hay audioUrl en la sesión, el usuario está respondiendo con el género para un cover
+  if (ctx.session?.audioUrl) {
+    const audioUrl = ctx.session.audioUrl;
+    const genre = raw; // El texto del usuario es el género
+    
+    console.log('Audio URL encontrado en sesión, ejecutando cover automáticamente con género:', genre);
+    
+    // Limpiar el audioUrl de la sesión para no repetir
+    delete ctx.session.audioUrl;
+    
+    // Ejecutar la tool make_cover automáticamente
+    try {
+      await ctx.reply(`🎵 ¡Perfecto! Voy a hacer un cover en estilo ${genre}. Esto puede tardar unos minutos...`);
+      
+      const r = await apiPostJson("/api/telegram/upload-cover", {
+        telegram_user_id: userId,
+        uploadUrl: audioUrl,
+        style: genre,
+        title: "Cover",
+        model: "V5",
+      });
+      
+      if (!r.ok) {
+        await handleApiError(ctx, r);
+        return;
+      }
+      
+      const taskId = String(r.data?.taskId || "").trim();
+      if (!taskId) {
+        await ctx.reply("No pude iniciar el cover.");
+        return;
+      }
+      
+      const done = await pollTask(userId, taskId);
+      if (!done.ok) {
+        await ctx.reply("No se pudo completar el cover. Intenta otra vez.");
+        return;
+      }
+      
+      const urls = extractAudioUrls(done.data);
+      if (urls.length === 0) {
+        await ctx.reply("Terminó, pero no encontré los links de audio. Revisa en la web.");
+        return;
+      }
+      
+      const msg =
+        urls.length >= 2
+          ? `Tu cover en estilo ${genre} está listo:\nVersión 1: ${urls[0]}\nVersión 2: ${urls[1]}`
+          : `Tu cover en estilo ${genre} está listo:\nAudio: ${urls[0]}`;
+      await ctx.reply(msg);
+      return;
+      
+    } catch (error) {
+      console.error("Error ejecutando cover automáticamente:", error);
+      await ctx.reply("Lo siento, hubo un error al hacer el cover. Por favor, intenta de nuevo.");
+      return;
+    }
+  }
+  
   try {
     // Obtener respuesta de OpenAI
     const openaiResponse = await chatWithOpenAI(userId, userMessage, ctx);
