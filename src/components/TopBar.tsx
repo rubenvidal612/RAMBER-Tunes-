@@ -19,7 +19,9 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
           <div className="w-9 h-9 rounded-lg bg-yellow-400 text-black flex items-center justify-center font-light text-2xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
             L
           </div>
-          <span className="text-base font-bold text-slate-100">LucIAna</span>
+          <span className="text-base font-bold text-slate-100">
+            Luc<span className="text-purple-400">IA</span>na | Music
+          </span>
         </span>
       </div>
       
