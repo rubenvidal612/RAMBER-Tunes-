@@ -5079,7 +5079,7 @@ function CustomForm({
             href="https://ramber-tunes-landing.vercel.app/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-yellow-400 font-bold text-sm mb-2 underline underline-offset-4 hover:text-yellow-300"
+            className="block text-yellow-400 font-bold text-sm mb-1 underline underline-offset-4 hover:text-yellow-300"
           >
             INSTRUCCIONES
           </a>
@@ -5087,7 +5087,7 @@ function CustomForm({
             href="https://online-audio-converter.com/sp/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
+            className="block text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
           >
             Convertir a MP3
           </a>
