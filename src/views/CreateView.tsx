@@ -2333,7 +2333,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const openMp3ConverterAlt = () => {
-    const url = 'https://online-audio-converter.com/sp/';
+    const url = 'https://ramber-tunes-landing.vercel.app/';
     try {
       const w = window.open(url, '_blank', 'noopener,noreferrer');
       if (w) {
@@ -4700,17 +4700,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     <>
                       <button
                         type="button"
-                        onClick={openMp3Converter}
-                        className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
-                      >
-                        Abrir Convertidor a MP3 (Opción 1)
-                      </button>
-                      <button
-                        type="button"
                         onClick={openMp3ConverterAlt}
                         className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
                       >
-                        Abrir Convertidor a MP3 (Opción 2)
+                        Abrir Convertidor a MP3
                       </button>
                     </>
                   ) : null}
@@ -5082,20 +5075,20 @@ function CustomForm({
 
       {!audioUploadUrl && (
         <div className="mt-2 px-1">
-          <button
-            type="button"
-            onClick={openMp3Converter}
+          <div className="text-yellow-400 font-bold text-sm mb-2">
+            Instrucciones:
+          </div>
+          <div className="text-xs text-yellow-300 mb-2">
+            Si tu audio no se sube, visita nuestro convertidor:
+          </div>
+          <a
+            href="https://ramber-tunes-landing.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
           >
-            Si tu audio no se sube, convertir a MP3 (Opción 1)
-          </button>
-          <button
-            type="button"
-            onClick={openMp3ConverterAlt}
-            className="mt-2 text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
-          >
-            Convertir a MP3 (Opción 2)
-          </button>
+            Convertir a MP3
+          </a>
         </div>
       )}
 
