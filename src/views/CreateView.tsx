@@ -5083,7 +5083,7 @@ function CustomForm({
           >
             INSTRUCCIONES
           </a>
-          <div className="text-xs text-yellow-300 mb-2">
+          <div className="text-xs text-yellow-300 mb-1">
             Si tu audio no se sube, visita nuestro convertidor:
           </div>
           <a
