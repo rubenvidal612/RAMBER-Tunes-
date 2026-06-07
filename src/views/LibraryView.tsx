@@ -1218,6 +1218,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             </button>
           ))}
         </div>
+
+        <div className="text-xs text-yellow-300">
+          Los archivos se conservan durante 14 días.
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
