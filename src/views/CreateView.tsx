@@ -5074,23 +5074,35 @@ function CustomForm({
       </div>
 
       {!audioUploadUrl && (
-        <div className="mt-2 px-1">
-          <a
-            href="https://ramber-tunes-landing.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block text-yellow-400 font-bold text-sm mb-1 underline underline-offset-4 hover:text-yellow-300"
-          >
-            INSTRUCCIONES
-          </a>
-          <a
-            href="https://online-audio-converter.com/sp/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
-          >
-            Convertir a MP3
-          </a>
+        <div className="mt-2 px-1 grid grid-cols-2 gap-6">
+          <div>
+            <a
+              href="https://ramber-tunes-landing.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-yellow-400 font-bold text-sm mb-1 underline underline-offset-4 hover:text-yellow-300"
+            >
+              INSTRUCCIONES
+            </a>
+            <a
+              href="https://online-audio-converter.com/sp/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
+            >
+              Convertir a MP3
+            </a>
+          </div>
+          <div className="flex flex-col items-end">
+            <a
+              href="https://wa.me/529931520202"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-yellow-400 font-bold text-sm underline underline-offset-4 hover:text-yellow-300"
+            >
+              WhatsApp
+            </a>
+          </div>
         </div>
       )}
 
