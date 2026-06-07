@@ -10096,6 +10096,110 @@ const aiHandler = (() => {
     };
   }
 
+  async function generateLyricsWithSuno(topic: string, gender: string, style: string, req: any) {
+    const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+    const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+    if (!apiKey) {
+      return { ok: false as const, error: "Falta SUNO_API_KEY en Vercel", userMessage: "La generación de letras no está disponible (proveedor)." };
+    }
+
+    const cleanLine = (s: string) =>
+      (s || "")
+        .toString()
+        .replaceAll("\r\n", " ")
+        .replaceAll("\n", " ")
+        .replaceAll("\t", " ")
+        .replaceAll(/\s+/g, " ")
+        .trim();
+
+    const base = cleanLine(topic);
+    const extra = cleanLine(`Estilo: ${style}. Voz: ${gender}.`);
+    let prompt = base;
+    if (extra && (base.length + 3 + extra.length) <= 200) prompt = `${base} | ${extra}`;
+    prompt = cleanLine(prompt).slice(0, 200);
+    if (!prompt) return { ok: false as const, error: "Prompt vacío", userMessage: "Escribe un tema para generar letras." };
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    try {
+      const { res: r, data, text } = await sunoFetchJsonWithRetry("/api/v1/lyrics", {
+        method: "POST",
+        body: JSON.stringify({ prompt, callBackUrl }),
+      });
+      if (!r || !r.ok) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r?.status || 0}`);
+        return { ok: false as const, error: String(msg), userMessage: "No pude generar letras con el proveedor." };
+      }
+      const code = Number(data?.code);
+      if (code && code !== 200) {
+        const msg = sunoErrorMessage(data, "Error del proveedor");
+        return { ok: false as const, error: String(msg), userMessage: "No pude generar letras con el proveedor." };
+      }
+      const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
+      if (!taskId) return { ok: false as const, error: "Respuesta inválida del proveedor", userMessage: "No pude generar letras con el proveedor." };
+
+      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const startedAt = Date.now();
+      const maxWaitMs = 16000;
+
+      while (Date.now() - startedAt < maxWaitMs) {
+        const enc = encodeURIComponent(taskId);
+        const paths = [`/api/v1/lyrics/record-info?taskId=${enc}`, `/api/v1/suno/lyrics/record-info?taskId=${enc}`];
+
+        let info: any = null;
+        for (const p of paths) {
+          const rr = await sunoFetchJson(p, { method: "GET" });
+          info = rr;
+          if (rr?.res?.status !== 404) break;
+        }
+
+        const infoData = info?.data;
+        const infoText = info?.text || "";
+        if (!info?.res || !info.res.ok) {
+          const msg = sunoErrorMessage(infoData, infoText || `HTTP ${info?.res?.status || 0}`);
+          return { ok: false as const, error: String(msg), userMessage: "No pude obtener las letras del proveedor." };
+        }
+        const infoCode = Number(infoData?.code);
+        if (infoCode && infoCode !== 200) {
+          const msg = sunoErrorMessage(infoData, "Error del proveedor");
+          return { ok: false as const, error: String(msg), userMessage: "No pude obtener las letras del proveedor." };
+        }
+
+        const payload = infoData?.data ?? {};
+        const status = String(payload?.status || "").toUpperCase();
+        if (status === "SUCCESS") {
+          const rows = Array.isArray(payload?.response?.data) ? payload.response.data : [];
+          const candidates = rows
+            .map((x: any) => ({
+              text: typeof x?.text === "string" ? x.text.trim() : "",
+              status: typeof x?.status === "string" ? x.status.trim().toLowerCase() : "",
+            }))
+            .filter((x: any) => x.text && (x.status === "complete" || x.status === "completed" || !x.status));
+          const best = candidates[0]?.text || "";
+          if (!best) return { ok: false as const, error: "El proveedor no devolvió letra", userMessage: "La IA no devolvió letra. Intenta con un tema más específico." };
+          return { ok: true as const, lyrics: best };
+        }
+
+        const failureStatuses = new Set([
+          "CREATE_TASK_FAILED",
+          "GENERATE_LYRICS_FAILED",
+          "CALLBACK_EXCEPTION",
+          "SENSITIVE_WORD_ERROR",
+        ]);
+        if (failureStatuses.has(status)) {
+          const em = String(payload?.errorMessage || payload?.error_message || infoData?.msg || "").trim();
+          return { ok: false as const, error: em || status, userMessage: "No pude generar letras con el proveedor." };
+        }
+
+        await sleep(1200);
+      }
+
+      return { ok: false as const, error: "Timeout esperando letras", userMessage: "El proveedor tardó demasiado. Voy a intentar con otra IA." };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false as const, error: msg, userMessage: "No pude generar letras con el proveedor." };
+    }
+  }
+
   async function handleGenerateLyrics(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -10128,7 +10232,15 @@ const aiHandler = (() => {
         }
       }
 
-      const out = await generateLyricsWithGemini(topic, gender, style);
+      let out: any = null;
+      try {
+        out = await generateLyricsWithSuno(topic, gender, style, req);
+      } catch {
+        out = null;
+      }
+      if (!out || !out.ok) {
+        out = await generateLyricsWithGemini(topic, gender, style);
+      }
       
       if (!out.ok) {
         return send(res, 200, { 
