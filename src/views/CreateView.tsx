@@ -2333,7 +2333,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const openMp3ConverterAlt = () => {
-    const url = 'https://ramber-tunes-landing.vercel.app/';
+    const url = 'https://online-audio-converter.com/sp/';
     try {
       const w = window.open(url, '_blank', 'noopener,noreferrer');
       if (w) {
@@ -5075,14 +5075,19 @@ function CustomForm({
 
       {!audioUploadUrl && (
         <div className="mt-2 px-1">
-          <div className="text-yellow-400 font-bold text-sm mb-2">
-            Instrucciones:
-          </div>
+          <a
+            href="https://ramber-tunes-landing.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-yellow-400 font-bold text-sm mb-2 underline underline-offset-4 hover:text-yellow-300"
+          >
+            INSTRUCCIONES
+          </a>
           <div className="text-xs text-yellow-300 mb-2">
             Si tu audio no se sube, visita nuestro convertidor:
           </div>
           <a
-            href="https://ramber-tunes-landing.vercel.app/"
+            href="https://online-audio-converter.com/sp/"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs font-semibold text-yellow-300 hover:text-yellow-200 underline underline-offset-4"
