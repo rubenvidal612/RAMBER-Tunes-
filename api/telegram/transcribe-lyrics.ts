@@ -40,6 +40,36 @@ function safeUrl(raw: string) {
   }
 }
 
+function tryDecodeB64Url(b64: string) {
+  try {
+    const s = Buffer.from(String(b64 || "").trim(), "base64").toString("utf8").trim();
+    return s || null;
+  } catch {
+    return null;
+  }
+}
+
+function getTelegramBotToken() {
+  const t = (process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN || "").toString().trim();
+  return t || "";
+}
+
+async function resolveTelegramFileUrlFromFileId(fileId: string) {
+  const token = getTelegramBotToken();
+  if (!token) return { ok: false as const, error: "Falta TELEGRAM_BOT_TOKEN en Vercel" };
+
+  const base = `https://api.telegram.org/bot${token}`;
+  const r = await fetch(`${base}/getFile?file_id=${encodeURIComponent(fileId)}`);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = String((data as any)?.description || (data as any)?.error || `HTTP ${r.status}` || "").trim();
+    return { ok: false as const, error: msg || `HTTP ${r.status}` };
+  }
+  const filePath = String((data as any)?.result?.file_path || "").trim();
+  if (!filePath) return { ok: false as const, error: "Telegram no devolvió file_path" };
+  return { ok: true as const, url: `https://api.telegram.org/file/bot${token}/${filePath}` };
+}
+
 function normalizeAudioMimeType(raw: string) {
   const s = (raw || "").toString().trim().toLowerCase();
   if (!s) return "";
@@ -181,10 +211,23 @@ export default async function handler(req: any, res: any) {
   const telegram_user_id = payload.telegram_user_id;
   if (telegram_user_id == null || telegram_user_id === "") return send(res, 400, { error: "Falta telegram_user_id" });
 
-  const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
+  const uploadUrlRaw = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
+  const uploadUrlB64 = typeof payload?.uploadUrl_b64 === "string" ? payload.uploadUrl_b64.trim() : typeof payload?.uploadUrlB64 === "string" ? payload.uploadUrlB64.trim() : "";
+  const telegramFileId = typeof payload?.telegram_file_id === "string" ? payload.telegram_file_id.trim() : typeof payload?.file_id === "string" ? payload.file_id.trim() : "";
   const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
-  const url = safeUrl(uploadUrl);
-  if (!url) return send(res, 400, { error: "uploadUrl inválido" });
+  let resolvedUrl = safeUrl(uploadUrlRaw);
+  if (!resolvedUrl && uploadUrlB64) {
+    const decoded = tryDecodeB64Url(uploadUrlB64);
+    resolvedUrl = decoded ? safeUrl(decoded) : null;
+  }
+  if (!resolvedUrl && telegramFileId) {
+    const out = await resolveTelegramFileUrlFromFileId(telegramFileId);
+    if (!out.ok) return send(res, 400, { error: out.error || "No pude resolver el archivo de Telegram" });
+    resolvedUrl = safeUrl(out.url);
+  }
+  if (!resolvedUrl) {
+    return send(res, 400, { error: "Falta uploadUrl (o uploadUrl_b64 / file_id)" });
+  }
 
   const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
   const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
@@ -200,7 +243,7 @@ export default async function handler(req: any, res: any) {
   if (!link?.user_id) return send(res, 401, { error: "Cuenta no vinculada" });
 
   try {
-    const fr = await fetch(url);
+    const fr = await fetch(resolvedUrl, { redirect: "follow" });
     if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
 
     const contentType = (fr.headers.get("content-type") || "").toString();
