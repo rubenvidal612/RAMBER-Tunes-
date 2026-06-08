@@ -318,9 +318,6 @@ export default async function handler(req: any, res: any) {
     if (Number.isFinite(audioWeight)) body.audioWeight = clamp01(audioWeight);
   }
 
-  const consumed = await consumeUserCredits(admin, userId, CREDIT_COSTS.generate_music);
-  if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
-
   try {
     const paths = ["/api/v1/generate", "/api/v1/suno/generate"];
     let last: any = null;
@@ -331,40 +328,34 @@ export default async function handler(req: any, res: any) {
     }
     const { res: r, data, text } = last || {};
     if (!r) {
-      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Error creando música", detail: "No pude contactar al proveedor" });
     }
 
     if (!r.ok) {
       const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Error creando música", code: r.status, detail: String(msg).slice(0, 1200) });
     }
 
     const code = Number(data?.code);
     if (code && code !== 200) {
       const msg = sunoErrorMessage(data, "Error del proveedor");
-      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Error creando música", code, detail: String(msg).slice(0, 1200) });
     }
 
     const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
     if (!taskId) {
-      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 502, { error: "Respuesta inválida del proveedor" });
     }
 
     const { error: insErr } = await admin
       .from("suno_tasks")
-      .insert({ task_id: taskId, user_id: userId, kind: "generate", cost: CREDIT_COSTS.generate_music, consumed: true });
+      .insert({ task_id: taskId, user_id: userId, kind: "generate", cost: CREDIT_COSTS.generate_music, consumed: false });
     if (insErr) {
-      await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
       return send(res, 500, { error: "No pude guardar tarea", detail: insErr.message });
     }
 
     return send(res, 200, { taskId });
   } catch (e) {
-    await adjustUserCredits(admin, userId, CREDIT_COSTS.generate_music);
     return send(res, 502, { error: "Error creando música", detail: e instanceof Error ? e.message : String(e) });
   }
 }
