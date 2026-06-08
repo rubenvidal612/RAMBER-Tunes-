@@ -349,6 +349,57 @@ async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: n
   return { ok: false as const, error: "Falta columna de créditos en profiles." };
 }
 
+async function applyCreditRolloverWithCap(
+  admin: any,
+  input: {
+    userId: string;
+    monthlyCredits: number;
+    subscriptionActive: boolean;
+    renewalPaidSuccessfully: boolean;
+  },
+) {
+  const { userId, monthlyCredits, subscriptionActive, renewalPaidSuccessfully } = input;
+
+  // Solo se acumulan créditos cuando la suscripción/plan está activa
+  // y el pago de renovación fue aprobado exitosamente.
+  if (!subscriptionActive) {
+    return { ok: false as const, error: "Suscripción inactiva: no se acumulan créditos." };
+  }
+  if (!renewalPaidSuccessfully) {
+    return { ok: false as const, error: "Pago no aprobado: no se acumulan créditos." };
+  }
+
+  // Normalizamos los créditos mensuales del plan.
+  // Ejemplo: si el plan da 2000, monthly será 2000.
+  const monthly = round2(Number(monthlyCredits));
+  if (!Number.isFinite(monthly) || monthly <= 0) {
+    return { ok: false as const, error: "Créditos mensuales inválidos." };
+  }
+
+  const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (readErr) return { ok: false as const, error: readErr.message };
+
+  // Leemos el saldo actual no utilizado del usuario.
+  // Si no existe o viene raro, tomamos 0 para no romper el cálculo.
+  const current = round2(creditsFromProfile(profile));
+
+  // Regla 1: suma de créditos = saldo actual no usado + créditos nuevos del mes.
+  // Ejemplo: 1500 actuales + 2000 nuevos = 3500.
+  const sum = round2(current + monthly);
+
+  // Regla 2: tope máximo = 2 meses del plan.
+  // Ejemplo: plan de 2000 => cap de 4000.
+  const cap = round2(monthly * 2);
+
+  // Regla 3: el saldo final guardado nunca puede pasar del cap.
+  // Ejemplo: si sum da 4500 y cap es 4000, guardamos 4000 exactos.
+  const next = round2(Math.min(sum, cap));
+
+  const upd = await updateCreditsAnyColumn(admin, userId, next);
+  if (!upd.ok) return upd;
+  return { ok: true as const, previous: current, added: monthly, cap, next };
+}
+
 async function ensureMonthlyCreditsCycle(admin: any, userId: string) {
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
@@ -396,8 +447,8 @@ async function ensureMonthlyCreditsCycle(admin: any, userId: string) {
 
   let didReset = false;
   if (now >= expiresMs) {
-    didReset = true;
-    await updateCreditsAnyColumn(admin, userId, 0);
+    // Ya no reseteamos créditos a cero en el corte mensual.
+    // El saldo se conserva y la recarga ocurre cuando entra el pago aprobado.
     await insertCycle(now);
     startMs = now;
     expiresMs = now + cycleMs;
@@ -4851,9 +4902,20 @@ const mercadoPagoHandler = (() => {
     const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
     if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
 
+    const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
     if (Number.isFinite(credits) && credits > 0) {
-      const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
-      if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      if (isPlanRenewal) {
+        const upd = await applyCreditRolloverWithCap(auth.admin, {
+          userId: auth.user.id,
+          monthlyCredits: credits,
+          subscriptionActive: true,
+          renewalPaidSuccessfully: paymentStatus === "approved",
+        });
+        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      } else {
+        const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
+        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      }
     }
 
     await auth.admin.from("mp_transactions").insert({
@@ -4909,7 +4971,21 @@ const mercadoPagoHandler = (() => {
     const amountMxn = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
     const credits = Number(meta?.credits ?? 0);
 
-    if (Number.isFinite(credits) && credits > 0) await adjustUserCredits(admin, userId, credits);
+    const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
+    if (Number.isFinite(credits) && credits > 0) {
+      if (isPlanRenewal) {
+        const upd = await applyCreditRolloverWithCap(admin, {
+          userId,
+          monthlyCredits: credits,
+          subscriptionActive: true,
+          renewalPaidSuccessfully: paymentStatus === "approved",
+        });
+        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      } else {
+        const upd = await adjustUserCredits(admin, userId, credits);
+        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      }
+    }
 
     await admin.from("mp_transactions").insert({
       user_id: userId,
