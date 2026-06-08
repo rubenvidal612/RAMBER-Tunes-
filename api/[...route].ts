@@ -356,9 +356,10 @@ async function applyCreditRolloverWithCap(
     monthlyCredits: number;
     subscriptionActive: boolean;
     renewalPaidSuccessfully: boolean;
+    isUnlimitedAccount?: boolean;
   },
 ) {
-  const { userId, monthlyCredits, subscriptionActive, renewalPaidSuccessfully } = input;
+  const { userId, monthlyCredits, subscriptionActive, renewalPaidSuccessfully, isUnlimitedAccount = false } = input;
 
   // Solo se acumulan créditos cuando la suscripción/plan está activa
   // y el pago de renovación fue aprobado exitosamente.
@@ -391,13 +392,20 @@ async function applyCreditRolloverWithCap(
   // Ejemplo: plan de 2000 => cap de 4000.
   const cap = round2(monthly * 2);
 
-  // Regla 3: el saldo final guardado nunca puede pasar del cap.
+  // Excepción para cuentas admin/ilimitadas:
+  // si el usuario es admin, no aplicamos tope y puede conservar/acumular todo.
+  // Para el resto sí se limita al equivalente de 2 meses.
+  const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
+  const unlimited = isUnlimitedAccount || isAdminEmail(profileEmail);
+
+  // Regla 3: para usuarios normales, el saldo final nunca puede pasar del cap.
   // Ejemplo: si sum da 4500 y cap es 4000, guardamos 4000 exactos.
-  const next = round2(Math.min(sum, cap));
+  // Para admin: si sum da 4500, se guarda 4500.
+  const next = round2(unlimited ? sum : Math.min(sum, cap));
 
   const upd = await updateCreditsAnyColumn(admin, userId, next);
   if (!upd.ok) return upd;
-  return { ok: true as const, previous: current, added: monthly, cap, next };
+  return { ok: true as const, previous: current, added: monthly, cap, next, unlimited };
 }
 
 async function ensureMonthlyCreditsCycle(admin: any, userId: string) {
@@ -4910,6 +4918,7 @@ const mercadoPagoHandler = (() => {
           monthlyCredits: credits,
           subscriptionActive: true,
           renewalPaidSuccessfully: paymentStatus === "approved",
+          isUnlimitedAccount: isAdminEmail(auth.user.email),
         });
         if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
       } else {
