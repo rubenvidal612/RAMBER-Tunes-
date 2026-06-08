@@ -159,6 +159,75 @@ function isFailureStatus(status: string) {
   );
 }
 
+function extractSongsFromProviderPayload(payload: any) {
+  const d = payload?.data || payload?.data?.data || payload;
+  const candidates: any[] = [];
+  if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+  if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+  if (Array.isArray(d?.response)) candidates.push(d.response);
+  if (Array.isArray(d?.data)) candidates.push(d.data);
+  if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+  const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+
+  const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+  const pickUrl = (track: any) => {
+    const raw =
+      track?.audio_url ||
+      track?.audioUrl ||
+      track?.streamAudioUrl ||
+      track?.stream_audio_url ||
+      track?.stream_url ||
+      track?.url ||
+      "";
+    const s = cleanStr(raw);
+    return /^https?:\/\//i.test(s) ? s : "";
+  };
+  const pickId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || "");
+  const pickTitle = (track: any) => cleanStr(track?.title || "");
+  const pickImage = (track: any) =>
+    cleanStr(
+      track?.image_url ||
+        track?.imageUrl ||
+        track?.image_large_url ||
+        track?.imageLargeUrl ||
+        track?.cover_url ||
+        track?.coverUrl ||
+        track?.thumbnail_url ||
+        track?.thumbnailUrl ||
+        track?.metadata?.image_url ||
+        track?.metadata?.imageUrl ||
+        track?.metadata?.image_large_url ||
+        track?.metadata?.imageLargeUrl ||
+        track?.metadata?.cover_url ||
+        track?.metadata?.coverUrl ||
+        track?.metadata?.thumbnail_url ||
+        track?.metadata?.thumbnailUrl ||
+        track?.image?.url ||
+        track?.image?.src ||
+        track?.cover?.url ||
+        track?.cover?.src ||
+        "",
+    );
+
+  return (Array.isArray(list) ? list : [])
+    .map((track: any) => ({
+      audio_url: pickUrl(track),
+      title: pickTitle(track),
+      id: pickId(track),
+      image_url: pickImage(track),
+    }))
+    .filter((x: any) => x.audio_url);
+}
+
+function normalizeTaskStatus(providerStatus: string) {
+  const s = String(providerStatus || "").toUpperCase();
+  if (isFailureStatus(s)) return "FAILED" as const;
+  if (s === "SUCCESS" || s === "COMPLETED" || s === "COMPLETE" || s === "DONE" || s.includes("SUCCESS") || s.includes("COMPLETE")) {
+    return "SUCCESS" as const;
+  }
+  return "PENDING" as const;
+}
+
 export default async function handler(req: any, res: any) {
   if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -252,7 +321,9 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    return send(res, 200, { data, kind: queryKind });
+    const status = normalizeTaskStatus(providerStatus);
+    const songs = status === "SUCCESS" ? extractSongsFromProviderPayload(data) : [];
+    return send(res, 200, { data, kind: queryKind, status, songs });
   } catch (e) {
     return send(res, 502, { error: "Error consultando task", detail: e instanceof Error ? e.message : String(e) });
   }
