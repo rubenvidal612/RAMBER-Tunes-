@@ -1,9 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
 function send(res: any, status: number, body: any) {
-  res.statusCode = status;
-  res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify(body));
+  try {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  } catch {
+    try {
+      res.statusCode = 500;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "Error enviando respuesta" }));
+    } catch {}
+  }
 }
 
 async function readJsonBody(req: any) {
@@ -198,51 +206,64 @@ async function transcribeLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: strin
 }
 
 export default async function handler(req: any, res: any) {
-  if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-
-  const secret = (process.env.TELEGRAM_BOT_SECRET || "").toString().trim();
-  if (!secret) return send(res, 500, { error: "TELEGRAM_BOT_SECRET no configurado" });
-  const got = String(req?.headers?.["x-telegram-secret"] || "").trim();
-  if (!got || got !== secret) return send(res, 401, { error: "No autorizado" });
-
-  const payload = await readJsonBody(req);
-  if (!payload) return send(res, 400, { error: "Body inválido" });
-
-  const telegram_user_id = payload.telegram_user_id;
-  if (telegram_user_id == null || telegram_user_id === "") return send(res, 400, { error: "Falta telegram_user_id" });
-
-  const uploadUrlRaw = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
-  const uploadUrlB64 = typeof payload?.uploadUrl_b64 === "string" ? payload.uploadUrl_b64.trim() : typeof payload?.uploadUrlB64 === "string" ? payload.uploadUrlB64.trim() : "";
-  const telegramFileId = typeof payload?.telegram_file_id === "string" ? payload.telegram_file_id.trim() : typeof payload?.file_id === "string" ? payload.file_id.trim() : "";
-  const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
-  let resolvedUrl = safeUrl(uploadUrlRaw);
-  if (!resolvedUrl && uploadUrlB64) {
-    const decoded = tryDecodeB64Url(uploadUrlB64);
-    resolvedUrl = decoded ? safeUrl(decoded) : null;
-  }
-  if (!resolvedUrl && telegramFileId) {
-    const out = await resolveTelegramFileUrlFromFileId(telegramFileId);
-    if (!out.ok) return send(res, 400, { error: out.error || "No pude resolver el archivo de Telegram" });
-    resolvedUrl = safeUrl(out.url);
-  }
-  if (!resolvedUrl) {
-    return send(res, 400, { error: "Falta uploadUrl (o uploadUrl_b64 / file_id)" });
-  }
-
-  const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
-  const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
-  if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
-
-  const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-  const { data: link, error: linkErr } = await admin
-    .from("telegram_links")
-    .select("user_id")
-    .eq("telegram_user_id", telegram_user_id)
-    .maybeSingle();
-  if (linkErr) return send(res, 500, { error: "Error buscando vínculo", detail: linkErr.message });
-  if (!link?.user_id) return send(res, 401, { error: "Cuenta no vinculada" });
-
   try {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const secret = (process.env.TELEGRAM_BOT_SECRET || "").toString().trim();
+    if (!secret) return send(res, 500, { error: "TELEGRAM_BOT_SECRET no configurado" });
+    const got = String(req?.headers?.["x-telegram-secret"] || "").trim();
+    if (!got || got !== secret) return send(res, 401, { error: "No autorizado" });
+
+    const payload = await readJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const telegram_user_id = (payload as any)?.telegram_user_id;
+    if (telegram_user_id == null || telegram_user_id === "") return send(res, 400, { error: "Falta telegram_user_id" });
+
+    const uploadUrlRaw = typeof (payload as any)?.uploadUrl === "string" ? (payload as any).uploadUrl.trim() : "";
+    const uploadUrlB64 =
+      typeof (payload as any)?.uploadUrl_b64 === "string"
+        ? (payload as any).uploadUrl_b64.trim()
+        : typeof (payload as any)?.uploadUrlB64 === "string"
+          ? (payload as any).uploadUrlB64.trim()
+          : "";
+    const telegramFileId =
+      typeof (payload as any)?.telegram_file_id === "string"
+        ? (payload as any).telegram_file_id.trim()
+        : typeof (payload as any)?.file_id === "string"
+          ? (payload as any).file_id.trim()
+          : "";
+    const mimeTypeHint = typeof (payload as any)?.mimeType === "string" ? (payload as any).mimeType.trim() : "";
+
+    let resolvedUrl = safeUrl(uploadUrlRaw);
+    if (!resolvedUrl && uploadUrlB64) {
+      const decoded = tryDecodeB64Url(uploadUrlB64);
+      resolvedUrl = decoded ? safeUrl(decoded) : null;
+    }
+    if (!resolvedUrl && telegramFileId) {
+      const out = await resolveTelegramFileUrlFromFileId(telegramFileId);
+      if (!out.ok) return send(res, 400, { error: out.error || "No pude resolver el archivo de Telegram" });
+      resolvedUrl = safeUrl(out.url);
+    }
+    if (!resolvedUrl) {
+      return send(res, 400, { error: "Falta uploadUrl (o uploadUrl_b64 / file_id)" });
+    }
+
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    const { data: link, error: linkErr } = await admin
+      .from("telegram_links")
+      .select("user_id")
+      .eq("telegram_user_id", telegram_user_id)
+      .maybeSingle();
+    if (linkErr) return send(res, 500, { error: "Error buscando vínculo", detail: linkErr.message });
+    if (!link?.user_id) return send(res, 401, { error: "Cuenta no vinculada" });
+
     const fr = await fetch(resolvedUrl, { redirect: "follow" });
     if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
 
@@ -279,11 +300,7 @@ export default async function handler(req: any, res: any) {
     }
     return send(res, 200, { ok: true, lyrics: out.lyrics || "", status: "OK" });
   } catch (e) {
-    return send(res, 200, {
-      ok: false,
-      error: "Error transcribiendo",
-      message: "No pude transcribir la letra. Intenta con un audio más claro o más corto.",
-      detail: e instanceof Error ? e.message : String(e),
-    });
+    const msg = e instanceof Error ? e.message : String(e);
+    return send(res, 500, { error: "Error interno", detail: msg.slice(0, 900) });
   }
 }
