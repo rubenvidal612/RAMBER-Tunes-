@@ -429,6 +429,20 @@ async function handleCoverText(ctx, text) {
   }
 }
 
+async function doAction(ctx, action, data, telegramId) {
+  console.log('[doAction] action=', action, 'tg=', telegramId);
+  
+  if (action === 'credits') {
+    const res = await callVercel('/api/telegram/credits', {}, telegramId);
+    if (res && res.error) return ctx.reply('Error: ' + res.error);
+    return ctx.reply('Tienes ' + res.credits + ' créditos disponibles.');
+  }
+  
+  // Para otras acciones, podríamos expandir aquí
+  console.log('[doAction] acción no manejada:', action);
+  return ctx.reply('Acción no reconocida.');
+}
+
 async function chat(ctx, userMessage) {
   const telegramId = ctx.from.id.toString();
   const s = getSession(telegramId);
@@ -443,6 +457,16 @@ async function chat(ctx, userMessage) {
   if (isVoiceSepRequest) {
     console.log('[voice-sep] detected request for voice separation');
     await handleVoiceSeparation(ctx, telegramId);
+    return;
+  }
+
+  // Detectar intención de créditos
+  const creditKeywords = ['creditos', 'créditos', 'saldo', 'cuantos tengo', 'cuanto tengo', 'cuántos tengo', 'cuánto tengo'];
+  const isCreditRequest = creditKeywords.some(keyword => msgLower.includes(keyword));
+
+  if (isCreditRequest) {
+    console.log('[chat] detected credit request');
+    await doAction(ctx, 'credits', {}, telegramId);
     return;
   }
 
@@ -477,12 +501,6 @@ async function chat(ctx, userMessage) {
       const json = JSON.parse(reply);
       if (json && json.action) {
         const action = String(json.action || '').trim();
-
-        if (action === 'credits') {
-          const res = await callVercel('/api/telegram/credits', {}, telegramId);
-          if (res && res.error) return ctx.reply('Error: ' + res.error);
-          return ctx.reply('Tienes ' + res.credits + ' créditos disponibles.');
-        }
 
         if (action === 'generate') {
           await ctx.reply('Generando tu canción, espera unos minutos…');
