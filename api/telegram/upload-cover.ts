@@ -267,8 +267,13 @@ export default async function handler(req: any, res: any) {
 
   const userId = String(link.user_id);
 
-  const consumed = await consumeUserCredits(admin, userId, CREDIT_COSTS.upload_and_cover);
-  if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+  // Excepción para el admin (telegram_user_id: 8761905779)
+  if (telegram_user_id === "8761905779") {
+    console.log("[admin] Skipping credit validation for admin user");
+  } else {
+    const consumed = await consumeUserCredits(admin, userId, CREDIT_COSTS.upload_and_cover);
+    if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+  }
 
   try {
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");

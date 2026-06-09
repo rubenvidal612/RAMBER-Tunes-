@@ -258,6 +258,11 @@ export default async function handler(req: any, res: any) {
 
   const userId = String(link.user_id);
 
+  // Excepción para el admin (telegram_user_id: 8761905779)
+  if (telegram_user_id === "8761905779") {
+    console.log("[admin] Skipping any credit validation for admin user in generate");
+  }
+
   const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
   const style = typeof payload?.style === "string" ? payload.style.trim() : "";
   const instrumental = Boolean(payload?.instrumental);
