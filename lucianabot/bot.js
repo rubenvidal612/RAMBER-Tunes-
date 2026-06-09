@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Telegraf } = require('telegraf');
-const Groq = require('groq-sdk');
+const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 
 function loadEnvFile(filePath) {
@@ -41,7 +41,7 @@ function mask(s) {
 }
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const VERCEL_URL = (process.env.VERCEL_URL || '').trim().replace(/\/+$/, '');
 const VERCEL_SECRET = process.env.VERCEL_SECRET || '';
 
@@ -49,7 +49,7 @@ console.log('[boot] Iniciando LucIA Bot...');
 console.log(
   '[boot] ENV ok?',
   'TELEGRAM_TOKEN=' + (TELEGRAM_TOKEN ? 'SI' : 'NO'),
-  'GROQ_API_KEY=' + (GROQ_API_KEY ? 'SI' : 'NO'),
+  'ANTHROPIC_API_KEY=' + (ANTHROPIC_API_KEY ? 'SI' : 'NO'),
   'VERCEL_URL=' + (VERCEL_URL ? VERCEL_URL : 'NO'),
   'VERCEL_SECRET=' + (VERCEL_SECRET ? mask(VERCEL_SECRET) : 'NO')
 );
@@ -58,8 +58,8 @@ if (!TELEGRAM_TOKEN) {
   console.log('[boot] FALTA TELEGRAM_TOKEN en /root/lucianabot/.env');
   process.exit(1);
 }
-if (!GROQ_API_KEY) {
-  console.log('[boot] FALTA GROQ_API_KEY en /root/lucianabot/.env');
+if (!ANTHROPIC_API_KEY) {
+  console.log('[boot] FALTA ANTHROPIC_API_KEY en /root/lucianabot/.env');
   process.exit(1);
 }
 if (!VERCEL_URL) {
@@ -72,7 +72,7 @@ if (!VERCEL_SECRET) {
 }
 
 const bot = new Telegraf(TELEGRAM_TOKEN);
-const groq = new Groq({ apiKey: GROQ_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const headers = { 'x-telegram-secret': VERCEL_SECRET, 'Content-Type': 'application/json' };
 const conversations = {};
@@ -166,17 +166,16 @@ async function generateLyricsDraft(topic, style) {
     'Estilo musical: ' +
     String(style || '').trim();
 
-  const response = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 800,
+    system: 'Eres un compositor profesional. Entrega SOLO la letra.',
     messages: [
-      { role: 'system', content: 'Eres un compositor profesional. Entrega SOLO la letra.' },
       { role: 'user', content: prompt },
     ],
-    max_tokens: 700,
-    temperature: 0.8,
   });
 
-  const text = response.choices[0].message.content || '';
+  const text = response.content[0].text || '';
   return String(text).trim();
 }
 
@@ -218,6 +217,86 @@ async function startCoverFlow(ctx, fileId) {
   }
 
   await ctx.reply('Listo. Ahora dime el estilo del cover (ej: cumbia, reggaetón, norteño) y de qué trata la letra.');
+}
+
+async function handleVoiceSeparation(ctx, telegramId) {
+  console.log('[voice-sep] starting voice separation flow for tg=', telegramId);
+  
+  // Llamar al endpoint para obtener las canciones del usuario
+  const res = await callVercel('/api/telegram/songs', {}, telegramId);
+  
+  if (res && res.error) {
+    await ctx.reply('Error al obtener tus canciones: ' + res.error);
+    return;
+  }
+  
+  if (!res.songs || res.songs.length === 0) {
+    await ctx.reply('No tienes canciones generadas aún. Primero genera una canción o cover.');
+    return;
+  }
+  
+  // Mostrar las últimas 5 canciones numeradas
+  let message = 'Estas son tus últimas canciones:\n\n';
+  const songs = res.songs.slice(0, 5); // Tomar máximo 5 canciones
+  
+  songs.forEach((song, index) => {
+    const title = song.title || `Canción ${index + 1}`;
+    message += `${index + 1}. ${title}\n`;
+  });
+  
+  message += '\nResponde con el número de la canción que quieres separar (ej: 1, 2, 3).';
+  
+  // Guardar las canciones en la sesión para referencia futura
+  const s = getSession(telegramId);
+  s.mode = 'await_song_selection';
+  s.voiceSepSongs = songs;
+  
+  await ctx.reply(message);
+}
+
+async function handleSongSelection(ctx, userMessage, telegramId) {
+  const s = getSession(telegramId);
+  const msg = String(userMessage || '').trim();
+  
+  // Verificar si el mensaje es un número válido
+  const selectedNum = parseInt(msg, 10);
+  
+  if (isNaN(selectedNum) || selectedNum < 1 || selectedNum > s.voiceSepSongs.length) {
+    await ctx.reply(`Por favor responde con un número entre 1 y ${s.voiceSepSongs.length}.`);
+    return;
+  }
+  
+  // Obtener la canción seleccionada
+  const selectedSong = s.voiceSepSongs[selectedNum - 1];
+  const taskId = selectedSong.task_id;
+  const title = selectedSong.title || `Canción ${selectedNum}`;
+  
+  console.log('[voice-sep] selected song:', selectedNum, 'taskId=', taskId, 'title=', title);
+  
+  // Llamar al endpoint de separación de voz
+  await ctx.reply(`Procesando separación de voz para: "${title}"...`);
+  
+  const res = await callVercel('/api/telegram/separate', { taskId }, telegramId);
+  
+  if (res && res.error) {
+    await ctx.reply('Error al separar la voz: ' + res.error);
+    s.mode = 'idle';
+    return;
+  }
+  
+  const newTaskId = (res.taskId || res.task_id || res.id || '').toString().trim();
+  
+  if (!newTaskId) {
+    await ctx.reply('No se pudo iniciar la separación de voz.');
+    s.mode = 'idle';
+    return;
+  }
+  
+  await ctx.reply('Separación de voz en proceso. Te aviso cuando esté lista.');
+  s.mode = 'idle';
+  
+  // Esperar y enviar el resultado
+  await waitAndSend(ctx, newTaskId, telegramId, 0);
 }
 
 async function handleCoverText(ctx, text) {
@@ -363,8 +442,24 @@ async function chat(ctx, userMessage) {
 
   console.log('[text] tg=', telegramId, 'mode=', s.mode, 'msg=', String(userMessage || '').slice(0, 120));
 
+  // Detectar solicitud de separación de voz
+  const msgLower = String(userMessage || '').toLowerCase().trim();
+  const voiceSepKeywords = ['separar voz', 'separación de voz', 'aislar voz', 'extraer voz', 'voz separada', 'separar la voz'];
+  const isVoiceSepRequest = voiceSepKeywords.some(keyword => msgLower.includes(keyword));
+
+  if (isVoiceSepRequest) {
+    console.log('[voice-sep] detected request for voice separation');
+    await handleVoiceSeparation(ctx, telegramId);
+    return;
+  }
+
   if (s.mode === 'await_cover_transcription_approve' || s.mode === 'await_cover_style' || s.mode === 'await_cover_approve') {
     await handleCoverText(ctx, userMessage);
+    return;
+  }
+
+  if (s.mode === 'await_song_selection') {
+    await handleSongSelection(ctx, userMessage, telegramId);
     return;
   }
 
@@ -373,14 +468,14 @@ async function chat(ctx, userMessage) {
   if (conversations[telegramId].length > 20) conversations[telegramId] = conversations[telegramId].slice(-20);
 
   try {
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }].concat(conversations[telegramId]),
-      max_tokens: 500,
-      temperature: 0.7,
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 300,
+      system: SYSTEM_PROMPT,
+      messages: conversations[telegramId]
     });
 
-    const reply = (response.choices[0].message.content || '').trim();
+    const reply = response.content[0].text.trim();
     conversations[telegramId].push({ role: 'assistant', content: reply });
 
     console.log('[ai] reply=', reply.slice(0, 200));
