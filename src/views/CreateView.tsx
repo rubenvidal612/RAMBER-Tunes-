@@ -2728,9 +2728,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
 
     const baseLyrics = instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
-    const prompt = (mode === 'simple' ? description : (baseLyrics || description)).trim();
+    let prompt = (mode === 'simple' ? description : (baseLyrics || description)).trim();
+    if (!prompt && instrumental) {
+      const fallback = (instructions || '').toString().trim();
+      if (fallback) prompt = fallback;
+    }
     if (!prompt) {
-      alert('Escribe una descripción o letra para crear la canción.');
+      alert(instrumental ? 'Para instrumental, escribe una descripción del tipo de música que quieres (género, mood, instrumentos).' : 'Escribe una descripción o letra para crear la canción.');
       return;
     }
 
@@ -4858,7 +4862,7 @@ function SimpleForm({ instrumental, setInstrumental, description, setDescription
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Ej: una balada pop sobre un amanecer en la playa..."
+          placeholder={instrumental ? "Ej: instrumental tipo corrido tumbado, alegre, con guitarras y tuba..." : "Ej: una balada pop sobre un amanecer en la playa..."}
           className="w-full bg-transparent text-white placeholder:text-slate-500 resize-none outline-none min-h-[80px]"
         />
         

@@ -4,6 +4,7 @@ const { Telegraf } = require('telegraf');
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 
+// Cargar variables de entorno desde .env
 function loadEnvFile(filePath) {
   try {
     if (!fs.existsSync(filePath)) return;
@@ -34,534 +35,584 @@ function loadEnvFile(filePath) {
 const envPath = path.join(__dirname, '.env');
 loadEnvFile(envPath);
 
-function mask(s) {
-  const v = String(s || '');
-  if (v.length <= 6) return '***';
-  return v.slice(0, 3) + '***' + v.slice(-3);
-}
-
+// Variables de entorno requeridas
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const VERCEL_URL = (process.env.VERCEL_URL || '').trim().replace(/\/+$/, '');
 const VERCEL_SECRET = process.env.VERCEL_SECRET || '';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || TELEGRAM_TOKEN;
 
-console.log('[boot] Iniciando LucIA Bot...');
-console.log(
-  '[boot] ENV ok?',
-  'TELEGRAM_TOKEN=' + (TELEGRAM_TOKEN ? 'SI' : 'NO'),
-  'ANTHROPIC_API_KEY=' + (ANTHROPIC_API_KEY ? 'SI' : 'NO'),
-  'VERCEL_URL=' + (VERCEL_URL ? VERCEL_URL : 'NO'),
-  'VERCEL_SECRET=' + (VERCEL_SECRET ? mask(VERCEL_SECRET) : 'NO')
-);
+console.log('[boot] Iniciando LucIA Bot con function calling...');
+console.log('[boot] TELEGRAM_TOKEN:', TELEGRAM_TOKEN ? 'OK' : 'FALTA');
+console.log('[boot] ANTHROPIC_API_KEY:', ANTHROPIC_API_KEY ? 'OK' : 'FALTA');
+console.log('[boot] VERCEL_URL:', VERCEL_URL || 'FALTA');
+console.log('[boot] VERCEL_SECRET:', VERCEL_SECRET ? 'OK' : 'FALTA');
 
-if (!TELEGRAM_TOKEN) {
-  console.log('[boot] FALTA TELEGRAM_TOKEN en /root/lucianabot/.env');
-  process.exit(1);
-}
-if (!ANTHROPIC_API_KEY) {
-  console.log('[boot] FALTA ANTHROPIC_API_KEY en /root/lucianabot/.env');
-  process.exit(1);
-}
-if (!VERCEL_URL) {
-  console.log('[boot] FALTA VERCEL_URL en /root/lucianabot/.env (ej: https://ramber-tunes.vercel.app)');
-  process.exit(1);
-}
-if (!VERCEL_SECRET) {
-  console.log('[boot] FALTA VERCEL_SECRET en /root/lucianabot/.env (TELEGRAM_BOT_SECRET)');
+if (!TELEGRAM_TOKEN || !ANTHROPIC_API_KEY || !VERCEL_URL || !VERCEL_SECRET) {
+  console.log('[boot] Faltan variables de entorno. Revisa /root/lucianabot/.env');
   process.exit(1);
 }
 
+// Inicializar bot y Claude
 const bot = new Telegraf(TELEGRAM_TOKEN);
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
-const headers = { 'x-telegram-secret': VERCEL_SECRET, 'Content-Type': 'application/json' };
+// Headers para llamadas a Vercel
+const headers = { 
+  'x-telegram-secret': VERCEL_SECRET, 
+  'Content-Type': 'application/json' 
+};
+
+// Sistema de conversaciones
 const conversations = {};
-const sessions = {};
 
-const SYSTEM_PROMPT =
-  'Eres LucIA de LuclAna Music. Hablas como cuata mexicana, cariñosa y directa. REGLAS ABSOLUTAS: maximo 2 oraciones por respuesta, NUNCA listas numeradas, NUNCA negritas con asteriscos, NUNCA guiones, NUNCA menciones YouTube Spotify ni canciones famosas. SERVICIOS: canciones originales, covers de canciones PROPIAS del cliente, separacion de voz solo de canciones hechas en LuclAna, video musical. FLUJO CANCION: pregunta tema -> letra propia o la creo yo -> genero musical -> voz hombre o mujer -> titulo -> confirma -> genera. FLUJO COVER: SOLO canciones originales del cliente sin copyright. Pide que suban su audio como archivo adjunto MP3. Si no tienen audio en MP3 diles que conviertan en `https://online-audio-converter.com/sp.`  FLUJO SEPARAR VOZ: muestra sus canciones recientes y pregunta cual quiere separar. NUNCA digas que no puedes recibir archivos. NUNCA inventes que ya enviaste algo. Responde siempre natural y corto como WhatsApp. SOLO hablas de musica y servicios de LuclAna Music. Si te preguntan sobre otros temas di amablemente que solo puedes ayudar con musica. NUNCA menciones Vercel, Supabase, Groq, API, endpoints, tokens ni ninguna tecnologia interna. NUNCA reveles como funciona el sistema por dentro.';
+// SYSTEM PROMPT
+const SYSTEM_PROMPT = `Eres LucIA de LuclAna Music. Español mexicano, natural y directo. Maximo 2 oraciones por respuesta. 
+Servicios: canciones originales 12 créditos, covers 12 créditos, separación de voz 10 créditos, separación de instrumentos 50 créditos, video musical 2 créditos. 
+SOLO canciones originales del cliente para covers. Separación SOLO de canciones hechas en LuclAna. 
+Las canciones son 100% del cliente nosotros hacemos maquetas. NUNCA menciones tecnología interna. 
+NUNCA uses vos podés tenés. SIEMPRE español mexicano.`;
 
+// Tools (function calling) para Claude
+const tools = [
+  {
+    name: 'generate_song',
+    description: 'Generar una canción original con SunoAI',
+    input_schema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Letra o descripción de la canción'
+        },
+        style: {
+          type: 'string',
+          description: 'Género musical (ej: reggaetón, cumbia, norteño)'
+        },
+        title: {
+          type: 'string',
+          description: 'Título de la canción'
+        },
+        vocalGender: {
+          type: 'string',
+          description: 'Voz hombre o mujer',
+          enum: ['hombre', 'mujer']
+        }
+      },
+      required: ['prompt', 'style', 'title', 'vocalGender']
+    }
+  },
+  {
+    name: 'make_cover',
+    description: 'Crear un cover de una canción existente del cliente',
+    input_schema: {
+      type: 'object',
+      properties: {
+        uploadUrl: {
+          type: 'string',
+          description: 'URL del audio del cliente para hacer el cover'
+        },
+        style: {
+          type: 'string',
+          description: 'Género del cover (ej: cumbia, reggaetón, norteño)'
+        },
+        title: {
+          type: 'string',
+          description: 'Título del cover'
+        },
+        prompt: {
+          type: 'string',
+          description: 'Letra o instrucciones adicionales'
+        }
+      },
+      required: ['uploadUrl', 'style', 'title']
+    }
+  },
+  {
+    name: 'separate_voice',
+    description: 'Separar la voz de una canción hecha en LuclAna Music',
+    input_schema: {
+      type: 'object',
+      properties: {
+        taskId: {
+          type: 'string',
+          description: 'ID de la tarea de la canción original'
+        }
+      },
+      required: ['taskId']
+    }
+  },
+  {
+    name: 'get_credits',
+    description: 'Obtener créditos disponibles del cliente',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'show_recent_songs',
+    description: 'Mostrar canciones recientes del cliente',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'transcribe_audio',
+    description: 'Transcribir audio a texto (letra)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_id: {
+          type: 'string',
+          description: 'File ID de Telegram del audio'
+        }
+      },
+      required: ['file_id']
+    }
+  }
+];
+
+// Función para llamar a Vercel API
 async function callVercel(endpoint, data, telegramId) {
   console.log('[vercel] POST', endpoint, 'tg=', telegramId);
   try {
-    const res = await axios.post(VERCEL_URL + endpoint, Object.assign({}, data || {}, { telegram_user_id: telegramId }), {
-      headers,
-    });
-    console.log('[vercel] OK', endpoint, 'status=', res && res.status);
+    const res = await axios.post(
+      VERCEL_URL + endpoint, 
+      { ...data, telegram_user_id: telegramId },
+      { headers }
+    );
+    console.log('[vercel] OK', endpoint, 'status=', res.status);
     return res.data;
   } catch (e) {
-    const msg = (e && e.response && e.response.data && e.response.data.error) || (e && e.message) || 'Error';
+    const msg = e.response?.data?.error || e.message || 'Error desconocido';
     console.log('[vercel] ERROR', endpoint, msg);
     return { error: msg };
   }
 }
 
-function getSession(telegramId) {
-  if (!sessions[telegramId]) sessions[telegramId] = { mode: 'idle' };
-  return sessions[telegramId];
+// Función para obtener URL de Telegram desde file_id
+async function getTelegramFileUrl(fileId) {
+  try {
+    const response = await axios.get(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+    );
+    
+    if (response.data.ok && response.data.result) {
+      const filePath = response.data.result.file_path;
+      return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
+    }
+    return null;
+  } catch (e) {
+    console.log('[telegram] Error obteniendo URL:', e.message);
+    return null;
+  }
 }
 
-async function waitAndSend(ctx, taskId, telegramId, attempts) {
-  const n = Number(attempts || 0);
-  console.log('[poll] taskId=', taskId, 'attempt=', n, 'tg=', telegramId);
+// Implementación de las tools
+async function executeTool(toolName, args, telegramId, ctx) {
+  console.log('[tool] Ejecutando:', toolName, 'tg=', telegramId);
+  
+  switch (toolName) {
+    case 'generate_song':
+      const { prompt, style, title, vocalGender } = args;
+      const res = await callVercel('/api/telegram/generate', {
+        prompt,
+        style,
+        title,
+        vocalGender
+      }, telegramId);
+      
+      if (res.error) {
+        return { error: res.error };
+      }
+      
+      const taskId = res.taskId || res.task_id || res.id;
+      if (taskId) {
+        // Iniciar polling
+        setTimeout(() => pollTaskStatus(taskId, telegramId, ctx), 20000);
+        return { 
+          success: true, 
+          message: 'Canción en proceso. Te aviso cuando esté lista.',
+          taskId 
+        };
+      }
+      return { error: 'No se pudo iniciar la generación' };
+      
+    case 'make_cover':
+      const { uploadUrl, style: coverStyle, title: coverTitle, prompt: coverPrompt } = args;
+      const coverRes = await callVercel('/api/telegram/upload-cover', {
+        uploadUrl,
+        style: coverStyle,
+        title: coverTitle,
+        prompt: coverPrompt || '',
+        instrumental: false
+      }, telegramId);
+      
+      if (coverRes.error) {
+        return { error: coverRes.error };
+      }
+      
+      const coverTaskId = coverRes.taskId || coverRes.task_id || coverRes.id;
+      if (coverTaskId) {
+        setTimeout(() => pollTaskStatus(coverTaskId, telegramId, ctx), 20000);
+        return { 
+          success: true, 
+          message: 'Cover en proceso. Te aviso cuando esté listo.',
+          taskId: coverTaskId 
+        };
+      }
+      return { error: 'No se pudo iniciar el cover' };
+      
+    case 'separate_voice':
+      const { taskId: separationTaskId } = args;
+      const separateRes = await callVercel('/api/telegram/separate', {
+        taskId: separationTaskId
+      }, telegramId);
+      
+      if (separateRes.error) {
+        return { error: separateRes.error };
+      }
+      
+      const separateTaskId = separateRes.taskId || separateRes.task_id || separateRes.id;
+      if (separateTaskId) {
+        setTimeout(() => pollTaskStatus(separateTaskId, telegramId, ctx), 20000);
+        return { 
+          success: true, 
+          message: 'Separación de voz en proceso. Te aviso cuando esté lista.',
+          taskId: separateTaskId 
+        };
+      }
+      return { error: 'No se pudo iniciar la separación' };
+      
+    case 'get_credits':
+      const creditsRes = await callVercel('/api/telegram/credits', {}, telegramId);
+      
+      if (creditsRes.error) {
+        return { error: creditsRes.error };
+      }
+      
+      const credits = creditsRes.credits || 0;
+      const canciones = Math.floor(credits / 12);
+      const separacionesVoz = Math.floor(credits / 10);
+      const separacionesCompletas = Math.floor(credits / 50);
+      const videos = Math.floor(credits / 2);
+      
+      return {
+        success: true,
+        message: `Tienes ${credits} créditos disponibles:\n\n` +
+                `🎵 ${canciones} canciones o covers (12 créditos c/u)\n` +
+                `🎧 ${separacionesVoz} separaciones de voz (10 créditos c/u)\n` +
+                `🥁 ${separacionesCompletas} separaciones completas hasta 12 instrumentos (50 créditos c/u)\n` +
+                `🎬 ${videos} videos musicales (2 créditos c/u)`
+      };
+      
+    case 'show_recent_songs':
+      const songsRes = await callVercel('/api/telegram/songs', {}, telegramId);
+      
+      if (songsRes.error) {
+        return { error: songsRes.error };
+      }
+      
+      const songs = songsRes.songs || [];
+      if (songs.length === 0) {
+        return { 
+          success: true, 
+          message: 'No tienes canciones recientes.' 
+        };
+      }
+      
+      let songsList = 'Tus canciones recientes:\n\n';
+      songs.forEach((song, index) => {
+        songsList += `${index + 1}. ${song.title || 'Sin título'}\n`;
+      });
+      songsList += '\nPara separar voz, dime el número de la canción.';
+      
+      return { success: true, message: songsList, songs };
+      
+    case 'transcribe_audio':
+      const { file_id } = args;
+      const transcribeRes = await callVercel('/api/telegram/transcribe-lyrics', {
+        file_id
+      }, telegramId);
+      
+      if (transcribeRes.error) {
+        return { error: transcribeRes.error };
+      }
+      
+      const lyrics = transcribeRes.lyrics || transcribeRes.text || '';
+      return {
+        success: true,
+        message: `Letra transcribida:\n\n${lyrics}\n\n¿Es correcta?`,
+        lyrics
+      };
+      
+    default:
+      return { error: `Tool desconocida: ${toolName}` };
+  }
+}
 
-  if (n > 30) {
+// Polling para estado de tareas
+async function pollTaskStatus(taskId, telegramId, ctx, attempt = 0) {
+  if (attempt > 30) {
     await ctx.reply('Tardó demasiado. Intenta de nuevo por favor.');
     return;
   }
-
-  setTimeout(async () => {
-    const res = await callVercel('/api/telegram/status', { taskId }, telegramId);
-    if (res && res.error) {
-      await ctx.reply('Error consultando estado: ' + res.error);
+  
+  console.log('[poll] taskId=', taskId, 'attempt=', attempt, 'tg=', telegramId);
+  
+  const res = await callVercel('/api/telegram/status', { taskId }, telegramId);
+  
+  if (res.error) {
+    await ctx.reply('Error consultando estado: ' + res.error);
+    return;
+  }
+  
+  const status = String(res.status || '').toUpperCase();
+  
+  if (status === 'SUCCESS') {
+    const songs = Array.isArray(res.songs) ? res.songs : [];
+    if (songs.length === 0) {
+      await ctx.reply('Ya terminó, pero no encontré el audio.');
       return;
     }
-
-    const status = String(res && res.status ? res.status : '').toUpperCase();
-    console.log('[poll] status=', status);
-
-    if (status === 'SUCCESS') {
-      const songs = Array.isArray(res.songs) ? res.songs : [];
-      if (songs.length === 0) {
-        await ctx.reply('Ya terminó, pero no encontré el audio en la respuesta.');
-        return;
+    
+    await ctx.reply('¡Tu canción está lista!');
+    for (const song of songs) {
+      const url = (song.audio_url || '').toString().trim();
+      const title = (song.title || 'Tu canción').toString();
+      if (url) {
+        await ctx.replyWithAudio({ url }, { caption: title });
       }
-      await ctx.reply('¡Tu canción está lista!');
-      for (let i = 0; i < songs.length; i++) {
-        const s = songs[i] || {};
-        const url = (s.audio_url || '').toString().trim();
-        const title = (s.title || 'Tu canción').toString();
-        if (url) {
-          console.log('[send] audio_url=', url.slice(0, 60) + '...');
-          await ctx.replyWithAudio({ url }, { caption: title });
-        }
-      }
-      return;
     }
-
-    if (status === 'FAILED') {
-      await ctx.reply('La generación falló. Intenta de nuevo.');
-      return;
-    }
-
-    await waitAndSend(ctx, taskId, telegramId, n + 1);
-  }, 20000);
-}
-
-async function generateLyricsDraft(topic, style) {
-  const prompt =
-    'Genera una letra ORIGINAL en español mexicano. ' +
-    'Estructura clara con etiquetas [Intro], [Verso], [Coro], [Puente], [Outro]. ' +
-    'No uses markdown. No uses comillas. ' +
-    'Tema: ' +
-    String(topic || '').trim() +
-    '\n' +
-    'Estilo musical: ' +
-    String(style || '').trim();
-
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 800,
-    system: 'Eres un compositor profesional. Entrega SOLO la letra.',
-    messages: [
-      { role: 'user', content: prompt },
-    ],
-  });
-
-  const text = response.content[0].text || '';
-  return String(text).trim();
-}
-
-async function startCoverFlow(ctx, fileId) {
-  const telegramId = ctx.from.id.toString();
-  console.log('[cover] start tg=', telegramId, 'fileId=', fileId);
-
-  const s = getSession(telegramId);
-  s.mode = 'await_cover_style';
-  s.cover = { fileId, uploadUrl: '', style: '', title: 'Cover', lyricsDraft: '', transcribedLyrics: '' };
-
-  try {
-    const link = await ctx.telegram.getFileLink(fileId);
-    const url = String(link || '').trim();
-    s.cover.uploadUrl = url;
-    console.log('[cover] fileLink=', url.slice(0, 80) + '...');
-  } catch (e) {
-    console.log('[cover] getFileLink error:', e && e.message ? e.message : String(e));
-    await ctx.reply('No pude leer tu audio de Telegram. Intenta mandar el archivo otra vez.');
-    s.mode = 'idle';
-    return;
-  }
-
-  try {
-    const r = await callVercel('/api/telegram/transcribe-lyrics', { file_id: fileId }, telegramId);
-    const ok = r && r.ok === true && String(r.status || '').toUpperCase() === 'OK';
-    const lyrics = ok && typeof r.lyrics === 'string' ? String(r.lyrics || '').trim() : '';
-    if (lyrics) {
-      s.cover.transcribedLyrics = lyrics;
-      s.mode = 'await_cover_transcription_approve';
-      console.log('[cover] transcribedLyrics ok len=', lyrics.length);
-      await ctx.reply('Aquí está la letra de tu canción. ¿Es correcta?\n\n' + lyrics + '\n\nResponde: SI o NO.');
-      return;
-    } else {
-      console.log('[cover] transcribedLyrics not available');
-    }
-  } catch (e) {
-    console.log('[cover] transcribedLyrics error:', e && e.message ? e.message : String(e));
-  }
-
-  await ctx.reply('Listo. Ahora dime el estilo del cover (ej: cumbia, reggaetón, norteño) y de qué trata la letra.');
-}
-
-async function handleVoiceSeparation(ctx, telegramId) {
-  console.log('[voice-sep] starting voice separation flow for tg=', telegramId);
-  
-  // Llamar al endpoint para obtener las canciones del usuario
-  const res = await callVercel('/api/telegram/songs', {}, telegramId);
-  
-  if (res && res.error) {
-    await ctx.reply('Error al obtener tus canciones: ' + res.error);
     return;
   }
   
-  if (!res.songs || res.songs.length === 0) {
-    await ctx.reply('No tienes canciones generadas aún. Primero genera una canción o cover.');
+  if (status === 'FAILED') {
+    await ctx.reply('La generación falló. Intenta de nuevo.');
     return;
   }
   
-  // Mostrar las últimas 5 canciones numeradas
-  let message = 'Estas son tus últimas canciones:\n\n';
-  const songs = res.songs.slice(0, 5); // Tomar máximo 5 canciones
+  // PENDING o vacío, seguir polling
+  setTimeout(() => pollTaskStatus(taskId, telegramId, ctx, attempt + 1), 20000);
+}
+
+// Procesar mensaje con Claude usando function calling
+async function processWithClaude(message, telegramId, ctx, fileUrl = null) {
+  // Inicializar conversación si no existe
+  if (!conversations[telegramId]) {
+    conversations[telegramId] = [];
+  }
   
-  songs.forEach((song, index) => {
-    const title = song.title || `Canción ${index + 1}`;
-    message += `${index + 1}. ${title}\n`;
+  // Agregar contexto de archivo si existe
+  let userMessage = message;
+  if (fileUrl) {
+    userMessage = `[El cliente envió un archivo de audio: ${fileUrl}]\n${message}`;
+  }
+  
+  // Agregar mensaje del usuario
+  conversations[telegramId].push({
+    role: 'user',
+    content: userMessage
   });
   
-  message += '\nResponde con el número de la canción que quieres separar (ej: 1, 2, 3).';
-  
-  // Guardar las canciones en la sesión para referencia futura
-  const s = getSession(telegramId);
-  s.mode = 'await_song_selection';
-  s.voiceSepSongs = songs;
-  
-  await ctx.reply(message);
-}
-
-async function handleSongSelection(ctx, userMessage, telegramId) {
-  const s = getSession(telegramId);
-  const msg = String(userMessage || '').trim();
-  
-  // Verificar si el mensaje es un número válido
-  const selectedNum = parseInt(msg, 10);
-  
-  if (isNaN(selectedNum) || selectedNum < 1 || selectedNum > s.voiceSepSongs.length) {
-    await ctx.reply(`Por favor responde con un número entre 1 y ${s.voiceSepSongs.length}.`);
-    return;
-  }
-  
-  // Obtener la canción seleccionada
-  const selectedSong = s.voiceSepSongs[selectedNum - 1];
-  const taskId = selectedSong.task_id;
-  const title = selectedSong.title || `Canción ${selectedNum}`;
-  
-  console.log('[voice-sep] selected song:', selectedNum, 'taskId=', taskId, 'title=', title);
-  
-  // Llamar al endpoint de separación de voz
-  await ctx.reply(`Procesando separación de voz para: "${title}"...`);
-  
-  const res = await callVercel('/api/telegram/separate', { taskId }, telegramId);
-  
-  if (res && res.error) {
-    await ctx.reply('Error al separar la voz: ' + res.error);
-    s.mode = 'idle';
-    return;
-  }
-  
-  const newTaskId = (res.taskId || res.task_id || res.id || '').toString().trim();
-  
-  if (!newTaskId) {
-    await ctx.reply('No se pudo iniciar la separación de voz.');
-    s.mode = 'idle';
-    return;
-  }
-  
-  await ctx.reply('Separación de voz en proceso. Te aviso cuando esté lista.');
-  s.mode = 'idle';
-  
-  // Esperar y enviar el resultado
-  await waitAndSend(ctx, newTaskId, telegramId, 0);
-}
-
-async function handleCoverText(ctx, text) {
-  const telegramId = ctx.from.id.toString();
-  const s = getSession(telegramId);
-  const msg = String(text || '').trim();
-
-  if (s.mode === 'await_cover_transcription_approve') {
-    const upper = msg.toUpperCase();
-
-    if (upper === 'SI' || upper === 'SÍ' || upper === 'OK' || upper.includes('APROBAR')) {
-      s.cover.lyricsDraft = s.cover.transcribedLyrics || '';
-      s.mode = 'await_cover_style';
-      console.log('[cover] transcription approved');
-      await ctx.reply('Perfecto. Ahora dime el estilo del cover (ej: cumbia, reggaetón, norteño).');
-      return;
-    }
-
-    if (upper === 'NO' || upper.includes('CAMBIAR')) {
-      s.cover.transcribedLyrics = '';
-      s.cover.lyricsDraft = '';
-      s.mode = 'await_cover_style';
-      console.log('[cover] transcription rejected');
-      await ctx.reply('Entendido. Ahora dime el estilo del cover (ej: cumbia, reggaetón, norteño) y de qué trata la letra.');
-      return;
-    }
-
-    await ctx.reply('Solo responde: SI o NO.');
-    return;
-  }
-
-  if (s.mode === 'await_cover_style') {
-    s.cover.style = msg || 'General';
-    console.log('[cover] style/topic=', s.cover.style);
-
-    if (s.cover.lyricsDraft) {
-      console.log('[cover] using approved lyrics');
-      await ctx.reply('Perfecto. Voy a usar la letra aprobada y empezar tu cover...');
-
-      const payload = {
-        uploadUrl: s.cover.uploadUrl,
-        style: s.cover.style || 'General',
-        title: s.cover.title || 'Cover',
-        prompt: s.cover.lyricsDraft || ' ',
-        instrumental: false,
-      };
-
-      const res = await callVercel('/api/telegram/upload-cover', payload, telegramId);
-      if (res && res.error) {
-        await ctx.reply('Error: ' + res.error);
-        s.mode = 'idle';
-        return;
-      }
-
-      const taskId = (res.taskId || res.task_id || res.id || '').toString().trim();
-      if (!taskId) {
-        await ctx.reply('No pude iniciar el cover.');
-        s.mode = 'idle';
-        return;
-      }
-
-      await ctx.reply('Cover en proceso. Te aviso cuando esté listo.');
-      s.mode = 'idle';
-      await waitAndSend(ctx, taskId, telegramId, 0);
-      return;
-    }
-
-    await ctx.reply('Perfecto. Estoy creando una letra para que la apruebes...');
-    let lyrics = '';
-    try {
-      lyrics = await generateLyricsDraft(msg, s.cover.style);
-    } catch (e) {
-      console.log('[cover] generateLyricsDraft error:', e && e.message ? e.message : String(e));
-      await ctx.reply('No pude generar la letra ahorita. Intenta otra vez.');
-      s.mode = 'idle';
-      return;
-    }
-
-    if (!lyrics) {
-      await ctx.reply('No salió letra. Intenta con un tema más específico.');
-      s.mode = 'idle';
-      return;
-    }
-
-    s.cover.lyricsDraft = lyrics;
-    s.mode = 'await_cover_approve';
-
-    await ctx.reply(
-      'Aquí está la letra propuesta:\n\n' + lyrics + '\n\nResponde: APROBAR para continuar o CAMBIAR para modificarla.'
-    );
-    return;
-  }
-
-  if (s.mode === 'await_cover_approve') {
-    const upper = msg.toUpperCase();
-    if (upper.includes('APROBAR') || upper === 'SI' || upper === 'OK') {
-      console.log('[cover] approved');
-      await ctx.reply('Va. Procesando tu cover…');
-
-      const payload = {
-        uploadUrl: s.cover.uploadUrl,
-        style: s.cover.style || 'General',
-        title: s.cover.title || 'Cover',
-        prompt: s.cover.lyricsDraft || ' ',
-        instrumental: false,
-      };
-
-      const res = await callVercel('/api/telegram/upload-cover', payload, telegramId);
-      if (res && res.error) {
-        await ctx.reply('Error: ' + res.error);
-        s.mode = 'idle';
-        return;
-      }
-
-      const taskId = (res.taskId || res.task_id || res.id || '').toString().trim();
-      if (!taskId) {
-        await ctx.reply('No pude iniciar el cover.');
-        s.mode = 'idle';
-        return;
-      }
-
-      await ctx.reply('Cover en proceso. Te aviso cuando esté listo.');
-      s.mode = 'idle';
-      await waitAndSend(ctx, taskId, telegramId, 0);
-      return;
-    }
-
-    if (upper.includes('CAMBIAR')) {
-      console.log('[cover] wants change');
-      s.mode = 'await_cover_style';
-      await ctx.reply('Dime qué quieres cambiar (tema/estilo/mood) y genero otra letra.');
-      return;
-    }
-
-    await ctx.reply('Solo responde: APROBAR o CAMBIAR.');
-    return;
-  }
-}
-
-async function doAction(ctx, action, data, telegramId) {
-  console.log('[doAction] action=', action, 'tg=', telegramId);
-  
-  if (action === 'credits') {
-    const res = await callVercel('/api/telegram/credits', {}, telegramId);
-    if (res && res.error) return ctx.reply('Error: ' + res.error);
-    return ctx.reply('Tienes ' + res.credits + ' créditos disponibles.');
-  }
-  
-  // Para otras acciones, podríamos expandir aquí
-  console.log('[doAction] acción no manejada:', action);
-  return ctx.reply('Acción no reconocida.');
-}
-
-async function chat(ctx, userMessage) {
-  const telegramId = ctx.from.id.toString();
-  const s = getSession(telegramId);
-
-  console.log('[text] tg=', telegramId, 'mode=', s.mode, 'msg=', String(userMessage || '').slice(0, 120));
-
-  // Detectar solicitud de separación de voz
-  const msgLower = String(userMessage || '').toLowerCase().trim();
-  const voiceSepKeywords = ['separar voz', 'separación de voz', 'aislar voz', 'extraer voz', 'voz separada', 'separar la voz'];
-  const isVoiceSepRequest = voiceSepKeywords.some(keyword => msgLower.includes(keyword));
-
-  if (isVoiceSepRequest) {
-    console.log('[voice-sep] detected request for voice separation');
-    await handleVoiceSeparation(ctx, telegramId);
-    return;
-  }
-
-  // Detectar intención de créditos
-  const creditKeywords = ['creditos', 'créditos', 'saldo', 'cuantos tengo', 'cuanto tengo', 'cuántos tengo', 'cuánto tengo'];
-  const isCreditRequest = creditKeywords.some(keyword => msgLower.includes(keyword));
-
-  if (isCreditRequest) {
-    console.log('[chat] detected credit request');
-    await doAction(ctx, 'credits', {}, telegramId);
-    return;
-  }
-
-  if (s.mode === 'await_cover_transcription_approve' || s.mode === 'await_cover_style' || s.mode === 'await_cover_approve') {
-    await handleCoverText(ctx, userMessage);
-    return;
-  }
-
-  if (s.mode === 'await_song_selection') {
-    await handleSongSelection(ctx, userMessage, telegramId);
-    return;
-  }
-
-  if (!conversations[telegramId]) conversations[telegramId] = [];
-  conversations[telegramId].push({ role: 'user', content: userMessage });
-  if (conversations[telegramId].length > 20) conversations[telegramId] = conversations[telegramId].slice(-20);
-
   try {
+    // Llamar a Claude con tools
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 300,
+      max_tokens: 1024,
       system: SYSTEM_PROMPT,
-      messages: conversations[telegramId]
+      messages: conversations[telegramId],
+      tools: tools
     });
-
-    const reply = response.content[0].text.trim();
-    conversations[telegramId].push({ role: 'assistant', content: reply });
-
-    console.log('[ai] reply=', reply.slice(0, 200));
-
-    try {
-      const json = JSON.parse(reply);
-      if (json && json.action) {
-        const action = String(json.action || '').trim();
-
-        if (action === 'generate') {
-          await ctx.reply('Generando tu canción, espera unos minutos…');
-          const res = await callVercel(
-            '/api/telegram/generate',
-            { prompt: json.prompt || userMessage, style: json.style || 'General', title: json.title || 'Canción', instrumental: false, customMode: true },
-            telegramId
-          );
-
-          if (res && res.error) return ctx.reply('Error: ' + res.error);
-          const taskId = (res.taskId || res.task_id || res.id || '').toString().trim();
-          if (!taskId) return ctx.reply('No se pudo iniciar la generación.');
-          await ctx.reply('Canción en proceso. Te aviso cuando esté lista.');
-          return waitAndSend(ctx, taskId, telegramId, 0);
-        }
-
-        if (action === 'cover') {
-          return ctx.reply(
-            'Mándame el audio (mp3/m4a) y luego te pido el estilo. Yo genero la letra y te la muestro para aprobar.'
-          );
-        }
+    
+    // Procesar respuesta
+    const messageContent = response.content[0];
+    
+    if (messageContent.type === 'text') {
+      // Respuesta de texto normal
+      const reply = messageContent.text.trim();
+      conversations[telegramId].push({
+        role: 'assistant',
+        content: reply
+      });
+      await ctx.reply(reply);
+      
+    } else if (messageContent.type === 'tool_use') {
+      // Claude quiere usar una tool
+      const toolUse = messageContent;
+      console.log('[claude] Tool use:', toolUse.name, 'tg=', telegramId);
+      
+      // Ejecutar la tool
+      const toolResult = await executeTool(
+        toolUse.name, 
+        toolUse.input, 
+        telegramId, 
+        ctx
+      );
+      
+      // Agregar tool use a la conversación
+      conversations[telegramId].push({
+        role: 'assistant',
+        content: [{ type: 'tool_use', ...toolUse }]
+      });
+      
+      // Agregar resultado de la tool
+      conversations[telegramId].push({
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: JSON.stringify(toolResult)
+        }]
+      });
+      
+      // Si hay mensaje para el usuario, enviarlo
+      if (toolResult.message) {
+        await ctx.reply(toolResult.message);
       }
-    } catch (e) {
-      // ignore
+      
+      // Si hay error, informar al usuario
+      if (toolResult.error) {
+        await ctx.reply(`Error: ${toolResult.error}`);
+      }
+      
+      // Continuar la conversación con Claude
+      await processWithClaude('', telegramId, ctx);
     }
-
-    return ctx.reply(reply || 'No entendí. ¿Quieres canción, cover o créditos?');
-  } catch (e) {
-    console.log('[ai] error:', e && e.message ? e.message : String(e));
-    return ctx.reply('Error de IA: ' + (e && e.message ? e.message : 'error'));
+    
+  } catch (error) {
+    console.log('[claude] Error:', error.message);
+    await ctx.reply('Hubo un error procesando tu mensaje. Intenta de nuevo.');
   }
 }
 
-bot.start((ctx) => {
-  const name = ctx.from.first_name || 'amigo';
-  console.log('[start] tg=', ctx.from.id.toString());
-  ctx.reply('Hola ' + name + '! Soy LucIA. Puedo crear canciones originales o hacer covers. ¿Qué quieres hacer hoy?');
+// Handler para mensajes de texto
+bot.on('text', async (ctx) => {
+  const telegramId = ctx.from.id.toString();
+  const message = ctx.message.text.trim();
+  
+  console.log('[text] tg=', telegramId, 'msg=', message.slice(0, 100));
+  
+  await processWithClaude(message, telegramId, ctx);
 });
 
+// Handler para archivos de audio
 bot.on('audio', async (ctx) => {
   const telegramId = ctx.from.id.toString();
-  const fileId = ctx.message.audio.file_id;
-  console.log('[audio] tg=', telegramId, 'fileId=', fileId);
-  await ctx.reply('Recibí tu audio. Vamos a hacer un cover: primero genero la letra y te la muestro para aprobar.');
-  await startCoverFlow(ctx, fileId);
+  const audio = ctx.message.audio;
+  const fileId = audio.file_id;
+  
+  console.log('[audio] tg=', telegramId, 'file_id=', fileId);
+  
+  // Obtener URL del archivo
+  const fileUrl = await getTelegramFileUrl(fileId);
+  
+  if (fileUrl) {
+    await ctx.reply('Recibí tu audio. Déjame procesarlo...');
+    await processWithClaude(
+      'El cliente envió un archivo de audio.',
+      telegramId, 
+      ctx, 
+      fileUrl
+    );
+  } else {
+    await ctx.reply('No pude obtener el audio. Intenta enviarlo de nuevo.');
+  }
 });
 
+// Handler para documentos (MP3)
 bot.on('document', async (ctx) => {
   const telegramId = ctx.from.id.toString();
-  const doc = ctx.message.document || {};
-  const fileId = doc.file_id;
-  const name = String(doc.file_name || '');
-  console.log('[document] tg=', telegramId, 'fileId=', fileId, 'name=', name);
-  await ctx.reply('Recibí tu archivo. Si es audio, hacemos un cover: primero genero la letra y te la muestro para aprobar.');
-  await startCoverFlow(ctx, fileId);
+  const document = ctx.message.document;
+  const mimeType = document.mime_type || '';
+  
+  // Solo procesar archivos de audio
+  if (!mimeType.includes('audio') && !document.file_name?.endsWith('.mp3')) {
+    return;
+  }
+  
+  const fileId = document.file_id;
+  console.log('[document] tg=', telegramId, 'file_id=', fileId, 'mime=', mimeType);
+  
+  // Obtener URL del archivo
+  const fileUrl = await getTelegramFileUrl(fileId);
+  
+  if (fileUrl) {
+    await ctx.reply('Recibí tu archivo de audio. Déjame procesarlo...');
+    await processWithClaude(
+      'El cliente envió un archivo de audio MP3.',
+      telegramId, 
+      ctx, 
+      fileUrl
+    );
+  } else {
+    await ctx.reply('No pude obtener el archivo. Intenta enviarlo de nuevo.');
+  }
 });
 
-bot.on('text', (ctx) => chat(ctx, ctx.message.text));
+// Handler para voz (voice messages)
+bot.on('voice', async (ctx) => {
+  const telegramId = ctx.from.id.toString();
+  const voice = ctx.message.voice;
+  const fileId = voice.file_id;
+  
+  console.log('[voice] tg=', telegramId, 'file_id=', fileId);
+  
+  // Obtener URL del archivo
+  const fileUrl = await getTelegramFileUrl(fileId);
+  
+  if (fileUrl) {
+    await ctx.reply('Recibí tu mensaje de voz. Déjame procesarlo...');
+    await processWithClaude(
+      'El cliente envió un mensaje de voz.',
+      telegramId, 
+      ctx, 
+      fileUrl
+    );
+  } else {
+    await ctx.reply('No pude obtener el mensaje de voz. Intenta enviarlo de nuevo.');
+  }
+});
 
-bot.launch();
-console.log('[boot] LucIA Bot iniciado correctamente');
+// Comando /start
+bot.start(async (ctx) => {
+  const telegramId = ctx.from.id.toString();
+  console.log('[start] tg=', telegramId);
+  
+  await ctx.reply(
+    '¡Hola! Soy LucIA de LuclAna Music. ' +
+    'Puedo ayudarte a crear canciones originales, hacer covers de tus canciones, ' +
+    'separar voces de canciones hechas aquí y más. ' +
+    '¿En qué te ayudo hoy?'
+  );
+});
 
+// Comando /credits
+bot.command('credits', async (ctx) => {
+  const telegramId = ctx.from.id.toString();
+  console.log('[credits] tg=', telegramId);
+  
+  await processWithClaude('créditos', telegramId, ctx);
+});
+
+// Manejo de errores
+bot.catch((err, ctx) => {
+  console.log('[error]', err);
+  ctx.reply('Ocurrió un error. Intenta de nuevo.');
+});
+
+// Iniciar bot
+bot.launch()
+  .then(() => {
+    console.log('[bot] LucIA Bot funcionando con function calling!');
+  })
+  .catch((err) => {
+    console.log('[bot] Error al iniciar:', err);
+    process.exit(1);
+  });
+
+// Manejo de cierre
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
