@@ -3,6 +3,7 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
 
 // Cargar variables de entorno desde .env
 function loadEnvFile(filePath) {
@@ -41,6 +42,8 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const VERCEL_URL = (process.env.VERCEL_URL || '').trim().replace(/\/+$/, '');
 const VERCEL_SECRET = process.env.VERCEL_SECRET || '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || TELEGRAM_TOKEN;
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
 console.log('[boot] Iniciando LucIA Bot con function calling...');
 console.log('[boot] TELEGRAM_TOKEN:', TELEGRAM_TOKEN ? 'OK' : 'FALTA');
@@ -56,6 +59,10 @@ if (!TELEGRAM_TOKEN || !ANTHROPIC_API_KEY || !VERCEL_URL || !VERCEL_SECRET) {
 // Inicializar bot y Claude
 const bot = new Telegraf(TELEGRAM_TOKEN);
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+const supabaseAdmin =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+    : null;
 
 // Headers para llamadas a Vercel
 const headers = { 
@@ -849,6 +856,60 @@ bot.command('credits', async (ctx) => {
   console.log('[credits] tg=', telegramId);
   
   await processWithClaude('créditos', telegramId, ctx);
+});
+
+// Comando /activate
+bot.command('activate', async (ctx) => {
+  const telegramId = ctx.from.id.toString();
+  const rawText = (((ctx && ctx.message && ctx.message.text) || '')).toString().trim();
+  const email = rawText.replace(/^\/activate(@\w+)?/i, '').trim().toLowerCase();
+
+  console.log('[activate] tg=', telegramId, 'email=', email || '(vacío)');
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    await ctx.reply('Escribe el comando así: /activate email@ejemplo.com');
+    return;
+  }
+
+  if (!supabaseAdmin) {
+    await ctx.reply('No pude activar tu cuenta en este momento.');
+    return;
+  }
+
+  try {
+    const { data: profile, error: findErr } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (findErr) {
+      console.log('[activate] error buscando email:', findErr.message);
+      await ctx.reply('No pude activar tu cuenta en este momento.');
+      return;
+    }
+
+    if (!profile || !profile.id) {
+      await ctx.reply('❌ Email no registrado. Compra créditos en la app primero.');
+      return;
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('profiles')
+      .update({ telegram_user_id: telegramId })
+      .eq('id', profile.id);
+
+    if (updateErr) {
+      console.log('[activate] error actualizando telegram_user_id:', updateErr.message);
+      await ctx.reply('No pude activar tu cuenta en este momento.');
+      return;
+    }
+
+    await ctx.reply('✅ Cuenta vinculada. Ya puedes usar todos los servicios.');
+  } catch (e) {
+    console.log('[activate] error:', e && e.message ? e.message : String(e));
+    await ctx.reply('No pude activar tu cuenta en este momento.');
+  }
 });
 
 // Manejo de errores
