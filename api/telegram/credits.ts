@@ -99,6 +99,54 @@ function parseCreditsValue(raw: any) {
   return NaN;
 }
 
+async function resolveTelegramUser(admin: any, telegramUserId: string) {
+  //#region debug-point credits-resolve-link
+  const out: any = {
+    userId: "",
+    source: "",
+    detail: "",
+  };
+  //#endregion debug-point credits-resolve-link
+
+  const { data: link, error: linkErr } = await admin
+    .from("telegram_links")
+    .select("user_id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+
+  if (linkErr) {
+    out.detail = linkErr.message || "Error buscando vínculo";
+    return out;
+  }
+  if (link?.user_id) {
+    out.userId = String(link.user_id);
+    out.source = "telegram_links";
+    return out;
+  }
+
+  const { data: profileByTelegram, error: profileByTelegramErr } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+
+  if (profileByTelegramErr) {
+    const msg = String(profileByTelegramErr.message || "").toLowerCase();
+    if (!msg.includes("column") || !msg.includes("telegram_user_id")) {
+      out.detail = profileByTelegramErr.message || "Error buscando perfil por telegram_user_id";
+      return out;
+    }
+  }
+
+  if ((profileByTelegram as any)?.id) {
+    out.userId = String((profileByTelegram as any).id);
+    out.source = "profiles.telegram_user_id";
+    return out;
+  }
+
+  return out;
+}
+
 async function sunoFetchJson(path: string) {
   const baseEnv = (process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "").toString().trim();
   const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
@@ -136,16 +184,11 @@ export default async function handler(req: any, res: any) {
   if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
 
   const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+  const resolved = await resolveTelegramUser(admin, String(telegram_user_id));
+  if (resolved.detail) return send(res, 500, { error: "Error buscando vínculo", detail: resolved.detail });
+  if (!resolved.userId) return send(res, 401, { error: "Cuenta no vinculada" });
 
-  const { data: link, error: linkErr } = await admin
-    .from("telegram_links")
-    .select("user_id")
-    .eq("telegram_user_id", telegram_user_id)
-    .maybeSingle();
-  if (linkErr) return send(res, 500, { error: "Error buscando vínculo", detail: linkErr.message });
-  if (!link?.user_id) return send(res, 401, { error: "Cuenta no vinculada" });
-
-  const userId = String(link.user_id);
+  const userId = String(resolved.userId);
   const { data: profile, error: profErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
   if (profErr) return send(res, 500, { error: "Error leyendo perfil", detail: profErr.message });
 
