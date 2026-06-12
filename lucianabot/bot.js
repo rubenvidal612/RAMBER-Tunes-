@@ -65,13 +65,20 @@ const headers = {
 
 // Sistema de conversaciones
 const conversations = {};
+const memories = {};
+
+function getMemory(telegramId) {
+  const id = (telegramId || '').toString();
+  if (!memories[id]) memories[id] = { lastTranscribedLyrics: '' };
+  return memories[id];
+}
 
 // SYSTEM PROMPT
 const SYSTEM_PROMPT = `Eres LucIA de LuclAna Music. Español mexicano, natural y directo. Maximo 2 oraciones por respuesta. 
 Servicios: canciones originales 12 créditos, covers 12 créditos, separación de voz 10 créditos, separación de instrumentos 50 créditos, video musical 2 créditos. 
 SOLO canciones originales del cliente para covers. Separación SOLO de canciones hechas en LuclAna. 
 Las canciones son 100% del cliente nosotros hacemos maquetas. NUNCA menciones tecnología interna. 
-NUNCA uses vos podés tenés. SIEMPRE español mexicano.`;
+NUNCA uses vos podés tenés. SIEMPRE español mexicano. Si transcribes una letra, guárdala y úsala tal cual para el cover, sin inventar letra nueva.`;
 
 // Tools (function calling) para Claude
 const tools = [
@@ -213,6 +220,7 @@ async function getTelegramFileUrl(fileId) {
 // Implementación de las tools
 async function executeTool(toolName, args, telegramId, ctx) {
   console.log('[tool] Ejecutando:', toolName, 'tg=', telegramId);
+  const mem = getMemory(telegramId);
   
   switch (toolName) {
     case 'generate_song':
@@ -241,11 +249,12 @@ async function executeTool(toolName, args, telegramId, ctx) {
       
     case 'make_cover':
       const { uploadUrl, style: coverStyle, title: coverTitle, prompt: coverPrompt } = args;
+      const finalCoverPrompt = (mem.lastTranscribedLyrics || '').toString().trim() || (coverPrompt || '').toString();
       const coverRes = await callVercel('/api/telegram/upload-cover', {
         uploadUrl,
         style: coverStyle,
         title: coverTitle,
-        prompt: coverPrompt || '',
+        prompt: finalCoverPrompt,
         instrumental: false
       }, telegramId);
       
@@ -340,7 +349,8 @@ async function executeTool(toolName, args, telegramId, ctx) {
         return { error: transcribeRes.error };
       }
       
-      const lyrics = transcribeRes.lyrics || transcribeRes.text || '';
+      const lyrics = (transcribeRes.lyrics || transcribeRes.text || '').toString();
+      mem.lastTranscribedLyrics = lyrics;
       return {
         success: true,
         message: `Letra transcribida:\n\n${lyrics}\n\n¿Es correcta?`,
@@ -502,6 +512,12 @@ async function processWithClaude(message, telegramId, ctx, fileUrl = null) {
           content: JSON.stringify(toolResult)
         }]
       });
+      if (toolUse.name === 'transcribe_audio' && toolResult && toolResult.lyrics) {
+        conversations[telegramId].push({
+          role: 'assistant',
+          content: `LETRA_TRANSCRITA_GUARDADA:\n${String(toolResult.lyrics || '')}`
+        });
+      }
       
       // Si hay mensaje para el usuario, enviarlo
       if (toolResult.message) {
