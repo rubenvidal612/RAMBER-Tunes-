@@ -157,6 +157,31 @@ async function sunoFetchJson(path: string, init: any = {}) {
   return { res, data, text };
 }
 
+async function resolveTelegramUser(admin: any, telegramUserId: string) {
+  const { data: link, error: linkErr } = await admin
+    .from("telegram_links")
+    .select("user_id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+  if (linkErr) return { userId: "", error: linkErr.message || "Error buscando vínculo" };
+  if (link?.user_id) return { userId: String(link.user_id), error: "" };
+
+  const { data: profileByTelegram, error: profileByTelegramErr } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+
+  if (profileByTelegramErr) {
+    const msg = String(profileByTelegramErr.message || "").toLowerCase();
+    if (!msg.includes("column") || !msg.includes("telegram_user_id")) {
+      return { userId: "", error: profileByTelegramErr.message || "Error buscando perfil" };
+    }
+  }
+  if ((profileByTelegram as any)?.id) return { userId: String((profileByTelegram as any).id), error: "" };
+  return { userId: "", error: "" };
+}
+
 export default async function handler(req: any, res: any) {
   if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -183,15 +208,11 @@ export default async function handler(req: any, res: any) {
 
   const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-  const { data: link, error: linkErr } = await admin
-    .from("telegram_links")
-    .select("user_id")
-    .eq("telegram_user_id", telegram_user_id)
-    .maybeSingle();
-  if (linkErr) return send(res, 500, { error: "Error buscando vínculo", detail: linkErr.message });
-  if (!link?.user_id) return send(res, 401, { error: "Cuenta no vinculada" });
+  const resolved = await resolveTelegramUser(admin, String(telegram_user_id));
+  if (resolved.error) return send(res, 500, { error: "Error buscando vínculo", detail: resolved.error });
+  if (!resolved.userId) return send(res, 401, { error: "Cuenta no vinculada" });
 
-  const userId = String(link.user_id);
+  const userId = String(resolved.userId);
   const cost = type === "split_stem" ? CREDIT_COSTS.split_stem : CREDIT_COSTS.separate_vocal;
 
   const consumed = await consumeUserCredits(admin, userId, cost);
@@ -252,4 +273,3 @@ export default async function handler(req: any, res: any) {
     return send(res, 502, { error: "Error separando", detail: e instanceof Error ? e.message : String(e) });
   }
 }
-

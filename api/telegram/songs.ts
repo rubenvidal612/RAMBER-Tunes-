@@ -15,6 +15,31 @@ async function readJsonBody(req: any): Promise<any> {
   }
 }
 
+async function resolveTelegramUser(admin: any, telegramUserId: string) {
+  const { data: link, error: linkErr } = await admin
+    .from("telegram_links")
+    .select("user_id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+  if (linkErr) return { userId: "", error: linkErr.message || "Error buscando vínculo" };
+  if (link?.user_id) return { userId: String(link.user_id), error: "" };
+
+  const { data: profileByTelegram, error: profileByTelegramErr } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("telegram_user_id", telegramUserId)
+    .maybeSingle();
+
+  if (profileByTelegramErr) {
+    const msg = String(profileByTelegramErr.message || "").toLowerCase();
+    if (!msg.includes("column") || !msg.includes("telegram_user_id")) {
+      return { userId: "", error: profileByTelegramErr.message || "Error buscando perfil" };
+    }
+  }
+  if ((profileByTelegram as any)?.id) return { userId: String((profileByTelegram as any).id), error: "" };
+  return { userId: "", error: "" };
+}
+
 export default async function handler(req: any, res: any) {
   try {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
@@ -38,16 +63,11 @@ export default async function handler(req: any, res: any) {
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-    // 1. Buscar el user_id en telegram_links
-    const { data: link, error: linkErr } = await admin
-      .from("telegram_links")
-      .select("user_id")
-      .eq("telegram_user_id", telegram_user_id)
-      .maybeSingle();
-    if (linkErr) return send(res, 500, { error: "Error buscando vínculo", detail: linkErr.message });
-    if (!link?.user_id) return send(res, 401, { error: "Cuenta no vinculada" });
+    const resolved = await resolveTelegramUser(admin, String(telegram_user_id));
+    if (resolved.error) return send(res, 500, { error: "Error buscando vínculo", detail: resolved.error });
+    if (!resolved.userId) return send(res, 401, { error: "Cuenta no vinculada" });
 
-    const userId = String(link.user_id);
+    const userId = String(resolved.userId);
 
     // 2. Buscar las últimas 5 canciones exitosas del usuario
     // Primero intentamos con title, si falla (columna no existe), intentamos sin title

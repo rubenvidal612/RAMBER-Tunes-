@@ -69,7 +69,13 @@ const memories = {};
 
 function getMemory(telegramId) {
   const id = (telegramId || '').toString();
-  if (!memories[id]) memories[id] = { lastTranscribedLyrics: '', lastPublicAudioUrl: '' };
+  if (!memories[id]) {
+    memories[id] = {
+      lastTranscribedLyrics: '',
+      lastPublicAudioUrl: '',
+      pendingSongDraft: null,
+    };
+  }
   return memories[id];
 }
 
@@ -259,6 +265,84 @@ async function convertTelegramFileToPublicUrl(ctx, fileId, fileName) {
   }
 }
 
+async function createSongLyricsDraft(data) {
+  const prompt = (data && data.prompt ? String(data.prompt).trim() : '').trim();
+  const style = (data && data.style ? String(data.style).trim() : '').trim();
+  const title = (data && data.title ? String(data.title).trim() : '').trim();
+  const vocalGender = (data && data.vocalGender ? String(data.vocalGender).trim() : '').trim();
+
+  const userPrompt =
+    `Crea una letra completa en español mexicano para una canción original.\n` +
+    `Tema o idea base: ${prompt || 'General'}\n` +
+    `Género o estilo: ${style || 'General'}\n` +
+    `Título: ${title || 'Sin título'}\n` +
+    `Voz: ${vocalGender || 'General'}\n` +
+    `Entrega solo la letra final, sin explicación.`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 900,
+    system: 'Eres compositor profesional. Escribe letras naturales, cantables y emotivas. Devuelve solo la letra final, sin introducción ni comentarios.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const text = response && response.content && response.content[0] && response.content[0].text
+    ? String(response.content[0].text).trim()
+    : '';
+  return text;
+}
+
+async function reviseSongLyricsDraft(draft, feedback) {
+  const originalLyrics = (draft && draft.lyrics ? String(draft.lyrics).trim() : '').trim();
+  const prompt = (draft && draft.prompt ? String(draft.prompt).trim() : '').trim();
+  const style = (draft && draft.style ? String(draft.style).trim() : '').trim();
+  const title = (draft && draft.title ? String(draft.title).trim() : '').trim();
+  const vocalGender = (draft && draft.vocalGender ? String(draft.vocalGender).trim() : '').trim();
+  const changes = (feedback || '').toString().trim();
+
+  const userPrompt =
+    `Corrige esta letra de canción original siguiendo solo los cambios pedidos por el cliente.\n` +
+    `Tema base: ${prompt || 'General'}\n` +
+    `Estilo: ${style || 'General'}\n` +
+    `Título: ${title || 'Sin título'}\n` +
+    `Voz: ${vocalGender || 'General'}\n\n` +
+    `Letra actual:\n${originalLyrics}\n\n` +
+    `Cambios pedidos por el cliente:\n${changes}\n\n` +
+    `Devuelve solo la letra corregida completa.`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 900,
+    system: 'Eres compositor profesional. Ajusta la letra respetando la intención del cliente. Devuelve solo la letra final.',
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const text = response && response.content && response.content[0] && response.content[0].text
+    ? String(response.content[0].text).trim()
+    : '';
+  return text;
+}
+
+function looksLikeApproval(text) {
+  const s = (text || '').toString().trim().toLowerCase();
+  if (!s) return false;
+  return [
+    'si',
+    'sí',
+    'ok',
+    'va',
+    'está bien',
+    'esta bien',
+    'perfecta',
+    'perfecto',
+    'aprobada',
+    'aprobado',
+    'me gusta',
+    'asi esta',
+    'así está',
+  ].some((x) => s === x || s.includes(x));
+}
+
 // Implementación de las tools
 async function executeTool(toolName, args, telegramId, ctx) {
   console.log('[tool] Ejecutando:', toolName, 'tg=', telegramId);
@@ -267,27 +351,26 @@ async function executeTool(toolName, args, telegramId, ctx) {
   switch (toolName) {
     case 'generate_song':
       const { prompt, style, title, vocalGender } = args;
-      const res = await callVercel('/api/telegram/generate', {
-        prompt,
-        style,
-        title,
-        vocalGender
-      }, telegramId);
-      
-      if (res.error) {
-        return { error: res.error };
+      const lyricsDraft = await createSongLyricsDraft({ prompt, style, title, vocalGender });
+      if (!lyricsDraft) {
+        return { error: 'No pude generar la letra.' };
       }
-      
-      const taskId = res.taskId || res.task_id || res.id;
-      if (taskId) {
-        setTimeout(() => pollTaskStatus(taskId, telegramId, ctx), 20000);
-        return { 
-          success: true, 
-          message: 'Canción en proceso. Te aviso cuando esté lista.',
-          taskId 
-        };
-      }
-      return { error: 'No se pudo iniciar la generación' };
+
+      mem.pendingSongDraft = {
+        prompt: (prompt || '').toString(),
+        style: (style || '').toString(),
+        title: (title || '').toString(),
+        vocalGender: (vocalGender || '').toString(),
+        lyrics: lyricsDraft,
+        awaitingApproval: true,
+      };
+
+      return {
+        success: true,
+        waitForUser: true,
+        lyrics: lyricsDraft,
+        message: `Aquí está la letra. ¿Está bien o quieres cambios?\n\n${lyricsDraft}`,
+      };
       
     case 'make_cover':
       const { uploadUrl, style: coverStyle, title: coverTitle, prompt: coverPrompt } = args;
@@ -410,6 +493,7 @@ async function executeTool(toolName, args, telegramId, ctx) {
       mem.lastTranscribedLyrics = lyrics;
       return {
         success: true,
+        waitForUser: true,
         message: `Letra transcribida:\n\n${lyrics}\n\n¿Es correcta?`,
         lyrics
       };
@@ -500,6 +584,39 @@ async function pollTaskStatus(taskId, telegramId, ctx, attempt = 0) {
   setTimeout(() => pollTaskStatus(taskId, telegramId, ctx, attempt + 1), 20000);
 }
 
+async function startApprovedSongGeneration(telegramId, ctx) {
+  const mem = getMemory(telegramId);
+  const draft = mem.pendingSongDraft;
+  if (!draft || !draft.lyrics) {
+    await ctx.reply('No encontré una letra pendiente para generar.');
+    return;
+  }
+
+  const res = await callVercel('/api/telegram/generate', {
+    prompt: draft.lyrics,
+    style: draft.style,
+    title: draft.title,
+    vocalGender: draft.vocalGender,
+  }, telegramId);
+
+  if (res.error) {
+    draft.awaitingApproval = true;
+    await ctx.reply('Error: ' + res.error);
+    return;
+  }
+
+  const taskId = res.taskId || res.task_id || res.id;
+  if (!taskId) {
+    draft.awaitingApproval = true;
+    await ctx.reply('No se pudo iniciar la generación.');
+    return;
+  }
+
+  mem.pendingSongDraft = null;
+  await ctx.reply('Perfecto. Ya estoy generando tu canción con la letra aprobada.');
+  setTimeout(() => pollTaskStatus(taskId, telegramId, ctx), 20000);
+}
+
 // Procesar mensaje con Claude usando function calling
 async function processWithClaude(message, telegramId, ctx, fileUrl = null) {
   // Inicializar conversación si no existe
@@ -587,7 +704,9 @@ async function processWithClaude(message, telegramId, ctx, fileUrl = null) {
       }
       
       // Continuar la conversación con Claude
-      await processWithClaude('', telegramId, ctx);
+      if (!toolResult.waitForUser) {
+        await processWithClaude('', telegramId, ctx);
+      }
     }
     
   } catch (error) {
@@ -602,6 +721,25 @@ bot.on('text', async (ctx) => {
   const message = ctx.message.text.trim();
   
   console.log('[text] tg=', telegramId, 'msg=', message.slice(0, 100));
+
+  const mem = getMemory(telegramId);
+  if (mem.pendingSongDraft && mem.pendingSongDraft.awaitingApproval) {
+    if (looksLikeApproval(message)) {
+      mem.pendingSongDraft.awaitingApproval = false;
+      await startApprovedSongGeneration(telegramId, ctx);
+      return;
+    }
+
+    const updatedLyrics = await reviseSongLyricsDraft(mem.pendingSongDraft, message);
+    if (!updatedLyrics) {
+      await ctx.reply('No pude corregir la letra. Dime otra vez qué quieres cambiar.');
+      return;
+    }
+
+    mem.pendingSongDraft.lyrics = updatedLyrics;
+    await ctx.reply(`Aquí está la letra. ¿Está bien o quieres cambios?\n\n${updatedLyrics}`);
+    return;
+  }
   
   await processWithClaude(message, telegramId, ctx);
 });
