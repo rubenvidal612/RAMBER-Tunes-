@@ -369,7 +369,7 @@ async function executeTool(toolName, args, telegramId, ctx) {
         success: true,
         waitForUser: true,
         lyrics: lyricsDraft,
-        message: `Aquí está la letra. ¿Está bien o quieres cambios?\n\n${lyricsDraft}`,
+        message: `Aquí está la letra.\n\n${lyricsDraft}\n\n¿Te late la letra? Escribe sí para que genere la canción o cambiar si quieres modificarla.`,
       };
       
     case 'make_cover':
@@ -737,7 +737,7 @@ bot.on('text', async (ctx) => {
     }
 
     mem.pendingSongDraft.lyrics = updatedLyrics;
-    await ctx.reply(`Aquí está la letra. ¿Está bien o quieres cambios?\n\n${updatedLyrics}`);
+    await ctx.reply(`Aquí está la letra.\n\n${updatedLyrics}\n\n¿Te late la letra? Escribe sí para que genere la canción o cambiar si quieres modificarla.`);
     return;
   }
   
