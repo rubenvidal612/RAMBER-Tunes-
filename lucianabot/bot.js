@@ -69,7 +69,7 @@ const memories = {};
 
 function getMemory(telegramId) {
   const id = (telegramId || '').toString();
-  if (!memories[id]) memories[id] = { lastTranscribedLyrics: '' };
+  if (!memories[id]) memories[id] = { lastTranscribedLyrics: '', lastPublicAudioUrl: '' };
   return memories[id];
 }
 
@@ -171,12 +171,16 @@ const tools = [
     input_schema: {
       type: 'object',
       properties: {
+        uploadUrl: {
+          type: 'string',
+          description: 'URL pública del audio'
+        },
         file_id: {
           type: 'string',
-          description: 'File ID de Telegram del audio'
+          description: 'File ID de Telegram (fallback)'
         }
       },
-      required: ['file_id']
+      required: []
     }
   }
 ];
@@ -214,6 +218,44 @@ async function getTelegramFileUrl(fileId) {
   } catch (e) {
     console.log('[telegram] Error obteniendo URL:', e.message);
     return null;
+  }
+}
+
+async function convertTelegramFileToPublicUrl(ctx, fileId, fileName) {
+  try {
+    const linkObj = await ctx.telegram.getFileLink(fileId);
+    const href = (linkObj && linkObj.href ? linkObj.href : '').toString().trim();
+    if (!href) return { ok: false, error: 'No pude obtener el link de Telegram' };
+
+    const r = await fetch(href);
+    if (!r.ok) return { ok: false, error: 'No pude descargar el audio desde Telegram' };
+    const ab = await r.arrayBuffer();
+    if (!ab || ab.byteLength <= 0) return { ok: false, error: 'El audio llegó vacío' };
+
+    if (typeof FormData === 'undefined' || typeof Blob === 'undefined' || typeof fetch === 'undefined') {
+      return { ok: false, error: 'Este servidor no soporta subir archivos (FormData/Blob)' };
+    }
+
+    const form = new FormData();
+    const blob = new Blob([ab], { type: 'application/octet-stream' });
+    const safeName = (fileName || 'audio').toString().trim() || 'audio';
+    form.append('file', blob, safeName);
+
+    const rr = await fetch(VERCEL_URL + '/api/telegram/convert-audio', {
+      method: 'POST',
+      headers: { 'x-telegram-secret': VERCEL_SECRET },
+      body: form,
+    });
+    const out = await rr.json().catch(() => ({}));
+    if (!rr.ok) {
+      const msg = (out && (out.error || out.message) ? String(out.error || out.message) : `HTTP ${rr.status}`).trim();
+      return { ok: false, error: msg || 'Error convirtiendo audio' };
+    }
+    const url = (out && out.url ? String(out.url).trim() : '').trim();
+    if (!url) return { ok: false, error: 'No recibí URL pública' };
+    return { ok: true, url };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
   }
 }
 
@@ -340,10 +382,19 @@ async function executeTool(toolName, args, telegramId, ctx) {
       return { success: true, message: songsList, songs };
       
     case 'transcribe_audio':
-      const { file_id } = args;
-      const transcribeRes = await callVercel('/api/telegram/transcribe-lyrics', {
-        file_id
-      }, telegramId);
+      const file_id = (args && args.file_id ? String(args.file_id).trim() : '').trim();
+      let audioUrlPublic = (args && args.uploadUrl ? String(args.uploadUrl).trim() : '').trim();
+      if (!audioUrlPublic) audioUrlPublic = (mem.lastPublicAudioUrl || '').toString().trim();
+      if (!audioUrlPublic && file_id) {
+        const conv = await convertTelegramFileToPublicUrl(ctx, file_id, 'audio');
+        if (conv && conv.ok && conv.url) {
+          audioUrlPublic = String(conv.url).trim();
+          mem.lastPublicAudioUrl = audioUrlPublic;
+        }
+      }
+      if (!audioUrlPublic) return { error: 'Falta uploadUrl para transcribir' };
+
+      const transcribeRes = await callVercel('/api/telegram/transcribe-lyrics', { uploadUrl: audioUrlPublic }, telegramId);
       
       if (transcribeRes.error) {
         return { error: transcribeRes.error };
@@ -554,23 +605,26 @@ bot.on('audio', async (ctx) => {
   const telegramId = ctx.from.id.toString();
   const audio = ctx.message.audio;
   const fileId = audio.file_id;
+  const fileName = (audio.file_name || 'audio').toString();
   
   console.log('[audio] tg=', telegramId, 'file_id=', fileId);
   
-  // Obtener URL del archivo
-  const fileUrl = await getTelegramFileUrl(fileId);
-  
-  if (fileUrl) {
-    await ctx.reply('Recibí tu audio. Déjame procesarlo...');
-    await processWithClaude(
-      'El cliente envió un archivo de audio.',
-      telegramId, 
-      ctx, 
-      fileUrl
-    );
-  } else {
+  const mem = getMemory(telegramId);
+  const conv = await convertTelegramFileToPublicUrl(ctx, fileId, fileName);
+  const publicUrl = conv && conv.ok && conv.url ? String(conv.url).trim() : '';
+  if (publicUrl) mem.lastPublicAudioUrl = publicUrl;
+
+  const fallbackLinkObj = await ctx.telegram.getFileLink(fileId).catch(() => null);
+  const fallbackUrl = (fallbackLinkObj && fallbackLinkObj.href ? String(fallbackLinkObj.href).trim() : '').trim();
+  const urlToUse = publicUrl || fallbackUrl;
+
+  if (!urlToUse) {
     await ctx.reply('No pude obtener el audio. Intenta enviarlo de nuevo.');
+    return;
   }
+
+  await ctx.reply('Recibí tu audio. Déjame procesarlo...');
+  await processWithClaude('El cliente envió un archivo de audio.', telegramId, ctx, urlToUse);
 });
 
 // Handler para documentos (MP3)
@@ -585,22 +639,25 @@ bot.on('document', async (ctx) => {
   }
   
   const fileId = document.file_id;
+  const fileName = (document.file_name || 'audio').toString();
   console.log('[document] tg=', telegramId, 'file_id=', fileId, 'mime=', mimeType);
   
-  // Obtener URL del archivo
-  const fileUrl = await getTelegramFileUrl(fileId);
-  
-  if (fileUrl) {
-    await ctx.reply('Recibí tu archivo de audio. Déjame procesarlo...');
-    await processWithClaude(
-      'El cliente envió un archivo de audio MP3.',
-      telegramId, 
-      ctx, 
-      fileUrl
-    );
-  } else {
+  const mem = getMemory(telegramId);
+  const conv = await convertTelegramFileToPublicUrl(ctx, fileId, fileName);
+  const publicUrl = conv && conv.ok && conv.url ? String(conv.url).trim() : '';
+  if (publicUrl) mem.lastPublicAudioUrl = publicUrl;
+
+  const fallbackLinkObj = await ctx.telegram.getFileLink(fileId).catch(() => null);
+  const fallbackUrl = (fallbackLinkObj && fallbackLinkObj.href ? String(fallbackLinkObj.href).trim() : '').trim();
+  const urlToUse = publicUrl || fallbackUrl;
+
+  if (!urlToUse) {
     await ctx.reply('No pude obtener el archivo. Intenta enviarlo de nuevo.');
+    return;
   }
+
+  await ctx.reply('Recibí tu archivo de audio. Déjame procesarlo...');
+  await processWithClaude('El cliente envió un archivo de audio MP3.', telegramId, ctx, urlToUse);
 });
 
 // Handler para voz (voice messages)
@@ -611,20 +668,22 @@ bot.on('voice', async (ctx) => {
   
   console.log('[voice] tg=', telegramId, 'file_id=', fileId);
   
-  // Obtener URL del archivo
-  const fileUrl = await getTelegramFileUrl(fileId);
-  
-  if (fileUrl) {
-    await ctx.reply('Recibí tu mensaje de voz. Déjame procesarlo...');
-    await processWithClaude(
-      'El cliente envió un mensaje de voz.',
-      telegramId, 
-      ctx, 
-      fileUrl
-    );
-  } else {
+  const mem = getMemory(telegramId);
+  const conv = await convertTelegramFileToPublicUrl(ctx, fileId, 'voice.ogg');
+  const publicUrl = conv && conv.ok && conv.url ? String(conv.url).trim() : '';
+  if (publicUrl) mem.lastPublicAudioUrl = publicUrl;
+
+  const fallbackLinkObj = await ctx.telegram.getFileLink(fileId).catch(() => null);
+  const fallbackUrl = (fallbackLinkObj && fallbackLinkObj.href ? String(fallbackLinkObj.href).trim() : '').trim();
+  const urlToUse = publicUrl || fallbackUrl;
+
+  if (!urlToUse) {
     await ctx.reply('No pude obtener el mensaje de voz. Intenta enviarlo de nuevo.');
+    return;
   }
+
+  await ctx.reply('Recibí tu mensaje de voz. Déjame procesarlo...');
+  await processWithClaude('El cliente envió un mensaje de voz.', telegramId, ctx, urlToUse);
 });
 
 // Comando /start
