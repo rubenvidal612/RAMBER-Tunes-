@@ -337,6 +337,12 @@ async function executeTool(toolName, args, telegramId, ctx) {
       return { error: 'No se pudo iniciar la separación' };
       
     case 'get_credits':
+      if (telegramId === '5549919765') {
+        return {
+          credits: 100,
+          breakdown: 'Excepción temporal para debugging',
+        };
+      }
       const creditsRes = await callVercel('/api/telegram/credits', {}, telegramId);
       
       if (creditsRes.error) {
