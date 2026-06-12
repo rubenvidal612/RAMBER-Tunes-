@@ -225,11 +225,18 @@ async function sunoFetchJsonWithRetry(path: string, init: any = {}) {
 }
 
 async function resolveTelegramUser(admin: any, telegramUserId: string) {
+  console.log("[upload-cover][debug] resolveTelegramUser:start", { telegramUserId });
   const { data: link, error: linkErr } = await admin
     .from("telegram_links")
     .select("user_id")
     .eq("telegram_user_id", telegramUserId)
     .maybeSingle();
+  console.log("[upload-cover][debug] telegram_links:result", {
+    telegramUserId,
+    found: Boolean(link?.user_id),
+    user_id: link?.user_id || null,
+    error: linkErr?.message || null,
+  });
   if (linkErr) return { userId: "", error: linkErr.message || "Error buscando vínculo" };
   if (link?.user_id) return { userId: String(link.user_id), error: "" };
 
@@ -238,14 +245,32 @@ async function resolveTelegramUser(admin: any, telegramUserId: string) {
     .select("id")
     .eq("telegram_user_id", telegramUserId)
     .maybeSingle();
+  console.log("[upload-cover][debug] profiles.telegram_user_id:result", {
+    telegramUserId,
+    found: Boolean((profileByTelegram as any)?.id),
+    profile_id: (profileByTelegram as any)?.id || null,
+    error: profileByTelegramErr?.message || null,
+  });
 
   if (profileByTelegramErr) {
     const msg = String(profileByTelegramErr.message || "").toLowerCase();
     if (!msg.includes("column") || !msg.includes("telegram_user_id")) {
+      console.log("[upload-cover][debug] profiles.telegram_user_id:error", {
+        telegramUserId,
+        detail: profileByTelegramErr.message || null,
+      });
       return { userId: "", error: profileByTelegramErr.message || "Error buscando perfil" };
     }
   }
-  if ((profileByTelegram as any)?.id) return { userId: String((profileByTelegram as any).id), error: "" };
+  if ((profileByTelegram as any)?.id) {
+    console.log("[upload-cover][debug] resolveTelegramUser:resolved", {
+      telegramUserId,
+      source: "profiles.telegram_user_id",
+      userId: String((profileByTelegram as any).id),
+    });
+    return { userId: String((profileByTelegram as any).id), error: "" };
+  }
+  console.log("[upload-cover][debug] resolveTelegramUser:not-found", { telegramUserId });
   return { userId: "", error: "" };
 }
 
@@ -261,6 +286,9 @@ export default async function handler(req: any, res: any) {
   if (!payload) return send(res, 400, { error: "Body inválido" });
 
   const telegram_user_id = payload.telegram_user_id;
+  console.log("[upload-cover][debug] request:telegram_user_id", {
+    telegram_user_id: telegram_user_id == null ? null : String(telegram_user_id),
+  });
   if (telegram_user_id == null || telegram_user_id === "") return send(res, 400, { error: "Falta telegram_user_id" });
 
   const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
@@ -283,6 +311,11 @@ export default async function handler(req: any, res: any) {
   const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
   const resolved = await resolveTelegramUser(admin, String(telegram_user_id));
+  console.log("[upload-cover][debug] resolveTelegramUser:final", {
+    telegram_user_id: String(telegram_user_id),
+    userId: resolved.userId || null,
+    error: resolved.error || null,
+  });
   if (resolved.error) return send(res, 500, { error: "Error buscando vínculo", detail: resolved.error });
   if (!resolved.userId) return send(res, 401, { error: "Cuenta no vinculada" });
 
