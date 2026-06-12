@@ -230,7 +230,6 @@ async function executeTool(toolName, args, telegramId, ctx) {
       
       const taskId = res.taskId || res.task_id || res.id;
       if (taskId) {
-        // Iniciar polling
         setTimeout(() => pollTaskStatus(taskId, telegramId, ctx), 20000);
         return { 
           success: true, 
@@ -353,9 +352,42 @@ async function executeTool(toolName, args, telegramId, ctx) {
   }
 }
 
-// Polling para estado de tareas
+async function sendAudioToUser(ctx, url, caption) {
+  const cleanUrl = (url || '').toString().trim();
+  const cleanCaption = (caption || '').toString().trim();
+  if (!cleanUrl) return false;
+
+  try {
+    const r = await axios.get(cleanUrl, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      headers: { 'User-Agent': 'LucIA-Bot' },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+    const buf = Buffer.from(r.data);
+    const safeBase = (cleanCaption || 'audio')
+      .toString()
+      .replace(/[^\w\-]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 60);
+    const filename = (safeBase || 'audio') + '.mp3';
+    await ctx.replyWithAudio({ source: buf, filename }, cleanCaption ? { caption: cleanCaption } : undefined);
+    return true;
+  } catch (e) {
+    try {
+      await ctx.replyWithAudio({ url: cleanUrl }, cleanCaption ? { caption: cleanCaption } : undefined);
+      return true;
+    } catch (e2) {
+      console.log('[sendAudio] Error enviando audio:', e2 && e2.message ? e2.message : String(e2));
+      return false;
+    }
+  }
+}
+
 async function pollTaskStatus(taskId, telegramId, ctx, attempt = 0) {
-  if (attempt > 30) {
+  if (attempt >= 40) {
     await ctx.reply('Tardó demasiado. Intenta de nuevo por favor.');
     return;
   }
@@ -383,7 +415,10 @@ async function pollTaskStatus(taskId, telegramId, ctx, attempt = 0) {
       const url = (song.audio_url || '').toString().trim();
       const title = (song.title || 'Tu canción').toString();
       if (url) {
-        await ctx.replyWithAudio({ url }, { caption: title });
+        const ok = await sendAudioToUser(ctx, url, title);
+        if (!ok) {
+          await ctx.reply('No pude enviarte el audio. Intenta de nuevo por favor.');
+        }
       }
     }
     return;
