@@ -91,7 +91,7 @@ const SYSTEM_PROMPT = `Eres LucIA de LuclAna Music. Español mexicano, natural y
 Servicios: canciones originales 12 créditos, covers 12 créditos, separación de voz 10 créditos, separación de instrumentos 50 créditos, video musical 2 créditos. 
 SOLO canciones originales del cliente para covers. Separación SOLO de canciones hechas en LuclAna. 
 Las canciones son 100% del cliente nosotros hacemos maquetas. NUNCA menciones tecnología interna. 
-NUNCA uses vos puedes tenés. SIEMPRE español mexicano. Si transcribes una letra, guárdala y úsala tal cual para el cover, sin inventar letra nueva.`;
+NUNCA uses vos puedes tenés. SIEMPRE español mexicano. Si transcribes una letra, guárdala y úsala tal cual para el cover, sin inventar letra nueva. Si preguntan por saldo o créditos, usa get_credits. Si piden activar créditos con un email, activa la cuenta con ese email.`;
 
 // Tools (function calling) para Claude
 const tools = [
@@ -348,6 +348,97 @@ function looksLikeApproval(text) {
     'asi esta',
     'así está',
   ].some((x) => s === x || s.includes(x));
+}
+
+function normalizeUserText(text) {
+  return (text || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldAutoGetCredits(text) {
+  const s = normalizeUserText(text);
+  if (!s) return false;
+  const checks = [
+    'cuanto tengo',
+    'cuanto me queda',
+    'cual es mi saldo',
+    'cuales son mis creditos',
+    'mis creditos',
+    'mi saldo',
+    'saldo disponible',
+    'creditos disponibles',
+    'cuantos creditos tengo',
+  ];
+  return checks.some((x) => s.includes(x));
+}
+
+function extractActivateEmail(text) {
+  const original = (text || '').toString().trim();
+  const normalized = normalizeUserText(original);
+  const wantsActivation =
+    normalized.includes('activame los creditos') ||
+    normalized.includes('activa mis creditos') ||
+    normalized.includes('activame mis creditos') ||
+    normalized.includes('activame la cuenta') ||
+    normalized.includes('activa mi cuenta');
+  if (!wantsActivation) return '';
+
+  const match = original.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? String(match[0]).trim().toLowerCase() : '';
+}
+
+async function activateAccountByEmail(ctx, telegramId, email) {
+  console.log('[activate] tg=', telegramId, 'email=', email || '(vacío)');
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    await ctx.reply('Escribe el comando así: /activate email@ejemplo.com');
+    return;
+  }
+
+  if (!supabaseAdmin) {
+    await ctx.reply('No pude activar tu cuenta en este momento.');
+    return;
+  }
+
+  try {
+    const { data: profile, error: findErr } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (findErr) {
+      console.log('[activate] error buscando email:', findErr.message);
+      await ctx.reply('No pude activar tu cuenta en este momento.');
+      return;
+    }
+
+    if (!profile || !profile.id) {
+      await ctx.reply('❌ Email no registrado. Compra créditos en la app primero.');
+      return;
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('profiles')
+      .update({ telegram_user_id: telegramId })
+      .eq('id', profile.id);
+
+    if (updateErr) {
+      console.log('[activate] error actualizando telegram_user_id:', updateErr.message);
+      await ctx.reply('No pude activar tu cuenta en este momento.');
+      return;
+    }
+
+    await ctx.reply('✅ Cuenta vinculada. Ya puedes usar todos los servicios.');
+  } catch (e) {
+    console.log('[activate] error:', e && e.message ? e.message : String(e));
+    await ctx.reply('No pude activar tu cuenta en este momento.');
+  }
 }
 
 // Implementación de las tools
@@ -729,6 +820,10 @@ bot.on('text', async (ctx) => {
   
   console.log('[text] tg=', telegramId, 'msg=', message.slice(0, 100));
 
+  if (/^\/activate\b/i.test(message) || /^\/credits\b/i.test(message)) {
+    return;
+  }
+
   const mem = getMemory(telegramId);
   if (mem.pendingSongDraft && mem.pendingSongDraft.awaitingApproval) {
     if (looksLikeApproval(message)) {
@@ -746,6 +841,24 @@ bot.on('text', async (ctx) => {
     mem.pendingSongDraft.lyrics = updatedLyrics;
     await ctx.reply(`Aquí está la letra.\n\n${updatedLyrics}\n\n¿Te late la letra? Escribe sí para que genere la canción o cambiar si quieres modificarla.`);
     return;
+  }
+
+  const activationEmail = extractActivateEmail(message);
+  if (activationEmail) {
+    await activateAccountByEmail(ctx, telegramId, activationEmail);
+    return;
+  }
+
+  if (shouldAutoGetCredits(message)) {
+    const toolResult = await executeTool('get_credits', {}, telegramId, ctx);
+    if (toolResult && toolResult.message) {
+      await ctx.reply(toolResult.message);
+      return;
+    }
+    if (toolResult && toolResult.error) {
+      await ctx.reply(`Error: ${toolResult.error}`);
+      return;
+    }
   }
   
   await processWithClaude(message, telegramId, ctx);
@@ -863,53 +976,7 @@ bot.command('activate', async (ctx) => {
   const telegramId = ctx.from.id.toString();
   const rawText = (((ctx && ctx.message && ctx.message.text) || '')).toString().trim();
   const email = rawText.replace(/^\/activate(@\w+)?/i, '').trim().toLowerCase();
-
-  console.log('[activate] tg=', telegramId, 'email=', email || '(vacío)');
-
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    await ctx.reply('Escribe el comando así: /activate email@ejemplo.com');
-    return;
-  }
-
-  if (!supabaseAdmin) {
-    await ctx.reply('No pude activar tu cuenta en este momento.');
-    return;
-  }
-
-  try {
-    const { data: profile, error: findErr } = await supabaseAdmin
-      .from('profiles')
-      .select('id, email')
-      .eq('email', email)
-      .maybeSingle();
-
-    if (findErr) {
-      console.log('[activate] error buscando email:', findErr.message);
-      await ctx.reply('No pude activar tu cuenta en este momento.');
-      return;
-    }
-
-    if (!profile || !profile.id) {
-      await ctx.reply('❌ Email no registrado. Compra créditos en la app primero.');
-      return;
-    }
-
-    const { error: updateErr } = await supabaseAdmin
-      .from('profiles')
-      .update({ telegram_user_id: telegramId })
-      .eq('id', profile.id);
-
-    if (updateErr) {
-      console.log('[activate] error actualizando telegram_user_id:', updateErr.message);
-      await ctx.reply('No pude activar tu cuenta en este momento.');
-      return;
-    }
-
-    await ctx.reply('✅ Cuenta vinculada. Ya puedes usar todos los servicios.');
-  } catch (e) {
-    console.log('[activate] error:', e && e.message ? e.message : String(e));
-    await ctx.reply('No pude activar tu cuenta en este momento.');
-  }
+  await activateAccountByEmail(ctx, telegramId, email);
 });
 
 // Manejo de errores
