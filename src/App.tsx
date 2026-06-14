@@ -495,18 +495,6 @@ export default function App() {
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [isAuthBooting, setIsAuthBooting] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
-  const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
-  const [profileFirstName, setProfileFirstName] = useState('');
-  const [profileLastName, setProfileLastName] = useState('');
-  const [profileBirthdate, setProfileBirthdate] = useState('');
-  const [profileSetupBusy, setProfileSetupBusy] = useState(false);
-  const [profileUsername, setProfileUsername] = useState('');
-  const [profileAvatarMode, setProfileAvatarMode] = useState<'male' | 'female' | 'photo'>('male');
-  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>('');
-  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
-  const avatarGalleryInputRef = useRef<HTMLInputElement | null>(null);
-  const avatarCameraInputRef = useRef<HTMLInputElement | null>(null);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -751,55 +739,7 @@ export default function App() {
     return '';
   };
 
-  const saveProfileSetup = async () => {
-    if (!supabaseBrowser) return;
-    const first = (profileFirstName || '').toString().trim();
-    const last = (profileLastName || '').toString().trim();
-    const birth = (profileBirthdate || '').toString().trim();
-    if (!first || !last) {
-      showToast('Escribe tu nombre y apellidos.');
-      return;
-    }
-    if (!birth) {
-      showToast('Selecciona tu fecha de nacimiento.');
-      return;
-    }
-    setProfileSetupBusy(true);
-    try {
-      const full_name = `${first} ${last}`.trim().slice(0, 120);
-      const { data: ud } = await supabaseBrowser.auth.getUser().catch(() => ({ data: null as any }));
-      const user = ud?.user;
-      const uid = (user?.id || '').toString().trim();
-      const currentMeta: any = user?.user_metadata || {};
-      const rawUsername = (profileUsername || '').toString().trim().replace(/\s+/g, '');
-      const username =
-        (rawUsername || (currentMeta?.username || '').toString().trim() || (uid ? uid.slice(0, 8) : '') || 'usuario')
-          .slice(0, 20);
 
-      let avatar_url = profileAvatarMode === 'photo' ? '' : (profileAvatarUrl || '').toString().trim();
-      if (profileAvatarMode === 'photo' && profileAvatarFile && uid) {
-        const uploaded = await uploadProfileAvatar(profileAvatarFile, uid).catch(() => '');
-        if (uploaded) avatar_url = uploaded;
-      }
-      if (!avatar_url) {
-        const base = full_name || username || 'Usuario';
-        avatar_url = makeAvatarSvgUrl(profileAvatarMode === 'female' ? 'female' : 'male', base);
-      }
-
-      const r = await supabaseBrowser.auth
-        .updateUser({ data: { full_name, birthdate: birth, username, avatar_url, profile_ready: true } })
-        .catch(() => null as any);
-      const err = (r as any)?.error;
-      if (err) {
-        showToast('No pude guardar tu perfil.');
-        return;
-      }
-      setIsProfileSetupOpen(false);
-      showToast('Listo. Guardé tu información.');
-    } finally {
-      setProfileSetupBusy(false);
-    }
-  };
 
   const updatesSorted = APP_UPDATES.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const latestUpdateKey = updatesSorted.length ? `${updatesSorted[0].date}::${updatesSorted[0].title}` : '';
@@ -1314,64 +1254,7 @@ export default function App() {
       .catch(() => {});
   }, [isAuthed]);
 
-  useEffect(() => {
-    if (!isAuthed) {
-      setIsProfileSetupOpen(false);
-      return;
-    }
-    const isAdminAccount =
-      (authEmail || '').toString().trim().toLowerCase() === 'rubenfiverr612@gmail.com' ||
-      (authEmail || '').toString().trim().toLowerCase() === 'rubenvidal612@gmail.com';
-    if (isAdminAccount) {
-      setIsProfileSetupOpen(false);
-      return;
-    }
-    if (!supabaseBrowser) return;
-    supabaseBrowser.auth
-      .getUser()
-      .then(({ data }) => {
-        const user = data?.user;
-        const meta: any = user?.user_metadata || {};
-        const isReady = Boolean(meta?.profile_ready);
-        const full = (meta?.full_name || meta?.name || '').toString().trim();
-        const birth = (meta?.birthdate || meta?.birthday || meta?.dob || '').toString().trim();
-        
-        console.log('Profile setup check:', {
-          authEmail,
-          isAdminAccount,
-          isReady,
-          full,
-          birth,
-          meta
-        });
-        
-        if (isReady) {
-          console.log('Profile is already ready, skipping setup');
-          return;
-        }
-        
-        console.log('Profile not ready, showing setup form');
-        const parts = full ? full.split(/\s+/g) : [];
-        const first = parts.length ? parts[0] : '';
-        const last = parts.length > 1 ? parts.slice(1).join(' ') : '';
-        setProfileFirstName(first);
-        setProfileLastName(last);
-        setProfileBirthdate(birth);
-        setProfileUsername((meta?.username || '').toString().trim());
-        const existingAvatar = (meta?.avatar_url || meta?.avatarUrl || '').toString().trim();
-        if (existingAvatar) {
-          setProfileAvatarUrl(existingAvatar);
-          setProfileAvatarMode(existingAvatar.startsWith('http') ? 'photo' : 'male');
-        } else {
-          const base = full || (user?.email || '').toString().split('@')[0] || 'Usuario';
-          setProfileAvatarUrl(makeAvatarSvgUrl('male', base));
-          setProfileAvatarMode('male');
-        }
-        setProfileAvatarFile(null);
-        setIsProfileSetupOpen(true);
-      })
-      .catch(() => {});
-  }, [isAuthed]);
+
 
   useEffect(() => {
     const isStandalone =
@@ -3198,163 +3081,7 @@ export default function App() {
           if (Number.isFinite(d)) setPlayerDuration(d);
         }}
         className="hidden" 
-      />
 
-      {isProfileSetupOpen && (
-        <div className="fixed inset-0 z-[260] bg-black/70 flex items-end md:items-center justify-center">
-          <div className="relative w-full md:max-w-[560px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between">
-              <div className="text-white font-extrabold">Completa tu perfil</div>
-              <button
-                onClick={() => setIsProfileSetupOpen(false)}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div>
-                <div className="text-[11px] text-slate-400 font-semibold">Nombre(s)</div>
-                <input
-                  value={profileFirstName}
-                  onChange={(e) => setProfileFirstName(e.target.value)}
-                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                  placeholder="Ej: Juan"
-                />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-400 font-semibold">Apellidos</div>
-                <input
-                  value={profileLastName}
-                  onChange={(e) => setProfileLastName(e.target.value)}
-                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                  placeholder="Ej: Pérez López"
-                />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-400 font-semibold">Fecha de nacimiento</div>
-                <input
-                  type="date"
-                  value={profileBirthdate}
-                  onChange={(e) => setProfileBirthdate(e.target.value)}
-                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                />
-              </div>
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <div className="text-[11px] text-slate-400 font-semibold">Foto / Avatar</div>
-                <div className="mt-3 flex items-center gap-3">
-                  <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-white font-extrabold">
-                    {profileAvatarUrl ? (
-                      <img src={profileAvatarUrl} className="w-full h-full object-cover" />
-                    ) : (
-                      'U'
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-slate-200 font-extrabold truncate">Tu foto se verá cuando publiques</div>
-                    <div className="text-[11px] text-slate-500 truncate">Puedes subir una foto o usar un avatar.</div>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setIsAvatarPickerOpen(true)}
-                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-extrabold px-4 py-2 rounded-full"
-                    type="button"
-                  >
-                    Subir / Tomar foto
-                  </button>
-                  <button
-                    onClick={() => {
-                      const base = `${(profileFirstName || '').toString().trim()} ${(profileLastName || '').toString().trim()}`.trim() || 'Usuario';
-                      setProfileAvatarMode('male');
-                      setProfileAvatarFile(null);
-                      setProfileAvatarUrl(makeAvatarSvgUrl('male', base));
-                    }}
-                    className={cn(
-                      "border text-xs font-extrabold px-4 py-2 rounded-full",
-                      profileAvatarMode === 'male' ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-200" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
-                    )}
-                    type="button"
-                  >
-                    Avatar hombre
-                  </button>
-                  <button
-                    onClick={() => {
-                      const base = `${(profileFirstName || '').toString().trim()} ${(profileLastName || '').toString().trim()}`.trim() || 'Usuario';
-                      setProfileAvatarMode('female');
-                      setProfileAvatarFile(null);
-                      setProfileAvatarUrl(makeAvatarSvgUrl('female', base));
-                    }}
-                    className={cn(
-                      "border text-xs font-extrabold px-4 py-2 rounded-full",
-                      profileAvatarMode === 'female' ? "bg-fuchsia-500/20 border-fuchsia-500/30 text-fuchsia-200" : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
-                    )}
-                    type="button"
-                  >
-                    Avatar mujer
-                  </button>
-                </div>
-                <input
-                  ref={avatarGalleryInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] || null;
-                    e.currentTarget.value = '';
-                    if (!f) return;
-                    setProfileAvatarMode('photo');
-                    setProfileAvatarFile(f);
-                    try {
-                      const url = URL.createObjectURL(f);
-                      setProfileAvatarUrl(url);
-                    } catch {}
-                  }}
-                />
-                <input
-                  ref={avatarCameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="user"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] || null;
-                    e.currentTarget.value = '';
-                    if (!f) return;
-                    setProfileAvatarMode('photo');
-                    setProfileAvatarFile(f);
-                    try {
-                      const url = URL.createObjectURL(f);
-                      setProfileAvatarUrl(url);
-                    } catch {}
-                  }}
-                />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-400 font-semibold">Nombre de usuario (opcional)</div>
-                <input
-                  value={profileUsername}
-                  onChange={(e) => setProfileUsername(e.target.value)}
-                  className="mt-2 w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
-                  placeholder="Ej: ramberjuan"
-                />
-                <div className="mt-2 text-[11px] text-slate-500">Se usa para identificarte cuando publiques canciones.</div>
-              </div>
-              <button
-                onClick={() => saveProfileSetup().catch(() => {})}
-                disabled={profileSetupBusy}
-                className="mt-2 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
-              >
-                {profileSetupBusy ? 'Guardando…' : 'Guardar'}
-              </button>
-              <div className="text-[11px] text-slate-500">
-                Tu foto/nombre se usan para mostrar autor en Inicio. La fecha de nacimiento solo la ve el admin en OFICINA.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} onOpenUpdates={() => openUpdates()} />}
       {isAvatarPickerOpen && (
