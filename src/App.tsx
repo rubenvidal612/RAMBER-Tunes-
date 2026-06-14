@@ -3080,56 +3080,10 @@ export default function App() {
           const d = Number(a.duration);
           if (Number.isFinite(d)) setPlayerDuration(d);
         }}
-        className="hidden" 
-
+        className="hidden"
+      />
 
       {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} onOpenUpdates={() => openUpdates()} />}
-      {isAvatarPickerOpen && (
-        <div className="fixed inset-0 z-[260] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setIsAvatarPickerOpen(false)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <div className="text-white font-extrabold">Elegir foto</div>
-              <button
-                onClick={() => setIsAvatarPickerOpen(false)}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-4 space-y-2">
-              <button
-                type="button"
-                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
-                onClick={() => {
-                  setIsAvatarPickerOpen(false);
-                  window.setTimeout(() => avatarCameraInputRef.current?.click(), 0);
-                }}
-              >
-                Tomar foto (Cámara)
-              </button>
-              <button
-                type="button"
-                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
-                onClick={() => {
-                  setIsAvatarPickerOpen(false);
-                  window.setTimeout(() => avatarGalleryInputRef.current?.click(), 0);
-                }}
-              >
-                Elegir de galería / archivos
-              </button>
-              <button
-                type="button"
-                className="w-full bg-transparent border border-white/10 text-slate-300 text-sm font-extrabold px-4 py-3 rounded-2xl text-left"
-                onClick={() => setIsAvatarPickerOpen(false)}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {isPricingOpen && (
         <PricingView
           onClose={() => {
