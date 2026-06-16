@@ -46,6 +46,18 @@ function creditsFromProfile(profile: any): number {
   const p = profile ?? {};
   const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
 
+  // Verificar si los créditos han vencido
+  const creditsExpiresAt = p.credits_expires_at;
+  if (creditsExpiresAt) {
+    const expiresDate = new Date(creditsExpiresAt);
+    const now = new Date();
+    
+    if (expiresDate < now) {
+      // Créditos vencidos, devolver 0
+      return 0;
+    }
+  }
+
   for (const k of ["ramber_credits", "zingy_credits", "credits"]) {
     if (!has(k)) continue;
     const v = (p as any)[k];
@@ -402,9 +414,33 @@ async function applyCreditRolloverWithCap(
   // Ejemplo: si sum da 4500 y cap es 4000, guardamos 4000 exactos.
   // Para admin: si sum da 4500, se guarda 4500.
   const next = round2(unlimited ? sum : Math.min(sum, cap));
+  
+  // Validar límite máximo de 2,400 créditos (2 paquetes)
+  const MAX_CREDITS = 2400;
+  if (next > MAX_CREDITS) {
+    return { 
+      ok: false as const, 
+      error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
+    };
+  }
 
-  const upd = await updateCreditsAnyColumn(admin, userId, next);
-  if (!upd.ok) return upd;
+  // Actualizar créditos y fecha de vencimiento
+  const patch: any = {};
+  const col = pickWritableCreditsColumn(profile);
+  if (col === "song_balance") {
+    patch.song_balance = toCounts(next).songs;
+  } else if (col) {
+    patch[col] = next;
+  }
+  
+  // Agregar campo credits_expires_at: ahora + 60 días
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 60);
+  patch.credits_expires_at = expiresAt.toISOString();
+  
+  const { error } = await admin.from("profiles").update(patch).eq("id", userId);
+  if (error) return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
+  
   return { ok: true as const, previous: current, added: monthly, cap, next, unlimited };
 }
 
@@ -535,10 +571,48 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
     }
 
     const current = creditsFromProfile(profile);
+    
+    // Validar límite máximo de 2,400 créditos (2 paquetes)
+    if (delta > 0) {
+      const totalAfterAdd = current + delta;
+      const MAX_CREDITS = 2400;
+      
+      if (totalAfterAdd > MAX_CREDITS) {
+        return { 
+          ok: false as const, 
+          error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
+        };
+      }
+    }
+    
     const next = round2(Math.max(0, current + delta));
-    const upd = await updateCreditsAnyColumn(admin, userId, next);
-    if (upd.ok) return { ok: true as const, credits: next };
-    return { ok: false as const, error: upd.error };
+    
+    // Actualizar créditos y fecha de vencimiento si se están agregando créditos
+    if (delta > 0) {
+      // Calcular fecha de vencimiento: ahora + 60 días
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 60);
+      
+      const patch: any = {};
+      const col = pickWritableCreditsColumn(profile);
+      if (col === "song_balance") {
+        patch.song_balance = toCounts(next).songs;
+      } else if (col) {
+        patch[col] = next;
+      }
+      
+      // Agregar campo credits_expires_at
+      patch.credits_expires_at = expiresAt.toISOString();
+      
+      const { error } = await admin.from("profiles").update(patch).eq("id", userId);
+      if (!error) return { ok: true as const, credits: next };
+      return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
+    } else {
+      // Para restar créditos, usar la función existente
+      const upd = await updateCreditsAnyColumn(admin, userId, next);
+      if (upd.ok) return { ok: true as const, credits: next };
+      return { ok: false as const, error: upd.error };
+    }
   }
 
   return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
@@ -571,6 +645,20 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       const created = await ensureProfileExists(admin, userId);
       if (!created.ok) return { ok: false as const, error: created.error };
       continue;
+    }
+
+    // Verificar si los créditos han vencido
+    const creditsExpiresAt = profile.credits_expires_at;
+    if (creditsExpiresAt) {
+      const expiresDate = new Date(creditsExpiresAt);
+      const now = new Date();
+      
+      if (expiresDate < now) {
+        return { 
+          ok: false as const, 
+          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar." 
+        };
+      }
     }
 
     const current = creditsFromProfile(profile);
@@ -4697,7 +4785,7 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio", amount_mxn: 375, credits: 1200, songs: 100 },
+    inicio: { title: "Pack Inicio", amount_mxn: 199, credits: 1200, songs: 100 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 3000, songs: 250 },
   };
 
@@ -6357,6 +6445,10 @@ const balanceHandler = (() => {
     const credits = is_admin && typeof provider_credits === "number" ? provider_credits : internal_credits;
 
     const counts = toCounts(credits);
+    
+    // Obtener fecha de vencimiento de créditos del perfil
+    const credits_expires_at = profile?.credits_expires_at || null;
+    
     return send(res, 200, {
       credits,
       song_balance: counts.songs,
@@ -6376,6 +6468,7 @@ const balanceHandler = (() => {
       provider_credits,
       provider_error: provider_error || null,
       source: is_admin && typeof provider_credits === "number" ? "provider_admin" : "local",
+      credits_expires_at,
     });
   };
 })();

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void }) {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
-  const { credits, refreshCredits } = useUserCredits();
+  const { credits, creditsExpiresAt, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -56,10 +56,10 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const TELEGRAM_INVITE_HASH = 'sgw5bsAX9utmZDEx';
   const TELEGRAM_APP_URL = `tg://join?invite=${TELEGRAM_INVITE_HASH}`;
 
-  // Paquetes predefinidos de créditos - SOLO Pack Inicio de $375
+  // Paquetes predefinidos de créditos - SOLO Pack Inicio de $199 (PROMO)
   const creditPackages = [
     { id: 'custom', name: 'Personalizado', credits: 0, description: 'Ingresa cantidad manual' },
-    { id: 'inicio', name: 'Pack Inicio', credits: 1200, description: '$375 MXN - 100 canciones' },
+    { id: 'inicio', name: 'Pack Inicio', credits: 1200, description: '$199 MXN (PROMO) - 100 canciones' },
   ];
 
   const openExternalUrl = (url: string) => {
@@ -1253,21 +1253,35 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
           <h2 className="text-2xl font-bold text-white">{userName}</h2>
         </div>
 
-        <div className="bg-gradient-to-r from-yellow-500/20 to-transparent border border-yellow-400/20 rounded-2xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
-            <span className="font-semibold text-slate-200">{credits} Créditos</span>
-            <HelpCircle className="w-4 h-4 text-slate-500" />
+        <div className="bg-gradient-to-r from-yellow-500/20 to-transparent border border-yellow-400/20 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
+              <span className="font-semibold text-slate-200">{credits} Créditos</span>
+              <HelpCircle className="w-4 h-4 text-slate-500" />
+            </div>
+            <button 
+              onClick={() => {
+                onOpenPricing?.();
+                onClose();
+              }}
+              className="bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs px-4 py-2 rounded-full transition-colors"
+            >
+              Obtener más canciones
+            </button>
           </div>
-          <button 
-            onClick={() => {
-              onOpenPricing?.();
-              onClose();
-            }}
-            className="bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs px-4 py-2 rounded-full transition-colors"
-          >
-            Obtener más canciones
-          </button>
+          
+          {creditsExpiresAt && (
+            <div className="text-xs text-slate-400 mt-2">
+              <span className="font-medium">Vencimiento: </span>
+              {new Date(creditsExpiresAt).toLocaleDateString('es-MX', { 
+                weekday: 'short', 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              })}
+            </div>
+          )}
         </div>
 
         <div className="glass-card rounded-2xl overflow-hidden">
