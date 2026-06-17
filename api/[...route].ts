@@ -299,6 +299,56 @@ async function uploadToR2(key: string, body: any, contentType: string): Promise<
   return `${env.publicBaseUrl}/${key}`;
 }
 
+/**
+ * Copia un archivo desde una URL temporal (ej: Replicate) a R2 con una URL permanente
+ * @param sourceUrl URL temporal del archivo (ej: de replicate.delivery)
+ * @param userId ID del usuario para la ruta en R2
+ * @param prefix Prefijo para la ruta en R2 (ej: "voice-models/")
+ * @param fileName Nombre del archivo (sin extensión)
+ * @returns URL permanente en R2
+ */
+async function copyUrlToR2(sourceUrl: string, userId: string, prefix: string, fileName: string): Promise<string> {
+  console.log(`📦 Copiando archivo a R2: ${sourceUrl.substring(0, 80)}...`);
+  
+  try {
+    // Descargar el archivo desde la URL temporal
+    const response = await fetch(sourceUrl);
+    if (!response.ok) {
+      throw new Error(`No se pudo descargar el archivo (HTTP ${response.status})`);
+    }
+    
+    // Obtener el tipo de contenido
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Determinar la extensión del archivo
+    let ext = 'bin';
+    if (contentType.includes('audio')) {
+      ext = contentType.includes('wav') ? 'wav' : 'mp3';
+    } else if (contentType.includes('zip')) {
+      ext = 'zip';
+    } else if (contentType.includes('json')) {
+      ext = 'json';
+    }
+    
+    // Crear la ruta en R2
+    const key = `${prefix}${userId}/${Date.now()}_${fileName}.${ext}`;
+    
+    // Leer el contenido
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // Subir a R2
+    const permanentUrl = await uploadToR2(key, buffer, contentType);
+    
+    console.log(`✅ Archivo copiado a R2: ${permanentUrl}`);
+    return permanentUrl;
+    
+  } catch (error) {
+    console.error(`❌ Error al copiar archivo a R2:`, error);
+    throw error;
+  }
+}
+
 async function getSignedR2Url(key: string, expiresIn: number = 3600): Promise<string> {
   const env = getR2Env();
   const client = await getR2Client();
@@ -3501,7 +3551,37 @@ notify pgrst, 'reload schema';`;
 
         if (modelUrl && voiceRow && !(voiceRow as any)?.model_url) {
           try {
-            await auth.admin.from("kits_voices").update({ model_url: modelUrl }).eq("id", (voiceRow as any).id);
+            // Si es una URL temporal de Replicate, copiarla a R2 primero
+            let finalModelUrl = modelUrl;
+            const lowerUrl = modelUrl.toLowerCase();
+            
+            if (lowerUrl.includes('replicate.delivery') || 
+                (lowerUrl.includes('replicate.com/') && !lowerUrl.includes('replicate.com/api/'))) {
+              console.log(`📦 Detectada URL temporal de Replicate, copiando a R2: ${modelUrl.substring(0, 80)}...`);
+              
+              try {
+                // Extraer un nombre seguro para el archivo
+                const voiceName = String((voiceRow as any)?.voice_name || 'voice-model').replace(/[^a-zA-Z0-9_-]/g, '_');
+                const userId = String(user.id);
+                
+                // Copiar a R2
+                finalModelUrl = await copyUrlToR2(
+                  modelUrl,
+                  userId,
+                  'voice-models/',
+                  voiceName
+                );
+                
+                console.log(`✅ URL temporal copiada a R2: ${finalModelUrl}`);
+              } catch (copyError) {
+                console.error(`❌ Error al copiar URL temporal a R2:`, copyError);
+                // Continuar con la URL original como fallback
+                console.log(`⚠️ Usando URL temporal original como fallback`);
+              }
+            }
+            
+            // Guardar la URL (permanente de R2 o la original si falló la copia)
+            await auth.admin.from("kits_voices").update({ model_url: finalModelUrl }).eq("id", (voiceRow as any).id);
           } catch {
           }
         }
