@@ -176,9 +176,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   useEffect(() => {
     let cancelled = false;
     const list = showTrash ? (Array.isArray(cancionesEliminadas) ? cancionesEliminadas : []) : (Array.isArray(canciones) ? canciones : []);
-    const ids = list.map((s) => String((s as any)?.id || '').trim()).filter(Boolean);
-    const missing = ids.filter((id) => !Number.isFinite(Number(songDurationsRef.current[id] || 0)) || Number(songDurationsRef.current[id] || 0) <= 0);
-    const toQueue = missing.filter((id) => !durationInFlightRef.current.has(id));
+    const entries = list
+      .map((s) => ({
+        id: String((s as any)?.id || '').trim(),
+        url: String((s as any)?.audioUrl || '').trim(),
+      }))
+      .filter((s) => s.id);
+    const missing = entries.filter((s) => !Number.isFinite(Number(songDurationsRef.current[s.id] || 0)) || Number(songDurationsRef.current[s.id] || 0) <= 0);
+    const toQueue = missing.filter((s) => !durationInFlightRef.current.has(s.id));
     if (toQueue.length === 0) return;
 
     const maxConcurrent = 2;
@@ -188,11 +193,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const next = () => {
       if (cancelled) return;
       while (active < maxConcurrent && idx < toQueue.length) {
-        const id = toQueue[idx++];
-        if (!id) continue;
+        const item = toQueue[idx++];
+        const id = item?.id || '';
+        const url = item?.url || (id ? `/api/share/song/audio?id=${encodeURIComponent(id)}&t=${Date.now()}` : '');
+        if (!id || !url) continue;
         durationInFlightRef.current.add(id);
         active++;
-        const url = `/api/share/song/audio?id=${encodeURIComponent(id)}&t=${Date.now()}`;
         loadDurationFromUrl(url)
           .then((d) => {
             if (cancelled) return;
@@ -2820,10 +2826,7 @@ function SongOptionsSheet({
   const trimAudioUrl = (() => {
     const id = (song?.id || '').toString().trim();
     const raw = (song?.audioUrl || '').toString().trim();
-    const proxy = id ? `/api/share/song/audio?id=${encodeURIComponent(id)}` : '';
-    if (raw.startsWith('/api/share/song/audio')) return raw;
-    if (proxy) return proxy;
-    return raw;
+    return raw || (id ? `/api/share/song/audio?id=${encodeURIComponent(id)}` : '');
   })();
   const [showVoiceClone, setShowVoiceClone] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
@@ -3716,11 +3719,7 @@ function SongOptionsSheet({
         if (!song?.id) return false;
         const u = (url || '').toString().trim();
         if (!u) return false;
-        if (!/^https?:\/\//i.test(u)) return true;
-        const lower = u.toLowerCase();
-        if (lower.includes('.r2.cloudflarestorage.com/')) return true;
-        if (/https?:\/\/[^/]+\.r2\.dev\//i.test(u)) return true;
-        return false;
+        return !/^https?:\/\//i.test(u);
       })();
       const filename = `${base}.mp3`;
       const dlUrl = wantsProxy
@@ -5096,8 +5095,8 @@ function SongOptionsSheet({
 
                     const instId = String((instSaved as any)?.id || '').trim();
                     const vocalsId = String((clonedSaved as any)?.id || '').trim();
-                    const instFetchUrl = instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : instItem.url;
-                    const vocalFetchUrl = vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : outputUrl;
+                    const instFetchUrl = String((instSaved as any)?.audio_url || (instSaved as any)?.audioUrl || instItem.url || '').trim() || (instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : '');
+                    const vocalFetchUrl = String((clonedSaved as any)?.audio_url || (clonedSaved as any)?.audioUrl || outputUrl || '').trim() || (vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : '');
 
                     setVoiceCloneProgress('Mezclando…');
                     const mixed = await mixToWavBlob(instFetchUrl, vocalFetchUrl);

@@ -21,10 +21,10 @@ async function updateCreditsDirectly() {
   console.log('===================================================\n');
   
   const email = 'forsanchez412@gmail.com';
-  const creditsToAdd = 1200; // $375 MXN = Pack Inicio
+  const creditsToAdd = 1200; // $199 MXN = Pack Inicio (PROMO)
   
   console.log(`📧 Usuario: ${email}`);
-  console.log(`💰 Monto: $375 MXN`);
+  console.log(`💰 Monto: $199 MXN (PROMO)`);
   console.log(`🎫 Créditos a añadir: ${creditsToAdd} (Pack Inicio)`);
   console.log('');
   

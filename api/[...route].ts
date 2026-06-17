@@ -217,7 +217,24 @@ function getR2Env(): R2Env {
       return s;
     }
   };
+  const normalizePublicBaseUrl = (raw: string) => {
+    const s = (raw || "").toString().trim();
+    if (!s) return "";
+    try {
+      return new URL(s).toString().replace(/\/$/, "");
+    } catch {
+      return s.replace(/\/+$/, "");
+    }
+  };
   const endpoint = normalizeEndpoint(((process.env.R2_ENDPOINT || "") as string).toString()) || `https://${accountId}.r2.cloudflarestorage.com`;
+  const publicBaseUrl =
+    normalizePublicBaseUrl(
+      ((process.env.R2_PUBLIC_BASE_URL ||
+        process.env.R2_PUBLIC_URL ||
+        process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ||
+        process.env.CLOUDFLARE_R2_PUBLIC_URL ||
+        process.env.R2_CUSTOM_DOMAIN) as string).toString(),
+    ) || `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`;
   if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
     throw new Error("Missing required R2 environment variables");
   }
@@ -227,7 +244,7 @@ function getR2Env(): R2Env {
     secretAccessKey,
     bucketName,
     endpoint,
-    publicBaseUrl: `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`,
+    publicBaseUrl,
   };
   return cachedR2Env;
 }
@@ -7485,10 +7502,12 @@ const shareHandler = (() => {
       const coverUrl = typeof (data as any).cover_url === "string" ? (data as any).cover_url.trim() : "";
       if (!audioUrl) return send(res, 404, { error: "No hay audio para compartir" });
 
-      const encId = encodeURIComponent(String((data as any).id || id));
-      const audioProxy = `/api/share/song/audio?id=${encId}`;
-      const coverProxy = coverUrl ? `/api/share/song/cover?id=${encId}` : "";
-      return send(res, 200, { id: String((data as any).id || ""), title, audioUrl: audioProxy, coverUrl: coverProxy || "" });
+      return send(res, 200, {
+        id: String((data as any).id || ""),
+        title,
+        audioUrl,
+        coverUrl: coverUrl || "",
+      });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -8206,8 +8225,8 @@ const shareProfileHandler = (() => {
           .map((x: any) => ({
             id: String(x?.id || ""),
             title: String(x?.title || "Canción").trim(),
-            audioUrl: `/api/share/song/audio?id=${encodeURIComponent(String(x?.id || ""))}`,
-            coverUrl: String(x?.cover_url || "").trim() ? `/api/share/song/cover?id=${encodeURIComponent(String(x?.id || ""))}` : null,
+            audioUrl: String(x?.audio_url || "").trim(),
+            coverUrl: String(x?.cover_url || "").trim() || null,
           }))
           .filter((x: any) => x.id && x.audioUrl);
       }
@@ -8349,8 +8368,8 @@ const profileHandler = (() => {
       .map((x: any) => ({
         id: String(x?.id || ""),
         title: String(x?.title || "Canción").trim(),
-        audioUrl: `/api/share/song/audio?id=${encodeURIComponent(String(x?.id || ""))}`,
-        coverUrl: String(x?.cover_url || "").trim() ? `/api/share/song/cover?id=${encodeURIComponent(String(x?.id || ""))}` : "",
+        audioUrl: String(x?.audio_url || "").trim(),
+        coverUrl: String(x?.cover_url || "").trim(),
       }))
       .filter((x: any) => x.id && x.audioUrl);
     return send(res, 200, { ok: true, items: out });

@@ -1,4 +1,4 @@
-// Script para asignar 1200 créditos ($375 MXN) a forsanchez412@gmail.com
+// Script para asignar 1200 créditos ($199 MXN PROMO) a forsanchez412@gmail.com
 // Ejecutar con: node grant-forsanchez.js
 
 import dotenv from 'dotenv';
@@ -57,10 +57,10 @@ async function grantCreditsToForsanchez() {
   console.log('=========================================\n');
   
   const email = 'forsanchez412@gmail.com';
-  const credits = 1200; // $375 MXN = Pack Inicio
+  const credits = 1200; // $199 MXN = Pack Inicio (PROMO)
   
   console.log(`📧 Usuario: ${email}`);
-  console.log(`💰 Monto: $375 MXN`);
+  console.log(`💰 Monto: $199 MXN (PROMO)`);
   console.log(`🎫 Créditos: ${credits} (Pack Inicio)`);
   console.log('');
   

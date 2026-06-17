@@ -84,6 +84,7 @@ export function CloneVoiceView() {
   const [externalInstrumentalFile, setExternalInstrumentalFile] = useState<File | null>(null);
   const [externalTrackTitle, setExternalTrackTitle] = useState('');
   const [clonedVocalSongId, setClonedVocalSongId] = useState('');
+  const [clonedVocalSongUrl, setClonedVocalSongUrl] = useState('');
 
   const loadVoices = async () => {
     const t = await getAccessToken();
@@ -1230,8 +1231,8 @@ export function CloneVoiceView() {
 
     const instId = String((instSaved as any)?.id || '').trim();
     const vocalsId = String((clonedSaved as any)?.id || '').trim();
-    const instFetchUrl = instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : instItem.url;
-    const vocalFetchUrl = vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : outputUrl;
+    const instFetchUrl = String((instSaved as any)?.audio_url || (instSaved as any)?.audioUrl || instItem.url || '').trim() || (instId ? `/api/share/song/audio?id=${encodeURIComponent(instId)}&t=${Date.now()}` : '');
+    const vocalFetchUrl = String((clonedSaved as any)?.audio_url || (clonedSaved as any)?.audioUrl || outputUrl || '').trim() || (vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : '');
 
     setCoverProgress('Mezclando…');
     const mixed = await mixToWavBlob(instFetchUrl, vocalFetchUrl);
@@ -1432,6 +1433,7 @@ export function CloneVoiceView() {
     setCoverSuccess('');
     setCoverProgress('');
     setClonedVocalSongId('');
+    setClonedVocalSongUrl('');
     const file = externalVocalFile;
     if (!file) {
       setCoverError('Primero sube la pista de voz (sin música).');
@@ -1506,6 +1508,7 @@ export function CloneVoiceView() {
       }).catch(() => null);
       const sid = String((saved as any)?.id || '').trim();
       if (sid) setClonedVocalSongId(sid);
+      setClonedVocalSongUrl(String((saved as any)?.audio_url || (saved as any)?.audioUrl || '').trim());
 
       setCoverSuccess('Voz clonada lista. Ahora sube el instrumental para mezclar.');
       setCoverProgress('');
@@ -1524,6 +1527,7 @@ export function CloneVoiceView() {
     setCoverProgress('');
     const inst = externalInstrumentalFile;
     const vocalsId = clonedVocalSongId;
+    const vocalsUrl = clonedVocalSongUrl.trim() || (vocalsId ? `/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}` : '');
     if (!vocalsId) {
       setCoverError('Primero crea la voz clonada (solo voz).');
       return;
@@ -1562,7 +1566,7 @@ export function CloneVoiceView() {
       try {
         const instBuf = await inst.arrayBuffer();
         const instDecoded = await decodeAudio(instBuf);
-        const vocalRes = await fetch(`/api/share/song/audio?id=${encodeURIComponent(vocalsId)}&t=${Date.now()}`);
+        const vocalRes = await fetch(vocalsUrl);
         if (!vocalRes.ok) throw new Error(`No pude descargar la voz clonada (HTTP ${vocalRes.status}).`);
         const vocalBuf = await vocalRes.arrayBuffer();
         const vocalDecoded = await decodeAudio(vocalBuf);
@@ -1801,6 +1805,7 @@ export function CloneVoiceView() {
                       const f = e.target.files?.[0] || null;
                       setExternalVocalFile(f);
                       setClonedVocalSongId('');
+                      setClonedVocalSongUrl('');
                       if (f) {
                         const name = (f.name || '').toString().replace(/\.[^/.]+$/, '').trim();
                         setExternalTrackTitle(name);

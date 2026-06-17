@@ -1379,12 +1379,7 @@ export default function App() {
   const startCoverFromSong = (song: SongItem) => {
     const songId = (song?.id || '').toString().trim();
     const rawUrl = (song?.audioUrl || '').toString().trim();
-    const proxyUrl = songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '';
-    const url = (() => {
-      if (rawUrl.startsWith('/api/share/song/audio')) return rawUrl;
-      if (proxyUrl) return proxyUrl;
-      return rawUrl;
-    })();
+    const url = rawUrl || (songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '');
     if (!url) {
       alert('Esta canción no tiene audio para hacer cover.');
       return;
@@ -1992,18 +1987,13 @@ export default function App() {
     };
 
     const directUrl = (song.audioUrl || '').toString().trim();
-    const looksLikeR2 = (() => {
-      const u = directUrl.toLowerCase();
-      if (!/^https?:\/\//i.test(directUrl)) return false;
-      return u.includes('.r2.cloudflarestorage.com/') || /https?:\/\/[^/]+\.r2\.dev\//i.test(directUrl);
-    })();
-    if (looksLikeR2 && song?.id) {
-      const proxyUrl = `/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`;
-      const ok = await tryPlay(proxyUrl);
+    if (/^https?:\/\//i.test(directUrl) || directUrl.startsWith('/')) {
+      const ok = await tryPlay(directUrl);
       if (ok) return;
     }
-    if (/^https?:\/\//i.test(directUrl)) {
-      const ok = await tryPlay(directUrl);
+    if (song?.id) {
+      const proxyUrl = `/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`;
+      const ok = await tryPlay(proxyUrl);
       if (ok) return;
     }
 
@@ -3263,8 +3253,8 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           return;
         }
         const id = (out?.id || shareId).toString();
-        const baseAudio = `/api/share/song/audio?id=${encodeURIComponent(id)}`;
-        setData({ id, title, audioUrl: baseAudio, coverUrl: coverUrl || undefined });
+        const playUrl = audioUrl || `/api/share/song/audio?id=${encodeURIComponent(id)}`;
+        setData({ id, title, audioUrl: playUrl, coverUrl: coverUrl || undefined });
         setShowPlayer(true);
       })
       .catch(() => {
@@ -3701,11 +3691,11 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
 
   const playSong = async (s: { id: string; title: string; audioUrl: string; coverUrl?: string | null }) => {
     if (!s?.id) return;
-    const baseAudio = `/api/share/song/audio?id=${encodeURIComponent(s.id)}`;
-    setCurrentSong({ id: s.id, title: s.title, audioUrl: baseAudio, coverUrl: s.coverUrl });
+    const playUrl = (s.audioUrl || '').toString().trim() || `/api/share/song/audio?id=${encodeURIComponent(s.id)}`;
+    setCurrentSong({ id: s.id, title: s.title, audioUrl: playUrl, coverUrl: s.coverUrl });
     setShowPlayer(true);
     try {
-      ensureAudioSrc(baseAudio);
+      ensureAudioSrc(playUrl);
       await audioRef.current?.play();
       setIsPlaying(true);
     } catch (e) {

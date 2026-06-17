@@ -692,12 +692,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const song = prefill.song;
     const songId = (song?.id || '').toString().trim();
     const rawUrl = (song?.audioUrl || '').toString().trim();
-    const proxyUrl = songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '';
-    const url = (() => {
-      if (rawUrl.startsWith('/api/share/song/audio')) return rawUrl;
-      if (proxyUrl) return proxyUrl;
-      return rawUrl;
-    })();
+    const url = rawUrl || (songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '');
     if (!url) return;
     setMode('personalizado');
     setAudioAction('cover');
@@ -1304,7 +1299,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const pickFromLibrary = async (songId: string) => {
     const sid = (songId || '').toString().trim();
     if (!sid) return;
-    const r = await fetch(`/api/share/song/audio?id=${encodeURIComponent(sid)}&t=${Date.now()}`);
+    const song = voiceLibrarySongs.find((x) => x.id === sid);
+    const sourceUrl = (song?.audioUrl || '').toString().trim() || `/api/share/song/audio?id=${encodeURIComponent(sid)}&t=${Date.now()}`;
+    const r = await fetch(sourceUrl);
     if (!r.ok) throw new Error(`No pude descargar el audio de la biblioteca (HTTP ${r.status})`);
     const ct = (r.headers.get('content-type') || '').toString().trim();
     const ab = await r.arrayBuffer();
