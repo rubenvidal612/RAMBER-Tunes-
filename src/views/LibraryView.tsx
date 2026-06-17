@@ -4572,25 +4572,11 @@ function SongOptionsSheet({
             {!isDeleted && (
               <>
                 <button
-                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-indigo-500/10 to-transparent"
-                  onClick={() => generateCoverImage().catch(() => {})}
-                  disabled={isBusy || !song.sunoTaskId}
-                >
-                  <ImageIcon className="w-5 h-5 text-indigo-300" /> <span className="text-slate-200 font-extrabold">Generar portada IA</span>
-                </button>
-                <button
                   className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-amber-500/10 to-transparent"
                   onClick={() => coverPhotoInputRef.current?.click()}
                   disabled={isBusy}
                 >
                   <ImageIcon className="w-5 h-5 text-amber-300" /> <span className="text-slate-200 font-extrabold">Subir foto de portada</span>
-                </button>
-                <button
-                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
-                  onClick={() => setShowCoverUrl(true)}
-                  disabled={isBusy}
-                >
-                  <ImageIcon className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Pegar link (URL)</span>
                 </button>
                 <input
                   ref={coverPhotoInputRef}
@@ -4606,13 +4592,6 @@ function SongOptionsSheet({
                 />
               </>
             )}
-            <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
-              onClick={() => setShowPersonaSave(true)}
-              disabled={isBusy || isDeleted}
-            >
-              <Sparkles className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Persona</span>
-            </button>
           {!isDeleted && (
             <button
               className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
@@ -4689,9 +4668,6 @@ function SongOptionsSheet({
                 <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Instrumentos y voces (Stems)</span>
               </button>
             )}
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => alert('Reporte enviado.')} disabled={isBusy}>
-              <Flag className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Reportar</span>
-            </button>
             {!isDeleted && (
               <button
                 className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
