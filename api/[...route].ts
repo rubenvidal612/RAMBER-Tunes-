@@ -24,29 +24,6 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
-// #region debug-point A:song-generation-reporter
-async function reportSongGenerationDebug(event: {
-  traceId: string;
-  hypothesisId: string;
-  location: string;
-  msg: string;
-  data?: any;
-}) {
-  try {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const line = JSON.stringify({
-      sessionId: "song-generation-failure",
-      runId: "pre-fix",
-      ts: Date.now(),
-      ...event,
-    });
-    await fs.appendFile(path.join(process.cwd(), "trae-debug-log-song-generation-failure.ndjson"), `${line}\n`, "utf8");
-  } catch {
-  }
-}
-// #endregion
-
 function toCounts(credits: number) {
   const c = Number.isFinite(credits) ? Math.max(0, credits) : 0;
   const safeFloor = (div: number) => (div > 0 ? Math.floor(c / div) : 0);
@@ -1152,7 +1129,6 @@ const sunoHandler = (() => {
 
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
-    const traceId = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
     const style = typeof payload?.style === "string" ? payload.style.trim() : "";
@@ -1171,25 +1147,6 @@ const sunoHandler = (() => {
     const wantsCustomMode = typeof payload?.customMode === "boolean" ? payload.customMode : null;
     const customMode = wantsCustomMode ?? (Boolean(style) || Boolean(title));
     body.customMode = customMode;
-    // #region debug-point A:generate-entry
-    await reportSongGenerationDebug({
-      traceId,
-      hypothesisId: "A",
-      location: "api/[...route].ts:handleGenerate:entry",
-      msg: "[DEBUG] Entró solicitud de generar canción",
-      data: {
-        userId: String(auth.user?.id || ""),
-        customMode,
-        instrumental,
-        modelRaw,
-        normalizedModel: model,
-        hasPersona: Boolean(payload?.personaId),
-        promptLength: prompt.length,
-        styleLength: style.length,
-        titleLength: title.length,
-      },
-    });
-    // #endregion
 
     if (!customMode) {
       if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt máximo es 500 caracteres." });
@@ -1238,68 +1195,15 @@ const sunoHandler = (() => {
 
     try {
       if (!isAdmin) {
-        // #region debug-point B:before-credit-consume
-        await reportSongGenerationDebug({
-          traceId,
-          hypothesisId: "B",
-          location: "api/[...route].ts:handleGenerate:before-credit-consume",
-          msg: "[DEBUG] Intentando consumir créditos para generar canción",
-          data: { userId: String(user.id || ""), cost, isAdmin },
-        });
-        // #endregion
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        // #region debug-point B:after-credit-consume
-        await reportSongGenerationDebug({
-          traceId,
-          hypothesisId: "B",
-          location: "api/[...route].ts:handleGenerate:after-credit-consume",
-          msg: "[DEBUG] Resultado al consumir créditos",
-          data: { ok: Boolean(consumed.ok), error: consumed.error || null },
-        });
-        // #endregion
         if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/generate", "/api/v1/suno/generate"];
       let last: any = null;
       for (const p of paths) {
-        // #region debug-point C:provider-request
-        await reportSongGenerationDebug({
-          traceId,
-          hypothesisId: "C",
-          location: "api/[...route].ts:handleGenerate:provider-request",
-          msg: "[DEBUG] Enviando solicitud al proveedor de generación",
-          data: {
-            path: p,
-            bodyPreview: {
-              model: body.model,
-              customMode: body.customMode,
-              instrumental: body.instrumental,
-              hasPersona: Boolean(body.personaId),
-              title: typeof body.title === "string" ? body.title : null,
-              promptLength: typeof body.prompt === "string" ? body.prompt.length : 0,
-              styleLength: typeof body.style === "string" ? body.style.length : 0,
-            },
-          },
-        });
-        // #endregion
         const r = await sunoFetchJsonWithRetry(p, { method: "POST", body: JSON.stringify(body) });
         last = r;
-        // #region debug-point C:provider-response
-        await reportSongGenerationDebug({
-          traceId,
-          hypothesisId: "C",
-          location: "api/[...route].ts:handleGenerate:provider-response",
-          msg: "[DEBUG] Respuesta del proveedor de generación",
-          data: {
-            path: p,
-            httpStatus: r?.res?.status ?? null,
-            providerCode: r?.data?.code ?? null,
-            providerTaskId: typeof r?.data?.data?.taskId === "string" ? r.data.data.taskId : null,
-            textSnippet: typeof r?.text === "string" ? r.text.slice(0, 300) : null,
-          },
-        });
-        // #endregion
         if (r?.res?.status !== 404) break;
       }
       const { res: r, data, text } = last || {};
@@ -1334,26 +1238,8 @@ const sunoHandler = (() => {
         cost, 
         consumed: true
       });
-      // #region debug-point D:task-saved
-      await reportSongGenerationDebug({
-        traceId,
-        hypothesisId: "D",
-        location: "api/[...route].ts:handleGenerate:task-saved",
-        msg: "[DEBUG] Generación aceptada y task guardado",
-        data: { taskId, userId: String(user.id || ""), cost },
-      });
-      // #endregion
       return send(res, 200, { taskId });
     } catch (e) {
-      // #region debug-point E:generate-catch
-      await reportSongGenerationDebug({
-        traceId,
-        hypothesisId: "E",
-        location: "api/[...route].ts:handleGenerate:catch",
-        msg: "[DEBUG] Error capturado en generar canción",
-        data: { error: e instanceof Error ? e.message : String(e) },
-      });
-      // #endregion
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
       return send(res, 502, { error: "Error creando música", detail: e instanceof Error ? e.message : String(e) });
     }
