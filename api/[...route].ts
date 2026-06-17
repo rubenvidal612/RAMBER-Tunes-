@@ -5528,6 +5528,59 @@ const libraryHandler = (() => {
       }
     }
 
+    // Función para verificar si una URL es de R2
+    const isR2Url = (url: string) => {
+      try {
+        const u = new URL(url);
+        const host = (u.hostname || "").toLowerCase();
+        return host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+      } catch {
+        return false;
+      }
+    };
+
+    let finalAudioUrl = audioUrl;
+    
+    // Solo procesar si hay una URL de audio y no es ya una URL de R2
+    if (audioUrl && !isR2Url(audioUrl)) {
+      console.log(`📦 [handleCreate] Copiando audio a R2: "${title}" (${audioUrl.substring(0, 80)}...)`);
+      
+      try {
+        // Descargar el audio
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 90_000);
+        const response = await fetch(audioUrl, { signal: ctrl.signal as any });
+        clearTimeout(timer);
+        
+        if (!response.ok) {
+          console.error(`❌ [handleCreate] Error al descargar audio: HTTP ${response.status}`);
+          // Continuar con la URL original como fallback
+        } else {
+          const contentType = (response.headers.get("content-type") || "audio/mpeg").toString().trim();
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          
+          // Crear path único en R2
+          const safeBase = (sunoAudioId || title || "audio")
+            .replace(/[\\/:*?"<>|]+/g, "_")
+            .replace(/\s+/g, "_")
+            .replace(/[^a-zA-Z0-9._-]+/g, "_")
+            .slice(0, 80);
+          const path = `imports/${auth.user.id}/${Date.now()}_${safeBase || "audio"}.mp3`;
+          
+          console.log(`⬆️  [handleCreate] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType})`);
+          finalAudioUrl = await uploadToR2(path, buffer, contentType);
+          console.log(`✅ [handleCreate] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
+        }
+      } catch (uploadError) {
+        console.error(`❌ [handleCreate] Error al subir audio a R2:`, uploadError);
+        // Usar la URL original como fallback
+        console.log(`🔄 [handleCreate] Usando URL original como fallback: ${audioUrl.substring(0, 100)}...`);
+      }
+    } else if (audioUrl && isR2Url(audioUrl)) {
+      console.log(`✅ [handleCreate] Audio ya está en R2: "${title}" (${audioUrl.substring(0, 100)}...)`);
+    }
+
     const insertRow: any = {
       user_id: auth.user.id,
       type: ITEM_TYPE,
@@ -5535,7 +5588,7 @@ const libraryHandler = (() => {
       description: description || null,
       lyrics,
       gender,
-      audio_url: audioUrl,
+      audio_url: finalAudioUrl,
       cover_url: coverUrl,
       suno_task_id: sunoTaskId,
       suno_audio_id: sunoAudioId,
@@ -5543,8 +5596,12 @@ const libraryHandler = (() => {
     };
 
     const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
-    if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+    if (error) {
+      console.error(`❌ [handleCreate] Error al guardar canción en base de datos:`, error);
+      return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+    }
 
+    console.log(`✅ [handleCreate] Canción guardada en base de datos: ${data.id}`);
     return send(res, 200, {
       song: data,
       deleted_oldest: false,
@@ -5694,11 +5751,20 @@ const libraryHandler = (() => {
     };
     const shouldCopyToR2 = (() => {
       const u = sourceUrl.toLowerCase();
+      
+      // 1. Si ya es una URL de R2, no copiar
       if (isR2Url(sourceUrl)) return false;
-      if (looksExpiringUrl(sourceUrl)) return true;
-      if (u.includes("replicate.delivery")) return true;
-      if (u.includes("supabase.co/storage/v1/object/sign")) return true;
-      return false;
+      
+      // 2. SIEMPRE copiar a R2 para garantizar almacenamiento permanente
+      // Esto incluye:
+      // - URLs de Suno (cdn.suno.ai, suno.ai, firebasestorage.googleapis.com)
+      // - URLs de servicios temporales (tempfile.aiquickdraw.com, musicfile.removeai.ai)
+      // - URLs de Supabase Storage (públicas o firmadas)
+      // - URLs que parecen expirar
+      // - Cualquier otra URL HTTP/HTTPS
+      
+      console.log(`📦 Copiando audio a R2: "${title}" (${sourceUrl.substring(0, 80)}...)`);
+      return true;
     })();
 
     if (externalId) {
@@ -5715,6 +5781,8 @@ const libraryHandler = (() => {
     }
 
     if (!shouldCopyToR2) {
+      console.log(`✅ Audio ya está en R2: "${title}" (${sourceUrl.substring(0, 100)}...)`);
+      
       const insertRow: any = {
         user_id: auth.user.id,
         type: ITEM_TYPE,
@@ -5729,7 +5797,11 @@ const libraryHandler = (() => {
         is_cover: false,
       };
       const { data: created, error: createErr } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
-      if (createErr) return send(res, 500, { error: "No pude guardar la canción", detail: createErr.message });
+      if (createErr) {
+        console.error(`❌ Error al guardar canción en base de datos:`, createErr);
+        return send(res, 500, { error: "No pude guardar la canción", detail: createErr.message });
+      }
+      console.log(`✅ Canción guardada en base de datos: ${created.id}`);
       return send(res, 200, { song: created, already: false, stored: "link" });
     }
 
@@ -5760,7 +5832,17 @@ const libraryHandler = (() => {
       return send(res, 502, { error: "No pude descargar el audio", detail: e instanceof Error ? e.message : String(e) });
     }
 
-    const audioUrl = await uploadToR2(path, buf, contentType);
+    let audioUrl = "";
+    try {
+      console.log(`⬆️  Subiendo audio a R2: ${path} (${buf.length} bytes, ${contentType})`);
+      audioUrl = await uploadToR2(path, buf, contentType);
+      console.log(`✅ Audio subido a R2: ${audioUrl.substring(0, 100)}...`);
+    } catch (uploadError) {
+      console.error(`❌ Error al subir audio a R2:`, uploadError);
+      // Intentar guardar con la URL original como fallback
+      console.log(`🔄 Usando URL original como fallback: ${sourceUrl.substring(0, 100)}...`);
+      audioUrl = sourceUrl;
+    }
 
     const insertRow: any = {
       user_id: auth.user.id,
@@ -7419,30 +7501,90 @@ const sunoWebhookHandler = (() => {
               (Array.isArray(existing) ? existing : []).map((r: any) => String(r?.suno_audio_id || "").trim()).filter(Boolean)
             );
 
-            const inserts = normalized
-              .filter((x: any) => !existingIds.has(x.sunoAudioId))
-              .map((x: any) => ({
-                user_id: userId,
-                type: "song",
-                title: (() => {
-                  const base = (x.title || "Canción").toString().trim();
-                  const suffix = normalized.length === 2 ? (x.idx === 0 ? "A" : x.idx === 1 ? "B" : String(x.idx + 1)) : normalized.length > 1 ? String(x.idx + 1) : "";
-                  if (!suffix) return base.slice(0, 120);
-                  const hasSuffix = new RegExp(`\\s${suffix}$`, "i").test(base);
-                  return (hasSuffix ? base : `${base} ${suffix}`).slice(0, 120);
-                })(),
-                description: x.tags ? x.tags.slice(0, 2000) : null,
-                lyrics: null,
-                gender: null,
-                audio_url: x.audioUrl.slice(0, 2000),
-                cover_url: x.coverUrl ? x.coverUrl.slice(0, 2000) : null,
-                suno_task_id: taskId.slice(0, 200),
-                suno_audio_id: x.sunoAudioId.slice(0, 200),
-                is_cover: Boolean(isCover),
-              }));
+            // Función para verificar si una URL es de R2
+            const isR2Url = (url: string) => {
+              try {
+                const u = new URL(url);
+                const host = (u.hostname || "").toLowerCase();
+                return host.includes(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
+              } catch {
+                return false;
+              }
+            };
+
+            // Procesar cada canción para copiar a R2 si es necesario
+            const inserts = await Promise.all(
+              normalized
+                .filter((x: any) => !existingIds.has(x.sunoAudioId))
+                .map(async (x: any) => {
+                  let finalAudioUrl = x.audioUrl;
+                  
+                  // Solo procesar si no es ya una URL de R2
+                  if (!isR2Url(x.audioUrl)) {
+                    console.log(`📦 [sunoWebhook] Copiando audio a R2: "${x.title}" (${x.audioUrl.substring(0, 80)}...)`);
+                    
+                    try {
+                      // Descargar el audio
+                      const ctrl = new AbortController();
+                      const timer = setTimeout(() => ctrl.abort(), 90_000);
+                      const response = await fetch(x.audioUrl, { signal: ctrl.signal as any });
+                      clearTimeout(timer);
+                      
+                      if (!response.ok) {
+                        console.error(`❌ [sunoWebhook] Error al descargar audio: HTTP ${response.status}`);
+                        // Continuar con la URL original como fallback
+                      } else {
+                        const contentType = (response.headers.get("content-type") || "audio/mpeg").toString().trim();
+                        const arrayBuffer = await response.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        
+                        // Crear path único en R2
+                        const safeBase = (x.sunoAudioId || x.title || "audio")
+                          .replace(/[\\/:*?"<>|]+/g, "_")
+                          .replace(/\s+/g, "_")
+                          .replace(/[^a-zA-Z0-9._-]+/g, "_")
+                          .slice(0, 80);
+                        const path = `imports/${userId}/${Date.now()}_${safeBase || "audio"}.mp3`;
+                        
+                        console.log(`⬆️  [sunoWebhook] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType})`);
+                        finalAudioUrl = await uploadToR2(path, buffer, contentType);
+                        console.log(`✅ [sunoWebhook] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
+                      }
+                    } catch (uploadError) {
+                      console.error(`❌ [sunoWebhook] Error al subir audio a R2:`, uploadError);
+                      // Usar la URL original como fallback
+                      console.log(`🔄 [sunoWebhook] Usando URL original como fallback: ${x.audioUrl.substring(0, 100)}...`);
+                    }
+                  } else {
+                    console.log(`✅ [sunoWebhook] Audio ya está en R2: "${x.title}" (${x.audioUrl.substring(0, 100)}...)`);
+                  }
+
+                  return {
+                    user_id: userId,
+                    type: "song",
+                    title: (() => {
+                      const base = (x.title || "Canción").toString().trim();
+                      const suffix = normalized.length === 2 ? (x.idx === 0 ? "A" : x.idx === 1 ? "B" : String(x.idx + 1)) : normalized.length > 1 ? String(x.idx + 1) : "";
+                      if (!suffix) return base.slice(0, 120);
+                      const hasSuffix = new RegExp(`\\s${suffix}$`, "i").test(base);
+                      return (hasSuffix ? base : `${base} ${suffix}`).slice(0, 120);
+                    })(),
+                    description: x.tags ? x.tags.slice(0, 2000) : null,
+                    lyrics: null,
+                    gender: null,
+                    audio_url: finalAudioUrl.slice(0, 2000),
+                    cover_url: x.coverUrl ? x.coverUrl.slice(0, 2000) : null,
+                    suno_task_id: taskId.slice(0, 200),
+                    suno_audio_id: x.sunoAudioId.slice(0, 200),
+                    is_cover: Boolean(isCover),
+                  };
+                })
+            );
 
             if (inserts.length > 0) {
+              console.log(`📥 [sunoWebhook] Insertando ${inserts.length} canciones en la base de datos`);
               await admin.from("library_items").insert(inserts);
+              console.log(`✅ [sunoWebhook] Canciones insertadas exitosamente`);
             }
           }
         } else if (userId && (callbackType === "error" || (Number.isFinite(code) && code !== 200))) {
