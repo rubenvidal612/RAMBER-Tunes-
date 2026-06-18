@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
@@ -2831,6 +2831,7 @@ function SongOptionsSheet({
   const [showVoiceClone, setShowVoiceClone] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
   const [voiceCloneProgress, setVoiceCloneProgress] = useState<string>('');
+  const [downloadsAllowed, setDownloadsAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!showVoiceClone) setVoiceCloneProgress('');
@@ -2862,6 +2863,25 @@ function SongOptionsSheet({
       alive = false;
     };
   }, [song?.id, isDeleted]);
+
+  useEffect(() => {
+    let alive = true;
+    setDownloadsAllowed(null);
+    (async () => {
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) return;
+      if (!alive) return;
+      setDownloadsAllowed(Boolean(out?.downloads_allowed));
+    })().catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [song?.id]);
 
   useEffect(() => {
     setLyricsText(((song as any)?.lyrics || '').toString());
@@ -3691,7 +3711,7 @@ function SongOptionsSheet({
         return;
       }
       if (!out?.downloads_allowed) {
-        alert('Tu plan no incluye descargas.');
+        alert('Puedes escuchar tu canción sin problema y la tendrás guardada en Biblioteca. Para descargarla, necesitas activar un plan.');
         return;
       }
 
@@ -3748,7 +3768,7 @@ function SongOptionsSheet({
         return;
       }
       if (!out?.downloads_allowed) {
-        alert('Tu plan no incluye descargas.');
+        alert('Puedes escuchar tu canción sin problema y la tendrás guardada en Biblioteca. Para descargar WAV, necesitas activar un plan.');
         return;
       }
 
@@ -4644,14 +4664,27 @@ function SongOptionsSheet({
               </button>
             )}
             {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={download} disabled={isBusy}>
-                <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar</span>
+              <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={download} disabled={isBusy}>
+                <div className="flex items-center gap-3">
+                  {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-300" />}
+                  <span className="text-slate-200 font-semibold">Descargar</span>
+                </div>
+                {downloadsAllowed === false ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-extrabold">CON PLAN</span> : null}
               </button>
             )}
             {canShowWav && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
-                <Download className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Descargar WAV</span>
+              <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
+                <div className="flex items-center gap-3">
+                  {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-300" />}
+                  <span className="text-slate-200 font-semibold">Descargar WAV</span>
+                </div>
+                {downloadsAllowed === false ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-extrabold">CON PLAN</span> : null}
               </button>
+            )}
+            {downloadsAllowed === false && !isDeleted && (
+              <div className="px-4 py-3 border-t border-white/5 text-[12px] text-slate-400">
+                Puedes escuchar tu canción normalmente y la tendrás guardada en Biblioteca. Para descargarla, necesitas activar un plan.
+              </div>
             )}
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
