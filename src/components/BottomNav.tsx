@@ -28,18 +28,18 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
     { id: 'inicio', label: 'Inicio', icon: Home },
-    { id: 'voces', label: 'Clonador', icon: Users },
-    { id: 'studio', label: 'Studio', icon: Sparkles },
+    { id: 'luciana', label: 'ChatBot', icon: MessageCircleMore },
+    { id: 'studio', label: 'Crear', icon: Sparkles },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
   ];
 
   const menuItems: MenuItem[] = [
     { kind: 'link', href: 'https://wa.me/529931520202', label: 'WhatsApp', icon: WhatsAppIcon },
-    { kind: 'tab', id: 'luciana', label: 'LucIAna Bot', icon: MessageCircleMore },
+    { kind: 'tab', id: 'voces', label: 'Clonador', icon: Users },
     { kind: 'tab', id: 'perfil', label: 'Perfil', icon: User },
   ];
 
-  const isMenuTab = currentTab === 'luciana' || currentTab === 'perfil' || currentTab === 'karaoke';
+  const isMenuTab = currentTab === 'voces' || currentTab === 'perfil' || currentTab === 'karaoke';
 
   return (
     <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-3 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">
