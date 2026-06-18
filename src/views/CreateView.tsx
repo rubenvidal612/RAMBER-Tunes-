@@ -151,7 +151,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioDurationSec, setAudioDurationSec] = useState<number>(0);
   const [audioPlayableUrl, setAudioPlayableUrl] = useState<string>('');
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-  const [audioAction, setAudioAction] = useState<'cover' | 'instrumental' | 'vocals' | 'extend' | 'library'>('cover');
+  const [audioAction, setAudioAction] = useState<'cover' | 'instrumental' | 'vocals' | 'extend' | 'library' | 'master'>('cover');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
@@ -1965,7 +1965,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }, 900);
     setAudioFile(file);
     setAudioUploadUrl('');
-    setAudioAction('cover');
+    setAudioAction((prev) => (prev === 'master' ? 'master' : 'cover'));
     setUploadProgress(0);
     setIsAudioModalOpen(true);
     setAudioUploadError(null);
@@ -2559,6 +2559,82 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
   };
 
+  const handleMasterFromAudio = async () => {
+    if (!onSongCreated) return;
+    if (!audioFile) {
+      alert('Primero sube tu audio.');
+      return;
+    }
+    if (!audioUploadUrl || !audioUploadPath) {
+      alert('Todavía se está subiendo el audio. Espera un momento.');
+      setIsAudioModalOpen(true);
+      return;
+    }
+
+    const type = (audioFile.type || '').toString().toLowerCase();
+    const name = (audioFile.name || '').toString().toLowerCase();
+    const isMp3 = type.includes('audio/mpeg') || type.includes('audio/mp3') || type.includes('mpeg') || name.endsWith('.mp3');
+    if (!isMp3) {
+      setAudioUploadError('El archivo debe ser MP3. Convierte aquí: https://online-audio-converter.com/sp/');
+      alert('El archivo debe ser MP3.\n\nConvierte aquí: https://online-audio-converter.com/sp/');
+      return;
+    }
+
+    if (typeof credits === 'number' && Number.isFinite(credits) && credits < 10) {
+      alert('Créditos insuficientes. Necesitas 10 créditos para masterizar.');
+      onOpenBalance?.();
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+
+      const titleFromFile = (audioFile?.name || title || 'Audio').toString().replace(/\.[^/.]+$/, '').slice(0, 110);
+      const r = await fetch('/api/mastering/masterize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ inputKey: audioUploadPath, title: titleFromFile }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        const msg = (out?.detail || out?.error || 'No se pudo masterizar.').toString();
+        const conv = (out?.converterUrl || '').toString().trim();
+        setAudioUploadError(msg);
+        alert(conv ? `${msg}\n\nConvierte a MP3 aquí: ${conv}` : msg);
+        return;
+      }
+
+      const row = out?.song || null;
+      const audioUrl = (row?.audio_url || out?.downloadUrl || '').toString();
+      if (!row?.id || !audioUrl) {
+        alert('No pude guardar el audio masterizado.');
+        return;
+      }
+
+      onSongCreated({
+        id: String(row.id),
+        title: String(row.title || titleFromFile || 'Masterizada'),
+        description: (row.description || '').toString(),
+        lyrics: row.lyrics ? String(row.lyrics) : undefined,
+        genre: row.gender ? String(row.gender) : undefined,
+        audioUrl,
+        coverUrl: (row.cover_url || '').toString() || makeAudioCoverSvgUrl(String(row.title || titleFromFile || 'Masterizada')),
+        sunoTaskId: row.suno_task_id ? String(row.suno_task_id) : null,
+        sunoAudioId: row.suno_audio_id ? String(row.suno_audio_id) : null,
+        isCover: Boolean(row.is_cover),
+      });
+      clearAudio();
+      onGoLibrary?.();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCoverFromAudio = async () => {
     if (!onSongCreated) return;
     if (!audioUploadUrl) {
@@ -2718,6 +2794,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (audioAction === 'cover') return handleCoverFromAudio();
       if (audioAction === 'instrumental') return handleAddInstrumentalFromAudio();
       if (audioAction === 'vocals') return handleAddVocalsFromAudio();
+      if (audioAction === 'master') return handleMasterFromAudio();
       if (audioAction === 'extend') {
         alert('Extender: Próximamente');
         return;
@@ -3067,6 +3144,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onPickAudio={pickAudio}
             uploadProgress={uploadProgress}
             onOpenAudioModal={() => setIsAudioModalOpen(true)}
+            onStartMastering={() => {
+              setAudioAction('master');
+              if (!audioFile) {
+                audioInputRef?.current?.click?.();
+                return;
+              }
+              if (!audioUploadUrl) {
+                setIsAudioModalOpen(true);
+                return;
+              }
+              handleMasterFromAudio().catch(() => {});
+            }}
             selectedPersona={selectedVoice}
             onClearPersona={() => setSelectedVoice(null)}
             isTranscribingAudioLyrics={isTranscribingAudioLyrics}
@@ -3183,6 +3272,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     ? 'Crear instrumental'
                     : audioUploadUrl && audioAction === 'vocals'
                       ? 'Crear voces'
+                      : audioUploadUrl && audioAction === 'master'
+                        ? 'Masterizar (10 créditos)'
                       : audioUploadUrl && audioAction === 'extend'
                         ? 'Extender (Próximamente)'
                         : audioUploadUrl && audioAction === 'library'
@@ -4786,6 +4877,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   </div>
                   <div className="mt-3 text-white font-bold">Biblioteca</div>
                 </button>
+
+                <button
+                  onClick={() => setAudioAction('master')}
+                  className={cn(
+                    "rounded-2xl p-4 border transition-colors text-left",
+                    audioAction === 'master' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  )}
+                  disabled={isUploadingAudio}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-black/30 border border-white/10 flex items-center justify-center text-slate-200">
+                    <BadgeCheck className="w-5 h-5" />
+                  </div>
+                  <div className="mt-3 text-white font-bold">Masterizar</div>
+                  <div className="text-xs text-slate-400 mt-1">10 créditos</div>
+                </button>
               </div>
 
               <button
@@ -4941,7 +5047,8 @@ function CustomForm({
   isGeneratingLyrics,
   isDev,
   onRecordStudioAudio,
-  onRefreshAudioPlayableUrl
+  onRefreshAudioPlayableUrl,
+  onStartMastering
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
@@ -5044,8 +5151,8 @@ function CustomForm({
               const f = e.target.files[0];
               e.currentTarget.value = '';
               if (!isMp3File(f)) {
-                setAudioUploadError('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
-                alert('Por ahora, en Studio solo se acepta MP3. Usa un convertidor a MP3 y vuelve a intentar.');
+                setAudioUploadError('El archivo debe ser MP3. Convierte aquí: https://online-audio-converter.com/sp/');
+                alert('El archivo debe ser MP3.\n\nConvierte aquí: https://online-audio-converter.com/sp/');
                 return;
               }
               onPickAudio(f);
@@ -5066,9 +5173,21 @@ function CustomForm({
             }
           }}
         />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <button
+          type="button"
+          onClick={() => onStartMastering?.()}
+          className="flex items-center justify-center gap-2 py-3 bg-emerald-500/15 hover:bg-emerald-500/20 rounded-2xl text-sm font-semibold border border-emerald-500/20 text-emerald-100 transition-colors shadow-inner"
+        >
+          <BadgeCheck className="w-5 h-5" /> Masterizar
+          <span className="text-[11px] text-emerald-100/80 font-extrabold">(10)</span>
+        </button>
+        <button
+          type="button"
           onClick={onOpenPersonaPicker}
-          className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner"
+          className="flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner"
         >
           <Plus className="w-5 h-5 text-slate-400" /> Clonador
         </button>

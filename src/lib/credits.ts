@@ -22,6 +22,7 @@ export const CREDIT_COSTS = {
   separate_vocal: 10, 
   split_stem: 50, 
   music_video: 2, 
+  mastering: 10,
   replace_section: 5, 
   wav: 0.4, 
   lyrics: 0.4, 

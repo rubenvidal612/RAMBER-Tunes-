@@ -9,6 +9,7 @@ const CREDIT_COSTS = {
   separate_vocal: 10,
   split_stem: 50,
   music_video: 2,
+  mastering: 10,
   replace_section: 5,
   wav: 0.4,
   lyrics: 0.4,
@@ -6443,6 +6444,242 @@ const libraryHandler = (() => {
     if (a === "charge-download") return handleChargeDownload(req, res);
 
     return send(res, 404, { error: "Ruta no encontrada", action: a || null });
+  };
+})();
+
+const masteringHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function safeFileBase(name: string) {
+    const s = (name || "").toString().trim().replaceAll("\\", "/").split("/").pop() || "audio";
+    const noExt = s.includes(".") ? s.slice(0, s.lastIndexOf(".")) : s;
+    return noExt.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 90) || "audio";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+    const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = (req.headers.authorization || "").toString();
+    const bearerToken = token.toLowerCase().startsWith("bearer ") ? token.slice(7).trim() : "";
+    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function headR2Object(key: string) {
+    const env = getR2Env();
+    const client = await getR2Client();
+    const { HeadObjectCommand } = await getR2AwsSdk();
+    const head = await client.send(new HeadObjectCommand({ Bucket: env.bucketName, Key: key }));
+    const contentLength = Number((head as any)?.ContentLength ?? NaN);
+    const contentType = String((head as any)?.ContentType || "").split(";")[0].trim();
+    return { contentLength, contentType };
+  }
+
+  async function runMasteringLocal(inputSignedUrl: string, outKey: string) {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const ffmpegInstaller: any = await import("@ffmpeg-installer/ffmpeg");
+    const ffmpegMod: any = await import("fluent-ffmpeg");
+    const ffmpeg = ffmpegMod?.default || ffmpegMod;
+    if (typeof ffmpeg?.setFfmpegPath === "function" && ffmpegInstaller?.path) {
+      ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+    }
+
+    const tmpDir = os.tmpdir();
+    const base = Math.random().toString(36).slice(2, 10);
+    const inPath = path.join(tmpDir, `master_in_${Date.now()}_${base}.mp3`);
+    const outPath = path.join(tmpDir, `master_out_${Date.now()}_${base}.mp3`);
+
+    const downloaded = await fetchUrlToBuffer(inputSignedUrl);
+    await fs.writeFile(inPath, downloaded.buf);
+
+    await new Promise<void>((resolve, reject) => {
+      try {
+        ffmpeg(inPath)
+          .outputOptions(["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"])
+          .format("mp3")
+          .on("end", () => resolve())
+          .on("error", (err: any) => reject(err instanceof Error ? err : new Error(String(err))))
+          .save(outPath);
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    });
+
+    const outBuf = await fs.readFile(outPath);
+    await uploadToR2(outKey, outBuf, "audio/mpeg");
+    try {
+      await fs.unlink(inPath);
+    } catch {
+    }
+    try {
+      await fs.unlink(outPath);
+    } catch {
+    }
+  }
+
+  async function runMasteringWithWorker(params: { workerUrl: string; inputUrl: string; outputPutUrl: string }) {
+    const workerUrl = params.workerUrl.replace(/\/+$/, "");
+    const r = await fetch(workerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        inputUrl: params.inputUrl,
+        outputUploadUrl: params.outputPutUrl,
+        ffmpegArgs: ["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"],
+      }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok || out?.ok === false) {
+      const msg = String(out?.error || out?.detail || `HTTP ${r.status}`);
+      throw new Error(msg || "No pude masterizar en el worker");
+    }
+    return true;
+  }
+
+  return async function handler(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    const u = new URL(req.url, "http://localhost");
+    const parts = u.pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "mastering") return send(res, 404, { error: "Ruta no encontrada" });
+    if (next !== "masterize") return send(res, 404, { error: "Ruta no encontrada" });
+    if (method !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const inputKey = String(body?.inputKey || body?.key || "").trim().replace(/^\/+/, "").slice(0, 500);
+    const uid = String(auth.user.id || "").trim();
+    const mustPrefix = `uploads/audio/${uid}/`;
+    if (!inputKey) return send(res, 400, { error: "Falta inputKey" });
+    if (!inputKey.startsWith(mustPrefix)) return send(res, 403, { error: "Archivo inválido" });
+
+    const titleRaw = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "";
+    const titleBase = titleRaw || safeFileBase(inputKey);
+    const cost = CREDIT_COSTS.mastering || 10;
+
+    const isAdmin = isAdminEmail(auth.user.email);
+    if (!isAdmin) {
+      const prof = await auth.admin.from("profiles").select("*").eq("id", uid).maybeSingle();
+      if (prof.error) return send(res, 500, { error: "No pude validar tus créditos", detail: prof.error.message });
+      const current = creditsFromProfile(prof.data);
+      if (current < cost) {
+        return send(res, 402, { error: "Créditos insuficientes. Necesitas 10 créditos para masterizar.", credits: current, cost });
+      }
+    }
+
+    const lowerKey = inputKey.toLowerCase();
+    const looksMp3 = lowerKey.endsWith(".mp3");
+    let headInfo: any = null;
+    try {
+      headInfo = await headR2Object(inputKey);
+    } catch {
+      headInfo = null;
+    }
+    const ct = String(headInfo?.contentType || "").toLowerCase();
+    const isMp3ByType = ct.includes("audio/mpeg") || ct.includes("audio/mp3") || ct.includes("mpeg");
+    if (!looksMp3 && !isMp3ByType) {
+      return send(res, 400, {
+        error: "El archivo debe ser MP3.",
+        converterUrl: "https://online-audio-converter.com/sp/",
+      });
+    }
+
+    const rand = Math.random().toString(36).slice(2, 10);
+    const outKey = `uploads/audio/${uid}/${Date.now()}_${rand}_${safeFileBase(titleBase)}_masterizada.mp3`.slice(0, 500);
+
+    try {
+      const workerUrl = (process.env.MASTERING_WORKER_URL || "").toString().trim();
+      if (workerUrl) {
+        const inputUrl = await getSignedR2Url(inputKey, 60 * 60);
+        const outputPutUrl = await getSignedR2PutUrl(outKey, "audio/mpeg", 60 * 10);
+        await runMasteringWithWorker({ workerUrl, inputUrl, outputPutUrl });
+      } else {
+        const contentLength = Number(headInfo?.contentLength ?? NaN);
+        const maxInline = 15 * 1024 * 1024;
+        if (Number.isFinite(contentLength) && contentLength > maxInline) {
+          return send(res, 413, {
+            error: "Ese MP3 está muy pesado para masterizar en Vercel.",
+            detail: "Para audios largos, configura MASTERING_WORKER_URL en tu VPS (Hostinger) y vuelve a intentar.",
+            bytes: contentLength,
+          });
+        }
+        const inputUrl = await getSignedR2Url(inputKey, 60 * 60);
+        await runMasteringLocal(inputUrl, outKey);
+      }
+
+      const env = getR2Env();
+      const audioUrl = `${env.publicBaseUrl}/${outKey}`;
+      const TABLE = "library_items";
+      const insertRow: any = {
+        user_id: uid,
+        type: "song",
+        title: `${titleBase} (Masterizada)`.slice(0, 120),
+        description: "Audio masterizado",
+        lyrics: null,
+        gender: null,
+        audio_url: audioUrl,
+        cover_url: null,
+        suno_task_id: null,
+        suno_audio_id: `master_${Date.now()}`.slice(0, 200),
+        is_cover: false,
+      };
+      const ins = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
+      if (ins.error) {
+        await deleteFromR2([outKey]).catch(() => 0);
+        return send(res, 500, { error: "No pude guardar en tu Biblioteca", detail: ins.error.message });
+      }
+
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, uid, cost);
+        if (!consumed.ok) {
+          await auth.admin.from(TABLE).delete().eq("id", (ins.data as any)?.id).eq("user_id", uid);
+          await deleteFromR2([outKey]).catch(() => 0);
+          return send(res, 402, { error: consumed.error || "No pude cobrar créditos", cost });
+        }
+        return send(res, 200, { ok: true, song: ins.data, cost, credits: consumed.credits ?? null, downloadUrl: audioUrl });
+      }
+
+      return send(res, 200, { ok: true, song: ins.data, cost: 0, credits: null, downloadUrl: audioUrl, is_admin: true });
+    } catch (e) {
+      await deleteFromR2([outKey]).catch(() => 0);
+      return send(res, 500, { error: "No pude masterizar el audio", detail: e instanceof Error ? e.message : String(e) });
+    }
   };
 })();
 
@@ -13426,6 +13663,7 @@ export default async function handler(req: any, res: any) {
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
+    if (head === "mastering") return masteringHandler(req, res);
     if (head === "videos") return videosHandler(req, res);
     if (head === "admin") return adminHandler(req, res);
     if (head === "support") return supportHandler(req, res);
