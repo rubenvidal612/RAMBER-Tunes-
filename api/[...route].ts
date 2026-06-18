@@ -10888,6 +10888,16 @@ const lucianaBotHandler = (() => {
     return { ok: true as const, user, admin };
   }
 
+  function originFromReq(req: any) {
+    const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+    return `${proto}://${host}`;
+  }
+
+  function absoluteUrlFromReq(req: any, pathname: string) {
+    return new URL(pathname, originFromReq(req)).toString();
+  }
+
   function makeMessageId(prefix: string) {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   }
