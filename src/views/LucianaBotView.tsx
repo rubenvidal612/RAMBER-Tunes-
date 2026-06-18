@@ -358,7 +358,7 @@ export function LucianaBotView() {
           </div>
           <div className="min-w-0">
             <div className="text-white font-extrabold text-lg">LucIAna Bot</div>
-            <div className="text-slate-300 text-xs md:text-sm">Te guía paso a paso para crear, hacer covers, separar voz y revisar tu saldo.</div>
+            <div className="text-slate-300 text-xs md:text-sm">Te guía paso a paso para crear, hacer covers y revisar tu saldo.</div>
           </div>
         </div>
       </div>

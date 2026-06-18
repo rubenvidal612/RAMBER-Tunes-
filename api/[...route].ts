@@ -11041,7 +11041,6 @@ const lucianaBotHandler = (() => {
     return [
       { id: "menu-generate", label: "Generar canción", value: "menu:generate", icon: "sparkles", variant: "primary" },
       { id: "menu-cover", label: "Hacer cover", value: "menu:cover", icon: "music", variant: "secondary" },
-      { id: "menu-separate", label: "Separar voz", value: "menu:separate", icon: "mic", variant: "secondary" },
       { id: "menu-credits", label: "Ver créditos", value: "menu:credits", icon: "coins", variant: "ghost" },
       { id: "menu-recent", label: "Canciones recientes", value: "menu:recent", icon: "library", variant: "ghost" },
     ];
@@ -11139,11 +11138,15 @@ const lucianaBotHandler = (() => {
   async function routeHomeIntent(text: string) {
     const trimmed = normalizeText(text, 800);
     const lower = trimmed.toLowerCase();
+    const separateOnlyAfterSongMessage =
+      "Quitar voz solo aparece al final de una canción creada dentro de la app. Si subes una canción externa, esa opción no aplica aquí.";
     const byKeyword = (() => {
       if (lower.includes("crédito") || lower.includes("saldo")) return { toolName: "show_account", input: { view: "credits" } };
       if (lower.includes("reciente") || lower.includes("biblioteca") || lower.includes("cancione")) return { toolName: "show_account", input: { view: "recent_songs" } };
       if (lower.includes("cover")) return { toolName: "open_flow", input: { flow: "cover" } };
-      if (lower.includes("separa") || lower.includes("karaoke") || lower.includes("stems") || lower.includes("voz")) return { toolName: "open_flow", input: { flow: "separate" } };
+      if (lower.includes("separa") || lower.includes("karaoke") || lower.includes("stems") || lower.includes("voz")) {
+        return { toolName: "answer_user", input: { message: separateOnlyAfterSongMessage } };
+      }
       if (lower.includes("genera") || lower.includes("hazme") || lower.includes("canción") || lower.includes("cancion")) return { toolName: "open_flow", input: { flow: "generate" } };
       return null;
     })();
@@ -11152,7 +11155,7 @@ const lucianaBotHandler = (() => {
       system:
         "Eres LucIAna Bot. Tu trabajo aquí es SOLO detectar la intención principal del usuario dentro de una app de música. " +
         "Debes usar una herramienta. Si el usuario quiere crear/generar canción usa open_flow(generate). " +
-        "Si quiere cover usa open_flow(cover). Si quiere separar voz/karaoke/stems usa open_flow(separate). " +
+        "Si quiere cover usa open_flow(cover). Si pregunta por quitar voz, karaoke o stems usa answer_user y explica que eso solo aparece al final de una canción creada dentro de la app. " +
         "Si quiere ver créditos usa show_account(credits). Si quiere ver canciones recientes usa show_account(recent_songs). " +
         "Si solo está saludando o no está claro, usa answer_user con un mensaje corto y amable.",
       userText: trimmed || "hola",
@@ -11162,7 +11165,7 @@ const lucianaBotHandler = (() => {
           description: "Abre uno de los flujos principales del chat.",
           input_schema: {
             type: "object",
-            properties: { flow: { type: "string", enum: ["generate", "cover", "separate"] } },
+            properties: { flow: { type: "string", enum: ["generate", "cover"] } },
             required: ["flow"],
           },
         },
@@ -11517,7 +11520,7 @@ const lucianaBotHandler = (() => {
     setComposer(session, "text", "Escribe lo que necesitas o toca un botón…", "Enviar");
     pushAssistant(
       session,
-      intro || "Soy LucIAna Bot. Te ayudo a crear canciones, hacer covers, separar voz, ver créditos o revisar tus canciones recientes.",
+      intro || "Soy LucIAna Bot. Te ayudo a crear canciones, hacer covers, ver créditos o revisar tus canciones recientes.",
       {
         quickReplies: mainMenuReplies(),
         inputMode: "text",
@@ -11880,7 +11883,6 @@ const lucianaBotHandler = (() => {
         setComposer(session, "text", "Escribe aquí…", "Enviar");
         pushAssistant(session, "La separación falló. Si quieres, intento con otra canción.", {
           quickReplies: [
-            { id: "sep-again", label: "Separar otra canción", value: "menu:separate", icon: "mic", variant: "primary" },
             { id: "sep-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
           ],
         });
@@ -12023,7 +12025,16 @@ const lucianaBotHandler = (() => {
           eventType === "quick_reply" && eventValue.startsWith("menu:")
             ? (() => {
                 const view = eventValue.replace("menu:", "").trim();
-                if (view === "generate" || view === "cover" || view === "separate") return { toolName: "open_flow", input: { flow: view } };
+                if (view === "generate" || view === "cover") return { toolName: "open_flow", input: { flow: view } };
+                if (view === "separate") {
+                  return {
+                    toolName: "answer_user",
+                    input: {
+                      message:
+                        "Quitar voz solo aparece al final de una canción creada dentro de la app. Si subes una canción externa, esa opción no aplica aquí.",
+                    },
+                  };
+                }
                 if (view === "credits") return { toolName: "show_account", input: { view: "credits" } };
                 if (view === "recent") return { toolName: "show_account", input: { view: "recent_songs" } };
                 return { toolName: "answer_user", input: { message: "Te ayudo con eso." } };
@@ -12043,35 +12054,6 @@ const lucianaBotHandler = (() => {
             pushAssistant(session, "Súbeme el audio que quieres usar para el cover. Cuando lo tenga, te pido las indicaciones extra.", {
               quickReplies: [{ id: "cover-home-btn", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
               inputMode: "audio",
-            });
-            return send(res, 200, { ok: true, session });
-          }
-          if (flow === "separate") {
-            session.flow = "separate";
-            session.step = "separate-song";
-            const songs = await getRecentSongs(auth.admin, auth.user.id, 4);
-            if (!songs.length) {
-              pushAssistant(session, "Para separar voz primero necesito una canción reciente con datos de Suno en tu biblioteca.", {
-                quickReplies: mainMenuReplies(),
-              });
-              session.flow = "home";
-              session.step = "home";
-              return send(res, 200, { ok: true, session });
-            }
-            setComposer(session, "disabled", "Elige una canción…", "Enviar");
-            pushAssistant(session, "Elige la canción que quieres separar.", {
-              songs,
-              quickReplies: [
-                ...songs.map((song: any) => ({
-                  id: `sep-song-${song.id}`,
-                  label: song.title.slice(0, 28),
-                  value: `separate:song:${song.id}`,
-                  icon: "music",
-                  variant: "secondary" as const,
-                })),
-                { id: "sep-song-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const },
-              ],
-              inputMode: "disabled",
             });
             return send(res, 200, { ok: true, session });
           }
