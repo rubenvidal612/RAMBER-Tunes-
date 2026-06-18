@@ -3253,7 +3253,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           return;
         }
         const id = (out?.id || shareId).toString();
-        const playUrl = audioUrl || `/api/share/song/audio?id=${encodeURIComponent(id)}`;
+        const playUrl = `/api/share/song/audio?id=${encodeURIComponent(id)}`;
         setData({ id, title, audioUrl: playUrl, coverUrl: coverUrl || undefined });
         setShowPlayer(true);
       })
@@ -3692,6 +3692,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
   const playSong = async (s: { id: string; title: string; audioUrl: string; coverUrl?: string | null }) => {
     if (!s?.id) return;
     const playUrl = (s.audioUrl || '').toString().trim() || `/api/share/song/audio?id=${encodeURIComponent(s.id)}`;
+    const baseAudio = playUrl;
     setCurrentSong({ id: s.id, title: s.title, audioUrl: playUrl, coverUrl: s.coverUrl });
     setShowPlayer(true);
     try {
@@ -3703,7 +3704,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
       const isNoSource = String(msg || '').toLowerCase().includes('supported source');
       if (isNoSource) {
         try {
-          const bust = `${baseAudio}&t=${Date.now()}`;
+          const bust = `${baseAudio}${baseAudio.includes('?') ? '&' : '?'}t=${Date.now()}`;
           ensureAudioSrc(bust);
           await audioRef.current?.play();
           setIsPlaying(true);
@@ -3712,7 +3713,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         }
       }
       try {
-        const bust = `${baseAudio}&t=${Date.now()}`;
+        const bust = `${baseAudio}${baseAudio.includes('?') ? '&' : '?'}t=${Date.now()}`;
         ensureAudioSrc(bust);
         await audioRef.current?.play();
         setIsPlaying(true);
