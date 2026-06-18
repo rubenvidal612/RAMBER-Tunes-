@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Sparkles, Library, User, Coins, Menu, X, Users } from 'lucide-react';
+import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -35,11 +35,11 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
   const menuItems: MenuItem[] = [
     { kind: 'link', href: 'https://wa.me/529931520202', label: 'WhatsApp', icon: WhatsAppIcon },
-    { kind: 'tab', id: 'afiliados', label: 'Afiliados', icon: Coins },
+    { kind: 'tab', id: 'luciana', label: 'LucIAna Bot', icon: MessageCircleMore },
     { kind: 'tab', id: 'perfil', label: 'Perfil', icon: User },
   ];
 
-  const isMenuTab = currentTab === 'afiliados' || currentTab === 'perfil' || currentTab === 'karaoke';
+  const isMenuTab = currentTab === 'luciana' || currentTab === 'perfil' || currentTab === 'karaoke';
 
   return (
     <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-3 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">

@@ -1,4 +1,4 @@
-import { Home, Sparkles, Library, User, Coins, HelpCircle, Repeat2, Users } from 'lucide-react';
+import { Home, Sparkles, Library, User, MessageCircleMore, HelpCircle, Repeat2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -95,20 +95,20 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
           </button>
         </div>
 
-        {/* GANAR CRÉDITOS */}
+        {/* ASISTENTE */}
         <div>
-          <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Ganar créditos</div>
+          <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Asistente</div>
           <button
-            onClick={() => onChange('afiliados')}
+            onClick={() => onChange('luciana')}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              currentTab === 'afiliados'
+              currentTab === 'luciana'
                 ? "bg-indigo-500/20 text-indigo-400 font-bold"
                 : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
             )}
           >
-            <Coins className="w-5 h-5" />
-            <span className="text-sm">Afiliados</span>
+            <MessageCircleMore className="w-5 h-5" />
+            <span className="text-sm">LucIAna Bot</span>
           </button>
         </div>
         

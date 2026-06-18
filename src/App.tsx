@@ -8,7 +8,7 @@ import { ProfileView } from './views/ProfileView';
 import { KaraokeView } from './views/KaraokeView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
-import { AffiliatesView } from './views/AffiliatesView';
+import { LucianaBotView } from './views/LucianaBotView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
@@ -2533,7 +2533,7 @@ export default function App() {
                </div>
              </div>
            )}
-           {currentTab === 'afiliados' && <AffiliatesView />}
+           {currentTab === 'luciana' && <LucianaBotView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
            
@@ -2600,8 +2600,8 @@ export default function App() {
                      <div className="mt-2 text-sm text-slate-300">Próximamente</div>
                    </div>
                  </div>
-               ) : currentTab === 'afiliados' ? (
-                 <AffiliatesView />
+              ) : currentTab === 'luciana' ? (
+                <LucianaBotView />
                 ) : (
                   <LibraryView
                     canciones={canciones}
