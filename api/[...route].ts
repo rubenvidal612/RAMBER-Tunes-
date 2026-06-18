@@ -11397,6 +11397,71 @@ const lucianaBotHandler = (() => {
       .filter((x) => /^https?:\/\//i.test(x.url));
   }
 
+  function extractSunoTracks(providerRaw: any) {
+    const cleanStr = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+    const d = providerRaw?.data || providerRaw;
+    const candidates: any[] = [];
+    if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+    if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+    if (Array.isArray(d?.response)) candidates.push(d.response);
+    if (Array.isArray(d?.data)) candidates.push(d.data);
+    if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+    const list = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+
+    const pickAudioUrl = (track: any) =>
+      cleanStr(
+        track?.audio_url ||
+          track?.audioUrl ||
+          track?.streamAudioUrl ||
+          track?.stream_audio_url ||
+          track?.stream_url ||
+          track?.url ||
+          track?.audio ||
+          "",
+      );
+    const pickCoverUrl = (track: any) =>
+      cleanStr(track?.image_url || track?.imageUrl || track?.cover_url || track?.coverUrl || track?.img_url || track?.imgUrl || "");
+    const pickAudioId = (track: any) => cleanStr(track?.id || track?.audio_id || track?.audioId || track?.audioID || "");
+
+    return (Array.isArray(list) ? list : [])
+      .map((track: any, idx: number) => ({
+        idx,
+        sunoAudioId: pickAudioId(track),
+        audioUrl: pickAudioUrl(track),
+        coverUrl: pickCoverUrl(track),
+        title: cleanStr(track?.title || ""),
+        tags: cleanStr(track?.tags || ""),
+      }))
+      .filter((x: any) => x.sunoAudioId && x.audioUrl);
+  }
+
+  async function persistSunoTracksFromProvider(req: any, auth: any, params: { taskId: string; provider: any; isCover?: boolean }) {
+    const taskId = normalizeText(params.taskId || "", 200);
+    if (!taskId) return [];
+    const tracks = extractSunoTracks(params.provider);
+    if (!tracks.length) return [];
+
+    for (const track of tracks) {
+      const base = normalizeText(track.title || "Canción", 120) || "Canción";
+      const suffix = tracks.length === 2 ? (track.idx === 0 ? "A" : track.idx === 1 ? "B" : String(track.idx + 1)) : tracks.length > 1 ? String(track.idx + 1) : "";
+      const finalTitle = /\s(A|B|\d+)$/i.test(base) || !suffix ? base.slice(0, 120) : `${base} ${suffix}`.slice(0, 120);
+      await internalJson(req, "/api/library/import-audio", {
+        method: "POST",
+        body: {
+          sourceUrl: track.audioUrl,
+          title: finalTitle,
+          description: normalizeText(track.tags || "", 2000),
+          coverUrl: normalizeText(track.coverUrl || "", 2000),
+          externalId: normalizeText(track.sunoAudioId || "", 200),
+          sunoTaskId: taskId,
+          isCover: Boolean(params.isCover),
+        },
+      });
+    }
+
+    return await getSongsByTask(auth.admin, auth.user.id, taskId);
+  }
+
   function resetHome(session: LucianaSession, intro?: string) {
     session.flow = "home";
     session.step = "home";
@@ -11593,28 +11658,15 @@ const lucianaBotHandler = (() => {
         session.draft.pendingTaskId = undefined;
         session.draft.pendingKind = undefined;
         session.step = kind === "generate" ? "generate-ready" : "cover-ready";
-        setComposer(session, "disabled", kind === "generate" ? "Escucha y elige una versión…" : "Tu cover ya quedó listo.", "Enviar");
+        setComposer(session, "disabled", "Listo", "Enviar");
         pushAssistant(
           session,
           kind === "generate"
-            ? "Tu canción ya está lista. Escucha las versiones y dime cuál te gustó."
-            : "Tu cover ya está listo. Aquí te lo dejo para escucharlo.",
+            ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas."
+            : "Tu cover ya quedó listo y guardado automáticamente en tu Biblioteca.",
           {
             songs,
-            quickReplies:
-              kind === "generate"
-                ? [
-                    ...songs.slice(0, 2).map((song: any, idx: number) => ({
-                      id: `accept-${song.id}`,
-                      label: `Me gusta, aceptar ${idx === 0 ? "A" : "B"}`,
-                      value: `generate:accept:${song.id}`,
-                      icon: "check",
-                      variant: "primary" as const,
-                    })),
-                    { id: "regen-song", label: "No me gustó, ajustar", value: "generate:regenerate", icon: "refresh", variant: "secondary" as const },
-                    { id: "home-song", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const },
-                  ]
-                : [{ id: "cover-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            quickReplies: [{ id: kind === "generate" ? "home-song" : "cover-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
           },
         );
         return;
@@ -11628,6 +11680,52 @@ const lucianaBotHandler = (() => {
     }
     const provider = polled.out?.data;
     const status = parseSunoTaskStatus(provider);
+    if (kind === "generate" || kind === "upload-cover") {
+      if (status === "SUCCESS") {
+        const songs = await persistSunoTracksFromProvider(req, auth, {
+          taskId,
+          provider,
+          isCover: kind === "upload-cover",
+        });
+        if (songs.length > 0) {
+          session.draft.pendingSongIds = songs.map((s: any) => s.id);
+          session.draft.pendingTaskId = undefined;
+          session.draft.pendingKind = undefined;
+          session.step = kind === "generate" ? "generate-ready" : "cover-ready";
+          setComposer(session, "disabled", "Listo", "Enviar");
+          pushAssistant(
+            session,
+            kind === "generate"
+              ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas."
+              : "Tu cover ya quedó listo y guardado automáticamente en tu Biblioteca.",
+            {
+              songs,
+              quickReplies: [{ id: kind === "generate" ? "home-song-auto" : "cover-home-auto", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            },
+          );
+          return;
+        }
+      }
+      if (
+        status === "FAILED" ||
+        status === "CREATE_TASK_FAILED" ||
+        status === "GENERATE_AUDIO_FAILED" ||
+        status === "CALLBACK_EXCEPTION" ||
+        status === "SENSITIVE_WORD_ERROR"
+      ) {
+        session.draft.pendingTaskId = undefined;
+        session.draft.pendingKind = undefined;
+        session.step = "home";
+        setComposer(session, "text", "Escribe aquí…", "Enviar");
+        pushAssistant(session, "No pude terminar esa generación. Si quieres, la intentamos de nuevo con otra idea.", {
+          quickReplies: [
+            { id: "gen-again", label: "Generar otra canción", value: "menu:generate", icon: "sparkles", variant: "primary" },
+            { id: "gen-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          ],
+        });
+        return;
+      }
+    }
     if (kind === "separate_vocal" || kind === "split_stem") {
       if (status === "SUCCESS") {
         const items = parseVocalRemovalItems(provider);
@@ -11656,11 +11754,13 @@ const lucianaBotHandler = (() => {
       }
     }
     const friendly =
-      status === "SUCCESS"
-        ? "Ya casi queda listo."
-        : status === "PENDING" || !status
-          ? "Sigue trabajando, todavía no termina."
-          : `Estado actual: ${status}.`;
+      kind === "generate"
+        ? "Generando tu canción... Esto puede tardar unos minutos."
+        : kind === "upload-cover"
+          ? "Generando tu cover... Esto puede tardar unos minutos."
+          : kind === "separate_vocal" || kind === "split_stem"
+            ? "Separando la voz... Esto puede tardar unos minutos."
+            : "Procesando tu solicitud... Esto puede tardar unos minutos.";
     upsertStatusMessage(session, `${kind}:${taskId}`, friendly);
   }
 
@@ -11701,34 +11801,6 @@ const lucianaBotHandler = (() => {
         { id: "recent-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
       ],
     });
-  }
-
-  async function acceptSong(auth: any, session: LucianaSession, songId: string) {
-    const { error } = await auth.admin
-      .from("library_items")
-      .update({
-        accepted_at: new Date().toISOString(),
-        delivered_at: new Date().toISOString(),
-        delivery_status: "accepted",
-        accepted_via: "luciana_chat",
-      })
-      .eq("user_id", auth.user.id)
-      .eq("id", songId.slice(0, 200))
-      .eq("type", "song");
-    if (error) {
-      pushAssistant(session, `La canción sí está lista, pero no pude marcarla como aceptada: ${error.message}`);
-      return;
-    }
-    session.draft.acceptedSongId = songId;
-    pushAssistant(session, "Perfecto. Ya marqué esa canción como aceptada/final en tu base de datos.", {
-      quickReplies: [
-        { id: "acc-recent", label: "Ver canciones recientes", value: "menu:recent", icon: "library", variant: "primary" },
-        { id: "acc-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
-      ],
-    });
-    session.flow = "home";
-    session.step = "home";
-    setComposer(session, "text", "Escribe aquí…", "Enviar");
   }
 
   async function handleOpen(auth: any, session: LucianaSession) {
@@ -12058,18 +12130,6 @@ const lucianaBotHandler = (() => {
           return send(res, 200, { ok: true, session });
         }
 
-        if (session.step === "generate-ready" && eventType === "quick_reply") {
-          if (eventValue.startsWith("generate:accept:")) {
-            await acceptSong(auth, session, eventValue.replace("generate:accept:", "").trim());
-            return send(res, 200, { ok: true, session });
-          }
-          if (eventValue === "generate:regenerate") {
-            session.step = "generate-extra";
-            setComposer(session, "multiline", "Cuéntame qué quieres cambiar…", "Guardar");
-            pushAssistant(session, "Cuéntame qué no te gustó y la ajusto/regenero.", { inputMode: "multiline" });
-            return send(res, 200, { ok: true, session });
-          }
-        }
       }
 
       if (session.flow === "cover") {
