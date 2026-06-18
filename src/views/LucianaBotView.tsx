@@ -18,6 +18,7 @@ import {
   PencilLine,
   FileText,
   Link as LinkIcon,
+  Video,
 } from 'lucide-react';
 import { getAccessToken } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
@@ -106,6 +107,7 @@ function iconForName(name?: string) {
   if (n === 'upload') return Upload;
   if (n === 'edit') return PencilLine;
   if (n === 'file-text') return FileText;
+  if (n === 'video') return Video;
   if (n === 'check') return Check;
   return ArrowRight;
 }

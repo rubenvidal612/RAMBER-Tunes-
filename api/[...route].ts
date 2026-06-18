@@ -10793,6 +10793,8 @@ const lucianaBotHandler = (() => {
     coverUrl?: string;
     createdAt?: string;
     acceptedAt?: string | null;
+    sunoTaskId?: string;
+    sunoAudioId?: string;
   };
 
   type LucianaMessage = {
@@ -10844,6 +10846,7 @@ const lucianaBotHandler = (() => {
       selectedSongTitle?: string;
       selectedSongTaskId?: string;
       selectedSongAudioId?: string;
+      selectedAction?: "separate" | "video";
       acceptedSongId?: string;
     };
   };
@@ -10951,6 +10954,8 @@ const lucianaBotHandler = (() => {
                 coverUrl: typeof s?.coverUrl === "string" ? s.coverUrl.slice(0, 2000) : "",
                 createdAt: typeof s?.createdAt === "string" ? s.createdAt : "",
                 acceptedAt: typeof s?.acceptedAt === "string" ? s.acceptedAt : null,
+                sunoTaskId: typeof s?.sunoTaskId === "string" ? s.sunoTaskId.slice(0, 200) : "",
+                sunoAudioId: typeof s?.sunoAudioId === "string" ? s.sunoAudioId.slice(0, 200) : "",
               }))
               .filter((s: any) => s.id)
           : undefined,
@@ -11329,7 +11334,36 @@ const lucianaBotHandler = (() => {
       coverUrl: String(row?.cover_url || "").trim(),
       createdAt: String(row?.created_at || "").trim(),
       acceptedAt: row?.accepted_at || row?.delivered_at || null,
+      sunoTaskId: taskId,
+      sunoAudioId: String(row?.suno_audio_id || "").trim(),
     }));
+  }
+
+  async function getSongsByIds(admin: any, userId: string, ids: string[]) {
+    const cleanIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map((x) => normalizeText(x || "", 200)).filter(Boolean))).slice(0, 12);
+    if (!cleanIds.length) return [];
+    const { data, error } = await admin
+      .from("library_items")
+      .select("id,title,audio_url,cover_url,created_at,suno_task_id,suno_audio_id")
+      .eq("user_id", userId)
+      .eq("type", "song")
+      .in("id", cleanIds)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true });
+    if (error) return [];
+    const order = new Map(cleanIds.map((id, idx) => [id, idx]));
+    return (Array.isArray(data) ? data : [])
+      .map((row: any) => ({
+        id: String(row?.id || ""),
+        title: String(row?.title || "Canción").trim(),
+        audioUrl: String(row?.audio_url || "").trim(),
+        coverUrl: String(row?.cover_url || "").trim(),
+        createdAt: String(row?.created_at || "").trim(),
+        acceptedAt: null,
+        sunoTaskId: String(row?.suno_task_id || "").trim(),
+        sunoAudioId: String(row?.suno_audio_id || "").trim(),
+      }))
+      .sort((a: any, b: any) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
   }
 
   function parseSunoTaskStatus(provider: any) {
@@ -11435,6 +11469,20 @@ const lucianaBotHandler = (() => {
       .filter((x: any) => x.sunoAudioId && x.audioUrl);
   }
 
+  function extractMp4Url(providerRaw: any) {
+    const d = providerRaw?.data || providerRaw;
+    const raw =
+      d?.response?.videoUrl ||
+      d?.data?.response?.videoUrl ||
+      d?.response?.video_url ||
+      d?.data?.response?.video_url ||
+      providerRaw?.response?.videoUrl ||
+      providerRaw?.response?.video_url ||
+      "";
+    const url = String(raw || "").trim();
+    return /^https?:\/\//i.test(url) ? url : "";
+  }
+
   async function persistSunoTracksFromProvider(req: any, auth: any, params: { taskId: string; provider: any; isCover?: boolean }) {
     const taskId = normalizeText(params.taskId || "", 200);
     if (!taskId) return [];
@@ -11531,6 +11579,55 @@ const lucianaBotHandler = (() => {
       ],
       inputMode: "disabled",
     });
+  }
+
+  function readySongQuickReplies(kind: "generate" | "cover") {
+    if (kind === "generate") {
+      return [
+        { id: "gen-service-separate", label: "Quitar voz", value: "generate:service:separate", icon: "mic-off", variant: "primary" as const },
+        { id: "gen-service-video", label: "Hacer video", value: "generate:service:video", icon: "video", variant: "secondary" as const },
+        { id: "gen-ready-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const },
+      ];
+    }
+    return [{ id: "cover-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const }];
+  }
+
+  async function askSongVersionForService(auth: any, session: LucianaSession, service: "separate" | "video") {
+    const songs = await getSongsByIds(auth.admin, auth.user.id, session.draft.pendingSongIds || []);
+    if (!songs.length) {
+      pushAssistant(session, "No encontré esas canciones en tu Biblioteca. Si quieres, te muestro tus canciones recientes.", {
+        quickReplies: [
+          { id: "recent-after-missing", label: "Ver Biblioteca", value: "menu:recent", icon: "library", variant: "primary" },
+          { id: "missing-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        ],
+      });
+      session.flow = "home";
+      session.step = "home";
+      setComposer(session, "text", "Escribe aquí…", "Enviar");
+      return;
+    }
+    session.draft.selectedAction = service;
+    session.step = service === "separate" ? "generate-service-separate-song" : "generate-service-video-song";
+    setComposer(session, "disabled", "Elige una versión…", "Enviar");
+    pushAssistant(
+      session,
+      service === "separate"
+        ? "Claro. ¿A cuál versión quieres que le quite la voz?"
+        : "Claro. ¿Cuál versión quieres que convierta en video para redes?",
+      {
+        songs,
+        quickReplies: [
+          ...songs.slice(0, 2).map((song: any, idx: number) => ({
+            id: `${service}-pick-${song.id}`,
+            label: `${idx === 0 ? "Versión A" : idx === 1 ? "Versión B" : song.title.slice(0, 22)}`,
+            value: `generate:service:${service}:song:${song.id}`,
+            icon: service === "separate" ? "mic-off" : "video",
+            variant: "secondary" as const,
+          })),
+          { id: `${service}-home`, label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const },
+        ],
+      },
+    );
   }
 
   async function startGenerate(req: any, session: LucianaSession) {
@@ -11646,6 +11743,43 @@ const lucianaBotHandler = (() => {
     upsertStatusMessage(session, `separate:${outTaskId}`, "Ya estoy separando la voz. Voy a revisar el estado real y te pondré aquí los links cuando terminen.");
   }
 
+  async function startVideo(req: any, auth: any, session: LucianaSession) {
+    const taskId = normalizeText(session.draft.selectedSongTaskId || "", 200);
+    const audioId = normalizeText(session.draft.selectedSongAudioId || "", 200);
+    if (!taskId && !audioId) {
+      pushAssistant(session, "Esa canción no tiene datos suficientes para crear el video. Elige otra versión.");
+      return;
+    }
+    const author = normalizeText(
+      auth?.user?.user_metadata?.display_name || auth?.user?.user_metadata?.full_name || auth?.user?.email || "",
+      50,
+    )
+      .split("@")[0]
+      .trim();
+    const started = await internalJson(req, "/api/suno/mp4", {
+      method: "POST",
+      body: { taskId, audioId, author },
+    });
+    if (!started.ok) {
+      pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar el video.").toString(), {
+        quickReplies: [
+          { id: "video-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        ],
+      });
+      return;
+    }
+    const outTaskId = String(started.out?.taskId || "").trim();
+    if (!outTaskId) {
+      pushAssistant(session, "No recibí taskId del video. Intenta otra vez.");
+      return;
+    }
+    session.step = "video-polling";
+    session.draft.pendingTaskId = outTaskId;
+    session.draft.pendingKind = "mp4";
+    setComposer(session, "disabled", "Generando video…", "Enviar");
+    upsertStatusMessage(session, `video:${outTaskId}`, "Preparando tu video para redes. Esto puede tardar unos minutos.");
+  }
+
   async function pollPendingTask(req: any, auth: any, session: LucianaSession) {
     const taskId = normalizeText(session.draft.pendingTaskId || "", 200);
     const kind = normalizeText(session.draft.pendingKind || "generate", 80);
@@ -11662,11 +11796,11 @@ const lucianaBotHandler = (() => {
         pushAssistant(
           session,
           kind === "generate"
-            ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas."
+            ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas. Si quieres, también puedo quitar la voz de una de ellas o hacerte un video para redes."
             : "Tu cover ya quedó listo y guardado automáticamente en tu Biblioteca.",
           {
             songs,
-            quickReplies: [{ id: kind === "generate" ? "home-song" : "cover-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            quickReplies: readySongQuickReplies(kind === "generate" ? "generate" : "cover"),
           },
         );
         return;
@@ -11696,11 +11830,11 @@ const lucianaBotHandler = (() => {
           pushAssistant(
             session,
             kind === "generate"
-              ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas."
+              ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas. Si quieres, también puedo quitar la voz de una de ellas o hacerte un video para redes."
               : "Tu cover ya quedó listo y guardado automáticamente en tu Biblioteca.",
             {
               songs,
-              quickReplies: [{ id: kind === "generate" ? "home-song-auto" : "cover-home-auto", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+              quickReplies: readySongQuickReplies(kind === "generate" ? "generate" : "cover"),
             },
           );
           return;
@@ -11753,11 +11887,46 @@ const lucianaBotHandler = (() => {
         return;
       }
     }
+    if (kind === "mp4") {
+      if (status === "SUCCESS") {
+        const videoUrl = extractMp4Url(provider);
+        session.step = "video-ready";
+        session.draft.pendingTaskId = undefined;
+        session.draft.pendingKind = undefined;
+        setComposer(session, "disabled", "Listo", "Enviar");
+        pushAssistant(
+          session,
+          videoUrl
+            ? "Tu video para redes ya quedó listo. Aquí te dejo el botón para abrirlo."
+            : "El video terminó, pero no recibí el link final. Si quieres, lo revisamos otra vez.",
+          {
+            links: videoUrl ? [{ label: "Abrir video", url: videoUrl }] : [],
+            quickReplies: [{ id: "video-ready-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+          },
+        );
+        return;
+      }
+      if (status === "FAILED" || status === "CREATE_TASK_FAILED" || status === "GENERATE_MP4_FAILED" || status === "CALLBACK_EXCEPTION") {
+        session.draft.pendingTaskId = undefined;
+        session.draft.pendingKind = undefined;
+        session.step = "home";
+        setComposer(session, "text", "Escribe aquí…", "Enviar");
+        pushAssistant(session, "No pude terminar el video. Si quieres, luego lo intento otra vez con una de tus canciones.", {
+          quickReplies: [
+            { id: "video-recent", label: "Ver canciones recientes", value: "menu:recent", icon: "library", variant: "primary" },
+            { id: "video-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          ],
+        });
+        return;
+      }
+    }
     const friendly =
       kind === "generate"
         ? "Generando tu canción... Esto puede tardar unos minutos."
         : kind === "upload-cover"
           ? "Generando tu cover... Esto puede tardar unos minutos."
+          : kind === "mp4"
+            ? "Preparando tu video para redes... Esto puede tardar unos minutos."
           : kind === "separate_vocal" || kind === "split_stem"
             ? "Separando la voz... Esto puede tardar unos minutos."
             : "Procesando tu solicitud... Esto puede tardar unos minutos.";
@@ -12126,6 +12295,53 @@ const lucianaBotHandler = (() => {
         }
 
         if (session.step === "generate-polling") {
+          await pollPendingTask(req, auth, session);
+          return send(res, 200, { ok: true, session });
+        }
+
+        if (session.step === "generate-ready" && eventType === "quick_reply") {
+          if (eventValue === "generate:service:separate") {
+            await askSongVersionForService(auth, session, "separate");
+            return send(res, 200, { ok: true, session });
+          }
+          if (eventValue === "generate:service:video") {
+            await askSongVersionForService(auth, session, "video");
+            return send(res, 200, { ok: true, session });
+          }
+        }
+
+        if (
+          (session.step === "generate-service-separate-song" || session.step === "generate-service-video-song") &&
+          eventType === "quick_reply" &&
+          eventValue.startsWith("generate:service:")
+        ) {
+          const parts = eventValue.split(":");
+          const service = normalizeText(parts[2] || "", 40);
+          const songId = normalizeText(parts[4] || "", 200);
+          const songs = await getSongsByIds(auth.admin, auth.user.id, session.draft.pendingSongIds || []);
+          const picked = songs.find((x: any) => x.id === songId);
+          if (!picked) {
+            pushAssistant(session, "No encontré esa versión. Intenta otra vez.", {
+              quickReplies: [{ id: "service-home-missing", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            });
+            return send(res, 200, { ok: true, session });
+          }
+          session.draft.selectedSongId = picked.id;
+          session.draft.selectedSongTitle = picked.title;
+          session.draft.selectedSongTaskId = picked.sunoTaskId || "";
+          session.draft.selectedSongAudioId = picked.sunoAudioId || "";
+          if (service === "separate") {
+            session.draft.pendingKind = "separate_vocal";
+            await startSeparate(req, session);
+            return send(res, 200, { ok: true, session });
+          }
+          if (service === "video") {
+            await startVideo(req, auth, session);
+            return send(res, 200, { ok: true, session });
+          }
+        }
+
+        if (session.step === "video-polling") {
           await pollPendingTask(req, auth, session);
           return send(res, 200, { ok: true, session });
         }
