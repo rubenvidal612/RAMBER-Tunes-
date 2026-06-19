@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Upload, Volume2, Download, CheckCircle, XCircle, Play, Pause, Loader2, AlertCircle, CreditCard, Zap, Shield, Headphones } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Upload, Volume2, Download, CheckCircle, XCircle, Loader2, AlertCircle, CreditCard, Zap, Shield, Headphones } from 'lucide-react';
 import { getAccessToken, signInWithGoogle, supabaseBrowser } from '../lib/supabaseBrowser';
 
 interface SubscriptionInfo {
@@ -29,19 +29,22 @@ function buttonClass(kind: 'primary' | 'secondary' | 'success' | 'ghost' = 'prim
 export function MasterizarView() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [originalPreviewUrl, setOriginalPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
   const isLoggedIn = !!user?.id;
   const publicShareUrl = useMemo(() => {
     if (typeof window === 'undefined') return 'https://ramber-tunes.vercel.app/masterizar';
     return `${window.location.origin.replace(/\/+$/, '')}/masterizar`;
   }, []);
+  const directDownloadUrl = useMemo(() => {
+    if (!subscription?.active) return null;
+    return downloadUrl || previewUrl || null;
+  }, [downloadUrl, previewUrl, subscription?.active]);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -74,17 +77,16 @@ export function MasterizarView() {
   }, []);
 
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    const onPause = () => setIsPlaying(false);
-    const onPlay = () => setIsPlaying(true);
-    el.addEventListener('pause', onPause);
-    el.addEventListener('play', onPlay);
+    if (!file) {
+      setOriginalPreviewUrl(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setOriginalPreviewUrl(objectUrl);
     return () => {
-      el.removeEventListener('pause', onPause);
-      el.removeEventListener('play', onPlay);
+      URL.revokeObjectURL(objectUrl);
     };
-  }, [previewUrl]);
+  }, [file]);
 
   const getOptionalToken = async () => {
     if (!supabaseBrowser) return '';
@@ -222,7 +224,7 @@ export function MasterizarView() {
   };
 
   const handleDownload = async () => {
-    if (!downloadUrl) return;
+    if (!directDownloadUrl) return;
     if (!isLoggedIn) {
       setProcessingError('Para descargar necesitas iniciar sesión primero.');
       return;
@@ -233,7 +235,7 @@ export function MasterizarView() {
     }
 
     const link = document.createElement('a');
-    link.href = downloadUrl;
+    link.href = directDownloadUrl;
     link.download = `masterizado_${Date.now()}.mp3`;
     document.body.appendChild(link);
     link.click();
@@ -276,18 +278,6 @@ export function MasterizarView() {
       }
     } catch (error: any) {
       setProcessingError(error.message || 'Error al crear la suscripción');
-    }
-  };
-
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play().catch(() => {
-        setProcessingError('No pude reproducir el preview en este momento.');
-      });
     }
   };
 
@@ -438,31 +428,34 @@ export function MasterizarView() {
                 <div className="space-y-6">
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <span className="font-semibold">Preview Gratis</span>
-                      <button onClick={togglePlay} className={buttonClass('secondary')}>
-                        {isPlaying ? (
-                          <>
-                            <Pause className="w-4 h-4 mr-2" />
-                            Pausar
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-4 h-4 mr-2" />
-                            Escuchar
-                          </>
-                        )}
-                      </button>
+                      <span className="font-semibold">Compara los 2 audios</span>
+                      <span className="text-xs text-gray-400">Dale play a cada uno para escuchar la diferencia</span>
                     </div>
-                    
-                    <audio
-                      ref={audioRef}
-                      src={previewUrl}
-                      onEnded={() => setIsPlaying(false)}
-                      className="w-full"
-                    />
-                    
-                    <div className="text-sm text-gray-400 mt-2">
-                      Puedes escuchar el resultado masterizado sin costo
+
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <span className="font-semibold text-white">Audio original</span>
+                          <span className="text-xs text-slate-400">Tu archivo tal como lo subiste</span>
+                        </div>
+                        {originalPreviewUrl ? (
+                          <audio controls preload="metadata" src={originalPreviewUrl} className="w-full" />
+                        ) : (
+                          <div className="text-sm text-slate-400">Selecciona un MP3 para escucharlo aqui.</div>
+                        )}
+                      </div>
+
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <span className="font-semibold text-white">Audio masterizado</span>
+                          <span className="text-xs text-emerald-300">Resultado listo para comparar</span>
+                        </div>
+                        <audio controls preload="metadata" src={previewUrl} className="w-full" />
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-gray-400 mt-4">
+                      Puedes reproducir el original y el masterizado para compararlos antes de descargar.
                     </div>
                   </div>
 
@@ -491,11 +484,11 @@ export function MasterizarView() {
                       
                       <button
                         onClick={handleDownload}
-                        disabled={!downloadUrl || !subscription?.active}
+                        disabled={!directDownloadUrl || !subscription?.active}
                         className={buttonClass('success', true)}
                       >
                         <Download className="w-4 h-4 mr-2" />
-                        Descargar MP3 Masterizado
+                        Descargar MP3 Masterizado Aqui
                       </button>
                       
                       {!subscription?.active && isLoggedIn && (
