@@ -5214,6 +5214,13 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       setEasyStage('wizard');
       return;
     }
+    if (currentStep === 3 && hasFinalLyrics) {
+      setCurrentStep(2);
+      setShowLyricsNotice(false);
+      setIsEditingReviewLyrics(false);
+      setEasyStage('review_lyrics');
+      return;
+    }
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
