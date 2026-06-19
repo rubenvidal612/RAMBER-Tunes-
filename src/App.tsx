@@ -35,8 +35,40 @@ type BeforeInstallPromptEvent = Event & {
 
 function tabFromPathname(pathname: string): ViewTab {
   const p = (pathname || '/').toString().trim().toLowerCase();
+  if (p === '/' || /^\/studio(?:\/|$)/i.test(p) || /^\/crear(?:\/|$)/i.test(p)) return 'studio';
+  if (/^\/inicio(?:\/|$)/i.test(p)) return 'inicio';
   if (/^\/masterizar(?:\/|$)/i.test(p)) return 'masterizar';
+  if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
+  if (/^\/perfil(?:\/|$)/i.test(p) || /^\/profile(?:\/|$)/i.test(p)) return 'perfil';
+  if (/^\/luciana(?:\/|$)/i.test(p) || /^\/chatbot(?:\/|$)/i.test(p)) return 'luciana';
+  if (/^\/clonador(?:\/|$)/i.test(p) || /^\/voces(?:\/|$)/i.test(p)) return 'voces';
+  if (/^\/karaoke(?:\/|$)/i.test(p)) return 'karaoke';
+  if (/^\/mv(?:\/|$)/i.test(p) || /^\/videos(?:\/|$)/i.test(p)) return 'mv';
   return 'studio';
+}
+
+function pathnameFromTab(tab: ViewTab): string {
+  switch (tab) {
+    case 'inicio':
+      return '/inicio';
+    case 'masterizar':
+      return '/masterizar';
+    case 'biblioteca':
+      return '/biblioteca';
+    case 'perfil':
+      return '/perfil';
+    case 'luciana':
+      return '/chatbot';
+    case 'voces':
+      return '/clonador';
+    case 'karaoke':
+      return '/karaoke';
+    case 'mv':
+      return '/videos';
+    case 'studio':
+    default:
+      return '/crear';
+  }
 }
 
 function InicioLanding({
@@ -1347,7 +1379,7 @@ export default function App() {
   const handleTabChange = (tab: ViewTab) => {
     setCurrentTab(tab);
     try {
-      const nextPath = tab === 'masterizar' ? '/masterizar' : '/';
+      const nextPath = pathnameFromTab(tab);
       if (window.location.pathname !== nextPath) {
         window.history.pushState({}, '', nextPath);
       }
