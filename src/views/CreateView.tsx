@@ -3285,39 +3285,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       ) : null}
 
       {/* Action Buttons & Sticky Create */}
-      <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
-        {/* Create Button */}
-        <button 
-          onClick={() => handleCreate().catch(() => {})}
-          disabled={isSubmitting || (audioFile && !audioUploadUrl) || (audioAction === 'extend' && Boolean(audioUploadUrl))}
-          className="w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[48px] rounded-full font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70"
-        >
-          {isSubmitting ? (
-            <RefreshCw className="w-5 h-5 animate-spin" />
-          ) : (
-            <Music className="w-5 h-5" strokeWidth={2} />
-          )}
-          <span>
-            {isSubmitting
-              ? 'Creando…'
-              : audioFile && !audioUploadUrl
-                ? 'Subiendo audio…'
-                : audioUploadUrl && audioAction === 'cover'
-                  ? 'Crear cover'
-                  : audioUploadUrl && audioAction === 'instrumental'
-                    ? 'Crear instrumental'
-                    : audioUploadUrl && audioAction === 'vocals'
-                      ? 'Crear voces'
-                      : audioUploadUrl && audioAction === 'master'
-                        ? 'Masterizar (10 créditos)'
-                      : audioUploadUrl && audioAction === 'extend'
-                        ? 'Extender (Próximamente)'
-                        : audioUploadUrl && audioAction === 'library'
-                          ? 'Guardar en Biblioteca'
-                          : 'Crear'}
-          </span>
-        </button>
-      </div>
+      {mode !== 'facil' ? (
+        <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
+          {/* Create Button */}
+          <button 
+            onClick={() => handleCreate().catch(() => {})}
+            disabled={isSubmitting || (audioFile && !audioUploadUrl) || (audioAction === 'extend' && Boolean(audioUploadUrl))}
+            className="w-full bg-green-500 hover:bg-green-400 text-[#020617] h-[48px] rounded-full font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70"
+          >
+            {isSubmitting ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : (
+              <Music className="w-5 h-5" strokeWidth={2} />
+            )}
+            <span>
+              {isSubmitting
+                ? 'Creando…'
+                : audioFile && !audioUploadUrl
+                  ? 'Subiendo audio…'
+                  : audioUploadUrl && audioAction === 'cover'
+                    ? 'Crear cover'
+                    : audioUploadUrl && audioAction === 'instrumental'
+                      ? 'Crear instrumental'
+                      : audioUploadUrl && audioAction === 'vocals'
+                        ? 'Crear voces'
+                        : audioUploadUrl && audioAction === 'master'
+                          ? 'Masterizar (10 créditos)'
+                        : audioUploadUrl && audioAction === 'extend'
+                          ? 'Extender (Próximamente)'
+                          : audioUploadUrl && audioAction === 'library'
+                            ? 'Guardar en Biblioteca'
+                            : 'Crear'}
+            </span>
+          </button>
+        </div>
+      ) : null}
         </>
       )}
 
