@@ -154,7 +154,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     voice: '',
     mood: '',
     extraInstructions: '',
-    occasion: '',
   });
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -2814,6 +2813,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
 
+    const easyBaseLyrics = normalizeLyricsTags(
+      ((easyModeSelections.finalLyrics || easyModeSelections.lyricContent || '') as string).toString()
+    );
+    const baseLyrics = mode === 'facil'
+      ? easyBaseLyrics
+      : (instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString())));
+
     let prompt = '';
     
     if (mode === 'facil') {
@@ -2821,24 +2827,29 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const genreObj = easyModeData.genres.find(g => g.id === easyModeSelections.genre);
       const voiceObj = easyModeData.voices.find(v => v.id === easyModeSelections.voice);
       const moodObj = easyModeData.moods.find(m => m.id === easyModeSelections.mood);
-      const occasionObj = easyModeData.occasions.find(o => o.id === easyModeSelections.occasion);
       const genreLabel = (easyModeSelections.customGenre || '').trim() || genreObj?.name || '';
       const lyricMode = (easyModeSelections.lyricMode || '').trim();
       const lyricContent = (easyModeSelections.lyricContent || '').trim();
       const finalLyrics = (easyModeSelections.finalLyrics || '').trim();
       const extraInstructions = (easyModeSelections.extraInstructions || '').trim();
+      const moodLabel = moodObj?.name || '';
       
       if (finalLyrics) {
         prompt = normalizeLyricsTags(finalLyrics);
       } else if (lyricMode === 'custom' && lyricContent) {
         prompt = normalizeLyricsTags(lyricContent);
-      } else if (genreLabel && lyricContent && voiceObj && moodObj && occasionObj) {
-        prompt = `Una canción de ${genreLabel} sobre ${lyricContent} con voz ${voiceObj.name}, de ánimo ${moodObj.name} para ${occasionObj.name}${extraInstructions ? `. Instrucciones extra: ${extraInstructions}` : ''}.`;
+      } else if (genreLabel && lyricContent && voiceObj && moodObj) {
+        prompt = `Una canción de ${genreLabel} sobre ${lyricContent} con voz ${voiceObj.name} y ánimo ${moodObj.name}${extraInstructions ? `. Instrucciones extra: ${extraInstructions}` : ''}.`;
       } else {
         prompt = description.trim();
       }
+      if (prompt && !finalLyrics && !lyricContent.includes(genreLabel) && genreLabel) {
+        prompt = `${prompt}\nGénero deseado: ${genreLabel}.`;
+      }
+      if (prompt && moodLabel) {
+        prompt = `${prompt}\nÁnimo deseado: ${moodLabel}.`;
+      }
     } else {
-      const baseLyrics = instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
       prompt = (baseLyrics || description).trim();
     }
     
@@ -2891,14 +2902,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
         const easyGenreLabel = (easyModeSelections.customGenre || '').trim() || easyModeData.genres.find(g => g.id === easyModeSelections.genre)?.name || '';
         const easyMoodLabel = easyModeData.moods.find(m => m.id === easyModeSelections.mood)?.name || '';
-        const easyOccasionLabel = easyModeData.occasions.find(o => o.id === easyModeSelections.occasion)?.name || '';
         const easyLyricMode = (easyModeSelections.lyricMode || '').trim();
         const easyExtraInstructions = (easyModeSelections.extraInstructions || '').trim();
         const baseStyle = mode === 'facil'
           ? [
               easyGenreLabel ? `Genero: ${easyGenreLabel}` : '',
               easyMoodLabel ? `Animo: ${easyMoodLabel}` : '',
-              easyOccasionLabel ? `Ocasion: ${easyOccasionLabel}` : '',
               easyLyricMode === 'custom' ? 'Usar letra proporcionada por el usuario' : 'La IA escribe la letra',
               easyExtraInstructions ? `Instrucciones extra: ${easyExtraInstructions}` : '',
             ].filter(Boolean).join('\n')
@@ -5095,7 +5104,6 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const [selectedVoice, setSelectedVoice] = useState('');
   const [selectedMood, setSelectedMood] = useState('');
   const [extraInstructions, setExtraInstructions] = useState('');
-  const [selectedOccasion, setSelectedOccasion] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [easyStage, setEasyStage] = useState<'wizard' | 'writing_lyrics' | 'review_lyrics' | 'composing'>('wizard');
   const [isEditingReviewLyrics, setIsEditingReviewLyrics] = useState(false);
@@ -5113,17 +5121,16 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         voice: selectedVoice,
         mood: selectedMood,
         extraInstructions,
-        occasion: selectedOccasion,
       });
     }
-  }, [selectedGenre, customGenre, lyricMode, lyricContent, finalLyrics, selectedVoice, selectedMood, extraInstructions, selectedOccasion, onSelectionsChange]);
+  }, [selectedGenre, customGenre, lyricMode, lyricContent, finalLyrics, selectedVoice, selectedMood, extraInstructions, onSelectionsChange]);
   
   const steps = [
     { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
     { number: 2, title: 'Elige la letra', description: 'La IA puede escribirla o tu la puedes pegar.' },
     { number: 3, title: 'Elige la voz', description: '¿Cómo quieres que suene?' },
     { number: 4, title: 'Elige el ánimo', description: '¿Qué sentimiento quieres transmitir?' },
-    { number: 5, title: 'Elige la ocasión', description: '¿Para qué es la canción?' },
+    { number: 5, title: 'Resumen final', description: 'Revisa todo y crea la canción.' },
   ];
 
   const hasGenre = Boolean(selectedGenre || customGenre.trim());
@@ -5131,24 +5138,22 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const hasFinalLyrics = Boolean(finalLyrics.trim());
   const hasVoice = Boolean(selectedVoice);
   const hasMood = Boolean(selectedMood);
-  const hasOccasion = Boolean(selectedOccasion);
 
   const isStepComplete = (step: number) => {
     if (step === 1) return hasGenre;
     if (step === 2) return easyStage === 'review_lyrics' ? hasFinalLyrics : hasLyricsInput;
     if (step === 3) return hasVoice;
     if (step === 4) return hasMood;
-    if (step === 5) return hasOccasion;
+    if (step === 5) return true;
     return false;
   };
 
   const canGoNext = currentStep < 5 && isStepComplete(currentStep);
-  const canCreateSong = hasGenre && hasFinalLyrics && hasVoice && hasMood && hasOccasion;
+  const canCreateSong = hasGenre && hasFinalLyrics && hasVoice && hasMood;
   const selectedGenreLabel = customGenre.trim() || easyModeData.genres.find(g => g.id === selectedGenre)?.name || '—';
   const selectedLyricsLabel = lyricMode === 'custom' ? 'Yo escribo' : lyricMode === 'ai' ? 'IA escribe' : '—';
   const selectedVoiceLabel = easyModeData.voices.find(v => v.id === selectedVoice)?.name || '—';
   const selectedMoodLabel = easyModeData.moods.find(m => m.id === selectedMood)?.name || '—';
-  const selectedOccasionLabel = easyModeData.occasions.find(o => o.id === selectedOccasion)?.name || '—';
   const selectedExtraInstructionsLabel = extraInstructions.trim() || 'Sin extras';
   const reviewTitle = (lyricContent || selectedGenreLabel || 'Tu canción').toString().trim().slice(0, 60) || 'Tu canción';
   const currentStepTitle = currentStep === 2 && easyStage === 'writing_lyrics'
@@ -5165,6 +5170,11 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const requestAiLyrics = async (topic: string) => {
     const cleanTopic = topic.trim();
     if (!cleanTopic) throw new Error('Escribe primero de qué trata la canción.');
+    const lyricGenre = (customGenre || '').trim() || easyModeData.genres.find(g => g.id === selectedGenre)?.name || 'General';
+    const lyricStyle = [
+      `Genero: ${lyricGenre}`,
+      'Haz que la letra sea acorde a ese genero musical.',
+    ].join('\n');
     const t = await getAccessToken();
     if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
     const response = await fetch('/api/ai/generate-lyrics', {
@@ -5173,7 +5183,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         'content-type': 'application/json',
         authorization: `Bearer ${t.token}`,
       },
-      body: JSON.stringify({ topic: cleanTopic }),
+      body: JSON.stringify({ topic: cleanTopic, gender: '', style: lyricStyle }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -5509,26 +5519,6 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       case 5:
         return (
           <div className="space-y-6">
-            <div>
-              <h3 className="text-xl font-bold text-white text-center mb-6">Elige la ocasión especial</h3>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {easyModeData.occasions.map((occasion) => (
-                <button
-                  key={occasion.id}
-                  onClick={() => setSelectedOccasion(occasion.id)}
-                  className={cn(
-                    "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
-                    selectedOccasion === occasion.id
-                      ? "bg-white text-black border-white"
-                      : "bg-white/5 text-white border-white/10 hover:border-white/30"
-                  )}
-                >
-                  <span className="text-2xl mb-2">{occasion.emoji}</span>
-                  <span className="text-sm font-medium">{occasion.name}</span>
-                </button>
-              ))}
-            </div>
             <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
               <div className="text-xs uppercase tracking-[0.3em] text-emerald-200 mb-2">Resumen final</div>
               <h4 className="text-2xl font-extrabold text-white mb-4">Así va a salir tu canción</h4>
@@ -5552,10 +5542,6 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                 <div className="rounded-2xl bg-black/20 border border-white/10 p-4 md:col-span-2">
                   <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Instrucciones extra</div>
                   <div className="text-white font-bold text-lg break-words">{selectedExtraInstructionsLabel}</div>
-                </div>
-                <div className="rounded-2xl bg-black/20 border border-white/10 p-4 md:col-span-2">
-                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Ocasión</div>
-                  <div className="text-white font-bold text-lg">{selectedOccasionLabel}</div>
                 </div>
               </div>
               <div className="mt-4 rounded-2xl bg-black/20 border border-white/10 p-4">
@@ -5693,7 +5679,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       {/* Resumen de selecciones */}
       <div className="glass-card rounded-2xl p-4 mt-6">
         <h3 className="text-lg font-bold text-white mb-3">Tu canción:</h3>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div className="text-center">
             <div className="text-sm text-slate-300">Estilo</div>
             <div className="text-white font-medium">{selectedGenreLabel}</div>
@@ -5713,10 +5699,6 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
           <div className="text-center">
             <div className="text-sm text-slate-300">Extras</div>
             <div className="text-white font-medium">{selectedExtraInstructionsLabel}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm text-slate-300">Ocasión</div>
-            <div className="text-white font-medium">{selectedOccasionLabel}</div>
           </div>
         </div>
       </div>
