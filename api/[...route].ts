@@ -25,6 +25,8 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+const MAX_ACCUMULATED_CREDITS = 2000;
+
 function toCounts(credits: number) {
   const c = Number.isFinite(credits) ? Math.max(0, credits) : 0;
   const safeFloor = (div: number) => (div > 0 ? Math.floor(c / div) : 0);
@@ -468,9 +470,8 @@ async function applyCreditRolloverWithCap(
   // Ejemplo: 1500 actuales + 2000 nuevos = 3500.
   const sum = round2(current + monthly);
 
-  // Regla 2: tope máximo = 2 meses del plan.
-  // Ejemplo: plan de 2000 => cap de 4000.
-  const cap = round2(monthly * 2);
+  // Regla 2: tope máximo fijo de saldo acumulado = 2000 créditos.
+  const cap = round2(MAX_ACCUMULATED_CREDITS);
 
   // Excepción para cuentas admin/ilimitadas:
   // si el usuario es admin, no aplicamos tope y puede conservar/acumular todo.
@@ -483,9 +484,8 @@ async function applyCreditRolloverWithCap(
   // Para admin: si sum da 4500, se guarda 4500.
   const next = round2(unlimited ? sum : Math.min(sum, cap));
   
-  // Validar límite máximo de 2,400 créditos (2 paquetes)
-  const MAX_CREDITS = 2400;
-  if (next > MAX_CREDITS) {
+  // Validar límite máximo real del saldo acumulado.
+  if (next > MAX_ACCUMULATED_CREDITS) {
     return { 
       ok: false as const, 
       error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
@@ -640,12 +640,11 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
 
     const current = creditsFromProfile(profile);
     
-    // Validar límite máximo de 2,400 créditos (2 paquetes)
+    // Validar límite máximo real del saldo acumulado.
     if (delta > 0) {
       const totalAfterAdd = current + delta;
-      const MAX_CREDITS = 2400;
       
-      if (totalAfterAdd > MAX_CREDITS) {
+      if (totalAfterAdd > MAX_ACCUMULATED_CREDITS) {
         return { 
           ok: false as const, 
           error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
@@ -4898,7 +4897,7 @@ const mercadoPagoHandler = (() => {
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
     inicio: { title: "Pack Inicio", amount_mxn: 199, credits: 1200, songs: 100 },
-    productor: { title: "Pack Productor", amount_mxn: 545, credits: 3000, songs: 250 },
+    productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
   };
 
   async function fetchPayment(mpToken: string, paymentId: string) {
@@ -5044,7 +5043,10 @@ const mercadoPagoHandler = (() => {
 
     const packKeyRaw = typeof payload?.packKey === "string" ? payload.packKey.trim().toLowerCase() : "";
     const packKey = (packKeyRaw === "inicio" || packKeyRaw === "productor" ? packKeyRaw : "") as PackKey | "";
-    if (!packKey) return send(res, 400, { error: "packKey inválido (usa 'inicio' o 'productor')" });
+    if (!packKey) return send(res, 400, { error: "packKey inválido" });
+    if (packKey !== "inicio") {
+      return send(res, 400, { error: "El Pack Productor no está disponible por ahora." });
+    }
 
     const pack = PACKS[packKey];
     const origin = originFromReq(req);
@@ -10115,7 +10117,7 @@ const adminHandler = (() => {
     if (credits_mode === "default") {
       let add = 0;
       if (plan_key === "inicio") add = 1200;
-      if (plan_key === "productor") add = 3000;
+      if (plan_key === "productor") add = 2000;
       if (add > 0) {
         const upd = await adjustUserCredits(admin, userId, add);
         if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });

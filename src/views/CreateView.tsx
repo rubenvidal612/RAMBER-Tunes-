@@ -147,7 +147,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   // Estado para el modo Fácil
   const [easyModeSelections, setEasyModeSelections] = useState({
     genre: '',
+    customGenre: '',
     theme: '',
+    customTheme: '',
     voice: '',
     mood: '',
     occasion: '',
@@ -2819,9 +2821,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const voiceObj = easyModeData.voices.find(v => v.id === easyModeSelections.voice);
       const moodObj = easyModeData.moods.find(m => m.id === easyModeSelections.mood);
       const occasionObj = easyModeData.occasions.find(o => o.id === easyModeSelections.occasion);
+      const genreLabel = (easyModeSelections.customGenre || '').trim() || genreObj?.name || '';
+      const themeLabel = (easyModeSelections.customTheme || '').trim() || themeObj?.name || '';
       
-      if (genreObj && themeObj && voiceObj && moodObj && occasionObj) {
-        prompt = `Una canción de ${genreObj.name} sobre ${themeObj.name} con voz ${voiceObj.name}, de ánimo ${moodObj.name} para ${occasionObj.name}.`;
+      if (genreLabel && themeLabel && voiceObj && moodObj && occasionObj) {
+        prompt = `Una canción de ${genreLabel} sobre ${themeLabel} con voz ${voiceObj.name}, de ánimo ${moodObj.name} para ${occasionObj.name}.`;
       } else {
         prompt = description.trim();
       }
@@ -5038,6 +5042,7 @@ const easyModeData = {
     { id: 'nostalgico', name: 'Nostálgico', emoji: '🌅' },
     { id: 'epico', name: 'Épico', emoji: '🏆' },
     { id: 'divertido', name: 'Divertido', emoji: '😄' },
+    { id: 'neutral', name: 'Neutral', emoji: '😐' },
   ],
   
   occasions: [
@@ -5051,13 +5056,16 @@ const easyModeData = {
     { id: 'dia_padre', name: 'Día del Padre', emoji: '👨‍👧' },
     { id: 'negocio', name: 'Negocio', emoji: '💼' },
     { id: 'evento_especial', name: 'Evento Especial', emoji: '🎪' },
+    { id: 'ninguna_especial', name: 'Ninguna en especial', emoji: '➖' },
   ],
 };
 
 function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsChange }: any) {
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedGenre, setSelectedGenre] = useState('');
+  const [customGenre, setCustomGenre] = useState('');
   const [selectedTheme, setSelectedTheme] = useState('');
+  const [customTheme, setCustomTheme] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('');
   const [selectedMood, setSelectedMood] = useState('');
   const [selectedOccasion, setSelectedOccasion] = useState('');
@@ -5068,13 +5076,15 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
     if (onSelectionsChange) {
       onSelectionsChange({
         genre: selectedGenre,
+        customGenre,
         theme: selectedTheme,
+        customTheme,
         voice: selectedVoice,
         mood: selectedMood,
         occasion: selectedOccasion,
       });
     }
-  }, [selectedGenre, selectedTheme, selectedVoice, selectedMood, selectedOccasion, onSelectionsChange]);
+  }, [selectedGenre, customGenre, selectedTheme, customTheme, selectedVoice, selectedMood, selectedOccasion, onSelectionsChange]);
   
   const steps = [
     { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
@@ -5083,9 +5093,32 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
     { number: 4, title: 'Elige el ánimo', description: '¿Qué sentimiento quieres transmitir?' },
     { number: 5, title: 'Elige la ocasión', description: '¿Para qué es la canción?' },
   ];
+
+  const hasGenre = Boolean(selectedGenre || customGenre.trim());
+  const hasTheme = Boolean(selectedTheme || customTheme.trim());
+  const hasVoice = Boolean(selectedVoice);
+  const hasMood = Boolean(selectedMood);
+  const hasOccasion = Boolean(selectedOccasion);
+
+  const isStepComplete = (step: number) => {
+    if (step === 1) return hasGenre;
+    if (step === 2) return hasTheme;
+    if (step === 3) return hasVoice;
+    if (step === 4) return hasMood;
+    if (step === 5) return hasOccasion;
+    return false;
+  };
+
+  const canGoNext = currentStep < 5 && isStepComplete(currentStep);
+  const canCreateSong = hasGenre && hasTheme && hasVoice && hasMood && hasOccasion;
+  const selectedGenreLabel = customGenre.trim() || easyModeData.genres.find(g => g.id === selectedGenre)?.name || '—';
+  const selectedThemeLabel = customTheme.trim() || easyModeData.themes.find(t => t.id === selectedTheme)?.name || '—';
+  const selectedVoiceLabel = easyModeData.voices.find(v => v.id === selectedVoice)?.name || '—';
+  const selectedMoodLabel = easyModeData.moods.find(m => m.id === selectedMood)?.name || '—';
+  const selectedOccasionLabel = easyModeData.occasions.find(o => o.id === selectedOccasion)?.name || '—';
   
   const handleNext = () => {
-    if (currentStep < 5) {
+    if (currentStep < 5 && isStepComplete(currentStep)) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -5097,7 +5130,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   };
   
   const handleGenerate = async () => {
-    if (!selectedGenre || !selectedTheme || !selectedVoice || !selectedMood || !selectedOccasion) {
+    if (!canCreateSong) {
       alert('Por favor completa todos los pasos antes de generar la canción');
       return;
     }
@@ -5133,7 +5166,10 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
               {easyModeData.genres.map((genre) => (
                 <button
                   key={genre.id}
-                  onClick={() => setSelectedGenre(genre.id)}
+                  onClick={() => {
+                    setSelectedGenre(genre.id);
+                    setCustomGenre('');
+                  }}
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
                     selectedGenre === genre.id
@@ -5146,6 +5182,20 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                 </button>
               ))}
             </div>
+            <div className="glass-card rounded-2xl p-4 border border-white/10">
+              <label className="block text-sm font-semibold text-white mb-2">Si no ves tu género, escríbelo aquí</label>
+              <input
+                value={customGenre}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCustomGenre(value);
+                  if (value.trim()) setSelectedGenre('');
+                }}
+                placeholder="Ej: sierreño romántico, rap cristiano, techno..."
+                className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-pink-400"
+              />
+              <p className="text-xs text-slate-400 mt-2">Puedes elegir un botón o escribir tu propio género musical.</p>
+            </div>
           </div>
         );
         
@@ -5157,7 +5207,10 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
               {easyModeData.themes.map((theme) => (
                 <button
                   key={theme.id}
-                  onClick={() => setSelectedTheme(theme.id)}
+                  onClick={() => {
+                    setSelectedTheme(theme.id);
+                    setCustomTheme('');
+                  }}
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
                     selectedTheme === theme.id
@@ -5169,6 +5222,20 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   <span className="text-sm font-medium">{theme.name}</span>
                 </button>
               ))}
+            </div>
+            <div className="glass-card rounded-2xl p-4 border border-white/10">
+              <label className="block text-sm font-semibold text-white mb-2">Si no ves el tema, cuéntanos de qué trata</label>
+              <textarea
+                value={customTheme}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCustomTheme(value);
+                  if (value.trim()) setSelectedTheme('');
+                }}
+                placeholder="Ej: una canción para mi mamá Carmen, que cumple 60 años y le encantan las margaritas..."
+                className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 outline-none resize-none min-h-[110px] focus:border-pink-400"
+              />
+              <p className="text-xs text-slate-400 mt-2">Aquí puedes escribir el tema o la idea principal si no está en los botones.</p>
             </div>
           </div>
         );
@@ -5319,15 +5386,26 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         {currentStep < 5 ? (
           <button
             onClick={handleNext}
-            className="px-6 py-3 rounded-full font-medium bg-white text-black hover:bg-gray-200 transition-colors"
+            disabled={!canGoNext}
+            className={cn(
+              "px-6 py-3 rounded-full font-medium transition-colors",
+              canGoNext
+                ? "bg-white text-black hover:bg-gray-200"
+                : "bg-white/5 text-slate-500 cursor-not-allowed"
+            )}
           >
             Siguiente →
           </button>
         ) : (
           <button
             onClick={handleGenerate}
-            disabled={isGenerating}
-            className="px-6 py-3 rounded-full font-medium bg-green-500 text-white hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isGenerating || !canCreateSong}
+            className={cn(
+              "px-6 py-3 rounded-full font-medium transition-colors",
+              canCreateSong && !isGenerating
+                ? "bg-green-500 text-white hover:bg-green-600"
+                : "bg-white/5 text-slate-500 cursor-not-allowed"
+            )}
           >
             {isGenerating ? (
               <>
@@ -5347,33 +5425,23 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div className="text-center">
             <div className="text-sm text-slate-300">Estilo</div>
-            <div className="text-white font-medium">
-              {selectedGenre ? easyModeData.genres.find(g => g.id === selectedGenre)?.name : '—'}
-            </div>
+            <div className="text-white font-medium">{selectedGenreLabel}</div>
           </div>
           <div className="text-center">
             <div className="text-sm text-slate-300">Tema</div>
-            <div className="text-white font-medium">
-              {selectedTheme ? easyModeData.themes.find(t => t.id === selectedTheme)?.name : '—'}
-            </div>
+            <div className="text-white font-medium">{selectedThemeLabel}</div>
           </div>
           <div className="text-center">
             <div className="text-sm text-slate-300">Voz</div>
-            <div className="text-white font-medium">
-              {selectedVoice ? easyModeData.voices.find(v => v.id === selectedVoice)?.name : '—'}
-            </div>
+            <div className="text-white font-medium">{selectedVoiceLabel}</div>
           </div>
           <div className="text-center">
             <div className="text-sm text-slate-300">Ánimo</div>
-            <div className="text-white font-medium">
-              {selectedMood ? easyModeData.moods.find(m => m.id === selectedMood)?.name : '—'}
-            </div>
+            <div className="text-white font-medium">{selectedMoodLabel}</div>
           </div>
           <div className="text-center">
             <div className="text-sm text-slate-300">Ocasión</div>
-            <div className="text-white font-medium">
-              {selectedOccasion ? easyModeData.occasions.find(o => o.id === selectedOccasion)?.name : '—'}
-            </div>
+            <div className="text-white font-medium">{selectedOccasionLabel}</div>
           </div>
         </div>
       </div>

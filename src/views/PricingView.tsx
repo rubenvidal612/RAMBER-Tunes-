@@ -16,7 +16,7 @@ export function PricingView({ onClose }: PricingViewProps) {
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
   const versions = songs * 2;
 
-  const buy = async (packKey: 'inicio' | 'productor') => {
+  const buy = async (packKey: 'inicio') => {
     setIsBusy(true);
     try {
       const t = await getAccessToken();
@@ -95,7 +95,7 @@ export function PricingView({ onClose }: PricingViewProps) {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 gap-5">
 
           {/* Pack Inicio */}
           <div className="bg-gradient-to-b from-blue-900/30 to-transparent border border-blue-500/20 rounded-3xl p-6 relative overflow-hidden">
@@ -155,58 +155,6 @@ export function PricingView({ onClose }: PricingViewProps) {
             </button>
           </div>
 
-          {/* Pack Productor */}
-          <div className="bg-gradient-to-b from-indigo-900/30 to-transparent border border-indigo-500/30 rounded-3xl p-6 relative overflow-hidden shadow-[0_0_30px_rgba(99,102,241,0.1)]">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h3 className="text-xl font-bold text-white">Pack Productor</h3>
-                <p className="text-slate-300 text-sm mt-1">250 canciones • 3000 créditos</p>
-                <p className="text-slate-400 text-sm mt-1">Para productores y artistas • Plan mensual</p>
-              </div>
-              <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-xs font-bold">Mejor valor</span>
-            </div>
-
-            <div className="flex items-end gap-2 mt-4 mb-6">
-              <span className="text-4xl font-bold text-white">$545 MXN</span>
-              <span className="text-slate-300 text-sm font-semibold mb-1">/ mes</span>
-              <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">500 versiones</span>
-            </div>
-
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400" /> Incluye 250 canciones
-              </div>
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400" /> Total: 3000 créditos
-              </div>
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400" /> Descargas activas
-              </div>
-              <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400" /> Karaoke / STEMS
-              </div>
-              <div className="flex items-start gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-                <span>Saldo mensual acumulable si renuevas a tiempo</span>
-              </div>
-              <div className="flex items-start gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-                <span>El saldo no usado dura hasta 2 meses</span>
-              </div>
-              <div className="flex items-start gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-                <span>Video MP4 con autor (opcional)<br/>Sin marca de agua LucIAna</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => buy('productor')}
-              disabled={isBusy}
-              className="w-full bg-indigo-500 hover:bg-indigo-400 text-white h-[48px] rounded-full font-bold text-base transition-colors disabled:opacity-60"
-            >
-              Comprar ahora
-            </button>
-          </div>
         </div>
 
         {/* Costos por acción */}
