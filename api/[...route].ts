@@ -4893,11 +4893,12 @@ const mercadoPagoHandler = (() => {
     return { ok: true as const, user, admin, supabaseUrl, supabaseAnon, supabaseService };
   }
 
-  type PackKey = "inicio" | "productor";
+  type PackKey = "inicio" | "productor" | "masterizar";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
     inicio: { title: "Pack Inicio", amount_mxn: 199, credits: 1200, songs: 100 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
+    masterizar: { title: "Masterizar Ilimitado", amount_mxn: 150, credits: 0, songs: 0 },
   };
 
   async function fetchPayment(mpToken: string, paymentId: string) {
@@ -5042,9 +5043,9 @@ const mercadoPagoHandler = (() => {
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
     const packKeyRaw = typeof payload?.packKey === "string" ? payload.packKey.trim().toLowerCase() : "";
-    const packKey = (packKeyRaw === "inicio" || packKeyRaw === "productor" ? packKeyRaw : "") as PackKey | "";
+    const packKey = (packKeyRaw === "inicio" || packKeyRaw === "productor" || packKeyRaw === "masterizar" ? packKeyRaw : "") as PackKey | "";
     if (!packKey) return send(res, 400, { error: "packKey inválido" });
-    if (packKey !== "inicio") {
+    if (packKey === "productor") {
       return send(res, 400, { error: "El Pack Productor no está disponible por ahora." });
     }
 
@@ -5183,7 +5184,26 @@ const mercadoPagoHandler = (() => {
     const credits = Number(meta?.credits ?? 0);
 
     const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
-    if (Number.isFinite(credits) && credits > 0) {
+    const isMasterizarSubscription = txKind === "songs" && packKey === "masterizar";
+    
+    if (isMasterizarSubscription) {
+      // Activar suscripción de masterización por 30 días
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 días desde hoy
+      
+      const { error: updateError } = await admin
+        .from('profiles')
+        .update({
+          mastering_subscription_active: true,
+          mastering_subscription_expires_at: expiresAt.toISOString(),
+        })
+        .eq('id', userId);
+      
+      if (updateError) {
+        console.error('Error al activar suscripción de masterización:', updateError);
+        return send(res, 500, { error: 'No pude activar la suscripción' });
+      }
+    } else if (Number.isFinite(credits) && credits > 0) {
       if (isPlanRenewal) {
         const upd = await applyCreditRolloverWithCap(admin, {
           userId,
@@ -5208,7 +5228,12 @@ const mercadoPagoHandler = (() => {
 
     await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
 
-    return send(res, 200, { ok: true, status: paymentStatus, credited: true });
+    return send(res, 200, { 
+      ok: true, 
+      status: paymentStatus, 
+      credited: true,
+      subscriptionActivated: isMasterizarSubscription 
+    });
   }
 
   async function handleClaimFree(req: any, res: any) {
@@ -6705,6 +6730,221 @@ const masteringHandler = (() => {
     } catch (e) {
       await deleteFromR2([outKey]).catch(() => 0);
       return send(res, 500, { error: "No pude masterizar el audio", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const masterizarUnlimitedHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function safeFileBase(name: string) {
+    const s = (name || "").toString().trim().replaceAll("\\", "/").split("/").pop() || "audio";
+    const noExt = s.includes(".") ? s.slice(0, s.lastIndexOf(".")) : s;
+    return noExt.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 90) || "audio";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+    const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase" };
+    }
+
+    const token = (req.headers.authorization || "").toString();
+    const bearerToken = token.toLowerCase().startsWith("bearer ") ? token.slice(7).trim() : "";
+    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function checkMasteringSubscription(userId: string, admin: any) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('mastering_subscription_active, mastering_subscription_expires_at')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('Error al verificar suscripción:', error);
+      return { active: false, expires_at: null };
+    }
+
+    const active = data.mastering_subscription_active || false;
+    const expires_at = data.mastering_subscription_expires_at;
+
+    // Verificar si la suscripción ha expirado
+    if (active && expires_at) {
+      const now = new Date();
+      const expiresDate = new Date(expires_at);
+      
+      if (now > expiresDate) {
+        // Actualizar estado a inactivo
+        await admin
+          .from('profiles')
+          .update({ 
+            mastering_subscription_active: false,
+            mastering_subscription_expires_at: null
+          })
+          .eq('id', userId);
+        
+        return { active: false, expires_at: null };
+      }
+    }
+
+    return { active, expires_at };
+  }
+
+  async function runMasteringWithWorker(params: { 
+    workerUrl: string; 
+    inputUrl: string; 
+    outputPutUrl: string;
+  }) {
+    const workerUrl = params.workerUrl.replace(/\/+$/, "");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10 * 60 * 1000);
+    const r = await fetch(workerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        inputUrl: params.inputUrl,
+        outputUploadUrl: params.outputPutUrl,
+        ffmpegArgs: ["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"],
+      }),
+      signal: ctrl.signal as any,
+    }).finally(() => clearTimeout(timer));
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok || out?.ok === false) {
+      const msg = String(out?.error || out?.detail || `HTTP ${r.status}`);
+      throw new Error(msg || "No pude masterizar en el worker");
+    }
+    return true;
+  }
+
+  return async function handler(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    const u = new URL(req.url, "http://localhost");
+    const parts = u.pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    
+    if (head !== "masterizar-unlimited") return send(res, 404, { error: "Ruta no encontrada" });
+    if (method !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const { action, filePath, isPreview = false, fileName, fileType } = body;
+    
+    if (!action) {
+      return send(res, 400, { error: 'Falta el parámetro "action"' });
+    }
+
+    const userId = auth.user.id;
+    const workerUrl = (process.env.MASTERING_WORKER_URL || "").toString().trim();
+
+    if (action === 'upload') {
+      // Preparar subida de archivo
+      if (!fileName || !fileType) {
+        return send(res, 400, { error: 'Falta fileName o fileType' });
+      }
+
+      // Generar ruta única para el archivo
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).slice(2, 10);
+      const fileKey = `uploads/masterizar-unlimited/${userId}/${timestamp}_${random}_${safeFileBase(fileName)}`;
+
+      // Obtener URL firmada para subir
+      const uploadUrl = await getSignedR2PutUrl(fileKey, fileType);
+
+      return send(res, 200, {
+        uploadUrl,
+        filePath: fileKey,
+      });
+
+    } else if (action === 'process') {
+      // Procesar masterización
+      if (!filePath) {
+        return send(res, 400, { error: 'Falta filePath' });
+      }
+
+      // Verificar suscripción para descargas completas
+      const subscription = await checkMasteringSubscription(userId, auth.admin);
+      
+      if (!isPreview && !subscription.active) {
+        return send(res, 403, { 
+          error: 'Suscripción requerida',
+          message: 'Necesitas una suscripción activa para descargar archivos completos. Suscríbete por $150 MXN/mes.'
+        });
+      }
+
+      // Validar que el archivo sea MP3
+      const lowerKey = filePath.toLowerCase();
+      const looksMp3 = lowerKey.endsWith(".mp3");
+      if (!looksMp3) {
+        return send(res, 400, {
+          error: "El archivo debe ser MP3.",
+          converterUrl: "https://online-audio-converter.com/sp/",
+        });
+      }
+
+      // Obtener URLs firmadas
+      const inputUrl = await getSignedR2Url(filePath, 3600);
+      const outputKey = `masterized-unlimited/${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.mp3`;
+      const outputPutUrl = await getSignedR2PutUrl(outputKey, 'audio/mpeg', 600);
+
+      // Ejecutar masterización
+      try {
+        await runMasteringWithWorker({
+          workerUrl,
+          inputUrl,
+          outputPutUrl,
+        });
+      } catch (error: any) {
+        return send(res, 500, {
+          error: "Error al masterizar",
+          message: error.message || "Error desconocido",
+        });
+      }
+
+      // Obtener URL para reproducir el resultado
+      const previewUrl = await getSignedR2Url(outputKey, 3600);
+
+      return send(res, 200, {
+        previewUrl,
+        downloadUrl: subscription.active ? previewUrl : null,
+        subscriptionActive: subscription.active,
+        expiresAt: subscription.expires_at,
+      });
+
+    } else {
+      return send(res, 400, { error: 'Acción no válida' });
     }
   };
 })();
@@ -13690,6 +13930,7 @@ export default async function handler(req: any, res: any) {
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
     if (head === "mastering") return masteringHandler(req, res);
+    if (head === "masterizar-unlimited") return masterizarUnlimitedHandler(req, res);
     if (head === "videos") return videosHandler(req, res);
     if (head === "admin") return adminHandler(req, res);
     if (head === "support") return supportHandler(req, res);

@@ -10,6 +10,7 @@ import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { LucianaBotView } from './views/LucianaBotView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
+import { MasterizarView } from './views/MasterizarView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -2534,6 +2535,7 @@ export default function App() {
              </div>
            )}
            {currentTab === 'luciana' && <LucianaBotView />}
+           {currentTab === 'masterizar' && <MasterizarView />}
            {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
            

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore } from 'lucide-react';
+import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -30,6 +30,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'luciana', label: 'ChatBot', icon: MessageCircleMore },
     { id: 'studio', label: 'Crear', icon: Sparkles },
+    { id: 'masterizar', label: 'Masterizar', icon: Volume2 },
     { id: 'biblioteca', label: 'Biblioteca', icon: Library },
   ];
 
