@@ -2800,16 +2800,28 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const handleCreate = async () => {
-    if (!onSongCreated) return;
+    if (!onSongCreated) return false;
 
     if (audioUploadUrl) {
-      if (audioAction === 'cover') return handleCoverFromAudio();
-      if (audioAction === 'instrumental') return handleAddInstrumentalFromAudio();
-      if (audioAction === 'vocals') return handleAddVocalsFromAudio();
-      if (audioAction === 'master') return handleMasterFromAudio();
+      if (audioAction === 'cover') {
+        await handleCoverFromAudio();
+        return true;
+      }
+      if (audioAction === 'instrumental') {
+        await handleAddInstrumentalFromAudio();
+        return true;
+      }
+      if (audioAction === 'vocals') {
+        await handleAddVocalsFromAudio();
+        return true;
+      }
+      if (audioAction === 'master') {
+        await handleMasterFromAudio();
+        return true;
+      }
       if (audioAction === 'extend') {
         alert('Extender: Próximamente');
-        return;
+        return false;
       }
     }
 
@@ -2859,7 +2871,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
     if (!prompt) {
       alert(instrumental ? 'Para instrumental, escribe una descripción del tipo de música que quieres (género, mood, instrumentos).' : 'Escribe una descripción o letra para crear la canción.');
-      return;
+      return false;
     }
 
     setIsSubmitting(true);
@@ -2867,7 +2879,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const t = await getAccessToken();
       if (!t.ok) {
         alert(t.error || 'No se pudo iniciar sesión.');
-        return;
+        return false;
       }
 
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
@@ -2975,12 +2987,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           const out2 = await rr.json().catch(() => ({}));
           if (!rr.ok) {
             alert(toUserFriendlySunoError(out2, 'No se pudo crear la canción.'));
-            return;
+            return false;
           }
           const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
           if (!taskId2) {
             alert('No recibí taskId del servidor.');
-            return;
+            return false;
           }
           try {
             const rawPending = window.localStorage.getItem(pendingListKey);
@@ -3008,16 +3020,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           }
           alert('La voz que elegiste expiró. Se generará la canción sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
           onGoLibrary?.();
-          return;
+          return true;
         }
         alert(msg);
-        return;
+        return false;
       }
 
       const taskId = typeof out?.taskId === 'string' ? out.taskId : '';
       if (!taskId) {
         alert('No recibí taskId del servidor.');
-        return;
+        return false;
       }
       try {
         const raw = window.localStorage.getItem(pendingListKey);
@@ -3044,8 +3056,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       } catch {
       }
       onGoLibrary?.();
+      return true;
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error creando la canción');
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -5261,7 +5275,11 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
     try {
       // Llamar al callback para generar la canción
       if (onGenerateSong) {
-        await onGenerateSong();
+        const created = await onGenerateSong();
+        if (created === false) {
+          setEasyStage('wizard');
+          return;
+        }
       }
     } catch (error) {
       console.error('Error generando canción:', error);
