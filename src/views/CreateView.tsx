@@ -5508,8 +5508,10 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         
       case 5:
         return (
-          <div className="space-y-4">
-            <h3 className="text-xl font-bold text-white text-center mb-6">Elige la ocasión especial</h3>
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-xl font-bold text-white text-center mb-6">Elige la ocasión especial</h3>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {easyModeData.occasions.map((occasion) => (
                 <button
@@ -5526,6 +5528,42 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   <span className="text-sm font-medium">{occasion.name}</span>
                 </button>
               ))}
+            </div>
+            <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
+              <div className="text-xs uppercase tracking-[0.3em] text-emerald-200 mb-2">Resumen final</div>
+              <h4 className="text-2xl font-extrabold text-white mb-4">Así va a salir tu canción</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Género</div>
+                  <div className="text-white font-bold text-lg">{selectedGenreLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Tipo de letra</div>
+                  <div className="text-white font-bold text-lg">{selectedLyricsLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Voz</div>
+                  <div className="text-white font-bold text-lg">{selectedVoiceLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Ánimo</div>
+                  <div className="text-white font-bold text-lg">{selectedMoodLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4 md:col-span-2">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Instrucciones extra</div>
+                  <div className="text-white font-bold text-lg break-words">{selectedExtraInstructionsLabel}</div>
+                </div>
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4 md:col-span-2">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Ocasión</div>
+                  <div className="text-white font-bold text-lg">{selectedOccasionLabel}</div>
+                </div>
+              </div>
+              <div className="mt-4 rounded-2xl bg-black/20 border border-white/10 p-4">
+                <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Qué pasa al crear</div>
+                <div className="text-white font-medium">
+                  Al darle al botón verde de crear, te llevamos a tu Biblioteca y ahí vas a ver la canción mientras se va creando.
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -5646,7 +5684,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                 Generando...
               </>
             ) : (
-              '🎵 Crear Canción'
+              '🎵 Crear y ver en Biblioteca'
             )}
           </button>
         )}
