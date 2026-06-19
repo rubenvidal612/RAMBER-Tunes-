@@ -302,7 +302,7 @@ export function MasterizarView() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8">
+    <div className="h-full overflow-y-auto bg-gradient-to-b from-gray-900 to-black text-white p-4 pb-[140px] md:p-8 md:pb-8">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-6">
