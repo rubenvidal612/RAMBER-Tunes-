@@ -62,7 +62,7 @@ type ChatMessage = {
 
 type ChatSession = {
   version: 1;
-  flow: 'home' | 'generate' | 'cover' | 'separate';
+  flow: 'home' | 'generate' | 'cover' | 'separate' | 'mastering';
   step: string;
   messages: ChatMessage[];
   composer: {
@@ -349,6 +349,13 @@ export function LucianaBotView() {
     return composer.placeholder || 'Escribe aquí…';
   }, [composer]);
 
+  const loadingLabel = useMemo(() => {
+    if (!uploading && !isSending) return '';
+    if (uploading && session.flow === 'mastering') return 'Subiendo tu MP3 para masterizar…';
+    if (isSending && session.flow === 'mastering') return 'Aplicando nuestra tecnologia LucIAna SoundCore para masterizar tu cancion...';
+    return uploading ? 'Subiendo audio…' : 'LucIAna está pensando…';
+  }, [uploading, isSending, session.flow]);
+
   return (
     <div className="h-full min-h-0 flex flex-col bg-[#05070d]">
       <div className="shrink-0 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 px-4 md:px-6 py-4">
@@ -480,7 +487,7 @@ export function LucianaBotView() {
           <div className="flex justify-start">
             <div className="max-w-[92%] rounded-3xl px-4 py-3 border border-white/10 bg-white/5 text-slate-200 inline-flex items-center gap-2 text-sm">
               <Loader2 className="w-4 h-4 animate-spin text-indigo-300" />
-              <span>{uploading ? 'Subiendo audio…' : 'LucIAna está pensando…'}</span>
+              <span>{loadingLabel}</span>
             </div>
           </div>
         ) : null}

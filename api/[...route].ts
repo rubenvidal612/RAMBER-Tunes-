@@ -11324,7 +11324,7 @@ const lucianaBotHandler = (() => {
 
   type LucianaSession = {
     version: 1;
-    flow: "home" | "generate" | "cover" | "separate";
+    flow: "home" | "generate" | "cover" | "separate" | "mastering";
     step: string;
     messages: LucianaMessage[];
     composer: {
@@ -11337,6 +11337,7 @@ const lucianaBotHandler = (() => {
       wantsAiLyrics?: boolean;
       referenceAudio?: { url: string; key?: string; fileName?: string; contentType?: string; size?: number };
       coverAudio?: { url: string; key?: string; fileName?: string; contentType?: string; size?: number };
+      masteringAudio?: { url: string; key?: string; fileName?: string; contentType?: string; size?: number };
       originalLyrics?: string;
       lyrics?: string;
       correctedLyrics?: string;
@@ -11492,7 +11493,10 @@ const lucianaBotHandler = (() => {
 
     return {
       version: 1,
-      flow: input?.flow === "generate" || input?.flow === "cover" || input?.flow === "separate" ? input.flow : "home",
+      flow:
+        input?.flow === "generate" || input?.flow === "cover" || input?.flow === "separate" || input?.flow === "mastering"
+          ? input.flow
+          : "home",
       step: typeof input?.step === "string" ? input.step.slice(0, 80) : "home",
       messages: safeMessages,
       composer,
@@ -11546,6 +11550,7 @@ const lucianaBotHandler = (() => {
     return [
       { id: "menu-generate", label: "Generar canción", value: "menu:generate", icon: "sparkles", variant: "primary" },
       { id: "menu-cover", label: "Hacer cover", value: "menu:cover", icon: "music", variant: "secondary" },
+      { id: "menu-mastering", label: "Masterizar", value: "menu:mastering", icon: "upload", variant: "secondary" },
       { id: "menu-credits", label: "Ver créditos", value: "menu:credits", icon: "coins", variant: "ghost" },
       { id: "menu-recent", label: "Canciones recientes", value: "menu:recent", icon: "library", variant: "ghost" },
     ];
@@ -11648,6 +11653,7 @@ const lucianaBotHandler = (() => {
     const byKeyword = (() => {
       if (lower.includes("crédito") || lower.includes("saldo")) return { toolName: "show_account", input: { view: "credits" } };
       if (lower.includes("reciente") || lower.includes("biblioteca") || lower.includes("cancione")) return { toolName: "show_account", input: { view: "recent_songs" } };
+      if (lower.includes("masteriz")) return { toolName: "open_flow", input: { flow: "mastering" } };
       if (lower.includes("cover")) return { toolName: "open_flow", input: { flow: "cover" } };
       if (lower.includes("separa") || lower.includes("karaoke") || lower.includes("stems") || lower.includes("voz")) {
         return { toolName: "answer_user", input: { message: separateOnlyAfterSongMessage } };
@@ -11660,6 +11666,7 @@ const lucianaBotHandler = (() => {
       system:
         "Eres LucIAna Bot. Tu trabajo aquí es SOLO detectar la intención principal del usuario dentro de una app de música. " +
         "Debes usar una herramienta. Si el usuario quiere crear/generar canción usa open_flow(generate). " +
+        "Si quiere masterizar una canción, masterizar un mp3 o dice frases como masteriza esto, usa open_flow(mastering). " +
         "Si quiere cover usa open_flow(cover). Si pregunta por quitar voz, karaoke o stems usa answer_user y explica que eso solo aparece al final de una canción creada dentro de la app. " +
         "Si quiere ver créditos usa show_account(credits). Si quiere ver canciones recientes usa show_account(recent_songs). " +
         "Si solo está saludando o no está claro, usa answer_user con un mensaje corto y amable.",
@@ -11670,7 +11677,7 @@ const lucianaBotHandler = (() => {
           description: "Abre uno de los flujos principales del chat.",
           input_schema: {
             type: "object",
-            properties: { flow: { type: "string", enum: ["generate", "cover"] } },
+            properties: { flow: { type: "string", enum: ["generate", "cover", "mastering"] } },
             required: ["flow"],
           },
         },
@@ -12462,6 +12469,146 @@ const lucianaBotHandler = (() => {
     });
   }
 
+  async function getCreditsSummary(req: any) {
+    const info = await internalJson(req, "/api/account/balance");
+    if (!info.ok) return { ok: false as const, error: (info.out?.detail || info.out?.error || "No pude leer tus créditos.").toString() };
+    const out = info.out || {};
+    return {
+      ok: true as const,
+      credits: Number(out?.credits ?? 0),
+      songBalance: Number(out?.song_balance ?? 0),
+      downloadsAllowed: Boolean(out?.downloads_allowed),
+      planKey: String(out?.plan_key || "ninguno"),
+      planActive: Boolean(out?.plan_active),
+      planExpiresAt: out?.plan_expires_at || null,
+    };
+  }
+
+  async function askMasteringStart(req: any, session: LucianaSession) {
+    const balance = await getCreditsSummary(req);
+    session.flow = "mastering";
+    session.step = "mastering-audio";
+    session.draft = {};
+    setComposer(session, "audio_mp3", "Súbeme el MP3 que quieres masterizar…", "Enviar");
+    if (!balance.ok) {
+      pushAssistant(
+        session,
+        "Te ayudo a masterizar tu canción. Primero súbeme un MP3.\n\nSi tu archivo no está en MP3, conviértelo aquí: https://online-audio-converter.com/sp/",
+        {
+          quickReplies: [{ id: "master-home-0", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+          inputMode: "audio_mp3",
+          inputPlaceholder: "Sube un MP3",
+        },
+      );
+      return;
+    }
+
+    if (balance.credits < (CREDIT_COSTS.mastering || 10)) {
+      pushAssistant(
+        session,
+        `Para masterizar necesitas 10 créditos y ahorita tienes ${balance.credits.toLocaleString("es-MX")}.\n\nRecarga saldo y en cuanto quieras lo hacemos aquí mismo.`,
+        {
+          credits: {
+            credits: balance.credits,
+            songBalance: balance.songBalance,
+            downloadsAllowed: balance.downloadsAllowed,
+            planKey: balance.planKey,
+            planActive: balance.planActive,
+            planExpiresAt: balance.planExpiresAt,
+          },
+          quickReplies: [
+            { id: "master-low-credits", label: "Ver créditos", value: "menu:credits", icon: "coins", variant: "primary" },
+            { id: "master-home-1", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          ],
+        },
+      );
+      setComposer(session, "disabled", "Necesitas recargar créditos…", "Enviar");
+      return;
+    }
+
+    pushAssistant(
+      session,
+      `Perfecto. Sí tienes saldo suficiente para masterizar: ${balance.credits.toLocaleString("es-MX")} créditos.\n\nAhora súbeme tu archivo en MP3 y yo me encargo del resto.\n\nSi no está en MP3, conviértelo aquí: https://online-audio-converter.com/sp/`,
+      {
+        credits: {
+          credits: balance.credits,
+          songBalance: balance.songBalance,
+          downloadsAllowed: balance.downloadsAllowed,
+          planKey: balance.planKey,
+          planActive: balance.planActive,
+          planExpiresAt: balance.planExpiresAt,
+        },
+        quickReplies: [{ id: "master-home-2", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+        inputMode: "audio_mp3",
+        inputPlaceholder: "Sube un MP3",
+      },
+    );
+  }
+
+  async function startMastering(req: any, session: LucianaSession) {
+    const audio = session.draft.masteringAudio;
+    const inputKey = normalizeText(audio?.key || "", 500);
+    if (!inputKey) {
+      pushAssistant(session, "Primero súbeme el MP3 que quieres masterizar.");
+      return;
+    }
+
+    const title = normalizeText((audio?.fileName || "audio").replace(/\.[a-z0-9]+$/i, ""), 120) || "audio";
+    const started = await internalJson(req, "/api/mastering/masterize", {
+      method: "POST",
+      body: {
+        inputKey,
+        title,
+      },
+    });
+
+    if (!started.ok) {
+      const errorText = (started.out?.detail || started.out?.error || "No pude masterizar tu audio.").toString();
+      const converterUrl = normalizeText(started.out?.converterUrl || "", 500);
+      pushAssistant(
+        session,
+        converterUrl ? `${errorText}\n\nConvierte tu audio aquí: ${converterUrl}` : errorText,
+        {
+          quickReplies: [
+            { id: "master-retry", label: "Subir otro MP3", value: "menu:mastering", icon: "upload", variant: "primary" },
+            { id: "master-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          ],
+          inputMode: converterUrl ? "audio_mp3" : "disabled",
+        },
+      );
+      if (converterUrl) {
+        session.step = "mastering-audio";
+        setComposer(session, "audio_mp3", "Súbeme un MP3…", "Enviar");
+      }
+      return;
+    }
+
+    const song = started.out?.song || {};
+    session.step = "mastering-ready";
+    session.draft.pendingTaskId = undefined;
+    session.draft.pendingKind = undefined;
+    setComposer(session, "disabled", "Listo", "Enviar");
+    pushAssistant(session, "Tu canción ya quedó masterizada con nuestra tecnología LucIAna SoundCore y también la guardé en tu Biblioteca.", {
+      songs: [
+        {
+          id: String(song?.id || `master_${Date.now()}`),
+          title: String(song?.title || `${title} (Masterizada)`),
+          audioUrl: String(song?.audio_url || started.out?.downloadUrl || "").trim(),
+          coverUrl: String(song?.cover_url || "").trim(),
+          createdAt: String(song?.created_at || new Date().toISOString()),
+          acceptedAt: null,
+          sunoTaskId: String(song?.suno_task_id || "").trim(),
+          sunoAudioId: String(song?.suno_audio_id || "").trim(),
+        },
+      ],
+      quickReplies: [
+        { id: "master-again", label: "Masterizar otra", value: "menu:mastering", icon: "upload", variant: "primary" },
+        { id: "master-recent", label: "Ver Biblioteca", value: "menu:recent", icon: "library", variant: "secondary" },
+        { id: "master-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+      ],
+    });
+  }
+
   async function showRecentSongs(auth: any, session: LucianaSession) {
     const songs = await getRecentSongs(auth.admin, auth.user.id, 6);
     if (!songs.length) {
@@ -12530,7 +12677,7 @@ const lucianaBotHandler = (() => {
           eventType === "quick_reply" && eventValue.startsWith("menu:")
             ? (() => {
                 const view = eventValue.replace("menu:", "").trim();
-                if (view === "generate" || view === "cover") return { toolName: "open_flow", input: { flow: view } };
+                if (view === "generate" || view === "cover" || view === "mastering") return { toolName: "open_flow", input: { flow: view } };
                 if (view === "separate") {
                   return {
                     toolName: "answer_user",
@@ -12560,6 +12707,10 @@ const lucianaBotHandler = (() => {
               quickReplies: [{ id: "cover-home-btn", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
               inputMode: "audio",
             });
+            return send(res, 200, { ok: true, session });
+          }
+          if (flow === "mastering") {
+            await askMasteringStart(req, session);
             return send(res, 200, { ok: true, session });
           }
         }
@@ -12896,6 +13047,30 @@ const lucianaBotHandler = (() => {
         }
         if (session.step === "separate-polling") {
           await pollPendingTask(req, auth, session);
+          return send(res, 200, { ok: true, session });
+        }
+      }
+
+      if (session.flow === "mastering") {
+        if (session.step === "mastering-audio" && eventType === "file" && file) {
+          const contentType = normalizeText(file?.contentType || "", 120).toLowerCase();
+          const fileName = normalizeText(file?.fileName || "", 200).toLowerCase();
+          const isMp3 = contentType === "audio/mpeg" || fileName.endsWith(".mp3");
+          if (!isMp3) {
+            pushAssistant(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/", {
+              inputMode: "audio_mp3",
+              quickReplies: [{ id: "master-bad-file-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            });
+            return send(res, 200, { ok: true, session });
+          }
+          session.draft.masteringAudio = {
+            url: normalizeText(file?.url || "", 2000),
+            key: normalizeText(file?.key || "", 500),
+            fileName: normalizeText(file?.fileName || "", 200),
+            contentType,
+            size: Number(file?.size || 0),
+          };
+          await startMastering(req, session);
           return send(res, 200, { ok: true, session });
         }
       }
