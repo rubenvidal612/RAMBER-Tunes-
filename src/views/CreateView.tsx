@@ -144,6 +144,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [isBoostingStyle, setIsBoostingStyle] = useState(false);
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   
+  // Estado para el modo Fácil
+  const [easyModeSelections, setEasyModeSelections] = useState({
+    genre: '',
+    theme: '',
+    voice: '',
+    mood: '',
+    occasion: '',
+  });
+  
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
   const [audioUploadPath, setAudioUploadPath] = useState<string>('');
@@ -617,7 +626,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (!raw) return;
       const d = JSON.parse(raw);
       const m = typeof d?.mode === 'string' ? d.mode : '';
-      if (m === 'simple' || m === 'personalizado') setMode(m);
+      if (m === 'facil' || m === 'personalizado') setMode(m);
       setInstrumental(Boolean(d?.instrumental));
       if (typeof d?.description === 'string') setDescription(d.description);
       if (typeof d?.instructions === 'string') setInstructions(d.instructions);
@@ -2801,8 +2810,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
 
-    const baseLyrics = instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
-    let prompt = (mode === 'simple' ? description : (baseLyrics || description)).trim();
+    let prompt = '';
+    
+    if (mode === 'facil') {
+      // Construir prompt basado en las selecciones del modo Fácil
+      const genreObj = easyModeData.genres.find(g => g.id === easyModeSelections.genre);
+      const themeObj = easyModeData.themes.find(t => t.id === easyModeSelections.theme);
+      const voiceObj = easyModeData.voices.find(v => v.id === easyModeSelections.voice);
+      const moodObj = easyModeData.moods.find(m => m.id === easyModeSelections.mood);
+      const occasionObj = easyModeData.occasions.find(o => o.id === easyModeSelections.occasion);
+      
+      if (genreObj && themeObj && voiceObj && moodObj && occasionObj) {
+        prompt = `Una canción de ${genreObj.name} sobre ${themeObj.name} con voz ${voiceObj.name}, de ánimo ${moodObj.name} para ${occasionObj.name}.`;
+      } else {
+        prompt = description.trim();
+      }
+    } else {
+      const baseLyrics = instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString()));
+      prompt = (baseLyrics || description).trim();
+    }
+    
     if (!prompt && instrumental) {
       const fallback = (instructions || '').toString().trim();
       if (fallback) prompt = fallback;
@@ -3014,13 +3041,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       <div className="flex items-center justify-between px-4 mt-4 mb-4">
         <div className="flex bg-white/5 rounded-full p-1 border border-white/5">
           <button 
-            onClick={() => setMode('simple')}
+            onClick={() => setMode('facil')}
             className={cn(
               "px-5 py-1.5 rounded-full text-sm font-semibold transition-colors",
-              mode === 'simple' ? "bg-white text-black" : "text-slate-300 hover:text-white"
+              mode === 'facil' ? "bg-white text-black" : "text-slate-300 hover:text-white"
             )}
           >
-            Simple
+            Fácil
           </button>
           <button 
             onClick={() => setMode('personalizado')}
@@ -3100,8 +3127,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       </div>
 
       <div className="px-4 space-y-4 pb-[220px] md:pb-32">
-        {mode === 'simple' ? (
-          <SimpleForm instrumental={instrumental} setInstrumental={setInstrumental} description={description} setDescription={setDescription} isDev={isDev} />
+        {mode === 'facil' ? (
+          <EasyModeWizard 
+            onGenerateSong={handleCreate}
+            credits={credits}
+            onOpenBalance={onOpenBalance}
+            onSelectionsChange={setEasyModeSelections}
+          />
         ) : (
           <CustomForm 
             instrumental={instrumental} 
@@ -4952,46 +4984,400 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   );
 }
 
-function SimpleForm({ instrumental, setInstrumental, description, setDescription, isDev }: any) {
-  return (
-    <>
-      <div className="glass-card rounded-3xl p-5 relative">
-        <div className="flex items-start justify-between mb-2">
-          <label className="text-sm font-semibold text-slate-200">Descripción de la canción</label>
-          <button className="bg-white/5 p-1.5 rounded-full text-slate-300 hover:text-white transition-colors">
-            <Dices className="w-4 h-4" />
-          </button>
-        </div>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={instrumental ? "Ej: instrumental tipo corrido tumbado, alegre, con guitarras y tuba..." : "Ej: una balada pop sobre un amanecer en la playa..."}
-          className="w-full bg-transparent text-white placeholder:text-slate-500 resize-none outline-none min-h-[80px]"
-        />
-        
-        <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <button className="flex-shrink-0 bg-white/5 w-8 h-8 rounded-full flex items-center justify-center text-slate-400">
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          <span className="flex-shrink-0 bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-full text-xs font-medium border border-indigo-500/20 truncate max-w-[150px]">
-            female background vocals
-          </span>
-          <span className="flex-shrink-0 bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-full text-xs font-medium border border-indigo-500/20 truncate max-w-[150px]">
-            dungeon neo so...
-          </span>
-        </div>
-      </div>
+// Datos para el modo Fácil
+const easyModeData = {
+  genres: [
+    { id: 'cumbia', name: 'Cumbia', emoji: '💃' },
+    { id: 'cumbia_sonidera', name: 'Cumbia Sonidera', emoji: '🎶' },
+    { id: 'norteno', name: 'Norteño', emoji: '🎸' },
+    { id: 'rock', name: 'Rock', emoji: '🤘' },
+    { id: 'rock_metalico', name: 'Rock Metálico', emoji: '🔥' },
+    { id: 'acustico', name: 'Acústico', emoji: '🎵' },
+    { id: 'orquesta_maestuoso', name: 'Orquesta Maestuoso', emoji: '🎻' },
+    { id: 'cristiano', name: 'Cristiano', emoji: '🙏' },
+    { id: 'pop', name: 'Pop', emoji: '🌟' },
+    { id: 'reggaeton', name: 'Reggaetón', emoji: '💥' },
+    { id: 'balada', name: 'Balada', emoji: '💕' },
+    { id: 'corrido', name: 'Corrido', emoji: '🎤' },
+    { id: 'salsa', name: 'Salsa', emoji: '🥁' },
+    { id: 'bachata', name: 'Bachata', emoji: '💘' },
+    { id: 'ranchera', name: 'Ranchera', emoji: '🎺' },
+  ],
+  
+  themes: [
+    { id: 'amor', name: 'Amor', emoji: '❤️' },
+    { id: 'desamor', name: 'Desamor', emoji: '💔' },
+    { id: 'fiesta', name: 'Fiesta', emoji: '🎉' },
+    { id: 'familia', name: 'Familia', emoji: '👨‍👩‍👧‍👦' },
+    { id: 'amistad', name: 'Amistad', emoji: '🤝' },
+    { id: 'trabajo', name: 'Trabajo', emoji: '💼' },
+    { id: 'superacion', name: 'Superación', emoji: '🚀' },
+    { id: 'naturaleza', name: 'Naturaleza', emoji: '🌳' },
+    { id: 'viajes', name: 'Viajes', emoji: '✈️' },
+    { id: 'recuerdos', name: 'Recuerdos', emoji: '📸' },
+    { id: 'fe', name: 'Fe', emoji: '🙏' },
+    { id: 'patria', name: 'Patria', emoji: '🇲🇽' },
+  ],
+  
+  voices: [
+    { id: 'masculina', name: 'Masculina', emoji: '👨' },
+    { id: 'femenina', name: 'Femenina', emoji: '👩' },
+    { id: 'dueto', name: 'Dúeto', emoji: '👫' },
+    { id: 'coro', name: 'Coro', emoji: '🎤' },
+    { id: 'infantil', name: 'Infantil', emoji: '👶' },
+    { id: 'voz_ronca', name: 'Voz Ronca', emoji: '🎙️' },
+    { id: 'voz_suave', name: 'Voz Suave', emoji: '🎧' },
+  ],
+  
+  moods: [
+    { id: 'alegre', name: 'Alegre', emoji: '😄' },
+    { id: 'triste', name: 'Triste', emoji: '😢' },
+    { id: 'romantico', name: 'Romántico', emoji: '😍' },
+    { id: 'energico', name: 'Energético', emoji: '⚡' },
+    { id: 'relajado', name: 'Relajado', emoji: '😌' },
+    { id: 'nostalgico', name: 'Nostálgico', emoji: '🌅' },
+    { id: 'epico', name: 'Épico', emoji: '🏆' },
+    { id: 'divertido', name: 'Divertido', emoji: '😄' },
+  ],
+  
+  occasions: [
+    { id: 'cumpleanos', name: 'Cumpleaños', emoji: '🎂' },
+    { id: 'boda', name: 'Boda', emoji: '💍' },
+    { id: 'aniversario', name: 'Aniversario', emoji: '🎊' },
+    { id: 'graduacion', name: 'Graduación', emoji: '🎓' },
+    { id: 'despedida', name: 'Despedida', emoji: '👋' },
+    { id: 'navidad', name: 'Navidad', emoji: '🎄' },
+    { id: 'dia_madre', name: 'Día de la Madre', emoji: '👩‍👦' },
+    { id: 'dia_padre', name: 'Día del Padre', emoji: '👨‍👧' },
+    { id: 'negocio', name: 'Negocio', emoji: '💼' },
+    { id: 'evento_especial', name: 'Evento Especial', emoji: '🎪' },
+  ],
+};
 
-        <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
-          <button className="flex items-center gap-2 text-white font-medium hover:text-gray-300 transition-colors">
-            <Plus className="w-5 h-5" /> Letras
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-300">Instrumental</span>
-            <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
+function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsChange }: any) {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [selectedGenre, setSelectedGenre] = useState('');
+  const [selectedTheme, setSelectedTheme] = useState('');
+  const [selectedVoice, setSelectedVoice] = useState('');
+  const [selectedMood, setSelectedMood] = useState('');
+  const [selectedOccasion, setSelectedOccasion] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Notificar cambios en las selecciones
+  useEffect(() => {
+    if (onSelectionsChange) {
+      onSelectionsChange({
+        genre: selectedGenre,
+        theme: selectedTheme,
+        voice: selectedVoice,
+        mood: selectedMood,
+        occasion: selectedOccasion,
+      });
+    }
+  }, [selectedGenre, selectedTheme, selectedVoice, selectedMood, selectedOccasion, onSelectionsChange]);
+  
+  const steps = [
+    { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
+    { number: 2, title: 'Elige el tema', description: '¿De qué quieres que hable la canción?' },
+    { number: 3, title: 'Elige la voz', description: '¿Cómo quieres que suene?' },
+    { number: 4, title: 'Elige el ánimo', description: '¿Qué sentimiento quieres transmitir?' },
+    { number: 5, title: 'Elige la ocasión', description: '¿Para qué es la canción?' },
+  ];
+  
+  const handleNext = () => {
+    if (currentStep < 5) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+  
+  const handlePrev = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
+  
+  const handleGenerate = async () => {
+    if (!selectedGenre || !selectedTheme || !selectedVoice || !selectedMood || !selectedOccasion) {
+      alert('Por favor completa todos los pasos antes de generar la canción');
+      return;
+    }
+    
+    if (credits < 1) {
+      alert('No tienes créditos suficientes. Compra más créditos para crear canciones.');
+      if (onOpenBalance) onOpenBalance();
+      return;
+    }
+    
+    setIsGenerating(true);
+    
+    try {
+      // Llamar al callback para generar la canción
+      if (onGenerateSong) {
+        await onGenerateSong();
+      }
+    } catch (error) {
+      console.error('Error generando canción:', error);
+      alert('Hubo un error al generar la canción. Intenta de nuevo.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+  
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-white text-center mb-6">Elige el estilo de música</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {easyModeData.genres.map((genre) => (
+                <button
+                  key={genre.id}
+                  onClick={() => setSelectedGenre(genre.id)}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
+                    selectedGenre === genre.id
+                      ? "bg-white text-black border-white"
+                      : "bg-white/5 text-white border-white/10 hover:border-white/30"
+                  )}
+                >
+                  <span className="text-2xl mb-2">{genre.emoji}</span>
+                  <span className="text-sm font-medium">{genre.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+        
+      case 2:
+        return (
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-white text-center mb-6">Elige el tema de la canción</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {easyModeData.themes.map((theme) => (
+                <button
+                  key={theme.id}
+                  onClick={() => setSelectedTheme(theme.id)}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
+                    selectedTheme === theme.id
+                      ? "bg-white text-black border-white"
+                      : "bg-white/5 text-white border-white/10 hover:border-white/30"
+                  )}
+                >
+                  <span className="text-2xl mb-2">{theme.emoji}</span>
+                  <span className="text-sm font-medium">{theme.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+        
+      case 3:
+        return (
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-white text-center mb-6">Elige el tipo de voz</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {easyModeData.voices.map((voice) => (
+                <button
+                  key={voice.id}
+                  onClick={() => setSelectedVoice(voice.id)}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
+                    selectedVoice === voice.id
+                      ? "bg-white text-black border-white"
+                      : "bg-white/5 text-white border-white/10 hover:border-white/30"
+                  )}
+                >
+                  <span className="text-2xl mb-2">{voice.emoji}</span>
+                  <span className="text-sm font-medium">{voice.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+        
+      case 4:
+        return (
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-white text-center mb-6">Elige el ánimo o sentimiento</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {easyModeData.moods.map((mood) => (
+                <button
+                  key={mood.id}
+                  onClick={() => setSelectedMood(mood.id)}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
+                    selectedMood === mood.id
+                      ? "bg-white text-black border-white"
+                      : "bg-white/5 text-white border-white/10 hover:border-white/30"
+                  )}
+                >
+                  <span className="text-2xl mb-2">{mood.emoji}</span>
+                  <span className="text-sm font-medium">{mood.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+        
+      case 5:
+        return (
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-white text-center mb-6">Elige la ocasión especial</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {easyModeData.occasions.map((occasion) => (
+                <button
+                  key={occasion.id}
+                  onClick={() => setSelectedOccasion(occasion.id)}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
+                    selectedOccasion === occasion.id
+                      ? "bg-white text-black border-white"
+                      : "bg-white/5 text-white border-white/10 hover:border-white/30"
+                  )}
+                >
+                  <span className="text-2xl mb-2">{occasion.emoji}</span>
+                  <span className="text-sm font-medium">{occasion.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+        
+      default:
+        return null;
+    }
+  };
+  
+  return (
+    <div className="max-w-4xl mx-auto">
+      {/* Indicador de pasos */}
+      <div className="flex justify-between items-center mb-8 px-4">
+        {steps.map((step) => (
+          <div key={step.number} className="flex flex-col items-center">
+            <div className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold mb-2",
+              currentStep >= step.number
+                ? "bg-white text-black"
+                : "bg-white/10 text-white"
+            )}>
+              {step.number}
+            </div>
+            <span className={cn(
+              "text-xs font-medium text-center",
+              currentStep === step.number ? "text-white" : "text-slate-400"
+            )}>
+              {step.title}
+            </span>
+          </div>
+        ))}
+      </div>
+      
+      {/* Contenido del paso actual */}
+      <div className="glass-card rounded-3xl p-6 mb-6">
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-white mb-2">{steps[currentStep - 1].title}</h2>
+          <p className="text-slate-300">{steps[currentStep - 1].description}</p>
+        </div>
+        
+        {renderStepContent()}
+      </div>
+      
+      {/* Navegación */}
+      <div className="flex justify-between items-center px-4">
+        <button
+          onClick={handlePrev}
+          disabled={currentStep === 1}
+          className={cn(
+            "px-6 py-3 rounded-full font-medium transition-colors",
+            currentStep === 1
+              ? "bg-white/5 text-slate-400 cursor-not-allowed"
+              : "bg-white/10 text-white hover:bg-white/20"
+          )}
+        >
+          ← Anterior
+        </button>
+        
+        <div className="text-center">
+          <div className="text-sm text-slate-300 mb-1">
+            Paso {currentStep} de 5
+          </div>
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map((step) => (
+              <div
+                key={step}
+                className={cn(
+                  "w-2 h-2 rounded-full",
+                  currentStep >= step ? "bg-white" : "bg-white/20"
+                )}
+              />
+            ))}
           </div>
         </div>
-    </>
+        
+        {currentStep < 5 ? (
+          <button
+            onClick={handleNext}
+            className="px-6 py-3 rounded-full font-medium bg-white text-black hover:bg-gray-200 transition-colors"
+          >
+            Siguiente →
+          </button>
+        ) : (
+          <button
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className="px-6 py-3 rounded-full font-medium bg-green-500 text-white hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin inline" />
+                Generando...
+              </>
+            ) : (
+              '🎵 Crear Canción'
+            )}
+          </button>
+        )}
+      </div>
+      
+      {/* Resumen de selecciones */}
+      <div className="glass-card rounded-2xl p-4 mt-6">
+        <h3 className="text-lg font-bold text-white mb-3">Tu canción:</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="text-center">
+            <div className="text-sm text-slate-300">Estilo</div>
+            <div className="text-white font-medium">
+              {selectedGenre ? easyModeData.genres.find(g => g.id === selectedGenre)?.name : '—'}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-sm text-slate-300">Tema</div>
+            <div className="text-white font-medium">
+              {selectedTheme ? easyModeData.themes.find(t => t.id === selectedTheme)?.name : '—'}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-sm text-slate-300">Voz</div>
+            <div className="text-white font-medium">
+              {selectedVoice ? easyModeData.voices.find(v => v.id === selectedVoice)?.name : '—'}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-sm text-slate-300">Ánimo</div>
+            <div className="text-white font-medium">
+              {selectedMood ? easyModeData.moods.find(m => m.id === selectedMood)?.name : '—'}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-sm text-slate-300">Ocasión</div>
+            <div className="text-white font-medium">
+              {selectedOccasion ? easyModeData.occasions.find(o => o.id === selectedOccasion)?.name : '—'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

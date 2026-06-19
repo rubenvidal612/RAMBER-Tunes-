@@ -1,5 +1,5 @@
 export type ViewTab = 'inicio' | 'mv' | 'studio' | 'karaoke' | 'voces' | 'biblioteca' | 'perfil' | 'luciana';
-export type CreateMode = 'simple' | 'personalizado';
+export type CreateMode = 'facil' | 'personalizado';
 export type LibraryTab = 'canciones' | 'video' | 'vibes' | 'listas';
 
 export interface VibeItem {

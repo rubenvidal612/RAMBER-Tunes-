@@ -72,6 +72,14 @@ export function PricingView({ onClose }: PricingViewProps) {
           <Sparkles className="w-4 h-4" /> Cada canción crea 2 versiones (A y B)
         </div>
 
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-300 space-y-2">
+          <p className="font-semibold text-white">Importante sobre los planes</p>
+          <p>Los precios son mensuales.</p>
+          <p>Si no gastas todo tu saldo, en tu siguiente pago se suma al nuevo saldo.</p>
+          <p>El saldo dura hasta 2 meses. Si en 2 meses no se recibe tu pago, el saldo acumulado se elimina.</p>
+          <p>El saldo acumulado tiene un tope de 2,000 créditos.</p>
+        </div>
+
         {/* Saldo actual */}
         <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-5 mt-4">
           <h3 className="text-lg font-bold text-white mb-1">Te quedan {songs} canciones disponibles</h3>
@@ -95,7 +103,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               <div>
                 <h3 className="text-xl font-bold text-white">Pack Inicio</h3>
                 <p className="text-slate-300 text-sm mt-1">100 canciones • 1200 créditos</p>
-                <p className="text-slate-400 text-sm mt-1">Ideal para empezar</p>
+                <p className="text-slate-400 text-sm mt-1">Ideal para empezar • Plan mensual</p>
               </div>
             </div>
 
@@ -104,6 +112,7 @@ export function PricingView({ onClose }: PricingViewProps) {
                 <span className="text-lg font-bold text-slate-400 line-through">$375 MXN</span>
                 <div className="flex items-center gap-2">
                   <span className="text-4xl font-bold text-white">$199 MXN</span>
+                  <span className="text-slate-300 text-sm font-semibold">/ mes</span>
                   <span className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold">PROMO</span>
                 </div>
               </div>
@@ -122,6 +131,14 @@ export function PricingView({ onClose }: PricingViewProps) {
               </div>
               <div className="flex items-center gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-blue-500" /> Karaoke / STEMS
+              </div>
+              <div className="flex items-start gap-3 text-slate-300 text-sm">
+                <Check className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                <span>Saldo mensual acumulable si renuevas a tiempo</span>
+              </div>
+              <div className="flex items-start gap-3 text-slate-300 text-sm">
+                <Check className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                <span>El saldo no usado dura hasta 2 meses</span>
               </div>
               <div className="flex items-start gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
@@ -144,13 +161,14 @@ export function PricingView({ onClose }: PricingViewProps) {
               <div>
                 <h3 className="text-xl font-bold text-white">Pack Productor</h3>
                 <p className="text-slate-300 text-sm mt-1">250 canciones • 3000 créditos</p>
-                <p className="text-slate-400 text-sm mt-1">Para productores y artistas</p>
+                <p className="text-slate-400 text-sm mt-1">Para productores y artistas • Plan mensual</p>
               </div>
               <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-xs font-bold">Mejor valor</span>
             </div>
 
             <div className="flex items-end gap-2 mt-4 mb-6">
               <span className="text-4xl font-bold text-white">$545 MXN</span>
+              <span className="text-slate-300 text-sm font-semibold mb-1">/ mes</span>
               <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-sm font-semibold mb-1">500 versiones</span>
             </div>
 
@@ -166,6 +184,14 @@ export function PricingView({ onClose }: PricingViewProps) {
               </div>
               <div className="flex items-center gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-indigo-400" /> Karaoke / STEMS
+              </div>
+              <div className="flex items-start gap-3 text-slate-300 text-sm">
+                <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                <span>Saldo mensual acumulable si renuevas a tiempo</span>
+              </div>
+              <div className="flex items-start gap-3 text-slate-300 text-sm">
+                <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                <span>El saldo no usado dura hasta 2 meses</span>
               </div>
               <div className="flex items-start gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />

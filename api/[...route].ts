@@ -6549,6 +6549,8 @@ const masteringHandler = (() => {
 
   async function runMasteringWithWorker(params: { workerUrl: string; inputUrl: string; outputPutUrl: string }) {
     const workerUrl = params.workerUrl.replace(/\/+$/, "");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10 * 60 * 1000);
     const r = await fetch(workerUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -6557,7 +6559,8 @@ const masteringHandler = (() => {
         outputUploadUrl: params.outputPutUrl,
         ffmpegArgs: ["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"],
       }),
-    });
+      signal: ctrl.signal as any,
+    }).finally(() => clearTimeout(timer));
     const out = await r.json().catch(() => ({}));
     if (!r.ok || out?.ok === false) {
       const msg = String(out?.error || out?.detail || `HTTP ${r.status}`);
@@ -6625,21 +6628,42 @@ const masteringHandler = (() => {
 
     try {
       const workerUrl = (process.env.MASTERING_WORKER_URL || "").toString().trim();
+      const allowLocalFallback = ["1", "true", "yes", "on"].includes((process.env.MASTERING_ALLOW_LOCAL_FALLBACK || "").toString().trim().toLowerCase());
+      const inputUrl = await getSignedR2Url(inputKey, 60 * 60);
+      const outputPutUrl = await getSignedR2PutUrl(outKey, "audio/mpeg", 60 * 10);
+
       if (workerUrl) {
-        const inputUrl = await getSignedR2Url(inputKey, 60 * 60);
-        const outputPutUrl = await getSignedR2PutUrl(outKey, "audio/mpeg", 60 * 10);
-        await runMasteringWithWorker({ workerUrl, inputUrl, outputPutUrl });
+        try {
+          await runMasteringWithWorker({ workerUrl, inputUrl, outputPutUrl });
+        } catch (workerError) {
+          if (!allowLocalFallback) {
+            throw new Error(`Falló el worker de masterización del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
+          }
+
+          const contentLength = Number(headInfo?.contentLength ?? NaN);
+          const maxInline = 15 * 1024 * 1024;
+          if (Number.isFinite(contentLength) && contentLength > maxInline) {
+            throw new Error("Falló el worker del VPS y el respaldo local en Vercel está limitado para archivos grandes.");
+          }
+          await runMasteringLocal(inputUrl, outKey);
+        }
       } else {
+        if (!allowLocalFallback) {
+          return send(res, 503, {
+            error: "Masterizar requiere tu worker del VPS.",
+            detail: "Configura MASTERING_WORKER_URL en Vercel para usar el procesamiento en Hostinger. El modo local en Vercel está desactivado.",
+          });
+        }
+
         const contentLength = Number(headInfo?.contentLength ?? NaN);
         const maxInline = 15 * 1024 * 1024;
         if (Number.isFinite(contentLength) && contentLength > maxInline) {
           return send(res, 413, {
             error: "Ese MP3 está muy pesado para masterizar en Vercel.",
-            detail: "Para audios largos, configura MASTERING_WORKER_URL en tu VPS (Hostinger) y vuelve a intentar.",
+            detail: "Configura MASTERING_WORKER_URL en tu VPS (Hostinger) o deja activo el worker principal.",
             bytes: contentLength,
           });
         }
-        const inputUrl = await getSignedR2Url(inputKey, 60 * 60);
         await runMasteringLocal(inputUrl, outKey);
       }
 
