@@ -126,7 +126,7 @@ interface CreateViewProps {
 }
 
 export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance, standaloneVoices, onExitVoices, onOpenCreateVoiceFullScreen, openCreateVoiceSignal, prefill, prefillNonce }: CreateViewProps) {
-  const [mode, setMode] = useState<CreateMode>('personalizado');
+  const [mode, setMode] = useState<CreateMode>('facil');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
