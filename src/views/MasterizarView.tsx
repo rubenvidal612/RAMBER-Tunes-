@@ -1,19 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Volume2, Download, CheckCircle, XCircle, Play, Pause, Loader2, AlertCircle, CreditCard, Users, Zap, Shield, Headphones } from 'lucide-react';
-import { supabaseBrowser } from '../lib/supabase';
-import { useAuth } from '../hooks/useAuth';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Upload, Volume2, Download, CheckCircle, XCircle, Play, Pause, Loader2, AlertCircle, CreditCard, Zap, Shield, Headphones } from 'lucide-react';
+import { getAccessToken, signInWithGoogle, supabaseBrowser } from '../lib/supabaseBrowser';
 
 interface SubscriptionInfo {
   active: boolean;
   expires_at: string | null;
 }
 
+type SessionUser = {
+  id: string;
+  email?: string;
+};
+
+function cardClass(extra?: string) {
+  return `rounded-3xl border border-white/10 bg-[#111827]/85 shadow-[0_20px_60px_rgba(0,0,0,0.35)] ${extra || ''}`.trim();
+}
+
+function buttonClass(kind: 'primary' | 'secondary' | 'success' | 'ghost' = 'primary', block = false) {
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60';
+  const width = block ? ' w-full' : '';
+  if (kind === 'secondary') return `${base}${width} bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700`;
+  if (kind === 'success') return `${base}${width} bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700`;
+  if (kind === 'ghost') return `${base}${width} border border-white/15 bg-white/5 text-white hover:bg-white/10`;
+  return `${base}${width} bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-700 hover:to-cyan-700`;
+}
+
 export function MasterizarView() {
-  const { user, isLoggedIn } = useAuth();
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -22,15 +37,71 @@ export function MasterizarView() {
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const isLoggedIn = !!user?.id;
+  const publicShareUrl = useMemo(() => {
+    if (typeof window === 'undefined') return 'https://ramber-tunes.vercel.app/masterizar';
+    return `${window.location.origin.replace(/\/+$/, '')}/masterizar`;
+  }, []);
 
-  // Cargar información de suscripción
   useEffect(() => {
-    if (isLoggedIn && user) {
-      loadSubscription(user.id);
-    }
-  }, [isLoggedIn, user]);
+    if (!supabaseBrowser) return;
+    let alive = true;
+
+    const syncUser = async () => {
+      const { data } = await supabaseBrowser.auth.getUser();
+      if (!alive) return;
+      const nextUser = data?.user ? { id: data.user.id, email: data.user.email || undefined } : null;
+      setUser(nextUser);
+      if (nextUser?.id) {
+        loadSubscription(nextUser.id).catch(() => {});
+      } else {
+        setSubscription(null);
+      }
+    };
+
+    syncUser().catch(() => {});
+    const { data: authSub } = supabaseBrowser.auth.onAuthStateChange(() => {
+      syncUser().catch(() => {});
+    });
+
+    return () => {
+      alive = false;
+      try {
+        authSub?.subscription?.unsubscribe?.();
+      } catch {
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    const onPause = () => setIsPlaying(false);
+    const onPlay = () => setIsPlaying(true);
+    el.addEventListener('pause', onPause);
+    el.addEventListener('play', onPlay);
+    return () => {
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('play', onPlay);
+    };
+  }, [previewUrl]);
+
+  const getOptionalToken = async () => {
+    if (!supabaseBrowser) return '';
+    const { data } = await supabaseBrowser.auth.getSession();
+    return data?.session?.access_token || '';
+  };
+
+  const apiHeaders = async (json = true) => {
+    const token = await getOptionalToken();
+    return {
+      ...(json ? { 'content-type': 'application/json' } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    };
+  };
 
   const loadSubscription = async (userId: string) => {
+    if (!supabaseBrowser) return;
     setIsLoadingSubscription(true);
     try {
       const { data, error } = await supabaseBrowser
@@ -44,27 +115,21 @@ export function MasterizarView() {
         return;
       }
 
-      // Verificar si la suscripción está activa y no ha expirado
-      const isActive = data.mastering_subscription_active || false;
-      const expiresAt = data.mastering_subscription_expires_at;
-      
+      const isActive = !!data?.mastering_subscription_active;
+      const expiresAt = data?.mastering_subscription_expires_at || null;
       let active = isActive;
-      if (expiresAt) {
-        const expiryDate = new Date(expiresAt);
-        const now = new Date();
-        if (expiryDate < now) {
-          active = false;
-          // Opcional: actualizar el estado en la base de datos
-          await supabaseBrowser
-            .from('profiles')
-            .update({ mastering_subscription_active: false })
-            .eq('id', userId);
-        }
+
+      if (expiresAt && new Date(expiresAt) < new Date()) {
+        active = false;
+        await supabaseBrowser
+          .from('profiles')
+          .update({ mastering_subscription_active: false })
+          .eq('id', userId);
       }
 
       setSubscription({
         active,
-        expires_at: expiresAt
+        expires_at: expiresAt,
       });
     } catch (error) {
       console.error('Error loading subscription:', error);
@@ -94,54 +159,79 @@ export function MasterizarView() {
 
     setIsUploading(true);
     setProcessingError(null);
+    setPreviewUrl(null);
+    setDownloadUrl(null);
 
     try {
-      // Subir archivo a R2
-      const formData = new FormData();
-      formData.append('file', file);
-
       const response = await fetch('/api/masterizar-unlimited', {
         method: 'POST',
-        body: formData,
+        headers: await apiHeaders(true),
+        body: JSON.stringify({
+          action: 'upload',
+          fileName: file.name,
+          fileType: file.type || 'audio/mpeg',
+        }),
       });
-
       const result = await response.json();
-
       if (!response.ok) {
         throw new Error(result.error || 'Error al procesar el archivo');
       }
 
-      // Obtener URLs para preview y descarga
-      if (result.previewUrl) {
-        setPreviewUrl(result.previewUrl);
-      }
-      
-      if (result.downloadUrl) {
-        setDownloadUrl(result.downloadUrl);
+      const uploadUrl = String(result?.uploadUrl || '').trim();
+      const filePath = String(result?.filePath || '').trim();
+      if (!uploadUrl || !filePath) {
+        throw new Error('No recibí la URL para subir el archivo.');
       }
 
-      // Si hay error de suscripción pero el procesamiento fue exitoso
-      if (result.error === 'subscription_required') {
-        setProcessingError('¡Masterización completada! Puedes escuchar el preview gratis. Para descargar el archivo masterizado, necesitas una suscripción activa.');
+      const uploadToR2 = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'audio/mpeg' },
+        body: file,
+      });
+      if (!uploadToR2.ok) {
+        throw new Error('No pude subir tu MP3 para masterizarlo.');
       }
 
+      const processResponse = await fetch('/api/masterizar-unlimited', {
+        method: 'POST',
+        headers: await apiHeaders(true),
+        body: JSON.stringify({
+          action: 'process',
+          filePath,
+          isPreview: true,
+        }),
+      });
+      const processResult = await processResponse.json().catch(() => ({}));
+      if (!processResponse.ok) {
+        throw new Error(processResult?.message || processResult?.error || 'No pude masterizar tu archivo.');
+      }
+      if (processResult?.previewUrl) setPreviewUrl(processResult.previewUrl);
+      if (processResult?.downloadUrl) setDownloadUrl(processResult.downloadUrl);
+      setSubscription((prev) => ({
+        active: !!processResult?.subscriptionActive || !!prev?.active,
+        expires_at: processResult?.expiresAt || prev?.expires_at || null,
+      }));
+      if (!processResult?.downloadUrl) {
+        setProcessingError('Preview listo. Para descargar el MP3 completo necesitas iniciar sesión y tener la suscripción activa.');
+      }
     } catch (error: any) {
-      setProcessingError(error.message || 'Error al procesar el archivo');
+      setProcessingError(error?.message || 'Error al procesar el archivo');
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleDownload = async () => {
-    if (!downloadUrl || !isLoggedIn) return;
-
-    // Verificar suscripción activa
+    if (!downloadUrl) return;
+    if (!isLoggedIn) {
+      setProcessingError('Para descargar necesitas iniciar sesión primero.');
+      return;
+    }
     if (!subscription?.active) {
       setProcessingError('Necesitas una suscripción activa para descargar. Suscríbete por $150 MXN/mes.');
       return;
     }
 
-    // Descargar archivo
     const link = document.createElement('a');
     link.href = downloadUrl;
     link.download = `masterizado_${Date.now()}.mp3`;
@@ -152,20 +242,26 @@ export function MasterizarView() {
 
   const handleSubscribe = async () => {
     if (!isLoggedIn) {
-      setProcessingError('Por favor inicia sesión o crea una cuenta para suscribirte.');
+      const login = await signInWithGoogle();
+      if (!login.ok) setProcessingError(login.error || 'No pude iniciar sesión.');
       return;
     }
 
     try {
-      // Crear preferencia de pago en Mercado Pago
-      const response = await fetch('/api/mercadopago', {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setProcessingError(t.error || 'Necesitas iniciar sesión.');
+        return;
+      }
+
+      const response = await fetch('/api/mercadopago/create-preference', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'content-type': 'application/json',
+          authorization: `Bearer ${t.token}`,
         },
         body: JSON.stringify({
-          pack: 'masterizar',
-          userId: user?.id,
+          packKey: 'masterizar',
         }),
       });
 
@@ -175,7 +271,6 @@ export function MasterizarView() {
         throw new Error(result.error || 'Error al crear la suscripción');
       }
 
-      // Redirigir a Mercado Pago
       if (result.init_point) {
         window.location.href = result.init_point;
       }
@@ -190,9 +285,10 @@ export function MasterizarView() {
     if (isPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch(() => {
+        setProcessingError('No pude reproducir el preview en este momento.');
+      });
     }
-    setIsPlaying(!isPlaying);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -207,7 +303,6 @@ export function MasterizarView() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4 md:p-8">
-      {/* Hero Section */}
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-6">
@@ -222,9 +317,8 @@ export function MasterizarView() {
           </p>
         </div>
 
-        {/* Subscription Status */}
         {isLoggedIn && (
-          <Card className="mb-8 bg-gray-800 border-purple-500">
+          <div className={cardClass('mb-8 border-purple-500/40')}>
             <div className="p-6">
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <Shield className="w-5 h-5" />
@@ -259,26 +353,21 @@ export function MasterizarView() {
                   )}
                   
                   {!subscription.active && (
-                    <Button
-                      onClick={handleSubscribe}
-                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 mt-4"
-                    >
+                    <button onClick={handleSubscribe} className={`${buttonClass('secondary')} mt-4`}>
                       <CreditCard className="w-4 h-4 mr-2" />
                       Suscribirse por $150 MXN/mes
-                    </Button>
+                    </button>
                   )}
                 </div>
               ) : (
                 <div className="text-gray-400">No se pudo cargar la información de suscripción</div>
               )}
             </div>
-          </Card>
+          </div>
         )}
 
-        {/* Upload & Preview Section */}
         <div className="grid md:grid-cols-2 gap-8 mb-12">
-          {/* Left: Upload */}
-          <Card className="bg-gray-800">
+          <div className={cardClass()}>
             <div className="p-6">
               <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
                 <Upload className="w-6 h-6 text-blue-400" />
@@ -298,12 +387,9 @@ export function MasterizarView() {
                 />
                 
                 <label htmlFor="file-upload">
-                  <Button
-                    variant="outline"
-                    className="border-gray-600 hover:border-purple-500 hover:text-purple-400"
-                  >
+                  <span className={buttonClass('ghost')}>
                     Seleccionar archivo
-                  </Button>
+                  </span>
                 </label>
                 
                 {file && (
@@ -318,11 +404,7 @@ export function MasterizarView() {
                 )}
               </div>
 
-              <Button
-                onClick={handleUpload}
-                disabled={!file || isUploading}
-                className="w-full mt-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-              >
+              <button onClick={handleUpload} disabled={!file || isUploading} className={`${buttonClass('primary', true)} mt-6`}>
                 {isUploading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -334,7 +416,7 @@ export function MasterizarView() {
                     Masterizar Gratis (Preview)
                   </>
                 )}
-              </Button>
+              </button>
 
               {processingError && (
                 <div className="mt-4 p-3 bg-red-900/30 border border-red-700 rounded flex items-start gap-2">
@@ -343,10 +425,9 @@ export function MasterizarView() {
                 </div>
               )}
             </div>
-          </Card>
+          </div>
 
-          {/* Right: Preview & Download */}
-          <Card className="bg-gray-800">
+          <div className={cardClass()}>
             <div className="p-6">
               <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
                 <Headphones className="w-6 h-6 text-green-400" />
@@ -355,15 +436,10 @@ export function MasterizarView() {
 
               {previewUrl ? (
                 <div className="space-y-6">
-                  {/* Audio Player */}
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-4">
                       <span className="font-semibold">Preview Gratis</span>
-                      <Button
-                        onClick={togglePlay}
-                        size="sm"
-                        className="bg-purple-600 hover:bg-purple-700"
-                      >
+                      <button onClick={togglePlay} className={buttonClass('secondary')}>
                         {isPlaying ? (
                           <>
                             <Pause className="w-4 h-4 mr-2" />
@@ -375,7 +451,7 @@ export function MasterizarView() {
                             Escuchar
                           </>
                         )}
-                      </Button>
+                      </button>
                     </div>
                     
                     <audio
@@ -390,7 +466,6 @@ export function MasterizarView() {
                     </div>
                   </div>
 
-                  {/* Download Section */}
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-4">
                       <span className="font-semibold">Descargar Archivo</span>
@@ -414,34 +489,28 @@ export function MasterizarView() {
                         )}
                       </div>
                       
-                      <Button
+                      <button
                         onClick={handleDownload}
                         disabled={!downloadUrl || !subscription?.active}
-                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                        className={buttonClass('success', true)}
                       >
                         <Download className="w-4 h-4 mr-2" />
                         Descargar MP3 Masterizado
-                      </Button>
+                      </button>
                       
                       {!subscription?.active && isLoggedIn && (
-                        <Button
-                          onClick={handleSubscribe}
-                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                        >
+                        <button onClick={handleSubscribe} className={buttonClass('secondary', true)}>
                           <CreditCard className="w-4 h-4 mr-2" />
                           Suscribirse para Descargar ($150 MXN/mes)
-                        </Button>
+                        </button>
                       )}
                       
                       {!isLoggedIn && (
                         <div className="text-center">
                           <p className="text-gray-400 mb-2">Para descargar, necesitas:</p>
-                          <Button
-                            onClick={() => window.location.href = '/login'}
-                            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
-                          >
+                          <button onClick={() => handleSubscribe()} className={buttonClass('primary', true)}>
                             Iniciar Sesión o Crear Cuenta
-                          </Button>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -456,12 +525,11 @@ export function MasterizarView() {
                 </div>
               )}
             </div>
-          </Card>
+          </div>
         </div>
 
-        {/* How It Works & Pricing */}
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <Card className="bg-gray-800">
+          <div className={cardClass()}>
             <div className="p-6">
               <div className="w-12 h-12 bg-blue-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl font-bold text-blue-400">1</span>
@@ -471,9 +539,9 @@ export function MasterizarView() {
                 Sube cualquier canción en formato MP3. No importa si la grabaste tú o es de otro artista.
               </p>
             </div>
-          </Card>
+          </div>
           
-          <Card className="bg-gray-800">
+          <div className={cardClass()}>
             <div className="p-6">
               <div className="w-12 h-12 bg-purple-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl font-bold text-purple-400">2</span>
@@ -483,9 +551,9 @@ export function MasterizarView() {
                 Obtén el resultado masterizado al instante y escúchalo gratis sin necesidad de suscripción.
               </p>
             </div>
-          </Card>
+          </div>
           
-          <Card className="bg-gray-800">
+          <div className={cardClass()}>
             <div className="p-6">
               <div className="w-12 h-12 bg-green-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl font-bold text-green-400">3</span>
@@ -495,11 +563,10 @@ export function MasterizarView() {
                 Con suscripción de $150 MXN/mes, descarga todas las canciones masterizadas que quieras.
               </p>
             </div>
-          </Card>
+          </div>
         </div>
 
-        {/* FAQ Section */}
-        <Card className="bg-gray-800 mb-12">
+        <div className={cardClass('mb-12')}>
           <div className="p-6">
             <h2 className="text-2xl font-bold mb-6">Preguntas Frecuentes</h2>
             
@@ -533,9 +600,8 @@ export function MasterizarView() {
               </div>
             </div>
           </div>
-        </Card>
+        </div>
 
-        {/* CTA Section */}
         <div className="text-center">
           <div className="inline-block bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-2xl p-8">
             <h2 className="text-3xl font-bold mb-4">¡Comienza a Masterizar Hoy!</h2>
@@ -544,41 +610,29 @@ export function MasterizarView() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button
-                onClick={() => document.getElementById('file-upload')?.click()}
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 px-8 py-3"
-                size="lg"
-              >
+              <button onClick={() => document.getElementById('file-upload')?.click()} className={buttonClass('primary')}>
                 <Upload className="w-5 h-5 mr-2" />
                 Probar Gratis
-              </Button>
+              </button>
               
               {isLoggedIn && !subscription?.active && (
-                <Button
-                  onClick={handleSubscribe}
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 px-8 py-3"
-                  size="lg"
-                >
+                <button onClick={handleSubscribe} className={buttonClass('secondary')}>
                   <CreditCard className="w-5 h-5 mr-2" />
                   Suscribirse Ahora
-                </Button>
+                </button>
               )}
               
               {!isLoggedIn && (
-                <Button
-                  onClick={() => window.location.href = '/login'}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 px-8 py-3"
-                  size="lg"
-                >
+                <button onClick={() => handleSubscribe()} className={buttonClass('success')}>
                   Crear Cuenta Gratis
-                </Button>
+                </button>
               )}
             </div>
             
             <p className="text-gray-400 mt-6 text-sm">
               Comparte este link en WhatsApp y redes sociales: <br />
               <code className="bg-gray-900 px-3 py-1 rounded text-blue-300">
-                https://ramber-tunes.vercel.app/masterizar
+                {publicShareUrl}
               </code>
             </p>
           </div>

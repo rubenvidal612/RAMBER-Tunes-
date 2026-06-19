@@ -6758,7 +6758,7 @@ const masterizarUnlimitedHandler = (() => {
     return noExt.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 90) || "audio";
   }
 
-  async function requireUser(req: any) {
+  async function getAuthContext(req: any) {
     const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
     const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
     const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
@@ -6768,16 +6768,16 @@ const masterizarUnlimitedHandler = (() => {
 
     const token = (req.headers.authorization || "").toString();
     const bearerToken = token.toLowerCase().startsWith("bearer ") ? token.slice(7).trim() : "";
-    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (!bearerToken) return { ok: false as const, status: 401, error: "No autorizado", anonymous: true };
 
     const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
     const user = userData?.user;
-    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado", anonymous: true };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return { ok: true as const, user, admin };
+    return { ok: true as const, user, admin, anonymous: false };
   }
 
   async function checkMasteringSubscription(userId: string, admin: any) {
@@ -6854,9 +6854,6 @@ const masterizarUnlimitedHandler = (() => {
     if (head !== "masterizar-unlimited") return send(res, 404, { error: "Ruta no encontrada" });
     if (method !== "POST") return send(res, 405, { error: "Método no permitido" });
 
-    const auth = await requireUser(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
     const body = parseJsonBody(req);
     if (!body) return send(res, 400, { error: "Body inválido" });
 
@@ -6866,7 +6863,10 @@ const masterizarUnlimitedHandler = (() => {
       return send(res, 400, { error: 'Falta el parámetro "action"' });
     }
 
-    const userId = auth.user.id;
+    const auth = await getAuthContext(req);
+    if (!auth.ok && !auth.anonymous) return send(res, auth.status, { error: auth.error });
+
+    const userId = auth.ok ? auth.user.id : "anonymous";
     const workerUrl = (process.env.MASTERING_WORKER_URL || "").toString().trim();
 
     if (action === 'upload') {
@@ -6894,10 +6894,11 @@ const masterizarUnlimitedHandler = (() => {
         return send(res, 400, { error: 'Falta filePath' });
       }
 
-      // Verificar suscripción para descargas completas
-      const subscription = await checkMasteringSubscription(userId, auth.admin);
-      
-      if (!isPreview && !subscription.active) {
+      const subscription = auth.ok
+        ? await checkMasteringSubscription(userId, auth.admin)
+        : { active: false, expires_at: null };
+
+      if (!isPreview && (!auth.ok || !subscription.active)) {
         return send(res, 403, { 
           error: 'Suscripción requerida',
           message: 'Necesitas una suscripción activa para descargar archivos completos. Suscríbete por $150 MXN/mes.'
@@ -6938,9 +6939,10 @@ const masterizarUnlimitedHandler = (() => {
 
       return send(res, 200, {
         previewUrl,
-        downloadUrl: subscription.active ? previewUrl : null,
+        downloadUrl: auth.ok && subscription.active ? previewUrl : null,
         subscriptionActive: subscription.active,
         expiresAt: subscription.expires_at,
+        requiresLogin: !auth.ok,
       });
 
     } else {
