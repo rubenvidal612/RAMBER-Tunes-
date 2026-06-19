@@ -33,6 +33,12 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
+function tabFromPathname(pathname: string): ViewTab {
+  const p = (pathname || '/').toString().trim().toLowerCase();
+  if (/^\/masterizar(?:\/|$)/i.test(p)) return 'masterizar';
+  return 'studio';
+}
+
 function InicioLanding({
   email,
   onGoStudio,
@@ -478,7 +484,10 @@ function InicioSocial({
 }
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<ViewTab>('studio');
+  const [currentTab, setCurrentTab] = useState<ViewTab>(() => {
+    if (typeof window === 'undefined') return 'studio';
+    return tabFromPathname(window.location.pathname || '/');
+  });
   const [canciones, setCanciones] = useState<SongItem[]>([]);
   const [cancionesEliminadas, setCancionesEliminadas] = useState<SongItem[]>([]);
   const [vibes, setVibes] = useState<VibeItem[]>([]);
@@ -1337,7 +1346,27 @@ export default function App() {
 
   const handleTabChange = (tab: ViewTab) => {
     setCurrentTab(tab);
+    try {
+      const nextPath = tab === 'masterizar' ? '/masterizar' : '/';
+      if (window.location.pathname !== nextPath) {
+        window.history.pushState({}, '', nextPath);
+      }
+    } catch {
+    }
   };
+
+  useEffect(() => {
+    const onPopState = () => {
+      try {
+        setCurrentTab(tabFromPathname(window.location.pathname || '/'));
+      } catch {
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, []);
 
   const addCancion = async (cancion: SongItem) => {
     try {
