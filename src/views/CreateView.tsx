@@ -150,6 +150,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     customGenre: '',
     lyricMode: '',
     lyricContent: '',
+    finalLyrics: '',
     voice: '',
     mood: '',
     occasion: '',
@@ -2823,8 +2824,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const genreLabel = (easyModeSelections.customGenre || '').trim() || genreObj?.name || '';
       const lyricMode = (easyModeSelections.lyricMode || '').trim();
       const lyricContent = (easyModeSelections.lyricContent || '').trim();
+      const finalLyrics = (easyModeSelections.finalLyrics || '').trim();
       
-      if (lyricMode === 'custom' && lyricContent) {
+      if (finalLyrics) {
+        prompt = normalizeLyricsTags(finalLyrics);
+      } else if (lyricMode === 'custom' && lyricContent) {
         prompt = normalizeLyricsTags(lyricContent);
       } else if (genreLabel && lyricContent && voiceObj && moodObj && occasionObj) {
         prompt = `Una canción de ${genreLabel} sobre ${lyricContent} con voz ${voiceObj.name}, de ánimo ${moodObj.name} para ${occasionObj.name}.`;
@@ -5083,10 +5087,14 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const [customGenre, setCustomGenre] = useState('');
   const [lyricMode, setLyricMode] = useState<'ai' | 'custom' | ''>('ai');
   const [lyricContent, setLyricContent] = useState('');
+  const [finalLyrics, setFinalLyrics] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('');
   const [selectedMood, setSelectedMood] = useState('');
   const [selectedOccasion, setSelectedOccasion] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [easyStage, setEasyStage] = useState<'wizard' | 'writing_lyrics' | 'review_lyrics' | 'composing'>('wizard');
+  const [isEditingReviewLyrics, setIsEditingReviewLyrics] = useState(false);
+  const [showLyricsNotice, setShowLyricsNotice] = useState(false);
   
   // Notificar cambios en las selecciones
   useEffect(() => {
@@ -5096,12 +5104,13 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         customGenre,
         lyricMode,
         lyricContent,
+        finalLyrics,
         voice: selectedVoice,
         mood: selectedMood,
         occasion: selectedOccasion,
       });
     }
-  }, [selectedGenre, customGenre, lyricMode, lyricContent, selectedVoice, selectedMood, selectedOccasion, onSelectionsChange]);
+  }, [selectedGenre, customGenre, lyricMode, lyricContent, finalLyrics, selectedVoice, selectedMood, selectedOccasion, onSelectionsChange]);
   
   const steps = [
     { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
@@ -5112,14 +5121,15 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   ];
 
   const hasGenre = Boolean(selectedGenre || customGenre.trim());
-  const hasLyrics = Boolean(lyricMode && lyricContent.trim());
+  const hasLyricsInput = Boolean(lyricMode && lyricContent.trim());
+  const hasFinalLyrics = Boolean(finalLyrics.trim());
   const hasVoice = Boolean(selectedVoice);
   const hasMood = Boolean(selectedMood);
   const hasOccasion = Boolean(selectedOccasion);
 
   const isStepComplete = (step: number) => {
     if (step === 1) return hasGenre;
-    if (step === 2) return hasLyrics;
+    if (step === 2) return easyStage === 'review_lyrics' ? hasFinalLyrics : hasLyricsInput;
     if (step === 3) return hasVoice;
     if (step === 4) return hasMood;
     if (step === 5) return hasOccasion;
@@ -5127,20 +5137,83 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   };
 
   const canGoNext = currentStep < 5 && isStepComplete(currentStep);
-  const canCreateSong = hasGenre && hasLyrics && hasVoice && hasMood && hasOccasion;
+  const canCreateSong = hasGenre && hasFinalLyrics && hasVoice && hasMood && hasOccasion;
   const selectedGenreLabel = customGenre.trim() || easyModeData.genres.find(g => g.id === selectedGenre)?.name || '—';
   const selectedLyricsLabel = lyricMode === 'custom' ? 'Yo escribo' : lyricMode === 'ai' ? 'IA escribe' : '—';
   const selectedVoiceLabel = easyModeData.voices.find(v => v.id === selectedVoice)?.name || '—';
   const selectedMoodLabel = easyModeData.moods.find(m => m.id === selectedMood)?.name || '—';
   const selectedOccasionLabel = easyModeData.occasions.find(o => o.id === selectedOccasion)?.name || '—';
+  const reviewTitle = (lyricContent || selectedGenreLabel || 'Tu canción').toString().trim().slice(0, 60) || 'Tu canción';
+  const currentStepTitle = currentStep === 2 && easyStage === 'writing_lyrics'
+    ? 'Escribiendo tu letra'
+    : currentStep === 2 && easyStage === 'review_lyrics'
+      ? 'Revisa bien la letra'
+      : steps[currentStep - 1].title;
+  const currentStepDescription = currentStep === 2 && easyStage === 'writing_lyrics'
+    ? 'La IA está preparando tu letra. Esto tarda solo un momento.'
+    : currentStep === 2 && easyStage === 'review_lyrics'
+      ? 'Léela con calma. Si quieres, puedes editarla antes de continuar.'
+      : steps[currentStep - 1].description;
+
+  const requestAiLyrics = async (topic: string) => {
+    const cleanTopic = topic.trim();
+    if (!cleanTopic) throw new Error('Escribe primero de qué trata la canción.');
+    const t = await getAccessToken();
+    if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+    const response = await fetch('/api/ai/generate-lyrics', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${t.token}`,
+      },
+      body: JSON.stringify({ topic: cleanTopic }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error((result?.detail || result?.error || 'No pude generar la letra.').toString());
+    }
+    const nextLyrics = (result?.lyrics || '').toString().trim();
+    if (!nextLyrics) throw new Error('No recibí la letra generada.');
+    return normalizeLyricsTags(nextLyrics);
+  };
   
   const handleNext = () => {
+    if (currentStep === 2) {
+      if (easyStage === 'review_lyrics') {
+        setShowLyricsNotice(true);
+        return;
+      }
+      if (!hasLyricsInput) return;
+      if (lyricMode === 'custom') {
+        setFinalLyrics(normalizeLyricsTags(lyricContent));
+        setIsEditingReviewLyrics(false);
+        setEasyStage('review_lyrics');
+        return;
+      }
+      setEasyStage('writing_lyrics');
+      requestAiLyrics(lyricContent)
+        .then((generated) => {
+          setFinalLyrics(generated);
+          setIsEditingReviewLyrics(false);
+          setEasyStage('review_lyrics');
+        })
+        .catch((error) => {
+          setEasyStage('wizard');
+          alert(error instanceof Error ? error.message : 'No pude generar la letra.');
+        });
+      return;
+    }
     if (currentStep < 5 && isStepComplete(currentStep)) {
       setCurrentStep(currentStep + 1);
     }
   };
   
   const handlePrev = () => {
+    if (currentStep === 2 && easyStage === 'review_lyrics') {
+      setShowLyricsNotice(false);
+      setEasyStage('wizard');
+      return;
+    }
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
@@ -5159,6 +5232,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
     }
     
     setIsGenerating(true);
+    setEasyStage('composing');
     
     try {
       // Llamar al callback para generar la canción
@@ -5167,6 +5241,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       }
     } catch (error) {
       console.error('Error generando canción:', error);
+      setEasyStage('wizard');
       alert('Hubo un error al generar la canción. Intenta de nuevo.');
     } finally {
       setIsGenerating(false);
@@ -5217,6 +5292,84 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         );
         
       case 2:
+        if (easyStage === 'writing_lyrics') {
+          return (
+            <div className="min-h-[420px] flex flex-col items-center justify-center text-center px-4">
+              <div className="w-24 h-24 rounded-full bg-pink-500/15 border border-pink-400/30 flex items-center justify-center mb-6">
+                <Loader2 className="w-10 h-10 text-pink-300 animate-spin" />
+              </div>
+              <div className="text-xs uppercase tracking-[0.35em] text-slate-400 mb-3">Letra</div>
+              <h3 className="text-3xl font-extrabold text-white mb-3">Escribiendo tu letra...</h3>
+              <p className="text-slate-300 max-w-xl">
+                Estamos armando una letra con el estilo que elegiste y con la idea que nos escribiste.
+              </p>
+            </div>
+          );
+        }
+        if (easyStage === 'review_lyrics') {
+          return (
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-[0.35em] text-slate-400">Letra lista · puedes editarla</div>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <h3 className="text-3xl font-extrabold text-white">{reviewTitle}</h3>
+                  <div className="inline-flex items-center justify-center rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white">
+                    {selectedGenreLabel}
+                  </div>
+                </div>
+                <p className="text-slate-300">
+                  Léela y, si quieres cambiar palabras, nombres o versos, puedes editarla antes de continuar.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (lyricMode !== 'ai') return;
+                    setEasyStage('writing_lyrics');
+                    try {
+                      const generated = await requestAiLyrics(lyricContent);
+                      setFinalLyrics(generated);
+                      setEasyStage('review_lyrics');
+                    } catch (error) {
+                      setEasyStage('review_lyrics');
+                      alert(error instanceof Error ? error.message : 'No pude generar otra letra.');
+                    }
+                  }}
+                  disabled={lyricMode !== 'ai'}
+                  className={cn(
+                    "rounded-2xl border px-5 py-4 text-base font-bold transition-colors",
+                    lyricMode === 'ai'
+                      ? "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                      : "border-white/10 bg-white/5 text-slate-500 cursor-not-allowed"
+                  )}
+                >
+                  Generar otra letra
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingReviewLyrics((prev) => !prev)}
+                  className="rounded-2xl border border-white/15 bg-white/5 px-5 py-4 text-base font-bold text-white transition-colors hover:bg-white/10"
+                >
+                  {isEditingReviewLyrics ? 'Cerrar edición' : 'Editar letra'}
+                </button>
+              </div>
+              <div className="rounded-[28px] border border-white/10 bg-[#f4efe5] p-5 text-[#111111] shadow-inner">
+                {isEditingReviewLyrics ? (
+                  <textarea
+                    value={finalLyrics}
+                    onChange={(e) => setFinalLyrics(e.target.value)}
+                    className="min-h-[300px] w-full resize-none rounded-[22px] border border-black/10 bg-white px-4 py-4 text-base text-black outline-none"
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words font-sans text-lg leading-8">
+                    {finalLyrics}
+                  </pre>
+                )}
+              </div>
+            </div>
+          );
+        }
         return (
           <div className="space-y-4">
             <div className="space-y-1">
@@ -5360,6 +5513,19 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   
   return (
     <div className="max-w-4xl mx-auto">
+      {easyStage === 'composing' ? (
+        <div className="glass-card rounded-3xl p-8 text-center min-h-[460px] flex flex-col items-center justify-center">
+          <div className="w-24 h-24 rounded-full bg-pink-500/15 border border-pink-400/30 flex items-center justify-center mb-6">
+            <Loader2 className="w-10 h-10 text-pink-300 animate-spin" />
+          </div>
+          <div className="text-xs uppercase tracking-[0.35em] text-slate-400 mb-3">Creando canción</div>
+          <h2 className="text-4xl font-extrabold text-white mb-3">Componiendo tu rola...</h2>
+          <p className="max-w-2xl text-slate-300 text-lg">
+            Ya estamos enviando tu canción. En cuanto quede en proceso, te llevamos a tu biblioteca para que veas el avance.
+          </p>
+        </div>
+      ) : (
+        <>
       {/* Indicador de pasos */}
       <div className="flex justify-between items-center mb-8 px-4">
         {steps.map((step) => (
@@ -5385,8 +5551,8 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       {/* Contenido del paso actual */}
       <div className="glass-card rounded-3xl p-6 mb-6">
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-white mb-2">{steps[currentStep - 1].title}</h2>
-          <p className="text-slate-300">{steps[currentStep - 1].description}</p>
+          <h2 className="text-2xl font-bold text-white mb-2">{currentStepTitle}</h2>
+          <p className="text-slate-300">{currentStepDescription}</p>
         </div>
         
         {renderStepContent()}
@@ -5431,11 +5597,13 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
             className={cn(
               "px-6 py-3 rounded-full font-medium transition-colors",
               canGoNext
-                ? "bg-white text-black hover:bg-gray-200"
+                ? currentStep === 2 && easyStage === 'review_lyrics'
+                  ? "bg-pink-500 text-white hover:bg-pink-400"
+                  : "bg-white text-black hover:bg-gray-200"
                 : "bg-white/5 text-slate-500 cursor-not-allowed"
             )}
           >
-            Siguiente →
+            {currentStep === 2 && easyStage === 'review_lyrics' ? 'Continuar con la canción' : 'Siguiente →'}
           </button>
         ) : (
           <button
@@ -5486,6 +5654,40 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
           </div>
         </div>
       </div>
+      </>
+      )}
+
+      {showLyricsNotice ? (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#0f172a] p-6 text-white shadow-2xl">
+            <div className="text-xs uppercase tracking-[0.35em] text-slate-400 mb-3">Antes de seguir</div>
+            <h3 className="text-2xl font-extrabold mb-3">Revisa bien la letra</h3>
+            <p className="text-slate-300 mb-6">
+              Si quieres cambiar nombres, frases o versos, este es el mejor momento para hacerlo. Cuando estés listo, seguimos con la canción.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowLyricsNotice(false)}
+                className="rounded-full bg-white/10 px-5 py-3 font-bold text-white hover:bg-white/15 transition-colors"
+              >
+                Seguir editando
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLyricsNotice(false);
+                  setEasyStage('wizard');
+                  setCurrentStep(3);
+                }}
+                className="rounded-full bg-pink-500 px-5 py-3 font-bold text-white hover:bg-pink-400 transition-colors"
+              >
+                Ya está lista
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
