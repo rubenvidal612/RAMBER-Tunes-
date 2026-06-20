@@ -5175,9 +5175,10 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   };
 
   const canGoNext = currentStep < 5 && isStepComplete(currentStep);
-  const canCreateSong = hasGenre && hasFinalLyrics && hasVoice && hasMood;
+  const hasSongTitle = Boolean(songTitle.trim());
+  const canCreateSong = hasGenre && hasFinalLyrics && hasVoice && hasMood && hasSongTitle;
   const selectedGenreLabel = customGenre.trim() || easyModeData.genres.find(g => g.id === selectedGenre)?.name || '—';
-  const selectedSongTitleLabel = songTitle.trim() || 'Se pondra automatico';
+  const selectedSongTitleLabel = songTitle.trim() || 'Falta titulo';
   const selectedLyricsLabel = lyricMode === 'custom' ? 'Yo escribo' : lyricMode === 'ai' ? 'IA escribe' : '—';
   const selectedVoiceLabel = easyModeData.voices.find(v => v.id === selectedVoice)?.name || '—';
   const selectedMoodLabel = easyModeData.moods.find(m => m.id === selectedMood)?.name || '—';
@@ -5272,7 +5273,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   
   const handleGenerate = async () => {
     if (!canCreateSong) {
-      alert('Por favor completa todos los pasos antes de generar la canción');
+      alert('Para crear la canción completa todos los pasos y escribe el nombre de la canción.');
       return;
     }
     
@@ -5293,6 +5294,8 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
           setEasyStage('wizard');
           return;
         }
+        setEasyStage('wizard');
+        setCurrentStep(1);
       }
     } catch (error) {
       console.error('Error generando canción:', error);
@@ -5554,14 +5557,14 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
               <div className="text-xs uppercase tracking-[0.3em] text-emerald-200 mb-2">Resumen final</div>
               <h4 className="text-2xl font-extrabold text-white mb-4">Así va a salir tu canción</h4>
               <div className="rounded-2xl bg-black/20 border border-white/10 p-4 mb-4">
-                <label className="block text-sm font-semibold text-white mb-2">Nombre de la cancion (opcional)</label>
+                <label className="block text-sm font-semibold text-white mb-2">Nombre de la cancion</label>
                 <input
                   value={songTitle}
                   onChange={(e) => setSongTitle(e.target.value.slice(0, 100))}
                   placeholder="Ej: Mi rola para mama"
                   className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-pink-400"
                 />
-                <p className="text-xs text-slate-400 mt-2">Si lo dejas vacio, LucIAna le pondra un nombre automatico.</p>
+                <p className="text-xs text-slate-400 mt-2">Este nombre es obligatorio para crear la canción. Máximo 100 caracteres.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="rounded-2xl bg-black/20 border border-white/10 p-4 md:col-span-2">
@@ -5592,7 +5595,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
               <div className="mt-4 rounded-2xl bg-black/20 border border-white/10 p-4">
                 <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Qué pasa al crear</div>
                 <div className="text-white font-medium">
-                  Al darle al botón verde de crear, te llevamos a tu Biblioteca y ahí vas a ver la canción mientras se va creando.
+                  Al darle al botón verde de crear, te llevamos a tu Biblioteca y ahí deben aparecer 2 canciones en proceso con su porcentaje de avance.
                 </div>
               </div>
             </div>
@@ -5724,7 +5727,11 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       {/* Resumen de selecciones */}
       <div className="glass-card rounded-2xl p-4 mt-6">
         <h3 className="text-lg font-bold text-white mb-3">Tu canción:</h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          <div className="text-center">
+            <div className="text-sm text-slate-300">Titulo</div>
+            <div className="text-white font-medium">{selectedSongTitleLabel}</div>
+          </div>
           <div className="text-center">
             <div className="text-sm text-slate-300">Estilo</div>
             <div className="text-white font-medium">{selectedGenreLabel}</div>
