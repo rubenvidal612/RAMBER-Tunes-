@@ -148,6 +148,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [easyModeSelections, setEasyModeSelections] = useState({
     genre: '',
     customGenre: '',
+    songTitle: '',
     lyricMode: '',
     lyricContent: '',
     finalLyrics: '',
@@ -2835,7 +2836,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     let prompt = '';
     const normalizedSongTitle = (() => {
       if (mode === 'facil') {
-        const rawEasyTitle = (easyModeSelections.lyricContent || 'Nueva Canción').toString().trim();
+        const rawEasyTitle = (
+          easyModeSelections.songTitle ||
+          easyModeSelections.lyricContent ||
+          'Nueva Canción'
+        ).toString().trim();
         return rawEasyTitle.slice(0, 100) || 'Nueva Canción';
       }
       return (title || 'Nueva Canción').toString().trim().slice(0, 100) || 'Nueva Canción';
@@ -5117,6 +5122,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedGenre, setSelectedGenre] = useState('');
   const [customGenre, setCustomGenre] = useState('');
+  const [songTitle, setSongTitle] = useState('');
   const [lyricMode, setLyricMode] = useState<'ai' | 'custom' | ''>('ai');
   const [lyricContent, setLyricContent] = useState('');
   const [finalLyrics, setFinalLyrics] = useState('');
@@ -5134,6 +5140,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       onSelectionsChange({
         genre: selectedGenre,
         customGenre,
+        songTitle,
         lyricMode,
         lyricContent,
         finalLyrics,
@@ -5142,7 +5149,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
         extraInstructions,
       });
     }
-  }, [selectedGenre, customGenre, lyricMode, lyricContent, finalLyrics, selectedVoice, selectedMood, extraInstructions, onSelectionsChange]);
+  }, [selectedGenre, customGenre, songTitle, lyricMode, lyricContent, finalLyrics, selectedVoice, selectedMood, extraInstructions, onSelectionsChange]);
   
   const steps = [
     { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
@@ -5170,6 +5177,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const canGoNext = currentStep < 5 && isStepComplete(currentStep);
   const canCreateSong = hasGenre && hasFinalLyrics && hasVoice && hasMood;
   const selectedGenreLabel = customGenre.trim() || easyModeData.genres.find(g => g.id === selectedGenre)?.name || '—';
+  const selectedSongTitleLabel = songTitle.trim() || 'Se pondra automatico';
   const selectedLyricsLabel = lyricMode === 'custom' ? 'Yo escribo' : lyricMode === 'ai' ? 'IA escribe' : '—';
   const selectedVoiceLabel = easyModeData.voices.find(v => v.id === selectedVoice)?.name || '—';
   const selectedMoodLabel = easyModeData.moods.find(m => m.id === selectedMood)?.name || '—';
@@ -5545,7 +5553,21 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
             <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
               <div className="text-xs uppercase tracking-[0.3em] text-emerald-200 mb-2">Resumen final</div>
               <h4 className="text-2xl font-extrabold text-white mb-4">Así va a salir tu canción</h4>
+              <div className="rounded-2xl bg-black/20 border border-white/10 p-4 mb-4">
+                <label className="block text-sm font-semibold text-white mb-2">Nombre de la cancion (opcional)</label>
+                <input
+                  value={songTitle}
+                  onChange={(e) => setSongTitle(e.target.value.slice(0, 100))}
+                  placeholder="Ej: Mi rola para mama"
+                  className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-pink-400"
+                />
+                <p className="text-xs text-slate-400 mt-2">Si lo dejas vacio, LucIAna le pondra un nombre automatico.</p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-black/20 border border-white/10 p-4 md:col-span-2">
+                  <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Nombre de la cancion</div>
+                  <div className="text-white font-bold text-lg break-words">{selectedSongTitleLabel}</div>
+                </div>
                 <div className="rounded-2xl bg-black/20 border border-white/10 p-4">
                   <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Género</div>
                   <div className="text-white font-bold text-lg">{selectedGenreLabel}</div>
