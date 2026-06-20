@@ -2833,6 +2833,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       : (instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString())));
 
     let prompt = '';
+    const normalizedSongTitle = (() => {
+      if (mode === 'facil') {
+        const rawEasyTitle = (easyModeSelections.lyricContent || 'Nueva Canción').toString().trim();
+        return rawEasyTitle.slice(0, 100) || 'Nueva Canción';
+      }
+      return (title || 'Nueva Canción').toString().trim().slice(0, 100) || 'Nueva Canción';
+    })();
     
     if (mode === 'facil') {
       // Construir prompt basado en las selecciones del modo Fácil
@@ -2932,9 +2939,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
         }
         payload.style = finalStyle.slice(0, 1000);
-        payload.title = mode === 'facil'
-          ? ((easyModeSelections.lyricContent || 'Nueva Canción').toString().trim().slice(0, 120) || 'Nueva Canción')
-          : (title || 'Nueva Canción').trim() || 'Nueva Canción';
+        payload.title = normalizedSongTitle;
         payload.weirdnessConstraint = weirdness / 100;
         payload.styleWeight = styleInfluence / 100;
         payload.audioWeight = audioInfluence / 100;
@@ -2971,7 +2976,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           };
           if (retryWantsCustomMode) {
             retryPayload.style = (instructions || 'General').trim() || 'General';
-            retryPayload.title = (title || 'Nueva Canción').trim() || 'Nueva Canción';
+            retryPayload.title = normalizedSongTitle;
             retryPayload.weirdnessConstraint = weirdness / 100;
             retryPayload.styleWeight = styleInfluence / 100;
             retryPayload.audioWeight = audioInfluence / 100;
@@ -3003,7 +3008,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               kind: 'generate',
               startedAt: Date.now(),
               draft: {
-                title: (title || 'Nueva Canción').toString(),
+                title: normalizedSongTitle,
                 description: (mode === 'simple' ? description : instructions).toString(),
                 lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
                 prompt: prompt,
@@ -3040,7 +3045,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           kind: 'generate',
           startedAt: Date.now(),
           draft: {
-            title: (title || 'Nueva Canción').toString(),
+            title: normalizedSongTitle,
             description: (mode === 'simple' ? description : instructions).toString(),
             lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
             prompt: prompt,
