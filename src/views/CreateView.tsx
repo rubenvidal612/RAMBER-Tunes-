@@ -5121,7 +5121,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const [lyricContent, setLyricContent] = useState('');
   const [finalLyrics, setFinalLyrics] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('');
-  const [selectedMood, setSelectedMood] = useState('');
+  const [selectedMood, setSelectedMood] = useState('neutral');
   const [extraInstructions, setExtraInstructions] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [easyStage, setEasyStage] = useState<'wizard' | 'writing_lyrics' | 'review_lyrics' | 'composing'>('wizard');
