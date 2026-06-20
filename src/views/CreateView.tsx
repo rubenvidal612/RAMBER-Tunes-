@@ -2677,6 +2677,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const promptRaw = (baseLyrics || description || '').trim();
       const prompt = promptRaw || ' ';
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      const requestedVocalGender = !hasSelectedVoice
+        ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
+        : undefined;
       const payload: any = {
         uploadUrl: audioUploadUrl,
         uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
@@ -2689,7 +2692,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         weirdnessConstraint: weirdness / 100,
         styleWeight: styleInfluence / 100,
         audioWeight: audioInfluence / 100,
+        vocalGender: requestedVocalGender,
       };
+      if (!hasSelectedVoice && !instrumental) {
+        payload.style = [payload.style, `Voz deseada: ${gender}.`].filter(Boolean).join('\n');
+      }
       if (hasSelectedVoice) {
         payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
         payload.personaModel = 'voice_persona';
@@ -2895,12 +2902,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      const requestedVocalGender = !hasSelectedVoice
+        ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
+        : undefined;
       const wantsCustomMode = mode === 'personalizado' || mode === 'facil' || hasSelectedVoice;
       const payload: any = {
         prompt,
         instrumental,
         customMode: wantsCustomMode,
         model: hasSelectedVoice ? 'V5' : model,
+        vocalGender: requestedVocalGender,
       };
       if (wantsCustomMode) {
         const mergedLower = `${(instructions || '').toString().trim().toLowerCase()}\n${(prompt || '').toString().trim().toLowerCase()}`;
@@ -2943,7 +2954,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
           finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
         }
-        payload.style = finalStyle.slice(0, 1000);
+        const styleWithGender = !hasSelectedVoice && !instrumental
+          ? [finalStyle, `Voz deseada: ${gender}.`].filter(Boolean).join('\n')
+          : finalStyle;
+        payload.style = styleWithGender.slice(0, 1000);
         payload.title = normalizedSongTitle;
         payload.weirdnessConstraint = weirdness / 100;
         payload.styleWeight = styleInfluence / 100;
@@ -2978,9 +2992,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             instrumental,
             customMode: retryWantsCustomMode,
             model,
+            vocalGender: gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined,
           };
           if (retryWantsCustomMode) {
-            retryPayload.style = (instructions || 'General').trim() || 'General';
+            retryPayload.style = [
+              (instructions || 'General').trim() || 'General',
+              !instrumental ? `Voz deseada: ${gender}.` : '',
+            ].filter(Boolean).join('\n').slice(0, 1000);
             retryPayload.title = normalizedSongTitle;
             retryPayload.weirdnessConstraint = weirdness / 100;
             retryPayload.styleWeight = styleInfluence / 100;
