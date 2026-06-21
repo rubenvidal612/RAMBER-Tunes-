@@ -694,17 +694,6 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   } catch {
   }
 
-  try {
-    const plan = await getUserPlan(admin, userId);
-    const key = String((plan as any)?.plan_key || "").toLowerCase();
-    const exp = (plan as any)?.plan_expires_at;
-    const active = Boolean((plan as any)?.plan_active);
-    if ((key === "inicio" || key === "productor") && exp && !active) {
-      return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
-    }
-  } catch {
-  }
-
   for (let i = 0; i < 4; i++) {
     const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (readErr) return { ok: false as const, error: readErr.message };
@@ -10361,7 +10350,12 @@ const adminHandler = (() => {
       if (plan_key === "inicio") add = 1200;
       if (plan_key === "productor") add = 2000;
       if (add > 0) {
-        const upd = await adjustUserCredits(admin, userId, add);
+        const upd = await applyCreditRolloverWithCap(admin, {
+          userId,
+          monthlyCredits: add,
+          subscriptionActive: true,
+          renewalPaidSuccessfully: true,
+        });
         if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
       }
     } else if (credits_mode === "set") {
