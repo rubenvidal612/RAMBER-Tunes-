@@ -18,6 +18,8 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [officePlanesOpen, setOfficePlanesOpen] = useState(false);
   const [officeReporteOpen, setOfficeReporteOpen] = useState(false);
   const [officeVentasOpen, setOfficeVentasOpen] = useState(false);
+  const [officeUsersActivityOpen, setOfficeUsersActivityOpen] = useState(false);
+  const [officeUsersActivityTab, setOfficeUsersActivityTab] = useState<'active' | 'inactive'>('active');
   const [officeLoading, setOfficeLoading] = useState(false);
   const [officeError, setOfficeError] = useState('');
   const [officeData, setOfficeData] = useState<any>(null);
@@ -593,6 +595,10 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
 
   if (isOfficeOpen) {
     const users = officeData?.users || {};
+    const userActivity = officeData?.user_activity || {};
+    const activeUsers = Array.isArray(userActivity?.active) ? userActivity.active : [];
+    const inactiveUsers = Array.isArray(userActivity?.inactive) ? userActivity.inactive : [];
+    const visibleUsers = officeUsersActivityTab === 'active' ? activeUsers : inactiveUsers;
     const payments = officeData?.payments || {};
     const daily = Array.isArray(payments?.daily_7d) ? payments.daily_7d : [];
     const balance = officeData?.balance || {};
@@ -605,6 +611,17 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
     const totalUsersReal = Number(users?.real_total ?? 0) || 0;
     const active30dReal = Number(users?.real_active30d ?? 0) || 0;
     const new7dReal = Number(users?.real_new7d ?? 0) || 0;
+    const fmtOfficeDate = (iso: string) => {
+      const clean = (iso || '').toString().trim();
+      if (!clean) return '—';
+      try {
+        const d = new Date(clean);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      } catch {
+        return '—';
+      }
+    };
 
     return (
       <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
@@ -643,6 +660,103 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
               <div className="text-2xl font-extrabold text-white mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
               <div className="text-[11px] text-slate-300/80 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
             </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-emerald-500/10 via-white/5 to-transparent border border-emerald-400/15 rounded-3xl p-5">
+            <button onClick={() => setOfficeUsersActivityOpen((v) => !v)} className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-extrabold">Usuarios activos e inactivos</div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Activos: {activeUsers.length} • Inactivos: {inactiveUsers.length}
+                </div>
+              </div>
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+                {officeUsersActivityOpen ? 'Ocultar' : 'Ver'}
+              </div>
+            </button>
+
+            {officeUsersActivityOpen ? (
+              <div className="mt-4">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
+                  <button
+                    onClick={() => setOfficeUsersActivityTab('active')}
+                    className={cn(
+                      'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
+                      officeUsersActivityTab === 'active' ? 'bg-emerald-500 text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                    )}
+                  >
+                    Activos
+                  </button>
+                  <button
+                    onClick={() => setOfficeUsersActivityTab('inactive')}
+                    className={cn(
+                      'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
+                      officeUsersActivityTab === 'inactive' ? 'bg-violet-500 text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                    )}
+                  >
+                    Inactivos
+                  </button>
+                </div>
+
+                <div className="mt-3 text-[11px] text-slate-400">
+                  {officeUsersActivityTab === 'active'
+                    ? 'Ordenados del que más canciones lleva este mes al que menos.'
+                    : 'Usuarios sin plan activo en este momento.'}
+                </div>
+
+                <div className="mt-3 max-h-[360px] overflow-y-auto rounded-2xl border border-white/10">
+                  <div className="grid grid-cols-1 divide-y divide-white/5">
+                    {visibleUsers.length === 0 ? (
+                      <div className="p-4 text-sm text-slate-400">
+                        {officeUsersActivityTab === 'active' ? 'No hay usuarios con plan activo ahora mismo.' : 'No hay usuarios inactivos ahora mismo.'}
+                      </div>
+                    ) : (
+                      visibleUsers.map((u: any, idx: number) => {
+                        const email = String(u?.email || '').trim();
+                        const fullName = String(u?.full_name || '').trim();
+                        const songsThisMonth = Number(u?.songs_this_month ?? 0) || 0;
+                        const planKey = String(u?.plan_key || 'ninguno').trim();
+                        const expiresAt = String(u?.plan_expires_at || '').trim();
+                        const lastSignIn = String(u?.last_sign_in_at || '').trim();
+                        return (
+                          <button
+                            key={u?.id || email || idx}
+                            type="button"
+                            onClick={() => {
+                              if (email) openUserDetail(email);
+                            }}
+                            className="p-4 w-full text-left hover:bg-white/5 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-white font-extrabold truncate">
+                                  {officeUsersActivityTab === 'active' ? `${idx + 1}. ` : ''}
+                                  {email || '—'}
+                                </div>
+                                <div className="text-[11px] text-slate-400 truncate">
+                                  {fullName || 'Sin nombre'} • Plan: {planKey || 'ninguno'}
+                                </div>
+                                <div className="text-[11px] text-slate-500 truncate">
+                                  {officeUsersActivityTab === 'active'
+                                    ? `Vence: ${fmtOfficeDate(expiresAt)}`
+                                    : `Último acceso: ${fmtOfficeDate(lastSignIn)}`}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className={cn('text-lg font-extrabold', officeUsersActivityTab === 'active' ? 'text-emerald-300' : 'text-violet-300')}>
+                                  {songsThisMonth}
+                                </div>
+                                <div className="text-[11px] text-slate-400">canciones este mes</div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="bg-gradient-to-r from-emerald-500/10 via-white/5 to-transparent border border-emerald-400/15 rounded-3xl p-5">

@@ -758,6 +758,50 @@ function isAdminEmail(email?: string | null) {
   return list.includes(e) || hardcoded.includes(e);
 }
 
+function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
+  const list = Array.isArray(rows) ? rows : [];
+
+  const pickPlanKey = (raw: any) => {
+    const k = String(raw || "").trim().toLowerCase();
+    return k === "inicio" || k === "productor" || k === "ninguno" ? k : "";
+  };
+
+  const latestPlanEvent =
+    list.find((t: any) => {
+      const planKey = pickPlanKey(t?.pack_key);
+      if (!planKey) return false;
+      const paymentId = String(t?.payment_id || "").trim();
+      if (paymentId.startsWith("claim:")) return false;
+      if (paymentId.startsWith("admin_plan:")) return true;
+      return planKey === "inicio" || planKey === "productor";
+    }) || null;
+
+  const plan_key = pickPlanKey(latestPlanEvent?.pack_key) || "ninguno";
+  const planStartIso =
+    plan_key === "inicio" || plan_key === "productor"
+      ? String(latestPlanEvent?.created_at || "").trim() || null
+      : null;
+
+  const plan_expires_at = (() => {
+    if (!planStartIso) return null;
+    const t = new Date(planStartIso).getTime();
+    if (!Number.isFinite(t) || t <= 0) return null;
+    return new Date(t + 30 * 24 * 60 * 60 * 1000).toISOString();
+  })();
+
+  const plan_active = (() => {
+    if (!plan_expires_at) return false;
+    const t = new Date(plan_expires_at).getTime();
+    if (!Number.isFinite(t) || t <= 0) return false;
+    return nowMs < t;
+  })();
+
+  const downloads_allowed = plan_active && (plan_key === "inicio" || plan_key === "productor");
+  const hasProductor = list.some((t: any) => String(t?.pack_key || "").trim().toLowerCase() === "productor");
+
+  return { plan_key, downloads_allowed, plan_active, plan_expires_at, hasProductor };
+}
+
 async function getUserPlan(admin: any, userId: string) {
   const { data: tx } = await admin
     .from("mp_transactions")
@@ -766,51 +810,7 @@ async function getUserPlan(admin: any, userId: string) {
     .eq("kind", "songs")
     .order("created_at", { ascending: false })
     .limit(200);
-  const rows = Array.isArray(tx) ? tx : [];
-
-  const pickPlanKey = (raw: any) => {
-    const k = String(raw || "").trim().toLowerCase();
-    return k === "inicio" || k === "productor" || k === "ninguno" ? k : "";
-  };
-
-  const override = rows.find((t: any) => String(t?.payment_id || "").startsWith("admin_plan:"));
-  const overridePlan = pickPlanKey(override?.pack_key);
-
-  const hasInicio = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "inicio");
-  const hasProductor = rows.some((t: any) => String(t?.pack_key || "").toLowerCase() === "productor");
-  const plan_key = overridePlan || (hasProductor ? "productor" : hasInicio ? "inicio" : "ninguno");
-
-  const planStartIso = (() => {
-    if (overridePlan && overridePlan !== "ninguno") return String(override?.created_at || "").trim() || null;
-    const paid = rows.find((t: any) => {
-      const pk = String(t?.pack_key || "").toLowerCase();
-      if (!(pk === "inicio" || pk === "productor")) return false;
-      const pid = String(t?.payment_id || "");
-      if (pid.startsWith("claim:")) return false;
-      return true;
-    });
-    const iso = String(paid?.created_at || "").trim();
-    return iso || null;
-  })();
-
-  const plan_expires_at = (() => {
-    if (!planStartIso) return null;
-    const t = new Date(planStartIso).getTime();
-    if (!Number.isFinite(t) || t <= 0) return null;
-    const ms = t + 30 * 24 * 60 * 60 * 1000;
-    return new Date(ms).toISOString();
-  })();
-
-  const plan_active = (() => {
-    if (!plan_expires_at) return false;
-    const t = new Date(plan_expires_at).getTime();
-    if (!Number.isFinite(t) || t <= 0) return false;
-    return Date.now() < t;
-  })();
-
-  const downloads_allowed = plan_active && (plan_key === "inicio" || plan_key === "productor");
-
-  return { plan_key, downloads_allowed, plan_active, plan_expires_at, hasProductor };
+  return buildUserPlanFromTransactions(Array.isArray(tx) ? tx : []);
 }
 
 async function randomHex(bytes: number) {
@@ -10066,6 +10066,16 @@ const adminHandler = (() => {
     let realTotal = 0;
     let realActive30d = 0;
     let realNew7d = 0;
+    const realUsers = new Map<
+      string,
+      {
+        id: string;
+        email: string;
+        created_at: string;
+        last_sign_in_at: string;
+        full_name: string;
+      }
+    >();
 
     const perPage = 200;
     const maxPages = 10;
@@ -10090,6 +10100,15 @@ const adminHandler = (() => {
           realTotal += 1;
           if (isNew7d) realNew7d += 1;
           if (isActive30d) realActive30d += 1;
+          const meta = (u as any)?.user_metadata ?? (u as any)?.user_meta_data ?? (u as any)?.raw_user_meta_data ?? {};
+          const full_name = typeof meta?.full_name === "string" ? meta.full_name : typeof meta?.name === "string" ? meta.name : "";
+          realUsers.set(uid, {
+            id: uid,
+            email,
+            created_at: createdAt,
+            last_sign_in_at: lastSignInAt,
+            full_name: String(full_name || "").slice(0, 120),
+          });
         }
       }
       if (typeof r.total === "number" && Number.isFinite(r.total) && r.total <= perPage * page) break;
@@ -10140,6 +10159,82 @@ const adminHandler = (() => {
       daily_7d.push({ day: key, mxn: Math.round((v.mxn || 0) * 100) / 100, count: v.count || 0 });
     }
 
+    const userIds = new Set<string>(Array.from(realUsers.keys()));
+    const txByUser = new Map<string, any[]>();
+    try {
+      const { data } = await admin
+        .from("mp_transactions")
+        .select("user_id, payment_id, pack_key, kind, created_at, amount_mxn")
+        .eq("kind", "songs")
+        .order("created_at", { ascending: false })
+        .limit(20000);
+      const rows = Array.isArray(data) ? data : [];
+      for (const row of rows) {
+        const uid = String((row as any)?.user_id || "").trim();
+        if (!uid || !userIds.has(uid)) continue;
+        const list = txByUser.get(uid) || [];
+        list.push(row);
+        txByUser.set(uid, list);
+      }
+    } catch {
+    }
+
+    const songsThisMonth = new Map<string, number>();
+    try {
+      const { data } = await admin
+        .from("library_items")
+        .select("user_id, title, description, suno_audio_id, created_at")
+        .eq("type", "song")
+        .gte("created_at", startMonth.toISOString())
+        .limit(50000);
+      const rows = Array.isArray(data) ? data : [];
+      for (const row of rows) {
+        const uid = String((row as any)?.user_id || "").trim();
+        if (!uid || !userIds.has(uid)) continue;
+        const description = String((row as any)?.description || "").trim().toLowerCase();
+        const title = String((row as any)?.title || "").trim().toLowerCase();
+        const sunoAudioId = String((row as any)?.suno_audio_id || "").trim().toLowerCase();
+        const isMastered =
+          description === "audio masterizado" ||
+          title.endsWith("(masterizada)") ||
+          sunoAudioId.startsWith("master_");
+        if (isMastered) continue;
+        songsThisMonth.set(uid, (songsThisMonth.get(uid) || 0) + 1);
+      }
+    } catch {
+    }
+
+    const sortUsers = (items: any[]) =>
+      items.sort((a: any, b: any) => {
+        const songsDiff = (Number(b?.songs_this_month ?? 0) || 0) - (Number(a?.songs_this_month ?? 0) || 0);
+        if (songsDiff !== 0) return songsDiff;
+        const signInDiff = safeTime(b?.last_sign_in_at) - safeTime(a?.last_sign_in_at);
+        if (signInDiff !== 0) return signInDiff;
+        return String(a?.email || "").localeCompare(String(b?.email || ""));
+      });
+
+    const active_users: any[] = [];
+    const inactive_users: any[] = [];
+    for (const user of realUsers.values()) {
+      const plan = buildUserPlanFromTransactions(txByUser.get(user.id) || [], now.getTime());
+      const row = {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        created_at: user.created_at,
+        last_sign_in_at: user.last_sign_in_at,
+        plan_key: String((plan as any)?.plan_key || "ninguno"),
+        plan_active: Boolean((plan as any)?.plan_active),
+        plan_expires_at: (plan as any)?.plan_expires_at ?? null,
+        songs_this_month: Number(songsThisMonth.get(user.id) || 0),
+      };
+      if (row.plan_active) active_users.push(row);
+      else inactive_users.push(row);
+    }
+
+    sortUsers(active_users);
+    sortUsers(inactive_users);
+
     return send(res, 200, {
       users: {
         total: totalCount,
@@ -10148,6 +10243,10 @@ const adminHandler = (() => {
         real_total: realTotal,
         real_active30d: realActive30d,
         real_new7d: realNew7d,
+      },
+      user_activity: {
+        active: active_users,
+        inactive: inactive_users,
       },
       payments: {
         today: { mxn: today.ok ? today.mxn : 0, count: today.ok ? today.count : 0 },
