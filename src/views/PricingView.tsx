@@ -127,6 +127,9 @@ export function PricingView({ onClose }: PricingViewProps) {
                 <Check className="w-5 h-5 text-blue-500" /> Total: 1200 créditos
               </div>
               <div className="flex items-center gap-3 text-slate-300 text-sm">
+                <Check className="w-5 h-5 text-blue-500" /> Incluye ChatBot
+              </div>
+              <div className="flex items-center gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-blue-500" /> Descargas activas
               </div>
               <div className="flex items-center gap-3 text-slate-300 text-sm">
