@@ -102,7 +102,7 @@ export function PricingView({ onClose }: PricingViewProps) {
             <div className="flex justify-between items-start mb-2">
               <div>
                 <h3 className="text-xl font-bold text-white">Pack Inicio</h3>
-                <p className="text-slate-300 text-sm mt-1">100 canciones • 1200 créditos</p>
+                <p className="text-slate-300 text-sm mt-1">200 canciones • 1200 créditos</p>
                 <p className="text-slate-400 text-sm mt-1">Ideal para empezar • Plan mensual</p>
               </div>
             </div>
@@ -121,7 +121,7 @@ export function PricingView({ onClose }: PricingViewProps) {
 
             <div className="space-y-3 mb-6">
               <div className="flex items-center gap-3 text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-blue-500" /> Incluye 100 canciones
+                <Check className="w-5 h-5 text-blue-500" /> Incluye 200 canciones
               </div>
               <div className="flex items-center gap-3 text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-blue-500" /> Total: 1200 créditos

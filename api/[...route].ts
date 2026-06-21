@@ -4896,7 +4896,7 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor" | "masterizar";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio", amount_mxn: 199, credits: 1200, songs: 100 },
+    inicio: { title: "Pack Inicio", amount_mxn: 199, credits: 1200, songs: 200 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
     masterizar: { title: "Masterizar Ilimitado", amount_mxn: 150, credits: 0, songs: 0 },
   };
@@ -6895,7 +6895,9 @@ const masterizarUnlimitedHandler = (() => {
       }
 
       const subscription = auth.ok
-        ? await checkMasteringSubscription(userId, auth.admin)
+        ? (isAdminEmail(auth.user.email)
+            ? { active: true, expires_at: null }
+            : await checkMasteringSubscription(userId, auth.admin))
         : { active: false, expires_at: null };
 
       if (!isPreview && (!auth.ok || !subscription.active)) {

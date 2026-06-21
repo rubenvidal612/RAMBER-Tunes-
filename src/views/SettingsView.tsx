@@ -59,7 +59,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   // Paquetes predefinidos de créditos - SOLO Pack Inicio de $199 (PROMO)
   const creditPackages = [
     { id: 'custom', name: 'Personalizado', credits: 0, description: 'Ingresa cantidad manual' },
-    { id: 'inicio', name: 'Pack Inicio', credits: 1200, description: '$199 MXN (PROMO) - 100 canciones' },
+    { id: 'inicio', name: 'Pack Inicio', credits: 1200, description: '$199 MXN (PROMO) - 200 canciones' },
   ];
 
   const openExternalUrl = (url: string) => {

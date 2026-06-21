@@ -12,6 +12,8 @@ type SessionUser = {
   email?: string;
 };
 
+const OWNER_EMAILS = ['rubenfiverr612@gmail.com', 'rubenvidal612@gmail.com'];
+
 function cardClass(extra?: string) {
   return `rounded-3xl border border-white/10 bg-[#111827]/85 shadow-[0_20px_60px_rgba(0,0,0,0.35)] ${extra || ''}`.trim();
 }
@@ -37,14 +39,15 @@ export function MasterizarView() {
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
   const isLoggedIn = !!user?.id;
+  const isOwner = OWNER_EMAILS.includes((user?.email || '').trim().toLowerCase());
   const publicShareUrl = useMemo(() => {
     if (typeof window === 'undefined') return 'https://ramber-tunes.vercel.app/masterizar';
     return `${window.location.origin.replace(/\/+$/, '')}/masterizar`;
   }, []);
   const directDownloadUrl = useMemo(() => {
-    if (!subscription?.active) return null;
+    if (!subscription?.active && !isOwner) return null;
     return downloadUrl || previewUrl || null;
-  }, [downloadUrl, previewUrl, subscription?.active]);
+  }, [downloadUrl, isOwner, previewUrl, subscription?.active]);
 
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -56,7 +59,7 @@ export function MasterizarView() {
       const nextUser = data?.user ? { id: data.user.id, email: data.user.email || undefined } : null;
       setUser(nextUser);
       if (nextUser?.id) {
-        loadSubscription(nextUser.id).catch(() => {});
+        loadSubscription(nextUser.id, nextUser.email).catch(() => {});
       } else {
         setSubscription(null);
       }
@@ -102,8 +105,16 @@ export function MasterizarView() {
     };
   };
 
-  const loadSubscription = async (userId: string) => {
+  const loadSubscription = async (userId: string, userEmail?: string) => {
     if (!supabaseBrowser) return;
+    const owner = OWNER_EMAILS.includes((userEmail || user?.email || '').trim().toLowerCase());
+    if (owner) {
+      setSubscription({
+        active: true,
+        expires_at: null,
+      });
+      return;
+    }
     setIsLoadingSubscription(true);
     try {
       const { data, error } = await supabaseBrowser
@@ -210,10 +221,10 @@ export function MasterizarView() {
       if (processResult?.previewUrl) setPreviewUrl(processResult.previewUrl);
       if (processResult?.downloadUrl) setDownloadUrl(processResult.downloadUrl);
       setSubscription((prev) => ({
-        active: !!processResult?.subscriptionActive || !!prev?.active,
+        active: isOwner || !!processResult?.subscriptionActive || !!prev?.active,
         expires_at: processResult?.expiresAt || prev?.expires_at || null,
       }));
-      if (!processResult?.downloadUrl) {
+      if (!processResult?.downloadUrl && !isOwner) {
         setProcessingError('Preview listo. Para descargar el MP3 completo necesitas iniciar sesión y tener la suscripción activa.');
       }
     } catch (error: any) {
@@ -229,7 +240,7 @@ export function MasterizarView() {
       setProcessingError('Para descargar necesitas iniciar sesión primero.');
       return;
     }
-    if (!subscription?.active) {
+    if (!subscription?.active && !isOwner) {
       setProcessingError('Necesitas una suscripción activa para descargar. Suscríbete por $150 MXN/mes.');
       return;
     }
@@ -326,7 +337,9 @@ export function MasterizarView() {
                     {subscription.active ? (
                       <>
                         <CheckCircle className="w-5 h-5 text-green-500" />
-                        <span className="text-green-400 font-semibold">Suscripción activa</span>
+                        <span className="text-green-400 font-semibold">
+                          {isOwner ? 'Acceso ilimitado de propietario' : 'Suscripción activa'}
+                        </span>
                       </>
                     ) : (
                       <>
@@ -341,8 +354,14 @@ export function MasterizarView() {
                       Válida hasta: {formatDate(subscription.expires_at)}
                     </div>
                   )}
+
+                  {isOwner && (
+                    <div className="text-gray-300">
+                      Tu cuenta de propietario tiene masterización ilimitada.
+                    </div>
+                  )}
                   
-                  {!subscription.active && (
+                  {!subscription.active && !isOwner && (
                     <button onClick={handleSubscribe} className={`${buttonClass('secondary')} mt-4`}>
                       <CreditCard className="w-4 h-4 mr-2" />
                       Suscribirse por $150 MXN/mes
