@@ -2033,13 +2033,27 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           >
                             {song.isPublic ? 'Público' : 'Privado'}
                           </button>
-                          <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
-                            <ThumbsUp className="w-3.5 h-3.5 text-slate-300" />
+                          <button 
+                            onClick={toggleLike}
+                            className={cn(
+                              "w-7 h-7 rounded-full flex items-center justify-center transition-colors",
+                              isLiked 
+                                ? "bg-pink-500/20 hover:bg-pink-500/30 text-pink-300" 
+                                : "bg-white/5 hover:bg-white/10 text-slate-300"
+                            )}
+                          >
+                            <ThumbsUp className={cn("w-3.5 h-3.5", isLiked ? "fill-pink-300" : "")} />
                           </button>
-                          <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
+                          <button 
+                            onClick={share}
+                            className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors"
+                          >
                             <Share2 className="w-3.5 h-3.5 text-slate-300" />
                           </button>
-                          <button className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors">
+                          <button 
+                            onClick={download}
+                            className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors"
+                          >
                             <Download className="w-3.5 h-3.5 text-slate-300" />
                           </button>
                         </div>
@@ -2775,6 +2789,7 @@ function SongOptionsSheet({
   const [showPublish, setShowPublish] = useState(false);
   const [publishGenre, setPublishGenre] = useState<string>(((song as any)?.publicGenre || '').toString());
   const [isPinnedToProfile, setIsPinnedToProfile] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyricsText, setLyricsText] = useState<string>(((song as any)?.lyrics || '').toString());
@@ -2858,6 +2873,28 @@ function SongOptionsSheet({
       const pinned = items.some((x: any) => String(x?.songId || x?.song_id || '').trim() === sid);
       if (!alive) return;
       setIsPinnedToProfile(pinned);
+    })().catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [song?.id, isDeleted]);
+
+  useEffect(() => {
+    setIsLiked(false);
+    let alive = true;
+    (async () => {
+      if (isDeleted) return;
+      const sid = (song?.id || '').toString().trim();
+      if (!sid) return;
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/likes/likes', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) return;
+      const items = Array.isArray(out?.items) ? out.items : [];
+      const liked = items.some((x: any) => String(x?.songId || x?.song_id || '').trim() === sid);
+      if (!alive) return;
+      setIsLiked(liked);
     })().catch(() => {});
     return () => {
       alive = false;
@@ -3435,6 +3472,42 @@ function SongOptionsSheet({
       return;
     }
     alert('No hay link para compartir.');
+  };
+
+  const toggleLike = async () => {
+    if (isDeleted) return;
+    const sid = (song?.id || '').toString().trim();
+    if (!sid) return;
+    setIsBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const next = !isLiked;
+      const r = await fetch('/api/likes/like', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: sid, like: next }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        const msg = (out?.error || out?.detail || 'No pude actualizar el like.').toString();
+        alert(msg);
+        return;
+      }
+      setIsLiked(next);
+      if (next) {
+        alert('¡Canción marcada como favorita!');
+      } else {
+        alert('Like removido.');
+      }
+    } catch (e: any) {
+      alert('Error inesperado: ' + (e?.message || String(e)));
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const togglePinToProfile = async () => {

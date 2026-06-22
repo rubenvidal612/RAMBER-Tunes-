@@ -9174,6 +9174,140 @@ const profileHandler = (() => {
   };
 })();
 
+const likesHandler = (() => {
+  const LIKES_TABLE = "song_likes";
+  const LIB_TABLE = "library_items";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function handleLikes(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const { data, error } = await auth.admin
+      .from(LIKES_TABLE)
+      .select("song_id, liked_at")
+      .eq("user_id", auth.user.id)
+      .order("liked_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar la tabla de likes",
+          hint: "Crea la tabla 'song_likes' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude leer tus likes", detail: error.message });
+    }
+    const list = Array.isArray(data) ? data : [];
+    return send(res, 200, { 
+      ok: true, 
+      items: list.map((x: any) => ({ 
+        songId: String(x?.song_id || ""), 
+        likedAt: String(x?.liked_at || "") 
+      })) 
+    });
+  }
+
+  async function handleLike(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const like = Boolean(body?.like ?? body?.liked ?? true);
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    const { data: song, error: songErr } = await auth.admin
+      .from(LIB_TABLE)
+      .select("id, user_id, deleted_at, type")
+      .eq("id", songId)
+      .eq("user_id", auth.user.id)
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
+    if (!song) return send(res, 404, { error: "No encontré esa canción" });
+
+    if (!like) {
+      const { error } = await auth.admin.from(LIKES_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", songId);
+      if (error) return send(res, 500, { error: "No pude quitar el like", detail: error.message });
+      return send(res, 200, { ok: true, liked: false });
+    }
+
+    const row: any = { user_id: auth.user.id, song_id: songId, liked_at: new Date().toISOString() };
+    const { error } = await auth.admin.from(LIKES_TABLE).upsert(row, { onConflict: "user_id,song_id" });
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar la tabla de likes",
+          hint: "Crea la tabla 'song_likes' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude guardar el like", detail: error.message });
+    }
+    return send(res, 200, { ok: true, liked: true });
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const next = isApi ? parts[2] : parts[1];
+    if (next === "likes") return handleLikes(req, res);
+    if (next === "like") return handleLike(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 const socialHandler = (() => {
   const PUBLIC_TABLE = "public_songs";
   const LIB_TABLE = "library_items";
@@ -14229,6 +14363,7 @@ export default async function handler(req: any, res: any) {
     if (head === "share" && next === "song") return shareHandler(req, res);
     if (head === "share" && next === "profile") return shareProfileHandler(req, res);
     if (head === "profile") return profileHandler(req, res);
+    if (head === "likes") return likesHandler(req, res);
     if (head === "account" && next === "bootstrap-profile") return bootstrapProfileHandler(req, res);
     if (head === "account" && next === "balance") return balanceHandler(req, res);
     if (head === "account" && next === "upload-profile-image") return uploadProfileImageHandler(req, res);
