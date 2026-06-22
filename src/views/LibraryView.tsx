@@ -72,6 +72,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [searchDraft, setSearchDraft] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [brokenCovers, setBrokenCovers] = useState<Record<string, boolean>>({});
+  const [likedSongIds, setLikedSongIds] = useState<Record<string, boolean>>({});
+  const [songActionBusy, setSongActionBusy] = useState<Record<string, boolean>>({});
 
   const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
     try {
@@ -172,6 +174,29 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     } catch {
     }
   }, [songDurationsSec]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/likes/likes', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) return;
+      const items = Array.isArray(out?.items) ? out.items : [];
+      const next: Record<string, boolean> = {};
+      for (const item of items) {
+        const sid = String(item?.songId || item?.song_id || '').trim();
+        if (!sid) continue;
+        next[sid] = true;
+      }
+      if (!alive) return;
+      setLikedSongIds(next);
+    })().catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -561,6 +586,122 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       } catch {
         return false;
       }
+    }
+  };
+
+  const setSongBusy = (songId: string, busy: boolean) => {
+    const sid = String(songId || '').trim();
+    if (!sid) return;
+    setSongActionBusy((prev) => {
+      if (busy) return { ...prev, [sid]: true };
+      if (!prev[sid]) return prev;
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
+  };
+
+  const shareSongCard = async (song: SongItem) => {
+    const title = (song?.title || 'Canción').toString();
+    const shareUrl = song?.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
+    try {
+      if (navigator.share && shareUrl) {
+        await navigator.share({ title: `LucIAna | Music - ${title}`, url: shareUrl });
+        return;
+      }
+    } catch {
+    }
+    if (shareUrl) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('Copiado al portapapeles.');
+      } catch {
+        alert(shareUrl);
+      }
+      return;
+    }
+    alert('No hay link para compartir.');
+  };
+
+  const toggleLikeForSong = async (song: SongItem) => {
+    const sid = String(song?.id || '').trim();
+    if (!sid) return;
+    setSongBusy(sid, true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const next = !Boolean(likedSongIds[sid]);
+      const r = await fetch('/api/likes/like', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: sid, like: next }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        alert((out?.error || out?.detail || 'No pude actualizar el like.').toString());
+        return;
+      }
+      setLikedSongIds((prev) => ({ ...prev, [sid]: next }));
+    } catch (e: any) {
+      alert('Error inesperado: ' + (e?.message || String(e)));
+    } finally {
+      setSongBusy(sid, false);
+    }
+  };
+
+  const downloadSongCard = async (song: SongItem) => {
+    const sid = String(song?.id || '').trim();
+    if (!sid) return;
+    setSongBusy(sid, true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/account/balance', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.error || 'No pude verificar tu plan.').toString());
+        return;
+      }
+      if (!out?.downloads_allowed) {
+        alert('Puedes escuchar tu canción sin problema y la tendrás guardada en Biblioteca. Para descargarla, necesitas activar un plan.');
+        return;
+      }
+      const externalId = String(song?.sunoAudioId || '').trim();
+      if (/^rvc_/i.test(externalId)) {
+        const cr = await fetch('/api/library/charge-download', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+          body: JSON.stringify({ id: sid }),
+        });
+        const cout = await cr.json().catch(() => ({}));
+        if (!cr.ok || cout?.ok === false) {
+          alert((cout?.error || 'No pude cobrar créditos para esta descarga.').toString());
+          return;
+        }
+      }
+      const audioUrl = String(song?.audioUrl || '').trim();
+      if (!audioUrl) {
+        alert('No hay audio para descargar.');
+        return;
+      }
+      const name = sanitizeFileName(`${song?.title || 'Cancion'}.mp3`) || 'Cancion.mp3';
+      const isRelative = !/^https?:\/\//i.test(audioUrl);
+      const finalUrl = isRelative
+        ? `/api/share/song/audio?id=${encodeURIComponent(sid)}&dl=1&filename=${encodeURIComponent(name)}&t=${Date.now()}`
+        : audioUrl;
+      await downloadToDevice(finalUrl, name);
+    } catch (e: any) {
+      alert('Error inesperado: ' + (e?.message || String(e)));
+    } finally {
+      setSongBusy(sid, false);
     }
   };
 
@@ -2034,25 +2175,29 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             {song.isPublic ? 'Público' : 'Privado'}
                           </button>
                           <button 
-                            onClick={toggleLike}
+                            onClick={() => toggleLikeForSong(song)}
+                            disabled={Boolean(songActionBusy[song.id])}
                             className={cn(
                               "w-7 h-7 rounded-full flex items-center justify-center transition-colors",
-                              isLiked 
+                              likedSongIds[song.id]
                                 ? "bg-pink-500/20 hover:bg-pink-500/30 text-pink-300" 
-                                : "bg-white/5 hover:bg-white/10 text-slate-300"
+                                : "bg-white/5 hover:bg-white/10 text-slate-300",
+                              songActionBusy[song.id] ? "opacity-60" : ""
                             )}
                           >
-                            <ThumbsUp className={cn("w-3.5 h-3.5", isLiked ? "fill-pink-300" : "")} />
+                            <ThumbsUp className={cn("w-3.5 h-3.5", likedSongIds[song.id] ? "fill-pink-300" : "")} />
                           </button>
                           <button 
-                            onClick={share}
-                            className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors"
+                            onClick={() => shareSongCard(song)}
+                            disabled={Boolean(songActionBusy[song.id])}
+                            className={cn("w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors", songActionBusy[song.id] ? "opacity-60" : "")}
                           >
                             <Share2 className="w-3.5 h-3.5 text-slate-300" />
                           </button>
                           <button 
-                            onClick={download}
-                            className="w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors"
+                            onClick={() => downloadSongCard(song)}
+                            disabled={Boolean(songActionBusy[song.id])}
+                            className={cn("w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors", songActionBusy[song.id] ? "opacity-60" : "")}
                           >
                             <Download className="w-3.5 h-3.5 text-slate-300" />
                           </button>
