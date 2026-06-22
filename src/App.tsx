@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { Component, useState, useEffect, useMemo, useRef } from 'react';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { MiniPlayer } from './components/MiniPlayer';
@@ -32,6 +32,44 @@ type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
+
+class ViewErrorBoundary extends Component<
+  { title: string; children: any },
+  { hasError: boolean; message: string }
+> {
+  declare props: Readonly<{ title: string; children: any }>;
+  state: { hasError: boolean; message: string } = { hasError: false, message: '' };
+
+  static getDerivedStateFromError(err: any) {
+    const msg = err instanceof Error ? err.message : String(err || '');
+    return { hasError: true, message: msg || 'Error inesperado' };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    try {
+      console.error('[DEBUG] ViewErrorBoundary:', this.props.title, error, errorInfo);
+    } catch {
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="m-4 rounded-3xl border border-red-500/20 bg-red-500/10 p-5 text-white">
+        <div className="text-lg font-extrabold">{this.props.title}</div>
+        <div className="mt-2 text-sm text-red-100">Esa parte de la app falló, pero el resto sigue disponible.</div>
+        <div className="mt-3 text-xs text-red-200/90 break-words">{this.state.message}</div>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-4 h-10 rounded-full bg-white px-4 text-sm font-extrabold text-black"
+        >
+          Recargar app
+        </button>
+      </div>
+    );
+  }
+}
 
 function tabFromPathname(pathname: string): ViewTab {
   const p = (pathname || '/').toString().trim().toLowerCase();
@@ -516,6 +554,16 @@ function InicioSocial({
 }
 
 export default function App() {
+  // #region debug-point app-mount
+  console.log('[DEBUG] App component mounting...');
+  console.log('[DEBUG] Window available:', typeof window !== 'undefined');
+  if (typeof window !== 'undefined') {
+    console.log('[DEBUG] Location:', window.location.href);
+    console.log('[DEBUG] User agent:', navigator.userAgent);
+    console.log('[DEBUG] Screen size:', window.innerWidth, 'x', window.innerHeight);
+  }
+  // #endregion
+
   const [currentTab, setCurrentTab] = useState<ViewTab>(() => {
     if (typeof window === 'undefined') return 'studio';
     return tabFromPathname(window.location.pathname || '/');
@@ -813,6 +861,11 @@ export default function App() {
     showToast(msg);
   }, [creditsError]);
   useEffect(() => {
+    // #region debug-point auth-init
+    console.log('[DEBUG] Auth useEffect running...');
+    console.log('[DEBUG] supabaseBrowser available:', !!supabaseBrowser);
+    // #endregion
+    
     if (!supabaseBrowser) {
       setIsAuthBooting(false);
       return;
@@ -2386,6 +2439,15 @@ export default function App() {
 
   const displayCredits = credits;
 
+  // #region debug-point app-render
+  console.log('[DEBUG] App rendering...');
+  console.log('[DEBUG] isAuthed:', isAuthed);
+  console.log('[DEBUG] isAuthBooting:', isAuthBooting);
+  console.log('[DEBUG] shareRouteId:', shareRouteId);
+  console.log('[DEBUG] profileRouteId:', profileRouteId);
+  console.log('[DEBUG] currentTab:', currentTab);
+  // #endregion
+
   if (shareRouteId) {
     return <SharedSongPage shareId={shareRouteId} />;
   }
@@ -2597,7 +2659,11 @@ export default function App() {
            )}
            {currentTab === 'luciana' && <LucianaBotView />}
            {currentTab === 'masterizar' && <MasterizarView />}
-           {currentTab === 'biblioteca' && <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />}
+          {currentTab === 'biblioteca' && (
+            <ViewErrorBoundary title="Biblioteca">
+              <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />
+            </ViewErrorBoundary>
+          )}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
            
            {/* Placeholders */}
@@ -2666,21 +2732,23 @@ export default function App() {
               ) : currentTab === 'luciana' ? (
                 <LucianaBotView />
                 ) : (
-                  <LibraryView
-                    canciones={canciones}
-                    cancionesEliminadas={cancionesEliminadas}
-                    vibes={vibes}
-                    onAddVibe={addVibe}
-                    onPlaySong={playSong}
-                    onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })}
-                    onDeleteSong={deleteCancion}
-                    onRestoreSong={restoreCancion}
-                    onPurgeSong={purgeCancion}
-                    onRefreshSongs={refreshLibrary}
-                    activeSongId={activeSong?.id}
-                    isPlaying={isPlaying}
-                    onStartCover={startCoverFromSong}
-                  />
+                  <ViewErrorBoundary title="Biblioteca">
+                    <LibraryView
+                      canciones={canciones}
+                      cancionesEliminadas={cancionesEliminadas}
+                      vibes={vibes}
+                      onAddVibe={addVibe}
+                      onPlaySong={playSong}
+                      onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })}
+                      onDeleteSong={deleteCancion}
+                      onRestoreSong={restoreCancion}
+                      onPurgeSong={purgeCancion}
+                      onRefreshSongs={refreshLibrary}
+                      activeSongId={activeSong?.id}
+                      isPlaying={isPlaying}
+                      onStartCover={startCoverFromSong}
+                    />
+                  </ViewErrorBoundary>
                 )}
                </div>
              </>

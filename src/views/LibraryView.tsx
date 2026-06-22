@@ -3032,18 +3032,27 @@ function SongOptionsSheet({
     if (!showTrim) return;
     const el = trimWrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const update = () => {
       const r = el.getBoundingClientRect();
       const w = Math.max(0, Math.floor(r.width));
       const h = Math.max(0, Math.floor(r.height));
       setTrimWaveSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
-    });
-    ro.observe(el);
+    };
+    let ro: ResizeObserver | null = null;
+    if (typeof (window as any).ResizeObserver === 'function') {
+      ro = new ResizeObserver(() => update());
+      ro.observe(el);
+    } else {
+      window.addEventListener('resize', update);
+    }
     const r = el.getBoundingClientRect();
     setTrimWaveSize({ w: Math.max(0, Math.floor(r.width)), h: Math.max(0, Math.floor(r.height)) });
     return () => {
       try {
-        ro.disconnect();
+        if (ro) ro.disconnect();
+      } catch {}
+      try {
+        window.removeEventListener('resize', update);
       } catch {}
     };
   }, [showTrim]);
