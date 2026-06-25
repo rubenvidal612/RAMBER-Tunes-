@@ -3298,8 +3298,10 @@ export default function App() {
             </div>
             <div className="p-5 flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+24px)]">
               <div className="text-slate-300 text-sm">
-                Créditos:{' '}
-                <span className="text-white font-extrabold">{Number(balanceData?.credits ?? displayCredits ?? 0).toString()}</span>
+                <span className="text-white font-extrabold">Obtener Créditos</span>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Saldo actual: {Number(balanceData?.credits ?? displayCredits ?? 0).toString()} créditos
+                </div>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
                 Fuente: {(balanceData?.source || '—').toString()}

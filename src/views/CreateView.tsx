@@ -6583,7 +6583,8 @@ function CustomForm({
         >
           <div className="text-slate-200 font-extrabold">Saldo</div>
           <div className="flex items-center gap-2">
-            <div className="text-slate-300 text-sm font-semibold">Créditos: {Number(credits || 0)}</div>
+            <div className="text-white text-sm font-extrabold">Obtener Créditos</div>
+            <div className="text-slate-400 text-xs">({Number(credits || 0)})</div>
             <ChevronDown className="w-4 h-4 text-slate-400" />
           </div>
         </button>
