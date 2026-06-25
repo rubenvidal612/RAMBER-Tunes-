@@ -348,9 +348,13 @@ const AFFILIATE_REF_KEY = 'ramber.affiliate_ref_v1';
 function InicioSocial({
   onPlaySong,
   onGoStudio,
+  onDeleteSong,
+  isAdmin = false,
 }: {
   onPlaySong: (s: SongItem) => void;
   onGoStudio: () => void;
+  onDeleteSong?: (id: string) => void;
+  isAdmin?: boolean;
 }) {
   const [tab, setTab] = useState<'canciones' | 'listas' | 'generos'>('canciones');
   const [items, setItems] = useState<SongItem[]>([]);
@@ -359,6 +363,8 @@ function InicioSocial({
   const [error, setError] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [activeGenre, setActiveGenre] = useState('');
+  const [songToDelete, setSongToDelete] = useState<SongItem | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const loadFeed = async (mode: 'reset' | 'more') => {
     setLoading(true);
@@ -396,6 +402,32 @@ function InicioSocial({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteClick = (song: SongItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSongToDelete(song);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!songToDelete || !onDeleteSong) return;
+    
+    try {
+      await onDeleteSong(songToDelete.id);
+      // Remover la canción de la lista localmente
+      setItems(prev => prev.filter(s => s.id !== songToDelete.id));
+      setShowDeleteConfirm(false);
+      setSongToDelete(null);
+    } catch (error) {
+      console.error('Error al eliminar canción:', error);
+      alert('No se pudo eliminar la canción');
+    }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setSongToDelete(null);
   };
 
   const loadGenres = async () => {
@@ -514,32 +546,50 @@ function InicioSocial({
 
           <div className="space-y-3">
             {items.map((s) => (
-              <button
+              <div
                 key={s.id}
-                onClick={() => onPlaySong(s)}
-                className="w-full flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-colors text-left"
+                className="w-full flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-colors"
               >
-                <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
-                  {s.coverUrl ? <img src={s.coverUrl} className="w-full h-full object-cover" /> : null}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-white font-extrabold truncate">{s.title}</div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-[10px] font-extrabold text-indigo-200 shrink-0">
-                      {s.authorAvatarUrl ? <img src={s.authorAvatarUrl} className="w-full h-full object-cover" /> : (s.authorName || 'U').slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="text-xs text-slate-300 truncate">{s.authorName || 'Usuario'}</div>
-                    {s.publicGenre ? (
-                      <div className="text-[10px] text-slate-200 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full truncate max-w-[140px]">
-                        {s.publicGenre}
-                      </div>
-                    ) : null}
+                <button
+                  onClick={() => onPlaySong(s)}
+                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                >
+                  <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+                    {s.coverUrl ? <img src={s.coverUrl} className="w-full h-full object-cover" /> : null}
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-extrabold truncate">{s.title}</div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-[10px] font-extrabold text-indigo-200 shrink-0">
+                        {s.authorAvatarUrl ? <img src={s.authorAvatarUrl} className="w-full h-full object-cover" /> : (s.authorName || 'U').slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="text-xs text-slate-300 truncate">{s.authorName || 'Usuario'}</div>
+                      {s.publicGenre ? (
+                        <div className="text-[10px] text-slate-200 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full truncate max-w-[140px]">
+                          {s.publicGenre}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onPlaySong(s)}
+                    className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 font-extrabold hover:bg-white/10"
+                  >
+                    ▶
+                  </button>
+                  {isAdmin && onDeleteSong && (
+                    <button
+                      onClick={(e) => handleDeleteClick(s, e)}
+                      className="shrink-0 w-10 h-10 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-200 font-extrabold hover:bg-red-500/30"
+                      title="Eliminar canción"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
-                <div className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 font-extrabold">
-                  ▶
-                </div>
-              </button>
+              </div>
             ))}
           </div>
 
@@ -552,6 +602,33 @@ function InicioSocial({
           ) : null}
         </div>
       ) : null}
+
+      {/* Modal de confirmación para eliminar canción */}
+      {showDeleteConfirm && songToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full">
+            <div className="text-white font-extrabold text-lg mb-2">¿Eliminar canción?</div>
+            <div className="text-slate-300 text-sm mb-4">
+              ¿Estás seguro de que quieres eliminar la canción "{songToDelete.title}" de {songToDelete.authorName || 'usuario'}?
+              Esta acción no se puede deshacer.
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={cancelDelete}
+                className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 rounded-full py-3 font-extrabold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 bg-red-500 hover:bg-red-400 text-white rounded-full py-3 font-extrabold transition-colors"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -594,6 +671,21 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
+
+  // Función para verificar si el usuario es administrador
+  const isAdmin = useMemo(() => {
+    const email = authEmail.toLowerCase().trim();
+    if (!email) return false;
+    
+    // Lista de emails de administradores
+    const adminEmails = [
+      'rubenfiverr612@gmail.com',
+      'rubenvidal612@gmail.com',
+      // Agrega más emails de administradores aquí si es necesario
+    ];
+    
+    return adminEmails.includes(email);
+  }, [authEmail]);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [nowPlayingMode, setNowPlayingMode] = useState<'normal' | 'elenco'>('normal');
   const [isElencoMenuOpen, setIsElencoMenuOpen] = useState(false);
@@ -2668,7 +2760,12 @@ export default function App() {
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && (
              isAuthed ? (
-               <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
+               <InicioSocial 
+                 onPlaySong={playSong} 
+                 onGoStudio={() => setCurrentTab('studio')}
+                 onDeleteSong={deleteCancion}
+                 isAdmin={isAdmin}
+               />
              ) : (
                <InicioLanding
                  email={authEmail}
@@ -2748,7 +2845,12 @@ export default function App() {
            {currentTab === 'inicio' ? (
              <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
               {isAuthed ? (
-                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
+                <InicioSocial 
+                  onPlaySong={playSong} 
+                  onGoStudio={() => setCurrentTab('studio')}
+                  onDeleteSong={deleteCancion}
+                  isAdmin={isAdmin}
+                />
               ) : (
                 <InicioLanding
                   email={authEmail}
