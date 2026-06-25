@@ -171,7 +171,10 @@ export function LucianaBotView() {
             return createEmptySession();
           }
         }
-        return data.session as ChatSession;
+        // Verificar que data.session existe y tiene la estructura correcta
+        if (data.session && data.session.messages && Array.isArray(data.session.messages)) {
+          return data.session as ChatSession;
+        }
       }
       return createEmptySession();
     } catch {
@@ -207,7 +210,7 @@ export function LucianaBotView() {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [session.messages.length, isSending, uploading]);
+  }, [session?.messages?.length, isSending, uploading]);
 
   const composer = session?.composer || createEmptySession().composer;
   const canType = composer.mode === 'text' || composer.mode === 'multiline';
@@ -243,7 +246,7 @@ export function LucianaBotView() {
   };
 
   useEffect(() => {
-    if (!session.messages.length) {
+    if (!session?.messages?.length) {
       sendEvent({ type: 'open' }, { silent: false }).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -375,10 +378,10 @@ export function LucianaBotView() {
 
   const loadingLabel = useMemo(() => {
     if (!uploading && !isSending) return '';
-    if (uploading && session.flow === 'mastering') return 'Subiendo tu MP3 para masterizar…';
-    if (isSending && session.flow === 'mastering') return 'Aplicando nuestra tecnologia LucIAna SoundCore para masterizar tu cancion...';
+    if (uploading && session?.flow === 'mastering') return 'Subiendo tu MP3 para masterizar…';
+    if (isSending && session?.flow === 'mastering') return 'Aplicando nuestra tecnologia LucIAna SoundCore para masterizar tu cancion...';
     return uploading ? 'Subiendo audio…' : 'LucIAna está pensando…';
-  }, [uploading, isSending, session.flow]);
+  }, [uploading, isSending, session?.flow]);
 
   return (
     <div className="h-full min-h-0 flex flex-col bg-[#05070d]">
@@ -395,7 +398,7 @@ export function LucianaBotView() {
       </div>
 
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-3 md:px-5 py-4 space-y-4">
-        {session.messages.map((message) => {
+        {(session?.messages || []).map((message) => {
           const isAssistant = message.role === 'assistant';
           return (
             <div key={message.id} className={cn('flex', isAssistant ? 'justify-start' : 'justify-end')}>
