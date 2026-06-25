@@ -32,7 +32,8 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
           className="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-full px-3 py-1.5 border border-white/10 transition-colors"
         >
           <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
-          <span className="text-sm font-semibold text-slate-200">{credits || 0} Créditos</span>
+          <span className="text-sm font-semibold text-slate-200">Obtener Créditos</span>
+          <span className="text-xs text-slate-400">({credits || 0})</span>
           <ChevronDown className="w-4 h-4 text-slate-400" />
         </button>
 
