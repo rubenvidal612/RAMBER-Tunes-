@@ -1656,6 +1656,18 @@ export default function App() {
           track?.url ||
           '';
         const s = cleanStr(raw);
+        
+        // #region debug-point P5: Log URL extraction
+        console.debug(`[DEBUG-P5] Extracting audio URL:`, {
+          rawUrl: raw,
+          cleanedUrl: s,
+          isValid: /^https?:\/\//i.test(s),
+          isSunoUrl: s.includes('suno.ai') || s.includes('cdn.suno'),
+          isR2Url: s.includes('r2.cloudflarestorage.com') || s.includes('.r2.dev'),
+          trackId: track?.id || 'unknown'
+        });
+        // #endregion
+        
         return /^https?:\/\//i.test(s) ? s : '';
       };
       const pickAudioId = (track: any) => {
@@ -2068,6 +2080,18 @@ export default function App() {
 
   const playSong = async (song: SongItem, opts?: { openMode?: 'normal' | 'elenco' | 'none' }) => {
     const openMode = opts?.openMode ?? 'normal';
+    
+    // #region debug-point P1: Log song playback attempt
+    console.debug(`[DEBUG-P1] Attempting to play song:`, {
+      songId: song.id,
+      title: song.title,
+      audioUrl: song.audioUrl,
+      sunoTaskId: song.sunoTaskId,
+      sunoAudioId: song.sunoAudioId,
+      openMode
+    });
+    // #endregion
+    
     if (activeSong?.id === song.id) {
       togglePlay();
       return;
@@ -2081,6 +2105,16 @@ export default function App() {
       if (!audioRef.current) return false;
       const nextUrl = (url || '').toString().trim();
       if (!nextUrl) return false;
+      
+      // #region debug-point P2: Log URL validation attempt
+      console.debug(`[DEBUG-P2] Trying to play URL:`, {
+        url: nextUrl,
+        isHttp: /^https?:\/\//i.test(nextUrl),
+        isProxy: nextUrl.includes('/api/share/song/audio'),
+        songId: song.id
+      });
+      // #endregion
+      
       const a = audioRef.current;
       try {
         if (a.src === nextUrl) {
@@ -2097,8 +2131,26 @@ export default function App() {
           setNowPlayingMode(openMode === 'elenco' ? 'elenco' : 'normal');
           setNowPlayingOpen(true);
         }
+        
+        // #region debug-point P3: Log successful playback
+        console.debug(`[DEBUG-P3] Successfully started playback:`, {
+          url: nextUrl,
+          songId: song.id,
+          duration: a.duration
+        });
+        // #endregion
+        
         return true;
       } catch (e) {
+        // #region debug-point P4: Log playback failure
+        console.debug(`[DEBUG-P4] Playback failed:`, {
+          url: nextUrl,
+          songId: song.id,
+          error: e instanceof Error ? e.message : String(e),
+          errorType: e instanceof Error ? e.name : 'Unknown'
+        });
+        // #endregion
+        
         alert(e instanceof Error ? e.message : 'No pude reproducir esta canción.');
         return false;
       }

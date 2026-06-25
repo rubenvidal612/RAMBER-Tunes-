@@ -160,7 +160,20 @@ export function LucianaBotView() {
   const [session, setSession] = useState<ChatSession>(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as ChatSession) : createEmptySession();
+      if (raw) {
+        const data = JSON.parse(raw);
+        // Verificar si hay una fecha de expiración
+        if (data.expiresAt) {
+          const expiresAt = new Date(data.expiresAt);
+          const now = new Date();
+          // Si ha expirado, crear nueva sesión
+          if (expiresAt < now) {
+            return createEmptySession();
+          }
+        }
+        return data.session as ChatSession;
+      }
+      return createEmptySession();
     } catch {
       return createEmptySession();
     }
@@ -175,7 +188,18 @@ export function LucianaBotView() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+      // Calcular fecha de expiración (24 horas desde ahora)
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+      
+      // Guardar sesión con fecha de expiración
+      const dataToStore = {
+        session,
+        expiresAt: expiresAt.toISOString(),
+        storedAt: new Date().toISOString()
+      };
+      
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore));
     } catch {}
   }, [session]);
 
