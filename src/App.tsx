@@ -240,7 +240,7 @@ function InicioLanding({
               </div>
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <div className="text-xs text-slate-400 font-semibold">Control</div>
-                <div className="mt-1 text-white font-extrabold">Créditos</div>
+                <div className="mt-1 text-white font-extrabold">Recarga Créditos</div>
                 <div className="mt-1 text-[11px] text-slate-400">Saldo y costos</div>
               </div>
             </div>

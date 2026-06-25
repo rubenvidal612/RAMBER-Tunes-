@@ -1292,7 +1292,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const tabs: {id: LibraryTab, label: string}[] = [
     { id: 'canciones', label: 'Canciones' },
     { id: 'video', label: 'Video' },
-    { id: 'vibes', label: 'Vibes' },
     { id: 'listas', label: 'Carpetas' },
   ];
 
@@ -1498,28 +1497,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           </div>
         )}
 
-        {activeTab === 'vibes' && (
-          <div className="p-4 grid grid-cols-2 gap-4">
-            <div 
-              onClick={() => setIsCreateVibeOpen(true)}
-              className="w-full aspect-square border border-dashed border-white/20 rounded-2xl flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors glass-card"
-            >
-              <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                <Plus className="w-5 h-5 text-slate-300" />
-              </div>
-            </div>
-            {vibes.map(vibe => (
-              <div key={vibe.id} className="w-full aspect-square glass-card rounded-2xl p-3 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-indigo-500/20 mb-3 flex items-center justify-center">
-                  <ImageIcon className="w-6 h-6 text-indigo-400" />
-                </div>
-                <div className="text-sm font-bold text-white truncate w-full">{vibe.name}</div>
-                <div className="text-xs text-slate-400 truncate w-full mt-1">{vibe.description}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        
         {activeTab === 'canciones' && (
           <div className="p-4 space-y-4">
             {/* Search Bar */}
