@@ -2316,6 +2316,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const continueFromAudio = async () => {
     if (audioAction === 'library') return saveUploadedAudioToLibrary();
+    if (audioAction === 'master') {
+      setIsAudioModalOpen(false);
+      setIsMasterizarModalOpen(true);
+      return;
+    }
     setIsAudioModalOpen(false);
   };
 
@@ -2827,7 +2832,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return true;
       }
       if (audioAction === 'master') {
-        await handleMasterFromAudio();
+        setIsMasterizarModalOpen(true);
         return true;
       }
       if (audioAction === 'extend') {
@@ -5088,7 +5093,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </button>
 
                 <button
-                  onClick={() => setAudioAction('master')}
+                  onClick={() => {
+                    setAudioAction('master');
+                    onStartMastering?.();
+                  }}
                   className={cn(
                     "rounded-2xl p-4 border transition-colors text-left",
                     audioAction === 'master' ? "border-emerald-400/70 bg-emerald-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
