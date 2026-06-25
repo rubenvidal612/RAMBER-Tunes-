@@ -2763,7 +2763,7 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-               {currentTab !== 'karaoke' && currentTab !== 'voces' && (
+              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                    <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
@@ -2791,8 +2791,10 @@ export default function App() {
                      <div className="mt-2 text-sm text-slate-300">Próximamente</div>
                    </div>
                  </div>
-              ) : currentTab === 'luciana' ? (
+                ) : currentTab === 'luciana' ? (
                 <LucianaBotView />
+               ) : currentTab === 'masterizar' ? (
+                 <MasterizarView />
               ) : currentTab === 'planes' ? (
                 <PricingView
                   onClose={() => {

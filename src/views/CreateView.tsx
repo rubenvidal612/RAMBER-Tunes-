@@ -3215,8 +3215,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       <div className="px-4 space-y-4 pb-[220px] md:pb-32">
         {mode === 'facil' ? (
           <>
-            {/* Botones de opciones: WhatsApp o Intentar Yo */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Botones de opciones: WhatsApp, Intentar Yo, o Tengo el Audio */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
               {/* Botón de WhatsApp - Cuadrado grande fosforescente */}
               <a
                 href="https://wa.me/529931520202"
@@ -3256,6 +3256,25 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               >
                 <span className="text-5xl">🎵</span>
                 <span className="font-black text-center leading-tight">Lo Quiero Intentar Yo</span>
+              </button>
+
+              {/* Botón de "Tengo el Audio" - Cuadrado grande fosforescente */}
+              <button
+                type="button"
+                onClick={() => {
+                  // Cambiar a la pestaña de Personalizado
+                  setMode('personalizado');
+                }}
+                className="w-full h-[180px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(255,165,0,0.5)] hover:shadow-[0_0_40px_rgba(255,165,0,0.7)]"
+                style={{
+                  background: 'linear-gradient(135deg, #ffa500 0%, #ff8c00 100%)',
+                  color: '#000',
+                  border: '3px solid #ffa500',
+                  textShadow: '0 0 10px rgba(255,165,0,0.8)'
+                }}
+              >
+                <span className="text-5xl">🎧</span>
+                <span className="font-black text-center leading-tight">Tengo el Audio</span>
               </button>
             </div>
 
@@ -3443,6 +3462,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               <button
                 type="button"
                 onClick={() => {
+                  setIsMasterizarModalOpen(false);
                   window.location.href = '/masterizar?mode=unlimited';
                 }}
                 className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:shadow-[0_0_40px_rgba(234,179,8,0.6)]"

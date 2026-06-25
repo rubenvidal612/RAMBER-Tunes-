@@ -341,6 +341,35 @@ export function MasterizarView() {
           </p>
         </div>
 
+        <div className={cardClass('mb-8 border-yellow-500/30')}>
+          <div className="p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-lg font-bold text-white">
+                {mode === 'credits' ? 'Tambien puedes pasarte a Masterizar Ilimitado' : 'Activa tu Masterizar Ilimitado'}
+              </div>
+              <div className="mt-1 text-sm text-gray-300">
+                Paga <span className="font-bold text-green-400">$150 MXN por 1 mes</span> con Mercado Pago y descarga todas las canciones masterizadas que quieras.
+              </div>
+              {!isLoggedIn && (
+                <div className="mt-2 text-xs text-gray-400">
+                  Si aun no has iniciado sesion, primero te pedira entrar para continuar con el pago.
+                </div>
+              )}
+            </div>
+            {(!subscription?.active && !isOwner) ? (
+              <button onClick={handleSubscribe} className={buttonClass('secondary')}>
+                <CreditCard className="w-4 h-4" />
+                Pagar $150 MXN/mes
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300">
+                <CheckCircle className="w-4 h-4" />
+                Masterizacion ilimitada activa
+              </div>
+            )}
+          </div>
+        </div>
+
         {isLoggedIn && (
           <div className={cardClass('mb-8 border-purple-500/40')}>
             <div className="p-6">
