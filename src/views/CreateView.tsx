@@ -3206,12 +3206,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       <div className="px-4 space-y-4 pb-[220px] md:pb-32">
         {mode === 'facil' ? (
-          <EasyModeWizard 
-            onGenerateSong={handleCreate}
-            credits={credits}
-            onOpenBalance={onOpenBalance}
-            onSelectionsChange={setEasyModeSelections}
-          />
+          <>
+            {/* Botón de WhatsApp - Llamativo fosforescente - SIEMPRE VISIBLE en modo Fácil */}
+            <div className="mb-6">
+              <a
+                href="https://wa.me/529931520202"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full"
+              >
+                <button
+                  type="button"
+                  className="w-full h-[60px] rounded-full font-extrabold text-xl flex items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(0,255,128,0.5)] hover:shadow-[0_0_40px_rgba(0,255,128,0.7)]"
+                  style={{
+                    background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)',
+                    color: '#000',
+                    border: '2px solid #00ff88',
+                    textShadow: '0 0 10px rgba(0,255,128,0.8)'
+                  }}
+                >
+                  <span className="text-2xl">💬</span>
+                  <span className="font-black">¡Quiero que una Persona Me Haga la Canción!</span>
+                </button>
+              </a>
+              <p className="text-center text-sm text-slate-300 mt-2">
+                ¿Prefieres que un humano te ayude? ¡Haz clic aquí para hablar conmigo por WhatsApp!
+              </p>
+            </div>
+            
+            <EasyModeWizard 
+              onGenerateSong={handleCreate}
+              credits={credits}
+              onOpenBalance={onOpenBalance}
+              onSelectionsChange={setEasyModeSelections}
+            />
+          </>
         ) : (
           <CustomForm 
             instrumental={instrumental} 
@@ -5574,14 +5603,15 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
             <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
               <div className="text-xs uppercase tracking-[0.3em] text-emerald-200 mb-2">Resumen final</div>
               <h4 className="text-2xl font-extrabold text-white mb-4">Así va a salir tu canción</h4>
+              
               <div className="rounded-2xl bg-black/20 border border-white/10 p-4 mb-4">
                 <label className="block text-sm font-semibold text-white mb-2">Nombre de la cancion</label>
-                <input
-                  value={songTitle}
-                  onChange={(e) => setSongTitle(e.target.value.slice(0, 100))}
-                  placeholder="Ej: Mi rola para mama"
-                  className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-pink-400"
-                />
+                  <input
+                    value={songTitle}
+                    onChange={(e) => setSongTitle(e.target.value.slice(0, 100))}
+                    placeholder="Ej: Mi rola para mama"
+                    className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-pink-400"
+                  />
                 <p className="text-xs text-slate-400 mt-2">Este nombre es obligatorio para crear la canción. Máximo 100 caracteres.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -5610,10 +5640,11 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   <div className="text-white font-bold text-lg break-words">{selectedExtraInstructionsLabel}</div>
                 </div>
               </div>
+              
               <div className="mt-4 rounded-2xl bg-black/20 border border-white/10 p-4">
                 <div className="text-xs text-slate-300 uppercase tracking-[0.25em] mb-2">Qué pasa al crear</div>
                 <div className="text-white font-medium">
-                  Al darle al botón verde de crear, te llevamos a tu Biblioteca y ahí deben aparecer 2 canciones en proceso con su porcentaje de avance.
+                  Al darle al botón verde de crear, te llevamos a tu Biblioteca y ahí deben aparecer 2 canciones en proceso con tu porcentaje de avance.
                 </div>
               </div>
             </div>
