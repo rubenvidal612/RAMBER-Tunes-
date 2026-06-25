@@ -7,3 +7,8 @@ scratch/
 *.log
 .env*
 !.env.example
+.dbg/
+.vercel/
+check_*.js
+debug-*.md
+test_suno_api.js
