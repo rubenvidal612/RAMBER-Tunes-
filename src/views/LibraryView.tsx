@@ -4913,6 +4913,15 @@ function SongOptionsSheet({
                 Puedes escuchar tu canción normalmente y la tendrás guardada en Biblioteca. Para descargarla, necesitas activar un plan.
               </div>
             )}
+            {downloadsAllowed === false && !isDeleted && (
+              <button 
+                className="w-full flex items-center justify-center gap-2 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold"
+                onClick={() => window.location.href = '/planes'}
+              >
+                <span>💰</span>
+                <span>Obtener Créditos para Descargar Canciones</span>
+              </button>
+            )}
             {!isDeleted && (
               <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
                 <Video className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Video (MP4)</span>

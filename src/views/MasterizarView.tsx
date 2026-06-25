@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Upload, Volume2, Download, CheckCircle, XCircle, Loader2, AlertCircle, CreditCard, Zap, Shield, Headphones } from 'lucide-react';
 import { getAccessToken, signInWithGoogle, supabaseBrowser } from '../lib/supabaseBrowser';
 
@@ -43,12 +43,18 @@ export function MasterizarView() {
   
   // Get mode from URL query params
   const [mode, setMode] = useState&lt;'credits' | 'unlimited'&gt;('unlimited');
+  const uploadSectionRef = useRef&lt;HTMLDivElement&gt;(null);
   
   useEffect(() =&gt; {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const modeParam = params.get('mode');
       setMode(modeParam === 'credits' ? 'credits' : 'unlimited');
+      
+      // Scroll to upload section after a small delay
+      setTimeout(() =&gt; {
+        uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
     }
   }, []);
   const publicShareUrl = useMemo(() => {
@@ -319,10 +325,16 @@ export function MasterizarView() {
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-6">
             <Volume2 className="w-12 h-12 text-purple-500" />
-            <h1 className="text-4xl md:text-5xl font-bold">Masterizar Ilimitado</h1>
+            <h1 className="text-4xl md:text-5xl font-bold">
+              {mode === 'credits' ? 'Masterizar (10 Créditos)' : 'Masterizar Ilimitado'}
+            </h1>
           </div>
           <p className="text-xl text-gray-300 mb-4">
-            Masteriza todas tus canciones por solo <span className="text-green-400 font-bold">$150 MXN/mes</span>
+            {mode === 'credits' ? (
+              <>Masteriza tu canción usando <span className="text-green-400 font-bold">10 créditos</span></>
+            ) : (
+              <>Masteriza todas tus canciones por solo <span className="text-green-400 font-bold">$150 MXN/mes</span></>
+            )}
           </p>
           <p className="text-gray-400 max-w-2xl mx-auto">
             Sube cualquier canción en MP3 y obtén un preview gratis. Con suscripción, descargas ilimitadas.
@@ -386,7 +398,7 @@ export function MasterizarView() {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-8 mb-12">
+        <div ref={uploadSectionRef} className="grid md:grid-cols-2 gap-8 mb-12">
           <div className={cardClass()}>
             <div className="p-6">
               <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
