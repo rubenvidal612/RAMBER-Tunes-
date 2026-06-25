@@ -221,21 +221,29 @@ export function LucianaBotView() {
   const handleDeleteChat = () => {
     // Crear una nueva sesión vacía
     const emptySession = createEmptySession();
-    setSession(emptySession);
-    setShowDeleteConfirm(false);
     
     // Limpiar el localStorage
     try {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch {}
     
-    // Enviar evento de apertura para iniciar nueva conversación
-    sendEvent({ type: 'open' }, { silent: false }).catch(() => {});
+    // Limpiar cualquier estado pendiente
+    setIsSending(false);
+    setUploading(false);
+    setError('');
+    
+    // Establecer la sesión vacía
+    setSession(emptySession);
+    setShowDeleteConfirm(false);
+    
+    // Enviar evento de apertura para iniciar nueva conversación usando la sesión vacía
+    sendEvent({ type: 'open' }, { silent: false }, emptySession).catch(() => {});
   };
 
   const sendEvent = async (
     event: Record<string, any>,
     opts?: { silent?: boolean },
+    customSession?: ChatSession,
   ) => {
     if (!opts?.silent) setIsSending(true);
     setError('');
@@ -248,7 +256,7 @@ export function LucianaBotView() {
           'content-type': 'application/json',
           authorization: `Bearer ${t.token}`,
         },
-        body: JSON.stringify({ session, event }),
+        body: JSON.stringify({ session: customSession || session, event }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok || !out?.session) {
@@ -264,7 +272,7 @@ export function LucianaBotView() {
 
   useEffect(() => {
     if (!session?.messages?.length) {
-      sendEvent({ type: 'open' }, { silent: false }).catch(() => {});
+      sendEvent({ type: 'open' }, { silent: false }, session).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -274,7 +282,7 @@ export function LucianaBotView() {
     const id = window.setInterval(() => {
       if (pollingRef.current) return;
       pollingRef.current = true;
-      sendEvent({ type: 'poll' }, { silent: true })
+      sendEvent({ type: 'poll' }, { silent: true }, session)
         .catch(() => {})
         .finally(() => {
           pollingRef.current = false;
@@ -290,14 +298,14 @@ export function LucianaBotView() {
       value: reply.value,
       label: reply.label,
       text: reply.label,
-    });
+    }, undefined, session);
   };
 
   const handleSubmit = async () => {
     const text = input.trim();
     if (!text || isSending || uploading || !canType) return;
     setInput('');
-    await sendEvent({ type: 'message', text });
+    await sendEvent({ type: 'message', text }, undefined, session);
   };
 
   const uploadAudio = async (file: File) => {
@@ -378,7 +386,7 @@ export function LucianaBotView() {
       await sendEvent({
         type: 'file',
         file: uploaded,
-      });
+      }, undefined, session);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No pude subir el audio.');
     } finally {
