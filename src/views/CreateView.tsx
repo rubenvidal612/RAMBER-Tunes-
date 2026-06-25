@@ -203,6 +203,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
+  const [isMasterizarModalOpen, setIsMasterizarModalOpen] = useState(false);
+  const masterizarUploadRef = useRef<HTMLDivElement>(null);
   const [voices, setVoices] = useState<
     Array<{
       voiceId: string;
@@ -3303,18 +3305,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onPickAudio={pickAudio}
             uploadProgress={uploadProgress}
             onOpenAudioModal={() => setIsAudioModalOpen(true)}
-            onStartMastering={() => {
-              setAudioAction('master');
-              if (!audioFile) {
-                audioInputRef?.current?.click?.();
-                return;
-              }
-              if (!audioUploadUrl) {
-                setIsAudioModalOpen(true);
-                return;
-              }
-              handleMasterFromAudio().catch(() => {});
-            }}
+            onStartMastering={() => setIsMasterizarModalOpen(true)}
             selectedPersona={selectedVoice}
             onClearPersona={() => setSelectedVoice(null)}
             isTranscribingAudioLyrics={isTranscribingAudioLyrics}
@@ -3333,6 +3324,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               });
             }}
             onRefreshAudioPlayableUrl={() => refreshAudioPlayableUrl().catch(() => {})}
+            masterizarUploadRef={masterizarUploadRef}
           />
         )}
       </div>
@@ -3407,6 +3399,65 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         </div>
       ) : null}
 
+      {/* Modal de Masterizar */}
+      {isMasterizarModalOpen && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0b0f16] p-6">
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <div className="text-white font-extrabold text-2xl">Masterizar Canción</div>
+              <button
+                type="button"
+                onClick={() => setIsMasterizarModalOpen(false)}
+                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Botones de opción */}
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              {/* Botón: Masterizar por 10 créditos */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMasterizarModalOpen(false);
+                  setAudioAction('master');
+                  setTimeout(() => {
+                    masterizarUploadRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 100);
+                }}
+                className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(34,197,94,0.4)] hover:shadow-[0_0_40px_rgba(34,197,94,0.6)]"
+                style={{
+                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                  color: '#000',
+                  border: '3px solid #4ade80'
+                }}
+              >
+                <span className="text-5xl">💰</span>
+                <span className="text-center leading-tight">Masterizar por 10 Créditos</span>
+              </button>
+
+              {/* Botón: Masterizar Ilimitado */}
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = '/masterizar';
+                }}
+                className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:shadow-[0_0_40px_rgba(234,179,8,0.6)]"
+                style={{
+                  background: 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
+                  color: '#000',
+                  border: '3px solid #facc15'
+                }}
+              >
+                <span className="text-5xl">♾️</span>
+                <span className="text-center leading-tight">Masterizar Ilimitado<br/>$150 Pesos / Mes</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons & Sticky Create */}
       {mode !== 'facil' ? (
         <div className="fixed md:sticky bottom-[76px] md:bottom-0 left-0 right-0 w-full px-4 flex flex-col gap-2 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent pt-12 pb-6 z-30">
@@ -3433,7 +3484,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       : audioUploadUrl && audioAction === 'vocals'
                         ? 'Crear voces'
                         : audioUploadUrl && audioAction === 'master'
-                          ? 'Masterizar (10 créditos)'
+                          ? 'Masterizar'
                         : audioUploadUrl && audioAction === 'extend'
                           ? 'Extender (Próximamente)'
                           : audioUploadUrl && audioAction === 'library'
@@ -5914,7 +5965,8 @@ function CustomForm({
   isDev,
   onRecordStudioAudio,
   onRefreshAudioPlayableUrl,
-  onStartMastering
+  onStartMastering,
+  masterizarUploadRef
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
@@ -5964,7 +6016,7 @@ function CustomForm({
   
 
   return (
-    <>
+    <div ref={masterizarUploadRef}>
       {/* PRIMERA FILA: Subir Audio / Quiero Cantarlo */}
       <div className="grid grid-cols-2 gap-3 mb-4">
         {/* Botón Subir Mi Archivo de Audio */}
@@ -6445,7 +6497,7 @@ function CustomForm({
           </div>
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
