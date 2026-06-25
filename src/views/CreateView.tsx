@@ -204,6 +204,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
   const [isMasterizarModalOpen, setIsMasterizarModalOpen] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const masterizarUploadRef = useRef<HTMLDivElement>(null);
   const [voices, setVoices] = useState<
     Array<{
@@ -3218,26 +3219,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             {/* Botones de opciones: WhatsApp, Intentar Yo, o Tengo el Audio */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               {/* Botón de WhatsApp - Cuadrado grande fosforescente */}
-              <a
-                href="https://wa.me/529931520202"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full"
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppModal(true)}
+                className="w-full h-[180px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(0,255,128,0.5)] hover:shadow-[0_0_40px_rgba(0,255,128,0.7)]"
+                style={{
+                  background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)',
+                  color: '#000',
+                  border: '3px solid #00ff88',
+                  textShadow: '0 0 10px rgba(0,255,128,0.8)'
+                }}
               >
-                <button
-                  type="button"
-                  className="w-full h-[180px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(0,255,128,0.5)] hover:shadow-[0_0_40px_rgba(0,255,128,0.7)]"
-                  style={{
-                    background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)',
-                    color: '#000',
-                    border: '3px solid #00ff88',
-                    textShadow: '0 0 10px rgba(0,255,128,0.8)'
-                  }}
-                >
-                  <span className="text-5xl">💬</span>
-                  <span className="font-black text-center leading-tight">¡Quiero que una Persona Me Haga la Canción!</span>
-                </button>
-              </a>
+                <span className="text-5xl">💬</span>
+                <span className="font-black text-center leading-tight">¡Quiero que una Persona Me Haga la Canción!</span>
+              </button>
 
               {/* Botón de "Lo Quiero Intentar Yo" - Cuadrado grande */}
               <button
@@ -3286,6 +3281,77 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 onSelectionsChange={setEasyModeSelections}
               />
             </div>
+
+            {/* Modal de opciones de WhatsApp */}
+            {showWhatsAppModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                <div className="mx-4 w-full max-w-md rounded-3xl border border-white/20 bg-gradient-to-b from-[#0f172a] to-[#1e293b] p-6 shadow-2xl">
+                  <div className="mb-6 text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 mb-4">
+                      <span className="text-3xl">💬</span>
+                    </div>
+                    <h3 className="text-xl font-extrabold text-white mb-2">¿Cómo prefieres crear tu canción?</h3>
+                    <p className="text-sm text-slate-300">
+                      Elige la opción que mejor se adapte a tus necesidades
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {/* Botón "Una Persona Real" */}
+                    <a
+                      href="https://wa.me/529931520202"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full"
+                    >
+                      <button
+                        type="button"
+                        className="w-full h-[140px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(0,255,128,0.5)] hover:shadow-[0_0_40px_rgba(0,255,128,0.7)]"
+                        style={{
+                          background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)',
+                          color: '#000',
+                          border: '3px solid #00ff88',
+                          textShadow: '0 0 10px rgba(0,255,128,0.8)'
+                        }}
+                      >
+                        <span className="text-4xl">👤</span>
+                        <span className="font-black text-center leading-tight text-sm">Una Persona Real</span>
+                      </button>
+                    </a>
+
+                    {/* Botón "Ayuda con Robot" */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWhatsAppModal(false);
+                        // Redirigir a la pestaña del chatbot
+                        window.location.href = '/chatbot';
+                      }}
+                      className="w-full h-[140px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(147,51,234,0.5)] hover:shadow-[0_0_40px_rgba(147,51,234,0.7)]"
+                      style={{
+                        background: 'linear-gradient(135deg, #9333ea 0%, #7c3aed 100%)',
+                        color: '#fff',
+                        border: '3px solid #a855f7',
+                        textShadow: '0 0 10px rgba(168,85,247,0.8)'
+                      }}
+                    >
+                      <span className="text-4xl">🤖</span>
+                      <span className="font-black text-center leading-tight text-sm">Ayuda con Robot</span>
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowWhatsAppModal(false)}
+                      className="flex-1 rounded-2xl border border-slate-600 bg-slate-800/50 px-4 py-3 text-white font-bold hover:bg-slate-700/50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <CustomForm 
