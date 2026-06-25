@@ -1302,9 +1302,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         {activeTab === 'canciones' && (
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors">
-              Me gusta
-            </button>
-            <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors">
               Publicado
             </button>
             <button
@@ -2150,19 +2147,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             )}
                           >
                             {song.isPublic ? 'Público' : 'Privado'}
-                          </button>
-                          <button 
-                            onClick={() => toggleLikeForSong(song)}
-                            disabled={Boolean(songActionBusy[song.id])}
-                            className={cn(
-                              "w-7 h-7 rounded-full flex items-center justify-center transition-colors",
-                              likedSongIds[song.id]
-                                ? "bg-pink-500/20 hover:bg-pink-500/30 text-pink-300" 
-                                : "bg-white/5 hover:bg-white/10 text-slate-300",
-                              songActionBusy[song.id] ? "opacity-60" : ""
-                            )}
-                          >
-                            <ThumbsUp className={cn("w-3.5 h-3.5", likedSongIds[song.id] ? "fill-pink-300" : "")} />
                           </button>
                           <button 
                             onClick={() => shareSongCard(song)}
