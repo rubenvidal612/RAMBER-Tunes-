@@ -5965,99 +5965,131 @@ function CustomForm({
 
   return (
     <>
-      <div className="flex gap-4">
-        <div className="flex-1 flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (audioFile) {
-                onOpenAudioModal?.();
-                return;
-              }
-              audioInputRef?.current?.click?.();
-            }}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white cursor-pointer relative transition-colors shadow-inner"
-          >
-            <Plus className="w-5 h-5 text-slate-400" /> {audioUploadUrl ? 'Audio cargado' : 'Audio'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (typeof onRecordStudioAudio === 'function') {
-                onRecordStudioAudio?.();
-                return;
-              }
-              audioCaptureInputRef?.current?.click?.();
-            }}
-            className="w-12 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center text-emerald-100"
-            aria-label="Grabar con micrófono"
-            title="Grabar con micrófono"
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-          {!!audioUploadUrl && (
-            <button
-              type="button"
-              onClick={() => onClearAudio?.()}
-              className="w-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-slate-200"
-              aria-label="Eliminar audio"
-              title="Eliminar audio"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-        <input 
-          type="file" 
-          accept=".mp3,audio/mpeg,audio/mp3" 
-          className="hidden" 
-          ref={audioInputRef}
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              const f = e.target.files[0];
-              e.currentTarget.value = '';
-              if (!isMp3File(f)) {
-                setAudioUploadError('El archivo debe ser MP3. Convierte aquí: https://online-audio-converter.com/sp/');
-                alert('El archivo debe ser MP3.\n\nConvierte aquí: https://online-audio-converter.com/sp/');
-                return;
-              }
-              onPickAudio(f);
+      {/* PRIMERA FILA: Subir Audio / Quiero Cantarlo */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* Botón Subir Mi Archivo de Audio */}
+        <button
+          type="button"
+          onClick={() => {
+            if (audioFile) {
+              onOpenAudioModal?.();
+              return;
             }
+            audioInputRef?.current?.click?.();
           }}
-        />
-        <input
-          type="file"
-          accept="audio/*"
-          capture="microphone"
-          className="hidden"
-          ref={audioCaptureInputRef}
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              const f = e.target.files[0];
-              e.currentTarget.value = '';
-              onPickAudio(f);
+          className="h-[120px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_25px_rgba(34,197,94,0.4)] hover:shadow-[0_0_35px_rgba(34,197,94,0.6)]"
+          style={{
+            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+            color: '#fff',
+            border: '3px solid #4ade80'
+          }}
+        >
+          <span className="text-4xl">📁</span>
+          <span className="text-center leading-tight">Subir Mi Archivo de Audio</span>
+        </button>
+
+        {/* Botón Quiero Cantarlo */}
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof onRecordStudioAudio === 'function') {
+              onRecordStudioAudio?.();
+              return;
             }
+            audioCaptureInputRef?.current?.click?.();
           }}
-        />
+          className="h-[120px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_25px_rgba(236,72,153,0.4)] hover:shadow-[0_0_35px_rgba(236,72,153,0.6)]"
+          style={{
+            background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
+            color: '#fff',
+            border: '3px solid #f472b6'
+          }}
+        >
+          <span className="text-4xl">🎤</span>
+          <span className="text-center leading-tight">Quiero Cantarlo</span>
+        </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3">
+      {/* INPUTS OCULTOS */}
+      <input 
+        type="file" 
+        accept=".mp3,audio/mpeg,audio/mp3" 
+        className="hidden" 
+        ref={audioInputRef}
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            const f = e.target.files[0];
+            e.currentTarget.value = '';
+            if (!isMp3File(f)) {
+              setAudioUploadError('El archivo debe ser MP3. Convierte aquí: https://online-audio-converter.com/sp/');
+              alert('El archivo debe ser MP3.\n\nConvierte aquí: https://online-audio-converter.com/sp/');
+              return;
+            }
+            onPickAudio(f);
+          }
+        }}
+      />
+      <input
+        type="file"
+        accept="audio/*"
+        capture="microphone"
+        className="hidden"
+        ref={audioCaptureInputRef}
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            const f = e.target.files[0];
+            e.currentTarget.value = '';
+            onPickAudio(f);
+          }
+        }}
+      />
+
+      {/* SEGUNDA FILA: Masterizar / Clonador de Voz */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* Botón Masterizar */}
         <button
           type="button"
           onClick={() => onStartMastering?.()}
-          className="flex items-center justify-center gap-2 py-3 bg-emerald-500/15 hover:bg-emerald-500/20 rounded-2xl text-sm font-semibold border border-emerald-500/20 text-emerald-100 transition-colors shadow-inner"
+          className="h-[120px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_25px_rgba(59,130,246,0.4)] hover:shadow-[0_0_35px_rgba(59,130,246,0.6)]"
+          style={{
+            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+            color: '#fff',
+            border: '3px solid #60a5fa'
+          }}
         >
-          <BadgeCheck className="w-5 h-5" /> Masterizar
-          <span className="text-[11px] text-emerald-100/80 font-extrabold">(10)</span>
+          <span className="text-4xl">⚡</span>
+          <span className="text-center leading-tight">Masterizar</span>
         </button>
+
+        {/* Botón Clonador de Voz */}
         <button
           type="button"
           onClick={onOpenPersonaPicker}
-          className="flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-sm font-semibold border border-white/5 text-slate-300 hover:text-white transition-colors shadow-inner"
+          className="h-[120px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] shadow-[0_0_25px_rgba(245,158,11,0.4)] hover:shadow-[0_0_35px_rgba(245,158,11,0.6)]"
+          style={{
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            color: '#fff',
+            border: '3px solid #fbbf24'
+          }}
         >
-          <Plus className="w-5 h-5 text-slate-400" /> Clonador
+          <span className="text-4xl">👤</span>
+          <span className="text-center leading-tight">Clonador de Voz</span>
         </button>
       </div>
+
+      {/* Botón de eliminar audio si es que hay uno cargado */}
+      {!!audioUploadUrl && (
+        <div className="flex justify-end mb-3">
+          <button
+            type="button"
+            onClick={() => onClearAudio?.()}
+            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-full text-red-200 text-sm font-semibold flex items-center gap-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            Eliminar audio
+          </button>
+        </div>
+      )}
 
       {!audioUploadUrl && (
         <div className="mt-2 px-1 grid grid-cols-2 gap-6">
@@ -6159,15 +6191,24 @@ function CustomForm({
       {selectedPersona?.voiceId && (
         <div className="glass-card rounded-2xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0">
-              <User className="w-5 h-5" />
-            </div>
+            {/* Foto en miniatura de la voz clonada */}
+            {selectedPersona.imageUrl ? (
+              <img
+                src={selectedPersona.imageUrl}
+                alt={selectedPersona.name}
+                className="w-12 h-12 rounded-xl object-cover shrink-0 border-2 border-purple-400"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-purple-500/20 border-2 border-purple-500/30 flex items-center justify-center text-purple-200 shrink-0">
+                <User className="w-6 h-6" />
+              </div>
+            )}
             <div className="min-w-0">
               <div className="text-white font-bold truncate">{selectedPersona.name || 'Voz'}</div>
-              <div className="text-slate-500 text-xs">Usando voz</div>
+              <div className="text-purple-400 text-xs font-semibold">✅ Voz seleccionada</div>
             </div>
           </div>
-          <button onClick={onClearPersona} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200">
+          <button onClick={onClearPersona} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-red-500/20 hover:border-red-500/30 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
