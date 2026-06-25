@@ -4910,7 +4910,9 @@ function SongOptionsSheet({
             )}
             {downloadsAllowed === false && !isDeleted && (
               <div className="px-4 py-3 border-t border-white/5 text-[12px] text-slate-400">
-                Puedes escuchar tu canción normalmente y la tendrás guardada en Biblioteca. Para descargarla, necesitas activar un plan.
+                🎵 Puedes escuchar tu canción normalmente y la tendrás guardada en Biblioteca. 
+                <br/>
+                💾 Para <strong>descargarla</strong> (MP3, WAV, Letras), necesitas activar un <strong>plan de recarga</strong>.
               </div>
             )}
             {downloadsAllowed === false && !isDeleted && (
@@ -4919,7 +4921,7 @@ function SongOptionsSheet({
                 onClick={() => window.location.href = '/planes'}
               >
                 <span>💰</span>
-                <span>Obtener Créditos para Descargar Canciones</span>
+                <span>Comprar Plan de $199 para Descargar Canciones</span>
               </button>
             )}
             {!isDeleted && (

@@ -82,6 +82,7 @@ function tabFromPathname(pathname: string): ViewTab {
   if (/^\/clonador(?:\/|$)/i.test(p) || /^\/voces(?:\/|$)/i.test(p)) return 'voces';
   if (/^\/karaoke(?:\/|$)/i.test(p)) return 'karaoke';
   if (/^\/mv(?:\/|$)/i.test(p) || /^\/videos(?:\/|$)/i.test(p)) return 'mv';
+  if (/^\/planes(?:\/|$)/i.test(p)) return 'planes';
   return 'studio';
 }
 
@@ -103,6 +104,8 @@ function pathnameFromTab(tab: ViewTab): string {
       return '/karaoke';
     case 'mv':
       return '/videos';
+    case 'planes':
+      return '/planes';
     case 'studio':
     default:
       return '/crear';
@@ -2665,6 +2668,13 @@ export default function App() {
             </ViewErrorBoundary>
           )}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
+          {currentTab === 'planes' && (
+            <PricingView
+              onClose={() => {
+                setCurrentTab('studio');
+              }}
+            />
+          )}
            
            {/* Placeholders */}
            {currentTab === 'mv' && (
@@ -2731,6 +2741,12 @@ export default function App() {
                  </div>
               ) : currentTab === 'luciana' ? (
                 <LucianaBotView />
+              ) : currentTab === 'planes' ? (
+                <PricingView
+                  onClose={() => {
+                    setCurrentTab('studio');
+                  }}
+                />
                 ) : (
                   <ViewErrorBoundary title="Biblioteca">
                     <LibraryView

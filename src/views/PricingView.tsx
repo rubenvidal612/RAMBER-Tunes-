@@ -172,6 +172,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               { name: 'Crear canción (genera A y B)', cost: '12 créditos' },
               { name: 'Extender canción', cost: '12 créditos' },
               { name: 'Karaoke (quitar voz)', cost: '10 créditos' },
+              { name: 'Masterizar 10 créditos', cost: '10 créditos' },
               { name: 'Separación de instrumentos (STEMS)', cost: '50 créditos' },
               { name: 'Video musical', cost: '2 créditos' },
               { name: 'Reemplazar sección', cost: '5 créditos' },
