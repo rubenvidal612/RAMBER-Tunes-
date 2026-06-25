@@ -29,17 +29,28 @@ function buttonClass(kind: 'primary' | 'secondary' | 'success' | 'ghost' = 'prim
 }
 
 export function MasterizarView() {
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [originalPreviewUrl, setOriginalPreviewUrl] = useState<string | null>(null);
+  const [user, setUser] = useState&lt;SessionUser | null&gt;(null);
+  const [file, setFile] = useState&lt;File | null&gt;(null);
+  const [originalPreviewUrl, setOriginalPreviewUrl] = useState&lt;string | null&gt;(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [processingError, setProcessingError] = useState<string | null>(null);
-  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState&lt;string | null&gt;(null);
+  const [previewUrl, setPreviewUrl] = useState&lt;string | null&gt;(null);
+  const [processingError, setProcessingError] = useState&lt;string | null&gt;(null);
+  const [subscription, setSubscription] = useState&lt;SubscriptionInfo | null&gt;(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
   const isLoggedIn = !!user?.id;
   const isOwner = OWNER_EMAILS.includes((user?.email || '').trim().toLowerCase());
+  
+  // Get mode from URL query params
+  const [mode, setMode] = useState&lt;'credits' | 'unlimited'&gt;('unlimited');
+  
+  useEffect(() =&gt; {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const modeParam = params.get('mode');
+      setMode(modeParam === 'credits' ? 'credits' : 'unlimited');
+    }
+  }, []);
   const publicShareUrl = useMemo(() => {
     if (typeof window === 'undefined') return 'https://ramber-tunes.vercel.app/masterizar';
     return `${window.location.origin.replace(/\/+$/, '')}/masterizar`;

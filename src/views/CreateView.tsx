@@ -3421,10 +3421,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 type="button"
                 onClick={() => {
                   setIsMasterizarModalOpen(false);
-                  setAudioAction('master');
-                  setTimeout(() => {
-                    masterizarUploadRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }, 100);
+                  window.location.href = '/masterizar?mode=credits';
                 }}
                 className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(34,197,94,0.4)] hover:shadow-[0_0_40px_rgba(34,197,94,0.6)]"
                 style={{
@@ -3441,7 +3438,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               <button
                 type="button"
                 onClick={() => {
-                  window.location.href = '/masterizar';
+                  window.location.href = '/masterizar?mode=unlimited';
                 }}
                 className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:shadow-[0_0_40px_rgba(234,179,8,0.6)]"
                 style={{
