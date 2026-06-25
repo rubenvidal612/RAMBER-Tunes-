@@ -12272,7 +12272,7 @@ const lucianaBotHandler = (() => {
     setComposer(session, "text", "Escribe lo que necesitas o toca un botón…", "Enviar");
     pushAssistant(
       session,
-      intro || "Soy LucIAna Bot. Te ayudo a crear canciones, hacer covers, ver créditos o revisar tus canciones recientes.\n\n⚠️ **IMPORTANTE:** Para usar el chatbot, debes presionar uno de los botones de opciones disponibles. No escribas directamente en el campo de texto.",
+      intro || "Soy LucIAna Bot. Te ayudo a crear canciones, hacer covers, ver créditos o revisar tus canciones recientes.",
       {
         quickReplies: mainMenuReplies(),
         inputMode: "text",

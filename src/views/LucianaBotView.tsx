@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  Trash2,
   Upload,
   PencilLine,
   FileText,
@@ -185,6 +186,7 @@ export function LucianaBotView() {
   const [isSending, setIsSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pollingRef = useRef(false);
@@ -215,6 +217,21 @@ export function LucianaBotView() {
   const composer = session?.composer || createEmptySession().composer;
   const canType = composer.mode === 'text' || composer.mode === 'multiline';
   const canUpload = composer.mode === 'audio' || composer.mode === 'audio_mp3';
+
+  const handleDeleteChat = () => {
+    // Crear una nueva sesión vacía
+    const emptySession = createEmptySession();
+    setSession(emptySession);
+    setShowDeleteConfirm(false);
+    
+    // Limpiar el localStorage
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+    
+    // Enviar evento de apertura para iniciar nueva conversación
+    sendEvent({ type: 'open' }, { silent: false }).catch(() => {});
+  };
 
   const sendEvent = async (
     event: Record<string, any>,
@@ -386,14 +403,24 @@ export function LucianaBotView() {
   return (
     <div className="h-full min-h-0 flex flex-col bg-[#05070d]">
       <div className="shrink-0 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 px-4 md:px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <MessageCircleMore className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <MessageCircleMore className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-white font-extrabold text-lg">LucIAna Bot</div>
+              <div className="text-slate-300 text-xs md:text-sm">Te guía paso a paso para crear, hacer covers y revisar tu saldo.</div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="text-white font-extrabold text-lg">LucIAna Bot</div>
-            <div className="text-slate-300 text-xs md:text-sm">Te guía paso a paso para crear, hacer covers y revisar tu saldo.</div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 transition-colors"
+            title="Eliminar historial del chat"
+          >
+            <Trash2 className="w-5 h-5 text-red-400" />
+          </button>
         </div>
       </div>
 
@@ -593,6 +620,42 @@ export function LucianaBotView() {
           className="hidden"
         />
       </div>
+
+      {/* Modal de confirmación para eliminar chat */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-3xl border border-white/20 bg-gradient-to-b from-[#0f172a] to-[#1e293b] p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="rounded-2xl bg-red-500/20 p-2">
+                <Trash2 className="w-6 h-6 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-extrabold text-white">¿Seguro que quieres eliminar el historial?</h3>
+                <p className="mt-1 text-sm text-slate-300">
+                  Se borrarán todos los mensajes de esta conversación. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 rounded-2xl border border-slate-600 bg-slate-800/50 px-4 py-3 text-white font-bold hover:bg-slate-700/50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteChat}
+                className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-600 px-4 py-3 text-white font-bold hover:from-red-600 hover:to-red-700 transition-all"
+              >
+                Sí, eliminar chat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
