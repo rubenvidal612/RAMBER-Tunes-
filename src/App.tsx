@@ -731,19 +731,6 @@ export default function App() {
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
 
-  // Función para verificar si el usuario es administrador
-  const isAdmin = useMemo(() => {
-    const email = authEmail.toLowerCase().trim();
-    if (!email) return false;
-    
-    // Lista de emails de administradores
-    const adminEmails = [
-      'rubenfiverr612@gmail.com',
-      'rubenvidal612@gmail.com',
-      // Agrega más emails de administradores aquí si es necesario
-    ];
-    return adminEmails.includes(email);
-  }, [authEmail]);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [nowPlayingMode, setNowPlayingMode] = useState<'normal' | 'elenco'>('normal');
   const [isElencoMenuOpen, setIsElencoMenuOpen] = useState(false);
