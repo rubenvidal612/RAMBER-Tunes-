@@ -582,10 +582,13 @@ function InicioSocial({
                   {isAdmin && onDeleteSong && (
                     <button
                       onClick={(e) => handleDeleteClick(s, e)}
-                      className="shrink-0 w-10 h-10 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-200 font-extrabold hover:bg-red-500/30"
+                      className="shrink-0 w-10 h-10 rounded-full bg-red-500/40 border-2 border-red-500/60 flex items-center justify-center text-white font-extrabold hover:bg-red-500/60 hover:border-red-500/80 transition-all duration-200 shadow-lg shadow-red-500/20 relative group"
                       title="Eliminar canción"
                     >
                       🗑️
+                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/90 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none">
+                        Eliminar canción
+                      </div>
                     </button>
                   )}
                 </div>
@@ -684,7 +687,9 @@ export default function App() {
       // Agrega más emails de administradores aquí si es necesario
     ];
     
-    return adminEmails.includes(email);
+    const result = adminEmails.includes(email);
+    console.log(`[DEBUG] isAdmin check: email=${email}, result=${result}`);
+    return result;
   }, [authEmail]);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [nowPlayingMode, setNowPlayingMode] = useState<'normal' | 'elenco'>('normal');
