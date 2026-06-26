@@ -9485,6 +9485,30 @@ const socialHandler = (() => {
     }
   }
 
+  async function handleRemoveFromFeed(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    const isAdmin = isAdminEmail(auth.user.email);
+    if (!isAdmin) return send(res, 403, { error: "Solo un administrador puede quitar canciones del inicio" });
+
+    try {
+      const { error } = await auth.admin.from(PUBLIC_TABLE).delete().eq("song_id", songId);
+      if (error) {
+        return send(res, 500, { error: "No pude quitar la canción del inicio", detail: error.message });
+      }
+      return send(res, 200, { ok: true, removed_from_feed: true });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleSearchUsers(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -9833,6 +9857,7 @@ const socialHandler = (() => {
     if (a === "feed") return handleFeed(req, res);
     if (a === "genres") return handleGenres(req, res);
     if (a === "publish") return handlePublish(req, res);
+    if (a === "remove") return handleRemoveFromFeed(req, res);
     if (a === "search") return handleSearchUsers(req, res);
     if (a === "follow") return handleFollowUser(req, res);
     if (a === "user") return handleUserProfile(req, res);
