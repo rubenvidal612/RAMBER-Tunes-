@@ -366,6 +366,11 @@ function InicioSocial({
   const [songToDelete, setSongToDelete] = useState<SongItem | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Depuración
+  useEffect(() => {
+    console.log(`[DEBUG InicioSocial] isAdmin=${isAdmin}, onDeleteSong=${!!onDeleteSong}, items count=${items.length}`);
+  }, [isAdmin, onDeleteSong, items.length]);
+
   const loadFeed = async (mode: 'reset' | 'more') => {
     setLoading(true);
     setError('');
@@ -579,15 +584,15 @@ function InicioSocial({
                   >
                     ▶
                   </button>
-                  {isAdmin && onDeleteSong && (
+                  {onDeleteSong && (
                     <button
                       onClick={(e) => handleDeleteClick(s, e)}
                       className="shrink-0 w-10 h-10 rounded-full bg-red-500/40 border-2 border-red-500/60 flex items-center justify-center text-white font-extrabold hover:bg-red-500/60 hover:border-red-500/80 transition-all duration-200 shadow-lg shadow-red-500/20 relative group"
-                      title="Eliminar canción"
+                      title="Eliminar canción (Admin)"
                     >
                       🗑️
                       <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/90 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none">
-                        Eliminar canción
+                        Eliminar canción (Admin)
                       </div>
                     </button>
                   )}
