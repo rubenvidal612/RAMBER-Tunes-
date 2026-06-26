@@ -9772,7 +9772,14 @@ const socialHandler = (() => {
     const cursor = (pickQuery(req, "cursor") || "").toString().trim();
 
     try {
-      const q = admin.from(PUBLIC_TABLE).select("*").order("published_at", { ascending: false }).limit(limit);
+      const cutoffMs = Date.now() - 15 * 24 * 60 * 60 * 1000;
+      const cutoffIso = new Date(cutoffMs).toISOString();
+      try {
+        await admin.from(PUBLIC_TABLE).delete().lt("published_at", cutoffIso);
+      } catch {
+      }
+
+      const q = admin.from(PUBLIC_TABLE).select("*").order("published_at", { ascending: false }).limit(limit).gte("published_at", cutoffIso);
       if (genre) q.eq("genre", genre);
       if (cursor) q.lt("published_at", cursor);
       const { data, error } = await q;
@@ -9810,7 +9817,9 @@ const socialHandler = (() => {
     const admin = a.admin;
 
     try {
-      const { data, error } = await admin.from(PUBLIC_TABLE).select("genre, cover_url").order("published_at", { ascending: false }).limit(200);
+      const cutoffMs = Date.now() - 15 * 24 * 60 * 60 * 1000;
+      const cutoffIso = new Date(cutoffMs).toISOString();
+      const { data, error } = await admin.from(PUBLIC_TABLE).select("genre, cover_url").order("published_at", { ascending: false }).limit(200).gte("published_at", cutoffIso);
       if (error) {
         const msg = (error.message || "").toLowerCase();
         const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");

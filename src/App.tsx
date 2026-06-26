@@ -348,13 +348,9 @@ const AFFILIATE_REF_KEY = 'ramber.affiliate_ref_v1';
 function InicioSocial({
   onPlaySong,
   onGoStudio,
-  onRemoveFromInicio,
-  isAdmin = false,
 }: {
   onPlaySong: (s: SongItem) => void;
   onGoStudio: () => void;
-  onRemoveFromInicio?: (id: string) => void | Promise<void>;
-  isAdmin?: boolean;
 }) {
   const [tab, setTab] = useState<'canciones' | 'listas' | 'generos'>('canciones');
   const [items, setItems] = useState<SongItem[]>([]);
@@ -363,11 +359,6 @@ function InicioSocial({
   const [error, setError] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [activeGenre, setActiveGenre] = useState('');
-  const [songToDelete, setSongToDelete] = useState<SongItem | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
-  const swipeStartXRef = useRef(0);
-  const swipeStartYRef = useRef(0);
 
   const loadFeed = async (mode: 'reset' | 'more') => {
     setLoading(true);
@@ -405,59 +396,6 @@ function InicioSocial({
     } finally {
       setLoading(false);
     }
-  };
-
-  const canDeleteFromFeed = isAdmin && Boolean(onRemoveFromInicio);
-
-  const openDeleteConfirm = (song: SongItem) => {
-    setOpenSwipeId(null);
-    setSongToDelete(song);
-    setShowDeleteConfirm(true);
-  };
-
-  const handleDeleteClick = (song: SongItem, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    openDeleteConfirm(song);
-  };
-
-  const handleSwipeStart = (e: React.TouchEvent, songId: string) => {
-    if (!canDeleteFromFeed) return;
-    const touch = e.touches[0];
-    if (!touch) return;
-    swipeStartXRef.current = touch.clientX;
-    swipeStartYRef.current = touch.clientY;
-    if (openSwipeId && openSwipeId !== songId) {
-      setOpenSwipeId(null);
-    }
-  };
-
-  const handleSwipeEnd = (e: React.TouchEvent, songId: string) => {
-    if (!canDeleteFromFeed) return;
-    const touch = e.changedTouches[0];
-    if (!touch) return;
-    const deltaX = touch.clientX - swipeStartXRef.current;
-    const deltaY = touch.clientY - swipeStartYRef.current;
-    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) < Math.abs(deltaY)) return;
-    setOpenSwipeId((prev) => (prev === songId ? null : songId));
-  };
-
-  const confirmDelete = async () => {
-    if (!songToDelete || !onRemoveFromInicio) return;
-    
-    try {
-      await onRemoveFromInicio(songToDelete.id);
-      setItems(prev => prev.filter(s => s.id !== songToDelete.id));
-      setShowDeleteConfirm(false);
-      setSongToDelete(null);
-    } catch (error) {
-      console.error('Error al quitar canción del inicio:', error);
-      alert('No se pudo quitar la canción del inicio');
-    }
-  };
-
-  const cancelDelete = () => {
-    setShowDeleteConfirm(false);
-    setSongToDelete(null);
   };
 
   const loadGenres = async () => {
@@ -574,81 +512,34 @@ function InicioSocial({
             </div>
           ) : null}
 
-          {canDeleteFromFeed ? (
-            <div className="mb-3 px-1 text-xs text-slate-400">
-              Desliza cada canción para quitarla solo del Inicio.
-            </div>
-          ) : null}
-
           <div className="space-y-3">
             {items.map((s) => (
-              <div
+              <button
                 key={s.id}
-                className="relative overflow-hidden rounded-2xl"
+                onClick={() => onPlaySong(s)}
+                className="w-full flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-colors text-left"
               >
-                {canDeleteFromFeed ? (
-                  <div className="absolute inset-y-0 right-0 flex items-stretch">
-                    <button
-                      onClick={(e) => handleDeleteClick(s, e)}
-                      className="h-full w-[88px] bg-red-500 hover:bg-red-400 text-white font-extrabold flex flex-col items-center justify-center gap-1"
-                      title="Quitar del Inicio"
-                    >
-                      <span className="text-xl leading-none">🗑️</span>
-                      <span className="text-[11px]">Quitar</span>
-                    </button>
-                  </div>
-                ) : null}
-
-                <div
-                  onTouchStart={(e) => handleSwipeStart(e, s.id)}
-                  onTouchEnd={(e) => handleSwipeEnd(e, s.id)}
-                  className="relative z-10 w-full flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-all duration-200"
-                  style={{ transform: canDeleteFromFeed && openSwipeId === s.id ? 'translateX(-88px)' : 'translateX(0px)' }}
-                >
-                  <button
-                    onClick={() => {
-                      if (canDeleteFromFeed && openSwipeId === s.id) {
-                        setOpenSwipeId(null);
-                        return;
-                      }
-                      onPlaySong(s);
-                    }}
-                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                  >
-                    <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
-                      {s.coverUrl ? <img src={s.coverUrl} className="w-full h-full object-cover" /> : null}
+                <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+                  {s.coverUrl ? <img src={s.coverUrl} className="w-full h-full object-cover" /> : null}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white font-extrabold truncate">{s.title}</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-[10px] font-extrabold text-indigo-200 shrink-0">
+                      {s.authorAvatarUrl ? <img src={s.authorAvatarUrl} className="w-full h-full object-cover" /> : (s.authorName || 'U').slice(0, 1).toUpperCase()}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-extrabold truncate">{s.title}</div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/30 overflow-hidden flex items-center justify-center text-[10px] font-extrabold text-indigo-200 shrink-0">
-                          {s.authorAvatarUrl ? <img src={s.authorAvatarUrl} className="w-full h-full object-cover" /> : (s.authorName || 'U').slice(0, 1).toUpperCase()}
-                        </div>
-                        <div className="text-xs text-slate-300 truncate">{s.authorName || 'Usuario'}</div>
-                        {s.publicGenre ? (
-                          <div className="text-[10px] text-slate-200 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full truncate max-w-[140px]">
-                            {s.publicGenre}
-                          </div>
-                        ) : null}
+                    <div className="text-xs text-slate-300 truncate">{s.authorName || 'Usuario'}</div>
+                    {s.publicGenre ? (
+                      <div className="text-[10px] text-slate-200 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full truncate max-w-[140px]">
+                        {s.publicGenre}
                       </div>
-                    </div>
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        if (canDeleteFromFeed && openSwipeId === s.id) {
-                          setOpenSwipeId(null);
-                          return;
-                        }
-                        onPlaySong(s);
-                      }}
-                      className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 font-extrabold hover:bg-white/10"
-                    >
-                      ▶
-                    </button>
+                    ) : null}
                   </div>
                 </div>
-              </div>
+                <div className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 font-extrabold">
+                  ▶
+                </div>
+              </button>
             ))}
           </div>
 
@@ -662,32 +553,6 @@ function InicioSocial({
         </div>
       ) : null}
 
-      {/* Modal de confirmación para eliminar canción */}
-      {showDeleteConfirm && songToDelete && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full">
-            <div className="text-white font-extrabold text-lg mb-2">¿Quitar del Inicio?</div>
-            <div className="text-slate-300 text-sm mb-4">
-              ¿Estás seguro de que quieres quitar la canción "{songToDelete.title}" del Inicio público?
-              La canción seguirá existiendo en la biblioteca del usuario.
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={cancelDelete}
-                className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 rounded-full py-3 font-extrabold transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="flex-1 bg-red-500 hover:bg-red-400 text-white rounded-full py-3 font-extrabold transition-colors"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2163,28 +2028,6 @@ export default function App() {
     }
   };
 
-  const removeSongFromInicio = async (songId: string) => {
-    try {
-      const t = await getAccessToken();
-      if (!t.ok) {
-        alert(t.error || 'No se pudo iniciar sesión.');
-        return;
-      }
-      const r = await fetch('/api/social/remove', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ songId }),
-      });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok || out?.ok === false) {
-        alert(out?.error || 'No pude quitar la canción del inicio.');
-        return;
-      }
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Error quitando del inicio');
-    }
-  };
-
   const restoreCancion = async (songId: string) => {
     try {
       const t = await getAccessToken();
@@ -2827,12 +2670,7 @@ export default function App() {
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && (
              isAuthed ? (
-               <InicioSocial 
-                 onPlaySong={playSong} 
-                 onGoStudio={() => setCurrentTab('studio')}
-                onRemoveFromInicio={removeSongFromInicio}
-                 isAdmin={isAdmin}
-               />
+               <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
              ) : (
                <InicioLanding
                  email={authEmail}
@@ -2912,12 +2750,7 @@ export default function App() {
            {currentTab === 'inicio' ? (
              <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
               {isAuthed ? (
-                <InicioSocial 
-                  onPlaySong={playSong} 
-                  onGoStudio={() => setCurrentTab('studio')}
-                  onRemoveFromInicio={removeSongFromInicio}
-                  isAdmin={isAdmin}
-                />
+                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
               ) : (
                 <InicioLanding
                   email={authEmail}
