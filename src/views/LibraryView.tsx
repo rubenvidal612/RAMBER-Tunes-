@@ -2557,11 +2557,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </button>
                     <button
                       className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
                       onClick={() => {
                         const base = sanitizeFileName(downloadsModalTitle || 'stems');
-                        const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
-                        list.forEach((x) => {
+                        downloadsModalItems.forEach((x) => {
                           const name = sanitizeFileName(`${base} - ${x.label}.mp3`);
                           downloadToDevice(x.url, name).catch(() => {});
                         });
@@ -2571,7 +2570,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </button>
                     <button
                       className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
+                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
                       onClick={() => {
                         downloadMixedStemsMp3().catch(() => {});
                       }}
@@ -2712,7 +2711,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
                               downloadToDevice(it.url, name).catch(() => {});
                             }}
-                            disabled={downloadsModalZipping || isMuted}
+                            disabled={downloadsModalZipping}
                           >
                             Descargar
                           </button>

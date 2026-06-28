@@ -197,9 +197,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const easyModeWizardRef = useRef<HTMLDivElement | null>(null);
 
-  const [weirdness, setWeirdness] = useState(50);
-  const [styleInfluence, setStyleInfluence] = useState(50);
-  const [audioInfluence, setAudioInfluence] = useState(25);
+  const [weirdness, setWeirdness] = useState(75);
+  const [styleInfluence, setStyleInfluence] = useState(40);
+  const [audioInfluence, setAudioInfluence] = useState(20);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
