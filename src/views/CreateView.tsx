@@ -741,7 +741,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setInstrumental(false);
     setAudioFile(null);
     setAudioUploadUrl(url);
-    setAudioUploadPath(((song as any)?.audioPath || '').toString().trim() || deriveAudioPath(rawUrl) || deriveAudioPath(url));
+    const nextAudioPath = ((song as any)?.audioPath || '').toString().trim() || deriveAudioPath(rawUrl) || deriveAudioPath(url);
+    setAudioUploadPath(nextAudioPath);
     setIsUploadingAudio(false);
     setUploadProgress(100);
     setExternalAudioLabel(song?.title ? `Cover de: ${song.title}` : 'Cover desde Biblioteca');
@@ -752,6 +753,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
     const srcLyrics = typeof song?.lyrics === 'string' ? song.lyrics : '';
     if (srcLyrics.trim()) setLyrics(srcLyrics);
+    // #region debug-point B:cover-prefill
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"B",location:"src/views/CreateView.tsx:prefill-useEffect",msg:"[DEBUG] CreateView recibio prefill de cover",data:{prefillNonce,songId,rawUrl,url,nextAudioPath,title:(song?.title||"").toString()},ts:Date.now()})}).catch(()=>{});
+    // #endregion
   }, [prefillNonce, prefill]);
 
   useEffect(() => {
@@ -905,8 +909,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const refreshAudioPlayableUrl = async () => {
     const fallback = (audioUploadUrl || '').toString().trim();
     const key = (audioUploadPath || '').toString().trim().replace(/^\/+/, '');
+    // #region debug-point C:refresh-audio-start
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"C",location:"src/views/CreateView.tsx:refreshAudioPlayableUrl:start",msg:"[DEBUG] Intentando resolver audioPlayableUrl",data:{fallback,key},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!key) {
       setAudioPlayableUrl(fallback);
+      // #region debug-point C:refresh-audio-no-key
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"C",location:"src/views/CreateView.tsx:refreshAudioPlayableUrl:no-key",msg:"[DEBUG] No llego audioPath; usando fallback",data:{fallback},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       return;
     }
     const allowed = key.startsWith('uploads/audio/') || key.startsWith('uploads/');
@@ -924,9 +934,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const url = (out?.url || '').toString().trim();
     if (r.ok && url) {
       setAudioPlayableUrl(url);
+      // #region debug-point C:refresh-audio-signed
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"C",location:"src/views/CreateView.tsx:refreshAudioPlayableUrl:signed",msg:"[DEBUG] Audio firmado correctamente",data:{key,url},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       return;
     }
     setAudioPlayableUrl(fallback);
+    // #region debug-point C:refresh-audio-fallback
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"C",location:"src/views/CreateView.tsx:refreshAudioPlayableUrl:fallback",msg:"[DEBUG] Firma fallo; usando fallback",data:{key,fallback,status:r.status,error:(out?.error||out?.detail||"").toString()},ts:Date.now()})}).catch(()=>{});
+    // #endregion
   };
 
   const resetVoiceWizard = () => {
@@ -6363,7 +6379,17 @@ function CustomForm({
                 preload="metadata"
                 src={(audioPlayableUrl || audioUploadUrl).toString()}
                 className="w-full"
+                onLoadedMetadata={(e) => {
+                  const el = e.currentTarget;
+                  // #region debug-point D:cover-audio-loaded
+                  fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"D",location:"src/views/CreateView.tsx:audio:onLoadedMetadata",msg:"[DEBUG] Audio de cover cargo metadata",data:{src:(el.currentSrc||el.src||"").toString(),duration:Number(el.duration||0),readyState:Number(el.readyState||0)},ts:Date.now()})}).catch(()=>{});
+                  // #endregion
+                }}
                 onError={() => {
+                  const el = document.querySelector('audio') as HTMLAudioElement | null;
+                  // #region debug-point D:cover-audio-error
+                  fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"D",location:"src/views/CreateView.tsx:audio:onError",msg:"[DEBUG] Audio de cover fallo al cargar",data:{audioUploadUrl:(audioUploadUrl||"").toString(),audioPlayableUrl:(audioPlayableUrl||"").toString(),audioUploadPath:(audioUploadPath||"").toString(),currentSrc:(el?.currentSrc||el?.src||"").toString(),networkState:Number(el?.networkState||0),readyState:Number(el?.readyState||0)},ts:Date.now()})}).catch(()=>{});
+                  // #endregion
                   onRefreshAudioPlayableUrl?.();
                 }}
               />

@@ -1530,6 +1530,9 @@ export default function App() {
       alert('Esta canción no tiene audio para hacer cover.');
       return;
     }
+    // #region debug-point A:library-to-cover
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"A",location:"src/App.tsx:startCoverFromSong",msg:"[DEBUG] Biblioteca envia audio a cover",data:{songId,title:(song?.title||"").toString(),rawUrl,url,audioPath,sunoTaskId:(song?.sunoTaskId||"").toString(),sunoAudioId:(song?.sunoAudioId||"").toString()},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     setStudioPrefill({ type: 'cover', song: { ...song, audioUrl: url, audioPath } });
     setStudioPrefillNonce((n) => n + 1);
     setCurrentTab('studio');
