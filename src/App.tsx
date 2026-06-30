@@ -925,11 +925,15 @@ export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const originalAlert = window.alert.bind(window);
+    (window as any).__nativeAlert = originalAlert;
     window.alert = ((message?: any) => {
       showStyledAlert(String(message ?? ''));
     }) as typeof window.alert;
     return () => {
       window.alert = originalAlert;
+      if ((window as any).__nativeAlert === originalAlert) {
+        delete (window as any).__nativeAlert;
+      }
     };
   }, []);
 

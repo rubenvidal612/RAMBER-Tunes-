@@ -2863,6 +2863,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const handleCreate = async () => {
     if (!onSongCreated) return false;
+    const showMissingLyricsAlert = () => {
+      const nativeAlert =
+        typeof window !== 'undefined' && typeof (window as any).__nativeAlert === 'function'
+          ? (window as any).__nativeAlert
+          : window.alert.bind(window);
+      nativeAlert('Es necesario poner la letra para continuar.');
+    };
 
     const easyBaseLyrics = normalizeLyricsTags(
       ((easyModeSelections.finalLyrics || easyModeSelections.lyricContent || '') as string).toString()
@@ -2881,7 +2888,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (audioUploadUrl) {
       if (audioAction === 'cover') {
         if (isMissingRequiredLyrics) {
-          alert('Es necesario poner la letra para continuar.');
+          showMissingLyricsAlert();
           return false;
         }
         await handleCoverFromAudio();
@@ -2909,7 +2916,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const easyCustomLyrics = normalizeLyricsTags(((easyModeSelections.lyricContent || '') as string).toString());
 
     if (isMissingRequiredLyrics) {
-      alert('Es necesario poner la letra para continuar.');
+      showMissingLyricsAlert();
       return false;
     }
 
