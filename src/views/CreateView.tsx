@@ -2899,8 +2899,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
     if (!instrumental) {
       if (mode === 'facil') {
-        const easyLyricsReady = easyFinalLyrics || (easyLyricMode === 'custom' ? easyCustomLyrics : '');
-        if (!easyLyricsReady.trim()) {
+        if (!easyFinalLyrics.trim()) {
           alert('Es necesario poner la letra para continuar.');
           return false;
         }
@@ -5420,6 +5419,16 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       });
     }
   }, [selectedGenre, customGenre, songTitle, lyricMode, lyricContent, finalLyrics, selectedVoice, selectedMood, extraInstructions, onSelectionsChange]);
+
+  useEffect(() => {
+    if (!finalLyrics) return;
+    setFinalLyrics('');
+    setShowLyricsNotice(false);
+    setIsEditingReviewLyrics(false);
+    if (easyStage === 'review_lyrics') {
+      setEasyStage('wizard');
+    }
+  }, [lyricMode, lyricContent]);
   
   const steps = [
     { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
