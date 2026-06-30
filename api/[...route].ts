@@ -740,6 +740,55 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
 }
 
+async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCredits: number) {
+  const cost = round2(Number(costCredits));
+  if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
+
+  try {
+    await ensureMonthlyCreditsCycle(admin, userId);
+  } catch {
+  }
+
+  try {
+    const plan = await getUserPlan(admin, userId);
+    const key = String((plan as any)?.plan_key || "").toLowerCase();
+    const exp = (plan as any)?.plan_expires_at;
+    const active = Boolean((plan as any)?.plan_active);
+    if ((key === "inicio" || key === "productor") && exp && !active) {
+      return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+    }
+  } catch {
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
+    if (!profile) {
+      const created = await ensureProfileExists(admin, userId);
+      if (!created.ok) return { ok: false as const, error: created.error };
+      continue;
+    }
+
+    const creditsExpiresAt = profile.credits_expires_at;
+    if (creditsExpiresAt) {
+      const expiresDate = new Date(creditsExpiresAt);
+      const now = new Date();
+      if (expiresDate < now) {
+        return {
+          ok: false as const,
+          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
+        };
+      }
+    }
+
+    const current = creditsFromProfile(profile);
+    if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
+    return { ok: true as const, credits: current };
+  }
+
+  return { ok: false as const, error: "No pude validar créditos (intenta otra vez)." };
+}
+
 function isAdminEmail(email?: string | null) {
   const e = (email || "").trim().toLowerCase();
   if (!e) return false;
@@ -1425,8 +1474,8 @@ const sunoHandler = (() => {
 
     try {
       if (!isAdmin) {
-        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        const available = await ensureUserHasCreditsAvailable(auth.admin, user.id, cost);
+        if (!available.ok) return send(res, 402, { error: available.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
       const paths = [
@@ -1467,10 +1516,9 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true });
+      await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: false });
       return send(res, 200, { taskId });
     } catch (e) {
-      if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
       return send(res, 502, { error: "No se pudo hacer el cover.", detail: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -2033,6 +2081,20 @@ const sunoHandler = (() => {
           if (consumed && Number.isFinite(cost) && cost > 0) {
             await adjustUserCredits(auth.admin, user.id, cost);
             await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", user.id);
+          }
+        }
+      }
+
+      if (status === "SUCCESS" && !isAdmin) {
+        const { data: rows } = await auth.admin.from("suno_tasks").select("cost, consumed, kind").eq("task_id", taskId).limit(1);
+        const row = Array.isArray(rows) ? rows[0] : null;
+        const cost = Number(row?.cost ?? 0);
+        const consumed = Boolean(row?.consumed);
+        const taskKind = String(row?.kind || "").trim().toLowerCase();
+        if (taskKind === "upload-cover" && !consumed && Number.isFinite(cost) && cost > 0) {
+          const charged = await consumeUserCredits(auth.admin, user.id, cost);
+          if (charged.ok) {
+            await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", taskId).eq("user_id", user.id);
           }
         }
       }
