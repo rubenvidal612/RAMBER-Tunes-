@@ -2864,8 +2864,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const handleCreate = async () => {
     if (!onSongCreated) return false;
 
+    const easyBaseLyrics = normalizeLyricsTags(
+      ((easyModeSelections.finalLyrics || easyModeSelections.lyricContent || '') as string).toString()
+    );
+    const baseLyrics = mode === 'facil'
+      ? easyBaseLyrics
+      : (instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString())));
+    const easyFinalLyrics = normalizeLyricsTags(((easyModeSelections.finalLyrics || '') as string).toString());
+    const rawCustomLyrics = (lyrics || '').toString().trim();
+    const isMissingRequiredLyrics = !instrumental && (
+      mode === 'facil'
+        ? !easyFinalLyrics.trim()
+        : !rawCustomLyrics || !baseLyrics.trim()
+    );
+
     if (audioUploadUrl) {
       if (audioAction === 'cover') {
+        if (isMissingRequiredLyrics) {
+          alert('Es necesario poner la letra para continuar.');
+          return false;
+        }
         await handleCoverFromAudio();
         return true;
       }
@@ -2887,29 +2905,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     }
 
-    const easyBaseLyrics = normalizeLyricsTags(
-      ((easyModeSelections.finalLyrics || easyModeSelections.lyricContent || '') as string).toString()
-    );
-    const baseLyrics = mode === 'facil'
-      ? easyBaseLyrics
-      : (instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString())));
     const easyLyricMode = (easyModeSelections.lyricMode || '').trim();
     const easyCustomLyrics = normalizeLyricsTags(((easyModeSelections.lyricContent || '') as string).toString());
-    const easyFinalLyrics = normalizeLyricsTags(((easyModeSelections.finalLyrics || '') as string).toString());
 
-    if (!instrumental) {
-      if (mode === 'facil') {
-        if (!easyFinalLyrics.trim()) {
-          alert('Es necesario poner la letra para continuar.');
-          return false;
-        }
-      } else {
-        const rawCustomLyrics = (lyrics || '').toString().trim();
-        if (!rawCustomLyrics || !baseLyrics.trim()) {
-          alert('Es necesario poner la letra para continuar.');
-          return false;
-        }
-      }
+    if (isMissingRequiredLyrics) {
+      alert('Es necesario poner la letra para continuar.');
+      return false;
     }
 
     let prompt = '';
