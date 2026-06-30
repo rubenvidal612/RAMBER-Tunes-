@@ -20,7 +20,7 @@ import { CREDIT_COSTS } from './lib/credits';
 
 import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
-import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, MessageCircle, MoreVertical, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, MessageCircle, MoreVertical, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 const APP_UPDATES: Array<{ date: string; title: string; detail: string }> = [
@@ -581,6 +581,7 @@ export default function App() {
   const [studioPrefill, setStudioPrefill] = useState<null | { type: 'cover'; song: SongItem }>(null);
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
+  const [alertQueue, setAlertQueue] = useState<Array<{ id: string; message: string }>>([]);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isBalanceOpen, setIsBalanceOpen] = useState(false);
   const [balanceData, setBalanceData] = useState<any>(null);
@@ -693,6 +694,70 @@ export default function App() {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
+
+  const showStyledAlert = (message: string) => {
+    const text = String(message || '').trim();
+    if (!text) return;
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setAlertQueue((prev) => [...prev, { id, message: text }]);
+  };
+
+  const closeStyledAlert = () => {
+    setAlertQueue((prev) => prev.slice(1));
+  };
+
+  const activeAlert = alertQueue[0] || null;
+  const activeAlertText = (activeAlert?.message || '').trim();
+  const activeAlertLower = activeAlertText.toLowerCase();
+  const activeAlertTone = activeAlertLower.includes('error') ||
+    activeAlertLower.includes('no pude') ||
+    activeAlertLower.includes('fall') ||
+    activeAlertLower.includes('inválid') ||
+    activeAlertLower.includes('insuficient')
+    ? 'error'
+    : activeAlertLower.includes('listo') ||
+        activeAlertLower.includes('copiado') ||
+        activeAlertLower.includes('guardad') ||
+        activeAlertLower.includes('actualiz')
+      ? 'success'
+      : activeAlertLower.includes('importante') ||
+          activeAlertLower.includes('necesita') ||
+          activeAlertLower.includes('primero') ||
+          activeAlertLower.includes('espera')
+        ? 'warning'
+        : 'info';
+
+  const alertMeta = activeAlertTone === 'error'
+    ? {
+        title: 'Algo salió mal',
+        Icon: AlertTriangle,
+        ring: 'shadow-[0_0_35px_rgba(248,113,113,0.22)]',
+        iconBg: 'bg-red-500/15 text-red-300 border-red-400/20',
+        button: 'bg-gradient-to-r from-red-500 to-fuchsia-500 text-white',
+      }
+    : activeAlertTone === 'success'
+      ? {
+          title: 'Listo',
+          Icon: CheckCircle2,
+          ring: 'shadow-[0_0_35px_rgba(74,222,128,0.18)]',
+          iconBg: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/20',
+          button: 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white',
+        }
+      : activeAlertTone === 'warning'
+        ? {
+            title: 'Atención',
+            Icon: AlertTriangle,
+            ring: 'shadow-[0_0_35px_rgba(250,204,21,0.2)]',
+            iconBg: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/20',
+            button: 'bg-gradient-to-r from-yellow-400 to-amber-500 text-black',
+          }
+        : {
+            title: 'LucIAna Music',
+            Icon: Info,
+            ring: 'shadow-[0_0_35px_rgba(96,165,250,0.2)]',
+            iconBg: 'bg-cyan-500/15 text-cyan-200 border-cyan-400/20',
+            button: 'bg-gradient-to-r from-cyan-500 to-indigo-500 text-white',
+          };
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -852,7 +917,20 @@ export default function App() {
       setIsPricingOpen(true);
     };
     window.addEventListener('ramber:openPricing', onOpenPricing as any);
-    return () => window.removeEventListener('ramber:openPricing', onOpenPricing as any);
+    return () => {
+      window.removeEventListener('ramber:openPricing', onOpenPricing as any);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const originalAlert = window.alert.bind(window);
+    window.alert = ((message?: any) => {
+      showStyledAlert(String(message ?? ''));
+    }) as typeof window.alert;
+    return () => {
+      window.alert = originalAlert;
+    };
   }, []);
 
   useEffect(() => {
@@ -3744,6 +3822,40 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         <div className="fixed left-0 right-0 bottom-[92px] z-[320] flex justify-center px-4 pointer-events-none">
           <div className="bg-black/80 border border-white/10 backdrop-blur-md text-slate-100 text-sm font-semibold px-4 py-2 rounded-full">
             {toast}
+          </div>
+        </div>
+      ) : null}
+
+      {activeAlert ? (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+          <button
+            type="button"
+            aria-label="Cerrar aviso"
+            className="absolute inset-0 h-full w-full"
+            onClick={closeStyledAlert}
+          />
+          <div className={cn("relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#090d17] p-5 text-white", alertMeta.ring)}>
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent" />
+            <div className="flex items-start gap-4">
+              <div className={cn("mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border", alertMeta.iconBg)}>
+                <alertMeta.Icon className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-lg font-extrabold tracking-tight">{alertMeta.title}</div>
+                <div className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">
+                  {activeAlert.message}
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeStyledAlert}
+                className={cn("min-w-[120px] rounded-full px-5 py-2.5 text-sm font-extrabold transition-transform active:scale-[0.98]", alertMeta.button)}
+              >
+                Entendido
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
