@@ -709,6 +709,31 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const song = prefill.song;
     const songId = (song?.id || '').toString().trim();
     const rawUrl = (song?.audioUrl || '').toString().trim();
+    const deriveAudioPath = (value: string) => {
+      const src = (value || '').toString().trim();
+      if (!src) return '';
+      try {
+        const parsed = new URL(src, window.location.origin);
+        const keyFromQuery = (parsed.searchParams.get('key') || '').toString().trim().replace(/^\/+/, '');
+        if (keyFromQuery && (keyFromQuery.startsWith('uploads/audio/') || keyFromQuery.startsWith('uploads/') || keyFromQuery.startsWith('imports/'))) {
+          return keyFromQuery;
+        }
+        const host = (parsed.hostname || '').toLowerCase();
+        const isR2 =
+          host.includes('.r2.cloudflarestorage.com') ||
+          host.endsWith('.r2.dev') ||
+          host.includes('.r2') ||
+          src.includes('.r2.cloudflarestorage.com/');
+        if (!isR2) return '';
+        const key = (parsed.pathname || '').replace(/^\/+/, '');
+        if (key && (key.startsWith('uploads/audio/') || key.startsWith('uploads/') || key.startsWith('imports/'))) {
+          return key;
+        }
+        return '';
+      } catch {
+        return '';
+      }
+    };
     const url = rawUrl || (songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '');
     if (!url) return;
     setMode('personalizado');
@@ -716,7 +741,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     setInstrumental(false);
     setAudioFile(null);
     setAudioUploadUrl(url);
-    setAudioUploadPath('');
+    setAudioUploadPath(((song as any)?.audioPath || '').toString().trim() || deriveAudioPath(rawUrl) || deriveAudioPath(url));
     setIsUploadingAudio(false);
     setUploadProgress(100);
     setExternalAudioLabel(song?.title ? `Cover de: ${song.title}` : 'Cover desde Biblioteca');

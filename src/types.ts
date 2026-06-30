@@ -23,6 +23,7 @@ export interface SongItem {
   authorName?: string;
   authorAvatarUrl?: string;
   audioUrl?: string;
+  audioPath?: string;
   coverUrl?: string;
   createdAt?: string;
   deletedAt?: string | null;

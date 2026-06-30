@@ -1499,12 +1499,38 @@ export default function App() {
   const startCoverFromSong = (song: SongItem) => {
     const songId = (song?.id || '').toString().trim();
     const rawUrl = (song?.audioUrl || '').toString().trim();
+    const deriveAudioPath = (value: string) => {
+      const src = (value || '').toString().trim();
+      if (!src) return '';
+      try {
+        const parsed = new URL(src, window.location.origin);
+        const keyFromQuery = (parsed.searchParams.get('key') || '').toString().trim().replace(/^\/+/, '');
+        if (keyFromQuery && (keyFromQuery.startsWith('uploads/audio/') || keyFromQuery.startsWith('uploads/') || keyFromQuery.startsWith('imports/'))) {
+          return keyFromQuery;
+        }
+        const host = (parsed.hostname || '').toLowerCase();
+        const isR2 =
+          host.includes('.r2.cloudflarestorage.com') ||
+          host.endsWith('.r2.dev') ||
+          host.includes('.r2') ||
+          src.includes('.r2.cloudflarestorage.com/');
+        if (!isR2) return '';
+        const key = (parsed.pathname || '').replace(/^\/+/, '');
+        if (key && (key.startsWith('uploads/audio/') || key.startsWith('uploads/') || key.startsWith('imports/'))) {
+          return key;
+        }
+        return '';
+      } catch {
+        return '';
+      }
+    };
+    const audioPath = deriveAudioPath(rawUrl) || (song?.audioPath || '').toString().trim();
     const url = rawUrl || (songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '');
     if (!url) {
       alert('Esta canción no tiene audio para hacer cover.');
       return;
     }
-    setStudioPrefill({ type: 'cover', song: { ...song, audioUrl: url } });
+    setStudioPrefill({ type: 'cover', song: { ...song, audioUrl: url, audioPath } });
     setStudioPrefillNonce((n) => n + 1);
     setCurrentTab('studio');
   };
