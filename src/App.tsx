@@ -1502,12 +1502,20 @@ export default function App() {
     const deriveAudioPath = (value: string) => {
       const src = (value || '').toString().trim();
       if (!src) return '';
+      const normalizeKey = (raw: string) => {
+        const key = (raw || '').toString().trim().replace(/^\/+/, '');
+        if (!key) return '';
+        const prefixes = ['uploads/audio/', 'uploads/', 'imports/'];
+        for (const prefix of prefixes) {
+          const idx = key.indexOf(prefix);
+          if (idx >= 0) return key.slice(idx);
+        }
+        return '';
+      };
       try {
         const parsed = new URL(src, window.location.origin);
-        const keyFromQuery = (parsed.searchParams.get('key') || '').toString().trim().replace(/^\/+/, '');
-        if (keyFromQuery && (keyFromQuery.startsWith('uploads/audio/') || keyFromQuery.startsWith('uploads/') || keyFromQuery.startsWith('imports/'))) {
-          return keyFromQuery;
-        }
+        const keyFromQuery = normalizeKey((parsed.searchParams.get('key') || '').toString());
+        if (keyFromQuery) return keyFromQuery;
         const host = (parsed.hostname || '').toLowerCase();
         const isR2 =
           host.includes('.r2.cloudflarestorage.com') ||
@@ -1515,11 +1523,7 @@ export default function App() {
           host.includes('.r2') ||
           src.includes('.r2.cloudflarestorage.com/');
         if (!isR2) return '';
-        const key = (parsed.pathname || '').replace(/^\/+/, '');
-        if (key && (key.startsWith('uploads/audio/') || key.startsWith('uploads/') || key.startsWith('imports/'))) {
-          return key;
-        }
-        return '';
+        return normalizeKey(parsed.pathname || '');
       } catch {
         return '';
       }
