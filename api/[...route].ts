@@ -5720,6 +5720,66 @@ const libraryHandler = (() => {
     const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
     if (error) {
       console.error(`❌ [handleCreate] Error al guardar canción en base de datos:`, error);
+      try {
+        const findExisting = async (query: any) => {
+          const { data: existing } = await query.limit(1).maybeSingle();
+          return existing || null;
+        };
+
+        let recovered: any = null;
+
+        if (sunoAudioId) {
+          recovered = await findExisting(
+            auth.admin
+              .from(TABLE)
+              .select("*")
+              .eq("user_id", auth.user.id)
+              .eq("type", ITEM_TYPE)
+              .eq("suno_audio_id", sunoAudioId)
+              .is("deleted_at", null)
+          );
+        }
+
+        if (!recovered && sunoTaskId && finalAudioUrl) {
+          recovered = await findExisting(
+            auth.admin
+              .from(TABLE)
+              .select("*")
+              .eq("user_id", auth.user.id)
+              .eq("type", ITEM_TYPE)
+              .eq("suno_task_id", sunoTaskId)
+              .eq("audio_url", finalAudioUrl)
+              .is("deleted_at", null)
+          );
+        }
+
+        if (!recovered && finalAudioUrl) {
+          recovered = await findExisting(
+            auth.admin
+              .from(TABLE)
+              .select("*")
+              .eq("user_id", auth.user.id)
+              .eq("type", ITEM_TYPE)
+              .eq("title", title)
+              .eq("audio_url", finalAudioUrl)
+              .is("deleted_at", null)
+          );
+        }
+
+        if (recovered) {
+          console.log(`ℹ️ [handleCreate] La canción ya existía, regresando el registro guardado: ${recovered.id}`);
+          return send(res, 200, {
+            song: recovered,
+            deleted_oldest: false,
+            deleted_id: null,
+            deleted_count: 0,
+            deleted_titles: [],
+            already: true,
+          });
+        }
+      } catch (recoverError) {
+        console.error(`❌ [handleCreate] No pude recuperar la canción existente tras error de insert:`, recoverError);
+      }
       return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
     }
 
