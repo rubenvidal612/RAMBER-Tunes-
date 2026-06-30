@@ -4892,7 +4892,7 @@ function SongOptionsSheet({
                 onClick={() => window.location.href = '/planes'}
               >
                 <span>💰</span>
-                <span>Comprar Plan de $199 para Descargar Canciones</span>
+                <span>Comprar Plan de $250 para Descargar Canciones</span>
               </button>
             )}
             {!isDeleted && (

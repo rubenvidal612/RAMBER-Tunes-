@@ -4896,7 +4896,7 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor" | "masterizar";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio", amount_mxn: 199, credits: 1200, songs: 200 },
+    inicio: { title: "Pack Inicio", amount_mxn: 250, credits: 1200, songs: 200 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
     masterizar: { title: "Masterizar Ilimitado", amount_mxn: 150, credits: 0, songs: 0 },
   };
@@ -5053,7 +5053,7 @@ const mercadoPagoHandler = (() => {
     const origin = originFromReq(req);
 
     const preferenceBody: any = {
-      items: [{ title: `${pack.title} - ${pack.songs} canciones`, quantity: 1, currency_id: "MXN", unit_price: pack.amount_mxn }],
+      items: [{ title: "LucIAna Music", quantity: 1, currency_id: "MXN", unit_price: pack.amount_mxn }],
       external_reference: `ramber:${auth.user.id}:${packKey}`,
       metadata: { user_id: auth.user.id, kind: "songs", pack_key: packKey, amount_mxn: pack.amount_mxn, credits: pack.credits, songs: pack.songs },
       back_urls: { success: `${origin}/?mp=success`, failure: `${origin}/?mp=failure`, pending: `${origin}/?mp=pending` },
