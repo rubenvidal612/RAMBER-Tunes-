@@ -6136,17 +6136,32 @@ const libraryHandler = (() => {
     // Verificar si el usuario es administrador
     const isAdmin = isAdminEmail(auth.user.email);
     
-    // Construir la consulta base
-    let query = auth.admin.from(TABLE).update({ 
-      deleted_at: new Date().toISOString(), 
-      deleted_reason: "user_deleted" 
+    let existingQuery = auth.admin
+      .from(TABLE)
+      .select("id, deleted_at")
+      .eq("id", id)
+      .eq("type", ITEM_TYPE);
+
+    if (!isAdmin) {
+      existingQuery = existingQuery.eq("user_id", auth.user.id);
+    }
+
+    const { data: existing, error: findErr } = await existingQuery.maybeSingle();
+    if (findErr) return send(res, 500, { error: "No pude validar la canción", detail: findErr.message });
+    if (!existing) return send(res, 404, { error: "Canción no encontrada" });
+    if ((existing as any).deleted_at) {
+      return send(res, 200, { ok: true, already: true });
+    }
+
+    let query = auth.admin.from(TABLE).update({
+      deleted_at: new Date().toISOString(),
+      deleted_reason: "user_deleted"
     }).eq("id", id).eq("type", ITEM_TYPE);
-    
-    // Si no es administrador, solo puede eliminar sus propias canciones
+
     if (!isAdmin) {
       query = query.eq("user_id", auth.user.id);
     }
-    
+
     const { error } = await query;
     if (error) return send(res, 500, { error: "No pude eliminar", detail: error.message });
     return send(res, 200, { ok: true });

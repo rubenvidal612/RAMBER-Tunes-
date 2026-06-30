@@ -48,29 +48,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
-  const [songToDelete, setSongToDelete] = useState<SongItem | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  
-  const handleConfirmDelete = async () => {
-    if (!songToDelete || !onDeleteSong) return;
-    
+  const handleDeleteSong = async (song: SongItem | null) => {
+    if (!song || !onDeleteSong) return;
     try {
-      await onDeleteSong(songToDelete.id);
-      setShowDeleteConfirm(false);
-      setSongToDelete(null);
-      // Refrescar la lista de canciones
-      if (onRefreshSongs) {
-        onRefreshSongs();
-      }
+      await onDeleteSong(song.id);
+      onRefreshSongs?.();
     } catch (error) {
       console.error('Error al eliminar canción:', error);
       alert('No se pudo eliminar la canción');
     }
-  };
-
-  const handleCancelDelete = () => {
-    setShowDeleteConfirm(false);
-    setSongToDelete(null);
   };
 
   const [downloadsModalTaskId, setDownloadsModalTaskId] = useState('');
@@ -2455,9 +2441,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             onRestoreSong?.(id);
           }}
           onDelete={() => {
-            setSongToDelete(menuSong);
+            const currentSong = menuSong;
             setMenuSong(null);
-            setShowDeleteConfirm(true);
+            handleDeleteSong(currentSong).catch(() => {});
           }}
           onPurge={() => {
             const id = menuSong.id;

@@ -2848,6 +2848,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const baseLyrics = mode === 'facil'
       ? easyBaseLyrics
       : (instrumental ? '' : normalizeLyricsTags(stripTitleFromLyrics(title, (lyrics || '').toString())));
+    const easyLyricMode = (easyModeSelections.lyricMode || '').trim();
+    const easyCustomLyrics = normalizeLyricsTags(((easyModeSelections.lyricContent || '') as string).toString());
+    const easyFinalLyrics = normalizeLyricsTags(((easyModeSelections.finalLyrics || '') as string).toString());
+
+    if (!instrumental) {
+      if (mode === 'facil') {
+        const easyLyricsReady = easyFinalLyrics || (easyLyricMode === 'custom' ? easyCustomLyrics : '');
+        if (!easyLyricsReady.trim()) {
+          alert('Es necesario poner la letra para continuar.');
+          return false;
+        }
+      } else if (!baseLyrics.trim()) {
+        alert('Es necesario poner la letra para continuar.');
+        return false;
+      }
+    }
 
     let prompt = '';
     const normalizedSongTitle = (() => {
@@ -2890,7 +2906,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         prompt = `${prompt}\nÁnimo deseado: ${moodLabel}.`;
       }
     } else {
-      prompt = (baseLyrics || description).trim();
+      prompt = baseLyrics.trim();
     }
     
     if (!prompt && instrumental) {

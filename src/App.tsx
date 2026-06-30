@@ -2017,6 +2017,7 @@ export default function App() {
         alert(out?.error || 'No pude eliminar.');
         return;
       }
+      setCanciones((prev) => prev.filter((song) => song.id !== songId));
       await refreshLibrary();
       if (activeSong?.id === songId) {
         setActiveSong(null);
