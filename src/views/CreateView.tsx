@@ -2903,9 +2903,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           alert('Es necesario poner la letra para continuar.');
           return false;
         }
-      } else if (!baseLyrics.trim()) {
-        alert('Es necesario poner la letra para continuar.');
-        return false;
+      } else {
+        const rawCustomLyrics = (lyrics || '').toString().trim();
+        if (!rawCustomLyrics || !baseLyrics.trim()) {
+          alert('Es necesario poner la letra para continuar.');
+          return false;
+        }
       }
     }
 
