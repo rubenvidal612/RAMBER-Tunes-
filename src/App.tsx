@@ -2104,6 +2104,8 @@ export default function App() {
     setPlayerTime(0);
     setPlayerDuration(0);
     
+    let lastPlayError = '';
+
     const tryPlay = async (url: string) => {
       if (!audioRef.current) return false;
       const nextUrl = (url || '').toString().trim();
@@ -2145,28 +2147,41 @@ export default function App() {
         
         return true;
       } catch (e) {
+        lastPlayError = e instanceof Error ? e.message : String(e);
         // #region debug-point P4: Log playback failure
         console.debug(`[DEBUG-P4] Playback failed:`, {
           url: nextUrl,
           songId: song.id,
-          error: e instanceof Error ? e.message : String(e),
+          error: lastPlayError,
           errorType: e instanceof Error ? e.name : 'Unknown'
         });
         // #endregion
-        
-        alert(e instanceof Error ? e.message : 'No pude reproducir esta canción.');
         return false;
       }
     };
 
     const directUrl = (song.audioUrl || '').toString().trim();
-    if (/^https?:\/\//i.test(directUrl) || directUrl.startsWith('/')) {
-      const ok = await tryPlay(directUrl);
-      if (ok) return;
+    const hasProviderIds = Boolean((song.sunoTaskId || '').toString().trim() || (song.sunoAudioId || '').toString().trim());
+    const playCandidates: string[] = [];
+    const addCandidate = (url: string) => {
+      const clean = (url || '').toString().trim();
+      if (!clean) return;
+      if (playCandidates.includes(clean)) return;
+      playCandidates.push(clean);
+    };
+
+    if (!hasProviderIds && song?.id) {
+      addCandidate(`/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`);
     }
-    if (song?.id) {
-      const proxyUrl = `/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`;
-      const ok = await tryPlay(proxyUrl);
+    if (/^https?:\/\//i.test(directUrl) || directUrl.startsWith('/')) {
+      addCandidate(directUrl);
+    }
+    if (hasProviderIds && song?.id) {
+      addCandidate(`/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`);
+    }
+
+    for (const candidate of playCandidates) {
+      const ok = await tryPlay(candidate);
       if (ok) return;
     }
 
@@ -2295,6 +2310,11 @@ export default function App() {
       } catch {}
     }
 
+    if (lastPlayError) {
+      alert(lastPlayError);
+    } else {
+      alert('No pude reproducir esta canción.');
+    }
     if (audioRef.current) audioRef.current.src = '';
   };
 
