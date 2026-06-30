@@ -6123,6 +6123,9 @@ function CustomForm({
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
   const [instructionsLanguage, setInstructionsLanguage] = useState<'es' | 'en'>('es');
+  const [isTranslatingInstructions, setIsTranslatingInstructions] = useState(false);
+  const [instructionsOriginalEs, setInstructionsOriginalEs] = useState('');
+  const [instructionsTranslatedEn, setInstructionsTranslatedEn] = useState('');
   const instructionsCopy = {
     es: {
       label: 'Instrucciones',
@@ -6136,6 +6139,47 @@ function CustomForm({
     },
   } as const;
   const activeInstructionsCopy = instructionsCopy[instructionsLanguage];
+
+  const handleTranslateInstructions = async () => {
+    if (isTranslatingInstructions) return;
+
+    if (instructionsLanguage === 'en') {
+      if (instructionsOriginalEs.trim()) {
+        setInstructions(instructionsOriginalEs);
+      }
+      setInstructionsLanguage('es');
+      return;
+    }
+
+    const sourceText = (instructions || '').trim();
+    if (!sourceText) return;
+
+    if (instructionsOriginalEs === sourceText && instructionsTranslatedEn.trim()) {
+      setInstructions(instructionsTranslatedEn);
+      setInstructionsLanguage('en');
+      return;
+    }
+
+    setIsTranslatingInstructions(true);
+    try {
+      const response = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(sourceText)}&langpair=es|en`
+      );
+      const result = await response.json().catch(() => ({}));
+      const translatedText = (result?.responseData?.translatedText || '').toString().trim();
+      if (!response.ok || !translatedText) {
+        return;
+      }
+      setInstructionsOriginalEs(sourceText);
+      setInstructionsTranslatedEn(translatedText);
+      setInstructions(translatedText);
+      setInstructionsLanguage('en');
+    } catch {
+      return;
+    } finally {
+      setIsTranslatingInstructions(false);
+    }
+  };
 
   const normalizeLyrics = (t: string) => {
     const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
@@ -6601,10 +6645,14 @@ function CustomForm({
           <label className="font-bold text-white text-base block">{activeInstructionsCopy.label}</label>
           <button
             type="button"
-            onClick={() => setInstructionsLanguage((prev) => (prev === 'es' ? 'en' : 'es'))}
-            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10"
+            onClick={handleTranslateInstructions}
+            disabled={isTranslatingInstructions}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {activeInstructionsCopy.toggle}
+            <span className="inline-flex items-center gap-1.5">
+              {isTranslatingInstructions ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              <span>{activeInstructionsCopy.toggle}</span>
+            </span>
           </button>
         </div>
         <textarea
