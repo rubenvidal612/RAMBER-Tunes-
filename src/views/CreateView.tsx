@@ -6122,6 +6122,20 @@ function CustomForm({
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [prevLyrics, setPrevLyrics] = useState<string>('');
+  const [instructionsLanguage, setInstructionsLanguage] = useState<'es' | 'en'>('es');
+  const instructionsCopy = {
+    es: {
+      label: 'Instrucciones',
+      placeholder: 'Describe el estilo, el ambiente o los instrumentos de tu música',
+      toggle: '🌐 Traducir a Inglés (Recomendado)',
+    },
+    en: {
+      label: 'Instructions',
+      placeholder: 'Describe the style, mood, or instruments for your music',
+      toggle: '🌐 Traducir a Español',
+    },
+  } as const;
+  const activeInstructionsCopy = instructionsCopy[instructionsLanguage];
 
   const normalizeLyrics = (t: string) => {
     const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
@@ -6583,11 +6597,20 @@ function CustomForm({
 
       {/* Instrucciones (Estilos) */}
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
-        <label className="font-bold text-white text-base mb-4 block">Instrucciones</label>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <label className="font-bold text-white text-base block">{activeInstructionsCopy.label}</label>
+          <button
+            type="button"
+            onClick={() => setInstructionsLanguage((prev) => (prev === 'es' ? 'en' : 'es'))}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10"
+          >
+            {activeInstructionsCopy.toggle}
+          </button>
+        </div>
         <textarea
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Describe el estilo, el ambiente o los instrumentos de tu música"
+          placeholder={activeInstructionsCopy.placeholder}
           className="w-full bg-transparent text-[15px] placeholder:text-slate-500 font-medium resize-none outline-none min-h-[80px] text-white"
         />
         
