@@ -2049,13 +2049,13 @@ const sunoHandler = (() => {
 
       const statusRaw = data?.data?.status ?? data?.data?.successFlag ?? data?.data?.data?.status ?? data?.data?.data?.successFlag ?? "";
       const status =
-        kind === "midi"
+        kind === "midi" || kind === "wav"
           ? (() => {
               const n = typeof statusRaw === "number" ? statusRaw : Number(String(statusRaw || "").trim());
               if (n === 0) return "PENDING";
               if (n === 1) return "SUCCESS";
               if (n === 2) return "CREATE_TASK_FAILED";
-              if (n === 3) return "GENERATE_MIDI_FAILED";
+              if (n === 3) return kind === "wav" ? "GENERATE_WAV_FAILED" : "GENERATE_MIDI_FAILED";
               return String(statusRaw || "").toUpperCase();
             })()
           : String(statusRaw || "").toUpperCase();
@@ -2253,6 +2253,9 @@ const sunoHandler = (() => {
     const cost = CREDIT_COSTS.wav;
 
     try {
+      // #region debug-point D:handle-wav-start
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:start",msg:"[DEBUG] Entrando a /api/suno/wav",data:{userId:user.id,taskId,audioId,isAdmin,cost},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!isAdmin) {
         const plan = await getUserPlan(auth.admin, user.id).catch(() => ({ downloads_allowed: false }));
         if (!plan.downloads_allowed) return send(res, 403, { error: "Tu plan no incluye descargas. Compra un plan para poder descargar." });
@@ -2271,6 +2274,9 @@ const sunoHandler = (() => {
         if (r.res.status !== 404) break;
       }
       const { res: r, data, text } = last || {};
+      // #region debug-point D:handle-wav-provider
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:provider",msg:"[DEBUG] Respuesta proveedor al iniciar WAV",data:{taskId,audioId,httpStatus:r?.status??null,code:data?.code??null,outTaskId:typeof data?.data?.taskId===\"string\"?data.data.taskId.trim():\"\",error:data?.error||\"\",detail:data?.detail||text||\"\"},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!r) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Error convirtiendo a WAV", detail: "No pude contactar al proveedor" });
@@ -12329,6 +12335,11 @@ const lucianaBotHandler = (() => {
       provider?.status ??
       provider?.successFlag ??
       "";
+    const n = typeof raw === "number" ? raw : Number(String(raw || "").trim());
+    if (n === 0) return "PENDING";
+    if (n === 1) return "SUCCESS";
+    if (n === 2) return "CREATE_TASK_FAILED";
+    if (n === 3) return "FAILED";
     return String(raw || "").toUpperCase();
   }
 

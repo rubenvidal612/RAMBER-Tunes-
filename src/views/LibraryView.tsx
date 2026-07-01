@@ -3792,7 +3792,7 @@ function SongOptionsSheet({
       a.remove();
       URL.revokeObjectURL(obj);
       return true;
-    } catch {
+    } catch (error) {
       try {
         const a = document.createElement('a');
         a.href = url;
@@ -4074,13 +4074,23 @@ function SongOptionsSheet({
         if (!tr.ok) continue;
 
         const provider = tout?.data;
-        const status = String(
-          provider?.data?.successFlag ||
-            provider?.data?.status ||
-            provider?.data?.data?.successFlag ||
-            provider?.data?.data?.status ||
-            ''
-        ).toUpperCase();
+        const rawStatus =
+          provider?.data?.status ??
+          provider?.data?.successFlag ??
+          provider?.data?.data?.status ??
+          provider?.data?.data?.successFlag ??
+          '';
+        const numericStatus = typeof rawStatus === 'number' ? rawStatus : Number(String(rawStatus || '').trim());
+        const status =
+          numericStatus === 0
+            ? 'PENDING'
+            : numericStatus === 1
+              ? 'SUCCESS'
+              : numericStatus === 2
+                ? 'CREATE_TASK_FAILED'
+                : numericStatus === 3
+                  ? 'GENERATE_WAV_FAILED'
+                  : String(rawStatus || '').toUpperCase();
 
         if (
           status === 'FAILED' ||
@@ -4098,6 +4108,8 @@ function SongOptionsSheet({
             provider?.data?.data?.response?.audioWavUrl ||
             provider?.data?.response?.audio_wav_url ||
             provider?.data?.data?.response?.audio_wav_url ||
+            provider?.data?.data?.audioWavUrl ||
+            provider?.data?.data?.audio_wav_url ||
             provider?.data?.audioWavUrl ||
             provider?.data?.audio_wav_url ||
             ''
