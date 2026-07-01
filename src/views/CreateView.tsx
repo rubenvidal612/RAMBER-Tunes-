@@ -933,6 +933,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setAudioPlayableUrl(fallback);
       return;
     }
+    const proxyResp = await fetch(`/api/karaoke/proxy-url?key=${encodeURIComponent(key)}`, {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const proxyOut = await proxyResp.json().catch(() => ({}));
+    const proxyUrl = (proxyOut?.url || '').toString().trim();
+    if (proxyResp.ok && proxyUrl) {
+      setAudioPlayableUrl(proxyUrl);
+      return;
+    }
     const r = await fetch(`/api/upload-audio?action=sign&key=${encodeURIComponent(key)}`, { headers: { authorization: `Bearer ${t.token}` } });
     const out = await r.json().catch(() => ({}));
     const url = (out?.url || '').toString().trim();

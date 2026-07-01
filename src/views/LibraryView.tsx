@@ -4119,7 +4119,17 @@ function SongOptionsSheet({
           return;
         }
         const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
-        const ok = await downloadToDevice(wavUrl, `${base}.wav`);
+        let finalWavUrl = wavUrl;
+        try {
+          const pr = await fetch(`/api/karaoke/proxy-url?src=${encodeURIComponent(wavUrl)}`, {
+            headers: { authorization: `Bearer ${t.token}` },
+          });
+          const pout = await pr.json().catch(() => ({}));
+          const proxyUrl = (pout?.url || '').toString().trim();
+          if (pr.ok && proxyUrl) finalWavUrl = proxyUrl;
+        } catch {
+        }
+        const ok = await downloadToDevice(finalWavUrl, `${base}.wav`);
         if (!ok) {
           alert('Encontré el archivo WAV, pero tu navegador no pudo descargarlo automáticamente. Intenta otra vez en unos segundos.');
         }

@@ -4657,6 +4657,36 @@ const karaokeHandler = (() => {
         }
       };
 
+      const isAllowedProxySrc = (rawUrl: string) => {
+        let u: URL | null = null;
+        try {
+          u = new URL(rawUrl);
+        } catch {
+          u = null;
+        }
+        if (!u || u.protocol !== "https:") return { ok: false as const, error: "URL inválida" };
+        const host = (u.hostname || "").toLowerCase();
+        if (!host) return { ok: false as const, error: "URL inválida" };
+        if (
+          host === "localhost" ||
+          host === "0.0.0.0" ||
+          host === "::1" ||
+          host.endsWith(".local") ||
+          /^127\./.test(host) ||
+          /^10\./.test(host) ||
+          /^192\.168\./.test(host) ||
+          /^169\.254\./.test(host)
+        ) {
+          return { ok: false as const, error: "Origen no permitido" };
+        }
+        const m172 = host.match(/^172\.(\d{1,3})\./);
+        if (m172) {
+          const n = Number(m172[1] || 0);
+          if (n >= 16 && n <= 31) return { ok: false as const, error: "Origen no permitido" };
+        }
+        return { ok: true as const, url: u };
+      };
+
       if (next === "proxy-url") {
         if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
         const auth = await requireUser(req);
@@ -4673,16 +4703,8 @@ const karaokeHandler = (() => {
           if (!allowedPrefixes.some((p) => key.startsWith(p))) return send(res, 403, { ok: false, error: "No autorizado para este archivo" });
         }
         if (src) {
-          let u: URL | null = null;
-          try {
-            u = new URL(src);
-          } catch {
-            u = null;
-          }
-          if (!u || u.protocol !== "https:") return send(res, 400, { ok: false, error: "URL inválida" });
-          const host = (u.hostname || "").toLowerCase();
-          const allow = host.endsWith("replicate.delivery") || host.endsWith(".r2.cloudflarestorage.com") || host.endsWith(".r2.dev");
-          if (!allow) return send(res, 403, { ok: false, error: "Origen no permitido" });
+          const allowed = isAllowedProxySrc(src);
+          if (!allowed.ok) return send(res, allowed.error === "URL inválida" ? 400 : 403, { ok: false, error: allowed.error });
         }
 
         try {
@@ -4808,19 +4830,9 @@ const karaokeHandler = (() => {
         }
 
         if (!src) return sendErr(400, "Falta src");
-        let u: URL | null = null;
-        try {
-          u = new URL(src);
-        } catch {
-          u = null;
-        }
-        if (!u || u.protocol !== "https:") return sendErr(400, "URL inválida");
-        const host = (u.hostname || "").toLowerCase();
-        const allow =
-          host.endsWith("replicate.delivery") ||
-          host.endsWith(".r2.cloudflarestorage.com") ||
-          host.endsWith(".r2.dev");
-        if (!allow) return sendErr(403, "Origen no permitido");
+        const allowed = isAllowedProxySrc(src);
+        if (!allowed.ok) return sendErr(allowed.error === "URL inválida" ? 400 : 403, allowed.error);
+        const u = allowed.url;
 
         try {
           const headers: Record<string, string> = { accept: "*/*" };
