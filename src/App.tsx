@@ -3830,40 +3830,6 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         </div>
       ) : null}
 
-      {activeAlert ? (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
-          <button
-            type="button"
-            aria-label="Cerrar aviso"
-            className="absolute inset-0 h-full w-full"
-            onClick={closeStyledAlert}
-          />
-          <div className={cn("relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#090d17] p-5 text-white", alertMeta.ring)}>
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent" />
-            <div className="flex items-start gap-4">
-              <div className={cn("mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border", alertMeta.iconBg)}>
-                <alertMeta.Icon className="h-6 w-6" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-lg font-extrabold tracking-tight">{alertMeta.title}</div>
-                <div className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">
-                  {activeAlert.message}
-                </div>
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={closeStyledAlert}
-                className={cn("min-w-[120px] rounded-full px-5 py-2.5 text-sm font-extrabold transition-transform active:scale-[0.98]", alertMeta.button)}
-              >
-                Entendido
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {shareSheetUrl ? (
         <div className="fixed inset-0 z-[350] bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
