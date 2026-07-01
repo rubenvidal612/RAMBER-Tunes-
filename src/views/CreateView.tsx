@@ -1949,9 +1949,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       if (!response.ok) {
-        setAudioUploadError(result.error || 'No se pudo subir el audio.');
-        alert(result.error || 'No se pudo subir el audio.');
-        return;
+        try {
+          const uploaded = await uploadViaServer();
+          setAudioUploadUrl(uploaded.url);
+          setAudioUploadPath(uploaded.key);
+          setAudioFile(file);
+          setExternalAudioLabel('');
+          setUploadProgress(100);
+          return;
+        } catch (serverErr) {
+          const msg =
+            (serverErr instanceof Error ? serverErr.message : '') ||
+            (result?.error || 'No se pudo subir el audio.').toString();
+          setAudioUploadError(msg);
+          alert(msg);
+          return;
+        }
       }
 
       const uploadUrl = (result?.uploadUrl || '').toString().trim();
@@ -1968,10 +1981,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       if (!uploadUrl || !url || !key) {
-        const msg = (result?.error || 'No recibí URLs para subir el audio.').toString();
-        setAudioUploadError(msg);
-        alert(msg);
-        return;
+        try {
+          const uploaded = await uploadViaServer();
+          setAudioUploadUrl(uploaded.url);
+          setAudioUploadPath(uploaded.key);
+          setAudioFile(file);
+          setExternalAudioLabel('');
+          setUploadProgress(100);
+          return;
+        } catch (serverErr) {
+          const msg =
+            (serverErr instanceof Error ? serverErr.message : '') ||
+            (result?.error || 'No recibí URLs para subir el audio.').toString();
+          setAudioUploadError(msg);
+          alert(msg);
+          return;
+        }
       }
       
       try {
