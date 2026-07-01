@@ -1164,11 +1164,22 @@ export default function App() {
     const r = await fetch(`/api/library/list?deleted=${deleted ? '1' : '0'}`, {
       headers: { authorization: `Bearer ${t.token}` },
     });
-    const out = await r.json().catch(() => ({}));
+    const rawText = await r.text().catch(() => '');
+    const out = (() => {
+      try {
+        return rawText ? JSON.parse(rawText) : {};
+      } catch {
+        return {};
+      }
+    })();
     // #region debug-point C:library-load-result
     fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:loadSongs:result",msg:"[DEBUG] Respuesta biblioteca recibida",data:{deleted,httpOk:r.ok,httpStatus:r.status,rawCount:Array.isArray(out?.songs)?out.songs.length:-1,cleanupDeleted:Number(out?.cleanup_deleted||0),error:(out?.error||"").toString().slice(0,200)},ts:Date.now()})}).catch(()=>{});
     // #endregion
-    if (!r.ok) return { ok: false as const, error: out?.error || 'No pude cargar tu biblioteca.' };
+    if (!r.ok) {
+      const detail = (out?.detail || out?.error || rawText || '').toString().trim().replace(/\s+/g, ' ').slice(0, 220);
+      const reason = detail ? `HTTP ${r.status}: ${detail}` : `HTTP ${r.status}`;
+      return { ok: false as const, error: `No pude cargar tu biblioteca. ${reason}`.trim() };
+    }
     const list = Array.isArray(out?.songs) ? out.songs : [];
     const songs = list.map(mapSongRow).filter((s: SongItem) => s.id);
     // #region debug-point C:library-load-mapped
