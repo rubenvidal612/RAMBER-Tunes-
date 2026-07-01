@@ -5636,68 +5636,91 @@ const libraryHandler = (() => {
     return { ok: true as const, songs: Array.isArray(data) ? data : [] };
   }
 
+  async function listSongsBasic(admin: any, userId: string, deleted: boolean) {
+    const q = admin
+      .from(TABLE)
+      .select("id,title,description,lyrics,gender,audio_url,cover_url,created_at,deleted_at,deleted_reason,suno_task_id,suno_audio_id,is_cover")
+      .eq("user_id", userId)
+      .eq("type", ITEM_TYPE)
+      .order(deleted ? "deleted_at" : "created_at", { ascending: false })
+      .limit(200);
+    if (deleted) q.not("deleted_at", "is", null);
+    else q.is("deleted_at", null);
+    const { data, error } = await q;
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const, songs: Array.isArray(data) ? data : [] };
+  }
+
   async function handleList(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireUser(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
     const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
-    // #region debug-point A:library-list-start
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"A",location:"api/[...route].ts:handleList:start",msg:"[DEBUG] API library/list iniciada",data:{deleted,userId:String((auth as any)?.user?.id||"").slice(0,12)},ts:Date.now()})}).catch(()=>{});
-    // #endregion
-    const r = await listSongs(auth.admin, auth.user.id, deleted);
-    if (!r.ok) return send(res, 500, { error: "Error cargando canciones", detail: r.error });
-    // #region debug-point A:library-list-db
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"A",location:"api/[...route].ts:handleList:db",msg:"[DEBUG] API library/list obtuvo filas",data:{deleted,dbCount:Array.isArray(r?.songs)?r.songs.length:-1,firstIds:(Array.isArray(r?.songs)?r.songs:[]).slice(0,5).map((s:any)=>String(s?.id||"")),deletedAtCount:(Array.isArray(r?.songs)?r.songs:[]).filter((s:any)=>Boolean(s?.deleted_at)).length},ts:Date.now()})}).catch(()=>{});
-    // #endregion
-
-    if (!deleted) {
-      try {
-        await migrateSunoSongsToSunoLinks(auth.admin, r.songs);
-      } catch {
-      }
-    }
-    let publishedBySongId: Record<string, { genre?: string; published_at?: string }> = {};
+    let auth: any = null;
     try {
-      const ids = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => String(s?.id || "").trim()).filter(Boolean);
-      if (ids.length > 0) {
-        const { data: pubs, error: pubErr } = await auth.admin
-          .from(PUBLIC_TABLE)
-          .select("song_id, genre, published_at")
-          .eq("user_id", auth.user.id)
-          .in("song_id", ids)
-          .limit(500);
-        if (!pubErr && Array.isArray(pubs)) {
-          publishedBySongId = pubs.reduce((acc: any, row: any) => {
-            const sid = String(row?.song_id || "").trim();
-            if (!sid) return acc;
-            acc[sid] = {
-              genre: typeof row?.genre === "string" ? row.genre : "",
-              published_at: typeof row?.published_at === "string" ? row.published_at : "",
-            };
-            return acc;
-          }, {});
+      auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const r = await listSongs(auth.admin, auth.user.id, deleted);
+      if (!r.ok) throw new Error(r.error || "No pude listar canciones");
+
+      if (!deleted) {
+        try {
+          await migrateSunoSongsToSunoLinks(auth.admin, r.songs);
+        } catch {
         }
       }
-    } catch {
-      publishedBySongId = {};
+      let publishedBySongId: Record<string, { genre?: string; published_at?: string }> = {};
+      try {
+        const ids = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => String(s?.id || "").trim()).filter(Boolean);
+        if (ids.length > 0) {
+          const { data: pubs, error: pubErr } = await auth.admin
+            .from(PUBLIC_TABLE)
+            .select("song_id, genre, published_at")
+            .eq("user_id", auth.user.id)
+            .in("song_id", ids)
+            .limit(500);
+          if (!pubErr && Array.isArray(pubs)) {
+            publishedBySongId = pubs.reduce((acc: any, row: any) => {
+              const sid = String(row?.song_id || "").trim();
+              if (!sid) return acc;
+              acc[sid] = {
+                genre: typeof row?.genre === "string" ? row.genre : "",
+                published_at: typeof row?.published_at === "string" ? row.published_at : "",
+              };
+              return acc;
+            }, {});
+          }
+        }
+      } catch {
+        publishedBySongId = {};
+      }
+
+      const songs = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => {
+        const sid = String(s?.id || "").trim();
+        const pub = sid ? publishedBySongId[sid] : null;
+        return {
+          ...s,
+          is_public: Boolean(pub),
+          public_genre: pub?.genre || null,
+          published_at: pub?.published_at || null,
+        };
+      });
+
+      return send(res, 200, { songs, cleanup_deleted: 0 });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      try {
+        const safeAuth = auth?.ok ? auth : await requireUser(req);
+        if (!safeAuth?.ok) return send(res, safeAuth?.status || 500, { error: safeAuth?.error || "No autorizado" });
+        const basic = await listSongsBasic(safeAuth.admin, safeAuth.user.id, deleted);
+        if (basic.ok) {
+          return send(res, 200, { songs: basic.songs, cleanup_deleted: 0, degraded: true, warning: "fallback_basic_list", detail: detail.slice(0, 300) });
+        }
+        return send(res, 500, { error: "Error cargando canciones", detail: (basic.error || detail).slice(0, 400) });
+      } catch (fallbackErr) {
+        const fallbackDetail = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        return send(res, 500, { error: "Error cargando canciones", detail: `${detail} | fallback: ${fallbackDetail}`.slice(0, 500) });
+      }
     }
-
-    const songs = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => {
-      const sid = String(s?.id || "").trim();
-      const pub = sid ? publishedBySongId[sid] : null;
-      return {
-        ...s,
-        is_public: Boolean(pub),
-        public_genre: pub?.genre || null,
-        published_at: pub?.published_at || null,
-      };
-    });
-
-    // #region debug-point B:library-list-response
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"B",location:"api/[...route].ts:handleList:response",msg:"[DEBUG] API library/list responde",data:{deleted,responseCount:songs.length,publishedCount:songs.filter((s:any)=>Boolean(s?.is_public)).length,sample:songs.slice(0,3).map((s:any)=>({id:String(s?.id||""),title:String(s?.title||"").slice(0,40),deletedAt:!!s?.deleted_at}))},ts:Date.now()})}).catch(()=>{});
-    // #endregion
-    return send(res, 200, { songs, cleanup_deleted: 0 });
   }
 
   async function handleCreate(req: any, res: any) {
