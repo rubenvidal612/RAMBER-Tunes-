@@ -1178,7 +1178,11 @@ export default function App() {
     if (!r.ok) {
       const detail = (out?.detail || out?.error || rawText || '').toString().trim().replace(/\s+/g, ' ').slice(0, 220);
       const reason = detail ? `HTTP ${r.status}: ${detail}` : `HTTP ${r.status}`;
-      return { ok: false as const, error: `No pude cargar tu biblioteca. ${reason}`.trim() };
+      return {
+        ok: false as const,
+        error: `No pude cargar tu biblioteca. ${reason}`.trim(),
+        debugSummary: (out?.debug_summary || '').toString().trim(),
+      };
     }
     const list = Array.isArray(out?.songs) ? out.songs : [];
     const songs = list.map(mapSongRow).filter((s: SongItem) => s.id);
@@ -1197,7 +1201,7 @@ export default function App() {
     const a = await loadSongs(false);
     if (a.ok) setCanciones(a.songs);
     else showToast((a.error || 'No pude cargar tu biblioteca.').toString());
-    if (a.ok && a.songs.length === 0 && a.debugSummary) {
+    if (a.debugSummary) {
       showToast(a.debugSummary);
     }
     const d = await loadSongs(true);
