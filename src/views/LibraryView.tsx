@@ -3350,10 +3350,6 @@ function SongOptionsSheet({
 
   const canShowWav = (() => {
     if (isDeleted) return false;
-    const taskId = (song?.sunoTaskId || '').toString().trim();
-    if (!taskId) return false;
-    const audioId = (song?.sunoAudioId || '').toString().trim();
-    if (audioId.startsWith('stem_')) return false;
     return true;
   })();
 
