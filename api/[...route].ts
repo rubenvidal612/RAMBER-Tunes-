@@ -5809,7 +5809,8 @@ const libraryHandler = (() => {
     let finalAudioUrl = audioUrl;
     
     // Solo procesar si hay una URL de audio y no es ya una URL de R2
-    if (audioUrl && !isR2Url(audioUrl)) {
+    const isSignedUrl = (url: string) => url.includes("?");
+    if (audioUrl && !isR2Url(audioUrl) && !isSignedUrl(audioUrl)) {
       console.log(`📦 [handleCreate] Copiando audio a R2: "${title}" (${audioUrl.substring(0, 80)}...)`);
       
       try {
@@ -5846,6 +5847,8 @@ const libraryHandler = (() => {
       }
     } else if (audioUrl && isR2Url(audioUrl)) {
       console.log(`✅ [handleCreate] Audio ya está en R2: "${title}" (${audioUrl.substring(0, 100)}...)`);
+    } else if (audioUrl && isSignedUrl(audioUrl)) {
+      console.log(`⏭️  [handleCreate] Saltando copia a R2 (URL firmada): "${title}" (${audioUrl.substring(0, 100)}...`);
     }
 
     const insertRow: any = {

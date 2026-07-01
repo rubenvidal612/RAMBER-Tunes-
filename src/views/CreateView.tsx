@@ -2245,6 +2245,58 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       return;
     }
     const titleFromFile = (audioFile.name || 'Audio').toString().slice(0, 120);
+    
+    // Si tenemos la ruta (key) en R2, usar el endpoint create-from-r2 para evitar volver a descargar
+    if (audioUploadPath) {
+      try {
+        const t = await getAccessToken();
+        if (!t.ok) {
+          alert(t.error || 'No se pudo iniciar sesión.');
+          return;
+        }
+        const r = await fetch('/api/library/create-from-r2', {
+          method: 'POST',
+          headers: { 
+            'content-type': 'application/json', 
+            authorization: `Bearer ${t.token}` 
+          },
+          body: JSON.stringify({
+            key: audioUploadPath,
+            title: titleFromFile,
+            description: (instructions || 'Audio subido').toString().slice(0, 2000),
+            coverUrl: makeAudioCoverSvgUrl(titleFromFile),
+            isCover: false,
+          }),
+        });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          alert(out?.error || 'No pude guardar en tu biblioteca.');
+          return;
+        }
+        if (out?.song) {
+          onSongCreated({
+            id: String(out.song.id || ''),
+            title: String(out.song.title || 'Pista sin título'),
+            description: typeof out.song.description === 'string' ? out.song.description : undefined,
+            lyrics: typeof out.song.lyrics === 'string' ? out.song.lyrics : undefined,
+            genre: typeof out.song.gender === 'string' ? out.song.gender : undefined,
+            audioUrl: typeof out.song.audio_url === 'string' ? out.song.audio_url : undefined,
+            coverUrl: typeof out.song.cover_url === 'string' ? out.song.cover_url : undefined,
+            sunoTaskId: typeof out.song.suno_task_id === 'string' ? out.song.suno_task_id : null,
+            sunoAudioId: typeof out.song.suno_audio_id === 'string' ? out.song.suno_audio_id : null,
+            isCover: Boolean(out.song.is_cover),
+          });
+        }
+        clearAudio();
+        onGoLibrary?.();
+        return;
+      } catch (e) {
+        console.error('Error using create-from-r2:', e);
+        // Si falla, usar el método original como fallback
+      }
+    }
+    
+    // Fallback al método original
     onSongCreated({
       id: `upload_${Date.now()}`,
       title: titleFromFile,
