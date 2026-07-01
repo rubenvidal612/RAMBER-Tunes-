@@ -1185,13 +1185,21 @@ export default function App() {
     // #region debug-point C:library-load-mapped
     fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:loadSongs:mapped",msg:"[DEBUG] Biblioteca mapeada en frontend",data:{deleted,rawCount:list.length,mappedCount:songs.length,firstIds:songs.slice(0,5).map((s)=>s.id)},ts:Date.now()})}).catch(()=>{});
     // #endregion
-    return { ok: true as const, songs, cleanupDeleted: Number(out?.cleanup_deleted || 0) };
+    return {
+      ok: true as const,
+      songs,
+      cleanupDeleted: Number(out?.cleanup_deleted || 0),
+      debugSummary: (out?.debug_summary || '').toString().trim(),
+    };
   };
 
   const refreshLibrary = async () => {
     const a = await loadSongs(false);
     if (a.ok) setCanciones(a.songs);
     else showToast((a.error || 'No pude cargar tu biblioteca.').toString());
+    if (a.ok && a.songs.length === 0 && a.debugSummary) {
+      showToast(a.debugSummary);
+    }
     const d = await loadSongs(true);
     if (d.ok) setCancionesEliminadas(d.songs);
     // #region debug-point C:library-refresh-summary

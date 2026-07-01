@@ -5651,6 +5651,37 @@ const libraryHandler = (() => {
     return { ok: true as const, songs: Array.isArray(data) ? data : [] };
   }
 
+  async function getLibraryDebugSummary(admin: any, userId: string) {
+    try {
+      const activeQ = await admin
+        .from(TABLE)
+        .select("id,title,created_at", { count: "exact" })
+        .eq("user_id", userId)
+        .eq("type", ITEM_TYPE)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(3);
+      const deletedQ = await admin
+        .from(TABLE)
+        .select("id,title,deleted_at", { count: "exact" })
+        .eq("user_id", userId)
+        .eq("type", ITEM_TYPE)
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false })
+        .limit(3);
+      const activeCount = Number((activeQ as any)?.count || 0);
+      const deletedCount = Number((deletedQ as any)?.count || 0);
+      const activeTitles = (Array.isArray((activeQ as any)?.data) ? (activeQ as any).data : []).map((x: any) => String(x?.title || "").slice(0, 40)).filter(Boolean);
+      const deletedTitles = (Array.isArray((deletedQ as any)?.data) ? (deletedQ as any).data : []).map((x: any) => String(x?.title || "").slice(0, 40)).filter(Boolean);
+      return {
+        ok: true as const,
+        summary: `Biblioteca debug: activas=${activeCount}, papelera=${deletedCount}${activeTitles.length ? `, recientes=${activeTitles.join(" | ")}` : ""}${deletedTitles.length ? `, borradas=${deletedTitles.join(" | ")}` : ""}`.slice(0, 400),
+      };
+    } catch (e) {
+      return { ok: false as const, summary: `Biblioteca debug: no pude leer el resumen (${e instanceof Error ? e.message : String(e)})`.slice(0, 400) };
+    }
+  }
+
   async function handleList(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
     const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
@@ -5705,17 +5736,19 @@ const libraryHandler = (() => {
         };
       });
 
-      return send(res, 200, { songs, cleanup_deleted: 0 });
+      const debug = songs.length === 0 ? await getLibraryDebugSummary(auth.admin, auth.user.id) : null;
+      return send(res, 200, { songs, cleanup_deleted: 0, debug_summary: debug?.summary || null });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       try {
         const safeAuth = auth?.ok ? auth : await requireUser(req);
         if (!safeAuth?.ok) return send(res, safeAuth?.status || 500, { error: safeAuth?.error || "No autorizado" });
         const basic = await listSongsBasic(safeAuth.admin, safeAuth.user.id, deleted);
+        const debug = await getLibraryDebugSummary(safeAuth.admin, safeAuth.user.id);
         if (basic.ok) {
-          return send(res, 200, { songs: basic.songs, cleanup_deleted: 0, degraded: true, warning: "fallback_basic_list", detail: detail.slice(0, 300) });
+          return send(res, 200, { songs: basic.songs, cleanup_deleted: 0, degraded: true, warning: "fallback_basic_list", detail: detail.slice(0, 300), debug_summary: debug.summary });
         }
-        return send(res, 500, { error: "Error cargando canciones", detail: (basic.error || detail).slice(0, 400) });
+        return send(res, 500, { error: "Error cargando canciones", detail: (basic.error || detail).slice(0, 400), debug_summary: debug.summary });
       } catch (fallbackErr) {
         const fallbackDetail = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
         return send(res, 500, { error: "Error cargando canciones", detail: `${detail} | fallback: ${fallbackDetail}`.slice(0, 500) });
