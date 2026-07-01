@@ -4074,7 +4074,13 @@ function SongOptionsSheet({
         if (!tr.ok) continue;
 
         const provider = tout?.data;
-        const status = String(provider?.data?.successFlag || provider?.data?.status || '').toUpperCase();
+        const status = String(
+          provider?.data?.successFlag ||
+            provider?.data?.status ||
+            provider?.data?.data?.successFlag ||
+            provider?.data?.data?.status ||
+            ''
+        ).toUpperCase();
 
         if (
           status === 'FAILED' ||
@@ -4091,6 +4097,9 @@ function SongOptionsSheet({
           provider?.data?.response?.audioWavUrl ||
             provider?.data?.data?.response?.audioWavUrl ||
             provider?.data?.response?.audio_wav_url ||
+            provider?.data?.data?.response?.audio_wav_url ||
+            provider?.data?.audioWavUrl ||
+            provider?.data?.audio_wav_url ||
             ''
         ).trim();
         if (!wavUrl) {
@@ -4098,7 +4107,10 @@ function SongOptionsSheet({
           return;
         }
         const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
-        await downloadToDevice(wavUrl, `${base}.wav`);
+        const ok = await downloadToDevice(wavUrl, `${base}.wav`);
+        if (!ok) {
+          alert('Encontré el archivo WAV, pero tu navegador no pudo descargarlo automáticamente. Intenta otra vez en unos segundos.');
+        }
         return;
       }
 
