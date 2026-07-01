@@ -1285,6 +1285,44 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 ? 'audio/mp4'
                 : 'audio/mpeg');
 
+    const parseJsonSafe = (raw: string) => {
+      try {
+        return raw ? JSON.parse(raw) : {};
+      } catch {
+        return { error: raw || '' };
+      }
+    };
+
+    const uploadWithGenericPrep = async () => {
+      const userData = await supabaseBrowser?.auth.getUser().catch(() => ({ data: { user: null } } as any));
+      const uid = (userData?.data?.user?.id || '').toString().trim();
+      if (!uid) throw new Error('No pude identificar tu usuario para subir el audio.');
+      const safeName = (name || 'audio')
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .slice(0, 80) || 'audio';
+      const key = `uploads/audio/${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${safeName}`;
+      const prep = await fetch('/api/account/upload-profile-image', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ path: key, contentType }),
+      });
+      const prepRaw = await prep.text().catch(() => '');
+      const prepOut = parseJsonSafe(prepRaw);
+      if (!(prep.ok && prepOut?.ok)) {
+        throw new Error((prepOut?.detail || prepOut?.error || 'No pude preparar la subida alternativa del audio.').toString());
+      }
+      const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+      const url = (prepOut?.url || '').toString().trim();
+      if (!uploadUrl || !url) {
+        throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida del audio.').toString());
+      }
+      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
+      if (!put.ok) throw new Error(`No se pudo subir el audio (HTTP ${put.status}).`);
+      return { url, key };
+    };
+
     const readAsDataUrl = (f: File) =>
       new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -1301,7 +1339,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ title: name, contentType, file: fileArray }),
       });
-      const out = await r.json().catch(() => ({}));
+      const raw = await r.text().catch(() => '');
+      const out = parseJsonSafe(raw);
       const url = (out?.url || '').toString().trim();
       const key = (out?.key || '').toString().trim();
       if (r.ok && out?.ok && url) return { url, key };
@@ -1314,7 +1353,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ title: name, contentType }),
       });
-      const prepOut = await prep.json().catch(() => ({}));
+      const prepRaw = await prep.text().catch(() => '');
+      const prepOut = parseJsonSafe(prepRaw);
       
       if (prep.ok && prepOut?.ok) {
         const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
@@ -1328,10 +1368,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       // Si el servidor dice que R2 no está listo o hay un error, usamos la subida inline (buffer)
-      return await uploadInline();
+      try {
+        return await uploadInline();
+      } catch {
+        return await uploadWithGenericPrep();
+      }
     } catch (error) {
       console.log('Error en uploadAudioForVoice, intentando respaldo...', error);
-      return await uploadInline();
+      try {
+        return await uploadInline();
+      } catch {
+        return await uploadWithGenericPrep();
+      }
     }
   };
 
