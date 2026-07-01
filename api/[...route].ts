@@ -5642,8 +5642,14 @@ const libraryHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
+    // #region debug-point A:library-list-start
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"A",location:"api/[...route].ts:handleList:start",msg:"[DEBUG] API library/list iniciada",data:{deleted,userId:String((auth as any)?.user?.id||"").slice(0,12)},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     const r = await listSongs(auth.admin, auth.user.id, deleted);
     if (!r.ok) return send(res, 500, { error: "Error cargando canciones", detail: r.error });
+    // #region debug-point A:library-list-db
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"A",location:"api/[...route].ts:handleList:db",msg:"[DEBUG] API library/list obtuvo filas",data:{deleted,dbCount:Array.isArray(r?.songs)?r.songs.length:-1,firstIds:(Array.isArray(r?.songs)?r.songs:[]).slice(0,5).map((s:any)=>String(s?.id||"")),deletedAtCount:(Array.isArray(r?.songs)?r.songs:[]).filter((s:any)=>Boolean(s?.deleted_at)).length},ts:Date.now()})}).catch(()=>{});
+    // #endregion
 
     if (!deleted) {
       try {
@@ -5688,6 +5694,9 @@ const libraryHandler = (() => {
       };
     });
 
+    // #region debug-point B:library-list-response
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"B",location:"api/[...route].ts:handleList:response",msg:"[DEBUG] API library/list responde",data:{deleted,responseCount:songs.length,publishedCount:songs.filter((s:any)=>Boolean(s?.is_public)).length,sample:songs.slice(0,3).map((s:any)=>({id:String(s?.id||""),title:String(s?.title||"").slice(0,40),deletedAt:!!s?.deleted_at}))},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     return send(res, 200, { songs, cleanup_deleted: 0 });
   }
 

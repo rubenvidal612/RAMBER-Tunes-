@@ -1158,13 +1158,22 @@ export default function App() {
   const loadSongs = async (deleted: boolean) => {
     const t = await getAccessToken();
     if (!t.ok) return { ok: false as const, error: t.error };
+    // #region debug-point D:library-load-start
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"D",location:"src/App.tsx:loadSongs:start",msg:"[DEBUG] Solicitando biblioteca",data:{deleted,userToken:!!t.token},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     const r = await fetch(`/api/library/list?deleted=${deleted ? '1' : '0'}`, {
       headers: { authorization: `Bearer ${t.token}` },
     });
     const out = await r.json().catch(() => ({}));
+    // #region debug-point C:library-load-result
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:loadSongs:result",msg:"[DEBUG] Respuesta biblioteca recibida",data:{deleted,httpOk:r.ok,httpStatus:r.status,rawCount:Array.isArray(out?.songs)?out.songs.length:-1,cleanupDeleted:Number(out?.cleanup_deleted||0),error:(out?.error||"").toString().slice(0,200)},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!r.ok) return { ok: false as const, error: out?.error || 'No pude cargar tu biblioteca.' };
     const list = Array.isArray(out?.songs) ? out.songs : [];
     const songs = list.map(mapSongRow).filter((s: SongItem) => s.id);
+    // #region debug-point C:library-load-mapped
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:loadSongs:mapped",msg:"[DEBUG] Biblioteca mapeada en frontend",data:{deleted,rawCount:list.length,mappedCount:songs.length,firstIds:songs.slice(0,5).map((s)=>s.id)},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     return { ok: true as const, songs, cleanupDeleted: Number(out?.cleanup_deleted || 0) };
   };
 
@@ -1174,6 +1183,9 @@ export default function App() {
     else showToast((a.error || 'No pude cargar tu biblioteca.').toString());
     const d = await loadSongs(true);
     if (d.ok) setCancionesEliminadas(d.songs);
+    // #region debug-point C:library-refresh-summary
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:refreshLibrary:summary",msg:"[DEBUG] Biblioteca refrescada",data:{activeOk:a.ok,activeCount:a.ok?a.songs.length:-1,deletedOk:d.ok,deletedCount:d.ok?d.songs.length:-1,activeError:!a.ok?(a.error||"").toString().slice(0,200):"",deletedError:!d.ok?(d.error||"").toString().slice(0,200):""},ts:Date.now()})}).catch(()=>{});
+    // #endregion
     if (a.ok && a.cleanupDeleted && a.cleanupDeleted > 0) {
       showToast(`Se eliminaron automáticamente ${a.cleanupDeleted} canciones (plan gratis: 15 días).`);
     }
