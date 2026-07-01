@@ -1875,6 +1875,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return 'audio/mpeg';
       };
       const contentType = guessAudioContentType(file);
+      const userData = await supabaseBrowser?.auth.getUser().catch(() => ({ data: { user: null } } as any));
+      const uid = (userData?.data?.user?.id || '').toString().trim();
+      if (!uid) {
+        throw new Error('No pude identificar tu usuario para subir el audio.');
+      }
+      const safeName = (() => {
+        const raw = (file?.name || 'audio.mp3').toString().trim();
+        const cleaned = raw.replaceAll('\\', '/').split('/').pop() || 'audio.mp3';
+        return cleaned.replaceAll(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120) || 'audio.mp3';
+      })();
+      const uploadKey = `uploads/audio/${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${safeName}`;
 
       const uploadViaServer = async () => {
         const maxServerBytes = 12 * 1024 * 1024;
@@ -1886,18 +1897,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           );
         }
         setUploadProgress((p) => (p > 0 ? p : 1));
-        const base64Str = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onerror = () => reject(new Error('No pude leer el audio.'));
-          reader.onload = () => resolve((String(reader.result || '').split(',')[1] || '').trim());
-          reader.readAsDataURL(file);
-        });
-        if (!base64Str) throw new Error('No pude leer el audio.');
+        const ab = await file.arrayBuffer().catch(() => null);
+        if (!ab) throw new Error('No pude leer el audio.');
+        const bytes = Array.from(new Uint8Array(ab));
+        if (!bytes.length) throw new Error('No pude leer el audio.');
         setUploadProgress((p) => Math.max(p, 8));
-        const resp = await fetch('/api/upload-audio', {
+        const resp = await fetch('/api/account/upload-profile-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', authorization: `Bearer ${t.token}` },
-          body: JSON.stringify({ title: file.name, contentType, file: base64Str }),
+          body: JSON.stringify({ path: uploadKey, contentType, data: bytes }),
         });
         const raw = await resp.text().catch(() => '');
         let out: any = {};
@@ -1928,14 +1936,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         }
       }
       
-      const response = await fetch('/api/upload-audio', {
+      const response = await fetch('/api/account/upload-profile-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'authorization': `Bearer ${t.token}`,
         },
         body: JSON.stringify({
-          title: file.name,
+          path: uploadKey,
           contentType,
         }),
       });
