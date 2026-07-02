@@ -5848,7 +5848,7 @@ const libraryHandler = (() => {
     } else if (audioUrl && isR2Url(audioUrl)) {
       console.log(`✅ [handleCreate] Audio ya está en R2: "${title}" (${audioUrl.substring(0, 100)}...)`);
     } else if (audioUrl && isSignedUrl(audioUrl)) {
-      console.log(`⏭️  [handleCreate] Saltando copia a R2 (URL firmada): "${title}" (${audioUrl.substring(0, 100)}...`);
+      console.log(`⏭️  [handleCreate] Saltando copia a R2 (URL firmada): "${title}" (${audioUrl.substring(0, 100)}...)`);
     }
 
     const insertRow: any = {
