@@ -19,7 +19,7 @@ const CREDIT_COSTS = {
   generate_persona: 0,
   music_cover: 0,
   clone_voice: 15,
-} as const;
+};
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -403,13 +403,13 @@ async function deleteFromR2(paths: string[]): Promise<number> {
 
 async function ensureProfileExists(admin: any, userId: string) {
   const r = await admin.from("profiles").upsert({ id: userId }, { onConflict: "id" });
-  if (!r?.error) return { ok: true as const };
-  return { ok: false as const, error: String(r.error?.message || "No pude crear el perfil.") };
+  if (!r?.error) return { ok: true };
+  return { ok: false, error: String(r.error?.message || "No pude crear el perfil.") };
 }
 
 async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: number) {
   const next = round2(Math.max(0, Number(nextCredits)));
-  if (!Number.isFinite(next)) return { ok: false as const, error: "Créditos inválidos" };
+  if (!Number.isFinite(next)) return { ok: false, error: "Créditos inválidos" };
 
   const candidates: Array<"ramber_credits" | "zingy_credits" | "credits" | "song_balance"> = [
     "ramber_credits",
@@ -2254,7 +2254,7 @@ const sunoHandler = (() => {
 
     try {
       // #region debug-point D:handle-wav-start
-      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:start",msg:"[DEBUG] Entrando a /api/suno/wav",data:{userId:user.id,taskId,audioId,isAdmin,cost},ts:Date.now()})}).catch(()=>{});
+      // fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:start",msg:"[DEBUG] Entrando a /api/suno/wav",data:{userId:user.id,taskId,audioId,isAdmin,cost},ts:Date.now()})}).catch(()=>{});
       // #endregion
       if (!isAdmin) {
         const plan = await getUserPlan(auth.admin, user.id).catch(() => ({ downloads_allowed: false }));
@@ -2275,7 +2275,7 @@ const sunoHandler = (() => {
       }
       const { res: r, data, text } = last || {};
       // #region debug-point D:handle-wav-provider
-      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:provider",msg:"[DEBUG] Respuesta proveedor al iniciar WAV",data:{taskId,audioId,httpStatus:r?.status??null,code:data?.code??null,outTaskId:typeof data?.data?.taskId===\"string\"?data.data.taskId.trim():\"\",error:data?.error||\"\",detail:data?.detail||text||\"\"},ts:Date.now()})}).catch(()=>{});
+      // fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:provider",msg:"[DEBUG] Respuesta proveedor al iniciar WAV",data:{taskId,audioId,httpStatus:r?.status??null,code:data?.code??null,outTaskId:typeof data?.data?.taskId===\"string\"?data.data.taskId.trim():\"\",error:data?.error||\"\",detail:data?.detail||text||\"\"},ts:Date.now()})}).catch(()=>{});
       // #endregion
       if (!r) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
