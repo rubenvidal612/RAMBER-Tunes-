@@ -48,6 +48,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [completedDownloads, setCompletedDownloads] = useState<Array<{ taskId: string; kind: string; doneAt: number; draft?: any }>>([]);
   const [downloadsModalOpen, setDownloadsModalOpen] = useState(false);
   const [downloadsModalTitle, setDownloadsModalTitle] = useState('');
+  const [downloadingSongId, setDownloadingSongId] = useState<string | null>(null);
+  const libraryContainerRef = useRef<HTMLDivElement>(null);
+
+  // Efecto para hacer scroll automático cuando se agregan nuevas canciones
+  useEffect(() => {
+    if (libraryContainerRef.current && canciones.length > 0) {
+      // Hacer scroll hacia arriba para mostrar las canciones nuevas
+      libraryContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [canciones.length]);
+
   const handleDeleteSong = async (song: SongItem | null) => {
     if (!song || !onDeleteSong) return;
     try {
@@ -660,6 +671,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       alert('Error inesperado: ' + (e?.message || String(e)));
     } finally {
       setSongBusy(sid, false);
+      setDownloadingSongId(null);
     }
   };
 
@@ -667,6 +679,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const sid = String(song?.id || '').trim();
     if (!sid) return;
     setSongBusy(sid, true);
+    setDownloadingSongId(sid);
     try {
       const t = await getAccessToken();
       if (!t.ok) {
@@ -1307,7 +1320,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   ];
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pt-2 relative">
+    <div ref={libraryContainerRef} className="flex-1 min-h-0 flex flex-col pt-2 relative overflow-y-auto">
       <div className="p-4 space-y-4">
         {/* Top Filters (Me gusta, Publicado, Filtros) */}
         {activeTab === 'canciones' && (
@@ -2166,13 +2179,20 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           >
                             <Share2 className="w-3.5 h-3.5 text-slate-300" />
                           </button>
-                          <button 
-                            onClick={() => downloadSongCard(song)}
-                            disabled={Boolean(songActionBusy[song.id])}
-                            className={cn("w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors", songActionBusy[song.id] ? "opacity-60" : "")}
-                          >
-                            <Download className="w-3.5 h-3.5 text-slate-300" />
-                          </button>
+                          {downloadingSongId === song.id ? (
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/10">
+                              <span className="text-xs text-slate-300">...</span>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => downloadSongCard(song)}
+                              disabled={Boolean(songActionBusy[song.id])}
+                              className={cn("w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors", songActionBusy[song.id] ? "opacity-60" : "")}
+                              title="Descargar"
+                            >
+                              <Download className="w-3.5 h-3.5 text-slate-300" />
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
