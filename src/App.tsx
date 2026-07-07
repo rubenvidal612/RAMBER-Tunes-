@@ -11,6 +11,7 @@ import { PricingView } from './views/PricingView';
 import { LucianaBotView } from './views/LucianaBotView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
+import { VendorView } from './views/VendorView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -76,6 +77,7 @@ function tabFromPathname(pathname: string): ViewTab {
   if (p === '/' || /^\/studio(?:\/|$)/i.test(p) || /^\/crear(?:\/|$)/i.test(p)) return 'studio';
   if (/^\/inicio(?:\/|$)/i.test(p)) return 'inicio';
   if (/^\/masterizar(?:\/|$)/i.test(p)) return 'masterizar';
+  if (/^\/vendedor(?:\/|$)/i.test(p) || /^\/vendor(?:\/|$)/i.test(p)) return 'vendedor';
   if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
   if (/^\/perfil(?:\/|$)/i.test(p) || /^\/profile(?:\/|$)/i.test(p)) return 'perfil';
   if (/^\/luciana(?:\/|$)/i.test(p) || /^\/chatbot(?:\/|$)/i.test(p)) return 'luciana';
@@ -92,6 +94,8 @@ function pathnameFromTab(tab: ViewTab): string {
       return '/inicio';
     case 'masterizar':
       return '/masterizar';
+    case 'vendedor':
+      return '/vendedor';
     case 'biblioteca':
       return '/biblioteca';
     case 'perfil':
@@ -1013,6 +1017,13 @@ export default function App() {
     const rawId = m[2] || '';
     const id = decodeURIComponent(rawId).trim();
     return id;
+  });
+
+  const [previewRouteId] = useState(() => {
+    const p = (window.location?.pathname || '').toString();
+    const m = p.match(/^\/preview\/([^/?#]+)/i);
+    if (!m) return '';
+    return decodeURIComponent(m[1] || '').trim();
   });
 
   const [profileRouteId] = useState(() => {
@@ -2679,6 +2690,9 @@ export default function App() {
   if (shareRouteId) {
     return <SharedSongPage shareId={shareRouteId} />;
   }
+  if (previewRouteId) {
+    return <SharedPreviewPage shareId={previewRouteId} />;
+  }
   if (profileRouteId) {
     return <SharedProfilePage profileId={profileRouteId} />;
   }
@@ -2887,6 +2901,7 @@ export default function App() {
            )}
            {currentTab === 'luciana' && <LucianaBotView />}
            {currentTab === 'masterizar' && <MasterizarView />}
+          {currentTab === 'vendedor' && <VendorView />}
           {currentTab === 'biblioteca' && (
             <ViewErrorBoundary title="Biblioteca">
               <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />
@@ -2936,7 +2951,7 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && (
+              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                    <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
@@ -2968,6 +2983,8 @@ export default function App() {
                 <LucianaBotView />
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
+               ) : currentTab === 'vendedor' ? (
+                 <VendorView />
               ) : currentTab === 'planes' ? (
                 <PricingView
                   onClose={() => {
@@ -3833,6 +3850,391 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         ref={audioRef}
         preload="metadata"
         onEnded={() => setIsPlaying(false)}
+        onPause={() => setIsPlaying(false)}
+        onPlay={() => setIsPlaying(true)}
+        onError={() => setIsPlaying(false)}
+        onTimeUpdate={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const t = Number(a.currentTime);
+          if (Number.isFinite(t)) setPlayerTime(t);
+        }}
+        onLoadedMetadata={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        onDurationChange={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          const d = Number(a.duration);
+          if (Number.isFinite(d)) setPlayerDuration(d);
+        }}
+        className="hidden"
+      />
+
+      {toast ? (
+        <div className="fixed left-0 right-0 bottom-[92px] z-[320] flex justify-center px-4 pointer-events-none">
+          <div className="bg-black/80 border border-white/10 backdrop-blur-md text-slate-100 text-sm font-semibold px-4 py-2 rounded-full">
+            {toast}
+          </div>
+        </div>
+      ) : null}
+
+      {shareSheetUrl ? (
+        <div className="fixed inset-0 z-[350] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold truncate">Compartir</div>
+              <button
+                onClick={() => setShareSheetUrl(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-slate-300 text-sm">Copia este link:</div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-words text-slate-100 text-sm">{shareSheetUrl}</div>
+              <button
+                className="w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm"
+                onClick={async () => {
+                  const ok = await copyToClipboard(shareSheetUrl);
+                  if (ok) {
+                    setShareSheetUrl(null);
+                    showToast('Link copiado.');
+                  } else {
+                    showToast('No pude copiar. Mantén presionado el link para copiarlo.');
+                  }
+                }}
+              >
+                Copiar link
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SharedPreviewPage({ shareId }: { shareId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<{
+    id: string;
+    songId: string;
+    title: string;
+    audioUrl: string;
+    coverUrl?: string;
+    hasCountdown: boolean;
+    expiresAt?: string | null;
+    isPaid: boolean;
+    clientLabel?: string;
+  } | null>(null);
+  const [showPlayer, setShowPlayer] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [playerDuration, setPlayerDuration] = useState(0);
+  const [toast, setToast] = useState('');
+  const [shareSheetUrl, setShareSheetUrl] = useState<string | null>(null);
+  const [endedLock, setEndedLock] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [, setTick] = useState(0);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 2600);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError('');
+    setData(null);
+    setEndedLock(false);
+    fetch(`/api/share/preview?id=${encodeURIComponent(shareId)}`, { method: 'GET' })
+      .then((r) => r.json().catch(() => ({})).then((out) => ({ r, out })))
+      .then(({ r, out }) => {
+        if (!alive) return;
+        if (!r.ok) {
+          setError((out?.error || 'Este preview no existe o ya no está disponible.').toString());
+          return;
+        }
+        const songId = String(out?.songId || '').trim();
+        if (!songId) {
+          setError('Este preview no tiene canción para reproducir.');
+          return;
+        }
+        setData({
+          id: String(out?.id || shareId),
+          songId,
+          title: String(out?.title || 'Canción'),
+          audioUrl: `/api/share/song/audio?id=${encodeURIComponent(songId)}`,
+          coverUrl: String(out?.coverUrl || '').trim() || undefined,
+          hasCountdown: Boolean(out?.hasCountdown),
+          expiresAt: out?.expiresAt || null,
+          isPaid: Boolean(out?.isPaid),
+          clientLabel: String(out?.clientLabel || '').trim(),
+        });
+        setShowPlayer(true);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setError('No pude cargar el preview.');
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [shareId]);
+
+  useEffect(() => {
+    if (!data?.hasCountdown || data?.isPaid) return;
+    const timer = window.setInterval(() => setTick((v) => v + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [data?.hasCountdown, data?.isPaid]);
+
+  const expiredByTime = (() => {
+    if (!data?.hasCountdown || data?.isPaid || !data?.expiresAt) return false;
+    const end = new Date(data.expiresAt).getTime();
+    if (!Number.isFinite(end)) return false;
+    return Date.now() >= end;
+  })();
+
+  const isLocked = Boolean(data && !data.isPaid && (endedLock || expiredByTime));
+
+  useEffect(() => {
+    if (!isLocked) return;
+    const a = audioRef.current;
+    if (!a) return;
+    try {
+      a.pause();
+    } catch {
+    }
+    setIsPlaying(false);
+  }, [isLocked]);
+
+  useEffect(() => {
+    setIsPlaying(false);
+    setPlayerTime(0);
+    setPlayerDuration(0);
+    const a = audioRef.current;
+    if (!a) return;
+    try {
+      a.pause();
+    } catch {
+    }
+    a.src = '';
+  }, [data?.audioUrl]);
+
+  const formatCountdown = (expiresAt?: string | null) => {
+    if (!expiresAt) return 'Sin fecha';
+    const end = new Date(expiresAt).getTime();
+    if (!Number.isFinite(end)) return 'Sin fecha';
+    const diff = Math.max(0, end - Date.now());
+    const total = Math.floor(diff / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const togglePlay = async () => {
+    const a = audioRef.current;
+    if (!a || !data?.audioUrl) return;
+    if (isLocked) {
+      showToast('Preview expirado — contacta a tu vendedor para continuar.');
+      return;
+    }
+    try {
+      const nextSrc = new URL(data.audioUrl, window.location.origin).toString();
+      if (a.src !== nextSrc) {
+        a.src = '';
+        a.src = nextSrc;
+      }
+      if (isPlaying) {
+        a.pause();
+        setIsPlaying(false);
+        return;
+      }
+      await a.play();
+      setIsPlaying(true);
+    } catch {
+    }
+  };
+
+  const shareThis = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: data?.title ? `LucIAna | Music - ${data.title}` : 'LucIAna | Music', url });
+        return;
+      }
+    } catch {
+    }
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      showToast('Link copiado.');
+      return;
+    }
+    setShareSheetUrl(url);
+  };
+
+  return (
+    <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
+      <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
+        <a href="/" className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">L</div>
+          <div className="min-w-0">
+            <div className="font-extrabold leading-tight truncate">LucIAna</div>
+            <div className="text-[11px] text-slate-400 leading-tight truncate">Reproductor oficial</div>
+          </div>
+        </a>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => shareThis().catch(() => {})}
+            className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
+          >
+            <Share2 className="w-4 h-4" /> Compartir
+          </button>
+          <a href="/" className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-sm flex items-center justify-center">
+            Abrir app
+          </a>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="p-6 text-slate-300">Cargando…</div>
+        ) : error ? (
+          <div className="p-6">
+            <div className="text-xl font-extrabold">No se pudo abrir</div>
+            <div className="mt-2 text-slate-300">{error}</div>
+          </div>
+        ) : data ? (
+          <div className="p-5 max-w-[980px] mx-auto w-full">
+            {data.hasCountdown ? (
+              <div className={cn(
+                "mb-5 rounded-3xl border p-4",
+                isLocked && !data.isPaid ? "border-red-400/30 bg-red-500/10" : "border-amber-400/20 bg-amber-500/10"
+              )}>
+                <div className="text-white font-extrabold">
+                  {data.isPaid ? 'Pago confirmado' : `⏳ ${formatCountdown(data.expiresAt)}`}
+                </div>
+                <div className="mt-1 text-sm text-slate-300">
+                  {data.isPaid
+                    ? 'Este preview quedó desbloqueado por tu vendedor.'
+                    : 'Esta canción se bloqueará al terminar de sonar. Contacta a tu vendedor para continuar.'}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col md:flex-row gap-5">
+              <div className="w-full md:w-[360px] shrink-0">
+                <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-white/5 aspect-square">
+                  {data.coverUrl ? (
+                    <img src={data.coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400">Sin portada</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-2xl md:text-3xl font-extrabold break-words">{data.title}</div>
+                <div className="mt-1 text-sm text-slate-400">
+                  {data.clientLabel ? `Cliente: ${data.clientLabel}` : 'Preview para cliente'}
+                </div>
+
+                <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
+                  {data.hasCountdown ? (
+                    <div className="mb-3 text-sm text-slate-300">
+                      Esto es para cuando vendes maquetas a clientes: tendrán este tiempo para pagarte.
+                    </div>
+                  ) : null}
+                  <button
+                    onClick={async () => {
+                      if (isLocked) return;
+                      setShowPlayer(true);
+                      await togglePlay();
+                    }}
+                    disabled={isLocked}
+                    className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold disabled:opacity-60"
+                  >
+                    {isLocked ? 'Preview expirado' : isPlaying ? 'Pausar' : 'Reproducir'}
+                  </button>
+                  {isLocked ? (
+                    <div className="mt-3 text-sm text-red-200">
+                      Preview expirado — contacta a tu vendedor para continuar.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {showPlayer && data && !isLocked ? (
+        <MiniPlayer
+          song={{ id: data.songId, title: data.title, description: 'Disponible en LucIAna | Music', audioUrl: data.audioUrl } as any}
+          isPlaying={isPlaying}
+          onPlayPause={() => togglePlay().catch(() => {})}
+          onClose={() => {
+            setShowPlayer(false);
+            setIsPlaying(false);
+            setPlayerTime(0);
+            setPlayerDuration(0);
+            const a = audioRef.current;
+            if (a) {
+              try {
+                a.pause();
+              } catch {
+              }
+              a.src = '';
+            }
+          }}
+          placement="default"
+          currentTime={playerTime}
+          duration={playerDuration}
+          onSeek={(t) => {
+            const a = audioRef.current;
+            if (!a) return;
+            try {
+              a.currentTime = t;
+            } catch {
+            }
+            setPlayerTime(t);
+          }}
+        />
+      ) : null}
+
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onEnded={() => {
+          setIsPlaying(false);
+          if (data?.hasCountdown && !data?.isPaid) {
+            setEndedLock(true);
+            setShowPlayer(false);
+          }
+        }}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
         onError={() => setIsPlaying(false)}

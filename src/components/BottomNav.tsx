@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore, Volume2 } from 'lucide-react';
+import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore, Volume2, Clock3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -37,10 +37,11 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
     { kind: 'link', href: 'https://wa.me/529931520202', label: 'WhatsApp', icon: WhatsAppIcon },
     { kind: 'tab', id: 'masterizar', label: 'Masterizar', icon: Volume2 },
     { kind: 'tab', id: 'voces', label: 'Clonador', icon: Users },
+    { kind: 'tab', id: 'vendedor', label: 'Vendedor', icon: Clock3 },
     { kind: 'tab', id: 'perfil', label: 'Perfil', icon: User },
   ];
 
-  const isMenuTab = currentTab === 'voces' || currentTab === 'perfil' || currentTab === 'karaoke' || currentTab === 'masterizar';
+  const isMenuTab = currentTab === 'voces' || currentTab === 'perfil' || currentTab === 'karaoke' || currentTab === 'masterizar' || currentTab === 'vendedor';
 
   return (
     <div className="fixed bottom-0 left-0 w-full glass-panel border-b-0 border-x-0 pb-safe pt-3 z-30 bg-gradient-to-r from-indigo-500/5 via-transparent to-fuchsia-500/5">

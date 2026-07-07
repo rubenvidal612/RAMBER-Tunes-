@@ -1,4 +1,4 @@
-import { Home, Sparkles, Library, User, MessageCircleMore, HelpCircle, Users, Volume2 } from 'lucide-react';
+import { Home, Sparkles, Library, User, MessageCircleMore, HelpCircle, Users, Volume2, Clock3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -92,6 +92,19 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
           >
             <User className="w-5 h-5" />
             <span className="text-sm">Perfil</span>
+          </button>
+
+          <button
+            onClick={() => onChange('vendedor')}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mt-1",
+              currentTab === 'vendedor'
+                ? "bg-indigo-500/20 text-indigo-400 font-bold"
+                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
+            )}
+          >
+            <Clock3 className="w-5 h-5" />
+            <span className="text-sm">Vendedor</span>
           </button>
         </div>
 

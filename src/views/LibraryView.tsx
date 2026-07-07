@@ -96,6 +96,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [brokenCovers, setBrokenCovers] = useState<Record<string, boolean>>({});
   const [likedSongIds, setLikedSongIds] = useState<Record<string, boolean>>({});
   const [songActionBusy, setSongActionBusy] = useState<Record<string, boolean>>({});
+  const [sharePickerSong, setSharePickerSong] = useState<SongItem | null>(null);
+  const [countdownShareSong, setCountdownShareSong] = useState<SongItem | null>(null);
+  const [countdownClientLabel, setCountdownClientLabel] = useState('');
+  const [countdownValue, setCountdownValue] = useState('24');
+  const [countdownUnit, setCountdownUnit] = useState<'hours' | 'days'>('hours');
+  const [countdownBusy, setCountdownBusy] = useState(false);
 
   const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
     try {
@@ -623,6 +629,94 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     });
   };
 
+  const openSharePicker = (song: SongItem) => {
+    setSharePickerSong(song);
+  };
+
+  const openCountdownShare = async (song: SongItem) => {
+    setSharePickerSong(null);
+    setCountdownShareSong(song);
+    setCountdownClientLabel('');
+    setCountdownBusy(false);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) return;
+      const r = await fetch('/api/vendor/settings', {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      const hours = Math.max(1, Number(out?.countdown_default_hours || 24) || 24);
+      if (hours % 24 === 0) {
+        setCountdownUnit('days');
+        setCountdownValue(String(Math.max(1, Math.floor(hours / 24))));
+      } else {
+        setCountdownUnit('hours');
+        setCountdownValue(String(hours));
+      }
+    } catch {
+      setCountdownUnit('hours');
+      setCountdownValue('24');
+    }
+  };
+
+  const sharePreviewLink = async (song: SongItem, shareUrl: string) => {
+    const title = (song?.title || 'Canción').toString();
+    try {
+      if (navigator.share && shareUrl) {
+        await navigator.share({ title: `LucIAna | Music - ${title}`, url: shareUrl });
+        return;
+      }
+    } catch {
+    }
+    if (shareUrl) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('Link copiado al portapapeles.');
+      } catch {
+        alert(shareUrl);
+      }
+      return;
+    }
+    alert('No hay link para compartir.');
+  };
+
+  const createCountdownShare = async () => {
+    const song = countdownShareSong;
+    if (!song?.id) return;
+    const amount = Math.max(1, Math.floor(Number(countdownValue) || 1));
+    const hours = countdownUnit === 'days' ? amount * 24 : amount;
+    setCountdownBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        alert(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/vendor/create-preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          songId: song.id,
+          clientLabel: countdownClientLabel,
+          hasCountdown: true,
+          countdown_hours: hours,
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        alert((out?.error || 'No pude crear el link con cuenta regresiva.').toString());
+        return;
+      }
+      const url = String(out?.url || '').trim();
+      setCountdownShareSong(null);
+      await sharePreviewLink(song, url);
+    } catch (e: any) {
+      alert('Error inesperado: ' + (e?.message || String(e)));
+    } finally {
+      setCountdownBusy(false);
+    }
+  };
+
   const shareSongCard = async (song: SongItem) => {
     const title = (song?.title || 'Canción').toString();
     const shareUrl = song?.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
@@ -671,7 +765,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       alert('Error inesperado: ' + (e?.message || String(e)));
     } finally {
       setSongBusy(sid, false);
-      setDownloadingSongId(null);
     }
   };
 
@@ -726,6 +819,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       alert('Error inesperado: ' + (e?.message || String(e)));
     } finally {
       setSongBusy(sid, false);
+      setDownloadingSongId(null);
     }
   };
 
@@ -2173,7 +2267,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             {song.isPublic ? 'Público' : 'Privado'}
                           </button>
                           <button 
-                            onClick={() => shareSongCard(song)}
+                            onClick={() => openSharePicker(song)}
                             disabled={Boolean(songActionBusy[song.id])}
                             className={cn("w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors", songActionBusy[song.id] ? "opacity-60" : "")}
                           >
@@ -2429,6 +2523,101 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         />
       )}
 
+      {sharePickerSong && (
+        <div className="fixed inset-0 z-[280] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setSharePickerSong(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div>
+                <div className="text-white font-extrabold">Compartir</div>
+                <div className="text-slate-400 text-sm truncate">{sharePickerSong.title || 'Canción'}</div>
+              </div>
+              <button
+                onClick={() => setSharePickerSong(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <button
+                onClick={() => openCountdownShare(sharePickerSong).catch(() => {})}
+                className="w-full text-left rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-4"
+              >
+                <div className="text-white font-extrabold text-sm">Compartir con Cuenta Regresiva</div>
+                <div className="mt-1 text-slate-300 text-xs">Usa un reloj para que el cliente pague más rápido.</div>
+              </button>
+              <button
+                onClick={async () => {
+                  const currentSong = sharePickerSong;
+                  setSharePickerSong(null);
+                  if (currentSong) await shareSongCard(currentSong);
+                }}
+                className="w-full text-left rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
+              >
+                <div className="text-white font-extrabold text-sm">Sin Cuenta Regresiva</div>
+                <div className="mt-1 text-slate-300 text-xs">Usa exactamente el flujo actual, sin cambios.</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {countdownShareSong && (
+        <div className="fixed inset-0 z-[281] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setCountdownShareSong(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[560px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div>
+                <div className="text-white font-extrabold">Compartir con Cuenta Regresiva</div>
+                <div className="text-slate-400 text-sm truncate">{countdownShareSong.title || 'Canción'}</div>
+              </div>
+              <button
+                onClick={() => setCountdownShareSong(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="text-sm text-slate-300">
+                Esto es para cuando vendes maquetas a clientes: tendrán este tiempo para pagarte.
+              </div>
+              <input
+                value={countdownClientLabel}
+                onChange={(e) => setCountdownClientLabel(e.target.value)}
+                placeholder="Nombre o referencia del cliente"
+                className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none"
+              />
+              <div className="grid grid-cols-[1fr,120px] gap-3">
+                <input
+                  type="number"
+                  min={1}
+                  value={countdownValue}
+                  onChange={(e) => setCountdownValue(e.target.value)}
+                  className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none"
+                />
+                <select
+                  value={countdownUnit}
+                  onChange={(e) => setCountdownUnit(e.target.value === 'days' ? 'days' : 'hours')}
+                  className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none bg-transparent"
+                >
+                  <option value="hours">Horas</option>
+                  <option value="days">Días</option>
+                </select>
+              </div>
+              <button
+                onClick={() => createCountdownShare().catch(() => {})}
+                disabled={countdownBusy}
+                className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm disabled:opacity-60"
+              >
+                {countdownBusy ? 'Creando link…' : 'Crear link con reloj'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {menuSong && (
         <SongOptionsSheet
           song={menuSong}
@@ -2453,6 +2642,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onMoveToFolder={() => {
             setMoveFolderSong(menuSong);
             setMenuSong(null);
+          }}
+          onShare={() => {
+            const currentSong = menuSong;
+            setMenuSong(null);
+            if (currentSong) openSharePicker(currentSong);
           }}
           onRefreshSongs={onRefreshSongs}
           onRestore={() => {
@@ -2900,6 +3094,7 @@ function SongOptionsSheet({
   onStartCover,
   onOpenLists,
   onMoveToFolder,
+  onShare,
   onRestore,
   onDelete,
   onPurge,
@@ -2915,6 +3110,7 @@ function SongOptionsSheet({
   onStartCover?: () => void;
   onOpenLists?: () => void;
   onMoveToFolder?: () => void;
+  onShare?: () => void;
   onRestore: () => void;
   onDelete: () => void;
   onPurge: () => void;
@@ -3591,28 +3787,7 @@ function SongOptionsSheet({
   };
 
   const share = async () => {
-    const title = (song.title || 'Canción').toString();
-    const shareUrl = song.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
-    try {
-      if (navigator.share && shareUrl) {
-        await navigator.share({
-          title: `LucIAna | Music - ${title}`,
-          url: shareUrl,
-        });
-        return;
-      }
-    } catch {
-    }
-    if (shareUrl) {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        alert('Copiado al portapapeles.');
-      } catch {
-        alert(shareUrl);
-      }
-      return;
-    }
-    alert('No hay link para compartir.');
+    onShare?.();
   };
 
   const toggleLike = async () => {

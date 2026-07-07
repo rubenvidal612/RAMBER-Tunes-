@@ -8508,6 +8508,401 @@ const shareHandler = (() => {
   };
 })();
 
+const sharePreviewHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function missingTable(error: any) {
+    const msg = String(error?.message || "").toLowerCase();
+    return msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+      const pr = await admin
+        .from("preview_shares")
+        .select("id, song_id, created_by, client_label, has_countdown, expires_at, is_paid, paid_at, created_at")
+        .eq("id", id.slice(0, 200))
+        .maybeSingle();
+      if (pr.error) {
+        if (missingTable(pr.error)) {
+          return send(res, 500, {
+            error: "Falta configurar las tablas de previews",
+            hint: "Ejecuta la migración nueva de Supabase para preview_shares y vendor_settings.",
+            detail: pr.error.message,
+          });
+        }
+        return send(res, 500, { error: "No pude buscar el preview", detail: pr.error.message });
+      }
+
+      const share = pr.data;
+      if (!share) return send(res, 404, { error: "Preview no encontrado" });
+
+      const sr = await admin
+        .from("library_items")
+        .select("id, title, audio_url, cover_url, deleted_at, type")
+        .eq("id", String((share as any).song_id || "").trim())
+        .eq("type", "song")
+        .maybeSingle();
+      if (sr.error) return send(res, 500, { error: "No pude buscar la canción", detail: sr.error.message });
+      if (!sr.data || (sr.data as any).deleted_at) return send(res, 404, { error: "La canción ya no está disponible" });
+
+      const song = sr.data as any;
+      return send(res, 200, {
+        ok: true,
+        id: String((share as any).id || ""),
+        songId: String((share as any).song_id || ""),
+        createdBy: String((share as any).created_by || ""),
+        clientLabel: String((share as any).client_label || ""),
+        hasCountdown: Boolean((share as any).has_countdown),
+        expiresAt: (share as any).expires_at || null,
+        isPaid: Boolean((share as any).is_paid),
+        paidAt: (share as any).paid_at || null,
+        createdAt: (share as any).created_at || null,
+        title: String(song?.title || "Canción"),
+        audioUrl: String(song?.audio_url || ""),
+        coverUrl: String(song?.cover_url || ""),
+      });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const vendorHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function originFromReq(req: any) {
+    const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim() || "https";
+    const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+    return `${proto}://${host}`;
+  }
+
+  function missingTable(error: any) {
+    const msg = String(error?.message || "").toLowerCase();
+    return msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+  }
+
+  function normalizeHours(raw: any) {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true, user, admin };
+  }
+
+  async function handleGetSettings(req: any, res: any) {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    try {
+      const r = await auth.admin
+        .from("vendor_settings")
+        .select("user_id, countdown_default_hours")
+        .eq("user_id", auth.user.id)
+        .maybeSingle();
+      if (r.error) {
+        if (missingTable(r.error)) {
+          return send(res, 200, { ok: true, countdown_default_hours: 24, missing_table: true });
+        }
+        return send(res, 500, { error: "No pude leer la configuración", detail: r.error.message });
+      }
+      return send(res, 200, {
+        ok: true,
+        countdown_default_hours: normalizeHours((r.data as any)?.countdown_default_hours) || 24,
+      });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleSaveSettings(req: any, res: any) {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const hours = normalizeHours(body?.countdown_default_hours);
+    if (hours < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
+
+    try {
+      const row = {
+        user_id: auth.user.id,
+        countdown_default_hours: hours,
+        updated_at: new Date().toISOString(),
+      };
+      const r = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" });
+      if (r.error) {
+        if (missingTable(r.error)) {
+          return send(res, 500, {
+            error: "Falta configurar vendor_settings",
+            hint: "Ejecuta la migración nueva de Supabase.",
+            detail: r.error.message,
+          });
+        }
+        return send(res, 500, { error: "No pude guardar la configuración", detail: r.error.message });
+      }
+      return send(res, 200, { ok: true, countdown_default_hours: hours });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleCreatePreview(req: any, res: any) {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const clientLabel = typeof body?.clientLabel === "string" ? body.clientLabel.trim().slice(0, 120) : "";
+    const hasCountdown = Boolean(body?.hasCountdown);
+    const hours = normalizeHours(body?.countdown_hours);
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+    if (hasCountdown && hours < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
+
+    try {
+      const sr = await auth.admin
+        .from("library_items")
+        .select("id, user_id, title, audio_url, deleted_at, type")
+        .eq("id", songId)
+        .eq("user_id", auth.user.id)
+        .eq("type", "song")
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (sr.error) return send(res, 500, { error: "No pude leer tu canción", detail: sr.error.message });
+      if (!sr.data) return send(res, 404, { error: "No encontré esa canción" });
+      if (!String((sr.data as any)?.audio_url || "").trim()) return send(res, 400, { error: "Esta canción no tiene audio" });
+
+      const expiresAt = hasCountdown ? new Date(Date.now() + hours * 60 * 60 * 1000).toISOString() : null;
+      const row = {
+        song_id: songId,
+        created_by: auth.user.id,
+        client_label: clientLabel || null,
+        has_countdown: hasCountdown,
+        expires_at: expiresAt,
+        is_paid: false,
+        paid_at: null,
+      };
+      const ir = await auth.admin
+        .from("preview_shares")
+        .insert(row)
+        .select("id, song_id, created_by, client_label, has_countdown, expires_at, is_paid, paid_at, created_at")
+        .maybeSingle();
+      if (ir.error) {
+        if (missingTable(ir.error)) {
+          return send(res, 500, {
+            error: "Falta configurar preview_shares",
+            hint: "Ejecuta la migración nueva de Supabase.",
+            detail: ir.error.message,
+          });
+        }
+        return send(res, 500, { error: "No pude crear el preview", detail: ir.error.message });
+      }
+
+      const share = ir.data as any;
+      return send(res, 200, {
+        ok: true,
+        id: String(share?.id || ""),
+        url: `${originFromReq(req)}/preview/${encodeURIComponent(String(share?.id || ""))}`,
+        songId: String(share?.song_id || ""),
+        clientLabel: String(share?.client_label || ""),
+        hasCountdown: Boolean(share?.has_countdown),
+        expiresAt: share?.expires_at || null,
+        isPaid: Boolean(share?.is_paid),
+        createdAt: share?.created_at || null,
+      });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleListPreviews(req: any, res: any) {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    try {
+      const rr = await auth.admin
+        .from("preview_shares")
+        .select("id, song_id, client_label, has_countdown, expires_at, is_paid, paid_at, created_at")
+        .eq("created_by", auth.user.id)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (rr.error) {
+        if (missingTable(rr.error)) return send(res, 200, { ok: true, items: [], missing_table: true });
+        return send(res, 500, { error: "No pude listar los previews", detail: rr.error.message });
+      }
+
+      const rows = Array.isArray(rr.data) ? rr.data : [];
+      const songIds = rows.map((x: any) => String(x?.song_id || "").trim()).filter(Boolean);
+      let songMap: Record<string, any> = {};
+      if (songIds.length > 0) {
+        const sr = await auth.admin.from("library_items").select("id, title, cover_url").in("id", songIds);
+        if (!sr.error && Array.isArray(sr.data)) {
+          songMap = sr.data.reduce((acc: any, row: any) => {
+            const sid = String(row?.id || "").trim();
+            if (!sid) return acc;
+            acc[sid] = row;
+            return acc;
+          }, {});
+        }
+      }
+
+      const items = rows.map((row: any) => {
+        const song = songMap[String(row?.song_id || "").trim()] || {};
+        return {
+          id: String(row?.id || ""),
+          songId: String(row?.song_id || ""),
+          title: String(song?.title || "Canción"),
+          coverUrl: String(song?.cover_url || ""),
+          clientLabel: String(row?.client_label || ""),
+          hasCountdown: Boolean(row?.has_countdown),
+          expiresAt: row?.expires_at || null,
+          isPaid: Boolean(row?.is_paid),
+          paidAt: row?.paid_at || null,
+          createdAt: row?.created_at || null,
+          url: `${originFromReq(req)}/preview/${encodeURIComponent(String(row?.id || ""))}`,
+        };
+      });
+
+      return send(res, 200, { ok: true, items });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleMarkPaid(req: any, res: any) {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const id = typeof body?.id === "string" ? body.id.trim().slice(0, 200) : "";
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    try {
+      const paidAt = new Date().toISOString();
+      const ur = await auth.admin
+        .from("preview_shares")
+        .update({ is_paid: true, paid_at: paidAt })
+        .eq("id", id)
+        .eq("created_by", auth.user.id)
+        .select("id, is_paid, paid_at")
+        .maybeSingle();
+      if (ur.error) {
+        if (missingTable(ur.error)) {
+          return send(res, 500, {
+            error: "Falta configurar preview_shares",
+            hint: "Ejecuta la migración nueva de Supabase.",
+            detail: ur.error.message,
+          });
+        }
+        return send(res, 500, { error: "No pude marcar como pagado", detail: ur.error.message });
+      }
+      if (!ur.data) return send(res, 404, { error: "Preview no encontrado" });
+      return send(res, 200, { ok: true, id: String((ur.data as any).id || ""), is_paid: true, paid_at: (ur.data as any).paid_at || paidAt });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    const third = isApi ? parts[3] : parts[2];
+    if (head !== "vendor") return send(res, 404, { error: "Ruta no encontrada" });
+
+    const action = (third || next || pickQuery(req, "action") || "").toString().trim().toLowerCase();
+    if (action === "settings") {
+      if ((req.method || "").toUpperCase() === "GET") return handleGetSettings(req, res);
+      if ((req.method || "").toUpperCase() === "POST") return handleSaveSettings(req, res);
+      return send(res, 405, { error: "Método no permitido" });
+    }
+    if (action === "preview-shares") {
+      if ((req.method || "").toUpperCase() === "GET") return handleListPreviews(req, res);
+      return send(res, 405, { error: "Método no permitido" });
+    }
+    if (action === "create-preview") {
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      return handleCreatePreview(req, res);
+    }
+    if (action === "mark-paid") {
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      return handleMarkPaid(req, res);
+    }
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 const shareSongAudioHandler = (() => {
   function sendJson(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -14646,8 +15041,10 @@ export default async function handler(req: any, res: any) {
     if (head === "affiliates") return affiliatesHandler(req, res);
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
+    if (head === "vendor") return vendorHandler(req, res);
     if (head === "upload-audio") return uploadAudioHandler(req, res);
     if (head === "r2" && next === "object") return r2ObjectHandler(req, res);
+    if (head === "share" && next === "preview") return sharePreviewHandler(req, res);
     if (head === "share" && next === "song" && third === "audio") return shareSongAudioHandler(req, res);
     if (head === "share" && next === "song" && third === "cover") return shareSongCoverHandler(req, res);
     if (head === "share" && next === "song") return shareHandler(req, res);
