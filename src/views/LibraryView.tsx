@@ -102,6 +102,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [countdownValue, setCountdownValue] = useState('24');
   const [countdownUnit, setCountdownUnit] = useState<'hours' | 'days'>('hours');
   const [countdownBusy, setCountdownBusy] = useState(false);
+  const [countdownShareUrl, setCountdownShareUrl] = useState('');
 
   const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
     try {
@@ -633,6 +634,33 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     setSharePickerSong(song);
   };
 
+  const copyTextToClipboard = async (text: string) => {
+    const value = String(text || '').trim();
+    if (!value) return false;
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+    }
+    return false;
+  };
+
   const openCountdownShare = async (song: SongItem) => {
     setSharePickerSong(null);
     setCountdownShareSong(song);
@@ -659,25 +687,19 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
   };
 
-  const sharePreviewLink = async (song: SongItem, shareUrl: string) => {
-    const title = (song?.title || 'Canción').toString();
-    try {
-      if (navigator.share && shareUrl) {
-        await navigator.share({ title: `LucIAna | Music - ${title}`, url: shareUrl });
-        return;
-      }
-    } catch {
-    }
-    if (shareUrl) {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        alert('Link copiado al portapapeles.');
-      } catch {
-        alert(shareUrl);
-      }
+  const sharePreviewLink = async (_song: SongItem, shareUrl: string) => {
+    const cleanUrl = String(shareUrl || '').trim();
+    if (!cleanUrl) {
+      alert('No hay link para compartir.');
       return;
     }
-    alert('No hay link para compartir.');
+    setCountdownShareUrl(cleanUrl);
+    const copied = await copyTextToClipboard(cleanUrl);
+    if (copied) {
+      alert('Link copiado.');
+      return;
+    }
+    alert('No pude copiarlo automáticamente, pero aquí te lo dejé visible para que lo copies.');
   };
 
   const createCountdownShare = async () => {
@@ -2613,6 +2635,54 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               >
                 {countdownBusy ? 'Creando link…' : 'Crear link con reloj'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {countdownShareUrl && (
+        <div className="fixed inset-0 z-[282] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setCountdownShareUrl('')} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[560px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div>
+                <div className="text-white font-extrabold">Link creado</div>
+                <div className="text-slate-400 text-sm">Este es el link que abre el reproductor con la cuenta regresiva.</div>
+              </div>
+              <button
+                onClick={() => setCountdownShareUrl('')}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-all text-slate-100 text-sm">
+                {countdownShareUrl}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  onClick={async () => {
+                    const copied = await copyTextToClipboard(countdownShareUrl);
+                    if (copied) {
+                      alert('Link copiado.');
+                      return;
+                    }
+                    alert('No pude copiarlo. Mantén presionado el link para copiarlo manualmente.');
+                  }}
+                  className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm"
+                >
+                  Copiar link
+                </button>
+                <a
+                  href={countdownShareUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full h-[48px] rounded-full bg-white/5 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center justify-center"
+                >
+                  Abrir preview
+                </a>
+              </div>
             </div>
           </div>
         </div>
