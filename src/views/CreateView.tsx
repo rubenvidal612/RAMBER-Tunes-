@@ -6751,7 +6751,7 @@ function CustomForm({
               </button>
             </div>
             <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm leading-6 text-slate-200">
-              No se pueden escribir en las instrucciones nombres de artistas ni nombres de canciones famosas por temas de copyright.
+              No se puede escribir en las instrucciones nombres de artistas ni nombres de canciones famosas por temas de copyright.
               El sistema no crea la canción si detecta eso.
             </div>
             <div className="mt-4 text-sm text-slate-400">

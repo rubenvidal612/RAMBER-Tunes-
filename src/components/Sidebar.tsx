@@ -26,7 +26,7 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
             )}
           >
             <Home className="w-5 h-5" />
-            <span className="text-sm">Inicio</span>
+            <span className="text-sm">Canciones</span>
           </button>
 
           <button

@@ -76,6 +76,7 @@ function tabFromPathname(pathname: string): ViewTab {
   const p = (pathname || '/').toString().trim().toLowerCase();
   if (p === '/' || /^\/studio(?:\/|$)/i.test(p) || /^\/crear(?:\/|$)/i.test(p)) return 'studio';
   if (/^\/inicio(?:\/|$)/i.test(p)) return 'inicio';
+  if (/^\/app-inicio(?:\/|$)/i.test(p)) return 'landing';
   if (/^\/masterizar(?:\/|$)/i.test(p)) return 'masterizar';
   if (/^\/vendedor(?:\/|$)/i.test(p) || /^\/vendor(?:\/|$)/i.test(p)) return 'vendedor';
   if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
@@ -92,6 +93,8 @@ function pathnameFromTab(tab: ViewTab): string {
   switch (tab) {
     case 'inicio':
       return '/inicio';
+    case 'landing':
+      return '/app-inicio';
     case 'masterizar':
       return '/masterizar';
     case 'vendedor':
@@ -347,14 +350,32 @@ function InicioLanding({
   );
 }
 
+function InicioPlaceholder() {
+  return (
+    <div className="flex-1 flex flex-col overflow-y-auto w-full relative z-10">
+      <div className="px-4 pt-4">
+        <div className="text-white font-extrabold text-lg">Inicio</div>
+      </div>
+      <div className="flex-1 flex items-center justify-center px-6 pb-[120px]">
+        <div className="w-full max-w-[520px] rounded-3xl border border-white/10 bg-white/5 p-6 text-center">
+          <div className="text-white font-extrabold">Próximamente</div>
+          <div className="mt-2 text-sm text-slate-400">Aquí más adelante pondremos noticias y la landing page.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const AFFILIATE_REF_KEY = 'ramber.affiliate_ref_v1';
 
 function InicioSocial({
   onPlaySong,
   onGoStudio,
+  isAdmin,
 }: {
   onPlaySong: (s: SongItem) => void;
   onGoStudio: () => void;
+  isAdmin: boolean;
 }) {
   const [tab, setTab] = useState<'canciones' | 'listas' | 'generos'>('canciones');
   const [items, setItems] = useState<SongItem[]>([]);
@@ -363,6 +384,88 @@ function InicioSocial({
   const [error, setError] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [activeGenre, setActiveGenre] = useState('');
+  const [adminBusyId, setAdminBusyId] = useState('');
+  const [adminMessage, setAdminMessage] = useState('');
+
+  const removeItemLocally = (songId: string) => {
+    setItems((prev) => prev.filter((song) => song.id !== songId));
+  };
+
+  const hideFromFeed = async (songId: string) => {
+    if (!isAdmin || adminBusyId) return;
+    const ok = window.confirm('¿Quieres esconder esta canción de Canciones?');
+    if (!ok) return;
+    setAdminBusyId(songId);
+    setAdminMessage('');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setError(t.error || 'No pude validar tu sesión.');
+        return;
+      }
+      const r = await fetch('/api/social/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({ songId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        setError((out?.error || out?.detail || 'No pude esconder la canción.').toString());
+        return;
+      }
+      removeItemLocally(songId);
+      setAdminMessage('Canción escondida de Canciones.');
+    } catch {
+      setError('No pude esconder la canción.');
+    } finally {
+      setAdminBusyId('');
+    }
+  };
+
+  const deleteSongAsAdmin = async (songId: string) => {
+    if (!isAdmin || adminBusyId) return;
+    const ok = window.confirm('¿Quieres eliminar esta canción? Se mandará a la papelera.');
+    if (!ok) return;
+    setAdminBusyId(songId);
+    setAdminMessage('');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setError(t.error || 'No pude validar tu sesión.');
+        return;
+      }
+      const r = await fetch('/api/library/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({ id: songId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        setError((out?.error || out?.detail || 'No pude eliminar la canción.').toString());
+        return;
+      }
+      await fetch('/api/social/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${t.token}`,
+        },
+        body: JSON.stringify({ songId }),
+      }).catch(() => null);
+      removeItemLocally(songId);
+      setAdminMessage('Canción enviada a la papelera.');
+    } catch {
+      setError('No pude eliminar la canción.');
+    } finally {
+      setAdminBusyId('');
+    }
+  };
 
   const loadFeed = async (mode: 'reset' | 'more') => {
     setLoading(true);
@@ -443,7 +546,7 @@ function InicioSocial({
     <div className="flex-1 flex flex-col overflow-y-auto w-full relative z-10">
       <div className="px-4 pt-4">
         <div className="flex items-center justify-between">
-          <div className="text-white font-extrabold text-lg">Inicio</div>
+          <div className="text-white font-extrabold text-lg">Canciones</div>
           <button onClick={onGoStudio} className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold">
             Crear
           </button>
@@ -469,6 +572,7 @@ function InicioSocial({
       </div>
 
       {error ? <div className="px-4 mt-4 text-sm text-red-200 bg-red-500/10 border border-red-500/20 rounded-2xl p-3">{error}</div> : null}
+      {adminMessage ? <div className="px-4 mt-4 text-sm text-emerald-200 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3">{adminMessage}</div> : null}
 
       {tab === 'listas' ? (
         <div className="px-4 mt-6">
@@ -518,11 +622,38 @@ function InicioSocial({
 
           <div className="space-y-3">
             {items.map((s) => (
-              <button
+              <div
                 key={s.id}
-                onClick={() => onPlaySong(s)}
-                className="w-full flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-colors text-left"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 hover:bg-white/10 transition-colors"
               >
+                {isAdmin ? (
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-amber-200/90">Control de administrador</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => hideFromFeed(s.id)}
+                        disabled={adminBusyId === s.id}
+                        className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-[11px] font-extrabold text-amber-100 disabled:opacity-60"
+                      >
+                        Esconder
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSongAsAdmin(s.id)}
+                        disabled={adminBusyId === s.id}
+                        className="rounded-full border border-red-400/30 bg-red-500/10 px-3 py-1.5 text-[11px] font-extrabold text-red-100 disabled:opacity-60"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => onPlaySong(s)}
+                  className="w-full flex items-center gap-3 text-left"
+                >
                 <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
                   {s.coverUrl ? <img src={s.coverUrl} className="w-full h-full object-cover" /> : null}
                 </div>
@@ -543,7 +674,8 @@ function InicioSocial({
                 <div className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 font-extrabold">
                   ▶
                 </div>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
 
@@ -2855,7 +2987,7 @@ export default function App() {
         <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
            {currentTab === 'inicio' && (
              isAuthed ? (
-               <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
+               <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} isAdmin={isAdmin} />
              ) : (
                <InicioLanding
                  email={authEmail}
@@ -2867,6 +2999,7 @@ export default function App() {
                />
              )
            )}
+           {currentTab === 'landing' && <InicioPlaceholder />}
            {currentTab === 'studio' && (
              <CreateView
                onSongCreated={addCancion}
@@ -2936,7 +3069,7 @@ export default function App() {
            {currentTab === 'inicio' ? (
              <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
               {isAuthed ? (
-                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} />
+                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} isAdmin={isAdmin} />
               ) : (
                 <InicioLanding
                   email={authEmail}
@@ -2947,6 +3080,10 @@ export default function App() {
                   }}
                 />
               )}
+             </div>
+           ) : currentTab === 'landing' ? (
+             <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
+               <InicioPlaceholder />
              </div>
            ) : (
              <>
