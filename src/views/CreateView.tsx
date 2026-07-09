@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, ListMusic, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause, Heart } from 'lucide-react';
+import { Dices, RefreshCw, Plus, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -1719,13 +1719,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
   };
 
-  const generateLyricsWithAI = async () => {
-    if (isGeneratingLyrics) return;
+  const generateLyricsWithAI = async (forcedTopic?: string) => {
+    if (isGeneratingLyrics) return false;
     
-    const topic = (lyrics || '').toString().trim() || description.trim() || instructions.trim();
+    const topic = (forcedTopic || '').toString().trim() || (lyrics || '').toString().trim() || description.trim() || instructions.trim();
     if (!topic) {
       alert('Escribe en el cuadro de Letras (o en Descripción/Instrucciones) de qué quieres que trate la canción.');
-      return;
+      return false;
     }
     
     setIsGeneratingLyrics(true);
@@ -1733,7 +1733,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const t = await getAccessToken();
       if (!t.ok) {
         alert(t.error || 'No se pudo iniciar sesión.');
-        return;
+        return false;
       }
       
       const response = await fetch('/api/ai/generate-lyrics', {
@@ -1753,17 +1753,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       
       if (!response.ok || result?.ok === false) {
         alert(result.error || result.message || 'No se pudo generar letras con IA.');
-        return;
+        return false;
       }
       
       const nextLyrics = (result?.lyrics || '').toString().trim();
       if (nextLyrics) {
         setLyrics(normalizeLyricsTags(nextLyrics));
-        return;
+        return true;
       }
       alert((result?.message || 'La IA no devolvió letra. Intenta con un tema más específico o espera unos minutos.').toString());
+      return false;
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error generando letras con IA.');
+      return false;
     } finally {
       setIsGeneratingLyrics(false);
     }
@@ -6094,6 +6096,8 @@ function CustomForm({
   masterizarUploadRef
 }: any) {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
+  const [showCreateLyricsModal, setShowCreateLyricsModal] = useState(false);
+  const [lyricsIdeaPrompt, setLyricsIdeaPrompt] = useState('');
   const [prevLyrics, setPrevLyrics] = useState<string>('');
   const [instructionsLanguage, setInstructionsLanguage] = useState<'es' | 'en'>('es');
   const [isTranslatingInstructions, setIsTranslatingInstructions] = useState(false);
@@ -6188,6 +6192,18 @@ function CustomForm({
     if (n === current) return;
     setPrevLyrics(current);
     setLyrics(n);
+  };
+
+  const handleCreateUniqueLyrics = async () => {
+    const topic = (lyricsIdeaPrompt || '').toString().trim();
+    if (!topic) {
+      alert('Escribe de qué quieres que se trate tu canción.');
+      return;
+    }
+    const ok = await generateLyricsWithAI(topic);
+    if (!ok) return;
+    setShowCreateLyricsModal(false);
+    setLyricsIdeaPrompt('');
   };
 
   const isMp3File = (f: File) => {
@@ -6508,20 +6524,6 @@ function CustomForm({
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <button 
-                onClick={generateLyricsWithAI}
-                disabled={isGeneratingLyrics}
-                className="text-slate-400 hover:text-white transition-colors disabled:opacity-50" 
-                type="button"
-                aria-label="Generar letras con IA"
-                title="Generar letras con IA basadas en tu tema"
-              >
-                {isGeneratingLyrics ? (
-                  <RefreshCw className="w-5 h-5 animate-spin" />
-                ) : (
-                  <ListMusic className="w-5 h-5" />
-                )}
-              </button>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-300">Instrumental</span>
                 <Toggle checked={instrumental} onChange={() => setInstrumental(!instrumental)} />
@@ -6541,6 +6543,14 @@ function CustomForm({
                 {audioLyricsStatus}
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => setShowCreateLyricsModal(true)}
+              className="mt-4 w-full rounded-2xl border border-fuchsia-400/30 bg-gradient-to-r from-fuchsia-500/20 via-pink-500/20 to-violet-500/20 px-4 py-3 text-white font-extrabold text-sm shadow-[0_10px_30px_rgba(217,70,239,0.18)] transition-transform hover:scale-[1.01] hover:from-fuchsia-500/30 hover:via-pink-500/30 hover:to-violet-500/30"
+            >
+              Crear Letra De Cancion Inedita
+            </button>
             
             <div className="flex justify-end items-center gap-2 mt-2">
               <button
@@ -6556,6 +6566,60 @@ function CustomForm({
           </div>
         </div>
         )}
+
+      {showCreateLyricsModal && (
+        <div className="fixed inset-0 z-[145] bg-black/75 flex items-end md:items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 w-full h-full"
+            onClick={() => setShowCreateLyricsModal(false)}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full max-w-[620px] rounded-3xl border border-fuchsia-400/20 bg-[#0b0f16] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-white text-xl font-extrabold">Crear Letra De Cancion Inedita</div>
+                <div className="mt-2 text-sm text-slate-300">
+                  Escribe de que quieres que se trate tu canción, dame las instrucciones y yo la escribo 100% tuya y si gustas la puedes editar.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateLyricsModal(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <textarea
+              value={lyricsIdeaPrompt}
+              onChange={(e) => setLyricsIdeaPrompt(e.target.value)}
+              placeholder="Ejemplo: quiero una canción romántica sobre una pareja que se vuelve a encontrar después de muchos años..."
+              className="mt-4 w-full min-h-[170px] rounded-2xl border border-white/10 bg-white/5 p-4 text-[15px] text-white placeholder:text-slate-500 outline-none resize-none"
+            />
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCreateLyricsModal(false)}
+                className="w-full h-[48px] rounded-full bg-white/5 border border-white/10 text-slate-200 font-extrabold text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCreateUniqueLyrics().catch(() => {})}
+                disabled={isGeneratingLyrics}
+                className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm disabled:opacity-60"
+              >
+                {isGeneratingLyrics ? 'Generando letra…' : 'Generar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLyricsExpanded && (
         <div className="fixed inset-0 z-[140] bg-black/70 flex items-end md:items-center justify-center">
