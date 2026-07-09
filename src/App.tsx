@@ -3940,7 +3940,6 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
   const [playerDuration, setPlayerDuration] = useState(0);
   const [toast, setToast] = useState('');
   const [shareSheetUrl, setShareSheetUrl] = useState<string | null>(null);
-  const [endedLock, setEndedLock] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [, setTick] = useState(0);
@@ -3965,7 +3964,6 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     setLoading(true);
     setError('');
     setData(null);
-    setEndedLock(false);
     fetch(`/api/share/preview?id=${encodeURIComponent(shareId)}`, { method: 'GET' })
       .then((r) => r.json().catch(() => ({})).then((out) => ({ r, out })))
       .then(({ r, out }) => {
@@ -4008,7 +4006,9 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
   useEffect(() => {
     if (!data?.hasCountdown || data?.isPaid) return;
     const timer = window.setInterval(() => setTick((v) => v + 1), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [data?.hasCountdown, data?.isPaid]);
 
   const expiredByTime = (() => {
@@ -4018,7 +4018,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     return Date.now() >= end;
   })();
 
-  const isLocked = Boolean(data && !data.isPaid && (endedLock || expiredByTime));
+  const isLocked = Boolean(data && !data.isPaid && expiredByTime);
 
   useEffect(() => {
     if (!isLocked) return;
@@ -4141,7 +4141,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                 <div className="mt-1 text-sm text-slate-300">
                   {data.isPaid
                     ? 'Este preview quedó desbloqueado por tu vendedor.'
-                    : 'Esta canción se bloqueará al terminar de sonar. Contacta a tu vendedor para continuar.'}
+                    : 'Esta canción se eliminará al terminar el temporizador. Contacta a tu vendedor para continuar.'}
                 </div>
               </div>
             ) : null}
@@ -4230,10 +4230,6 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
         preload="metadata"
         onEnded={() => {
           setIsPlaying(false);
-          if (data?.hasCountdown && !data?.isPaid) {
-            setEndedLock(true);
-            setShowPlayer(false);
-          }
         }}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}

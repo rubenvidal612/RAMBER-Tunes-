@@ -68,7 +68,7 @@ $$;
 
 CREATE TABLE IF NOT EXISTS public.preview_shares (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  song_id UUID NOT NULL REFERENCES public.library_items(id) ON DELETE CASCADE,
+  song_id BIGINT NOT NULL REFERENCES public.library_items(id) ON DELETE CASCADE,
   created_by UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   client_label TEXT,
   has_countdown BOOLEAN NOT NULL DEFAULT FALSE,

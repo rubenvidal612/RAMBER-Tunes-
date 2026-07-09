@@ -661,6 +661,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     return false;
   };
 
+  const copyCountdownLink = async (text: string) => {
+    const value = String(text || '').trim();
+    if (!value) return false;
+    return copyTextToClipboard(value);
+  };
+
   const openCountdownShare = async (song: SongItem) => {
     setSharePickerSong(null);
     setCountdownShareSong(song);
@@ -687,19 +693,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
   };
 
-  const sharePreviewLink = async (_song: SongItem, shareUrl: string) => {
+  const showPreviewLink = async (_song: SongItem, shareUrl: string) => {
     const cleanUrl = String(shareUrl || '').trim();
     if (!cleanUrl) {
       alert('No hay link para compartir.');
       return;
     }
     setCountdownShareUrl(cleanUrl);
-    const copied = await copyTextToClipboard(cleanUrl);
-    if (copied) {
-      alert('Link copiado.');
-      return;
-    }
-    alert('No pude copiarlo automáticamente, pero aquí te lo dejé visible para que lo copies.');
+    alert('Listo. Ya quedó generado el link con reloj.');
   };
 
   const createCountdownShare = async () => {
@@ -731,7 +732,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       }
       const url = String(out?.url || '').trim();
       setCountdownShareSong(null);
-      await sharePreviewLink(song, url);
+      await showPreviewLink(song, url);
     } catch (e: any) {
       alert('Error inesperado: ' + (e?.message || String(e)));
     } finally {
@@ -2657,18 +2658,21 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               </button>
             </div>
             <div className="p-4 space-y-4">
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-all text-slate-100 text-sm">
-                {countdownShareUrl}
-              </div>
+              <textarea
+                readOnly
+                value={countdownShareUrl}
+                onFocus={(e) => e.target.select()}
+                className="w-full min-h-[96px] bg-white/5 border border-white/10 rounded-2xl p-3 text-slate-100 text-sm outline-none resize-none"
+              />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
                   onClick={async () => {
-                    const copied = await copyTextToClipboard(countdownShareUrl);
-                    if (copied) {
+                    const done = await copyCountdownLink(countdownShareUrl);
+                    if (done) {
                       alert('Link copiado.');
                       return;
                     }
-                    alert('No pude copiarlo. Mantén presionado el link para copiarlo manualmente.');
+                    alert('No pude copiarlo automático. Mantén presionado el texto del link para copiarlo manualmente.');
                   }}
                   className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm"
                 >

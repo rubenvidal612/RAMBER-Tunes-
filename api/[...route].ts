@@ -485,7 +485,7 @@ async function applyCreditRolloverWithCap(
   const next = round2(unlimited ? sum : Math.min(sum, cap));
   
   // Validar límite máximo real del saldo acumulado.
-  if (next > MAX_ACCUMULATED_CREDITS) {
+  if (!unlimited && next > MAX_ACCUMULATED_CREDITS) {
     return { 
       ok: false as const, 
       error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
@@ -639,9 +639,11 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
     }
 
     const current = creditsFromProfile(profile);
+    const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
+    const unlimited = isAdminEmail(profileEmail);
     
     // Validar límite máximo real del saldo acumulado.
-    if (delta > 0) {
+    if (delta > 0 && !unlimited) {
       const totalAfterAdd = current + delta;
       
       if (totalAfterAdd > MAX_ACCUMULATED_CREDITS) {
