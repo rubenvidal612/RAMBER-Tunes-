@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore, Volume2, Clock3 } from 'lucide-react';
+import { Home, Sparkles, Library, User, Menu, X, Users, MessageCircleMore, Volume2, Clock3, Music2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -27,10 +27,10 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
 
 
   const mainItems: { id: ViewTab; label: string; icon: React.ElementType }[] = [
-    { id: 'inicio', label: 'Canciones', icon: Home },
-    { id: 'landing', label: 'Inicio', icon: MessageCircleMore },
+    { id: 'landing', label: 'Inicio', icon: Home },
+    { id: 'inicio', label: 'Canciones', icon: Music2 },
     { id: 'studio', label: 'Crear', icon: Sparkles },
-    { id: 'biblioteca', label: 'Biblioteca', icon: Library },
+    { id: 'biblioteca', label: 'Mis Canciones', icon: Library },
   ];
 
   const menuItems: MenuItem[] = [

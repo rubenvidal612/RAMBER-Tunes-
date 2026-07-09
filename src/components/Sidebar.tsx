@@ -1,4 +1,4 @@
-import { Home, Sparkles, Library, User, MessageCircleMore, HelpCircle, Users, Volume2, Clock3 } from 'lucide-react';
+import { Home, Sparkles, Library, User, MessageCircleMore, HelpCircle, Users, Volume2, Clock3, Music2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -17,6 +17,19 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
           <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Menú</div>
 
           <button
+            onClick={() => onChange('landing')}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
+              currentTab === 'landing'
+                ? "bg-indigo-500/20 text-indigo-400 font-bold"
+                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
+            )}
+          >
+            <Home className="w-5 h-5" />
+            <span className="text-sm">Inicio</span>
+          </button>
+
+          <button
             onClick={() => onChange('inicio')}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
@@ -25,7 +38,7 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
                 : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
             )}
           >
-            <Home className="w-5 h-5" />
+            <Music2 className="w-5 h-5" />
             <span className="text-sm">Canciones</span>
           </button>
 
@@ -78,7 +91,7 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
             )}
           >
             <Library className="w-5 h-5" />
-            <span className="text-sm">Biblioteca</span>
+            <span className="text-sm">Mis Canciones</span>
           </button>
 
           <button
