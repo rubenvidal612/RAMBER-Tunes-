@@ -6097,6 +6097,7 @@ function CustomForm({
   const [prevLyrics, setPrevLyrics] = useState<string>('');
   const [instructionsLanguage, setInstructionsLanguage] = useState<'es' | 'en'>('es');
   const [isTranslatingInstructions, setIsTranslatingInstructions] = useState(false);
+  const [showInstructionsRules, setShowInstructionsRules] = useState(false);
   const [instructionsOriginalEs, setInstructionsOriginalEs] = useState('');
   const [instructionsTranslatedEn, setInstructionsTranslatedEn] = useState('');
   const instructionsCopy = {
@@ -6648,14 +6649,60 @@ function CustomForm({
           >
             <RefreshCw className={cn("w-4 h-4", isBoostingStyle ? "animate-spin" : "")} />
           </button>
-          <span className="flex-shrink-0 bg-white/5 text-slate-300 px-4 py-2 rounded-full text-sm font-medium border border-white/5 truncate max-w-[200px]">
-            raspy female vocals
-          </span>
-          <span className="flex-shrink-0 bg-white/5 text-slate-300 px-4 py-2 rounded-full text-sm font-medium border border-white/5 truncate max-w-[200px]">
-            modern danceh...
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowInstructionsRules(true)}
+            className="flex-shrink-0 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-gradient-to-r from-amber-500/20 to-red-500/20 px-4 py-2 text-sm font-extrabold text-amber-100 shadow-[0_8px_25px_rgba(245,158,11,0.18)] transition-transform hover:scale-[1.02] hover:from-amber-500/30 hover:to-red-500/30"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>¿Qué No Está Permitido?</span>
+          </button>
         </div>
       </div>
+
+      {showInstructionsRules ? (
+        <div className="fixed inset-0 z-[260] bg-black/75 flex items-end md:items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 w-full h-full"
+            onClick={() => setShowInstructionsRules(false)}
+            aria-label="Cerrar aviso"
+          />
+          <div className="relative w-full max-w-[560px] rounded-3xl border border-amber-400/20 bg-[#111318] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-amber-200">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Importante
+                </div>
+                <h3 className="mt-3 text-white text-xl font-extrabold">¿Qué no está permitido?</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstructionsRules(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm leading-6 text-slate-200">
+              No se pueden escribir en las instrucciones nombres de artistas ni nombres de canciones famosas por temas de copyright.
+              El sistema no crea la canción si detecta eso.
+            </div>
+            <div className="mt-4 text-sm text-slate-400">
+              Es mejor describir el estilo, el ambiente, los instrumentos o el tipo de voz que quieres, sin mencionar artistas o canciones reales.
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInstructionsRules(false)}
+              className="mt-5 w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Género */}
       {!instrumental ? (
