@@ -103,6 +103,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [countdownUnit, setCountdownUnit] = useState<'hours' | 'days'>('hours');
   const [countdownBusy, setCountdownBusy] = useState(false);
   const [countdownShareUrl, setCountdownShareUrl] = useState('');
+  const [countdownShareNotice, setCountdownShareNotice] = useState('');
 
   const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
     try {
@@ -672,6 +673,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     setCountdownShareSong(song);
     setCountdownClientLabel('');
     setCountdownBusy(false);
+    setCountdownShareNotice('');
     try {
       const t = await getAccessToken();
       if (!t.ok) return;
@@ -700,7 +702,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       return;
     }
     setCountdownShareUrl(cleanUrl);
-    alert('Listo. Ya quedó generado el link con reloj.');
+    setCountdownShareNotice('Listo. Ya quedó generado el link con reloj.');
   };
 
   const createCountdownShare = async () => {
@@ -2643,7 +2645,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
       {countdownShareUrl && (
         <div className="fixed inset-0 z-[282] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setCountdownShareUrl('')} aria-label="Cerrar" />
+          <button className="absolute inset-0 w-full h-full" onClick={() => { setCountdownShareUrl(''); setCountdownShareNotice(''); }} aria-label="Cerrar" />
           <div className="relative w-full md:max-w-[560px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div>
@@ -2651,7 +2653,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 <div className="text-slate-400 text-sm">Este es el link que abre el reproductor con la cuenta regresiva.</div>
               </div>
               <button
-                onClick={() => setCountdownShareUrl('')}
+                onClick={() => { setCountdownShareUrl(''); setCountdownShareNotice(''); }}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
                 ✕
@@ -2669,10 +2671,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   onClick={async () => {
                     const done = await copyCountdownLink(countdownShareUrl);
                     if (done) {
-                      alert('Link copiado.');
+                      setCountdownShareNotice('Link copiado.');
                       return;
                     }
-                    alert('No pude copiarlo automático. Mantén presionado el texto del link para copiarlo manualmente.');
+                    setCountdownShareNotice('No pude copiarlo automático. Mantén presionado el texto del link para copiarlo manualmente.');
                   }}
                   className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm"
                 >
@@ -2687,6 +2689,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   Abrir preview
                 </a>
               </div>
+              {countdownShareNotice ? (
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+                  {countdownShareNotice}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

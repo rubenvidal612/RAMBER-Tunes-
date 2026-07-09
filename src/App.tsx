@@ -4132,16 +4132,37 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
           <div className="p-5 max-w-[980px] mx-auto w-full">
             {data.hasCountdown ? (
               <div className={cn(
-                "mb-5 rounded-3xl border p-4",
-                isLocked && !data.isPaid ? "border-red-400/30 bg-red-500/10" : "border-amber-400/20 bg-amber-500/10"
+                "mb-5 relative overflow-hidden rounded-3xl border p-5 md:p-6 shadow-[0_18px_60px_rgba(0,0,0,0.28)]",
+                isLocked && !data.isPaid
+                  ? "border-red-400/40 bg-gradient-to-br from-red-500/20 via-red-500/10 to-black/20"
+                  : "border-amber-300/40 bg-gradient-to-br from-amber-300/25 via-yellow-400/10 to-black/20"
               )}>
-                <div className="text-white font-extrabold">
-                  {data.isPaid ? 'Pago confirmado' : `⏳ ${formatCountdown(data.expiresAt)}`}
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className={cn(
+                    "absolute -top-16 -right-10 h-40 w-40 rounded-full blur-3xl",
+                    isLocked && !data.isPaid ? "bg-red-400/20" : "bg-amber-300/25"
+                  )} />
                 </div>
-                <div className="mt-1 text-sm text-slate-300">
-                  {data.isPaid
-                    ? 'Este preview quedó desbloqueado por tu vendedor.'
-                    : 'Esta canción se eliminará al terminar el temporizador. Contacta a tu vendedor para continuar.'}
+                <div className="relative">
+                  <div className={cn(
+                    "inline-flex items-center rounded-full border px-3 py-1 text-[11px] md:text-xs font-bold uppercase tracking-[0.24em]",
+                    isLocked && !data.isPaid
+                      ? "border-red-300/35 bg-red-400/10 text-red-100"
+                      : "border-amber-200/35 bg-black/20 text-amber-100"
+                  )}>
+                    {data.isPaid ? 'Acceso liberado' : 'Tiempo restante'}
+                  </div>
+                  <div className={cn(
+                    "mt-3 font-black leading-none tracking-[0.08em] text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)]",
+                    data.isPaid ? "text-3xl md:text-4xl" : "text-4xl md:text-6xl"
+                  )}>
+                    {data.isPaid ? 'Pago confirmado' : formatCountdown(data.expiresAt)}
+                  </div>
+                  <div className="mt-2 text-sm md:text-base text-slate-200/90 max-w-2xl">
+                    {data.isPaid
+                      ? 'Este preview quedó desbloqueado por tu vendedor.'
+                      : 'Esta canción se eliminará al terminar el temporizador. Contacta a tu vendedor para continuar.'}
+                  </div>
                 </div>
               </div>
             ) : null}
