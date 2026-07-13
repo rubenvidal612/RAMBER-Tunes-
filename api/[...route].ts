@@ -9170,8 +9170,8 @@ const shareSongAudioHandler = (() => {
       }
 
       if (endsDev) {
-        const bucket = parts[0] || "";
-        const key = parts.slice(1).join("/");
+        const bucket = String(env.bucketName || "").trim();
+        const key = path;
         if (!bucket || !key) return null;
         return { bucket, key };
       }
@@ -9221,7 +9221,13 @@ const shareSongAudioHandler = (() => {
       const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
 
       const initialR2Key = extractR2KeyFromUrlOrKey(audioUrl);
-      const shouldRefresh = !audioUrl || looksExpiringUrl(audioUrl) || /^http:\/\//i.test(audioUrl) || Boolean(initialR2Key);
+      const initialR2Loc = /^https?:\/\//i.test((audioUrl || "").toString().trim())
+        ? parseR2LocationFromUrlString(audioUrl)
+        : null;
+      const hasStoredR2Audio = Boolean(initialR2Loc?.key || initialR2Key);
+      const shouldRefresh =
+        !audioUrl ||
+        (!hasStoredR2Audio && (looksExpiringUrl(audioUrl) || /^http:\/\//i.test(audioUrl)));
       if (shouldRefresh && sunoTaskId) {
         const fresh = await resolveFreshFromSuno(sunoTaskId, title || "");
         if (fresh.ok && fresh.audioUrl) {
