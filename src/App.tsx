@@ -1789,7 +1789,8 @@ export default function App() {
       }
     };
     const audioPath = deriveAudioPath(rawUrl) || (song?.audioPath || '').toString().trim();
-    const url = rawUrl || (songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '');
+    const proxyUrl = songId ? `/api/share/song/audio?id=${encodeURIComponent(songId)}&t=${Date.now()}` : '';
+    const url = proxyUrl || rawUrl;
     if (!url) {
       alert('Esta canción no tiene audio para hacer cover.');
       return;
@@ -2463,14 +2464,11 @@ export default function App() {
       playCandidates.push(clean);
     };
 
-    if (!hasProviderIds && song?.id) {
+    if (song?.id) {
       addCandidate(`/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`);
     }
     if (/^https?:\/\//i.test(directUrl) || directUrl.startsWith('/')) {
       addCandidate(directUrl);
-    }
-    if (hasProviderIds && song?.id) {
-      addCandidate(`/api/share/song/audio?id=${encodeURIComponent(String(song.id))}&t=${Date.now()}`);
     }
 
     for (const candidate of playCandidates) {
@@ -4623,7 +4621,8 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
 
   const playSong = async (s: { id: string; title: string; audioUrl: string; coverUrl?: string | null }) => {
     if (!s?.id) return;
-    const playUrl = (s.audioUrl || '').toString().trim() || `/api/share/song/audio?id=${encodeURIComponent(s.id)}`;
+    const safePlayUrl = `/api/share/song/audio?id=${encodeURIComponent(s.id)}`;
+    const playUrl = safePlayUrl || (s.audioUrl || '').toString().trim();
     const baseAudio = playUrl;
     setCurrentSong({ id: s.id, title: s.title, audioUrl: playUrl, coverUrl: s.coverUrl });
     setShowPlayer(true);
