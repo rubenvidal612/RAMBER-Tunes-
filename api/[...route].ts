@@ -302,6 +302,48 @@ async function uploadToR2(key: string, body: any, contentType: string): Promise<
   return `${env.publicBaseUrl}/${key}`;
 }
 
+// TEMP-LOGGING: quitar despues de diagnostico
+async function insertR2CopyLog(admin: any, input: {
+  taskId: string;
+  userId?: string;
+  kind: string;
+  sunoAudioId?: string;
+  sourceUrl?: string;
+  fetchStatus?: number | null;
+  downloadMs?: number | null;
+  sizeBytes?: number | null;
+  contentType?: string | null;
+  fallbackUsed: boolean;
+  errorStep?: string | null;
+  errorMessage?: string | null;
+}) {
+  try {
+    let sourceHost = "";
+    try {
+      sourceHost = new URL(String(input.sourceUrl || "").trim()).host.toLowerCase();
+    } catch {
+      sourceHost = "";
+    }
+
+    await admin.from("r2_copy_logs").insert({
+      task_id: String(input.taskId || "").slice(0, 200),
+      user_id: input.userId ? String(input.userId).slice(0, 200) : null,
+      kind: String(input.kind || "").slice(0, 120),
+      suno_audio_id: input.sunoAudioId ? String(input.sunoAudioId).slice(0, 200) : null,
+      source_host: sourceHost ? sourceHost.slice(0, 255) : null,
+      source_url: input.sourceUrl ? String(input.sourceUrl).slice(0, 2000) : null,
+      fetch_status: Number.isFinite(Number(input.fetchStatus)) ? Number(input.fetchStatus) : null,
+      download_ms: Number.isFinite(Number(input.downloadMs)) ? Number(input.downloadMs) : null,
+      size_bytes: Number.isFinite(Number(input.sizeBytes)) ? Number(input.sizeBytes) : null,
+      content_type: input.contentType ? String(input.contentType).slice(0, 255) : null,
+      fallback_used: Boolean(input.fallbackUsed),
+      error_step: input.errorStep ? String(input.errorStep).slice(0, 40) : null,
+      error_message: input.errorMessage ? String(input.errorMessage).slice(0, 2000) : null,
+    });
+  } catch {
+  }
+}
+
 /**
  * Copia un archivo desde una URL temporal (ej: Replicate) a R2 con una URL permanente
  * @param sourceUrl URL temporal del archivo (ej: de replicate.delivery)
@@ -8374,37 +8416,92 @@ const sunoWebhookHandler = (() => {
                   // Solo procesar si no es ya una URL de R2
                   if (!isR2Url(x.audioUrl)) {
                     console.log(`📦 [sunoWebhook] Copiando audio a R2: "${x.title}" (${x.audioUrl.substring(0, 80)}...)`);
-                    
+
+                    let fetchStatus: number | null = null;
+                    let downloadMs: number | null = null;
+                    let sizeBytes: number | null = null;
+                    let contentType: string | null = null;
+                    let fallbackUsed = false;
+                    let errorStep: string | null = null;
+                    let errorMessage: string | null = null;
+                    let response: Response | null = null;
+                    let buffer: Buffer | null = null;
+
+                    // TEMP-LOGGING: quitar despues de diagnostico
+                    const startedAt = Date.now();
+
                     try {
-                      // Descargar el audio
                       const ctrl = new AbortController();
                       const timer = setTimeout(() => ctrl.abort(), 90_000);
-                      const response = await fetch(x.audioUrl, { signal: ctrl.signal as any });
+                      response = await fetch(x.audioUrl, { signal: ctrl.signal as any });
                       clearTimeout(timer);
-                      
+                      fetchStatus = Number((response as any)?.status || 0) || null;
+                      downloadMs = Date.now() - startedAt;
                       if (!response.ok) {
-                        console.error(`❌ [sunoWebhook] Error al descargar audio: HTTP ${response.status}`);
-                        // Continuar con la URL original como fallback
-                      } else {
-                        const contentType = (response.headers.get("content-type") || "audio/mpeg").toString().trim();
+                        fallbackUsed = true;
+                        errorStep = "fetch";
+                        errorMessage = `HTTP ${response.status}`;
+                      }
+                    } catch (fetchError) {
+                      fallbackUsed = true;
+                      errorStep = "fetch";
+                      errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+                    }
+
+                    if (!fallbackUsed && response) {
+                      try {
+                        contentType = (response.headers.get("content-type") || "audio/mpeg").toString().trim();
                         const arrayBuffer = await response.arrayBuffer();
-                        const buffer = Buffer.from(arrayBuffer);
-                        
-                        // Crear path único en R2
+                        buffer = Buffer.from(arrayBuffer);
+                        sizeBytes = buffer.length;
+                        if (!buffer.length) {
+                          fallbackUsed = true;
+                          errorStep = "arrayBuffer";
+                          errorMessage = "Audio vacio al leer response.arrayBuffer()";
+                        }
+                      } catch (bufferError) {
+                        fallbackUsed = true;
+                        errorStep = "arrayBuffer";
+                        errorMessage = bufferError instanceof Error ? bufferError.message : String(bufferError);
+                      }
+                    }
+
+                    if (!fallbackUsed && buffer) {
+                      try {
                         const safeBase = (x.sunoAudioId || x.title || "audio")
                           .replace(/[\\/:*?"<>|]+/g, "_")
                           .replace(/\s+/g, "_")
                           .replace(/[^a-zA-Z0-9._-]+/g, "_")
                           .slice(0, 80);
                         const path = `imports/${userId}/${Date.now()}_${safeBase || "audio"}.mp3`;
-                        
-                        console.log(`⬆️  [sunoWebhook] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType})`);
-                        finalAudioUrl = await uploadToR2(path, buffer, contentType);
+
+                        console.log(`⬆️  [sunoWebhook] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType || "audio/mpeg"})`);
+                        finalAudioUrl = await uploadToR2(path, buffer, contentType || "audio/mpeg");
                         console.log(`✅ [sunoWebhook] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
+                      } catch (uploadError) {
+                        fallbackUsed = true;
+                        errorStep = "uploadToR2";
+                        errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
                       }
-                    } catch (uploadError) {
-                      console.error(`❌ [sunoWebhook] Error al subir audio a R2:`, uploadError);
-                      // Usar la URL original como fallback
+                    }
+
+                    // TEMP-LOGGING: quitar despues de diagnostico
+                    await insertR2CopyLog(admin, {
+                      taskId: taskId,
+                      userId,
+                      kind: String(kind || ""),
+                      sunoAudioId: String(x.sunoAudioId || ""),
+                      sourceUrl: String(x.audioUrl || ""),
+                      fetchStatus,
+                      downloadMs,
+                      sizeBytes,
+                      contentType,
+                      fallbackUsed,
+                      errorStep,
+                      errorMessage,
+                    });
+
+                    if (fallbackUsed) {
                       console.log(`🔄 [sunoWebhook] Usando URL original como fallback: ${x.audioUrl.substring(0, 100)}...`);
                     }
                   } else {
