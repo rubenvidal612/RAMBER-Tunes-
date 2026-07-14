@@ -2266,7 +2266,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         })()}
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-slate-400 truncate">{song.genre || ' '} </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-slate-400 truncate">{song.genre || ' '}</p>
+                          <span className="text-[9px] text-slate-600 font-mono bg-slate-800 px-1 rounded truncate max-w-[120px]">
+                            ID: {song.id}
+                          </span>
+                        </div>
                         {!showTrash ? (
                           <p className="text-[11px] text-slate-500 shrink-0">{song.createdAt ? `Creada ${fmt(song.createdAt)}` : ''}</p>
                         ) : (
