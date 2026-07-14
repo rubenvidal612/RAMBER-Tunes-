@@ -4374,11 +4374,6 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                 </div>
 
                 <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
-                  {data.hasCountdown ? (
-                    <div className="mb-3 text-sm text-slate-300">
-                      Esto es para cuando vendes maquetas a clientes: tendrán este tiempo para pagarte.
-                    </div>
-                  ) : null}
 
                   {!data.isPaid ? (
                     <>
@@ -4405,13 +4400,13 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                             Procesando pago...
                           </>
                         ) : (
-                          `Desbloquear por $${unlockPrice}`
+                          `Descargar por $${unlockPrice}`
                         )}
                       </button>
 
                       {isLocked ? (
                         <div className="mt-3 text-sm text-red-200">
-                          Preview expirado — contacta a tu vendedor o desbloquea para continuar.
+                          Preview expirado — contacta a tu vendedor o descarga para continuar.
                         </div>
                       ) : null}
                     </>
