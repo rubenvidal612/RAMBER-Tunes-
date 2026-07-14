@@ -4070,7 +4070,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     clientLabel?: string;
     unlockPrice?: number;
   } | null>(null);
-  const [showPlayer, setShowPlayer] = useState(true);
+  const [showPlayer, setShowPlayer] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
@@ -4130,7 +4130,6 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       if (out?.unlockPrice) {
         setUnlockPrice(Number(out.unlockPrice));
       }
-        setShowPlayer(true);
       })
       .catch(() => {
         if (!alive) return;
