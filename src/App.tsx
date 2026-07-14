@@ -4068,6 +4068,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     expiresAt?: string | null;
     isPaid: boolean;
     clientLabel?: string;
+    unlockPrice?: number;
   } | null>(null);
   const [showPlayer, setShowPlayer] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -4075,6 +4076,8 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
   const [playerDuration, setPlayerDuration] = useState(0);
   const [toast, setToast] = useState('');
   const [shareSheetUrl, setShareSheetUrl] = useState<string | null>(null);
+  const [isPaymentLoading, setIsPaymentLoading] = useState(false);
+  const [unlockPrice, setUnlockPrice] = useState(250);
   const toastTimerRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [, setTick] = useState(0);
@@ -4113,16 +4116,20 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
           return;
         }
         setData({
-          id: String(out?.id || shareId),
-          songId,
-          title: String(out?.title || 'Canción'),
-          audioUrl: `/api/share/song/audio?id=${encodeURIComponent(songId)}`,
-          coverUrl: String(out?.coverUrl || '').trim() || undefined,
-          hasCountdown: Boolean(out?.hasCountdown),
-          expiresAt: out?.expiresAt || null,
-          isPaid: Boolean(out?.isPaid),
-          clientLabel: String(out?.clientLabel || '').trim(),
-        });
+        id: String(out?.id || shareId),
+        songId,
+        title: String(out?.title || "Canción"),
+        audioUrl: `/api/share/song/audio?id=${encodeURIComponent(songId)}`,
+        coverUrl: String(out?.coverUrl || "").trim() || undefined,
+        hasCountdown: Boolean(out?.hasCountdown),
+        expiresAt: out?.expiresAt || null,
+        isPaid: Boolean(out?.isPaid),
+        clientLabel: String(out?.clientLabel || "").trim(),
+        unlockPrice: Number(out?.unlockPrice) || 250,
+      });
+      if (out?.unlockPrice) {
+        setUnlockPrice(Number(out.unlockPrice));
+      }
         setShowPlayer(true);
       })
       .catch(() => {
@@ -4145,6 +4152,55 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       window.clearInterval(timer);
     };
   }, [data?.hasCountdown, data?.isPaid]);
+
+  useEffect(() => {
+    if (!shareId) return;
+    const channel = supabaseBrowser
+      ?.channel(`preview_shares:${shareId}`)
+      ?.on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'preview_shares',
+          filter: `id=eq.${shareId}`,
+        },
+        (payload) => {
+          const newIsPaid = Boolean((payload.new as any)?.is_paid);
+          if (newIsPaid) {
+            setData((prev) => prev ? { ...prev, isPaid: newIsPaid } : prev);
+          }
+        }
+      )
+      ?.subscribe();
+    return () => {
+      channel?.unsubscribe();
+    };
+  }, [shareId]);
+
+  const handleUnlock = async () => {
+    try {
+      setIsPaymentLoading(true);
+      setError('');
+      const response = await fetch('/api/share/preview/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shareId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Error al crear el pago');
+      if (result.init_point) {
+        window.location.href = result.init_point;
+      } else {
+        throw new Error('No se recibió la URL de pago');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al procesar el pago');
+      showToast(err.message || 'Error al procesar el pago');
+    } finally {
+      setIsPaymentLoading(false);
+    }
+  };
 
   const expiredByTime = (() => {
     if (!data?.hasCountdown || data?.isPaid || !data?.expiresAt) return false;
@@ -4324,22 +4380,64 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                       Esto es para cuando vendes maquetas a clientes: tendrán este tiempo para pagarte.
                     </div>
                   ) : null}
-                  <button
-                    onClick={async () => {
-                      if (isLocked) return;
-                      setShowPlayer(true);
-                      await togglePlay();
-                    }}
-                    disabled={isLocked}
-                    className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold disabled:opacity-60"
-                  >
-                    {isLocked ? 'Preview expirado' : isPlaying ? 'Pausar' : 'Reproducir'}
-                  </button>
-                  {isLocked ? (
-                    <div className="mt-3 text-sm text-red-200">
-                      Preview expirado — contacta a tu vendedor para continuar.
-                    </div>
-                  ) : null}
+
+                  {!data.isPaid ? (
+                    <>
+                      <button
+                        onClick={async () => {
+                          if (isLocked) return;
+                          setShowPlayer(true);
+                          await togglePlay();
+                        }}
+                        disabled={isLocked}
+                        className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold disabled:opacity-60"
+                      >
+                        {isLocked ? 'Preview expirado' : isPlaying ? 'Pausar' : 'Reproducir'}
+                      </button>
+
+                      <button
+                        onClick={handleUnlock}
+                        disabled={isPaymentLoading}
+                        className="w-full h-[46px] rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold disabled:opacity-60 mt-3 flex items-center justify-center gap-2"
+                      >
+                        {isPaymentLoading ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                            Procesando pago...
+                          </>
+                        ) : (
+                          `Desbloquear por $${unlockPrice}`
+                        )}
+                      </button>
+
+                      {isLocked ? (
+                        <div className="mt-3 text-sm text-red-200">
+                          Preview expirado — contacta a tu vendedor o desbloquea para continuar.
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={async () => {
+                          setShowPlayer(true);
+                          await togglePlay();
+                        }}
+                        className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold"
+                      >
+                        {isPlaying ? 'Pausar' : 'Reproducir'}
+                      </button>
+
+                      <a
+                        href={data.audioUrl}
+                        download={`${data.title}.mp3`}
+                        className="w-full h-[46px] rounded-full bg-indigo-500 hover:bg-indigo-400 text-white font-extrabold flex items-center justify-center gap-2 mt-3"
+                      >
+                        <Download className="w-5 h-5" />
+                        Descargar canción
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
