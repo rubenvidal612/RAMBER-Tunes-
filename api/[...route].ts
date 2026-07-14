@@ -8744,7 +8744,17 @@ const sharePreviewHandler = (() => {
       if (sr.error) return send(res, 500, { error: "No pude buscar la canción", detail: sr.error.message });
       if (!sr.data || (sr.data as any).deleted_at) return send(res, 404, { error: "La canción ya no está disponible" });
 
-      const song = sr.data as any;
+      
+      // Get product pricing
+      const productType = "cancion_generada";
+      const pp = await admin
+        .from("product_pricing")
+        .select("product_type, unlock_price_mxn, empleado_commission_mxn")
+        .eq("product_type", productType)
+        .maybeSingle();
+      const unlockPrice = Number((pp.data as any)?.unlock_price_mxn) || 250;
+
+const song = sr.data as any;
       return send(res, 200, {
         ok: true,
         id: String((share as any).id || ""),
@@ -8759,7 +8769,8 @@ const sharePreviewHandler = (() => {
         title: String(song?.title || "Canción"),
         audioUrl: String(song?.audio_url || ""),
         coverUrl: String(song?.cover_url || ""),
-      });
+          unlockPrice: unlockPrice,
+});
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
