@@ -5291,16 +5291,81 @@ const mercadoPagoHandler = (() => {
     if (paymentStatus !== "approved") return send(res, 200, { ok: true, status: paymentStatus });
 
     const meta = data?.metadata || {};
-    const userId = (meta?.user_id || meta?.userId || "").toString();
-    if (!userId) return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
-
+    const txKind = (meta?.kind || "songs").toString() || "songs";
     const createClient = await getSupabaseCreateClient();
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+    if (txKind === "share_unlock") {
+      const shareId = (meta?.share_id || "").toString();
+      const productType = (meta?.product_type || "cancion_generada").toString();
+      
+      if (!shareId) return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
+
+      const { data: existsTx } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
+      if (Array.isArray(existsTx) && existsTx.length > 0) return send(res, 200, { ok: true, status: paymentStatus, already: true });
+
+      const { data: share, error: shareError } = await admin
+        .from("preview_shares")
+        .select("id, song_id, created_by, is_paid")
+        .eq("id", shareId)
+        .maybeSingle();
+      if (shareError || !share) return send(res, 500, { error: "No pude encontrar el preview share" });
+      if (share.is_paid) return send(res, 200, { ok: true, status: paymentStatus, already: true });
+
+      // Mark share as paid
+      const paidAt = new Date().toISOString();
+      await admin
+        .from("preview_shares")
+        .update({ is_paid: true, paid_at: paidAt })
+        .eq("id", shareId);
+
+      // Get vendor settings for created_by
+      const { data: vendorSettings } = await admin
+        .from("vendor_settings")
+        .select("role")
+        .eq("user_id", share.created_by)
+        .maybeSingle();
+      const role = (vendorSettings as any)?.role || "vendor";
+
+      // Get product pricing
+      const { data: pricing } = await admin
+        .from("product_pricing")
+        .select("unlock_price_mxn, empleado_commission_mxn")
+        .eq("product_type", productType)
+        .maybeSingle();
+      const unlockPrice = Number((pricing as any)?.unlock_price_mxn) || 250;
+      const empleadoCommission = Number((pricing as any)?.empleado_commission_mxn) || 50;
+
+      // Create share commission record if role is empleado
+      if (role === "empleado") {
+        await admin.from("share_commissions").insert({
+          share_id: shareId,
+          seller_user_id: share.created_by,
+          role_at_time: role,
+          product_type: productType,
+          amount_mxn: empleadoCommission,
+          status: "pending",
+        });
+      }
+
+      // Record transaction
+      await admin.from("mp_transactions").insert({
+        user_id: null,
+        kind: "share_unlock",
+        pack_key: productType,
+        amount_mxn: unlockPrice,
+        payment_id: paymentId,
+      });
+
+      return send(res, 200, { ok: true, status: paymentStatus, shareUnlocked: true });
+    }
+
+    const userId = (meta?.user_id || meta?.userId || "").toString();
+    if (!userId) return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
 
     const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
     if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, status: paymentStatus, already: true });
 
-    const txKind = (meta?.kind || "songs").toString() || "songs";
     const packKey = (meta?.pack_key || meta?.packKey || "").toString();
     const amountMxn = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
     const credits = Number(meta?.credits ?? 0);
@@ -8610,9 +8675,26 @@ const sharePreviewHandler = (() => {
     res.end(JSON.stringify(body));
   }
 
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
   function pickQuery(req: any, key: string) {
     const url = new URL(req.url, "http://localhost");
     return url.searchParams.get(key) || "";
+  }
+
+  function originFromReq(req: any) {
+    const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim() || "https";
+    const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+    return `${proto}://${host}`;
   }
 
   function missingTable(error: any) {
@@ -8620,9 +8702,7 @@ const sharePreviewHandler = (() => {
     return msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
   }
 
-  return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-
+  async function handleGetPreview(req: any, res: any) {
     const id = pickQuery(req, "id").trim();
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -8683,6 +8763,105 @@ const sharePreviewHandler = (() => {
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
+  }
+
+  async function handleCreatePayment(req: any, res: any) {
+    const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
+    if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const shareId = typeof body?.shareId === "string" ? body.shareId.trim().slice(0, 200) : "";
+    if (!shareId) return send(res, 400, { error: "Falta shareId" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+      const pr = await admin
+        .from("preview_shares")
+        .select("id, song_id, created_by, is_paid")
+        .eq("id", shareId)
+        .maybeSingle();
+      if (pr.error) return send(res, 500, { error: "No pude buscar el preview", detail: pr.error.message });
+      const share = pr.data as any;
+      if (!share) return send(res, 404, { error: "Preview no encontrado" });
+      if (share.is_paid) return send(res, 400, { error: "Este preview ya ha sido pagado" });
+
+      // Get product type (default to cancion_generada for now)
+      const productType = "cancion_generada";
+      
+      // Get pricing from product_pricing table
+      const pp = await admin
+        .from("product_pricing")
+        .select("product_type, unlock_price_mxn, empleado_commission_mxn")
+        .eq("product_type", productType)
+        .maybeSingle();
+      const price = Number((pp.data as any)?.unlock_price_mxn) || 250;
+
+      const origin = originFromReq(req);
+      const preferenceBody: any = {
+        items: [{ 
+          title: "Desbloquear Canción", 
+          quantity: 1, 
+          currency_id: "MXN", 
+          unit_price: price 
+        }],
+        external_reference: `share:${shareId}`,
+        metadata: { 
+          share_id: shareId, 
+          song_id: share.song_id,
+          product_type: productType,
+          kind: "share_unlock"
+        },
+        back_urls: { 
+          success: `${origin}/preview/${encodeURIComponent(shareId)}?mp=success`, 
+          failure: `${origin}/preview/${encodeURIComponent(shareId)}?mp=failure`, 
+          pending: `${origin}/preview/${encodeURIComponent(shareId)}?mp=pending` 
+        },
+        auto_return: "approved",
+        notification_url: `${origin}/api/mercadopago/webhook`,
+      };
+
+      const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: { authorization: `Bearer ${mpToken}`, "content-type": "application/json" },
+        body: JSON.stringify(preferenceBody),
+      });
+      const mpData = await mpRes.json().catch(() => null);
+      if (!mpRes.ok) return send(res, 502, { error: "Error creando pago en Mercado Pago", detail: mpData || null });
+
+      const initPoint = typeof mpData?.init_point === "string" ? mpData.init_point : "";
+      if (!initPoint) return send(res, 502, { error: "Respuesta inválida de Mercado Pago" });
+
+      return send(res, 200, { init_point: initPoint, preference_id: mpData?.id || null });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    const third = isApi ? parts[3] : parts[2];
+    const action = (third || next || pickQuery(req, "action") || "").toString().trim().toLowerCase();
+
+    if (action === "create-payment") {
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      return handleCreatePayment(req, res);
+    }
+
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    return handleGetPreview(req, res);
   };
 })();
 
@@ -8758,18 +8937,33 @@ const vendorHandler = (() => {
     try {
       const r = await auth.admin
         .from("vendor_settings")
-        .select("user_id, countdown_default_hours")
+        .select("user_id, countdown_default_hours, role, commission_type, commission_value, force_countdown_only, can_show_payment_info")
         .eq("user_id", auth.user.id)
         .maybeSingle();
       if (r.error) {
         if (missingTable(r.error)) {
-          return send(res, 200, { ok: true, countdown_default_hours: 24, missing_table: true });
+          return send(res, 200, { 
+            ok: true, 
+            countdown_default_hours: 24, 
+            missing_table: true,
+            role: "vendor",
+            commission_type: "percentage",
+            commission_value: 0,
+            force_countdown_only: false,
+            can_show_payment_info: true
+          });
         }
         return send(res, 500, { error: "No pude leer la configuración", detail: r.error.message });
       }
+      const data = r.data as any;
       return send(res, 200, {
         ok: true,
-        countdown_default_hours: normalizeHours((r.data as any)?.countdown_default_hours) || 24,
+        countdown_default_hours: normalizeHours(data?.countdown_default_hours) || 24,
+        role: data?.role || "vendor",
+        commission_type: data?.commission_type || "percentage",
+        commission_value: Number(data?.commission_value) || 0,
+        force_countdown_only: Boolean(data?.force_countdown_only),
+        can_show_payment_info: Boolean(data?.can_show_payment_info),
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
@@ -8785,11 +8979,28 @@ const vendorHandler = (() => {
     const hours = normalizeHours(body?.countdown_default_hours);
     if (hours < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
 
+    // First get current settings to see if user is employee (role should be set by admin only)
+    const currentSettings = await auth.admin
+      .from("vendor_settings")
+      .select("role")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    const currentRole = (currentSettings.data as any)?.role || "vendor";
+
+    // If role is employee, enforce force_countdown_only = true and can_show_payment_info = false
+    const isEmployee = currentRole === "empleado";
+
     try {
       const row = {
         user_id: auth.user.id,
         countdown_default_hours: hours,
         updated_at: new Date().toISOString(),
+        // These should only be editable by admin, but we'll keep current values
+        role: currentRole,
+        commission_type: (currentSettings.data as any)?.commission_type || "percentage",
+        commission_value: Number((currentSettings.data as any)?.commission_value) || 0,
+        force_countdown_only: isEmployee ? true : Boolean((currentSettings.data as any)?.force_countdown_only),
+        can_show_payment_info: isEmployee ? false : Boolean((currentSettings.data as any)?.can_show_payment_info),
       };
       const r = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" });
       if (r.error) {
@@ -8802,7 +9013,13 @@ const vendorHandler = (() => {
         }
         return send(res, 500, { error: "No pude guardar la configuración", detail: r.error.message });
       }
-      return send(res, 200, { ok: true, countdown_default_hours: hours });
+      return send(res, 200, { 
+        ok: true, 
+        countdown_default_hours: hours,
+        role: currentRole,
+        force_countdown_only: isEmployee,
+        can_show_payment_info: !isEmployee
+      });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -8817,10 +9034,21 @@ const vendorHandler = (() => {
 
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     const clientLabel = typeof body?.clientLabel === "string" ? body.clientLabel.trim().slice(0, 120) : "";
-    const hasCountdown = Boolean(body?.hasCountdown);
     const hours = normalizeHours(body?.countdown_hours);
     if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    // Get vendor settings to check force_countdown_only
+    const vs = await auth.admin
+      .from("vendor_settings")
+      .select("force_countdown_only, role")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    const forceCountdown = Boolean((vs.data as any)?.force_countdown_only) || (vs.data as any)?.role === "empleado";
+    
+    // Enforce countdown if force_countdown_only is true
+    const hasCountdown = forceCountdown ? true : Boolean(body?.hasCountdown);
     if (hasCountdown && hours < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
+    if (forceCountdown && !hasCountdown) return send(res, 400, { error: "Debes activar el temporizador." });
 
     try {
       const sr = await auth.admin
