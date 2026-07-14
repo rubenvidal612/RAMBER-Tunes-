@@ -2298,7 +2298,6 @@ const sunoHandler = (() => {
 
     try {
       // #region debug-point D:handle-wav-start
-      // fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:start",msg:"[DEBUG] Entrando a /api/suno/wav",data:{userId:user.id,taskId,audioId,isAdmin,cost},ts:Date.now()})}).catch(()=>{});
       // #endregion
       if (!isAdmin) {
         const plan = await getUserPlan(auth.admin, user.id).catch(() => ({ downloads_allowed: false }));
@@ -2319,7 +2318,6 @@ const sunoHandler = (() => {
       }
       const { res: r, data, text } = last || {};
       // #region debug-point D:handle-wav-provider
-      // fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"wav-download-fails",runId:"pre-fix",hypothesisId:"D",location:"api/[...route].ts:handleWav:provider",msg:"[DEBUG] Respuesta proveedor al iniciar WAV",data:{taskId,audioId,httpStatus:r?.status??null,code:data?.code??null,outTaskId:typeof data?.data?.taskId===\"string\"?data.data.taskId.trim():\"\",error:data?.error||\"\",detail:data?.detail||text||\"\"},ts:Date.now()})}).catch(()=>{});
       // #endregion
       if (!r) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
