@@ -9238,13 +9238,13 @@ const vendorHandler = (() => {
 })();
 
 const adminHandler = (() => {
-  function send(res: any, status: number, body: any) {
+  function send(res, status, body) {
     res.statusCode = status;
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify(body));
   }
 
-  function parseJsonBody(req: any) {
+  function parseJsonBody(req) {
     if (typeof req.body === "string") {
       try {
         return JSON.parse(req.body);
@@ -9255,17 +9255,17 @@ const adminHandler = (() => {
     return req.body ?? null;
   }
 
-  function getAuthToken(req: any) {
+  function getAuthToken(req) {
     const authHeader = (req.headers.authorization || "").toString();
     return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
   }
 
-  function pickQuery(req: any, key: string) {
+  function pickQuery(req, key) {
     const url = new URL(req.url, "http://localhost");
     return url.searchParams.get(key) || "";
   }
 
-  async function requireAdmin(req: any) {
+  async function requireAdmin(req) {
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
     const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -9294,7 +9294,7 @@ const adminHandler = (() => {
       .select("role")
       .eq("user_id", user.id)
       .maybeSingle();
-    const userRole = (vs.data as any)?.role;
+    const userRole = vs && vs.data ? vs.data.role : null;
     if (userRole !== "admin") {
       return { ok: false, status: 403, error: "No tienes permiso para acceder a esta sección" };
     }
@@ -9302,7 +9302,7 @@ const adminHandler = (() => {
     return { ok: true, user, admin };
   }
 
-  async function handleGetCollaborators(req: any, res: any) {
+  async function handleGetCollaborators(req, res) {
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -9314,19 +9314,19 @@ const adminHandler = (() => {
       if (r.error) return send(res, 500, { error: "No pude leer los colaboradores", detail: r.error.message });
 
       const vendorSettingsList = Array.isArray(r.data) ? r.data : [];
-      const userIds = vendorSettingsList.map((vs: any) => vs.user_id).filter(Boolean);
-      let userEmailMap: Record<string, any> = {};
+      const userIds = vendorSettingsList.map((vs) => vs.user_id).filter(Boolean);
+      let userEmailMap = {};
       if (userIds.length > 0) {
         const ur = await auth.admin.from("profiles").select("id, email").in("id", userIds);
         if (!ur.error && Array.isArray(ur.data)) {
-          userEmailMap = ur.data.reduce((acc: any, p: any) => {
+          userEmailMap = ur.data.reduce((acc, p) => {
             acc[p.id] = p.email;
             return acc;
           }, {});
         }
       }
 
-      const items = vendorSettingsList.map((vs: any) => ({
+      const items = vendorSettingsList.map((vs) => ({
         user_id: vs.user_id,
         email: userEmailMap[vs.user_id] || "",
         role: vs.role || "vendor",
@@ -9342,7 +9342,7 @@ const adminHandler = (() => {
     }
   }
 
-  async function handleAssignCollaborator(req: any, res: any) {
+  async function handleAssignCollaborator(req, res) {
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -9350,30 +9350,28 @@ const adminHandler = (() => {
     if (!body) return send(res, 400, { error: "Body inválido" });
 
     const email = (body.email || "").toString().trim().toLowerCase();
-    const role = (body.role || "empleado").toString().trim().toLowerCase();
     const commissionValue = Number(body.commission_value) || 0;
 
     if (!email) return send(res, 400, { error: "Falta email" });
 
-    if (!["admin", "vendor", "empleado"].includes(role)) {
-      return send(res, 400, { error: "Role inválido (debe ser admin, vendor o empleado)" });
-    }
+    const requestedRole = (body.role || "empleado").toString().trim().toLowerCase();
+    if (requestedRole !== "empleado") return send(res, 400, { error: "En esta fase solo se permite role = empleado" });
+    const role = "empleado";
 
     try {
       // Find user by email
       const ur = await auth.admin.from("profiles").select("id").eq("email", email).maybeSingle();
       if (ur.error) return send(res, 500, { error: "No pude buscar el usuario", detail: ur.error.message });
-      const userId = (ur.data as any)?.id;
+      const userId = ur && ur.data ? ur.data.id : null;
       if (!userId) return send(res, 404, { error: "Usuario no encontrado con ese email" });
 
-      const isEmployee = role === "empleado";
       const row = {
         user_id: userId,
         role: role,
         commission_type: "percentage",
         commission_value: commissionValue,
-        force_countdown_only: isEmployee ? true : false,
-        can_show_payment_info: isEmployee ? false : true,
+        force_countdown_only: true,
+        can_show_payment_info: false,
         updated_at: new Date().toISOString(),
       };
       const ir = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" });
@@ -9385,7 +9383,7 @@ const adminHandler = (() => {
     }
   }
 
-  async function handleGetCommissionsReport(req: any, res: any) {
+  async function handleGetCommissionsReport(req, res) {
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -9413,12 +9411,12 @@ const adminHandler = (() => {
       if (r.error) return send(res, 500, { error: "No pude leer las comisiones", detail: r.error.message });
 
       const rows = Array.isArray(r.data) ? r.data : [];
-      const userIds = rows.map((row: any) => row.seller_user_id).filter(Boolean);
-      let userEmailMap: Record<string, any> = {};
+      const userIds = rows.map((row) => row.seller_user_id).filter(Boolean);
+      let userEmailMap = {};
       if (userIds.length > 0) {
         const ur = await auth.admin.from("profiles").select("id, email").in("id", userIds);
         if (!ur.error && Array.isArray(ur.data)) {
-          userEmailMap = ur.data.reduce((acc: any, p: any) => {
+          userEmailMap = ur.data.reduce((acc, p) => {
             acc[p.id] = p.email;
             return acc;
           }, {});
@@ -9426,11 +9424,11 @@ const adminHandler = (() => {
       }
 
       // Group by seller and product type
-      const grouped: Record<string, Record<string, number>> = {};
-      const groupedPending: Record<string, Record<string, number>> = {};
-      const groupedPaid: Record<string, Record<string, number>> = {};
+      const grouped = {};
+      const groupedPending = {};
+      const groupedPaid = {};
 
-      rows.forEach((row: any) => {
+      rows.forEach((row) => {
         const sellerId = row.seller_user_id;
         const productType = row.product_type;
         const amount = Number(row.amount_mxn) || 0;
@@ -9469,31 +9467,7 @@ const adminHandler = (() => {
     }
   }
 
-  async function handleMarkCommissionPaid(req: any, res: any) {
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
-    const commissionId = (body.commission_id || "").toString().trim();
-    if (!commissionId) return send(res, 400, { error: "Falta commission_id" });
-
-    try {
-      const ur = await auth.admin
-        .from("share_commissions")
-        .update({ status: "paid", paid_out_at: new Date().toISOString() })
-        .eq("id", commissionId)
-        .select("id, status, paid_out_at")
-        .maybeSingle();
-      if (ur.error) return send(res, 500, { error: "No pude marcar como pagada la comisión", detail: ur.error.message });
-      if (!ur.data) return send(res, 404, { error: "Comisión no encontrada" });
-      return send(res, 200, { ok: true, id: ur.data.id, status: ur.data.status, paid_out_at: ur.data.paid_out_at });
-    } catch (e) {
-      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
-    }
-  }
-
-  return async function handler(req: any, res: any) {
+  return async function handler(req, res) {
     const pathname = new URL(req.url, "http://localhost").pathname;
     const parts = pathname.split("/").filter(Boolean);
     const isApi = parts[0] === "api";
@@ -9514,10 +9488,6 @@ const adminHandler = (() => {
     if (action === "commissions-report") {
       if ((req.method || "").toUpperCase() === "GET") return handleGetCommissionsReport(req, res);
       return send(res, 405, { error: "Método no permitido" });
-    }
-    if (action === "mark-commission-paid") {
-      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-      return handleMarkCommissionPaid(req, res);
     }
     return send(res, 404, { error: "Ruta no encontrada" });
   };
