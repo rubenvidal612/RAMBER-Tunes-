@@ -9237,6 +9237,292 @@ const vendorHandler = (() => {
   };
 })();
 
+const adminHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  async function requireAdmin(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+    // Check if admin by email or vendor_settings.role === "admin"
+    if (isAdminEmail(user.email)) {
+      return { ok: true, user, admin };
+    }
+
+    const vs = await admin
+      .from("vendor_settings")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const userRole = (vs.data as any)?.role;
+    if (userRole !== "admin") {
+      return { ok: false, status: 403, error: "No tienes permiso para acceder a esta sección" };
+    }
+
+    return { ok: true, user, admin };
+  }
+
+  async function handleGetCollaborators(req: any, res: any) {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    try {
+      const r = await auth.admin
+        .from("vendor_settings")
+        .select("user_id, role, commission_type, commission_value, force_countdown_only, can_show_payment_info")
+        .order("created_at", { ascending: false });
+      if (r.error) return send(res, 500, { error: "No pude leer los colaboradores", detail: r.error.message });
+
+      const vendorSettingsList = Array.isArray(r.data) ? r.data : [];
+      const userIds = vendorSettingsList.map((vs: any) => vs.user_id).filter(Boolean);
+      let userEmailMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const ur = await auth.admin.from("profiles").select("id, email").in("id", userIds);
+        if (!ur.error && Array.isArray(ur.data)) {
+          userEmailMap = ur.data.reduce((acc: any, p: any) => {
+            acc[p.id] = p.email;
+            return acc;
+          }, {});
+        }
+      }
+
+      const items = vendorSettingsList.map((vs: any) => ({
+        user_id: vs.user_id,
+        email: userEmailMap[vs.user_id] || "",
+        role: vs.role || "vendor",
+        commission_type: vs.commission_type || "percentage",
+        commission_value: Number(vs.commission_value) || 0,
+        force_countdown_only: Boolean(vs.force_countdown_only),
+        can_show_payment_info: Boolean(vs.can_show_payment_info),
+      }));
+
+      return send(res, 200, { ok: true, items });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleAssignCollaborator(req: any, res: any) {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const email = (body.email || "").toString().trim().toLowerCase();
+    const role = (body.role || "empleado").toString().trim().toLowerCase();
+    const commissionValue = Number(body.commission_value) || 0;
+
+    if (!email) return send(res, 400, { error: "Falta email" });
+
+    if (!["admin", "vendor", "empleado"].includes(role)) {
+      return send(res, 400, { error: "Role inválido (debe ser admin, vendor o empleado)" });
+    }
+
+    try {
+      // Find user by email
+      const ur = await auth.admin.from("profiles").select("id").eq("email", email).maybeSingle();
+      if (ur.error) return send(res, 500, { error: "No pude buscar el usuario", detail: ur.error.message });
+      const userId = (ur.data as any)?.id;
+      if (!userId) return send(res, 404, { error: "Usuario no encontrado con ese email" });
+
+      const isEmployee = role === "empleado";
+      const row = {
+        user_id: userId,
+        role: role,
+        commission_type: "percentage",
+        commission_value: commissionValue,
+        force_countdown_only: isEmployee ? true : false,
+        can_show_payment_info: isEmployee ? false : true,
+        updated_at: new Date().toISOString(),
+      };
+      const ir = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" });
+      if (ir.error) return send(res, 500, { error: "No pude guardar la configuración", detail: ir.error.message });
+
+      return send(res, 200, { ok: true, user_id: userId, role: role });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleGetCommissionsReport(req: any, res: any) {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const period = (pickQuery(req, "period") || "day").toString().trim().toLowerCase();
+    let startDate = new Date();
+
+    if (period === "day") {
+      startDate.setHours(0, 0, 0, 0);
+    } else if (period === "week") {
+      const day = startDate.getDay();
+      const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
+      startDate = new Date(startDate.setDate(diff));
+      startDate.setHours(0, 0, 0, 0);
+    } else if (period === "month") {
+      startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    } else {
+      return send(res, 400, { error: "Periodo inválido (debe ser day, week o month)" });
+    }
+
+    try {
+      const r = await auth.admin
+        .from("share_commissions")
+        .select("seller_user_id, product_type, amount_mxn, status, created_at")
+        .gte("created_at", startDate.toISOString());
+      if (r.error) return send(res, 500, { error: "No pude leer las comisiones", detail: r.error.message });
+
+      const rows = Array.isArray(r.data) ? r.data : [];
+      const userIds = rows.map((row: any) => row.seller_user_id).filter(Boolean);
+      let userEmailMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const ur = await auth.admin.from("profiles").select("id, email").in("id", userIds);
+        if (!ur.error && Array.isArray(ur.data)) {
+          userEmailMap = ur.data.reduce((acc: any, p: any) => {
+            acc[p.id] = p.email;
+            return acc;
+          }, {});
+        }
+      }
+
+      // Group by seller and product type
+      const grouped: Record<string, Record<string, number>> = {};
+      const groupedPending: Record<string, Record<string, number>> = {};
+      const groupedPaid: Record<string, Record<string, number>> = {};
+
+      rows.forEach((row: any) => {
+        const sellerId = row.seller_user_id;
+        const productType = row.product_type;
+        const amount = Number(row.amount_mxn) || 0;
+        const status = row.status;
+
+        if (!grouped[sellerId]) {
+          grouped[sellerId] = {};
+          groupedPending[sellerId] = {};
+          groupedPaid[sellerId] = {};
+        }
+        if (!grouped[sellerId][productType]) grouped[sellerId][productType] = 0;
+        if (!groupedPending[sellerId][productType]) groupedPending[sellerId][productType] = 0;
+        if (!groupedPaid[sellerId][productType]) groupedPaid[sellerId][productType] = 0;
+
+        grouped[sellerId][productType] += amount;
+        if (status === "pending") groupedPending[sellerId][productType] += amount;
+        if (status === "paid") groupedPaid[sellerId][productType] += amount;
+      });
+
+      const items = Object.entries(grouped).map(([sellerId, products]) => {
+        return {
+          seller_user_id: sellerId,
+          email: userEmailMap[sellerId] || "",
+          products: Object.entries(products).map(([productType, total]) => ({
+            product_type: productType,
+            total: total,
+            pending: groupedPending[sellerId]?.[productType] || 0,
+            paid: groupedPaid[sellerId]?.[productType] || 0,
+          })),
+        };
+      });
+
+      return send(res, 200, { ok: true, items, period });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleMarkCommissionPaid(req: any, res: any) {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const commissionId = (body.commission_id || "").toString().trim();
+    if (!commissionId) return send(res, 400, { error: "Falta commission_id" });
+
+    try {
+      const ur = await auth.admin
+        .from("share_commissions")
+        .update({ status: "paid", paid_out_at: new Date().toISOString() })
+        .eq("id", commissionId)
+        .select("id, status, paid_out_at")
+        .maybeSingle();
+      if (ur.error) return send(res, 500, { error: "No pude marcar como pagada la comisión", detail: ur.error.message });
+      if (!ur.data) return send(res, 404, { error: "Comisión no encontrada" });
+      return send(res, 200, { ok: true, id: ur.data.id, status: ur.data.status, paid_out_at: ur.data.paid_out_at });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    const third = isApi ? parts[3] : parts[2];
+    if (head !== "admin") return send(res, 404, { error: "Ruta no encontrada" });
+
+    const action = (third || next || pickQuery(req, "action") || "").toString().trim().toLowerCase();
+    if (action === "collaborators") {
+      if ((req.method || "").toUpperCase() === "GET") return handleGetCollaborators(req, res);
+      return send(res, 405, { error: "Método no permitido" });
+    }
+    if (action === "assign") {
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      return handleAssignCollaborator(req, res);
+    }
+    if (action === "commissions-report") {
+      if ((req.method || "").toUpperCase() === "GET") return handleGetCommissionsReport(req, res);
+      return send(res, 405, { error: "Método no permitido" });
+    }
+    if (action === "mark-commission-paid") {
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      return handleMarkCommissionPaid(req, res);
+    }
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
 const shareSongAudioHandler = (() => {
   function sendJson(res: any, status: number, body: any) {
     res.statusCode = status;
