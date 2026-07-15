@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, Bell } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { isAdminEmail } from '@/lib/authz';
 import { cn } from '@/lib/utils';
 
 export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void }) {
@@ -12,6 +13,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [isOfficeOpen, setIsOfficeOpen] = useState(false);
+  const [officeTab, setOfficeTab] = useState<'resumen' | 'colaboradores'>('resumen');
   const [officeSaldoOpen, setOfficeSaldoOpen] = useState(false);
   const [officeMensajesOpen, setOfficeMensajesOpen] = useState(false);
   const [officeCreditosOpen, setOfficeCreditosOpen] = useState(false);
@@ -52,6 +54,20 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const [userDetailError, setUserDetailError] = useState('');
   const [userDetailData, setUserDetailData] = useState<any>(null);
+  const [collaboratorSearch, setCollaboratorSearch] = useState('');
+  const [collaboratorSearchLoading, setCollaboratorSearchLoading] = useState(false);
+  const [collaboratorSearchError, setCollaboratorSearchError] = useState('');
+  const [collaboratorSearchResults, setCollaboratorSearchResults] = useState<Array<{ id: string; email: string; full_name?: string; created_at?: string }>>([]);
+  const [selectedCollaborator, setSelectedCollaborator] = useState<{ id: string; email: string; full_name?: string } | null>(null);
+  const [collaboratorCommissionValue, setCollaboratorCommissionValue] = useState('50');
+  const [collaboratorAssignBusy, setCollaboratorAssignBusy] = useState(false);
+  const [collaboratorsLoading, setCollaboratorsLoading] = useState(false);
+  const [collaboratorsError, setCollaboratorsError] = useState('');
+  const [collaboratorsList, setCollaboratorsList] = useState<any[]>([]);
+  const [collaboratorsPeriod, setCollaboratorsPeriod] = useState<'day' | 'week' | 'month'>('month');
+  const [collaboratorsReportLoading, setCollaboratorsReportLoading] = useState(false);
+  const [collaboratorsReportError, setCollaboratorsReportError] = useState('');
+  const [collaboratorsReport, setCollaboratorsReport] = useState<any[]>([]);
   const officeCreditosRef = useRef<HTMLDivElement | null>(null);
 
   const TELEGRAM_GROUP_URL = 'https://t.me/+sgw5bsAX9utmZDEx';
@@ -147,7 +163,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       .getUser()
       .then(({ data }) => {
         const email = (data?.user?.email || '').toString().trim().toLowerCase();
-        if (email === 'rubenfiverr612@gmail.com') setIsAdmin(true);
+        if (isAdminEmail(email)) setIsAdmin(true);
       })
       .catch(() => {});
 
@@ -171,7 +187,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       .then(({ data }) => {
         const user = data?.user;
         const email = (user?.email || '').toString().trim();
-        if (email.toLowerCase() === 'rubenfiverr612@gmail.com') setIsAdmin(true);
+        if (isAdminEmail(email)) setIsAdmin(true);
         const meta: any = user?.user_metadata || {};
         const name = (meta?.full_name || meta?.name || '').toString().trim();
         const display = (name || email || 'Usuario').toString().trim();
@@ -288,6 +304,130 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       setOfficeLoading(false);
     }
   };
+
+  const loadCollaboratorsData = async (periodOverride?: 'day' | 'week' | 'month') => {
+    if (!supabaseBrowser) return;
+    const period = periodOverride || collaboratorsPeriod;
+    setCollaboratorsLoading(true);
+    setCollaboratorsReportLoading(true);
+    setCollaboratorsError('');
+    setCollaboratorsReportError('');
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        setCollaboratorsError('No se pudo iniciar sesión.');
+        setCollaboratorsReportError('No se pudo iniciar sesión.');
+        return;
+      }
+
+      const [collaboratorsRes, reportRes] = await Promise.all([
+        fetch('/api/admin/collaborators', { headers: { authorization: `Bearer ${token}` } }),
+        fetch(`/api/admin/commissions-report?period=${encodeURIComponent(period)}`, { headers: { authorization: `Bearer ${token}` } }),
+      ]);
+
+      const collaboratorsOut = await collaboratorsRes.json().catch(() => ({}));
+      const reportOut = await reportRes.json().catch(() => ({}));
+
+      if (!collaboratorsRes.ok) {
+        setCollaboratorsError((collaboratorsOut?.detail || collaboratorsOut?.error || 'No pude cargar colaboradores.').toString());
+      } else {
+        setCollaboratorsList(Array.isArray(collaboratorsOut?.items) ? collaboratorsOut.items : []);
+      }
+
+      if (!reportRes.ok) {
+        setCollaboratorsReportError((reportOut?.detail || reportOut?.error || 'No pude cargar el reporte de comisiones.').toString());
+      } else {
+        setCollaboratorsReport(Array.isArray(reportOut?.items) ? reportOut.items : []);
+      }
+    } finally {
+      setCollaboratorsLoading(false);
+      setCollaboratorsReportLoading(false);
+    }
+  };
+
+  const searchCollaboratorByEmail = async () => {
+    if (!supabaseBrowser) return;
+    const search = collaboratorSearch.trim().toLowerCase();
+    if (!search) {
+      setCollaboratorSearchError('Escribe un correo para buscar.');
+      setCollaboratorSearchResults([]);
+      return;
+    }
+    setCollaboratorSearchLoading(true);
+    setCollaboratorSearchError('');
+    setCollaboratorSearchResults([]);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        setCollaboratorSearchError('No se pudo iniciar sesión.');
+        return;
+      }
+      const url = `/api/admin/users?limit=20&mode=real&search=${encodeURIComponent(search)}`;
+      const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setCollaboratorSearchError((out?.detail || out?.error || 'No pude buscar ese correo.').toString());
+        return;
+      }
+      const items = Array.isArray(out?.items) ? out.items : [];
+      const mapped = items
+        .map((x: any) => ({
+          id: String(x?.id || ''),
+          email: String(x?.email || '').trim().toLowerCase(),
+          full_name: String(x?.full_name || '').trim(),
+          created_at: String(x?.created_at || '').trim(),
+        }))
+        .filter((x: any) => x.email);
+      setCollaboratorSearchResults(mapped);
+      if (mapped.length === 0) setCollaboratorSearchError('No encontré usuarios con ese correo.');
+    } finally {
+      setCollaboratorSearchLoading(false);
+    }
+  };
+
+  const saveCollaborator = async () => {
+    if (!supabaseBrowser) return;
+    const email = String(selectedCollaborator?.email || '').trim().toLowerCase();
+    const commission = Number((collaboratorCommissionValue || '').toString().trim().replaceAll(',', '.'));
+    if (!email) {
+      alert('Primero selecciona un usuario.');
+      return;
+    }
+    if (!Number.isFinite(commission) || commission < 0) {
+      alert('Pon una comisión válida en pesos.');
+      return;
+    }
+    setCollaboratorAssignBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/collaborators/assign', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, role: 'empleado', commission_value: commission }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert((out?.detail || out?.error || 'No pude guardar el colaborador.').toString());
+        return;
+      }
+      alert('Listo. Colaborador guardado.');
+      await loadCollaboratorsData();
+    } finally {
+      setCollaboratorAssignBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin || !isOfficeOpen || officeTab !== 'colaboradores') return;
+    loadCollaboratorsData().catch(() => {});
+  }, [isAdmin, isOfficeOpen, officeTab, collaboratorsPeriod]);
 
   const grant = async () => {
     if (!supabaseBrowser) return;
@@ -611,6 +751,15 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
     const totalUsersReal = Number(users?.real_total ?? 0) || 0;
     const active30dReal = Number(users?.real_active30d ?? 0) || 0;
     const new7dReal = Number(users?.real_new7d ?? 0) || 0;
+    const employeeCollaborators = collaboratorsList.filter((item: any) => String(item?.role || '').trim().toLowerCase() === 'empleado');
+    const collaboratorReportMap = new Map(
+      collaboratorsReport.map((item: any) => [String(item?.seller_user_id || '').trim(), item])
+    );
+    const productLabels: Record<string, string> = {
+      cancion_generada: 'Canción Generada',
+      karaoke_audio: 'Karaoke Audio',
+      karaoke_video: 'Karaoke Video',
+    };
     const fmtOfficeDate = (iso: string) => {
       const clean = (iso || '').toString().trim();
       if (!clean) return '—';
@@ -638,6 +787,30 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
               {officeError}
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
+            <button
+              onClick={() => setOfficeTab('resumen')}
+              className={cn(
+                'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
+                officeTab === 'resumen' ? 'bg-white text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+              )}
+            >
+              Resumen
+            </button>
+            <button
+              onClick={() => setOfficeTab('colaboradores')}
+              className={cn(
+                'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
+                officeTab === 'colaboradores' ? 'bg-emerald-500 text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+              )}
+            >
+              Colaboradores
+            </button>
+          </div>
+
+          {officeTab === 'resumen' ? (
+            <>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-400/15 rounded-2xl p-4">
@@ -1239,6 +1412,186 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
               </>
             ) : null}
           </div>
+            </>
+          ) : (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-emerald-500/10 via-white/5 to-transparent border border-emerald-400/15 rounded-3xl p-5">
+                <div className="text-white font-extrabold">Buscar por correo</div>
+                <div className="text-[11px] text-slate-400 mt-1">Busca al usuario y asígnalo como empleado.</div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <input
+                    value={collaboratorSearch}
+                    onChange={(e) => setCollaboratorSearch(e.target.value)}
+                    placeholder="correo@gmail.com"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 md:col-span-3"
+                  />
+                  <button
+                    onClick={() => searchCollaboratorByEmail().catch(() => {})}
+                    disabled={collaboratorSearchLoading}
+                    className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  >
+                    {collaboratorSearchLoading ? 'Buscando…' : 'Buscar'}
+                  </button>
+                </div>
+
+                {collaboratorSearchError ? (
+                  <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{collaboratorSearchError}</div>
+                ) : null}
+
+                {collaboratorSearchResults.length > 0 ? (
+                  <div className="mt-3 rounded-2xl border border-white/10 overflow-hidden">
+                    <div className="divide-y divide-white/5">
+                      {collaboratorSearchResults.map((item) => {
+                        const isSelected = selectedCollaborator?.email === item.email;
+                        return (
+                          <button
+                            key={item.id || item.email}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCollaborator({ id: item.id, email: item.email, full_name: item.full_name });
+                              const existing = employeeCollaborators.find((x: any) => String(x?.email || '').trim().toLowerCase() === item.email);
+                              setCollaboratorCommissionValue(String(Number(existing?.commission_value ?? 50) || 50));
+                            }}
+                            className={cn('w-full p-4 text-left transition-colors', isSelected ? 'bg-emerald-500/15' : 'hover:bg-white/5')}
+                          >
+                            <div className="text-white font-extrabold truncate">{item.email}</div>
+                            <div className="text-[11px] text-slate-400 truncate">{item.full_name || 'Sin nombre'}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="bg-gradient-to-r from-indigo-500/10 via-white/5 to-transparent border border-indigo-400/15 rounded-3xl p-5">
+                <div className="text-white font-extrabold">Asignación</div>
+                <div className="text-[11px] text-slate-400 mt-1">Solo se asigna el role empleado en esta fase.</div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 md:col-span-2">
+                    <div className="text-[11px] text-slate-400 font-semibold">Usuario seleccionado</div>
+                    <div className="text-white font-extrabold mt-1 break-words">{selectedCollaborator?.email || 'Selecciona un correo arriba'}</div>
+                    <div className="text-[11px] text-slate-500 mt-1">{selectedCollaborator?.full_name || '—'}</div>
+                  </div>
+                  <div className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3">
+                    <div className="text-[11px] text-slate-400 font-semibold">Role</div>
+                    <div className="text-white font-extrabold mt-1">empleado</div>
+                  </div>
+                  <input
+                    value={collaboratorCommissionValue}
+                    onChange={(e) => setCollaboratorCommissionValue(e.target.value)}
+                    placeholder="50"
+                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                  />
+                  <div className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 md:col-span-2 text-sm text-slate-300">
+                    El backend forzará countdown obligatorio y ocultará cualquier dato de pago manual.
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => saveCollaborator().catch(() => {})}
+                  disabled={collaboratorAssignBusy || !selectedCollaborator}
+                  className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                >
+                  {collaboratorAssignBusy ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+
+              <div className="bg-gradient-to-r from-cyan-500/10 via-white/5 to-transparent border border-cyan-400/15 rounded-3xl p-5">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <div className="text-white font-extrabold">Colaboradores activos</div>
+                    <div className="text-[11px] text-slate-400 mt-1">Lista de empleados y lo generado en el periodo.</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={collaboratorsPeriod}
+                      onChange={(e) => setCollaboratorsPeriod(e.target.value as 'day' | 'week' | 'month')}
+                      style={{ colorScheme: 'dark' }}
+                      className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+                    >
+                      <option value="day" className="bg-[#0b0f16] text-slate-200">Día</option>
+                      <option value="week" className="bg-[#0b0f16] text-slate-200">Semana</option>
+                      <option value="month" className="bg-[#0b0f16] text-slate-200">Mes</option>
+                    </select>
+                    <button
+                      onClick={() => loadCollaboratorsData().catch(() => {})}
+                      disabled={collaboratorsLoading || collaboratorsReportLoading}
+                      className="bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl px-4 py-3 font-extrabold text-sm border border-white/10 disabled:opacity-60"
+                    >
+                      Actualizar
+                    </button>
+                  </div>
+                </div>
+
+                {collaboratorsError ? (
+                  <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{collaboratorsError}</div>
+                ) : null}
+                {collaboratorsReportError ? (
+                  <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{collaboratorsReportError}</div>
+                ) : null}
+
+                <div className="mt-4 rounded-2xl border border-white/10 overflow-hidden">
+                  <div className="grid grid-cols-1 divide-y divide-white/5">
+                    {employeeCollaborators.length === 0 ? (
+                      <div className="p-4 text-sm text-slate-400">
+                        {collaboratorsLoading ? 'Cargando colaboradores…' : 'No hay empleados asignados todavía.'}
+                      </div>
+                    ) : (
+                      employeeCollaborators.map((item: any) => {
+                        const sellerId = String(item?.user_id || '').trim();
+                        const report = collaboratorReportMap.get(sellerId) || {};
+                        const products = Array.isArray(report?.products) ? report.products : [];
+                        return (
+                          <div key={sellerId || item?.email} className="p-4 bg-gradient-to-r from-white/[0.03] to-transparent">
+                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-white font-extrabold break-words">{String(item?.email || '—')}</div>
+                                <div className="text-[11px] text-slate-400 mt-1">
+                                  Comisión asignada: ${Number(item?.commission_value ?? 0).toFixed(0)} MXN
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 md:min-w-[260px]">
+                                <div className="bg-black/20 border border-white/10 rounded-2xl p-3 text-center">
+                                  <div className="text-[11px] text-slate-400">Total</div>
+                                  <div className="text-white font-extrabold">${Number(report?.total_mxn ?? 0).toFixed(0)}</div>
+                                </div>
+                                <div className="bg-black/20 border border-white/10 rounded-2xl p-3 text-center">
+                                  <div className="text-[11px] text-slate-400">Pendiente</div>
+                                  <div className="text-yellow-300 font-extrabold">${Number(report?.pending_mxn ?? 0).toFixed(0)}</div>
+                                </div>
+                                <div className="bg-black/20 border border-white/10 rounded-2xl p-3 text-center">
+                                  <div className="text-[11px] text-slate-400">Pagado</div>
+                                  <div className="text-emerald-300 font-extrabold">${Number(report?.paid_mxn ?? 0).toFixed(0)}</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {['cancion_generada', 'karaoke_audio', 'karaoke_video'].map((productType) => {
+                                const found = products.find((p: any) => String(p?.product_type || '').trim() === productType) || {};
+                                return (
+                                  <div key={productType} className="bg-black/20 border border-white/10 rounded-2xl p-4">
+                                    <div className="text-xs text-slate-300 font-semibold">{productLabels[productType]}</div>
+                                    <div className="text-lg text-white font-extrabold mt-1">${Number(found?.total_mxn ?? 0).toFixed(0)}</div>
+                                    <div className="text-[11px] text-slate-400 mt-1">
+                                      Pendiente: ${Number(found?.pending_mxn ?? 0).toFixed(0)} • Pagado: ${Number(found?.paid_mxn ?? 0).toFixed(0)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {isUserDetailOpen ? (
             <div className="fixed inset-0 z-[200] bg-black/70 flex items-end md:items-center justify-center">
@@ -1432,7 +1785,10 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
           <div className="glass-card rounded-2xl overflow-hidden">
             <button
               className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
-              onClick={() => openOffice().catch(() => {})}
+              onClick={() => {
+                setOfficeTab('resumen');
+                openOffice().catch(() => {});
+              }}
             >
               <div className="flex items-center gap-3 text-sm font-medium text-slate-200">
                 <div className="relative">

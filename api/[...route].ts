@@ -11042,10 +11042,244 @@ const adminHandler = (() => {
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
     if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
-    if (!isAdminEmail(user.email)) return { ok: false as const, status: 403, error: "No autorizado" };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return { ok: true as const, user, admin, supabaseUrl, supabaseService };
+    if (isAdminEmail(user.email)) return { ok: true as const, user, admin, supabaseUrl, supabaseService };
+
+    try {
+      const vs = await admin.from("vendor_settings").select("role").eq("user_id", user.id).maybeSingle();
+      const role = String(vs?.data?.role || "").trim().toLowerCase();
+      if (role === "admin") return { ok: true as const, user, admin, supabaseUrl, supabaseService };
+    } catch {
+    }
+
+    return { ok: false as const, status: 403, error: "No autorizado" };
+  }
+
+  async function handleGetCollaborators(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    try {
+      const vr = await auth.admin
+        .from("vendor_settings")
+        .select("user_id, role, commission_type, commission_value, force_countdown_only, can_show_payment_info, updated_at, created_at")
+        .order("updated_at", { ascending: false });
+      if (vr.error) return send(res, 500, { error: "No pude leer colaboradores", detail: vr.error.message });
+
+      const rows = Array.isArray(vr.data) ? vr.data : [];
+      const userIds = Array.from(new Set(rows.map((x: any) => String(x?.user_id || "").trim()).filter(Boolean)));
+      let profilesMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const pr = await auth.admin.from("profiles").select("id, email, full_name").in("id", userIds);
+        if (!pr.error && Array.isArray(pr.data)) {
+          profilesMap = pr.data.reduce((acc: any, item: any) => {
+            const id = String(item?.id || "").trim();
+            if (id) acc[id] = item;
+            return acc;
+          }, {});
+        }
+      }
+
+      const items = rows.map((row: any) => {
+        const profile = profilesMap[String(row?.user_id || "").trim()] || {};
+        return {
+          user_id: String(row?.user_id || "").trim(),
+          email: String(profile?.email || "").trim(),
+          full_name: String(profile?.full_name || "").trim(),
+          role: String(row?.role || "vendor").trim(),
+          commission_type: String(row?.commission_type || "percentage").trim(),
+          commission_value: Number(row?.commission_value ?? 0) || 0,
+          force_countdown_only: Boolean(row?.force_countdown_only),
+          can_show_payment_info: Boolean(row?.can_show_payment_info),
+          updated_at: String(row?.updated_at || row?.created_at || "").trim(),
+        };
+      });
+
+      return send(res, 200, { ok: true, items });
+    } catch (e) {
+      return send(res, 500, { error: "No pude leer colaboradores", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleAssignCollaborator(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const email = String(body?.email || "").trim().toLowerCase();
+    const requestedRole = String(body?.role || "").trim().toLowerCase();
+    const commissionValue = Number(body?.commission_value ?? 0);
+    if (!email) return send(res, 400, { error: "Falta email" });
+    if (requestedRole !== "empleado") return send(res, 400, { error: "En esta fase solo se permite role = empleado" });
+    if (!Number.isFinite(commissionValue) || commissionValue < 0) return send(res, 400, { error: "commission_value inválido" });
+
+    try {
+      let userId = "";
+
+      const pr = await auth.admin.from("profiles").select("id, email").eq("email", email).limit(1);
+      if (!pr.error && Array.isArray(pr.data) && pr.data[0]?.id) {
+        userId = String(pr.data[0].id || "").trim();
+      }
+
+      if (!userId) {
+        const found = await findUserIdByEmail(auth, email);
+        if (!found.ok) return send(res, found.status || 404, { error: found.error || "No encontré ese usuario por correo.", detail: found.detail || null });
+        userId = String(found.userId || "").trim();
+      }
+
+      if (!userId) return send(res, 404, { error: "No encontré ese usuario por correo." });
+
+      await ensureProfileExists(auth.admin, userId);
+      const up = await auth.admin.from("profiles").upsert({ id: userId, email }, { onConflict: "id" });
+      if (up?.error) return send(res, 500, { error: "No pude asegurar el perfil del colaborador", detail: up.error.message });
+
+      const row = {
+        user_id: userId,
+        role: "empleado",
+        commission_type: "fixed",
+        commission_value: commissionValue,
+        force_countdown_only: true,
+        can_show_payment_info: false,
+        updated_at: new Date().toISOString(),
+      };
+      const wr = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" }).select("user_id, role, commission_type, commission_value").maybeSingle();
+      if (wr.error) return send(res, 500, { error: "No pude guardar el colaborador", detail: wr.error.message });
+
+      return send(res, 200, {
+        ok: true,
+        item: {
+          user_id: userId,
+          email,
+          role: "empleado",
+          commission_type: "fixed",
+          commission_value: commissionValue,
+          force_countdown_only: true,
+          can_show_payment_info: false,
+        },
+      });
+    } catch (e) {
+      return send(res, 500, { error: "No pude guardar el colaborador", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleCommissionsReport(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const period = String(pickQuery(req, "period") || "day").trim().toLowerCase();
+    const now = new Date();
+    let start = new Date(now);
+    if (period === "day") {
+      start.setHours(0, 0, 0, 0);
+    } else if (period === "week") {
+      const day = start.getDay();
+      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+      start = new Date(start.setDate(diff));
+      start.setHours(0, 0, 0, 0);
+    } else if (period === "month") {
+      start = new Date(start.getFullYear(), start.getMonth(), 1);
+    } else {
+      return send(res, 400, { error: "Periodo inválido. Usa day, week o month." });
+    }
+
+    try {
+      const cr = await auth.admin
+        .from("share_commissions")
+        .select("seller_user_id, product_type, amount_mxn, status, created_at")
+        .gte("created_at", start.toISOString())
+        .order("created_at", { ascending: false });
+      if (cr.error) return send(res, 500, { error: "No pude cargar el reporte de comisiones", detail: cr.error.message });
+
+      const rows = Array.isArray(cr.data) ? cr.data : [];
+      const sellerIds = Array.from(new Set(rows.map((x: any) => String(x?.seller_user_id || "").trim()).filter(Boolean)));
+      let profilesMap: Record<string, any> = {};
+      let settingsMap: Record<string, any> = {};
+
+      if (sellerIds.length > 0) {
+        const [pr, vr] = await Promise.all([
+          auth.admin.from("profiles").select("id, email, full_name").in("id", sellerIds),
+          auth.admin.from("vendor_settings").select("user_id, role, commission_type, commission_value").in("user_id", sellerIds),
+        ]);
+        if (!pr.error && Array.isArray(pr.data)) {
+          profilesMap = pr.data.reduce((acc: any, item: any) => {
+            const id = String(item?.id || "").trim();
+            if (id) acc[id] = item;
+            return acc;
+          }, {});
+        }
+        if (!vr.error && Array.isArray(vr.data)) {
+          settingsMap = vr.data.reduce((acc: any, item: any) => {
+            const id = String(item?.user_id || "").trim();
+            if (id) acc[id] = item;
+            return acc;
+          }, {});
+        }
+      }
+
+      const grouped: Record<string, any> = {};
+      for (const row of rows) {
+        const sellerId = String(row?.seller_user_id || "").trim();
+        const productType = String(row?.product_type || "").trim();
+        if (!sellerId || !productType) continue;
+        if (!grouped[sellerId]) {
+          const profile = profilesMap[sellerId] || {};
+          const settings = settingsMap[sellerId] || {};
+          grouped[sellerId] = {
+            seller_user_id: sellerId,
+            email: String(profile?.email || "").trim(),
+            full_name: String(profile?.full_name || "").trim(),
+            role: String(settings?.role || "").trim(),
+            commission_type: String(settings?.commission_type || "").trim(),
+            commission_value: Number(settings?.commission_value ?? 0) || 0,
+            total_mxn: 0,
+            pending_mxn: 0,
+            paid_mxn: 0,
+            products: {},
+          };
+        }
+
+        const amount = Number(row?.amount_mxn ?? 0) || 0;
+        const status = String(row?.status || "").trim().toLowerCase();
+        grouped[sellerId].total_mxn += amount;
+        if (status === "paid") grouped[sellerId].paid_mxn += amount;
+        else grouped[sellerId].pending_mxn += amount;
+
+        if (!grouped[sellerId].products[productType]) {
+          grouped[sellerId].products[productType] = {
+            product_type: productType,
+            total_mxn: 0,
+            pending_mxn: 0,
+            paid_mxn: 0,
+          };
+        }
+        grouped[sellerId].products[productType].total_mxn += amount;
+        if (status === "paid") grouped[sellerId].products[productType].paid_mxn += amount;
+        else grouped[sellerId].products[productType].pending_mxn += amount;
+      }
+
+      const items = Object.values(grouped)
+        .map((item: any) => ({
+          ...item,
+          products: Object.values(item.products || {}),
+        }))
+        .sort((a: any, b: any) => Number(b?.total_mxn ?? 0) - Number(a?.total_mxn ?? 0));
+
+      return send(res, 200, {
+        ok: true,
+        period,
+        from: start.toISOString(),
+        to: now.toISOString(),
+        items,
+      });
+    } catch (e) {
+      return send(res, 500, { error: "No pude cargar el reporte de comisiones", detail: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   function explainAuthAdminError(err: any) {
@@ -11986,7 +12220,7 @@ const adminHandler = (() => {
       const pathname = new URL(req.url, "http://localhost").pathname;
       const parts = pathname.split("/").filter(Boolean);
       const i = parts.findIndex((p) => p === "admin");
-      const next = i >= 0 ? parts[i + 1] : "";
+      const next = i >= 0 ? parts.slice(i + 1).join("/") : "";
       return (next || "").toLowerCase();
     })();
     const a = action || fallback;
@@ -12000,6 +12234,9 @@ const adminHandler = (() => {
     if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
     if (a === "users") return handleUsers(req, res);
     if (a === "user-detail") return handleUserDetail(req, res);
+    if (a === "collaborators") return handleGetCollaborators(req, res);
+    if (a === "assign" || a === "collaborators/assign") return handleAssignCollaborator(req, res);
+    if (a === "commissions-report") return handleCommissionsReport(req, res);
     if (a === "delete-user") return handleDeleteUser(req, res);
     if (a === "prune-users") return handlePruneUsers(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
