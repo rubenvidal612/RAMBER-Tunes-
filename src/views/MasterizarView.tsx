@@ -237,12 +237,17 @@ export function MasterizarView() {
       }
       if (processResult?.previewUrl) setPreviewUrl(processResult.previewUrl);
       if (processResult?.downloadUrl) setDownloadUrl(processResult.downloadUrl);
+      
+      // We don't need subscription check for credit mode
+      /*
       setSubscription((prev) => ({
         active: isOwner || !!processResult?.subscriptionActive || !!prev?.active,
         expires_at: processResult?.expiresAt || prev?.expires_at || null,
       }));
+      */
+      
       if (!processResult?.downloadUrl && !isOwner) {
-        setProcessingError('Preview listo. Para descargar el MP3 completo necesitas iniciar sesión y tener la suscripción activa.');
+        setProcessingError('Preview listo. Para descargar el MP3 completo necesitas tener 12 créditos disponibles.');
       }
     } catch (error: any) {
       setProcessingError(error?.message || 'Error al procesar el archivo');
@@ -257,11 +262,10 @@ export function MasterizarView() {
       setProcessingError('Para descargar necesitas iniciar sesión primero.');
       return;
     }
-    if (!subscription?.active && !isOwner) {
-      setProcessingError('Necesitas una suscripción activa para descargar. Suscríbete por $150 MXN/mes.');
-      return;
-    }
-
+    
+    // Check if user has enough credits or is owner
+    // Note: The actual credit consumption happens in the backend
+    
     const link = document.createElement('a');
     link.href = directDownloadUrl;
     link.download = `masterizado_${Date.now()}.mp3`;
@@ -326,22 +330,19 @@ export function MasterizarView() {
           <div className="flex items-center justify-center gap-3 mb-6">
             <Volume2 className="w-12 h-12 text-purple-500" />
             <h1 className="text-4xl md:text-5xl font-bold">
-              {mode === 'credits' ? 'Masterizar (10 Créditos)' : 'Masterizar Ilimitado'}
+              Masterizar (12 Créditos)
             </h1>
           </div>
           <p className="text-xl text-gray-300 mb-4">
-            {mode === 'credits' ? (
-              <>Masteriza tu canción usando <span className="text-green-400 font-bold">10 créditos</span></>
-            ) : (
-              <>Masteriza todas tus canciones por solo <span className="text-green-400 font-bold">$150 MXN/mes</span></>
-            )}
+            <>Masteriza tu canción usando <span className="text-green-400 font-bold">12 créditos</span></>
           </p>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Sube cualquier canción en MP3 y obtén un preview gratis. Con suscripción, descargas ilimitadas.
+            Sube cualquier canción en MP3 y obtén un preview gratis.
           </p>
         </div>
 
-        <div className={cardClass('mb-8 border-yellow-500/30')}>
+        <div className="hidden">
+          <div className={cardClass('mb-8 border-yellow-500/30')}>
           <div className="p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-lg font-bold text-white">
@@ -369,8 +370,9 @@ export function MasterizarView() {
             )}
           </div>
         </div>
+        </div>
 
-        {isLoggedIn && (
+        {false && isLoggedIn && (
           <div className={cardClass('mb-8 border-purple-500/40')}>
             <div className="p-6">
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -533,46 +535,28 @@ export function MasterizarView() {
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-4">
                       <span className="font-semibold">Descargar Archivo</span>
-                      {subscription?.active ? (
-                        <CheckCircle className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <XCircle className="w-5 h-5 text-red-500" />
-                      )}
                     </div>
                     
                     <div className="space-y-4">
                       <div className="text-sm text-gray-300">
-                        {subscription?.active ? (
-                          <span className="text-green-400">
-                            ¡Suscripción activa! Puedes descargar ilimitadamente.
-                          </span>
-                        ) : (
-                          <span className="text-red-400">
-                            Se requiere suscripción activa para descargar
-                          </span>
-                        )}
+                        <span className="text-emerald-400">
+                          La descarga consume 12 créditos.
+                        </span>
                       </div>
                       
                       <button
                         onClick={handleDownload}
-                        disabled={!directDownloadUrl || !subscription?.active}
+                        disabled={!directDownloadUrl}
                         className={buttonClass('success', true)}
                       >
                         <Download className="w-4 h-4 mr-2" />
-                        Descargar MP3 Masterizado Aqui
+                        Descargar MP3 Masterizado (12 créditos)
                       </button>
-                      
-                      {!subscription?.active && isLoggedIn && (
-                        <button onClick={handleSubscribe} className={buttonClass('secondary', true)}>
-                          <CreditCard className="w-4 h-4 mr-2" />
-                          Suscribirse para Descargar ($150 MXN/mes)
-                        </button>
-                      )}
                       
                       {!isLoggedIn && (
                         <div className="text-center">
                           <p className="text-gray-400 mb-2">Para descargar, necesitas:</p>
-                          <button onClick={() => handleSubscribe()} className={buttonClass('primary', true)}>
+                          <button onClick={() => signInWithGoogle()} className={buttonClass('primary', true)}>
                             Iniciar Sesión o Crear Cuenta
                           </button>
                         </div>
@@ -622,9 +606,9 @@ export function MasterizarView() {
               <div className="w-12 h-12 bg-green-900/30 rounded-lg flex items-center justify-center mb-4">
                 <span className="text-2xl font-bold text-green-400">3</span>
               </div>
-              <h3 className="text-xl font-bold mb-3">Descarga Ilimitado</h3>
+              <h3 className="text-xl font-bold mb-3">Descarga</h3>
               <p className="text-gray-400">
-                Con suscripción de $150 MXN/mes, descarga todas las canciones masterizadas que quieras.
+                Cada descarga masterizada consume 12 créditos de tu saldo.
               </p>
             </div>
           </div>
@@ -643,23 +627,16 @@ export function MasterizarView() {
               </div>
               
               <div>
-                <h3 className="text-lg font-semibold mb-2">¿Necesito suscripción para usar el servicio?</h3>
+                <h3 className="text-lg font-semibold mb-2">¿Necesito créditos para usar el servicio?</h3>
                 <p className="text-gray-400">
-                  No. Puedes subir canciones y escuchar el preview gratis sin suscripción. Solo necesitas suscripción para descargar los archivos masterizados.
+                  Puedes subir canciones y escuchar el preview gratis sin créditos. Solo necesitas 12 créditos para descargar el archivo masterizado completo.
                 </p>
               </div>
               
               <div>
-                <h3 className="text-lg font-semibold mb-2">¿La suscripción consume mis créditos de LucIAna Music?</h3>
+                <h3 className="text-lg font-semibold mb-2">¿Puedo probarlo antes de pagar?</h3>
                 <p className="text-gray-400">
-                  No. La suscripción de Masterizar Ilimitado es completamente independiente. No consume tus créditos para crear canciones en LucIAna Music.
-                </p>
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-semibold mb-2">¿Puedo cancelar mi suscripción?</h3>
-                <p className="text-gray-400">
-                  Sí. Puedes cancelar en cualquier momento desde Mercado Pago. Tu suscripción seguirá activa hasta la fecha de expiración.
+                  Sí. El sistema te permite subir tu MP3 y escuchar un fragmento masterizado totalmente gratis para que compruebes la calidad.
                 </p>
               </div>
             </div>
@@ -670,7 +647,7 @@ export function MasterizarView() {
           <div className="inline-block bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-2xl p-8">
             <h2 className="text-3xl font-bold mb-4">¡Comienza a Masterizar Hoy!</h2>
             <p className="text-xl text-gray-300 mb-6">
-              Por solo <span className="text-green-400 font-bold">$150 MXN/mes</span>
+              Por solo <span className="text-green-400 font-bold">12 créditos por canción</span>
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -679,15 +656,8 @@ export function MasterizarView() {
                 Probar Gratis
               </button>
               
-              {isLoggedIn && !subscription?.active && (
-                <button onClick={handleSubscribe} className={buttonClass('secondary')}>
-                  <CreditCard className="w-5 h-5 mr-2" />
-                  Suscribirse Ahora
-                </button>
-              )}
-              
               {!isLoggedIn && (
-                <button onClick={() => handleSubscribe()} className={buttonClass('success')}>
+                <button onClick={() => signInWithGoogle()} className={buttonClass('success')}>
                   Crear Cuenta Gratis
                 </button>
               )}
