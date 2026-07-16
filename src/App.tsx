@@ -16,6 +16,7 @@ import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
 import { cn } from './lib/utils';
+import { isAdminEmail } from './lib/authz';
 import { ensureAnonSession, getAccessToken, signInWithGoogle, supabaseBrowser } from './lib/supabaseBrowser';
 import { CREDIT_COSTS } from './lib/credits';
 
