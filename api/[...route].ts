@@ -8732,8 +8732,16 @@ const sharePreviewHandler = (() => {
         return send(res, 500, { error: "No pude buscar el preview", detail: pr.error.message });
       }
 
-      const share = pr.data;
+      const share = pr.data as any;
       if (!share) return send(res, 404, { error: "Preview no encontrado" });
+
+      // Get creator email
+      const { data: creatorProfile } = await admin
+        .from("profiles")
+        .select("email")
+        .eq("id", share.created_by)
+        .maybeSingle();
+      const creatorEmail = (creatorProfile as any)?.email || "";
 
       const sr = await admin
         .from("library_items")
@@ -8759,7 +8767,7 @@ const song = sr.data as any;
         ok: true,
         id: String((share as any).id || ""),
         songId: String((share as any).song_id || ""),
-        createdBy: String((share as any).created_by || ""),
+        createdBy: creatorEmail || String((share as any).created_by || ""),
         clientLabel: String((share as any).client_label || ""),
         hasCountdown: Boolean((share as any).has_countdown),
         expiresAt: (share as any).expires_at || null,
