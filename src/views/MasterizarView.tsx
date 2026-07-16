@@ -33,6 +33,8 @@ export function MasterizarView() {
   const [file, setFile] = useState<File | null>(null);
   const [originalPreviewUrl, setOriginalPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
@@ -173,7 +175,14 @@ export function MasterizarView() {
     if (!selectedFile) return;
 
     // Validar que sea MP3
-    if (!selectedFile.type.includes('audio/mpeg') && !selectedFile.name.toLowerCase().endsWith('.mp3')) {
+    const fileName = selectedFile.name.toLowerCase();
+    const isMp3 = 
+      selectedFile.type.includes('audio/mpeg') || 
+      selectedFile.type.includes('audio/mp3') || 
+      selectedFile.type.includes('audio/x-mp3') ||
+      fileName.endsWith('.mp3');
+
+    if (!isMp3) {
       setProcessingError('Por favor sube un archivo MP3. Si no tienes MP3, puedes convertir tu audio en: https://online-audio-converter.com/sp/');
       return;
     }
@@ -222,6 +231,8 @@ export function MasterizarView() {
         throw new Error('No pude subir tu MP3 para masterizarlo.');
       }
 
+      setCurrentFilePath(filePath);
+
       const processResponse = await fetch('/api/masterizar-unlimited', {
         method: 'POST',
         headers: await apiHeaders(true),
@@ -257,21 +268,46 @@ export function MasterizarView() {
   };
 
   const handleDownload = async () => {
-    if (!directDownloadUrl) return;
+    if (!currentFilePath) return;
     if (!isLoggedIn) {
       setProcessingError('Para descargar necesitas iniciar sesión primero.');
       return;
     }
     
-    // Check if user has enough credits or is owner
-    // Note: The actual credit consumption happens in the backend
-    
-    const link = document.createElement('a');
-    link.href = directDownloadUrl;
-    link.download = `masterizado_${Date.now()}.mp3`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setIsProcessing(true);
+    setProcessingError(null);
+
+    try {
+      const response = await fetch('/api/masterizar-unlimited', {
+        method: 'POST',
+        headers: await apiHeaders(true),
+        body: JSON.stringify({
+          action: 'process',
+          filePath: currentFilePath,
+          isPreview: false,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Error al procesar la descarga');
+      }
+
+      if (result.downloadUrl) {
+        const link = document.createElement('a');
+        link.href = result.downloadUrl;
+        link.download = `masterizado_${Date.now()}.mp3`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        throw new Error('No se recibió el archivo para descargar.');
+      }
+    } catch (error: any) {
+      setProcessingError(error.message || 'Error al descargar el archivo');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleSubscribe = async () => {
@@ -546,11 +582,15 @@ export function MasterizarView() {
                       
                       <button
                         onClick={handleDownload}
-                        disabled={!directDownloadUrl}
+                        disabled={!previewUrl || isProcessing}
                         className={buttonClass('success', true)}
                       >
-                        <Download className="w-4 h-4 mr-2" />
-                        Descargar MP3 Masterizado (12 créditos)
+                        {isProcessing ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4 mr-2" />
+                        )}
+                        {isProcessing ? 'Procesando descarga...' : 'Descargar MP3 Masterizado (12 créditos)'}
                       </button>
                       
                       {!isLoggedIn && (

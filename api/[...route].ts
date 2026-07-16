@@ -7250,23 +7250,29 @@ const masterizarUnlimitedHandler = (() => {
         return send(res, 400, { error: 'Falta filePath' });
       }
 
-      const subscription = auth.ok
-        ? (isAdminEmail(auth.user.email)
-            ? { active: true, expires_at: null }
-            : await checkMasteringSubscription(userId, auth.admin))
-        : { active: false, expires_at: null };
+      const isAdmin = auth.ok && isAdminEmail(auth.user.email);
+      const cost = CREDIT_COSTS.mastering;
+      let creditsConsumed = false;
 
-      if (!isPreview && (!auth.ok || !subscription.active)) {
-        return send(res, 403, { 
-          error: 'Suscripción requerida',
-          message: 'Necesitas una suscripción activa para descargar archivos completos. Suscríbete por $150 MXN/mes.'
-        });
+      if (!isPreview) {
+        if (!auth.ok) {
+          return send(res, 401, { error: 'Inicia sesión para descargar el archivo completo.' });
+        }
+        
+        if (!isAdmin) {
+          const consumed = await consumeUserCredits(auth.admin, userId, cost);
+          if (!consumed.ok) {
+            return send(res, 402, { error: consumed.error || "Créditos insuficientes para descargar." });
+          }
+          creditsConsumed = true;
+        }
       }
 
       // Validar que el archivo sea MP3
       const lowerKey = filePath.toLowerCase();
       const looksMp3 = lowerKey.endsWith(".mp3");
       if (!looksMp3) {
+        if (creditsConsumed) await adjustUserCredits(auth.admin, userId, cost);
         return send(res, 400, {
           error: "El archivo debe ser MP3.",
           converterUrl: "https://online-audio-converter.com/sp/",
@@ -7286,6 +7292,7 @@ const masterizarUnlimitedHandler = (() => {
           outputPutUrl,
         });
       } catch (error: any) {
+        if (creditsConsumed) await adjustUserCredits(auth.admin, userId, cost);
         return send(res, 500, {
           error: "Error al masterizar",
           message: error.message || "Error desconocido",
@@ -7293,14 +7300,12 @@ const masterizarUnlimitedHandler = (() => {
       }
 
       // Obtener URL para reproducir el resultado
-      const previewUrl = await getSignedR2Url(outputKey, 3600);
+      const finalUrl = await getSignedR2Url(outputKey, 3600);
 
       return send(res, 200, {
-        previewUrl,
-        downloadUrl: auth.ok && subscription.active ? previewUrl : null,
-        subscriptionActive: subscription.active,
-        expiresAt: subscription.expires_at,
-        requiresLogin: !auth.ok,
+        previewUrl: finalUrl,
+        downloadUrl: (!isPreview || isAdmin) ? finalUrl : null,
+        creditsConsumed: creditsConsumed,
       });
 
     } else {
