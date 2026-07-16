@@ -7,6 +7,7 @@ export function useUserCredits() {
   const [internalCredits, setInternalCredits] = useState<number | null>(null);
   const [providerCredits, setProviderCredits] = useState<number | null>(null);
   const [creditsExpiresAt, setCreditsExpiresAt] = useState<string | null>(null);
+  const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [source, setSource] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,6 +38,8 @@ export function useUserCredits() {
       setProviderCredits(Number.isFinite(pc) ? pc : null);
       const cea = out?.credits_expires_at || null;
       setCreditsExpiresAt(cea);
+      const pea = out?.plan_expires_at || null;
+      setPlanExpiresAt(pea);
       setIsAdmin(Boolean(out?.is_admin));
       setSource(String(out?.source || ''));
       setError('');
@@ -48,6 +51,7 @@ export function useUserCredits() {
             internal_credits: Number.isFinite(ic) ? ic : null,
             provider_credits: Number.isFinite(pc) ? pc : null,
             credits_expires_at: cea,
+            plan_expires_at: pea,
             is_admin: Boolean(out?.is_admin),
             source: String(out?.source || ''),
             saved_at: new Date().toISOString(),
@@ -87,6 +91,8 @@ export function useUserCredits() {
         setProviderCredits(Number.isFinite(pc) ? pc : null);
         const cea = cached?.credits_expires_at || null;
         setCreditsExpiresAt(cea);
+        const pea = cached?.plan_expires_at || null;
+        setPlanExpiresAt(pea);
         setIsAdmin(Boolean(cached?.is_admin));
         setSource(String(cached?.source || ''));
       }
@@ -113,6 +119,7 @@ export function useUserCredits() {
     internalCredits,
     providerCredits,
     creditsExpiresAt,
+    planExpiresAt,
     isAdmin,
     source,
     loading,

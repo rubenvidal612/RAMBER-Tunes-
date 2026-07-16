@@ -4069,7 +4069,8 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     isPaid: boolean;
     clientLabel?: string;
     unlockPrice?: number;
-  } | null>(null);
+  createdBy?: string;
+} | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
@@ -4126,6 +4127,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
         isPaid: Boolean(out?.isPaid),
         clientLabel: String(out?.clientLabel || "").trim(),
         unlockPrice: Number(out?.unlockPrice) || 250,
+        createdBy: String(out?.createdBy || ""),
       });
       if (out?.unlockPrice) {
         setUnlockPrice(Number(out.unlockPrice));
@@ -4389,24 +4391,26 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                         {isLocked ? 'Preview expirado' : isPlaying ? 'Pausar' : 'Reproducir'}
                       </button>
 
-                      <button
-                        onClick={handleUnlock}
-                        disabled={isPaymentLoading}
-                        className="w-full h-[46px] rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold disabled:opacity-60 mt-3 flex items-center justify-center gap-2"
-                      >
-                        {isPaymentLoading ? (
-                          <>
-                            <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                            Procesando pago...
-                          </>
-                        ) : (
-                          `Descargar por $${unlockPrice}`
-                        )}
-                      </button>
+                      {isAdminEmail(data.createdBy) || data.createdBy === 'jesusmanuelmartinezgonzalez3@gmail.com' ? (
+                        <button
+                          onClick={handleUnlock}
+                          disabled={isPaymentLoading}
+                          className="w-full h-[46px] rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold disabled:opacity-60 mt-3 flex items-center justify-center gap-2"
+                        >
+                          {isPaymentLoading ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                              Procesando pago...
+                            </>
+                          ) : (
+                            `Descargar por $${unlockPrice}`
+                          )}
+                        </button>
+                      ) : null}
 
                       {isLocked ? (
                         <div className="mt-3 text-sm text-red-200">
-                          Preview expirado — contacta a tu vendedor o descarga para continuar.
+                          Preview expirado — contacta a tu vendedor para continuar.
                         </div>
                       ) : null}
                     </>

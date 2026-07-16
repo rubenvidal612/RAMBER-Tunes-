@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 
 export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void }) {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
-  const { credits, creditsExpiresAt, refreshCredits } = useUserCredits();
+  const { credits, creditsExpiresAt, planExpiresAt, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -1738,17 +1738,31 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
             </button>
           </div>
           
-          {creditsExpiresAt && (
-            <div className="text-xs text-slate-400 mt-2">
-              <span className="font-medium">Vencimiento: </span>
-              {new Date(creditsExpiresAt).toLocaleDateString('es-MX', { 
-                weekday: 'short', 
-                year: 'numeric', 
-                month: 'short', 
-                day: 'numeric' 
-              })}
-            </div>
-          )}
+          <div className="flex flex-col gap-1.5 mt-2">
+            {planExpiresAt && (
+              <div className="text-[11px] text-slate-300">
+                <span className="font-semibold text-emerald-400">Plan activo hasta: </span>
+                {new Date(planExpiresAt).toLocaleDateString('es-MX', { 
+                  weekday: 'short', 
+                  year: 'numeric', 
+                  month: 'short', 
+                  day: 'numeric' 
+                })}
+              </div>
+            )}
+            
+            {creditsExpiresAt && (
+              <div className="text-[11px] text-slate-400">
+                <span className="font-semibold text-yellow-500/80">Saldo disponible hasta: </span>
+                {new Date(creditsExpiresAt).toLocaleDateString('es-MX', { 
+                  weekday: 'short', 
+                  year: 'numeric', 
+                  month: 'short', 
+                  day: 'numeric' 
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="glass-card rounded-2xl overflow-hidden">
