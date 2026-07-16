@@ -3526,15 +3526,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             </div>
 
             {/* Botones de opción */}
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {/* Botón: Masterizar por 10 créditos */}
+            <div className="flex flex-col gap-4 mb-8">
+              {/* Botón: Masterizar por 12 créditos */}
               <button
                 type="button"
                 onClick={() => {
                   setIsMasterizarModalOpen(false);
                   window.location.href = '/masterizar?mode=credits';
                 }}
-                className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(34,197,94,0.4)] hover:shadow-[0_0_40px_rgba(34,197,94,0.6)]"
+                className="h-[160px] rounded-xl font-extrabold text-xl flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(34,197,94,0.4)] hover:shadow-[0_0_40px_rgba(34,197,94,0.6)]"
                 style={{
                   background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                   color: '#000',
@@ -3542,26 +3542,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 }}
               >
                 <span className="text-5xl">💰</span>
-                <span className="text-center leading-tight">Masterizar por 10 Créditos</span>
+                <span className="text-center leading-tight">Masterizar por 12 Créditos</span>
               </button>
 
-              {/* Botón: Masterizar Ilimitado */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMasterizarModalOpen(false);
-                  window.location.href = '/masterizar?mode=unlimited';
-                }}
-                className="h-[160px] rounded-xl font-extrabold text-lg flex flex-col items-center justify-center gap-3 transition-all duration-300 active:scale-[0.98] shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:shadow-[0_0_40px_rgba(234,179,8,0.6)]"
-                style={{
-                  background: 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
-                  color: '#000',
-                  border: '3px solid #facc15'
-                }}
-              >
-                <span className="text-5xl">♾️</span>
-                <span className="text-center leading-tight">Masterizar Ilimitado<br/>$150 Pesos / Mes</span>
-              </button>
+              <p className="text-gray-400 text-sm text-center italic">
+                Sube tu MP3, escucha el preview gratis y descarga el resultado completo por 12 créditos.
+              </p>
             </div>
           </div>
         </div>
