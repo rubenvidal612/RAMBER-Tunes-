@@ -443,6 +443,45 @@ async function deleteFromR2(paths: string[]): Promise<number> {
   return deletedCount;
 }
 
+function normalizeWatermarkVersion(raw: any) {
+  const value = String(raw || "").trim().toLowerCase();
+  return value === "v2" ? "v2" : "v1";
+}
+
+function getWatermarkAssetKey(versionRaw: any) {
+  const version = normalizeWatermarkVersion(versionRaw);
+  return `system-assets/watermark-${version}.mp3`;
+}
+
+async function runPreviewWatermarkWithWorker(params: {
+  workerUrl: string;
+  originalInputUrl: string;
+  watermarkInputUrl: string;
+  outputPutUrl: string;
+  introDelayMs?: number;
+}) {
+  const workerUrl = params.workerUrl.replace(/\/+$/, "");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10 * 60 * 1000);
+  const r = await fetch(`${workerUrl}/preview-watermark`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      originalInputUrl: params.originalInputUrl,
+      watermarkInputUrl: params.watermarkInputUrl,
+      outputUploadUrl: params.outputPutUrl,
+      introDelayMs: Number.isFinite(Number(params.introDelayMs)) ? Number(params.introDelayMs) : 2000,
+    }),
+    signal: ctrl.signal as any,
+  }).finally(() => clearTimeout(timer));
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok || out?.ok === false) {
+    const msg = String(out?.error || out?.detail || `HTTP ${r.status}`);
+    throw new Error(msg || "No pude generar el preview protegido en el worker");
+  }
+  return out;
+}
+
 async function ensureProfileExists(admin: any, userId: string) {
   const r = await admin.from("profiles").upsert({ id: userId }, { onConflict: "id" });
   if (!r?.error) return { ok: true };
@@ -8808,6 +8847,71 @@ const sharePreviewHandler = (() => {
     return `${proto}://${host}`;
   }
 
+  function sanitizeDispositionName(name: string, fallback: string) {
+    const s = (name || "").toString().replaceAll("\r", " ").replaceAll("\n", " ").trim();
+    const cleaned = s.replaceAll(/[^a-zA-Z0-9._ -]+/g, "_").replaceAll(/\s+/g, " ").trim().slice(0, 120);
+    return cleaned || fallback;
+  }
+
+  async function serveR2Object(req: any, res: any, key: string, downloadName?: string) {
+    const env = getR2Env();
+    const client = await getR2Client();
+    const { GetObjectCommand } = await getR2AwsSdk();
+    const range = (req.headers?.range || req.headers?.Range || "").toString().trim();
+    const command = new GetObjectCommand({
+      Bucket: env.bucketName,
+      Key: key,
+      ...(range ? { Range: range } : {}),
+    });
+    const out: any = await client.send(command);
+
+    const isPartial = Boolean(range);
+    res.statusCode = isPartial ? 206 : 200;
+    res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-headers", "range, content-type");
+    res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type");
+    res.setHeader("accept-ranges", "bytes");
+    res.setHeader("content-type", String(out?.ContentType || "audio/mpeg").trim() || "audio/mpeg");
+    if (downloadName) {
+      const safe = sanitizeDispositionName(downloadName, "preview.mp3");
+      res.setHeader("content-disposition", `attachment; filename=\"${safe.replaceAll('\"', '')}\"`);
+      res.setHeader("access-control-expose-headers", "accept-ranges, content-length, content-range, content-type, content-disposition");
+    }
+    if (out?.ContentLength != null) res.setHeader("content-length", String(out.ContentLength));
+    if (out?.ContentRange) res.setHeader("content-range", String(out.ContentRange));
+
+    if ((req.method || "").toUpperCase() === "HEAD") {
+      res.end();
+      return;
+    }
+
+    const body = out?.Body;
+    if (body?.pipe) {
+      body.pipe(res);
+      return;
+    }
+    if (body?.transformToWebStream) {
+      try {
+        const mod = await import("stream");
+        const Readable = (mod as any).Readable;
+        if (Readable?.fromWeb) {
+          Readable.fromWeb(body.transformToWebStream()).pipe(res);
+          return;
+        }
+      } catch {
+      }
+    }
+    const ab = await (body?.arrayBuffer?.() ?? Promise.resolve(null)).catch(() => null);
+    if (!ab) {
+      res.statusCode = 502;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "No pude leer el audio del preview" }));
+      return;
+    }
+    res.end(Buffer.from(ab));
+  }
+
   function missingTable(error: any) {
     const msg = String(error?.message || "").toLowerCase();
     return msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
@@ -8829,7 +8933,7 @@ const sharePreviewHandler = (() => {
 
       const pr = await admin
         .from("preview_shares")
-        .select("id, song_id, created_by, client_label, has_countdown, expires_at, is_paid, paid_at, created_at")
+        .select("id, song_id, created_by, client_label, has_countdown, expires_at, is_paid, paid_at, created_at, watermarked_audio_key, watermark_version_used")
         .eq("id", id.slice(0, 200))
         .maybeSingle();
       if (pr.error) {
@@ -8874,6 +8978,10 @@ const sharePreviewHandler = (() => {
       const unlockPrice = Number((pp.data as any)?.unlock_price_mxn) || 250;
 
 const song = sr.data as any;
+      const previewAudioUrl =
+        Boolean((share as any).has_countdown) && !Boolean((share as any).is_paid) && String((share as any).watermarked_audio_key || "").trim()
+          ? `/api/share/preview/audio?id=${encodeURIComponent(String((share as any).id || ""))}`
+          : `/api/share/song/audio?id=${encodeURIComponent(String((share as any).song_id || ""))}`;
       return send(res, 200, {
         ok: true,
         id: String((share as any).id || ""),
@@ -8886,10 +8994,104 @@ const song = sr.data as any;
         paidAt: (share as any).paid_at || null,
         createdAt: (share as any).created_at || null,
         title: String(song?.title || "Canción"),
-        audioUrl: String(song?.audio_url || ""),
+        audioUrl: previewAudioUrl,
         coverUrl: String(song?.cover_url || ""),
-          unlockPrice: unlockPrice,
-});
+        unlockPrice: unlockPrice,
+        watermarkVersion: normalizeWatermarkVersion((share as any).watermark_version_used),
+      });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handlePreviewAudio(req: any, res: any) {
+    const id = pickQuery(req, "id").trim();
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const pr = await admin
+        .from("preview_shares")
+        .select("id, song_id, title, has_countdown, expires_at, is_paid, watermarked_audio_key")
+        .eq("id", id.slice(0, 200))
+        .maybeSingle();
+      if (pr.error) return send(res, 500, { error: "No pude buscar el preview", detail: pr.error.message });
+      const share = pr.data as any;
+      if (!share) return send(res, 404, { error: "Preview no encontrado" });
+
+      const expiresAt = String(share?.expires_at || "").trim();
+      const expiredByTime = Boolean(share?.has_countdown) && !Boolean(share?.is_paid) && expiresAt
+        ? Date.now() >= new Date(expiresAt).getTime()
+        : false;
+      if (expiredByTime) return send(res, 410, { error: "Preview expirado" });
+
+      const watermarkedAudioKey = String(share?.watermarked_audio_key || "").trim();
+      if (Boolean(share?.has_countdown) && !Boolean(share?.is_paid) && watermarkedAudioKey) {
+        const wantDownload = (() => {
+          const raw = pickQuery(req, "dl") || pickQuery(req, "download");
+          const v = (raw || "").toString().trim().toLowerCase();
+          return v === "1" || v === "true" || v === "yes" || v === "si";
+        })();
+        const downloadName = wantDownload ? `${sanitizeDispositionName(String(share?.title || "Preview"), "Preview")}.mp3` : undefined;
+        await serveR2Object(req, res, watermarkedAudioKey, downloadName);
+        return;
+      }
+
+      res.statusCode = 307;
+      res.setHeader("location", `/api/share/song/audio?id=${encodeURIComponent(String(share?.song_id || ""))}${pickQuery(req, "dl") ? "&dl=1" : ""}`);
+      res.end();
+      return;
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleCleanupExpired(req: any, res: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const nowIso = new Date().toISOString();
+      const rr = await admin
+        .from("preview_shares")
+        .select("id, watermarked_audio_key")
+        .not("watermarked_audio_key", "is", null)
+        .lte("expires_at", nowIso)
+        .limit(200);
+      if (rr.error) return send(res, 500, { error: "No pude buscar previews expirados", detail: rr.error.message });
+
+      const rows = Array.isArray(rr.data) ? rr.data : [];
+      const ids = rows.map((row: any) => String(row?.id || "").trim()).filter(Boolean);
+      const keys = rows.map((row: any) => String(row?.watermarked_audio_key || "").trim()).filter(Boolean);
+      let deletedFromR2 = 0;
+      if (keys.length > 0) {
+        deletedFromR2 = await deleteFromR2(keys).catch(() => 0);
+      }
+      if (ids.length > 0) {
+        await admin
+          .from("preview_shares")
+          .update({ watermarked_audio_key: null })
+          .in("id", ids);
+      }
+
+      return send(res, 200, {
+        ok: true,
+        found: rows.length,
+        deletedFromR2,
+        cleanedRows: ids.length,
+      });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -8990,6 +9192,20 @@ const song = sr.data as any;
       return handleCreatePayment(req, res);
     }
 
+    if (action === "audio") {
+      if ((req.method || "").toUpperCase() !== "GET" && (req.method || "").toUpperCase() !== "HEAD") {
+        return send(res, 405, { error: "Método no permitido" });
+      }
+      return handlePreviewAudio(req, res);
+    }
+
+    if (action === "cleanup-expired") {
+      if ((req.method || "").toUpperCase() !== "GET" && (req.method || "").toUpperCase() !== "POST") {
+        return send(res, 405, { error: "Método no permitido" });
+      }
+      return handleCleanupExpired(req, res);
+    }
+
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
     return handleGetPreview(req, res);
   };
@@ -9067,7 +9283,7 @@ const vendorHandler = (() => {
     try {
       const r = await auth.admin
         .from("vendor_settings")
-        .select("user_id, countdown_default_hours, role, commission_type, commission_value, force_countdown_only, can_show_payment_info")
+        .select("user_id, countdown_default_hours, role, commission_type, commission_value, force_countdown_only, can_show_payment_info, watermark_version")
         .eq("user_id", auth.user.id)
         .maybeSingle();
       if (r.error) {
@@ -9080,7 +9296,8 @@ const vendorHandler = (() => {
             commission_type: "percentage",
             commission_value: 0,
             force_countdown_only: false,
-            can_show_payment_info: true
+            can_show_payment_info: true,
+            watermark_version: "v1"
           });
         }
         return send(res, 500, { error: "No pude leer la configuración", detail: r.error.message });
@@ -9094,6 +9311,7 @@ const vendorHandler = (() => {
         commission_value: Number(data?.commission_value) || 0,
         force_countdown_only: Boolean(data?.force_countdown_only),
         can_show_payment_info: Boolean(data?.can_show_payment_info),
+        watermark_version: normalizeWatermarkVersion(data?.watermark_version),
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
@@ -9112,7 +9330,7 @@ const vendorHandler = (() => {
     // First get current settings to see if user is employee (role should be set by admin only)
     const currentSettings = await auth.admin
       .from("vendor_settings")
-      .select("role")
+      .select("role, commission_type, commission_value, force_countdown_only, can_show_payment_info, watermark_version")
       .eq("user_id", auth.user.id)
       .maybeSingle();
     const currentRole = (currentSettings.data as any)?.role || "vendor";
@@ -9131,6 +9349,7 @@ const vendorHandler = (() => {
         commission_value: Number((currentSettings.data as any)?.commission_value) || 0,
         force_countdown_only: isEmployee ? true : Boolean((currentSettings.data as any)?.force_countdown_only),
         can_show_payment_info: isEmployee ? false : Boolean((currentSettings.data as any)?.can_show_payment_info),
+        watermark_version: normalizeWatermarkVersion((currentSettings.data as any)?.watermark_version),
       };
       const r = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" });
       if (r.error) {
@@ -9148,7 +9367,8 @@ const vendorHandler = (() => {
         countdown_default_hours: hours,
         role: currentRole,
         force_countdown_only: isEmployee,
-        can_show_payment_info: !isEmployee
+        can_show_payment_info: !isEmployee,
+        watermark_version: normalizeWatermarkVersion((currentSettings.data as any)?.watermark_version),
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
@@ -9170,10 +9390,11 @@ const vendorHandler = (() => {
     // Get vendor settings to check force_countdown_only
     const vs = await auth.admin
       .from("vendor_settings")
-      .select("force_countdown_only, role")
+      .select("force_countdown_only, role, watermark_version")
       .eq("user_id", auth.user.id)
       .maybeSingle();
     const forceCountdown = Boolean((vs.data as any)?.force_countdown_only) || (vs.data as any)?.role === "empleado";
+    const watermarkVersion = normalizeWatermarkVersion((vs.data as any)?.watermark_version);
     
     // Enforce countdown if force_countdown_only is true
     const hasCountdown = forceCountdown ? true : Boolean(body?.hasCountdown);
@@ -9220,6 +9441,49 @@ const vendorHandler = (() => {
       }
 
       const share = ir.data as any;
+      let watermarkedAudioKey = "";
+      if (hasCountdown) {
+        const workerUrl = (process.env.MASTERING_WORKER_URL || "").toString().trim();
+        if (!workerUrl) {
+          await auth.admin.from("preview_shares").delete().eq("id", String(share?.id || ""));
+          return send(res, 500, {
+            error: "Falta configurar el worker de audio",
+            detail: "Configura MASTERING_WORKER_URL en Vercel para generar previews protegidos con temporizador.",
+          });
+        }
+
+        try {
+          watermarkedAudioKey = `preview_watermarked/${auth.user.id}/${String(share?.id || "").trim()}.mp3`;
+          const origin = originFromReq(req);
+          const originalInputUrl = `${origin}/api/share/song/audio?id=${encodeURIComponent(String(share?.song_id || ""))}`;
+          const watermarkInputUrl = await getSignedR2Url(getWatermarkAssetKey(watermarkVersion), 600);
+          const outputPutUrl = await getSignedR2PutUrl(watermarkedAudioKey, "audio/mpeg", 600);
+          await runPreviewWatermarkWithWorker({
+            workerUrl,
+            originalInputUrl,
+            watermarkInputUrl,
+            outputPutUrl,
+            introDelayMs: 2000,
+          });
+          const ur = await auth.admin
+            .from("preview_shares")
+            .update({
+              watermarked_audio_key: watermarkedAudioKey,
+              watermark_version_used: watermarkVersion,
+              watermarked_generated_at: new Date().toISOString(),
+            })
+            .eq("id", String(share?.id || ""));
+          if (ur.error) throw new Error(`No pude guardar el audio protegido: ${ur.error.message}`);
+        } catch (error) {
+          if (watermarkedAudioKey) await deleteFromR2([watermarkedAudioKey]).catch(() => 0);
+          await auth.admin.from("preview_shares").delete().eq("id", String(share?.id || ""));
+          return send(res, 500, {
+            error: "No pude generar el preview con audio protegido",
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       return send(res, 200, {
         ok: true,
         id: String(share?.id || ""),
@@ -9230,6 +9494,8 @@ const vendorHandler = (() => {
         expiresAt: share?.expires_at || null,
         isPaid: Boolean(share?.is_paid),
         createdAt: share?.created_at || null,
+        watermarkVersion,
+        watermarkedAudioKey,
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });

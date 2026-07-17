@@ -4121,7 +4121,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
         id: String(out?.id || shareId),
         songId,
         title: String(out?.title || "Canción"),
-        audioUrl: `/api/share/song/audio?id=${encodeURIComponent(songId)}`,
+        audioUrl: String(out?.audioUrl || `/api/share/song/audio?id=${encodeURIComponent(songId)}`),
         coverUrl: String(out?.coverUrl || "").trim() || undefined,
         hasCountdown: Boolean(out?.hasCountdown),
         expiresAt: out?.expiresAt || null,
@@ -4170,7 +4170,11 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
         (payload) => {
           const newIsPaid = Boolean((payload.new as any)?.is_paid);
           if (newIsPaid) {
-            setData((prev) => prev ? { ...prev, isPaid: newIsPaid } : prev);
+            setData((prev) => prev ? {
+              ...prev,
+              isPaid: newIsPaid,
+              audioUrl: `/api/share/song/audio?id=${encodeURIComponent(prev.songId)}`,
+            } : prev);
           }
         }
       )
