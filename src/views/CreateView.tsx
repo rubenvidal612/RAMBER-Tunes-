@@ -6083,18 +6083,16 @@ function CustomForm({
   const [instructionsLanguage, setInstructionsLanguage] = useState<'es' | 'en'>('es');
   const [isTranslatingInstructions, setIsTranslatingInstructions] = useState(false);
   const [showInstructionsRules, setShowInstructionsRules] = useState(false);
-  const [instructionsOriginalEs, setInstructionsOriginalEs] = useState('');
-  const [instructionsTranslatedEn, setInstructionsTranslatedEn] = useState('');
   const instructionsCopy = {
     es: {
       label: 'Instrucciones',
       placeholder: 'Describe el estilo, el ambiente o los instrumentos de tu música',
-      toggle: '🌐 Traducir a Inglés (Recomendado)',
+      toggle: '🌐 Traducir a Inglés',
     },
     en: {
-      label: 'Instructions',
-      placeholder: 'Describe the style, mood, or instruments for your music',
-      toggle: '🌐 Traducir a Español',
+      label: 'Instrucciones',
+      placeholder: 'Describe el estilo, el ambiente o los instrumentos de tu música',
+      toggle: '🌐 Traducir a Inglés',
     },
   } as const;
   const activeInstructionsCopy = instructionsCopy[instructionsLanguage];
@@ -6102,22 +6100,8 @@ function CustomForm({
   const handleTranslateInstructions = async () => {
     if (isTranslatingInstructions) return;
 
-    if (instructionsLanguage === 'en') {
-      if (instructionsOriginalEs.trim()) {
-        setInstructions(instructionsOriginalEs);
-      }
-      setInstructionsLanguage('es');
-      return;
-    }
-
     const sourceText = (instructions || '').trim();
     if (!sourceText) return;
-
-    if (instructionsOriginalEs === sourceText && instructionsTranslatedEn.trim()) {
-      setInstructions(instructionsTranslatedEn);
-      setInstructionsLanguage('en');
-      return;
-    }
 
     setIsTranslatingInstructions(true);
     try {
@@ -6129,10 +6113,7 @@ function CustomForm({
       if (!response.ok || !translatedText) {
         return;
       }
-      setInstructionsOriginalEs(sourceText);
-      setInstructionsTranslatedEn(translatedText);
       setInstructions(translatedText);
-      setInstructionsLanguage('en');
     } catch {
       return;
     } finally {
