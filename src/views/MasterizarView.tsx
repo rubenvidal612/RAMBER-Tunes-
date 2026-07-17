@@ -479,7 +479,7 @@ export function MasterizarView() {
                 
                 <input
                   type="file"
-                  accept=".mp3,audio/mpeg"
+                  accept=".mp3,audio/mpeg,audio/mp3,audio/x-mp3"
                   onChange={handleFileChange}
                   className="hidden"
                   id="file-upload"

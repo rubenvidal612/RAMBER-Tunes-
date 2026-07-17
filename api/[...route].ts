@@ -7231,10 +7231,24 @@ const masterizarUnlimitedHandler = (() => {
         return send(res, 400, { error: 'Falta fileName o fileType' });
       }
 
+      const normalizedFileName = String(fileName || "").trim().toLowerCase();
+      const normalizedFileType = String(fileType || "").trim().toLowerCase();
+      const isMp3Upload =
+        normalizedFileType.includes("audio/mpeg") ||
+        normalizedFileType.includes("audio/mp3") ||
+        normalizedFileType.includes("audio/x-mp3") ||
+        normalizedFileName.endsWith(".mp3");
+      if (!isMp3Upload) {
+        return send(res, 400, {
+          error: "El archivo debe ser MP3.",
+          converterUrl: "https://online-audio-converter.com/sp/",
+        });
+      }
+
       // Generar ruta única para el archivo
       const timestamp = Date.now();
       const random = Math.random().toString(36).slice(2, 10);
-      const fileKey = `uploads/masterizar-unlimited/${userId}/${timestamp}_${random}_${safeFileBase(fileName)}`;
+      const fileKey = `uploads/masterizar-unlimited/${userId}/${timestamp}_${random}_${safeFileBase(fileName)}.mp3`;
 
       // Obtener URL firmada para subir
       const uploadUrl = await getSignedR2PutUrl(fileKey, fileType);
