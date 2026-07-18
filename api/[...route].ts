@@ -9390,11 +9390,10 @@ const vendorHandler = (() => {
     // Get vendor settings to check force_countdown_only
     const vs = await auth.admin
       .from("vendor_settings")
-      .select("force_countdown_only, role, watermark_version")
+      .select("force_countdown_only, role")
       .eq("user_id", auth.user.id)
       .maybeSingle();
     const forceCountdown = Boolean((vs.data as any)?.force_countdown_only) || (vs.data as any)?.role === "empleado";
-    const watermarkVersion = normalizeWatermarkVersion((vs.data as any)?.watermark_version);
     
     // Enforce countdown if force_countdown_only is true
     const hasCountdown = forceCountdown ? true : Boolean(body?.hasCountdown);
@@ -9441,48 +9440,6 @@ const vendorHandler = (() => {
       }
 
       const share = ir.data as any;
-      let watermarkedAudioKey = "";
-      if (hasCountdown) {
-        const workerUrl = (process.env.MASTERING_WORKER_URL || "").toString().trim();
-        if (!workerUrl) {
-          await auth.admin.from("preview_shares").delete().eq("id", String(share?.id || ""));
-          return send(res, 500, {
-            error: "Falta configurar el worker de audio",
-            detail: "Configura MASTERING_WORKER_URL en Vercel para generar previews protegidos con temporizador.",
-          });
-        }
-
-        try {
-          watermarkedAudioKey = `preview_watermarked/${auth.user.id}/${String(share?.id || "").trim()}.mp3`;
-          const origin = originFromReq(req);
-          const originalInputUrl = `${origin}/api/share/song/audio?id=${encodeURIComponent(String(share?.song_id || ""))}`;
-          const watermarkInputUrl = await getSignedR2Url(getWatermarkAssetKey(watermarkVersion), 600);
-          const outputPutUrl = await getSignedR2PutUrl(watermarkedAudioKey, "audio/mpeg", 600);
-          await runPreviewWatermarkWithWorker({
-            workerUrl,
-            originalInputUrl,
-            watermarkInputUrl,
-            outputPutUrl,
-            introDelayMs: 2000,
-          });
-          const ur = await auth.admin
-            .from("preview_shares")
-            .update({
-              watermarked_audio_key: watermarkedAudioKey,
-              watermark_version_used: watermarkVersion,
-              watermarked_generated_at: new Date().toISOString(),
-            })
-            .eq("id", String(share?.id || ""));
-          if (ur.error) throw new Error(`No pude guardar el audio protegido: ${ur.error.message}`);
-        } catch (error) {
-          if (watermarkedAudioKey) await deleteFromR2([watermarkedAudioKey]).catch(() => 0);
-          await auth.admin.from("preview_shares").delete().eq("id", String(share?.id || ""));
-          return send(res, 500, {
-            error: "No pude generar el preview con audio protegido",
-            detail: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
 
       return send(res, 200, {
         ok: true,
@@ -9494,8 +9451,6 @@ const vendorHandler = (() => {
         expiresAt: share?.expires_at || null,
         isPaid: Boolean(share?.is_paid),
         createdAt: share?.created_at || null,
-        watermarkVersion,
-        watermarkedAudioKey,
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
