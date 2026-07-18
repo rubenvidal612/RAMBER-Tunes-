@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useId } from 'react';
 import { Upload, Volume2, Download, CheckCircle, XCircle, Loader2, AlertCircle, CreditCard, Zap, Shield, Headphones } from 'lucide-react';
 import { getAccessToken, signInWithGoogle, supabaseBrowser } from '../lib/supabaseBrowser';
 
@@ -29,6 +29,7 @@ function buttonClass(kind: 'primary' | 'secondary' | 'success' | 'ghost' = 'prim
 }
 
 export function MasterizarView() {
+  const fileInputId = useId();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [originalPreviewUrl, setOriginalPreviewUrl] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export function MasterizarView() {
   // Get mode from URL query params
   const [mode, setMode] = useState<'credits' | 'unlimited'>('unlimited');
   const uploadSectionRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -478,14 +480,15 @@ export function MasterizarView() {
                 <p className="mb-4">Arrastra tu archivo MP3 aquí o haz clic para seleccionar</p>
                 
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept=".mp3,audio/mpeg,audio/mp3,audio/x-mp3"
                   onChange={handleFileChange}
                   className="hidden"
-                  id="file-upload"
+                  id={fileInputId}
                 />
                 
-                <label htmlFor="file-upload">
+                <label htmlFor={fileInputId}>
                   <span className={buttonClass('ghost')}>
                     Seleccionar archivo
                   </span>
@@ -691,7 +694,7 @@ export function MasterizarView() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button onClick={() => document.getElementById('file-upload')?.click()} className={buttonClass('primary')}>
+              <button onClick={() => fileInputRef.current?.click()} className={buttonClass('primary')}>
                 <Upload className="w-5 h-5 mr-2" />
                 Probar Gratis
               </button>
