@@ -8933,7 +8933,7 @@ const sharePreviewHandler = (() => {
 
       const pr = await admin
         .from("preview_shares")
-        .select("id, song_id, created_by, client_label, has_countdown, expires_at, is_paid, paid_at, created_at, watermarked_audio_key, watermark_version_used")
+        .select("id, song_id, created_by, client_label, has_countdown, expires_at, is_paid, paid_at, created_at")
         .eq("id", id.slice(0, 200))
         .maybeSingle();
       if (pr.error) {
@@ -8978,10 +8978,7 @@ const sharePreviewHandler = (() => {
       const unlockPrice = Number((pp.data as any)?.unlock_price_mxn) || 250;
 
 const song = sr.data as any;
-      const previewAudioUrl =
-        Boolean((share as any).has_countdown) && !Boolean((share as any).is_paid) && String((share as any).watermarked_audio_key || "").trim()
-          ? `/api/share/preview/audio?id=${encodeURIComponent(String((share as any).id || ""))}`
-          : `/api/share/song/audio?id=${encodeURIComponent(String((share as any).song_id || ""))}`;
+      const previewAudioUrl = `/api/share/preview/audio?id=${encodeURIComponent(String((share as any).id || ""))}`;
       return send(res, 200, {
         ok: true,
         id: String((share as any).id || ""),
@@ -8997,7 +8994,6 @@ const song = sr.data as any;
         audioUrl: previewAudioUrl,
         coverUrl: String(song?.cover_url || ""),
         unlockPrice: unlockPrice,
-        watermarkVersion: normalizeWatermarkVersion((share as any).watermark_version_used),
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
@@ -9019,7 +9015,7 @@ const song = sr.data as any;
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
       const pr = await admin
         .from("preview_shares")
-        .select("id, song_id, title, has_countdown, expires_at, is_paid, watermarked_audio_key")
+        .select("id, song_id, title, has_countdown, expires_at, is_paid")
         .eq("id", id.slice(0, 200))
         .maybeSingle();
       if (pr.error) return send(res, 500, { error: "No pude buscar el preview", detail: pr.error.message });
@@ -9031,18 +9027,6 @@ const song = sr.data as any;
         ? Date.now() >= new Date(expiresAt).getTime()
         : false;
       if (expiredByTime) return send(res, 410, { error: "Preview expirado" });
-
-      const watermarkedAudioKey = String(share?.watermarked_audio_key || "").trim();
-      if (Boolean(share?.has_countdown) && !Boolean(share?.is_paid) && watermarkedAudioKey) {
-        const wantDownload = (() => {
-          const raw = pickQuery(req, "dl") || pickQuery(req, "download");
-          const v = (raw || "").toString().trim().toLowerCase();
-          return v === "1" || v === "true" || v === "yes" || v === "si";
-        })();
-        const downloadName = wantDownload ? `${sanitizeDispositionName(String(share?.title || "Preview"), "Preview")}.mp3` : undefined;
-        await serveR2Object(req, res, watermarkedAudioKey, downloadName);
-        return;
-      }
 
       res.statusCode = 307;
       res.setHeader("location", `/api/share/song/audio?id=${encodeURIComponent(String(share?.song_id || ""))}${pickQuery(req, "dl") ? "&dl=1" : ""}`);
