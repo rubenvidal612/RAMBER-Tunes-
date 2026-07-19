@@ -5057,7 +5057,7 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor" | "masterizar";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio", amount_mxn: 250, credits: 1200, songs: 200 },
+    inicio: { title: "Pack Inicio", amount_mxn: 350, credits: 1200, songs: 200 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
     masterizar: { title: "Masterizar Ilimitado", amount_mxn: 150, credits: 0, songs: 0 },
   };
