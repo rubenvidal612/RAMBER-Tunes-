@@ -1644,7 +1644,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                <input 
                  type="text" 
-                 placeholder="Buscar" 
+                 placeholder="Buscar por nombre o ID" 
                  value={searchDraft}
                  onChange={(e) => setSearchDraft(e.target.value)}
                  onKeyDown={(e) => {
@@ -2163,6 +2163,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   if (!q) return true;
                   const hay = normalizeSearchText(
                     [
+                      song.id,
                       song.title,
                       song.genre,
                       (song as any)?.description,
