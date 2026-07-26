@@ -9015,7 +9015,7 @@ const song = sr.data as any;
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
       const pr = await admin
         .from("preview_shares")
-        .select("id, song_id, title, has_countdown, expires_at, is_paid")
+        .select("id, song_id, has_countdown, expires_at, is_paid")
         .eq("id", id.slice(0, 200))
         .maybeSingle();
       if (pr.error) return send(res, 500, { error: "No pude buscar el preview", detail: pr.error.message });
