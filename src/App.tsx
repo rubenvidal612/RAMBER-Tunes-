@@ -3623,10 +3623,26 @@ export default function App() {
               </button>
             </div>
             <div className="p-5 flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+24px)]">
-              <div className="text-slate-300 text-sm">
-                <span className="text-white font-extrabold">Obtener Créditos</span>
-                <div className="mt-1 text-[11px] text-slate-500">
-                  Saldo actual: {Number(balanceData?.credits ?? displayCredits ?? 0).toString()} créditos
+              <div className="rounded-2xl border border-amber-400/20 bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-orange-500/15 p-4 shadow-[0_12px_40px_rgba(245,158,11,0.12)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white font-extrabold text-base">Obtener créditos</div>
+                    <div className="mt-1 text-xs text-amber-100/80">
+                      Recarga ahora para seguir creando, descargando y usando todas las herramientas.
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-300">
+                      Saldo actual: {Number(balanceData?.credits ?? displayCredits ?? 0).toString()} créditos
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsBalanceOpen(false);
+                      setIsPricingOpen(true);
+                    }}
+                    className="shrink-0 rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-black shadow-[0_10px_30px_rgba(251,191,36,0.35)] transition-transform hover:scale-[1.03]"
+                  >
+                    Obtener créditos
+                  </button>
                 </div>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
@@ -3690,18 +3706,7 @@ export default function App() {
                   })()}
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-slate-400 text-sm">Se descuenta al usar cada opción.</div>
-                <button
-                  onClick={() => {
-                    setIsBalanceOpen(false);
-                    setIsPricingOpen(true);
-                  }}
-                  className="bg-white text-black px-5 py-2.5 rounded-full font-extrabold text-sm"
-                >
-                  Obtener créditos
-                </button>
-              </div>
+              <div className="mt-4 text-slate-400 text-sm">Se descuenta al usar cada opción.</div>
               <button
                 onClick={() => refreshBalance().catch(() => {})}
                 disabled={isBalanceLoading}
