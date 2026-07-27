@@ -797,26 +797,52 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       continue;
     }
 
-    // Verificar si los créditos han vencido
+    // Paso 1: calcular total disponible (lotes FIFO + perfil)
+    const profileCredits = creditsFromProfile(profile);
+    const batchCredits = await getActiveBatchCredits(admin, userId);
+    const totalAvailable = round2(profileCredits + batchCredits);
+
+    // Regla de vencimiento: si el perfil global venció PERO el usuario
+    // tiene lotes activos con créditos, permitimos seguir usando (de lotes).
+    // Solo bloqueamos si NO hay nada en lotes y la fecha global venció.
     const creditsExpiresAt = profile.credits_expires_at;
     if (creditsExpiresAt) {
       const expiresDate = new Date(creditsExpiresAt);
       const now = new Date();
-      
-      if (expiresDate < now) {
-        return { 
-          ok: false as const, 
-          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar." 
+      if (expiresDate < now && batchCredits <= 0) {
+        return {
+          ok: false as const,
+          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
         };
       }
     }
 
-    const current = creditsFromProfile(profile);
-    if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
+    if (totalAvailable < cost) {
+      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
+    }
 
-    const next = round2(Math.max(0, current - cost));
+    // Paso 2: consumir primero de lotes (FIFO, el que vence antes primero).
+    // pending = lo que no alcanzaron los lotes y debe salir del perfil global.
+    const pendingAfterBatches = await consumeBatchCreditsFifo(admin, userId, cost);
+
+    if (pendingAfterBatches <= 0) {
+      const remainingTotal = await getUserAvailableCredits(admin, userId, profile);
+      return { ok: true as const, credits: remainingTotal };
+    }
+
+    // Paso 3: el resto se consume de la columna global del perfil (sistema Pack Inicio/Productor).
+    // Para esto, volvemos a calcular los créditos del perfil por si la tabla
+    // credit_batches aún no existe (entonces pendingAfterBatches == cost y vamos a la lógica original).
+    const currentProfile = creditsFromProfile(profile);
+    if (currentProfile < pendingAfterBatches) {
+      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
+    }
+    const next = round2(Math.max(0, currentProfile - pendingAfterBatches));
     const upd = await updateCreditsAnyColumn(admin, userId, next);
-    if (upd.ok) return { ok: true as const, credits: next };
+    if (upd.ok) {
+      const remainingTotal = await getUserAvailableCredits(admin, userId, profile);
+      return { ok: true as const, credits: remainingTotal };
+    }
     return { ok: false as const, error: upd.error };
   }
 
@@ -852,11 +878,15 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
       continue;
     }
 
+    const profileCredits = creditsFromProfile(profile);
+    const batchCredits = await getActiveBatchCredits(admin, userId);
+    const totalAvailable = round2(profileCredits + batchCredits);
+
     const creditsExpiresAt = profile.credits_expires_at;
     if (creditsExpiresAt) {
       const expiresDate = new Date(creditsExpiresAt);
       const now = new Date();
-      if (expiresDate < now) {
+      if (expiresDate < now && batchCredits <= 0) {
         return {
           ok: false as const,
           error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
@@ -864,9 +894,10 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
       }
     }
 
-    const current = creditsFromProfile(profile);
-    if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current };
-    return { ok: true as const, credits: current };
+    if (totalAvailable < cost) {
+      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
+    }
+    return { ok: true as const, credits: totalAvailable };
   }
 
   return { ok: false as const, error: "No pude validar créditos (intenta otra vez)." };
@@ -1023,7 +1054,290 @@ async function getSupabaseCreateClient() {
   return mod.createClient;
 }
 
+// ==========================================================================
+// SISTEMA DE LOTES DE CRÉDITOS (mini paquetes) - NUEVO, SEPARADO
+// Lotes FIFO: al consumir, primero se gasta el lote que vence más pronto.
+// ==========================================================================
 
+/**
+ * Suma los créditos disponibles de todos los lotes activos y no vencidos del usuario.
+ * Si la tabla credit_batches no existe (aún no aplicada la migración), retorna 0
+ * para no romper el flujo existente.
+ */
+async function getActiveBatchCredits(admin: any, userId: string): Promise<number> {
+  try {
+    const { data, error } = await admin
+      .from("credit_batches")
+      .select("remaining_credits, expires_at, is_expired")
+      .eq("user_id", userId)
+      .eq("is_expired", false);
+    if (error) {
+      if (isMissingColumnError(error) || /relation.*credit_batches.*does not exist/i.test(String(error?.message || error || ""))) {
+        return 0;
+      }
+      return 0;
+    }
+    const now = Date.now();
+    let total = 0;
+    const rows = Array.isArray(data) ? data : [];
+    for (const r of rows) {
+      const remaining = Number((r as any).remaining_credits ?? 0);
+      if (!Number.isFinite(remaining) || remaining <= 0) continue;
+      const expIso = String((r as any).expires_at || "").trim();
+      if (expIso) {
+        const expMs = new Date(expIso).getTime();
+        if (Number.isFinite(expMs) && expMs <= now) continue;
+      }
+      total += remaining;
+    }
+    return round2(total);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Devuelve el crédito TOTAL disponible del usuario:
+ *  - Créditos en la columna global del perfil (sistema Pack Inicio / Productor)
+ *    SIN SUMAR si vence antes.
+ *    Usamos creditsFromProfile (que ya valida credits_expires_at global).
+ *  - Créditos de lotes activos y no vencidos.
+ *
+ * Esta es la función que debería usarse para mostrar saldo y validar si puede gastar.
+ */
+async function getUserAvailableCredits(admin: any, userId: string, profile?: any): Promise<number> {
+  let profileCredits = 0;
+  if (profile) {
+    profileCredits = creditsFromProfile(profile);
+  } else {
+    try {
+      const { data } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+      profileCredits = creditsFromProfile(data);
+    } catch {
+      profileCredits = 0;
+    }
+  }
+  const batchCredits = await getActiveBatchCredits(admin, userId);
+  return round2(profileCredits + batchCredits);
+}
+
+/**
+ * Consume créditos de los lotes activos siguiendo orden FIFO:
+ * primero agota el lote cuya fecha de expiración es más próxima.
+ * Retorna la cantidad que NO pudo cubrir de los lotes (0 = todo cubierto).
+ * Si la tabla no existe, retorna costNeeded completo.
+ */
+async function consumeBatchCreditsFifo(admin: any, userId: string, costNeeded: number): Promise<number> {
+  const cost = round2(Number(costNeeded));
+  if (!Number.isFinite(cost) || cost <= 0) return 0;
+
+  try {
+    const nowMs = Date.now();
+    const { data, error } = await admin
+      .from("credit_batches")
+      .select("id, remaining_credits, expires_at")
+      .eq("user_id", userId)
+      .eq("is_expired", false)
+      .gt("remaining_credits", 0)
+      .order("expires_at", { ascending: true })
+      .order("purchased_at", { ascending: true });
+    if (error) {
+      if (isMissingColumnError(error) || /relation.*credit_batches.*does not exist/i.test(String(error?.message || error || ""))) {
+        return cost;
+      }
+      return cost;
+    }
+
+    const batches = (Array.isArray(data) ? data : [])
+      .filter((r: any) => {
+        const remaining = Number((r as any).remaining_credits ?? 0);
+        if (!Number.isFinite(remaining) || remaining <= 0) return false;
+        const expIso = String((r as any).expires_at || "").trim();
+        if (expIso) {
+          const expMs = new Date(expIso).getTime();
+          if (Number.isFinite(expMs) && expMs <= nowMs) return false;
+        }
+        return true;
+      })
+      .map((r: any) => ({
+        id: Number((r as any).id ?? 0),
+        remaining: round2(Number((r as any).remaining_credits ?? 0)),
+      }))
+      .filter((b: any) => b.id > 0);
+
+    let pending = cost;
+    for (const b of batches) {
+      if (pending <= 0) break;
+      const take = round2(Math.min(b.remaining, pending));
+      const nextRemaining = round2(Math.max(0, b.remaining - take));
+      const { error: updErr } = await admin
+        .from("credit_batches")
+        .update({ remaining_credits: nextRemaining })
+        .eq("id", b.id);
+      if (!updErr) {
+        pending = round2(Math.max(0, pending - take));
+      }
+    }
+    return round2(pending);
+  } catch {
+    return cost;
+  }
+}
+
+/**
+ * Inserta un lote de créditos nuevo cuando se aprueba el pago de un mini paquete.
+ * No falla si la tabla no existe (aún no migrada), retorna ok:false en ese caso.
+ */
+async function insertCreditBatch(admin: any, input: {
+  userId: string;
+  packId?: number;
+  packKey?: string;
+  paymentId?: string;
+  credits: number;
+  validityDays: number;
+  amountMxn?: number;
+  note?: string;
+}): Promise<{ ok: boolean; error?: string; batchId?: number }> {
+  const credits = round2(Number(input.credits ?? 0));
+  const days = Number(input.validityDays ?? 0);
+  if (!Number.isFinite(credits) || credits <= 0) return { ok: false, error: "Créditos inválidos" };
+  if (!Number.isFinite(days) || days <= 0) return { ok: false, error: "Vigencia inválida" };
+  if (!input.userId) return { ok: false, error: "Falta usuario" };
+
+  const purchasedAt = new Date();
+  const expiresAt = new Date(purchasedAt.getTime() + days * 24 * 60 * 60 * 1000);
+  const row: any = {
+    user_id: input.userId,
+    pack_id: Number.isFinite(Number(input.packId)) && Number(input.packId) > 0 ? Number(input.packId) : null,
+    pack_key: input.packKey ? String(input.packKey).slice(0, 120) : null,
+    payment_id: input.paymentId ? String(input.paymentId).slice(0, 255) : null,
+    original_credits: credits,
+    remaining_credits: credits,
+    purchased_at: purchasedAt.toISOString(),
+    expires_at: expiresAt.toISOString(),
+    is_expired: false,
+    amount_mxn: Number.isFinite(Number(input.amountMxn)) ? round2(Number(input.amountMxn)) : 0,
+    note: input.note ? String(input.note).slice(0, 500) : null,
+  };
+
+  try {
+    const { data, error } = await admin.from("credit_batches").insert(row).select("id").limit(1);
+    if (error) {
+      if (isMissingColumnError(error) || /relation.*credit_batches.*does not exist/i.test(String(error?.message || error || ""))) {
+        return { ok: false, error: "La tabla credit_batches aún no existe en Supabase. Aplica la migración primero." };
+      }
+      return { ok: false, error: String(error?.message || error || "No pude guardar el lote de créditos") };
+    }
+    const rows = Array.isArray(data) ? data : [];
+    const id = Number((rows[0] as any)?.id ?? 0);
+    return { ok: true, batchId: id > 0 ? id : undefined };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Marca como expirados todos los lotes cuya fecha pasó y aún no están marcados.
+ * Retorna la cantidad de lotes marcados. Usado por el job diario (cron).
+ */
+async function expireOverdueBatches(admin: any): Promise<{ ok: boolean; expired: number; error?: string }> {
+  try {
+    const now = new Date().toISOString();
+    const { data, error } = await admin
+      .from("credit_batches")
+      .update({ is_expired: true })
+      .eq("is_expired", false)
+      .lte("expires_at", now)
+      .select("id");
+    if (error) {
+      if (isMissingColumnError(error) || /relation.*credit_batches.*does not exist/i.test(String(error?.message || error || ""))) {
+        return { ok: true, expired: 0 };
+      }
+      return { ok: false, expired: 0, error: String(error?.message || error || "No pude expirar lotes") };
+    }
+    const count = Array.isArray(data) ? data.length : 0;
+    return { ok: true, expired: count };
+  } catch (e) {
+    return { ok: false, expired: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * SISTEMA GRANDE (Pack Inicio / Productor):
+ * Elimina (pone en 0) el saldo congelado de perfiles donde pasaron 2 MÁS meses
+ * desde que se venció su fecha de créditos. Es decir:
+ *   Pagó el día 0 → créditos válidos 60 días → congelados 60 días más → BORRADOS.
+ * Total 120 días (≈ 4 meses) desde el último pago aprobado.
+ * También pone credits_expires_at = NULL para que no se procese otra vez.
+ * Retorna la cantidad de perfiles borrados.
+ */
+async function wipeOverdueFrozenCredits(admin: any): Promise<{ ok: boolean; wiped: number; error?: string }> {
+  try {
+    const { data: profiles, error: selectErr } = await admin
+      .from("profiles")
+      .select("id, credits_expires_at, ramber_credits, zingy_credits, credits, song_balance")
+      .not("credits_expires_at", "is", null);
+    if (selectErr) return { ok: false, wiped: 0, error: String(selectErr.message || selectErr) };
+
+    const rows = Array.isArray(profiles) ? profiles : [];
+    const nowMs = Date.now();
+    const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
+    const wipeThreshold = nowMs - SIXTY_DAYS_MS; // credits_expires_at tiene que ser ANTES de esto
+
+    let wiped = 0;
+    for (const p of rows) {
+      const expIso = String((p as any).credits_expires_at || "").trim();
+      if (!expIso) continue;
+      const expMs = new Date(expIso).getTime();
+      if (!Number.isFinite(expMs)) continue;
+      if (expMs > wipeThreshold) continue; // aún no cumplen 60 días congelados
+
+      const userId = String((p as any).id || "");
+      if (!userId) continue;
+
+      const patch: any = { credits_expires_at: null };
+      for (const col of ["ramber_credits", "zingy_credits", "credits"] as const) {
+        const current = Number((p as any)[col] ?? 0);
+        if (typeof (p as any)[col] === "number" && Number.isFinite(current) && current > 0) {
+          patch[col] = 0;
+        }
+      }
+      const sb = Number((p as any).song_balance ?? 0);
+      if (typeof (p as any).song_balance === "number" && Number.isFinite(sb) && sb > 0) {
+        patch.song_balance = 0;
+      }
+
+      try {
+        const { error: updErr } = await admin.from("profiles").update(patch).eq("id", userId);
+        if (!updErr) wiped++;
+      } catch {
+      }
+    }
+
+    return { ok: true, wiped };
+  } catch (e) {
+    return { ok: false, wiped: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Lista los paquetes de créditos activos (de credit_packs), ordenados por sort_order.
+ * Si la tabla no existe, retorna lista vacía (para no romper).
+ */
+async function listActiveCreditPacks(admin: any): Promise<any[]> {
+  try {
+    const { data, error } = await admin
+      .from("credit_packs")
+      .select("id, pack_key, name, songs, credits_amount, price_mxn, validity_days, sort_order, description")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("price_mxn", { ascending: true });
+    if (error) return [];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
 
 async function buildRealUserIdSet(admin: any) {
   const ids = new Set<string>();
@@ -5408,11 +5722,36 @@ const mercadoPagoHandler = (() => {
     const packKey = (meta?.pack_key || meta?.packKey || "").toString();
     const amountMxn = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
     const credits = Number(meta?.credits ?? 0);
+    const packIdRaw = meta?.pack_id ?? meta?.packId ?? null;
+    const packId = Number.isFinite(Number(packIdRaw)) ? Number(packIdRaw) : null;
+    const validityDays = Number.isFinite(Number(meta?.validity_days ?? meta?.validityDays))
+      ? Number(meta?.validity_days ?? meta?.validityDays)
+      : 30;
 
     const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
     const isMasterizarSubscription = txKind === "songs" && packKey === "masterizar";
-    
-    if (isMasterizarSubscription) {
+    const isMiniPack = txKind === "mini_pack";
+
+    if (isMiniPack) {
+      // ========== MINI PAQUETE: crear LOTE independiente con su propia expiración ==========
+      if (!Number.isFinite(credits) || credits <= 0) {
+        return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "no_credits" });
+      }
+      const batchResult = await insertCreditBatch(admin, {
+        userId,
+        packId: packId || undefined,
+        packKey: packKey || undefined,
+        paymentId,
+        credits,
+        validityDays,
+        amountMxn,
+        note: `Compra Mercado Pago ${paymentId}`,
+      });
+      if (!batchResult.ok) {
+        console.error("[MP Webhook] mini_pack - insertCreditBatch falló:", batchResult.error);
+        return send(res, 500, { error: batchResult.error || "No pude guardar el lote de créditos" });
+      }
+    } else if (isMasterizarSubscription) {
       // Activar suscripción de masterización por 30 días
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30); // 30 días desde hoy
@@ -5452,13 +5791,17 @@ const mercadoPagoHandler = (() => {
       payment_id: paymentId,
     });
 
-    await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
+    // Solo pagar comisión de afiliado para planes grandes, no mini paquetes
+    if (!isMiniPack) {
+      await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
+    }
 
     return send(res, 200, { 
       ok: true, 
       status: paymentStatus, 
       credited: true,
-      subscriptionActivated: isMasterizarSubscription 
+      subscriptionActivated: isMasterizarSubscription,
+      mini_pack_created: isMiniPack
     });
   }
 
@@ -5466,6 +5809,163 @@ const mercadoPagoHandler = (() => {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     return send(res, 410, { error: "El plan gratis fue desactivado." });
   }
+
+  // =================== NUEVOS: MINI PAQUETES ===================
+
+  /**
+   * GET /api/mercadopago/packs
+   * Lista los paquetes de créditos disponibles (leyendo de credit_packs).
+   * No requiere autenticación para ver catálogo.
+   */
+  async function handleListPacks(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase." });
+    }
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+    try {
+      const packs = await listActiveCreditPacks(admin);
+      return send(res, 200, { ok: true, packs });
+    } catch (e) {
+      return send(res, 500, { error: "No pude listar los paquetes.", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  /**
+   * POST /api/mercadopago/create-mini-pack-preference
+   * Body: { packKey: "mini_3" | "chico_10" | "mediano_30" | "grande_80" }
+   * Requiere usuario autenticado.
+   * Lee el paquete desde la tabla credit_packs (no hardcodeado).
+   */
+  async function handleCreateMiniPackPreference(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
+    if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const packKey = (typeof payload?.packKey === "string" ? payload.packKey.trim() : "") ||
+                    (typeof payload?.pack_key === "string" ? payload.pack_key.trim() : "");
+    if (!packKey) return send(res, 400, { error: "Falta packKey del paquete." });
+
+    try {
+      const packs = await listActiveCreditPacks(auth.admin);
+      const pack = packs.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === packKey.toLowerCase());
+      if (!pack) return send(res, 404, { error: "Paquete no encontrado o no disponible." });
+
+      const packId = Number((pack as any).id ?? 0);
+      const credits = round2(Number((pack as any).credits_amount ?? 0));
+      const songs = Number((pack as any).songs ?? 0);
+      const validityDays = Number((pack as any).validity_days ?? 30);
+      const unitPrice = round2(Number((pack as any).price_mxn ?? 0));
+      const title = String((pack as any).name || "Pack de Créditos").slice(0, 200);
+
+      if (credits <= 0 || unitPrice <= 0) return send(res, 400, { error: "El paquete tiene precio o créditos inválidos." });
+
+      const origin = originFromReq(req);
+      const preferenceBody: any = {
+        items: [{ title, quantity: 1, currency_id: "MXN", unit_price: unitPrice }],
+        external_reference: `ramber_mp:${auth.user.id}:${packKey}`,
+        metadata: {
+          user_id: auth.user.id,
+          kind: "mini_pack",
+          pack_key: packKey,
+          pack_id: packId || null,
+          songs: Number.isFinite(songs) ? songs : null,
+          amount_mxn: unitPrice,
+          credits: credits,
+          validity_days: validityDays,
+        },
+        back_urls: {
+          success: `${origin}/?mp=success&pack=${encodeURIComponent(packKey)}`,
+          failure: `${origin}/?mp=failure&pack=${encodeURIComponent(packKey)}`,
+          pending: `${origin}/?mp=pending&pack=${encodeURIComponent(packKey)}`,
+        },
+        auto_return: "approved",
+        notification_url: `${origin}/api/mercadopago/webhook`,
+      };
+
+      const r = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: { authorization: `Bearer ${mpToken}`, "content-type": "application/json" },
+        body: JSON.stringify(preferenceBody),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) return send(res, 502, { error: "Error creando pago en Mercado Pago", detail: data || null });
+
+      const initPoint = typeof data?.init_point === "string" ? data.init_point : "";
+      if (!initPoint) return send(res, 502, { error: "Respuesta inválida de Mercado Pago" });
+      return send(res, 200, {
+        ok: true,
+        init_point: initPoint,
+        preference_id: typeof data?.id === "string" ? data.id : null,
+        pack: {
+          pack_key: packKey,
+          name: title,
+          credits,
+          songs,
+          validity_days: validityDays,
+          price_mxn: unitPrice,
+        },
+      });
+    } catch (e) {
+      return send(res, 500, { error: "No pude crear la preferencia de pago.", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  /**
+   * POST /api/mercadopago/expire-batches
+   * Job diario: marca como expirados los lotes vencidos.
+   * Se puede invocar desde un cron externo (Vercel Cron, GitHub Actions, etc).
+   * Seguridad básica: requiere header X-Cron-Secret igual a CRON_JOB_SECRET env var,
+   * o bien un token de admin con rol service en Supabase.
+   */
+  async function handleExpireBatches(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const secretFromEnv = (process.env.CRON_JOB_SECRET || process.env.CRON_SECRET || "").toString().trim();
+    const providedSecret = (req.headers["x-cron-secret"] || req.headers["x-cron-token"] || "").toString().trim();
+
+    // Seguridad básica: si hay secret configurado, debe coincidir.
+    if (secretFromEnv && providedSecret !== secretFromEnv) {
+      return send(res, 403, { error: "No autorizado." });
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase." });
+    }
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+    try {
+      const resultBatches = await expireOverdueBatches(admin);
+      if (!resultBatches.ok) return send(res, 500, { error: resultBatches.error || "No pude expirar lotes." });
+      const resultWipe = await wipeOverdueFrozenCredits(admin);
+      if (!resultWipe.ok) return send(res, 500, { error: resultWipe.error || "No pude borrar saldos vencidos." });
+      return send(res, 200, {
+        ok: true,
+        expired_batches: resultBatches.expired,
+        wiped_profiles: resultWipe.wiped,
+        at: new Date().toISOString(),
+      });
+    } catch (e) {
+      return send(res, 500, { error: "No pude ejecutar la limpieza diaria.", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // ===============================================================
 
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
@@ -5482,6 +5982,11 @@ const mercadoPagoHandler = (() => {
     if (a === "verify") return handleVerify(req, res);
     if (a === "webhook") return handleWebhook(req, res);
     if (a === "claim-free") return handleClaimFree(req, res);
+
+    // Nuevos endpoints mini paquetes
+    if (a === "packs") return handleListPacks(req, res);
+    if (a === "create-mini-pack-preference") return handleCreateMiniPackPreference(req, res);
+    if (a === "expire-batches") return handleExpireBatches(req, res);
 
     return send(res, 404, { error: "Ruta no encontrada", action: a || null });
   };
@@ -7606,9 +8111,11 @@ const balanceHandler = (() => {
       profile = r2.data ?? null;
     }
 
-    let internal_credits = round2(creditsFromProfile(profile));
+    let profile_credits = round2(creditsFromProfile(profile));
+    const batch_credits = await getActiveBatchCredits(admin, user.id);
+    let internal_credits = round2(profile_credits + batch_credits);
     const cycle = await ensureMonthlyCreditsCycle(admin, user.id).catch(() => null as any);
-    if (cycle?.did_reset) internal_credits = 0;
+    if (cycle?.did_reset) internal_credits = round2(batch_credits); // reset solo afecta perfil, no lotes
     let provider_credits: number | null = null;
     let provider_error = "";
 
@@ -7652,9 +8159,39 @@ const balanceHandler = (() => {
 
     const counts = toCounts(credits);
     
-    // Obtener fecha de vencimiento de créditos del perfil
-    const credits_expires_at = profile?.credits_expires_at || null;
-    
+    // Fecha de vencimiento: preferimos la más PRÓXIMA a vencer (para advertir al usuario),
+    // comparando entre la del perfil global y la del lote más cercano.
+    const global_exp = profile?.credits_expires_at ? new Date(String(profile.credits_expires_at)).getTime() : null;
+    let next_batch_exp_ms: number | null = null;
+    try {
+      const { data: batRows } = await admin
+        .from("credit_batches")
+        .select("expires_at")
+        .eq("user_id", user.id)
+        .eq("is_expired", false)
+        .gt("remaining_credits", 0)
+        .order("expires_at", { ascending: true })
+        .limit(1);
+      const rows = Array.isArray(batRows) ? batRows : [];
+      if (rows.length > 0) {
+        const ms = new Date(String((rows[0] as any).expires_at)).getTime();
+        if (Number.isFinite(ms)) next_batch_exp_ms = ms;
+      }
+    } catch {
+      next_batch_exp_ms = null;
+    }
+
+    let credits_expires_at: string | null = profile?.credits_expires_at || null;
+    if (global_exp != null && Number.isFinite(global_exp)) {
+      if (next_batch_exp_ms != null && Number.isFinite(next_batch_exp_ms)) {
+        credits_expires_at = new Date(Math.min(global_exp, next_batch_exp_ms)).toISOString();
+      } else {
+        credits_expires_at = new Date(global_exp).toISOString();
+      }
+    } else if (next_batch_exp_ms != null && Number.isFinite(next_batch_exp_ms)) {
+      credits_expires_at = new Date(next_batch_exp_ms).toISOString();
+    }
+
     return send(res, 200, {
       credits,
       song_balance: counts.songs,
@@ -7671,6 +8208,8 @@ const balanceHandler = (() => {
       mp4_watermark_disabled: is_admin ? true : Boolean((plan as any)?.hasProductor),
       is_admin,
       internal_credits,
+      internal_profile_credits: profile_credits,
+      internal_batch_credits: batch_credits,
       provider_credits,
       provider_error: provider_error || null,
       source: is_admin && typeof provider_credits === "number" ? "provider_admin" : "local",
