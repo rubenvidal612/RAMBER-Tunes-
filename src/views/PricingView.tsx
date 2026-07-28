@@ -83,10 +83,8 @@ export function PricingView({ onClose }: PricingViewProps) {
   const buy = async (packKey: 'inicio') => {
     setIsBusy(true);
     try {
-      const preOpened = window.open('about:blank', '_blank', 'noopener,noreferrer');
       const t = await getAccessToken();
       if (!t.ok) {
-        try { preOpened?.close?.(); } catch {}
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
@@ -101,7 +99,6 @@ export function PricingView({ onClose }: PricingViewProps) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        try { preOpened?.close?.(); } catch {}
         const detail = (out?.detail || '').toString().trim();
         alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
@@ -109,17 +106,8 @@ export function PricingView({ onClose }: PricingViewProps) {
 
       const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
       if (!initPoint) {
-        try { preOpened?.close?.(); } catch {}
         alert('No recibí link de pago.');
         return;
-      }
-      if (preOpened) {
-        try {
-          preOpened.location.href = initPoint;
-          return;
-        } catch {
-          try { preOpened?.close?.(); } catch {}
-        }
       }
       window.location.href = initPoint;
     } catch (e) {
@@ -133,10 +121,8 @@ export function PricingView({ onClose }: PricingViewProps) {
   const buyMini = async (packKey: string) => {
     setIsBusy(true);
     try {
-      const preOpened = window.open('about:blank', '_blank', 'noopener,noreferrer');
       const t = await getAccessToken();
       if (!t.ok) {
-        try { preOpened?.close?.(); } catch {}
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
@@ -150,24 +136,14 @@ export function PricingView({ onClose }: PricingViewProps) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        try { preOpened?.close?.(); } catch {}
         const detail = (out?.detail || '').toString().trim();
         alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
       }
       const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
       if (!initPoint) {
-        try { preOpened?.close?.(); } catch {}
         alert('No recibí link de pago.');
         return;
-      }
-      if (preOpened) {
-        try {
-          preOpened.location.href = initPoint;
-          return;
-        } catch {
-          try { preOpened?.close?.(); } catch {}
-        }
       }
       window.location.href = initPoint;
     } catch (e) {
