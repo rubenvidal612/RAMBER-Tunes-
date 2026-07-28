@@ -99,7 +99,8 @@ export function PricingView({ onClose }: PricingViewProps) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert(out?.error || 'No se pudo iniciar el pago.');
+        const detail = (out?.detail || '').toString().trim();
+        alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
       }
 
@@ -108,7 +109,11 @@ export function PricingView({ onClose }: PricingViewProps) {
         alert('No recibí link de pago.');
         return;
       }
-      window.location.href = initPoint;
+      const opened = window.open(initPoint, '_blank', 'noopener,noreferrer');
+      if (!opened) window.location.href = initPoint;
+    } catch (e) {
+      console.error(e);
+      alert('No pude iniciar el pago. Revisa tu conexión e intenta de nuevo.');
     } finally {
       setIsBusy(false);
     }
@@ -132,7 +137,8 @@ export function PricingView({ onClose }: PricingViewProps) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert(out?.error || 'No se pudo iniciar el pago.');
+        const detail = (out?.detail || '').toString().trim();
+        alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
       }
       const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
@@ -140,7 +146,11 @@ export function PricingView({ onClose }: PricingViewProps) {
         alert('No recibí link de pago.');
         return;
       }
-      window.location.href = initPoint;
+      const opened = window.open(initPoint, '_blank', 'noopener,noreferrer');
+      if (!opened) window.location.href = initPoint;
+    } catch (e) {
+      console.error(e);
+      alert('No pude iniciar el pago. Revisa tu conexión e intenta de nuevo.');
     } finally {
       setIsBusy(false);
     }
@@ -244,7 +254,7 @@ export function PricingView({ onClose }: PricingViewProps) {
                       disabled={isBusy}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      Comprar ${price.toFixed(0)}
+                      {isBusy ? 'Abriendo…' : `Comprar $${price.toFixed(0)}`}
                     </button>
                   </div>
                 );
@@ -304,7 +314,7 @@ export function PricingView({ onClose }: PricingViewProps) {
                   disabled={isBusy}
                   className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
                 >
-                  Comprar $350 / mes
+                  {isBusy ? 'Abriendo…' : 'Comprar $350 / mes'}
                 </button>
               </div>
             </div>
