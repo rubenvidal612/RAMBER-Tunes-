@@ -720,6 +720,7 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
   const [alertQueue, setAlertQueue] = useState<Array<{ id: string; message: string }>>([]);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const pricingPrevUrlRef = useRef<string | null>(null);
   const [isBalanceOpen, setIsBalanceOpen] = useState(false);
   const [balanceData, setBalanceData] = useState<any>(null);
   const [isBalanceLoading, setIsBalanceLoading] = useState(false);
@@ -1701,6 +1702,36 @@ export default function App() {
       const nextPath = pathnameFromTab(tab);
       if (window.location.pathname !== nextPath) {
         window.history.pushState({}, '', nextPath);
+      }
+    } catch {
+    }
+  };
+
+  const openPricingModal = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        if (!pricingPrevUrlRef.current) {
+          pricingPrevUrlRef.current = `${window.location.pathname || ''}${window.location.search || ''}${window.location.hash || ''}` || '/';
+        }
+        const next = '/planes';
+        const now = `${window.location.pathname || ''}${window.location.search || ''}${window.location.hash || ''}` || '/';
+        if (now !== next) window.history.replaceState({}, '', next);
+      }
+    } catch {
+    }
+    setIsPricingOpen(true);
+  };
+
+  const closePricingModal = () => {
+    setIsPricingOpen(false);
+    try {
+      if (typeof window !== 'undefined') {
+        const prev = pricingPrevUrlRef.current;
+        pricingPrevUrlRef.current = null;
+        if (prev) {
+          const now = `${window.location.pathname || ''}${window.location.search || ''}${window.location.hash || ''}` || '/';
+          if (now !== prev) window.history.replaceState({}, '', prev);
+        }
       }
     } catch {
     }
@@ -3600,11 +3631,11 @@ export default function App() {
         className="hidden"
       />
 
-      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => setIsPricingOpen(true)} onOpenUpdates={() => openUpdates()} />}
+      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} />}
       {isPricingOpen && (
         <PricingView
           onClose={() => {
-            setIsPricingOpen(false);
+            closePricingModal();
           }}
         />
       )}
@@ -3637,7 +3668,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       setIsBalanceOpen(false);
-                      setIsPricingOpen(true);
+                      openPricingModal();
                     }}
                     className="shrink-0 rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-black shadow-[0_10px_30px_rgba(251,191,36,0.35)] transition-transform hover:scale-[1.03]"
                   >
