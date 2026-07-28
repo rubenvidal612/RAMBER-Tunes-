@@ -83,8 +83,10 @@ export function PricingView({ onClose }: PricingViewProps) {
   const buy = async (packKey: 'inicio') => {
     setIsBusy(true);
     try {
+      const preOpened = window.open('about:blank', '_blank', 'noopener,noreferrer');
       const t = await getAccessToken();
       if (!t.ok) {
+        try { preOpened?.close?.(); } catch {}
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
@@ -99,6 +101,7 @@ export function PricingView({ onClose }: PricingViewProps) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
+        try { preOpened?.close?.(); } catch {}
         const detail = (out?.detail || '').toString().trim();
         alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
@@ -106,11 +109,19 @@ export function PricingView({ onClose }: PricingViewProps) {
 
       const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
       if (!initPoint) {
+        try { preOpened?.close?.(); } catch {}
         alert('No recibí link de pago.');
         return;
       }
-      const opened = window.open(initPoint, '_blank', 'noopener,noreferrer');
-      if (!opened) window.location.href = initPoint;
+      if (preOpened) {
+        try {
+          preOpened.location.href = initPoint;
+          return;
+        } catch {
+          try { preOpened?.close?.(); } catch {}
+        }
+      }
+      window.location.href = initPoint;
     } catch (e) {
       console.error(e);
       alert('No pude iniciar el pago. Revisa tu conexión e intenta de nuevo.');
@@ -122,8 +133,10 @@ export function PricingView({ onClose }: PricingViewProps) {
   const buyMini = async (packKey: string) => {
     setIsBusy(true);
     try {
+      const preOpened = window.open('about:blank', '_blank', 'noopener,noreferrer');
       const t = await getAccessToken();
       if (!t.ok) {
+        try { preOpened?.close?.(); } catch {}
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
@@ -137,17 +150,26 @@ export function PricingView({ onClose }: PricingViewProps) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
+        try { preOpened?.close?.(); } catch {}
         const detail = (out?.detail || '').toString().trim();
         alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
       }
       const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
       if (!initPoint) {
+        try { preOpened?.close?.(); } catch {}
         alert('No recibí link de pago.');
         return;
       }
-      const opened = window.open(initPoint, '_blank', 'noopener,noreferrer');
-      if (!opened) window.location.href = initPoint;
+      if (preOpened) {
+        try {
+          preOpened.location.href = initPoint;
+          return;
+        } catch {
+          try { preOpened?.close?.(); } catch {}
+        }
+      }
+      window.location.href = initPoint;
     } catch (e) {
       console.error(e);
       alert('No pude iniciar el pago. Revisa tu conexión e intenta de nuevo.');
@@ -250,7 +272,12 @@ export function PricingView({ onClose }: PricingViewProps) {
                       </div>
                     </div>
                     <button
-                      onClick={() => buyMini(p.pack_key)}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        buyMini(p.pack_key);
+                      }}
                       disabled={isBusy}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
@@ -310,7 +337,12 @@ export function PricingView({ onClose }: PricingViewProps) {
                   </div>
                 </div>
                 <button
-                  onClick={() => buy('inicio')}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    buy('inicio');
+                  }}
                   disabled={isBusy}
                   className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
                 >
@@ -378,11 +410,16 @@ export function PricingView({ onClose }: PricingViewProps) {
                     </div>
 
                     <button
-                      onClick={() => buyMini(p.pack_key)}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        buyMini(p.pack_key);
+                      }}
                       disabled={isBusy}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      Comprar ${price.toFixed(0)}
+                      {isBusy ? 'Abriendo…' : `Comprar $${price.toFixed(0)}`}
                     </button>
                   </div>
                 );
@@ -443,11 +480,16 @@ export function PricingView({ onClose }: PricingViewProps) {
                 </div>
 
                 <button
-                  onClick={() => buy('inicio')}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    buy('inicio');
+                  }}
                   disabled={isBusy}
                   className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
                 >
-                  Comprar $350 / mes
+                  {isBusy ? 'Abriendo…' : 'Comprar $350 / mes'}
                 </button>
               </div>
 
