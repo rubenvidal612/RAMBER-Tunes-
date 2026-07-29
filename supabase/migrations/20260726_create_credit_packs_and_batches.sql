@@ -92,56 +92,56 @@ CREATE POLICY credit_batches_select_own ON credit_batches
   USING (auth.uid() = user_id);
 
 -- ========== INSERT DE PAQUETES INICIALES ==========
--- Mini 3 canciones $25  30 días
--- Chico 10 canciones $70  30 días
--- Mediano 30 canciones $180  30 días
--- Grande 80 canciones $350  30 días
+-- Mini $25  30 días
+-- Chico $70  30 días
+-- Mediano $180  30 días
+-- Nota: se muestran "canciones" con regla visual: (créditos ÷ 12) × 2
 --
 -- Nota: cada canción = 12 créditos (CREDIT_COSTS.generate_music = 12)
 INSERT INTO credit_packs (pack_key, name, songs, credits_amount, price_mxn, validity_days, is_active, sort_order, description)
 VALUES
   (
     'mini_3',
-    'Mini Pack 3 Canciones',
-    3,
+    'Mini',
+    6,
     36.00,
     25.00,
     30,
     TRUE,
     1,
-    '3 canciones · Vigencia 30 días'
+    '6 canciones · Vigencia 30 días'
   ),
   (
     'chico_10',
-    'Pack Chico 10 Canciones',
-    10,
+    'Chico',
+    20,
     120.00,
     70.00,
     30,
     TRUE,
     2,
-    '10 canciones · Vigencia 30 días'
+    '20 canciones · Vigencia 30 días'
   ),
   (
     'mediano_30',
-    'Pack Mediano 30 Canciones',
-    30,
+    'Mediano',
+    60,
     360.00,
     180.00,
     30,
     TRUE,
     3,
-    '30 canciones · Vigencia 30 días'
+    '60 canciones · Vigencia 30 días'
   ),
   (
     'grande_80',
-    'Pack Grande 80 Canciones',
-    80,
+    'Grande',
+    160,
     960.00,
     350.00,
     30,
-    TRUE,
+    FALSE,
     4,
-    '80 canciones · Vigencia 30 días'
+    '160 canciones · Vigencia 30 días'
   )
 ON CONFLICT (pack_key) DO NOTHING;

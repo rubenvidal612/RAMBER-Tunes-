@@ -48,6 +48,15 @@ export function PricingView({ onClose }: PricingViewProps) {
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
   const versions = songs * 2;
 
+  const displaySongsForPack = (p: MiniPack) => {
+    const creditsAmount = Number((p as any)?.credits_amount ?? 0);
+    const baseSongs = Math.floor((Number.isFinite(creditsAmount) ? creditsAmount : 0) / CREDIT_COSTS.generate_music);
+    const marketingSongs = baseSongs * 2;
+    if (Number.isFinite(marketingSongs) && marketingSongs > 0) return marketingSongs;
+    const fallback = Number((p as any)?.songs ?? 0);
+    return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -197,7 +206,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               {FALLBACK_MINI_PACKS.map((p, idx) => {
                 const { Icon, bg, border, text, btn, tag, ring } = miniPackIcon(idx);
                 const price = Number(p.price_mxn || 0);
-                const nSongs = Number(p.songs || 0);
+                const nSongs = displaySongsForPack(p);
                 const validity = Number(p.validity_days || 30);
                 return (
                   <div
@@ -331,7 +340,7 @@ export function PricingView({ onClose }: PricingViewProps) {
               {miniPacks.map((p, idx) => {
                 const { Icon, bg, border, text, btn, tag, ring } = miniPackIcon(idx);
                 const price = Number(p.price_mxn || 0);
-                const nSongs = Number(p.songs || 0);
+                const nSongs = displaySongsForPack(p);
                 const validity = Number(p.validity_days || 30);
                 return (
                   <div
