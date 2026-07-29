@@ -198,8 +198,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const easyModeWizardRef = useRef<HTMLDivElement | null>(null);
 
   const [weirdness, setWeirdness] = useState(75);
-  const [styleInfluence, setStyleInfluence] = useState(40);
-  const [audioInfluence, setAudioInfluence] = useState(20);
+  const [styleInfluence, setStyleInfluence] = useState(70);
+  const [audioInfluence, setAudioInfluence] = useState(30);
+  const [coverNegativeTags, setCoverNegativeTags] = useState('');
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
@@ -648,6 +649,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (Number.isFinite(w)) setWeirdness(Math.max(0, Math.min(100, Math.round(w))));
       if (Number.isFinite(si)) setStyleInfluence(Math.max(0, Math.min(100, Math.round(si))));
       if (Number.isFinite(ai)) setAudioInfluence(Math.max(0, Math.min(100, Math.round(ai))));
+      if (typeof d?.coverNegativeTags === 'string') setCoverNegativeTags(d.coverNegativeTags);
       const vid = typeof d?.voice_id === 'string' ? d.voice_id : '';
       const vn = typeof d?.voice_name === 'string' ? d.voice_name : '';
       if (vid) setSelectedVoice({ voiceId: vid, name: vn || 'Voz' });
@@ -684,6 +686,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           weirdness,
           styleInfluence,
           audioInfluence,
+          coverNegativeTags,
           voice_id: selectedVoice?.voiceId || '',
           voice_name: selectedVoice?.name || '',
           audioUploadUrl: (audioUploadUrl || '').toString(),
@@ -1539,6 +1542,23 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const uploadedVerify = await uploadAudioForVoice(t.token, verifyFile);
       const verifyUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploadedVerify);
       const cleanVerifyUrl = sanitizeExternalUrl(verifyUrlForSuno || uploadedVerify.url);
+
+      const singerSkillLevel = (() => {
+        const raw = (voiceSkillLevel || '').toString().trim().toLowerCase();
+        if (raw === 'advanced' || raw === 'professional') return raw;
+        return 'professional';
+      })();
+
+      const style = (() => {
+        const a = (customGenre || '').toString().trim();
+        if (a) return a.slice(0, 1000);
+        const b = (easyModeSelections?.customGenre || '').toString().trim();
+        if (b) return b.slice(0, 1000);
+        const fromSelected = easyModeData.genres.find((g: any) => String(g?.id || '') === String(selectedGenre || ''));
+        const label = String((fromSelected as any)?.name || '').trim();
+        return (label || 'General').slice(0, 1000);
+      })();
+
       const r = await fetch('/api/suno/voice-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
@@ -1546,6 +1566,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           taskId: validationTaskId,
           verifyUrl: cleanVerifyUrl,
           voiceName: name,
+          singerSkillLevel,
+          style,
         }),
       });
       const out = await r.json().catch(() => ({}));
@@ -2698,6 +2720,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         audioWeight: audioInfluence / 100,
         vocalGender: requestedVocalGender,
       };
+      const neg = (coverNegativeTags || '').toString().trim();
+      if (neg) payload.negativeTags = neg;
       if (!hasSelectedVoice && !instrumental) {
         payload.style = [payload.style, `Voz deseada: ${gender}.`].filter(Boolean).join('\n');
       }
@@ -4527,7 +4551,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="glass-card rounded-2xl p-4 border border-white/10">
                           <div className="flex items-center gap-2 text-white font-bold text-sm">
-                            <Sparkles className="w-4 h-4 text-emerald-200" /> Canta o habla claro
+                              <Sparkles className="w-4 h-4 text-emerald-200" /> Canta claro (no la hables)
                           </div>
                           <div className="mt-1 text-slate-400 text-sm">Sin ruido, sin eco, y con buena pronunciación.</div>
                         </div>
@@ -4815,7 +4839,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   {voiceCreateStep === 'pick_verify' ? (
                     <div className="mt-4 glass-card rounded-2xl p-4 border border-white/10">
                       <div className="text-white font-extrabold">Sube la grabación de la frase</div>
-                      <div className="mt-2 text-slate-400 text-sm">Recomendación: canta o habla claro, sin ruido.</div>
+                      <div className="mt-2 text-slate-400 text-sm">Recomendación: cántala (no la hables), sin ruido.</div>
                       {voiceVerifyFile && voiceVerifyPreviewUrl ? (
                         <div className="mt-3">
                           <div className="text-slate-300 text-xs font-semibold mb-1">Tu grabación</div>
@@ -6619,20 +6643,33 @@ function CustomForm({
         {showMoreOptions && (
           <div className="mt-4 space-y-4">
             <SliderRow
-              label="Weirdness"
+              label="Nivel de originalidad"
               value={weirdness}
               onChange={setWeirdness}
             />
             <SliderRow
-              label="Influencia de estilo"
+              label="Peso de la instrucción"
               value={styleInfluence}
               onChange={setStyleInfluence}
             />
             <SliderRow
-              label="Influencia de audio"
+              label="Peso del audio original"
               value={audioInfluence}
               onChange={setAudioInfluence}
             />
+            {audioUploadUrl && audioAction === 'cover' ? (
+              <div>
+                <div className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.22em] mb-2">
+                  Excluir géneros (opcional)
+                </div>
+                <input
+                  value={coverNegativeTags}
+                  onChange={(e) => setCoverNegativeTags(e.target.value)}
+                  placeholder='Ej: "Ranchera, Mariachi"'
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                />
+              </div>
+            ) : null}
           </div>
         )}
       </div>
