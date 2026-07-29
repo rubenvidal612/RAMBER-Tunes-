@@ -12588,6 +12588,57 @@ const adminHandler = (() => {
     return send(res, 200, { ok: true, user_id: userId, credited: credits, new_credits: upd.credits ?? null });
   }
 
+  async function handleGrantMiniPack(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const email = (body?.email || "").toString().trim().toLowerCase();
+    const packKey = (body?.packKey || body?.pack_key || "").toString().trim();
+    if (!email) return send(res, 400, { error: "Falta email" });
+    if (!packKey) return send(res, 400, { error: "Falta packKey" });
+
+    const admin = auth.admin;
+    const found = await findUserIdByEmail(auth, email);
+    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
+    const userId = found.userId;
+
+    const packs = await listActiveCreditPacks(admin);
+    const pack = packs.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === packKey.toLowerCase());
+    if (!pack) return send(res, 404, { error: "Paquete no encontrado o no disponible." });
+
+    const packId = Number((pack as any).id ?? 0);
+    const credits = round2(Number((pack as any).credits_amount ?? 0));
+    const validityDays = Number((pack as any).validity_days ?? 30);
+    if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos en el paquete." });
+    if (!Number.isFinite(validityDays) || validityDays <= 0) return send(res, 400, { error: "Vigencia inválida en el paquete." });
+
+    const paymentId = `admin_mini_pack:${auth.user.id}:${userId}:${Date.now()}`;
+    const batch = await insertCreditBatch(admin, {
+      userId,
+      packId: Number.isFinite(packId) && packId > 0 ? packId : undefined,
+      packKey,
+      paymentId,
+      credits,
+      validityDays,
+      amountMxn: 0,
+      note: `Admin recarga mini pack (${packKey})`,
+    });
+    if (!batch.ok) return send(res, 500, { error: batch.error || "No pude crear el lote del mini paquete." });
+
+    await admin.from("mp_transactions").insert({
+      user_id: userId,
+      kind: "admin_mini_pack",
+      pack_key: packKey,
+      amount_mxn: 0,
+      payment_id: paymentId,
+    });
+
+    return send(res, 200, { ok: true, user_id: userId, pack_key: packKey, credits, batch_id: batch.batchId ?? null });
+  }
+
   async function handleTransferCredits(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireAdmin(req);
@@ -13091,6 +13142,7 @@ const adminHandler = (() => {
     if (a === "stats") return handleStats(req, res);
     if (a === "diag") return handleDiag(req, res);
     if (a === "grant-credits") return handleGrantCredits(req, res);
+    if (a === "grant-mini-pack") return handleGrantMiniPack(req, res);
     if (a === "transfer-credits") return handleTransferCredits(req, res);
     if (a === "set-plan") return handleSetPlan(req, res);
     if (a === "feedback") return handleFeedback(req, res);

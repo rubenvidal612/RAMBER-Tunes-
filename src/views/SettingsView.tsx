@@ -43,6 +43,10 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [planCreditsMode, setPlanCreditsMode] = useState<'none' | 'default' | 'set'>('none');
   const [planCreditsManual, setPlanCreditsManual] = useState('0');
   const [planBusy, setPlanBusy] = useState(false);
+  const [officeMiniPacks, setOfficeMiniPacks] = useState<any[]>([]);
+  const [officeMiniPackKey, setOfficeMiniPackKey] = useState('');
+  const [officeMiniPackBusy, setOfficeMiniPackBusy] = useState(false);
+  const [officeMiniPackError, setOfficeMiniPackError] = useState('');
   const [isUsersOpen, setIsUsersOpen] = useState(false);
   const [usersSearch, setUsersSearch] = useState('');
   const [usersLoading, setUsersLoading] = useState(false);
@@ -558,6 +562,75 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       setFeedbackText('');
     } finally {
       setFeedbackBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!officePlanesOpen) return;
+    let alive = true;
+    (async () => {
+      try {
+        setOfficeMiniPackError('');
+        const r = await fetch('/api/mercadopago/packs');
+        const out = await r.json().catch(() => ({}));
+        const list = Array.isArray(out?.packs) ? out.packs : Array.isArray(out) ? out : [];
+        const filtered = list
+          .filter((p: any) => String(p?.pack_key || '').trim())
+          .filter((p: any) => String(p?.pack_key || '').toLowerCase() !== 'grande_80')
+          .filter((p: any) => (p as any).is_active !== false);
+        if (!alive) return;
+        setOfficeMiniPacks(filtered);
+        const nextKey = String(filtered?.[0]?.pack_key || '').trim();
+        if (nextKey && !officeMiniPackKey) setOfficeMiniPackKey(nextKey);
+      } catch {
+        if (!alive) return;
+        setOfficeMiniPacks([]);
+        setOfficeMiniPackError('No pude cargar los mini paquetes.');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [officePlanesOpen]);
+
+  const grantMiniPack = async () => {
+    if (!supabaseBrowser) return;
+    const email = planEmail.trim().toLowerCase();
+    if (!email) {
+      alert('Pon el correo del usuario.');
+      return;
+    }
+    const packKey = (officeMiniPackKey || '').toString().trim();
+    if (!packKey) {
+      alert('Selecciona un mini paquete.');
+      return;
+    }
+    setOfficeMiniPackBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      const sessionEmail = String(data?.session?.user?.email || '').trim().toLowerCase();
+      if (!token) {
+        alert('No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/admin/grant-mini-pack', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, packKey }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = (out?.error || 'No pude recargar el mini paquete.').toString();
+        const detail = (out?.detail || '').toString();
+        alert([msg, detail].filter(Boolean).join('\n'));
+        return;
+      }
+      alert('Listo. Se agregó el mini paquete como lote (30 días).');
+      openOffice().catch(() => {});
+      if (sessionEmail && sessionEmail === email) refreshCredits?.();
+    } finally {
+      setOfficeMiniPackBusy(false);
     }
   };
 
@@ -1368,7 +1441,6 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
               >
                 <option value="ninguno" className="bg-[#0b0f16] text-slate-200">Sin plan</option>
                 <option value="inicio" className="bg-[#0b0f16] text-slate-200">Inicio</option>
-                <option value="productor" className="bg-[#0b0f16] text-slate-200">Productor</option>
               </select>
               <select
                 value={planCreditsMode}
@@ -1408,6 +1480,44 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
                 )}
                 <div className="mt-3 text-[11px] text-slate-400">
                   Esto cambia el plan sin obligar a regalar créditos extra (si eliges “No tocar créditos”). Si eliges “Créditos del plan”, se suman los créditos del paquete.
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-white font-extrabold">Recarga (mini paquetes)</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Esto agrega un lote con vencimiento (como compra única).</div>
+                  {officeMiniPackError ? (
+                    <div className="mt-2 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{officeMiniPackError}</div>
+                  ) : null}
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <select
+                      value={officeMiniPackKey}
+                      onChange={(e) => setOfficeMiniPackKey(e.target.value)}
+                      style={{ colorScheme: 'dark' }}
+                      className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20 md:col-span-2"
+                    >
+                      {(officeMiniPacks.length > 0 ? officeMiniPacks : []).map((p: any) => {
+                        const key = String(p?.pack_key || '').trim();
+                        const name = String(p?.name || key).trim() || key;
+                        const price = Number(p?.price_mxn ?? 0) || 0;
+                        const creditsAmount = Number(p?.credits_amount ?? 0) || 0;
+                        return (
+                          <option key={key} value={key} className="bg-[#0b0f16] text-slate-200">
+                            {name} — ${price.toFixed(0)} — {creditsAmount} créditos
+                          </option>
+                        );
+                      })}
+                      {officeMiniPacks.length === 0 ? (
+                        <option value="" className="bg-[#0b0f16] text-slate-200">No hay mini paquetes</option>
+                      ) : null}
+                    </select>
+                    <button
+                      onClick={() => grantMiniPack().catch(() => {})}
+                      disabled={officeMiniPackBusy || !officeMiniPackKey}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    >
+                      {officeMiniPackBusy ? 'Recargando…' : 'Recargar'}
+                    </button>
+                  </div>
                 </div>
               </>
             ) : null}
