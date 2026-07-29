@@ -341,6 +341,8 @@ export default async function handler(req: any, res: any) {
       tags: style.slice(0, 1000),
       instrumental,
       customMode: true,
+      styleWeight: 0.7,
+      audioWeight: 0.3,
     };
 
     if (typeof body.uploadUrl === "string" && body.uploadUrl.trim().startsWith("/")) {
