@@ -6643,7 +6643,7 @@ function CustomForm({
         {showMoreOptions && (
           <div className="mt-4 space-y-4">
             <SliderRow
-              label="Nivel de originalidad"
+              label="Nivel de creatividad"
               value={weirdness}
               onChange={setWeirdness}
             />
