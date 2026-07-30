@@ -2844,7 +2844,7 @@ Ejemplos según lo que quieras lograr:
         prompt,
         style: (instructions || 'General').trim(),
         title: (title || 'Cover').trim(),
-        model: hasSelectedVoice ? 'V5' : model,
+        model: hasSelectedVoice ? 'V5_5' : model,
         weirdnessConstraint: weirdness / 100,
         styleWeight: styleInfluence / 100,
         audioWeight: audioInfluence / 100,
@@ -3066,7 +3066,7 @@ Ejemplos según lo que quieras lograr:
         prompt,
         instrumental,
         customMode: wantsCustomMode,
-        model: hasSelectedVoice ? 'V5' : model,
+        model: hasSelectedVoice ? 'V5_5' : model,
         vocalGender: requestedVocalGender,
       };
       if (wantsCustomMode) {
