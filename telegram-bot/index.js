@@ -325,7 +325,9 @@ async function processToolCall(toolName, input, ctx) {
     case "make_cover":
       const r3 = await apiPostJson("/api/telegram/upload-cover", {
         telegram_user_id,
-        description: input.song_description
+        description: input.song_description,
+        styleWeight: 0.7,
+        audioWeight: 0.3,
       });
       return r3;
       
@@ -769,6 +771,8 @@ const coverWizard = new Scenes.WizardScene(
       prompt: lyrics,
       title,
       model: "V5",
+      styleWeight: 0.7,
+      audioWeight: 0.3,
     });
     if (!r.ok) {
       await handleApiError(ctx, r);
@@ -870,6 +874,8 @@ bot.on("text", async (ctx, next) => {
         style: genre,
         title: "Cover",
         model: "V5",
+        styleWeight: 0.7,
+        audioWeight: 0.3,
       });
       
       if (!r.ok) {
