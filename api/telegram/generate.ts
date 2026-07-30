@@ -291,7 +291,7 @@ export default async function handler(req: any, res: any) {
   const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
   const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
   let model = normalizeModel(modelRaw || mv);
-  if (personaModelHint === "voice_persona") model = "V5_5";
+  if (personaModelHint === "voice_persona") model = "V5";
   const title = typeof payload?.title === "string" ? payload.title.trim() : "";
 
   if (!prompt) return send(res, 400, { error: "Falta prompt" });

@@ -30,7 +30,8 @@ export async function getAccessToken() {
 
 export async function signInWithGoogle() {
   if (!supabaseBrowser) return { ok: false as const, error: "Falta SUPABASE_URL o SUPABASE_ANON_KEY" };
-  const baseRaw = window.location.origin.toString().trim();
+  const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const baseRaw = (isDev ? window.location.origin : (siteUrl || window.location.origin)).toString().trim();
   const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : `https://${baseRaw.replace(/^\/+/, "")}`;
   const redirectTo = base.endsWith("/") ? base : `${base}/`;
   const { data, error } = await supabaseBrowser.auth.signInWithOAuth({

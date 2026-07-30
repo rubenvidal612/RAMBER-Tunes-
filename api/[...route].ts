@@ -340,23 +340,7 @@ async function insertR2CopyLog(admin: any, input: {
       error_step: input.errorStep ? String(input.errorStep).slice(0, 40) : null,
       error_message: input.errorMessage ? String(input.errorMessage).slice(0, 2000) : null,
     });
-  } catch (e) {
-    try {
-      console.error(
-        "[R2_COPY_LOG][FAILED]",
-        JSON.stringify(
-          {
-            taskId: input && input.taskId ? String(input.taskId).slice(0, 200) : "",
-            kind: input && input.kind ? String(input.kind).slice(0, 120) : "",
-            sunoAudioId: input && input.sunoAudioId ? String(input.sunoAudioId).slice(0, 200) : "",
-            error: e instanceof Error ? e.message : String(e),
-          },
-          null,
-          2
-        )
-      );
-    } catch {
-    }
+  } catch {
   }
 }
 
@@ -1599,7 +1583,7 @@ const sunoHandler = (() => {
     const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
     const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
     let model = normalizeModel(modelRaw || mv);
-    if (personaModelHint === "voice_persona") model = "V5_5";
+    if (personaModelHint === "voice_persona") model = "V5";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     if (!prompt) return send(res, 400, { error: "Falta prompt" });
 
@@ -1676,19 +1660,6 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        try {
-          const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
-          const lower = String(msg || "").toLowerCase();
-          const looksLikeVoiceExpired =
-            lower.includes("voice has expired") ||
-            (lower.includes("voice") && lower.includes("expired")) ||
-            (lower.includes("persona") && lower.includes("expired"));
-          if (personaId && looksLikeVoiceExpired) {
-            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
-          }
-        } catch (e) {
-          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
-        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Error creando música", code: r.status, detail: String(msg).slice(0, 1200) });
       }
@@ -1696,19 +1667,6 @@ const sunoHandler = (() => {
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
-        try {
-          const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
-          const lower = String(msg || "").toLowerCase();
-          const looksLikeVoiceExpired =
-            lower.includes("voice has expired") ||
-            (lower.includes("voice") && lower.includes("expired")) ||
-            (lower.includes("persona") && lower.includes("expired"));
-          if (personaId && looksLikeVoiceExpired) {
-            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
-          }
-        } catch (e) {
-          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
-        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Error creando música", code, detail: String(msg).slice(0, 1200) });
       }
@@ -1749,7 +1707,7 @@ const sunoHandler = (() => {
     const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
     const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
     let model = normalizeModel(modelRaw || mv);
-    if (personaModelHint === "voice_persona") model = "V5_5";
+    if (personaModelHint === "voice_persona") model = "V5";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     if (!audioId) return send(res, 400, { error: "Falta audioId" });
 
@@ -1859,7 +1817,7 @@ const sunoHandler = (() => {
     const modelRaw = firstString(payload, ["model"]);
     const personaModelHint = firstString(payload, ["personaModel", "persona_model"]);
     let model = normalizeModel(modelRaw || mv);
-    if (personaModelHint === "voice_persona") model = "V5_5";
+    if (personaModelHint === "voice_persona") model = "V5";
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
@@ -1938,18 +1896,6 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        try {
-          const lower = String(msg || "").toLowerCase();
-          const looksLikeVoiceExpired =
-            lower.includes("voice has expired") ||
-            (lower.includes("voice") && lower.includes("expired")) ||
-            (lower.includes("persona") && lower.includes("expired"));
-          if (personaId && looksLikeVoiceExpired) {
-            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
-          }
-        } catch (e) {
-          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
-        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "No se pudo hacer el cover.", code: r.status, detail: String(msg).slice(0, 1200) });
       }
@@ -1957,18 +1903,6 @@ const sunoHandler = (() => {
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
-        try {
-          const lower = String(msg || "").toLowerCase();
-          const looksLikeVoiceExpired =
-            lower.includes("voice has expired") ||
-            (lower.includes("voice") && lower.includes("expired")) ||
-            (lower.includes("persona") && lower.includes("expired"));
-          if (personaId && looksLikeVoiceExpired) {
-            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
-          }
-        } catch (e) {
-          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
-        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "No se pudo hacer el cover.", code, detail: String(msg).slice(0, 1200) });
       }
@@ -9204,26 +9138,13 @@ const sunoWebhookHandler = (() => {
           if (ids.length > 0) {
             const { data: existing } = await admin
               .from("library_items")
-              .select("id, suno_audio_id, audio_url")
+              .select("suno_audio_id")
               .eq("user_id", userId)
               .eq("type", "song")
               .in("suno_audio_id", ids)
               .is("deleted_at", null);
-            const existingRows = Array.isArray(existing) ? existing : [];
-            const existingBySunoAudioId = new Map(
-              existingRows
-                .map((r: any) => {
-                  const sid = String(r?.suno_audio_id || "").trim();
-                  if (!sid) return null;
-                  return [
-                    sid,
-                    {
-                      id: r?.id,
-                      audioUrl: typeof r?.audio_url === "string" ? String(r.audio_url || "").trim() : "",
-                    },
-                  ] as any;
-                })
-                .filter(Boolean) as any
+            const existingIds = new Set(
+              (Array.isArray(existing) ? existing : []).map((r: any) => String(r?.suno_audio_id || "").trim()).filter(Boolean)
             );
 
             // Función para verificar si una URL es de R2
@@ -9238,11 +9159,10 @@ const sunoWebhookHandler = (() => {
             };
 
             // Procesar cada canción para copiar a R2 si es necesario
-            const insertRows: any[] = [];
-            await Promise.all(
-              normalized.map(async (x: any) => {
-                const existingRow = existingBySunoAudioId.get(x.sunoAudioId) || null;
-                const hadExisting = Boolean(existingRow);
+            const inserts = await Promise.all(
+              normalized
+                .filter((x: any) => !existingIds.has(x.sunoAudioId))
+                .map(async (x: any) => {
                   let finalAudioUrl = x.audioUrl;
                   
                   // Solo procesar si no es ya una URL de R2
@@ -9340,80 +9260,12 @@ const sunoWebhookHandler = (() => {
                     console.log(`✅ [sunoWebhook] Audio ya está en R2: "${x.title}" (${x.audioUrl.substring(0, 100)}...)`);
                   }
 
-                  const finalAudioUrlTrimmed = typeof finalAudioUrl === "string" ? finalAudioUrl.trim() : "";
-
-                  if (hadExisting) {
-                    const prevAudioUrl = existingRow && existingRow.audioUrl ? String(existingRow.audioUrl || "").trim() : "";
-                    const shouldUpdate =
-                      Boolean(finalAudioUrlTrimmed) &&
-                      isR2Url(finalAudioUrlTrimmed) &&
-                      (!prevAudioUrl || !isR2Url(prevAudioUrl) || prevAudioUrl !== finalAudioUrlTrimmed);
-
-                    if (shouldUpdate) {
-                      const updatePayload = { audio_url: finalAudioUrlTrimmed.slice(0, 2000) };
-                      const { error: updateErr } = await admin
-                        .from("library_items")
-                        .update(updatePayload)
-                        .eq("user_id", userId)
-                        .eq("type", "song")
-                        .eq("suno_audio_id", x.sunoAudioId.slice(0, 200))
-                        .is("deleted_at", null);
-
-                      if (updateErr) {
-                        console.error(
-                          "[R2_AUDIO_URL_UPDATE][FAILED]",
-                          JSON.stringify(
-                            {
-                              taskId: String(taskId || "").slice(0, 200),
-                              userId: String(userId || "").slice(0, 80),
-                              sunoAudioId: String(x.sunoAudioId || "").slice(0, 200),
-                              prevAudioUrl: prevAudioUrl ? prevAudioUrl.slice(0, 200) : "",
-                              nextAudioUrl: finalAudioUrlTrimmed ? finalAudioUrlTrimmed.slice(0, 200) : "",
-                              error: updateErr.message,
-                            },
-                            null,
-                            2
-                          )
-                        );
-
-                        await insertR2CopyLog(admin, {
-                          taskId: taskId,
-                          userId,
-                          kind: "library_items_audio_url_update",
-                          sunoAudioId: String(x.sunoAudioId || ""),
-                          sourceUrl: String(x.audioUrl || ""),
-                          fetchStatus: null,
-                          downloadMs: null,
-                          sizeBytes: null,
-                          contentType: null,
-                          fallbackUsed: false,
-                          errorStep: "update_audio_url",
-                          errorMessage: updateErr.message,
-                        });
-                      } else {
-                        console.log(
-                          `✅ [sunoWebhook] Actualicé audio_url a R2 en library_items: ${String(x.sunoAudioId || "").slice(0, 80)}`
-                        );
-                      }
-                    }
-                    return;
-                  }
-
-                  insertRows.push({
+                  return {
                     user_id: userId,
                     type: "song",
                     title: (() => {
                       const base = (x.title || "Canción").toString().trim();
-                      const suffix =
-                        normalized.length === 2
-                          ? x.idx === 0
-                            ? "A"
-                            : x.idx === 1
-                              ? "B"
-                              : String(x.idx + 1)
-                          : normalized.length > 1
-                            ? String(x.idx + 1)
-                            : "";
+                      const suffix = normalized.length === 2 ? (x.idx === 0 ? "A" : x.idx === 1 ? "B" : String(x.idx + 1)) : normalized.length > 1 ? String(x.idx + 1) : "";
                       if (!suffix) return base.slice(0, 120);
                       const hasSuffix = new RegExp(`\\s${suffix}$`, "i").test(base);
                       return (hasSuffix ? base : `${base} ${suffix}`).slice(0, 120);
@@ -9421,34 +9273,19 @@ const sunoWebhookHandler = (() => {
                     description: x.tags ? x.tags.slice(0, 2000) : null,
                     lyrics: null,
                     gender: null,
-                    audio_url: finalAudioUrlTrimmed.slice(0, 2000),
+                    audio_url: finalAudioUrl.slice(0, 2000),
                     cover_url: x.coverUrl ? x.coverUrl.slice(0, 2000) : null,
                     suno_task_id: taskId.slice(0, 200),
                     suno_audio_id: x.sunoAudioId.slice(0, 200),
                     is_cover: Boolean(isCover),
-                  });
+                  };
                 })
             );
 
-            if (insertRows.length > 0) {
-              console.log(`📥 [sunoWebhook] Insertando ${insertRows.length} canciones en la base de datos`);
-              const { error: insertErr } = await admin.from("library_items").insert(insertRows);
-              if (insertErr) {
-                console.error(
-                  "[SUNO_WEBHOOK][LIBRARY_INSERT_FAILED]",
-                  JSON.stringify(
-                    {
-                      taskId: String(taskId || "").slice(0, 200),
-                      userId: String(userId || "").slice(0, 80),
-                      error: insertErr.message,
-                    },
-                    null,
-                    2
-                  )
-                );
-              } else {
-                console.log(`✅ [sunoWebhook] Canciones insertadas exitosamente`);
-              }
+            if (inserts.length > 0) {
+              console.log(`📥 [sunoWebhook] Insertando ${inserts.length} canciones en la base de datos`);
+              await admin.from("library_items").insert(inserts);
+              console.log(`✅ [sunoWebhook] Canciones insertadas exitosamente`);
             }
           }
         } else if (userId && (callbackType === "error" || (Number.isFinite(code) && code !== 200))) {
