@@ -205,7 +205,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioInfluence, setAudioInfluence] = useState(30);
   const [coverNegativeTags, setCoverNegativeTags] = useState('');
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [showMoreOptionsTips, setShowMoreOptionsTips] = useState(false);
+  const [showMoreOptionsTipsOpen, setShowMoreOptionsTipsOpen] = useState(false);
 
   const moreOptionsTipsText = `¿Qué hace cada control?
 
@@ -6701,7 +6701,7 @@ function CustomForm({
             <div className="text-white font-bold text-base">Más opciones</div>
             <button
               type="button"
-              onClick={() => setShowMoreOptionsTips(true)}
+                onClick={() => setShowMoreOptionsTipsOpen(true)}
               className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 transition-colors hover:bg-emerald-500/15"
             >
               Consejos
@@ -6751,19 +6751,19 @@ function CustomForm({
         )}
       </div>
 
-      {showMoreOptionsTips ? (
+      {showMoreOptionsTipsOpen ? (
         <div className="fixed inset-0 z-[250] bg-black/75 flex items-end md:items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0 w-full h-full"
-            onClick={() => setShowMoreOptionsTips(false)}
+            onClick={() => setShowMoreOptionsTipsOpen(false)}
             aria-label="Cerrar consejos"
           />
           <div className="relative w-full md:w-11/12 md:max-w-2xl bg-[#0b0f16] border border-emerald-500/20 rounded-3xl overflow-hidden shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="text-white font-extrabold">Consejos</div>
               <button
-                onClick={() => setShowMoreOptionsTips(false)}
+                onClick={() => setShowMoreOptionsTipsOpen(false)}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
                 <X className="w-5 h-5" />
