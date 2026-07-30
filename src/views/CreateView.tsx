@@ -156,6 +156,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     mood: '',
     extraInstructions: '',
   });
+
+  const selectedGenre = String((easyModeSelections as any)?.genre || '').trim();
+  const customGenre = String((easyModeSelections as any)?.customGenre || '');
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUploadUrl, setAudioUploadUrl] = useState<string>('');
