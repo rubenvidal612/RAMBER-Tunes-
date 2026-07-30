@@ -1676,6 +1676,19 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        try {
+          const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
+          const lower = String(msg || "").toLowerCase();
+          const looksLikeVoiceExpired =
+            lower.includes("voice has expired") ||
+            (lower.includes("voice") && lower.includes("expired")) ||
+            (lower.includes("persona") && lower.includes("expired"));
+          if (personaId && looksLikeVoiceExpired) {
+            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
+          }
+        } catch (e) {
+          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
+        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Error creando música", code: r.status, detail: String(msg).slice(0, 1200) });
       }
@@ -1683,6 +1696,19 @@ const sunoHandler = (() => {
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
+        try {
+          const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
+          const lower = String(msg || "").toLowerCase();
+          const looksLikeVoiceExpired =
+            lower.includes("voice has expired") ||
+            (lower.includes("voice") && lower.includes("expired")) ||
+            (lower.includes("persona") && lower.includes("expired"));
+          if (personaId && looksLikeVoiceExpired) {
+            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
+          }
+        } catch (e) {
+          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
+        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "Error creando música", code, detail: String(msg).slice(0, 1200) });
       }
@@ -1912,6 +1938,18 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        try {
+          const lower = String(msg || "").toLowerCase();
+          const looksLikeVoiceExpired =
+            lower.includes("voice has expired") ||
+            (lower.includes("voice") && lower.includes("expired")) ||
+            (lower.includes("persona") && lower.includes("expired"));
+          if (personaId && looksLikeVoiceExpired) {
+            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
+          }
+        } catch (e) {
+          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
+        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "No se pudo hacer el cover.", code: r.status, detail: String(msg).slice(0, 1200) });
       }
@@ -1919,6 +1957,18 @@ const sunoHandler = (() => {
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
+        try {
+          const lower = String(msg || "").toLowerCase();
+          const looksLikeVoiceExpired =
+            lower.includes("voice has expired") ||
+            (lower.includes("voice") && lower.includes("expired")) ||
+            (lower.includes("persona") && lower.includes("expired"));
+          if (personaId && looksLikeVoiceExpired) {
+            await auth.admin.from("suno_voices").delete().eq("user_id", user.id).eq("suno_voice_id", personaId.slice(0, 200));
+          }
+        } catch (e) {
+          console.error("[SUNO_VOICE][AUTO_DELETE_FAILED]", e instanceof Error ? e.message : String(e));
+        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
         return send(res, 502, { error: "No se pudo hacer el cover.", code, detail: String(msg).slice(0, 1200) });
       }

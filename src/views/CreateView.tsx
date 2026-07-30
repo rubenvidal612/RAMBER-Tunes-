@@ -239,6 +239,9 @@ Ejemplos según lo que quieras lograr:
   const [isCreateVoiceOpen, setIsCreateVoiceOpen] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
   const [voicesTab, setVoicesTab] = useState<'mine' | 'favorites'>('mine');
+  const [voicePickerNotice, setVoicePickerNotice] = useState('');
+  const [checkingVoiceId, setCheckingVoiceId] = useState('');
+  const [voiceAvailabilityCache, setVoiceAvailabilityCache] = useState<Record<string, { isAvailable: boolean; checkedAt: number }>>({});
 
   useEffect(() => {
     try {
@@ -852,6 +855,24 @@ Ejemplos según lo que quieras lograr:
   }, [isVoicesPickerOpen, standaloneVoices]);
 
   useEffect(() => {
+    const vid = (selectedVoice?.voiceId || '').toString().trim();
+    if (!vid) return;
+    let cancelled = false;
+    (async () => {
+      const row = voices.find((x) => x.voiceId === vid);
+      const ok = await checkSunoVoiceAvailability({ voiceId: vid, taskId: row?.taskId });
+      if (cancelled) return;
+      if (ok === false) {
+        setVoicePickerNotice('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+        await purgeExpiredSunoVoice(vid);
+      }
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVoice?.voiceId, voices]);
+
+  useEffect(() => {
     if (!isModelMenuOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as any;
@@ -1256,6 +1277,96 @@ Ejemplos según lo que quieras lograr:
     }
   };
 
+  const removeSunoVoiceFromUiAndCache = (voiceId: string) => {
+    const id = (voiceId || '').toString().trim();
+    if (!id) return;
+    setVoices((prev) => prev.filter((x) => x.voiceId !== id));
+    if (selectedVoice?.voiceId === id) setSelectedVoice(null);
+    try {
+      const raw = localStorage.getItem('ramber.suno_voices_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const next = list.filter((x: any) => String(x?.voiceId || x?.voice_id || x?.suno_voice_id || '').trim() !== id);
+      localStorage.setItem('ramber.suno_voices_v1', JSON.stringify(next.slice(0, 50)));
+    } catch {
+    }
+    try {
+      const rawDraft = localStorage.getItem('ramber_create_draft_v1');
+      const d = rawDraft ? JSON.parse(rawDraft) : null;
+      if (d && typeof d === 'object' && !Array.isArray(d)) {
+        if (String((d as any).voice_id || '').trim() === id) {
+          (d as any).voice_id = '';
+          (d as any).voice_name = '';
+          localStorage.setItem('ramber_create_draft_v1', JSON.stringify(d));
+        }
+      }
+    } catch {
+    }
+  };
+
+  const purgeExpiredSunoVoice = async (voiceId: string) => {
+    const id = (voiceId || '').toString().trim();
+    if (!id) return;
+    removeSunoVoiceFromUiAndCache(id);
+    try {
+      window.localStorage.setItem('ramber.voice_expired_v1', '1');
+    } catch {
+    }
+    const t = await getAccessToken();
+    if (!t.ok) return;
+    await fetch('/api/suno/voices', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+      body: JSON.stringify({ sunoVoiceId: id }),
+    }).catch(() => {});
+  };
+
+  const checkSunoVoiceAvailability = async (voice: { voiceId: string; taskId?: string }, token?: string) => {
+    const id = (voice?.voiceId || '').toString().trim();
+    if (!id) return null;
+    const taskId = (voice?.taskId || '').toString().trim() || id;
+    const cached = voiceAvailabilityCache?.[id];
+    const now = Date.now();
+    if (cached && Number.isFinite(cached.checkedAt) && now - cached.checkedAt < 1000 * 60 * 30) {
+      return Boolean(cached.isAvailable);
+    }
+    const t = token ? { ok: true as const, token } : await getAccessToken();
+    if (!t.ok) return null;
+    const r = await fetch('/api/suno/voice-check-voice', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+      body: JSON.stringify({ taskId }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return null;
+    const isAvailable = Boolean((out as any)?.isAvailable);
+    setVoiceAvailabilityCache((prev) => ({ ...(prev || {}), [id]: { isAvailable, checkedAt: now } }));
+    return isAvailable;
+  };
+
+  const selectSunoVoiceFromPicker = async (v: { voiceId: string; name: string; taskId?: string }) => {
+    const id = (v?.voiceId || '').toString().trim();
+    if (!id) return;
+    setVoicePickerNotice('');
+    setCheckingVoiceId(id);
+    try {
+      const ok = await checkSunoVoiceAvailability({ voiceId: id, taskId: v?.taskId });
+      if (ok === true) {
+        setSelectedVoice({ voiceId: id, name: (v?.name || 'Voz').toString() });
+        setIsVoicesPickerOpen(false);
+        return;
+      }
+      if (ok === false) {
+        setVoicePickerNotice('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+        await purgeExpiredSunoVoice(id);
+        return;
+      }
+      setVoicePickerNotice('No pude verificar esta voz en este momento. Intenta otra vez.');
+    } finally {
+      setCheckingVoiceId('');
+    }
+  };
+
   const deleteSunoVoice = async (voiceId: string) => {
     const id = (voiceId || '').toString().trim();
     if (!id) return;
@@ -1268,16 +1379,7 @@ Ejemplos según lo que quieras lograr:
       headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
       body: JSON.stringify({ sunoVoiceId: id }),
     }).catch(() => {});
-    setVoices((prev) => prev.filter((x) => x.voiceId !== id));
-    if (selectedVoice?.voiceId === id) setSelectedVoice(null);
-    try {
-      const raw = localStorage.getItem('ramber.suno_voices_v1');
-      const parsed = raw ? JSON.parse(raw) : null;
-      const list = Array.isArray(parsed) ? parsed : [];
-      const next = list.filter((x: any) => String(x?.voiceId || x?.voice_id || '').trim() !== id);
-      localStorage.setItem('ramber.suno_voices_v1', JSON.stringify(next.slice(0, 50)));
-    } catch {
-    }
+    removeSunoVoiceFromUiAndCache(id);
   };
 
   const uploadAudioForVoice = async (token: string, file: File) => {
@@ -1564,11 +1666,9 @@ Ejemplos según lo que quieras lograr:
       })();
 
       const style = (() => {
-        const a = (customGenre || '').toString().trim();
-        if (a) return a.slice(0, 1000);
         const b = (easyModeSelections?.customGenre || '').toString().trim();
         if (b) return b.slice(0, 1000);
-        const fromSelected = easyModeData.genres.find((g: any) => String(g?.id || '') === String(selectedGenre || ''));
+        const fromSelected = easyModeData.genres.find((g: any) => String(g?.id || '') === String((easyModeSelections as any)?.genre || ''));
         const label = String((fromSelected as any)?.name || '').trim();
         return (label || 'General').slice(0, 1000);
       })();
@@ -2717,6 +2817,22 @@ Ejemplos según lo que quieras lograr:
       const promptRaw = (baseLyrics || description || '').trim();
       const prompt = promptRaw || ' ';
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      if (hasSelectedVoice) {
+        const vid = (selectedVoice?.voiceId || '').toString().trim();
+        const row = voices.find((x) => x.voiceId === vid);
+        const okVoice = await checkSunoVoiceAvailability({ voiceId: vid, taskId: row?.taskId }, t.token);
+        if (okVoice === false) {
+          setVoicePickerNotice('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          await purgeExpiredSunoVoice(vid);
+          setIsVoicesPickerOpen(true);
+          alert('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          return;
+        }
+        if (okVoice === null) {
+          alert('No pude verificar el estado de la voz. Intenta otra vez.');
+          return;
+        }
+      }
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
         : undefined;
@@ -2758,55 +2874,11 @@ Ejemplos según lo que quieras lograr:
         const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
         const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
         if (hasSelectedVoice && looksLikeVoiceExpired) {
-          setSelectedVoice(null);
-          const retryPayload: any = { ...payload };
-          delete retryPayload.personaId;
-          delete retryPayload.personaModel;
-          retryPayload.model = model;
-          const rr = await fetch('/api/suno/upload-cover', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              authorization: `Bearer ${t.token}`,
-            },
-            body: JSON.stringify(retryPayload),
-          });
-          const out2 = await rr.json().catch(() => ({}));
-          if (!rr.ok) {
-            alert(toUserFriendlySunoError(out2, 'No se pudo hacer el cover.'));
-            return;
-          }
-          const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
-          if (!taskId2) {
-            alert('No recibí taskId del servidor.');
-            return;
-          }
-          try {
-            const rawPending = window.localStorage.getItem(pendingListKey);
-            const arrPending = rawPending ? JSON.parse(rawPending) : [];
-            const listPending = Array.isArray(arrPending) ? arrPending : [];
-            listPending.push({
-              taskId: taskId2,
-              kind: 'upload-cover',
-              startedAt: Date.now(),
-              draft: {
-                title: (title || 'Cover').toString(),
-                description: (instructions || 'Cover').toString(),
-                lyrics: promptRaw ? promptRaw : null,
-                prompt: promptRaw ? promptRaw : null,
-                genre: gender,
-                isCover: true,
-              },
-            });
-            window.localStorage.setItem(pendingListKey, JSON.stringify(listPending));
-            try {
-              window.localStorage.removeItem(pendingLegacyKey);
-            } catch {
-            }
-          } catch {
-          }
-          alert('La voz que elegiste expiró. Se generará el cover sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
-          onGoLibrary?.();
+          const vid = (selectedVoice?.voiceId || '').toString().trim();
+          setVoicePickerNotice('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          await purgeExpiredSunoVoice(vid);
+          setIsVoicesPickerOpen(true);
+          alert('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
           return;
         }
         alert(msg);
@@ -2970,6 +3042,22 @@ Ejemplos según lo que quieras lograr:
       }
 
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      if (hasSelectedVoice) {
+        const vid = (selectedVoice?.voiceId || '').toString().trim();
+        const row = voices.find((x) => x.voiceId === vid);
+        const okVoice = await checkSunoVoiceAvailability({ voiceId: vid, taskId: row?.taskId }, t.token);
+        if (okVoice === false) {
+          setVoicePickerNotice('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          await purgeExpiredSunoVoice(vid);
+          setIsVoicesPickerOpen(true);
+          alert('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          return false;
+        }
+        if (okVoice === null) {
+          alert('No pude verificar el estado de la voz. Intenta otra vez.');
+          return false;
+        }
+      }
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
         : undefined;
@@ -3053,70 +3141,12 @@ Ejemplos según lo que quieras lograr:
         const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
         const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
         if (hasSelectedVoice && looksLikeVoiceExpired) {
-          setSelectedVoice(null);
-          const retryWantsCustomMode = mode === 'personalizado';
-          const retryPayload: any = {
-            prompt,
-            instrumental,
-            customMode: retryWantsCustomMode,
-            model,
-            vocalGender: gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined,
-          };
-          if (retryWantsCustomMode) {
-            retryPayload.style = [
-              (instructions || 'General').trim() || 'General',
-              !instrumental ? `Voz deseada: ${gender}.` : '',
-            ].filter(Boolean).join('\n').slice(0, 1000);
-            retryPayload.title = normalizedSongTitle;
-            retryPayload.weirdnessConstraint = weirdness / 100;
-            retryPayload.styleWeight = styleInfluence / 100;
-            retryPayload.audioWeight = audioInfluence / 100;
-          }
-          const rr = await fetch('/api/suno/generate', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              authorization: `Bearer ${t.token}`,
-            },
-            body: JSON.stringify(retryPayload),
-          });
-          const out2 = await rr.json().catch(() => ({}));
-          if (!rr.ok) {
-            alert(toUserFriendlySunoError(out2, 'No se pudo crear la canción.'));
-            return false;
-          }
-          const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
-          if (!taskId2) {
-            alert('No recibí taskId del servidor.');
-            return false;
-          }
-          try {
-            const rawPending = window.localStorage.getItem(pendingListKey);
-            const arrPending = rawPending ? JSON.parse(rawPending) : [];
-            const listPending = Array.isArray(arrPending) ? arrPending : [];
-            listPending.push({
-              taskId: taskId2,
-              kind: 'generate',
-              startedAt: Date.now(),
-              draft: {
-                title: normalizedSongTitle,
-                description: (mode === 'simple' ? description : instructions).toString(),
-                lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
-                prompt: prompt,
-                genre: gender,
-                isCover: Boolean(audioFile || audioUploadUrl),
-              },
-            });
-            window.localStorage.setItem(pendingListKey, JSON.stringify(listPending));
-            try {
-              window.localStorage.removeItem(pendingLegacyKey);
-            } catch {
-            }
-          } catch {
-          }
-          alert('La voz que elegiste expiró. Se generará la canción sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
-          onGoLibrary?.();
-          return true;
+          const vid = (selectedVoice?.voiceId || '').toString().trim();
+          setVoicePickerNotice('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          await purgeExpiredSunoVoice(vid);
+          setIsVoicesPickerOpen(true);
+          alert('Este perfil de voz expiró. Por favor clona tu voz de nuevo.');
+          return false;
         }
         alert(msg);
         return false;
@@ -3677,6 +3707,18 @@ Ejemplos según lo que quieras lograr:
                 />
               </div>
 
+              <div className="mb-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4">
+                <div className="text-amber-200 font-bold text-sm">Aviso importante</div>
+                <div className="text-amber-100/90 text-xs mt-1">
+                  Este perfil de voz dura aproximadamente 3–5 días antes de expirar. Si expira, tendrás que clonarlo de nuevo.
+                </div>
+                {voicePickerNotice ? (
+                  <div className="mt-3 rounded-xl bg-red-500/10 border border-red-500/25 p-3 text-red-200 text-sm">
+                    {voicePickerNotice}
+                  </div>
+                ) : null}
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -3742,11 +3784,9 @@ Ejemplos según lo que quieras lograr:
                         <button
                           key={v.voiceId}
                           type="button"
-                          onClick={() => {
-                            setSelectedVoice({ voiceId: v.voiceId, name: v.name });
-                            setIsVoicesPickerOpen(false);
-                          }}
-                          className="group text-left"
+                          onClick={() => selectSunoVoiceFromPicker(v).catch(() => {})}
+                          disabled={checkingVoiceId === v.voiceId}
+                          className={cn("group text-left", checkingVoiceId === v.voiceId ? "opacity-70 cursor-not-allowed" : "")}
                         >
                           <div className="relative aspect-square rounded-[28px] bg-white/5 border border-white/10 overflow-hidden">
                             <img
@@ -3754,7 +3794,12 @@ Ejemplos según lo que quieras lograr:
                               alt=""
                               className="w-full h-full object-cover opacity-95 group-hover:opacity-100 transition-opacity"
                             />
-                            <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {checkingVoiceId === v.voiceId ? (
+                              <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 text-white animate-spin" />
+                              </div>
+                            ) : null}
+                            <div className="absolute top-2 right-2 flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                               <button
                                 type="button"
                                 onClick={(e) => {
