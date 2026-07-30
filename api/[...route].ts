@@ -1692,14 +1692,12 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({
-        task_id: taskId,
-        user_id: user.id,
-        kind: "generate",
-        cost,
-        consumed: true,
-        output: JSON.stringify({ requestedModel: model }),
-      });
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
+      const withModel = { ...baseTaskRow, requested_model: model };
+      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+      if (ins1?.error && isMissingColumnError(ins1.error)) {
+        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      }
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -1805,14 +1803,12 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({
-        task_id: taskId,
-        user_id: user.id,
-        kind: "extend",
-        cost,
-        consumed: true,
-        output: JSON.stringify({ requestedModel: model }),
-      });
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "extend", cost, consumed: true };
+      const withModel = { ...baseTaskRow, requested_model: model };
+      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+      if (ins1?.error && isMissingColumnError(ins1.error)) {
+        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      }
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -1934,14 +1930,12 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({
-        task_id: taskId,
-        user_id: user.id,
-        kind: "upload-cover",
-        cost,
-        consumed: false,
-        output: JSON.stringify({ requestedModel: model }),
-      });
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: false };
+      const withModel = { ...baseTaskRow, requested_model: model };
+      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+      if (ins1?.error && isMissingColumnError(ins1.error)) {
+        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      }
       return send(res, 200, { taskId });
     } catch (e) {
       return send(res, 502, { error: "No se pudo hacer el cover.", detail: e instanceof Error ? e.message : String(e) });
@@ -9042,11 +9036,14 @@ const sunoWebhookHandler = (() => {
       const admin = createClient(supabaseUrl, supabaseService);
 
       if (taskId) {
-        const { data: taskRows } = await admin.from("suno_tasks").select("user_id, kind, cost, consumed, output").eq("task_id", taskId).limit(1);
+        const { data: taskRows } = await admin.from("suno_tasks").select("*").eq("task_id", taskId).limit(1);
         const taskRow = Array.isArray(taskRows) ? taskRows[0] : null;
         const userId = String(taskRow?.user_id || "").trim();
         const kind = String(taskRow?.kind || "").trim().toLowerCase();
-        const requestedModel = requestedModelFromTaskOutput(taskRow?.output);
+        const requestedModel =
+          typeof taskRow?.requested_model === "string" && taskRow.requested_model.trim()
+            ? taskRow.requested_model.trim()
+            : requestedModelFromTaskOutput(taskRow?.output);
         const isCover = kind.includes("cover");
         const isMusicCover = kind.startsWith("music-cover:");
         const isWav = kind.startsWith("wav:");
