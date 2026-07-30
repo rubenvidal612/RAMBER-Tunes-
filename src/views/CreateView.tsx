@@ -205,7 +205,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [audioInfluence, setAudioInfluence] = useState(30);
   const [coverNegativeTags, setCoverNegativeTags] = useState('');
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [showMoreOptionsTipsOpen, setShowMoreOptionsTipsOpen] = useState(false);
+  const [showMoreOptionsTips, setShowMoreOptionsTips] = useState(false);
+  const showMoreOptionsTipsOpen = showMoreOptionsTips;
+  const setShowMoreOptionsTipsOpen = setShowMoreOptionsTips;
 
   const moreOptionsTipsText = `¿Qué hace cada control?
 
