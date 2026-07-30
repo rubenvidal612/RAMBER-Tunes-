@@ -2684,6 +2684,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const promptRaw = (baseLyrics || description || '').trim();
       const prompt = promptRaw || ' ';
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      if (hasSelectedVoice && !(model === 'V5' || model === 'V5_5')) {
+        alert('La voz clonada solo es compatible con V5 o V5_5. Cambia el modelo a V5 o V5_5 para continuar.');
+        return;
+      }
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
         : undefined;
@@ -2695,7 +2699,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         prompt,
         style: (instructions || 'General').trim(),
         title: (title || 'Cover').trim(),
-        model: hasSelectedVoice ? 'V5' : model,
+        model,
         weirdnessConstraint: weirdness / 100,
         styleWeight: styleInfluence / 100,
         audioWeight: audioInfluence / 100,
@@ -2935,6 +2939,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
+      if (hasSelectedVoice && !(model === 'V5' || model === 'V5_5')) {
+        alert('La voz clonada solo es compatible con V5 o V5_5. Cambia el modelo a V5 o V5_5 para continuar.');
+        return false;
+      }
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
         : undefined;
@@ -2943,7 +2951,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         prompt,
         instrumental,
         customMode: wantsCustomMode,
-        model: hasSelectedVoice ? 'V5' : model,
+        model,
         vocalGender: requestedVocalGender,
       };
       if (wantsCustomMode) {

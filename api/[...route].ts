@@ -1599,7 +1599,6 @@ const sunoHandler = (() => {
     const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
     const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
     let model = normalizeModel(modelRaw || mv);
-    if (personaModelHint === "voice_persona") model = "V5";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     if (!prompt) return send(res, 400, { error: "Falta prompt" });
 
@@ -1723,7 +1722,6 @@ const sunoHandler = (() => {
     const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
     const personaModelHint = typeof payload?.personaModel === "string" ? payload.personaModel.trim() : "";
     let model = normalizeModel(modelRaw || mv);
-    if (personaModelHint === "voice_persona") model = "V5";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     if (!audioId) return send(res, 400, { error: "Falta audioId" });
 
@@ -1833,7 +1831,6 @@ const sunoHandler = (() => {
     const modelRaw = firstString(payload, ["model"]);
     const personaModelHint = firstString(payload, ["personaModel", "persona_model"]);
     let model = normalizeModel(modelRaw || mv);
-    if (personaModelHint === "voice_persona") model = "V5";
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
