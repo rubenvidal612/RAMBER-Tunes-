@@ -340,7 +340,23 @@ async function insertR2CopyLog(admin: any, input: {
       error_step: input.errorStep ? String(input.errorStep).slice(0, 40) : null,
       error_message: input.errorMessage ? String(input.errorMessage).slice(0, 2000) : null,
     });
-  } catch {
+  } catch (e) {
+    try {
+      console.error(
+        "[R2_COPY_LOG][FAILED]",
+        JSON.stringify(
+          {
+            taskId: input && input.taskId ? String(input.taskId).slice(0, 200) : "",
+            kind: input && input.kind ? String(input.kind).slice(0, 120) : "",
+            sunoAudioId: input && input.sunoAudioId ? String(input.sunoAudioId).slice(0, 200) : "",
+            error: e instanceof Error ? e.message : String(e),
+          },
+          null,
+          2
+        )
+      );
+    } catch {
+    }
   }
 }
 
@@ -9138,13 +9154,26 @@ const sunoWebhookHandler = (() => {
           if (ids.length > 0) {
             const { data: existing } = await admin
               .from("library_items")
-              .select("suno_audio_id")
+              .select("id, suno_audio_id, audio_url")
               .eq("user_id", userId)
               .eq("type", "song")
               .in("suno_audio_id", ids)
               .is("deleted_at", null);
-            const existingIds = new Set(
-              (Array.isArray(existing) ? existing : []).map((r: any) => String(r?.suno_audio_id || "").trim()).filter(Boolean)
+            const existingRows = Array.isArray(existing) ? existing : [];
+            const existingBySunoAudioId = new Map(
+              existingRows
+                .map((r: any) => {
+                  const sid = String(r?.suno_audio_id || "").trim();
+                  if (!sid) return null;
+                  return [
+                    sid,
+                    {
+                      id: r?.id,
+                      audioUrl: typeof r?.audio_url === "string" ? String(r.audio_url || "").trim() : "",
+                    },
+                  ] as any;
+                })
+                .filter(Boolean) as any
             );
 
             // Función para verificar si una URL es de R2
@@ -9159,10 +9188,11 @@ const sunoWebhookHandler = (() => {
             };
 
             // Procesar cada canción para copiar a R2 si es necesario
-            const inserts = await Promise.all(
-              normalized
-                .filter((x: any) => !existingIds.has(x.sunoAudioId))
-                .map(async (x: any) => {
+            const insertRows: any[] = [];
+            await Promise.all(
+              normalized.map(async (x: any) => {
+                const existingRow = existingBySunoAudioId.get(x.sunoAudioId) || null;
+                const hadExisting = Boolean(existingRow);
                   let finalAudioUrl = x.audioUrl;
                   
                   // Solo procesar si no es ya una URL de R2
@@ -9260,12 +9290,80 @@ const sunoWebhookHandler = (() => {
                     console.log(`✅ [sunoWebhook] Audio ya está en R2: "${x.title}" (${x.audioUrl.substring(0, 100)}...)`);
                   }
 
-                  return {
+                  const finalAudioUrlTrimmed = typeof finalAudioUrl === "string" ? finalAudioUrl.trim() : "";
+
+                  if (hadExisting) {
+                    const prevAudioUrl = existingRow && existingRow.audioUrl ? String(existingRow.audioUrl || "").trim() : "";
+                    const shouldUpdate =
+                      Boolean(finalAudioUrlTrimmed) &&
+                      isR2Url(finalAudioUrlTrimmed) &&
+                      (!prevAudioUrl || !isR2Url(prevAudioUrl) || prevAudioUrl !== finalAudioUrlTrimmed);
+
+                    if (shouldUpdate) {
+                      const updatePayload = { audio_url: finalAudioUrlTrimmed.slice(0, 2000) };
+                      const { error: updateErr } = await admin
+                        .from("library_items")
+                        .update(updatePayload)
+                        .eq("user_id", userId)
+                        .eq("type", "song")
+                        .eq("suno_audio_id", x.sunoAudioId.slice(0, 200))
+                        .is("deleted_at", null);
+
+                      if (updateErr) {
+                        console.error(
+                          "[R2_AUDIO_URL_UPDATE][FAILED]",
+                          JSON.stringify(
+                            {
+                              taskId: String(taskId || "").slice(0, 200),
+                              userId: String(userId || "").slice(0, 80),
+                              sunoAudioId: String(x.sunoAudioId || "").slice(0, 200),
+                              prevAudioUrl: prevAudioUrl ? prevAudioUrl.slice(0, 200) : "",
+                              nextAudioUrl: finalAudioUrlTrimmed ? finalAudioUrlTrimmed.slice(0, 200) : "",
+                              error: updateErr.message,
+                            },
+                            null,
+                            2
+                          )
+                        );
+
+                        await insertR2CopyLog(admin, {
+                          taskId: taskId,
+                          userId,
+                          kind: "library_items_audio_url_update",
+                          sunoAudioId: String(x.sunoAudioId || ""),
+                          sourceUrl: String(x.audioUrl || ""),
+                          fetchStatus: null,
+                          downloadMs: null,
+                          sizeBytes: null,
+                          contentType: null,
+                          fallbackUsed: false,
+                          errorStep: "update_audio_url",
+                          errorMessage: updateErr.message,
+                        });
+                      } else {
+                        console.log(
+                          `✅ [sunoWebhook] Actualicé audio_url a R2 en library_items: ${String(x.sunoAudioId || "").slice(0, 80)}`
+                        );
+                      }
+                    }
+                    return;
+                  }
+
+                  insertRows.push({
                     user_id: userId,
                     type: "song",
                     title: (() => {
                       const base = (x.title || "Canción").toString().trim();
-                      const suffix = normalized.length === 2 ? (x.idx === 0 ? "A" : x.idx === 1 ? "B" : String(x.idx + 1)) : normalized.length > 1 ? String(x.idx + 1) : "";
+                      const suffix =
+                        normalized.length === 2
+                          ? x.idx === 0
+                            ? "A"
+                            : x.idx === 1
+                              ? "B"
+                              : String(x.idx + 1)
+                          : normalized.length > 1
+                            ? String(x.idx + 1)
+                            : "";
                       if (!suffix) return base.slice(0, 120);
                       const hasSuffix = new RegExp(`\\s${suffix}$`, "i").test(base);
                       return (hasSuffix ? base : `${base} ${suffix}`).slice(0, 120);
@@ -9273,19 +9371,34 @@ const sunoWebhookHandler = (() => {
                     description: x.tags ? x.tags.slice(0, 2000) : null,
                     lyrics: null,
                     gender: null,
-                    audio_url: finalAudioUrl.slice(0, 2000),
+                    audio_url: finalAudioUrlTrimmed.slice(0, 2000),
                     cover_url: x.coverUrl ? x.coverUrl.slice(0, 2000) : null,
                     suno_task_id: taskId.slice(0, 200),
                     suno_audio_id: x.sunoAudioId.slice(0, 200),
                     is_cover: Boolean(isCover),
-                  };
+                  });
                 })
             );
 
-            if (inserts.length > 0) {
-              console.log(`📥 [sunoWebhook] Insertando ${inserts.length} canciones en la base de datos`);
-              await admin.from("library_items").insert(inserts);
-              console.log(`✅ [sunoWebhook] Canciones insertadas exitosamente`);
+            if (insertRows.length > 0) {
+              console.log(`📥 [sunoWebhook] Insertando ${insertRows.length} canciones en la base de datos`);
+              const { error: insertErr } = await admin.from("library_items").insert(insertRows);
+              if (insertErr) {
+                console.error(
+                  "[SUNO_WEBHOOK][LIBRARY_INSERT_FAILED]",
+                  JSON.stringify(
+                    {
+                      taskId: String(taskId || "").slice(0, 200),
+                      userId: String(userId || "").slice(0, 80),
+                      error: insertErr.message,
+                    },
+                    null,
+                    2
+                  )
+                );
+              } else {
+                console.log(`✅ [sunoWebhook] Canciones insertadas exitosamente`);
+              }
             }
           }
         } else if (userId && (callbackType === "error" || (Number.isFinite(code) && code !== 200))) {

@@ -201,6 +201,20 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [styleInfluence, setStyleInfluence] = useState(40);
   const [audioInfluence, setAudioInfluence] = useState(20);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [showMoreOptionsTips, setShowMoreOptionsTips] = useState(false);
+
+  const moreOptionsTipsText = `¿Qué hace cada control?
+
+Nivel de creatividad: qué tan diferente o experimental sale el resultado. Bajo = más predecible y clásico. Alto = más arriesgado y distinto a lo común.
+Peso de la instrucción: qué tanto se respeta lo que escribiste en el estilo/género (ej. "balada romántica lenta"). Entre más alto, más manda tu instrucción sobre el sonido del audio original.
+Peso del audio original: qué tanto el resultado se parece al género/ritmo/sonido de tu audio subido. Entre más alto, más se queda pegado al estilo original del audio.
+
+Ejemplos según lo que quieras lograr:
+
+"Quiero mi canción pero en otro género distinto" (ej. tenías una ranchera y la quieres balada): Peso de la instrucción alto (70-80%), Peso del audio original bajo (20-30%), Creatividad media (40-60%).
+"Quiero que se parezca mucho a como ya suena, solo mejorar calidad": Peso de la instrucción bajo (20-30%), Peso del audio original alto (70-80%), Creatividad baja (20-40%).
+"Quiero algo equilibrado, mitad y mitad": Ambos pesos en 50%, Creatividad media (40-60%).
+"Quiero algo muy distinto y sorprendente": Creatividad alta (70-90%), y ajusta el peso de instrucción alto si quieres controlar hacia dónde se va ese cambio.`;
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
   const [isMasterizarModalOpen, setIsMasterizarModalOpen] = useState(false);
@@ -4894,6 +4908,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   {voiceCreateStep === 'details' ? (
                     <div className="mt-4 glass-card rounded-2xl p-5 border border-white/10">
                       <div className="text-white font-extrabold text-lg text-center">Detalles de la voz</div>
+                      <div className="mt-4 rounded-2xl border border-amber-400/25 bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-emerald-500/10 p-4 text-sm text-amber-100/90">
+                        Aviso: El voiceId de clonación puede expirar en 3–5 días. Se recomienda usar esta voz pronto para generar canciones/covers.
+                      </div>
 
                       <div className="mt-5 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5 items-start">
                         <div className="flex flex-col items-center">
@@ -6607,14 +6624,26 @@ function CustomForm({
       )}
 
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
-        <button
-          type="button"
-          onClick={() => setShowMoreOptions(!showMoreOptions)}
-          className="w-full flex items-center justify-between"
-        >
-          <div className="text-white font-bold text-base">Más opciones</div>
-          <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform", showMoreOptions ? "rotate-180" : "rotate-0")} />
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="text-white font-bold text-base">Más opciones</div>
+            <button
+              type="button"
+              onClick={() => setShowMoreOptionsTips(true)}
+              className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 transition-colors hover:bg-emerald-500/15"
+            >
+              Consejos
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowMoreOptions(!showMoreOptions)}
+            className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+            aria-label="Mostrar más opciones"
+          >
+            <ChevronDown className={cn("w-5 h-5 text-slate-400 transition-transform", showMoreOptions ? "rotate-180" : "rotate-0")} />
+          </button>
+        </div>
 
         {showMoreOptions && (
           <div className="mt-4 space-y-4">
@@ -6636,6 +6665,31 @@ function CustomForm({
           </div>
         )}
       </div>
+
+      {showMoreOptionsTips ? (
+        <div className="fixed inset-0 z-[250] bg-black/75 flex items-end md:items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 w-full h-full"
+            onClick={() => setShowMoreOptionsTips(false)}
+            aria-label="Cerrar consejos"
+          />
+          <div className="relative w-full md:w-11/12 md:max-w-2xl bg-[#0b0f16] border border-emerald-500/20 rounded-3xl overflow-hidden shadow-[0_18px_60px_rgba(0,0,0,0.6)]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="text-white font-extrabold">Consejos</div>
+              <button
+                onClick={() => setShowMoreOptionsTips(false)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 max-h-[70vh] overflow-y-auto whitespace-pre-wrap text-slate-200 text-sm leading-relaxed">
+              {moreOptionsTipsText}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Instrucciones (Estilos) */}
       <div className="bg-[#111318] border border-white/5 rounded-2xl p-5 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] mt-4">
