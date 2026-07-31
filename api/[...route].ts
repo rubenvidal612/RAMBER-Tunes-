@@ -27,6 +27,20 @@ function round2(n: number) {
 
 const MAX_ACCUMULATED_CREDITS = 2000;
 
+function addDaysIso(days: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + Number(days || 0));
+  return d.toISOString();
+}
+
+function isIsoInPast(iso: any) {
+  const s = String(iso || "").trim();
+  if (!s) return false;
+  const ms = new Date(s).getTime();
+  if (!Number.isFinite(ms)) return false;
+  return ms < Date.now();
+}
+
 function toCounts(credits: number) {
   const c = Number.isFinite(credits) ? Math.max(0, credits) : 0;
   const safeFloor = (div: number) => (div > 0 ? Math.floor(c / div) : 0);
@@ -562,6 +576,12 @@ async function applyCreditRolloverWithCap(
   // Leemos el saldo actual no utilizado del usuario.
   // Si no existe o viene raro, tomamos 0 para no romper el cálculo.
   const current = round2(creditsFromProfile(profile));
+  let batchCredits = 0;
+  try {
+    batchCredits = await getActiveBatchCredits(admin, userId);
+  } catch {
+    batchCredits = 0;
+  }
 
   // Regla 1: suma de créditos = saldo actual no usado + créditos nuevos del mes.
   // Ejemplo: 1500 actuales + 2000 nuevos = 3500.
@@ -579,15 +599,8 @@ async function applyCreditRolloverWithCap(
   // Regla 3: para usuarios normales, el saldo final nunca puede pasar del cap.
   // Ejemplo: si sum da 4500 y cap es 4000, guardamos 4000 exactos.
   // Para admin: si sum da 4500, se guarda 4500.
-  const next = round2(unlimited ? sum : Math.min(sum, cap));
-  
-  // Validar límite máximo real del saldo acumulado.
-  if (!unlimited && next > MAX_ACCUMULATED_CREDITS) {
-    return { 
-      ok: false as const, 
-      error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
-    };
-  }
+  const maxProfileAllowed = round2(Math.max(0, cap - round2(batchCredits)));
+  const next = round2(unlimited ? sum : Math.min(sum, maxProfileAllowed));
 
   // Actualizar créditos y fecha de vencimiento
   const patch: any = {};
@@ -598,10 +611,7 @@ async function applyCreditRolloverWithCap(
     patch[col] = next;
   }
   
-  // Agregar campo credits_expires_at: ahora + 60 días
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 60);
-  patch.credits_expires_at = expiresAt.toISOString();
+  patch.credits_expires_at = addDaysIso(60);
   
   const { error } = await admin.from("profiles").update(patch).eq("id", userId);
   if (error) return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
@@ -738,27 +748,23 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
     const current = creditsFromProfile(profile);
     const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
     const unlimited = isAdminEmail(profileEmail);
-    
-    // Validar límite máximo real del saldo acumulado.
+
+    let next = round2(Math.max(0, current + delta));
     if (delta > 0 && !unlimited) {
-      const totalAfterAdd = current + delta;
-      
-      if (totalAfterAdd > MAX_ACCUMULATED_CREDITS) {
-        return { 
-          ok: false as const, 
-          error: "Ya tienes el máximo de créditos disponibles, úsalos antes de comprar más." 
-        };
+      let batchCredits = 0;
+      try {
+        batchCredits = await getActiveBatchCredits(admin, userId);
+      } catch {
+        batchCredits = 0;
       }
+      const cap = round2(MAX_ACCUMULATED_CREDITS);
+      const maxProfileAllowed = round2(Math.max(0, cap - round2(batchCredits)));
+      next = round2(Math.min(next, maxProfileAllowed));
     }
-    
-    const next = round2(Math.max(0, current + delta));
     
     // Actualizar créditos y fecha de vencimiento si se están agregando créditos
     if (delta > 0) {
-      // Calcular fecha de vencimiento: ahora + 60 días
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 60);
-      
+      const expiresIso = addDaysIso(60);
       const patch: any = {};
       const col = pickWritableCreditsColumn(profile);
       if (col === "song_balance") {
@@ -768,7 +774,7 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
       }
       
       // Agregar campo credits_expires_at
-      patch.credits_expires_at = expiresAt.toISOString();
+      patch.credits_expires_at = expiresIso;
       
       const { error } = await admin.from("profiles").update(patch).eq("id", userId);
       if (!error) return { ok: true as const, credits: next };
@@ -818,14 +824,13 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     const batchCredits = await getActiveBatchCredits(admin, userId);
     const totalAvailable = round2(profileCredits + batchCredits);
 
-    // Regla de vencimiento: si el perfil global venció PERO el usuario
-    // tiene lotes activos con créditos, permitimos seguir usando (de lotes).
-    // Solo bloqueamos si NO hay nada en lotes y la fecha global venció.
+    // Regla de vencimiento global (2 meses desde la última compra):
+    // si credits_expires_at venció, se considera que TODO el saldo venció (incluyendo minis).
     const creditsExpiresAt = profile.credits_expires_at;
     if (creditsExpiresAt) {
       const expiresDate = new Date(creditsExpiresAt);
       const now = new Date();
-      if (expiresDate < now && batchCredits <= 0) {
+      if (expiresDate < now) {
         return {
           ok: false as const,
           error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
@@ -902,7 +907,7 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
     if (creditsExpiresAt) {
       const expiresDate = new Date(creditsExpiresAt);
       const now = new Date();
-      if (expiresDate < now && batchCredits <= 0) {
+      if (expiresDate < now) {
         return {
           ok: false as const,
           error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
@@ -5606,13 +5611,50 @@ const mercadoPagoHandler = (() => {
     const packKey = (meta?.pack_key || meta?.packKey || "").toString();
     const amountMxn = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
     const credits = Number(meta?.credits ?? 0);
+    const packIdRaw = meta?.pack_id ?? meta?.packId ?? null;
+    const packId = Number.isFinite(Number(packIdRaw)) ? Number(packIdRaw) : null;
+    const validityDaysRaw = Number(meta?.validity_days ?? meta?.validityDays);
+    const validityDays = Number.isFinite(validityDaysRaw) && validityDaysRaw > 0 ? validityDaysRaw : 30;
 
     const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
     if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
 
     const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
+    const isMiniPack = txKind === "mini_pack";
     if (Number.isFinite(credits) && credits > 0) {
-      if (isPlanRenewal) {
+      if (isMiniPack) {
+        await ensureProfileExists(auth.admin, auth.user.id);
+        const { data: profile } = await auth.admin.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
+        const profileEmail = String((profile as any)?.email || auth.user.email || "").trim().toLowerCase();
+        const unlimited = isAdminEmail(profileEmail);
+        const profileCredits = creditsFromProfile(profile);
+        const batchCredits = await getActiveBatchCredits(auth.admin, auth.user.id);
+        const totalBefore = round2(profileCredits + batchCredits);
+        const cap = round2(MAX_ACCUMULATED_CREDITS);
+        const allowed = unlimited ? round2(credits) : round2(Math.max(0, Math.min(round2(credits), cap - totalBefore)));
+
+        const expiresIso = addDaysIso(60);
+        await auth.admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", auth.user.id);
+
+        if (allowed > 0) {
+          const effectiveDays = 60;
+          const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
+          const batchResult = await insertCreditBatch(auth.admin, {
+            userId: auth.user.id,
+            packId: packId || undefined,
+            packKey: packKey || undefined,
+            paymentId,
+            credits: allowed,
+            validityDays: effectiveDays,
+            amountMxn,
+            note: batchNote,
+          });
+          if (!batchResult.ok) {
+            const upd = await adjustUserCredits(auth.admin, auth.user.id, allowed);
+            if (!upd.ok) return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
+          }
+        }
+      } else if (isPlanRenewal) {
         const upd = await applyCreditRolloverWithCap(auth.admin, {
           userId: auth.user.id,
           monthlyCredits: credits,
@@ -5759,19 +5801,39 @@ const mercadoPagoHandler = (() => {
       if (!Number.isFinite(credits) || credits <= 0) {
         return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "no_credits" });
       }
-      const batchResult = await insertCreditBatch(admin, {
-        userId,
-        packId: packId || undefined,
-        packKey: packKey || undefined,
-        paymentId,
-        credits,
-        validityDays,
-        amountMxn,
-        note: `Compra Mercado Pago ${paymentId}`,
-      });
-      if (!batchResult.ok) {
-        console.error("[MP Webhook] mini_pack - insertCreditBatch falló:", batchResult.error);
-        return send(res, 500, { error: batchResult.error || "No pude guardar el lote de créditos" });
+      await ensureProfileExists(admin, userId);
+      const { data: profile } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+      const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
+      const unlimited = isAdminEmail(profileEmail);
+      const profileCredits = creditsFromProfile(profile);
+      const batchCredits = await getActiveBatchCredits(admin, userId);
+      const totalBefore = round2(profileCredits + batchCredits);
+      const cap = round2(MAX_ACCUMULATED_CREDITS);
+      const allowed = unlimited ? round2(credits) : round2(Math.max(0, Math.min(round2(credits), cap - totalBefore)));
+
+      const expiresIso = addDaysIso(60);
+      await admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", userId);
+
+      if (allowed > 0) {
+        const effectiveDays = 60;
+        const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
+        const batchResult = await insertCreditBatch(admin, {
+          userId,
+          packId: packId || undefined,
+          packKey: packKey || undefined,
+          paymentId,
+          credits: allowed,
+          validityDays: effectiveDays,
+          amountMxn,
+          note: batchNote,
+        });
+        if (!batchResult.ok) {
+          const upd = await adjustUserCredits(admin, userId, allowed);
+          if (!upd.ok) {
+            console.error("[MP Webhook] mini_pack - crédito fallback falló:", batchResult.error || upd.error);
+            return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
+          }
+        }
       }
     } else if (isMasterizarSubscription) {
       // Activar suscripción de masterización por 30 días
@@ -8183,9 +8245,11 @@ const balanceHandler = (() => {
       profile = r2.data ?? null;
     }
 
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
     let profile_credits = round2(creditsFromProfile(profile));
-    const batch_credits = await getActiveBatchCredits(admin, user.id);
-    let internal_credits = round2(profile_credits + batch_credits);
+    const batch_credits = globalExpired ? 0 : await getActiveBatchCredits(admin, user.id);
+    if (globalExpired) profile_credits = 0;
+    let internal_credits = globalExpired ? 0 : round2(profile_credits + batch_credits);
     const cycle = await ensureMonthlyCreditsCycle(admin, user.id).catch(() => null as any);
     if (cycle?.did_reset) internal_credits = round2(batch_credits); // reset solo afecta perfil, no lotes
     let provider_credits: number | null = null;

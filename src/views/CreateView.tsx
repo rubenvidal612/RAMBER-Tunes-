@@ -135,6 +135,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [lyrics, setLyrics] = useState('');
   const [gender, setGender] = useState<'Masculino' | 'Femenino'>('Masculino');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [creditsGate, setCreditsGate] = useState<null | { title: string; message: string }>(null);
   const [isTranscribingAudioLyrics, setIsTranscribingAudioLyrics] = useState(false);
   const [audioLyricsStatus, setAudioLyricsStatus] = useState<string>('');
   const lastTranscribedKeyRef = useRef<string>('');
@@ -3026,6 +3027,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (!r.ok) {
         const msg = toUserFriendlySunoError(out, 'No se pudo crear la canción.');
         const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
+        const isPlanExpired =
+          raw.includes('paquete vencio') ||
+          raw.includes('paquete venció') ||
+          (raw.includes('plan') && (raw.includes('vencio') || raw.includes('venció')));
+        const isCreditsExpired =
+          raw.includes('creditos han vencido') ||
+          raw.includes('créditos han vencido') ||
+          raw.includes('tus creditos han vencido') ||
+          raw.includes('tus créditos han vencido');
+        if (isPlanExpired || isCreditsExpired) {
+          setCreditsGate({
+            title: isPlanExpired ? 'Plan vencido' : 'Créditos vencidos',
+            message: isPlanExpired
+              ? 'Tu plan está vencido. Para seguir creando canciones, necesitas recargar.'
+              : 'Tus créditos vencieron. Para seguir creando canciones, necesitas recargar.',
+          });
+          return false;
+        }
         const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
         if (hasSelectedVoice && looksLikeVoiceExpired) {
           setSelectedVoice(null);
@@ -3145,6 +3164,58 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         standaloneVoices ? "overflow-hidden w-full bg-[#030303] text-white" : "overflow-y-auto"
       )}
     >
+      {creditsGate ? (
+        <div className="fixed inset-0 z-[260] bg-black/70 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 w-full h-full"
+            onClick={() => setCreditsGate(null)}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full max-w-[520px] rounded-3xl bg-[#0b0f16] border border-white/10 shadow-[0_20px_80px_rgba(0,0,0,0.65)] overflow-hidden">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between gap-3">
+              <div className="text-white font-extrabold text-lg">{creditsGate.title}</div>
+              <button
+                type="button"
+                onClick={() => setCreditsGate(null)}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="text-slate-200 text-sm leading-relaxed">{creditsGate.message}</div>
+              <div className="mt-5 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreditsGate(null);
+                    try {
+                      window.dispatchEvent(new Event('ramber:openPricing'));
+                    } catch {
+                    }
+                    try {
+                      if (onOpenBalance) onOpenBalance();
+                    } catch {
+                    }
+                  }}
+                  className="rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-black shadow-[0_10px_30px_rgba(251,191,36,0.35)]"
+                >
+                  Obtener créditos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreditsGate(null)}
+                  className="rounded-full bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-3 text-sm font-extrabold text-slate-200"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {standaloneVoices ? (
         <div className="p-4 border-b border-white/10 flex items-center gap-3">
           <button

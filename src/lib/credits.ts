@@ -57,6 +57,12 @@ export function creditsFromProfile(profile: any): number {
   const p = profile ?? {}; 
   const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k); 
 
+  const exp = (p as any)?.credits_expires_at; 
+  if (exp) { 
+    const ms = new Date(String(exp)).getTime(); 
+    if (Number.isFinite(ms) && ms < Date.now()) return 0; 
+  } 
+
   for (const k of ["ramber_credits", "zingy_credits", "credits"]) { 
     if (!has(k)) continue; 
     const v = (p as any)[k]; 
@@ -93,13 +99,20 @@ export async function adjustUserCredits(admin: any, userId: string, deltaCredits
     if (readErr) return { ok: false as const, error: readErr.message }; 
 
     const current = creditsFromProfile(profile); 
-    const next = round2(Math.max(0, current + delta)); 
+    let next = round2(Math.max(0, current + delta)); 
+    if (delta > 0) next = Math.min(next, 2000); 
     const col = pickWritableCreditsColumn(profile); 
     if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." }; 
+    const patch: any = { [col]: next }; 
+    if (delta > 0) { 
+      const expiresAt = new Date(); 
+      expiresAt.setDate(expiresAt.getDate() + 60); 
+      patch.credits_expires_at = expiresAt.toISOString(); 
+    } 
 
     const { error: updErr } = await admin 
       .from("profiles") 
-      .update({ [col]: next }) 
+      .update(patch) 
       .eq("id", userId); 
 
     if (!updErr) return { ok: true as const, credits: next }; 
