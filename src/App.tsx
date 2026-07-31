@@ -1286,6 +1286,7 @@ export default function App() {
     title: String(row?.title || 'Pista sin título'),
     description: typeof row?.description === 'string' ? row.description : undefined,
     lyrics: typeof row?.lyrics === 'string' ? row.lyrics : undefined,
+    sunoModel: typeof row?.suno_model === 'string' ? row.suno_model : undefined,
     genre: typeof row?.gender === 'string' ? row.gender : undefined,
     isPublic: Boolean(row?.is_public),
     publicGenre: typeof row?.public_genre === 'string' ? row.public_genre : row?.public_genre ?? null,
@@ -1764,6 +1765,7 @@ export default function App() {
           title: cancion.title,
           description: cancion.description || '',
           lyrics: cancion.lyrics || null,
+          sunoModel: cancion.sunoModel || null,
           gender: cancion.genre || null,
           audioUrl: cancion.audioUrl || null,
           coverUrl: cancion.coverUrl || null,
@@ -2249,6 +2251,7 @@ export default function App() {
           const draftLyrics = typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? String(draft.lyrics) : '';
           const draftPrompt = typeof draft?.prompt === 'string' && draft.prompt.trim() ? String(draft.prompt) : '';
           const draftDescription = typeof draft?.description === 'string' && draft.description.trim() ? String(draft.description) : '';
+          const draftModel = typeof draft?.model === 'string' && draft.model.trim() ? String(draft.model).trim() : '';
           for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             const suffix =
@@ -2272,6 +2275,7 @@ export default function App() {
               title: finalTitle,
               description: String(draft?.description || ''),
               lyrics: autoLyrics ? autoLyrics : undefined,
+              sunoModel: draftModel || undefined,
               genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
               audioUrl: track.audioUrl,
               coverUrl: track.coverUrl || undefined,

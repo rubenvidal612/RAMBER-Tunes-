@@ -6312,7 +6312,7 @@ const libraryHandler = (() => {
   async function listSongsBasic(admin: any, userId: string, deleted: boolean) {
     const q = admin
       .from(TABLE)
-      .select("id,title,description,lyrics,gender,audio_url,cover_url,created_at,deleted_at,deleted_reason,suno_task_id,suno_audio_id,is_cover")
+      .select("id,title,description,lyrics,gender,suno_model,audio_url,cover_url,created_at,deleted_at,deleted_reason,suno_task_id,suno_audio_id,is_cover")
       .eq("user_id", userId)
       .eq("type", ITEM_TYPE)
       .order(deleted ? "deleted_at" : "created_at", { ascending: false })
@@ -6441,6 +6441,13 @@ const libraryHandler = (() => {
     const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
     const lyrics = typeof body?.lyrics === "string" ? body.lyrics.trim().slice(0, 8000) : null;
     const gender = typeof body?.gender === "string" ? body.gender.trim().slice(0, 20) : null;
+    const sunoModelRaw =
+      typeof body?.sunoModel === "string"
+        ? body.sunoModel
+        : typeof body?.suno_model === "string"
+          ? body.suno_model
+          : null;
+    const sunoModel = typeof sunoModelRaw === "string" ? sunoModelRaw.trim().slice(0, 20) : null;
     const audioUrl = typeof body?.audioUrl === "string" ? body.audioUrl.trim().slice(0, 2000) : null;
     const coverUrl = typeof body?.coverUrl === "string" ? body.coverUrl.trim().slice(0, 2000) : null;
     const sunoTaskId = typeof body?.sunoTaskId === "string" ? body.sunoTaskId.trim().slice(0, 200) : null;
@@ -6458,12 +6465,54 @@ const libraryHandler = (() => {
         .limit(1)
         .maybeSingle();
       if (existing) {
+        try {
+          const patch: any = {};
+          const prevLyrics = typeof (existing as any)?.lyrics === "string" ? String((existing as any).lyrics || "").trim() : "";
+          const prevDesc = typeof (existing as any)?.description === "string" ? String((existing as any).description || "").trim() : "";
+          const prevGender = typeof (existing as any)?.gender === "string" ? String((existing as any).gender || "").trim() : "";
+          const prevTask = typeof (existing as any)?.suno_task_id === "string" ? String((existing as any).suno_task_id || "").trim() : "";
+          const prevCover = typeof (existing as any)?.cover_url === "string" ? String((existing as any).cover_url || "").trim() : "";
+          const prevModel = typeof (existing as any)?.suno_model === "string" ? String((existing as any).suno_model || "").trim() : "";
+
+          if (lyrics && !prevLyrics) patch.lyrics = lyrics;
+          if (description && !prevDesc) patch.description = description;
+          if (gender && !prevGender) patch.gender = gender;
+          if (sunoTaskId && !prevTask) patch.suno_task_id = sunoTaskId;
+          if (coverUrl && !prevCover) patch.cover_url = coverUrl;
+          if (sunoModel && !prevModel) patch.suno_model = sunoModel;
+
+          if (Object.keys(patch).length > 0) {
+            const { data: updated, error: upErr } = await auth.admin
+              .from(TABLE)
+              .update(patch)
+              .eq("user_id", auth.user.id)
+              .eq("type", ITEM_TYPE)
+              .eq("suno_audio_id", sunoAudioId)
+              .is("deleted_at", null)
+              .select("*")
+              .maybeSingle();
+            if (upErr && !isMissingColumnError(upErr)) throw upErr;
+            if (updated) {
+              return send(res, 200, {
+                song: updated,
+                deleted_oldest: false,
+                deleted_id: null,
+                deleted_count: 0,
+                deleted_titles: [],
+                already: true,
+              });
+            }
+          }
+        } catch {
+        }
+
         return send(res, 200, {
           song: existing,
           deleted_oldest: false,
           deleted_id: null,
           deleted_count: 0,
           deleted_titles: [],
+          already: true,
         });
       }
     }
@@ -6529,6 +6578,7 @@ const libraryHandler = (() => {
       description: description || null,
       lyrics,
       gender,
+      suno_model: sunoModel,
       audio_url: finalAudioUrl,
       cover_url: coverUrl,
       suno_task_id: sunoTaskId,
@@ -9391,7 +9441,7 @@ const sunoWebhookHandler = (() => {
                       const hasSuffix = new RegExp(`\\s${suffix}$`, "i").test(base);
                       return (hasSuffix ? base : `${base} ${suffix}`).slice(0, 120);
                     })(),
-                    description: x.tags ? x.tags.slice(0, 2000) : null,
+                    description: null,
                     lyrics: null,
                     gender: null,
                     audio_url: finalAudioUrlTrimmed.slice(0, 2000),

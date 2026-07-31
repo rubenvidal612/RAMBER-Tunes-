@@ -15,6 +15,7 @@ export interface SongItem {
   title: string;
   description?: string;
   lyrics?: string;
+  sunoModel?: string;
   style?: string[];
   genre?: string;
   isPublic?: boolean;
