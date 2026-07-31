@@ -2257,7 +2257,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-sm font-bold truncate">{song.title}</h3>
-                        <span className="shrink-0 bg-green-500/20 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded">V5</span>
+                        <span className="shrink-0 bg-green-500/20 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                          {(() => {
+                            const raw = (song.sunoModel || '').toString().trim();
+                            if (!raw) return 'N/D';
+                            if (raw === 'V5_5') return 'V5.5';
+                            if (raw === 'V4_5PLUS') return 'V4.5+';
+                            if (raw === 'V4_5ALL') return 'V4.5 All';
+                            if (raw === 'V4_5') return 'V4.5';
+                            return raw;
+                          })()}
+                        </span>
                         <span className="shrink-0 bg-white/10 text-slate-300 text-[9px] font-medium px-1.5 py-0.5 rounded">{song.isCover ? 'Cover' : 'Canción'}</span>
                         {(() => {
                           const fid = songFolderId[song.id] || '';
@@ -5022,6 +5032,27 @@ function SongOptionsSheet({
                 <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
                 <div className="text-slate-400 text-sm truncate">Ruben</div>
                 <div className="text-slate-500 text-xs mt-1">{isDeleted ? `Eliminada: ${fmt(song.deletedAt || undefined)}` : `Creada: ${fmt(song.createdAt || undefined)}`}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="shrink-0 bg-green-500/20 text-green-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                    {(() => {
+                      const raw = (song.sunoModel || '').toString().trim();
+                      if (!raw) return 'Modelo: N/D';
+                      if (raw === 'V5_5') return 'Modelo: V5.5';
+                      if (raw === 'V4_5PLUS') return 'Modelo: V4.5+';
+                      if (raw === 'V4_5ALL') return 'Modelo: V4.5 All';
+                      if (raw === 'V4_5') return 'Modelo: V4.5';
+                      return `Modelo: ${raw}`;
+                    })()}
+                  </span>
+                  <span className="shrink-0 bg-white/10 text-slate-200 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                    {(song.lyrics || '').toString().trim() ? 'Letra: sí' : 'Letra: no'}
+                  </span>
+                </div>
+                {(() => {
+                  const d = (song.description || '').toString().trim();
+                  if (!d) return null;
+                  return <div className="mt-2 text-[11px] text-slate-400 break-words line-clamp-2">Instrucción/estilo: {d}</div>;
+                })()}
               </div>
               <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10" onClick={onClose} type="button">
                 ✕
