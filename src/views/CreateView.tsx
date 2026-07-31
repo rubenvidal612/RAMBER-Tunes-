@@ -3640,6 +3640,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 </button>
               </div>
 
+              <div className="mb-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 text-amber-100 text-sm">
+                <div className="font-extrabold">Importante</div>
+                <div className="mt-1 text-amber-100/90">
+                  El perfil de voz dura aprox. 3 a 5 días (no garantizado). Si falla o expira, crea uno nuevo.
+                </div>
+              </div>
+
               <div className="relative mb-6">
                 <Search className="w-5 h-5 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
@@ -3727,7 +3734,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               alt=""
                               className="w-full h-full object-cover opacity-95 group-hover:opacity-100 transition-opacity"
                             />
-                            <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute top-2 right-2 flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                               <button
                                 type="button"
                                 onClick={(e) => {
