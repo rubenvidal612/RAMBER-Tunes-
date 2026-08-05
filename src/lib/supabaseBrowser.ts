@@ -4,7 +4,66 @@ const supabaseUrl = (process.env.SUPABASE_URL as string | undefined) || "";
 const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY as string | undefined) || "";
 const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL as string | undefined) || "";
 
-export const supabaseBrowser = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+export const supabaseBrowser = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        detectSessionInUrl: true,
+        flowType: "pkce",
+      },
+    })
+  : null;
+
+function cleanAuthCallbackUrl(sessionReady: boolean) {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  let changed = false;
+
+  if (url.hash === "#") {
+    url.hash = "";
+    changed = true;
+  } else if (sessionReady && url.hash) {
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    const isLegacyAuthCallback = [
+      "access_token",
+      "refresh_token",
+      "expires_in",
+      "token_type",
+      "type",
+    ].some((key) => hashParams.has(key));
+
+    if (isLegacyAuthCallback) {
+      url.hash = "";
+      changed = true;
+    }
+  }
+
+  if (sessionReady && url.searchParams.has("code")) {
+    url.searchParams.delete("code");
+    changed = true;
+  }
+
+  if (changed) {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }
+}
+
+if (supabaseBrowser && typeof window !== "undefined") {
+  cleanAuthCallbackUrl(false);
+
+  supabaseBrowser.auth
+    .getSession()
+    .then(({ data }) => cleanAuthCallbackUrl(Boolean(data.session)))
+    .catch(() => {});
+
+  supabaseBrowser.auth.onAuthStateChange((_event, session) => {
+    cleanAuthCallbackUrl(Boolean(session));
+  });
+}
 
 export async function ensureAnonSession() {
   if (!supabaseBrowser) return { ok: false as const, error: "Falta SUPABASE_URL o SUPABASE_ANON_KEY" };
