@@ -16463,6 +16463,99 @@ const uploadAudioHandler = (() => {
   };
 })();
 
+const uploadAudioSupabaseHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function safeFileName(name: string) {
+    const s = (name || "").toString().trim();
+    const cleaned = s.replaceAll("\\", "/").split("/").pop() || "audio.mp3";
+    return cleaned.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "audio.mp3";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL as string | undefined || "";
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY as string | undefined || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY as string | undefined || "";
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Falta configurar Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)." };
+    }
+    const { createClient } = require("@supabase/supabase-js");
+    const token = (req.headers["authorization"] || "").toString().trim().replace(/^Bearer\s+/i, "").trim();
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin, supabaseUrl };
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const bucket = "ramber-tunes";
+    const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
+    const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
+    const fname = safeFileName(title);
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
+    const userId = String(auth.user.id || "");
+
+    try {
+      const t0 = Date.now();
+      const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
+      const dtPrep = Date.now() - t0;
+      if (error) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_failed", key, contentType, fname, error: String(error?.message || error || "").slice(0, 800) })); } catch {}
+        return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
+      }
+
+      const uploadUrl: string = (data as any)?.signedUrl || "";
+      const pathKey: string = (data as any)?.path || key;
+
+      if (!uploadUrl) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_missing_url", key, contentType, fname })); } catch {}
+        return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
+      }
+
+      const signed = await auth.admin.storage.from(bucket).createSignedUrl(pathKey || key, 60 * 60 * 2);
+      if (signed.error) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_get_failed", key, contentType, fname, error: String(signed.error?.message || signed.error || "").slice(0, 600), durationPrepMs: dtPrep })); } catch {}
+        return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción en Supabase", detail: String(signed.error?.message || signed.error || "").slice(0, 800) });
+      }
+      const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
+      const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+      try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct" })); } catch {}
+      return send(res, 200, { ok: true, uploadUrl, url, key: pathKey || key, contentType, via: "supabase_signed_direct" });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "global_catch", key: (key || "").slice(0, 200), contentType, fname, error: String(detail || "").slice(0, 1000) })); } catch {}
+      return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(detail || "").slice(0, 1000) });
+    }
+  };
+})();
+
 const rvcHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -16843,6 +16936,7 @@ export default async function handler(req: any, res: any) {
     if (head === "social") return socialHandler(req, res);
     if (head === "vendor") return vendorHandler(req, res);
     if (head === "upload-audio") return uploadAudioHandler(req, res);
+    if (head === "upload-audio-supabase") return uploadAudioSupabaseHandler(req, res);
     if (head === "r2" && next === "object") return r2ObjectHandler(req, res);
     if (head === "share" && next === "preview") return sharePreviewHandler(req, res);
     if (head === "share" && next === "song" && third === "audio") return shareSongAudioHandler(req, res);

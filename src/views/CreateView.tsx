@@ -1285,9 +1285,15 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 : 'audio/mpeg');
     const sizeBytes = Number(file?.size || 0);
     const sizeKb = Math.round(sizeBytes / 1024);
+    const sizeMb = sizeBytes / (1024 * 1024);
     const skipInline = sizeBytes > 3.5 * 1024 * 1024;
     const diag: string[] = [`size=${sizeKb}KB`, `ct=${contentType}`];
     if (skipInline) diag.push('skip_inline=1 (size > 3.5MB)');
+
+    const timeoutPrep = 30000;
+    const timeoutPut = Math.max(45000, Math.min(180000, Math.ceil(sizeMb) * 12000 + 30000));
+    const timeoutInline = Math.max(55000, Math.min(300000, Math.ceil(sizeMb) * 25000 + 55000));
+    diag.push(`timeout_put=${Math.round(timeoutPut / 1000)}s`, `timeout_inline=${Math.round(timeoutInline / 1000)}s`);
 
     const parseJsonSafe = (raw: string) => {
       try {
@@ -1314,6 +1320,41 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       return fetch(input, { ...(init as any), signal: controller.signal }).finally(() => clearTimeout(t));
     };
 
+    const uploadSupabaseDirect = async () => {
+      let prep: Response | undefined;
+      try {
+        prep = await fetchWithTimeout('/api/upload-audio-supabase', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: name, contentType }),
+        }, timeoutPrep);
+        const prepRaw = await prep.text().catch(() => '');
+        const prepOut = parseJsonSafe(prepRaw);
+        if (!(prep.ok && prepOut?.ok)) {
+          throw new Error((prepOut?.detail || prepOut?.error || `No pude preparar la subida final (Supabase, HTTP ${prep.status}).`).toString());
+        }
+        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+        const url = (prepOut?.url || '').toString().trim();
+        const key = (prepOut?.key || '').toString().trim();
+        if (!uploadUrl || !url) {
+          throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida de Supabase.').toString());
+        }
+        const put = await fetchWithTimeout(uploadUrl, { method: 'POST', body: file }, timeoutPut);
+        if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
+        diag.push('intent4=ok');
+        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (fallback final)', diag.join(' | '));
+        return { url, key };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e || '');
+        diag.push(`intent4=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
+        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadSupabaseDirect', diag.join(' | '));
+        if (e instanceof Error && (e as any)?.name === 'AbortError') {
+          throw new Error('La subida final tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
+        }
+        throw e;
+      }
+    };
+
     const uploadWithGenericPrep = async () => {
       const userData = await supabaseBrowser?.auth.getUser().catch(() => ({ data: { user: null } } as any));
       const uid = (userData?.data?.user?.id || '').toString().trim();
@@ -1330,7 +1371,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
           body: JSON.stringify({ path: key, contentType }),
-        }, 25000);
+        }, timeoutPrep);
         const prepRaw = await prep.text().catch(() => '');
         const prepOut = parseJsonSafe(prepRaw);
         if (!(prep.ok && prepOut?.ok)) {
@@ -1341,7 +1382,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (!uploadUrl || !url) {
           throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida del audio.').toString());
         }
-        const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, 45000);
+        const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, timeoutPut);
         if (!put.ok) throw new Error(`No se pudo subir el audio al almacenamiento (HTTP ${put.status}).`);
         diag.push('intent3=ok');
         console.log('[UPLOAD_AUDIO_VOICE] OK via uploadWithGenericPrep', diag.join(' | '));
@@ -1351,7 +1392,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         diag.push(`intent3=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
         console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadWithGenericPrep', diag.join(' | '));
         if (e instanceof Error && (e as any)?.name === 'AbortError') {
-          throw new Error('La subida tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
+          throw new Error('La subida alternativa tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
         }
         throw e;
       }
@@ -1374,7 +1415,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
           body: JSON.stringify({ title: name, contentType, file: fileArray }),
-        }, 55000);
+        }, timeoutInline);
         const raw = await r.text().catch(() => '');
         const out = parseJsonSafe(raw);
         const url = (out?.url || '').toString().trim();
@@ -1396,6 +1437,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
     };
 
+    const fallbackChain = async (alreadyTriedInline = false) => {
+      if (!skipInline && !alreadyTriedInline) {
+        try { return await uploadInline(); } catch { /* sigue */ }
+      }
+      try { return await uploadWithGenericPrep(); } catch { /* sigue */ }
+      return await uploadSupabaseDirect();
+    };
+
     try {
       let prep: Response | undefined;
       try {
@@ -1403,7 +1452,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
           body: JSON.stringify({ title: name, contentType }),
-        }, 25000);
+        }, timeoutPrep);
         const prepRaw = await prep.text().catch(() => '');
         const prepOut = parseJsonSafe(prepRaw);
 
@@ -1412,7 +1461,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           const url = (prepOut?.url || '').toString().trim();
           if (uploadUrl) {
             try {
-              const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, 45000);
+              const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, timeoutPut);
               if (!put.ok) {
                 diag.push(`intent1_put_fail_http=${put.status}`);
                 console.log('[UPLOAD_AUDIO_VOICE] FAIL intent1 PUT', diag.join(' | '));
@@ -1423,12 +1472,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               console.log('[UPLOAD_AUDIO_VOICE] OK via direct R2', diag.join(' | '));
               return { url, key };
             } catch (putErr) {
-              // Fall through to fallback chain (inline then profile-image)
+              // Fall through to fallback chain (inline then profile-image then supabase direct)
               const m = putErr instanceof Error ? putErr.message : String(putErr || '');
               diag.push(`intent1_put=fail:${m.slice(0, 120).replace(/\s+/g, ' ')}`);
               if (putErr instanceof Error && (putErr as any)?.name === 'AbortError') {
                 throw new Error('La subida tardó demasiado. Prueba con un MP3 más pequeño.');
               }
+              return await fallbackChain(false);
             }
           } else {
             const key = (prepOut?.key || '').toString().trim();
@@ -1447,27 +1497,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         }
       }
 
-      if (!skipInline) {
-        try {
-          return await uploadInline();
-        } catch {
-          return await uploadWithGenericPrep();
-        }
-      } else {
-        diag.push('skip_inline=true -> directo a intent3');
-        return await uploadWithGenericPrep();
-      }
+      return await fallbackChain(false);
     } catch (error) {
       diag.push(`chain_top_catch:${(error instanceof Error ? error.message : String(error || '')).slice(0, 120).replace(/\s+/g, ' ')}`);
-      console.log('[UPLOAD_AUDIO_VOICE] chain catch, saltando a fallback...', diag.join(' | '));
-      try {
-        if (!skipInline) {
-          return await uploadInline();
-        }
-      } catch {
-        // intenta el tercero si falla inline
-      }
-      return await uploadWithGenericPrep();
+      console.log('[UPLOAD_AUDIO_VOICE] chain catch, saltando a fallback completo...', diag.join(' | '));
+      return await fallbackChain(true);
     }
   };
 
