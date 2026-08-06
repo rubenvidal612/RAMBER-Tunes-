@@ -1321,28 +1321,52 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     };
 
     const uploadSupabaseDirect = async () => {
+      const maxSupabaseInlineBytes = 4.3 * 1024 * 1024;
+      const useInline = sizeBytes > 0 && sizeBytes <= maxSupabaseInlineBytes;
+      diag.push(`intent4_mode=${useInline ? "admin_inline_bytes" : "signed_upload_url"}`);
+
       let prep: Response | undefined;
       try {
-        prep = await fetchWithTimeout('/api/upload-audio-supabase', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-          body: JSON.stringify({ title: name, contentType }),
-        }, timeoutPrep);
+        if (useInline) {
+          diag.push(`intent4_inline_size=${sizeKb}KB`);
+          const arrayBuffer = await file.arrayBuffer();
+          const fileArray = Array.from(new Uint8Array(arrayBuffer));
+          prep = await fetchWithTimeout('/api/upload-audio-supabase', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ title: name, contentType, file: fileArray }),
+          }, timeoutInline);
+        } else {
+          prep = await fetchWithTimeout('/api/upload-audio-supabase', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ title: name, contentType }),
+          }, timeoutPrep);
+        }
         const prepRaw = await prep.text().catch(() => '');
         const prepOut = parseJsonSafe(prepRaw);
         if (!(prep.ok && prepOut?.ok)) {
           throw new Error((prepOut?.detail || prepOut?.error || `No pude preparar la subida final (Supabase, HTTP ${prep.status}).`).toString());
         }
-        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
         const url = (prepOut?.url || '').toString().trim();
         const key = (prepOut?.key || '').toString().trim();
-        if (!uploadUrl || !url) {
-          throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida de Supabase.').toString());
+        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+        const modo = String(prepOut?.via || '').toString().trim();
+        if (modo === 'supabase_admin_inline' || !uploadUrl) {
+          if (!url) throw new Error('No recibí la URL final del audio en Supabase');
+          diag.push('intent4_inline=ok');
+          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect admin inline (<=4.3MB)', diag.join(' | '));
+          return { url, key };
         }
-        const put = await fetchWithTimeout(uploadUrl, { method: 'POST', body: file }, timeoutPut);
+        const formData = new FormData();
+        formData.append('file', file, name || 'audio.mp3');
+        const put = await fetchWithTimeout(uploadUrl, {
+          method: 'POST',
+          body: formData,
+        }, timeoutPut);
         if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
-        diag.push('intent4=ok');
-        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (fallback final)', diag.join(' | '));
+        diag.push('intent4_signed=ok');
+        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload >4.3MB)', diag.join(' | '));
         return { url, key };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e || '');
