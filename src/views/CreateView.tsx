@@ -1286,13 +1286,27 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const sizeBytes = Number(file?.size || 0);
     const sizeKb = Math.round(sizeBytes / 1024);
     const sizeMb = sizeBytes / (1024 * 1024);
-    const skipInline = sizeBytes > 3.5 * 1024 * 1024;
+    const SKIP_INLINE_BYTES = 3 * 1024 * 1024; // 3 MB - seguro bajo el límite Vercel (~4.5MB) y evita FUNCTION_PAYLOAD_TOO_LARGE
+    const skipInline = sizeBytes > SKIP_INLINE_BYTES;
     const diag: string[] = [`size=${sizeKb}KB`, `ct=${contentType}`];
-    if (skipInline) diag.push('skip_inline=1 (size > 3.5MB)');
+    if (skipInline) diag.push(`skip_inline=1 (size > ${Math.round(SKIP_INLINE_BYTES / 1024 / 1024)}MB)`);
+
+    const isPayloadTooLarge = (statusCode: number, text: string | null | undefined): boolean => {
+      if (statusCode === 413) return true;
+      const haystack = (text || '').toString().toLowerCase();
+      if (!haystack) return false;
+      return (
+        haystack.includes('function_payload_too_large') ||
+        haystack.includes('request entity too large') ||
+        haystack.includes('payload too large') ||
+        haystack.includes('body is too large') ||
+        haystack.includes('413')
+      );
+    };
 
     const timeoutPrep = 30000;
-    const timeoutPut = Math.max(45000, Math.min(180000, Math.ceil(sizeMb) * 12000 + 30000));
-    const timeoutInline = Math.max(55000, Math.min(300000, Math.ceil(sizeMb) * 25000 + 55000));
+    const timeoutPut = Math.max(45000, Math.min(240000, Math.ceil(sizeMb) * 15000 + 45000));
+    const timeoutInline = Math.max(55000, Math.min(240000, Math.ceil(sizeMb) * 30000 + 55000));
     diag.push(`timeout_put=${Math.round(timeoutPut / 1000)}s`, `timeout_inline=${Math.round(timeoutInline / 1000)}s`);
 
     const parseJsonSafe = (raw: string) => {
@@ -1321,8 +1335,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     };
 
     const uploadSupabaseDirect = async () => {
-      const maxSupabaseInlineBytes = 4.3 * 1024 * 1024;
-      const useInline = sizeBytes > 0 && sizeBytes <= maxSupabaseInlineBytes;
+      const useInline = sizeBytes > 0 && sizeBytes <= SKIP_INLINE_BYTES;
       diag.push(`intent4_mode=${useInline ? "admin_inline_bytes" : "signed_upload_url"}`);
 
       let prep: Response | undefined;
@@ -1344,6 +1357,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           }, timeoutPrep);
         }
         const prepRaw = await prep.text().catch(() => '');
+        if (isPayloadTooLarge(prep.status, prepRaw)) {
+          throw new Error('(supabase_inline_oversize_skip)'); // Señal interna: pasar a signed upload
+        }
         const prepOut = parseJsonSafe(prepRaw);
         if (!(prep.ok && prepOut?.ok)) {
           throw new Error((prepOut?.detail || prepOut?.error || `No pude preparar la subida final (Supabase, HTTP ${prep.status}).`).toString());
@@ -1355,7 +1371,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (modo === 'supabase_admin_inline' || !uploadUrl) {
           if (!url) throw new Error('No recibí la URL final del audio en Supabase');
           diag.push('intent4_inline=ok');
-          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect admin inline (<=4.3MB)', diag.join(' | '));
+          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect admin inline (<=3MB)', diag.join(' | '));
           return { url, key };
         }
         const formData = new FormData();
@@ -1366,10 +1382,39 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         }, timeoutPut);
         if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
         diag.push('intent4_signed=ok');
-        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload >4.3MB)', diag.join(' | '));
+        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload >3MB)', diag.join(' | '));
         return { url, key };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e || '');
+        // Señal interna: si era inline oversize, saltar a intento Signed Upload sin mostrar error
+        if (msg && /supabase_inline_oversize_skip/i.test(msg)) {
+          diag.push('intent4_inline_oversize -> retry as signed');
+          try {
+            const prepRetry = await fetchWithTimeout('/api/upload-audio-supabase', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+              body: JSON.stringify({ title: name, contentType }),
+            }, timeoutPrep);
+            const prepRaw2 = await prepRetry.text().catch(() => '');
+            const prepOut2 = parseJsonSafe(prepRaw2);
+            if (!(prepRetry.ok && prepOut2?.ok)) {
+              throw new Error((prepOut2?.detail || prepOut2?.error || `No pude preparar la subida final (HTTP ${prepRetry.status}).`).toString());
+            }
+            const uploadUrl = (prepOut2?.uploadUrl || '').toString().trim();
+            const url = (prepOut2?.url || '').toString().trim();
+            const key = (prepOut2?.key || '').toString().trim();
+            if (!uploadUrl || !url) throw new Error('No recibí la URL de subida de Supabase.');
+            const fd = new FormData();
+            fd.append('file', file, name || 'audio.mp3');
+            const put = await fetchWithTimeout(uploadUrl, { method: 'POST', body: fd }, timeoutPut);
+            if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
+            diag.push('intent4_signed=ok');
+            console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload por retry >3MB)', diag.join(' | '));
+            return { url, key };
+          } catch (inner) {
+            throw inner;
+          }
+        }
         diag.push(`intent4=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
         console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadSupabaseDirect', diag.join(' | '));
         if (e instanceof Error && (e as any)?.name === 'AbortError') {
@@ -1431,6 +1476,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
 
     const uploadInline = async () => {
+      // SKIP EXPLÍCITO: si archivo es mayor que límite Vercel, NO intentar fetch inline NUNCA.
+      if (skipInline) {
+        diag.push('uploadInline_SKIP=1 (too large)');
+        throw new Error('(inline_oversize_skip)');
+      }
       const arrayBuffer = await file.arrayBuffer();
       const fileArray = Array.from(new Uint8Array(arrayBuffer));
       let r: Response | undefined;
@@ -1441,6 +1491,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           body: JSON.stringify({ title: name, contentType, file: fileArray }),
         }, timeoutInline);
         const raw = await r.text().catch(() => '');
+        // Si Vercel devuelve 413 PAYLOAD TOO LARGE → señal para saltarse a intento 3/4 (no mostrar rojo)
+        if (isPayloadTooLarge(r.status, raw)) {
+          diag.push('uploadInline_413=1 (skip)');
+          throw new Error('(inline_413_skip)');
+        }
         const out = parseJsonSafe(raw);
         const url = (out?.url || '').toString().trim();
         const key = (out?.key || '').toString().trim();
@@ -1452,6 +1507,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         throw new Error((out?.detail || out?.error || `No pude subir el audio (HTTP ${r.status}).`).toString());
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e || '');
+        if (msg && /inline_oversize_skip|inline_413_skip/i.test(msg)) {
+          throw e; // Señal interna, lo captura el caller y sigue al siguiente intento SILENCIOSAMENTE.
+        }
         diag.push(`intent2=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
         console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadInline', diag.join(' | '));
         if (e instanceof Error && (e as any)?.name === 'AbortError') {
@@ -1462,8 +1520,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     };
 
     const fallbackChain = async (alreadyTriedInline = false) => {
-      if (!skipInline && !alreadyTriedInline) {
-        try { return await uploadInline(); } catch { /* sigue */ }
+      let inlineTried = alreadyTriedInline;
+      if (!skipInline && !inlineTried) {
+        inlineTried = true;
+        try { return await uploadInline(); } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e || '');
+          // Si era oversize o 413: continúa silenciosamente al siguiente intento.
+          if (msg && /inline_oversize_skip|inline_413_skip/i.test(msg)) {
+            diag.push('fallback_inline_skipped -> siguiente intento');
+          } else {
+            throw e;
+          }
+        }
       }
       try { return await uploadWithGenericPrep(); } catch { /* sigue */ }
       return await uploadSupabaseDirect();
@@ -1523,9 +1591,23 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       return await fallbackChain(false);
     } catch (error) {
-      diag.push(`chain_top_catch:${(error instanceof Error ? error.message : String(error || '')).slice(0, 120).replace(/\s+/g, ' ')}`);
+      const errMsg = error instanceof Error ? error.message : String(error || '');
+      diag.push(`chain_top_catch:${errMsg.slice(0, 120).replace(/\s+/g, ' ')}`);
       console.log('[UPLOAD_AUDIO_VOICE] chain catch, saltando a fallback completo...', diag.join(' | '));
-      return await fallbackChain(true);
+      try {
+        return await fallbackChain(true);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e || '');
+        // Si fue oversize skip de inline → pasar al siguiente intento sin mostrar (evita 413 rojo)
+        if (m && /inline_oversize_skip|inline_413_skip/i.test(m)) {
+          try {
+            return await uploadWithGenericPrep();
+          } catch {
+            return await uploadSupabaseDirect();
+          }
+        }
+        throw e;
+      }
     }
   };
 

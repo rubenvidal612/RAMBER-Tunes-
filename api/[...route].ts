@@ -16399,13 +16399,13 @@ const uploadAudioHandler = (() => {
       inlineSizeBytes = inline ? inline.byteLength : 0;
 
       if (inline) {
-        const maxBytes = 25 * 1024 * 1024;
+        const maxBytes = 3 * 1024 * 1024; // 3 MB - seguro bajo el límite Vercel (~4.5MB) para evitar FUNCTION_PAYLOAD_TOO_LARGE
         if (inline.byteLength > maxBytes) {
           try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_rejected_oversize", key, sizeBytes: inlineSizeBytes, maxBytes, contentType, fname })); } catch {}
           return send(res, 413, {
             ok: false,
             error: "Audio muy pesado",
-            message: "Ese MP3 está muy pesado para subirlo por el servidor. Intenta con un MP3 más ligero o habilita CORS en R2 para subida directa.",
+            message: "Ese MP3 está muy pesado para subirlo por el servidor. Se usará subida directa a Supabase Storage.",
           });
         }
         try {
@@ -16544,8 +16544,8 @@ const uploadAudioSupabaseHandler = (() => {
       }
       inlineSizeBytes = inline ? inline.byteLength : 0;
 
-      // MODO 1: INLINE (<=4.3 MB, sin Signed URL ni multipart). Admin sube directamente, saltando todo RLS/CORS.
-      const maxInline = Math.floor(4.3 * 1024 * 1024);
+      // MODO 1: INLINE (<= 3 MB, sin Signed URL ni multipart). Admin sube directamente, saltando todo RLS/CORS.
+      const maxInline = Math.floor(3 * 1024 * 1024);
       if (inline && inlineSizeBytes > 0 && inlineSizeBytes <= maxInline) {
         try {
           const t0 = Date.now();
