@@ -16505,7 +16505,7 @@ const uploadAudioSupabaseHandler = (() => {
     if (!supabaseUrl || !supabaseAnonKey || !supabaseService) {
       return { ok: false as const, status: 500, error: "Falta configurar Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)." };
     }
-    const { createClient } = require("@supabase/supabase-js");
+    const createClient = await getSupabaseCreateClient();
     const token = (req.headers["authorization"] || "").toString().trim().replace(/^Bearer\s+/i, "").trim();
     if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
     const supabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false } });
