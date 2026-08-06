@@ -441,12 +441,28 @@ async function getSignedR2PutUrl(key: string, contentType: string, expiresIn: nu
   const client = await getR2Client();
   const { PutObjectCommand } = await getR2AwsSdk();
   const { getSignedUrl } = await getR2Presigner();
+  const ct = (contentType || "application/octet-stream").toString().trim() || "application/octet-stream";
   const command = new PutObjectCommand({
     Bucket: env.bucketName,
     Key: key,
-    ContentType: contentType,
+    ContentType: ct,
+    CacheControl: "max-age=604800, immutable",
   });
-  return await getSignedUrl(client, command, { expiresIn });
+  const signed = await getSignedUrl(client, command, { expiresIn, unhoistableHeaders: new Set(["content-type"]) });
+  try {
+    const u = new URL(signed);
+    const hasAmzHeaders =
+      u.searchParams.has("X-Amz-Algorithm") ||
+      u.searchParams.has("X-Amz-Credential") ||
+      u.searchParams.has("X-Amz-Signature");
+    if (hasAmzHeaders) {
+      u.searchParams.delete("X-Amz-SignedHeaders");
+      u.searchParams.set("X-Amz-SignedHeaders", "host");
+    }
+    return u.toString();
+  } catch {
+    return signed;
+  }
 }
 
 async function deleteFromR2(paths: string[]): Promise<number> {
@@ -799,13 +815,16 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   } catch {
   }
 
+  let cachedPlan: any = null;
+  let planRejection: any = null;
   try {
     const plan = await getUserPlan(admin, userId);
+    cachedPlan = plan;
     const key = String((plan as any)?.plan_key || "").toLowerCase();
     const exp = (plan as any)?.plan_expires_at;
     const active = Boolean((plan as any)?.plan_active);
     if ((key === "inicio" || key === "productor") && exp && !active) {
-      return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+      planRejection = { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
     }
   } catch {
   }
@@ -819,31 +838,25 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       continue;
     }
 
-    // Paso 1: calcular total disponible (lotes FIFO + perfil)
-    const profileCredits = creditsFromProfile(profile);
     const batchCredits = await getActiveBatchCredits(admin, userId);
+    const profileCreditsRaw = creditsFromProfile(profile);
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
+    const profileCredits = globalExpired ? 0 : profileCreditsRaw;
     const totalAvailable = round2(profileCredits + batchCredits);
 
-    // Regla de vencimiento global (2 meses desde la última compra):
-    // si credits_expires_at venció, se considera que TODO el saldo venció (incluyendo minis).
-    const creditsExpiresAt = profile.credits_expires_at;
-    if (creditsExpiresAt) {
-      const expiresDate = new Date(creditsExpiresAt);
-      const now = new Date();
-      if (expiresDate < now) {
-        return {
-          ok: false as const,
-          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
-        };
-      }
+    if (globalExpired && batchCredits <= 0) {
+      if (planRejection) return planRejection;
+      return {
+        ok: false as const,
+        error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
+      };
     }
 
     if (totalAvailable < cost) {
+      if (planRejection) return planRejection;
       return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
     }
 
-    // Paso 2: consumir primero de lotes (FIFO, el que vence antes primero).
-    // pending = lo que no alcanzaron los lotes y debe salir del perfil global.
     const pendingAfterBatches = await consumeBatchCreditsFifo(admin, userId, cost);
 
     if (pendingAfterBatches <= 0) {
@@ -851,11 +864,9 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       return { ok: true as const, credits: remainingTotal };
     }
 
-    // Paso 3: el resto se consume de la columna global del perfil (sistema Pack Inicio/Productor).
-    // Para esto, volvemos a calcular los créditos del perfil por si la tabla
-    // credit_batches aún no existe (entonces pendingAfterBatches == cost y vamos a la lógica original).
-    const currentProfile = creditsFromProfile(profile);
+    const currentProfile = globalExpired ? 0 : creditsFromProfile(profile);
     if (currentProfile < pendingAfterBatches) {
+      if (planRejection) return planRejection;
       return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
     }
     const next = round2(Math.max(0, currentProfile - pendingAfterBatches));
@@ -867,6 +878,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     return { ok: false as const, error: upd.error };
   }
 
+  if (planRejection) return planRejection;
   return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
 }
 
@@ -879,6 +891,33 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
   } catch {
   }
 
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
+    if (!profile) {
+      const created = await ensureProfileExists(admin, userId);
+      if (!created.ok) return { ok: false as const, error: created.error };
+      continue;
+    }
+
+    const batchCredits = await getActiveBatchCredits(admin, userId);
+    const profileCredits = creditsFromProfile(profile);
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
+    const effectiveProfileCredits = globalExpired ? 0 : profileCredits;
+    const totalAvailable = round2(effectiveProfileCredits + batchCredits);
+
+    if (globalExpired && batchCredits <= 0) {
+      return {
+        ok: false as const,
+        error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
+      };
+    }
+
+    if (totalAvailable >= cost) {
+      return { ok: true as const, credits: totalAvailable };
+    }
+  }
+
   try {
     const plan = await getUserPlan(admin, userId);
     const key = String((plan as any)?.plan_key || "").toLowerCase();
@@ -890,38 +929,7 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
   } catch {
   }
 
-  for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
-    if (readErr) return { ok: false as const, error: readErr.message };
-    if (!profile) {
-      const created = await ensureProfileExists(admin, userId);
-      if (!created.ok) return { ok: false as const, error: created.error };
-      continue;
-    }
-
-    const profileCredits = creditsFromProfile(profile);
-    const batchCredits = await getActiveBatchCredits(admin, userId);
-    const totalAvailable = round2(profileCredits + batchCredits);
-
-    const creditsExpiresAt = profile.credits_expires_at;
-    if (creditsExpiresAt) {
-      const expiresDate = new Date(creditsExpiresAt);
-      const now = new Date();
-      if (expiresDate < now) {
-        return {
-          ok: false as const,
-          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
-        };
-      }
-    }
-
-    if (totalAvailable < cost) {
-      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
-    }
-    return { ok: true as const, credits: totalAvailable };
-  }
-
-  return { ok: false as const, error: "No pude validar créditos (intenta otra vez)." };
+  return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar." };
 }
 
 function isAdminEmail(email?: string | null) {
@@ -8597,35 +8605,56 @@ const uploadProfileImageHandler = (() => {
     const path = typeof payload?.path === "string" ? payload.path.trim() : "";
     const data = payload?.data;
     const contentType = typeof payload?.contentType === "string" ? payload.contentType.trim() : "image/webp";
+    const userId = String(auth.user.id || "").trim();
 
     if (!path) return send(res, 400, { error: "Falta path" });
 
+    const cleanedPath = path.replace(/^\/+/, "");
+    const allowedPrefixes = [`uploads/audio/${userId}/`, `uploads/${userId}/`, `avatars/${userId}/`, `profiles/${userId}/`];
+    const isAllowedPath = allowedPrefixes.some((p) => cleanedPath.startsWith(p));
+    if (!isAllowedPath) {
+      try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "path_rejected", path: (cleanedPath || "").slice(0, 300), contentType })); } catch {}
+      return send(res, 403, { error: "No autorizado para escribir en este path" });
+    }
+
     try {
-      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
+      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(cleanedPath)}`;
 
       if (!data || !Array.isArray(data)) {
-        const uploadUrl = await getSignedR2PutUrl(path, contentType || "application/octet-stream", 60 * 10);
-        return send(res, 200, { ok: true, uploadUrl, url, key: path, via: "direct" });
+        try {
+          const uploadUrl = await getSignedR2PutUrl(cleanedPath, contentType || "application/octet-stream", 60 * 10);
+          try { console.log(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "direct_prep_ok", path: (cleanedPath || "").slice(0, 300), contentType, via: "direct", signedPut: true })); } catch {}
+          return send(res, 200, { ok: true, uploadUrl, url, key: cleanedPath, via: "direct" });
+        } catch (r2Err) {
+          const msg = r2Err instanceof Error ? r2Err.message : String(r2Err || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "direct_prep_failed", path: (cleanedPath || "").slice(0, 300), contentType, error: String(msg || "").slice(0, 600) })); } catch {}
+          throw r2Err;
+        }
       }
 
       const buf = Buffer.from(data);
-      if (shouldModeratePath(path) && buf.length > 0) {
+      if (shouldModeratePath(cleanedPath) && buf.length > 0) {
         const check = await moderateImageWithGoogleVision(buf);
         if (!check.ok) {
           const needsKey = String(check.error || "").toLowerCase().includes("api key");
           const hint = needsKey
             ? "Falta configurar GOOGLE_VISION_API_KEY en Vercel (Google Cloud Vision API)."
             : "";
+          try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "server_moderation_rejected", path: (cleanedPath || "").slice(0, 300), sizeBytes: buf.length, error: String(check.error || "").slice(0, 600) })); } catch {}
           return send(res, 400, { error: check.error || "Imagen no permitida", hint: hint || undefined });
         }
       }
-      await uploadToR2(path, buf, contentType);
-      return send(res, 200, { ok: true, url, key: path, via: "server" });
+      const t0 = Date.now();
+      await uploadToR2(cleanedPath, buf, contentType);
+      const dt = Date.now() - t0;
+      try { console.log(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "server_ok", path: (cleanedPath || "").slice(0, 300), contentType, sizeBytes: buf.length, durationMs: dt, via: "server" })); } catch {}
+      return send(res, 200, { ok: true, url, key: cleanedPath, via: "server" });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
         ? "Falta configurar Cloudflare R2 en Vercel"
         : "Error subiendo imagen";
+      try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "global_catch", path: (cleanedPath || "").slice(0, 300), contentType, error: String(detail || "").slice(0, 1200) })); } catch {}
       return send(res, 500, { error: msg, detail: String(detail || "").slice(0, 1200) });
     }
   };
@@ -16355,19 +16384,24 @@ const uploadAudioHandler = (() => {
     const fname = safeFileName(title);
     const rand = Math.random().toString(36).slice(2, 10);
     const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
+    const userId = String(auth.user.id || "");
 
     try {
       // Intentar usar R2 si está configurado
       let inline: Uint8Array | null = null;
+      let inlineSizeBytes = 0;
       if (typeof payload?.file === "string") {
         const b64 = payload.file.includes(",") ? payload.file.split(",")[1] : payload.file;
         inline = new Uint8Array(Buffer.from(b64, "base64"));
       } else {
         inline = fileArrayToUint8(payload?.file);
       }
+      inlineSizeBytes = inline ? inline.byteLength : 0;
+
       if (inline) {
         const maxBytes = 25 * 1024 * 1024;
         if (inline.byteLength > maxBytes) {
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_rejected_oversize", key, sizeBytes: inlineSizeBytes, maxBytes, contentType, fname })); } catch {}
           return send(res, 413, {
             ok: false,
             error: "Audio muy pesado",
@@ -16375,32 +16409,55 @@ const uploadAudioHandler = (() => {
           });
         }
         try {
+          const t0 = Date.now();
           await uploadToR2(key, inline, contentType);
+          const dt = Date.now() - t0;
           const url = await getSignedR2Url(key, 60 * 60 * 2);
-          return send(res, 200, { ok: true, url, key, contentType, via: "server" });
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_r2_ok", key, sizeBytes: inlineSizeBytes, contentType, fname, durationMs: dt, via: "server_r2" })); } catch {}
+          return send(res, 200, { ok: true, url, key, contentType, via: "server_r2" });
         } catch (r2Error) {
-          const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true });
-          if (up.error) throw up.error;
-          const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
-          if (signed.error) throw signed.error;
-          const raw = (signed.data as any)?.signedUrl || "";
-          const url = /^https?:\/\//i.test(String(raw)) ? String(raw) : new URL(String(raw || ""), auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
-          return send(res, 200, { ok: true, url, key: "", contentType, via: "supabase" });
+          const r2Msg = r2Error instanceof Error ? r2Error.message : String(r2Error || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_r2_failed", key, sizeBytes: inlineSizeBytes, contentType, fname, error: r2Msg.slice(0, 500) })); } catch {}
+          try {
+            const t0 = Date.now();
+            const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true });
+            if (up.error) throw up.error;
+            const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
+            if (signed.error) throw signed.error;
+            const raw = (signed.data as any)?.signedUrl || "";
+            const url = /^https?:\/\//i.test(String(raw)) ? String(raw) : new URL(String(raw || ""), auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+            const dt = Date.now() - t0;
+            try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_supabase_ok", key, sizeBytes: inlineSizeBytes, contentType, fname, durationMs: dt, via: "server_supabase" })); } catch {}
+            return send(res, 200, { ok: true, url, key, contentType, via: "server_supabase" });
+          } catch (supErr) {
+            const supMsg = supErr instanceof Error ? supErr.message : String(supErr || "");
+            try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_supabase_failed", key, sizeBytes: inlineSizeBytes, contentType, fname, error: supMsg.slice(0, 500) })); } catch {}
+            throw supErr;
+          }
         }
       }
 
       try {
         const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
         const url = await getSignedR2Url(key, 60 * 60 * 2);
+        try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "direct_prep_ok", key, contentType, fname, via: "direct", signedPut: true })); } catch {}
         return send(res, 200, { ok: true, uploadUrl, url, key, contentType, via: "direct" });
       } catch (r2Error) {
-        return send(res, 200, { ok: false, error: "No pude preparar la subida del audio", detail: "R2 no está configurado para subida directa. Vuelve a intentar para subir por servidor." });
+        const msg = r2Error instanceof Error ? r2Error.message : String(r2Error || "");
+        const isMissingEnv = /Missing required R2 environment variables/i.test(msg || "");
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "direct_prep_failed", key, contentType, fname, error: msg.slice(0, 500), missingEnv: isMissingEnv })); } catch {}
+        return send(res, 200, {
+          ok: false,
+          error: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - subiendo por servidor" : "No pude preparar la subida del audio",
+          detail: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - vuelve a intentar para subir por servidor." : "R2 no está configurado para subida directa. Vuelve a intentar para subir por servidor."
+        });
       }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
         ? "Falta configurar Cloudflare R2 en Vercel - subiendo por servidor"
         : "No pude preparar la subida del audio";
+      try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "global_catch", key: (key || "").slice(0, 200), contentType, fname, error: String(detail || "").slice(0, 800) })); } catch {}
       return send(res, 500, { ok: false, error: msg, detail });
     }
   };

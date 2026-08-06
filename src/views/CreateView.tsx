@@ -1283,6 +1283,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               : ext === 'm4a' || ext === 'mp4'
                 ? 'audio/mp4'
                 : 'audio/mpeg');
+    const sizeBytes = Number(file?.size || 0);
+    const sizeKb = Math.round(sizeBytes / 1024);
+    const skipInline = sizeBytes > 3.5 * 1024 * 1024;
+    const diag: string[] = [`size=${sizeKb}KB`, `ct=${contentType}`];
+    if (skipInline) diag.push('skip_inline=1 (size > 3.5MB)');
 
     const parseJsonSafe = (raw: string) => {
       try {
@@ -1290,6 +1295,23 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       } catch {
         return { error: raw || '' };
       }
+    };
+
+    const fetchWithTimeout = (input: RequestInfo, init: RequestInit = {}, timeoutMs = 45000): Promise<Response> => {
+      const controller = new AbortController();
+      const initAny = init as any;
+      const existingSignal = initAny?.signal as AbortSignal | undefined;
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+      if (existingSignal) {
+        const onExternalAbort = () => controller.abort((existingSignal as any)?.reason);
+        if (existingSignal.aborted) {
+          clearTimeout(t);
+          controller.abort(onExternalAbort as any);
+        } else {
+          existingSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+      }
+      return fetch(input, { ...(init as any), signal: controller.signal }).finally(() => clearTimeout(t));
     };
 
     const uploadWithGenericPrep = async () => {
@@ -1302,24 +1324,37 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         .replace(/[^a-zA-Z0-9._-]+/g, '_')
         .slice(0, 80) || 'audio';
       const key = `uploads/audio/${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${safeName}`;
-      const prep = await fetch('/api/account/upload-profile-image', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ path: key, contentType }),
-      });
-      const prepRaw = await prep.text().catch(() => '');
-      const prepOut = parseJsonSafe(prepRaw);
-      if (!(prep.ok && prepOut?.ok)) {
-        throw new Error((prepOut?.detail || prepOut?.error || 'No pude preparar la subida alternativa del audio.').toString());
+      let prep: Response | undefined;
+      try {
+        prep = await fetchWithTimeout('/api/account/upload-profile-image', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ path: key, contentType }),
+        }, 25000);
+        const prepRaw = await prep.text().catch(() => '');
+        const prepOut = parseJsonSafe(prepRaw);
+        if (!(prep.ok && prepOut?.ok)) {
+          throw new Error((prepOut?.detail || prepOut?.error || `No pude preparar la subida alternativa (HTTP ${prep.status}).`).toString());
+        }
+        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+        const url = (prepOut?.url || '').toString().trim();
+        if (!uploadUrl || !url) {
+          throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida del audio.').toString());
+        }
+        const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, 45000);
+        if (!put.ok) throw new Error(`No se pudo subir el audio al almacenamiento (HTTP ${put.status}).`);
+        diag.push('intent3=ok');
+        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadWithGenericPrep', diag.join(' | '));
+        return { url, key };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e || '');
+        diag.push(`intent3=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
+        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadWithGenericPrep', diag.join(' | '));
+        if (e instanceof Error && (e as any)?.name === 'AbortError') {
+          throw new Error('La subida tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
+        }
+        throw e;
       }
-      const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
-      const url = (prepOut?.url || '').toString().trim();
-      if (!uploadUrl || !url) {
-        throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida del audio.').toString());
-      }
-      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
-      if (!put.ok) throw new Error(`No se pudo subir el audio (HTTP ${put.status}).`);
-      return { url, key };
     };
 
     const readAsDataUrl = (f: File) =>
@@ -1333,52 +1368,106 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const uploadInline = async () => {
       const arrayBuffer = await file.arrayBuffer();
       const fileArray = Array.from(new Uint8Array(arrayBuffer));
-      const r = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: name, contentType, file: fileArray }),
-      });
-      const raw = await r.text().catch(() => '');
-      const out = parseJsonSafe(raw);
-      const url = (out?.url || '').toString().trim();
-      const key = (out?.key || '').toString().trim();
-      if (r.ok && out?.ok && url) return { url, key };
-      throw new Error((out?.detail || out?.error || 'No pude subir el audio al servidor.').toString());
+      let r: Response | undefined;
+      try {
+        r = await fetchWithTimeout('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: name, contentType, file: fileArray }),
+        }, 55000);
+        const raw = await r.text().catch(() => '');
+        const out = parseJsonSafe(raw);
+        const url = (out?.url || '').toString().trim();
+        const key = (out?.key || '').toString().trim();
+        if (r.ok && out?.ok && url) {
+          diag.push('intent2=ok');
+          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadInline', diag.join(' | '));
+          return { url, key };
+        }
+        throw new Error((out?.detail || out?.error || `No pude subir el audio (HTTP ${r.status}).`).toString());
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e || '');
+        diag.push(`intent2=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
+        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadInline', diag.join(' | '));
+        if (e instanceof Error && (e as any)?.name === 'AbortError') {
+          throw new Error('La subida por servidor tardó demasiado. Usa un MP3 más pequeño o activa subida directa.');
+        }
+        throw e;
+      }
     };
 
     try {
-      const prep = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: name, contentType }),
-      });
-      const prepRaw = await prep.text().catch(() => '');
-      const prepOut = parseJsonSafe(prepRaw);
-      
-      if (prep.ok && prepOut?.ok) {
-        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
-        const url = (prepOut?.url || '').toString().trim();
-        if (uploadUrl) {
-          const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
-          if (!put.ok) throw new Error('Error en subida directa a R2');
+      let prep: Response | undefined;
+      try {
+        prep = await fetchWithTimeout('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: name, contentType }),
+        }, 25000);
+        const prepRaw = await prep.text().catch(() => '');
+        const prepOut = parseJsonSafe(prepRaw);
+
+        if (prep.ok && prepOut?.ok) {
+          const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+          const url = (prepOut?.url || '').toString().trim();
+          if (uploadUrl) {
+            try {
+              const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, 45000);
+              if (!put.ok) {
+                diag.push(`intent1_put_fail_http=${put.status}`);
+                console.log('[UPLOAD_AUDIO_VOICE] FAIL intent1 PUT', diag.join(' | '));
+                throw new Error(`Error en subida directa a R2 (HTTP ${put.status}).`);
+              }
+              const key = (prepOut?.key || '').toString().trim();
+              diag.push('intent1=ok');
+              console.log('[UPLOAD_AUDIO_VOICE] OK via direct R2', diag.join(' | '));
+              return { url, key };
+            } catch (putErr) {
+              // Fall through to fallback chain (inline then profile-image)
+              const m = putErr instanceof Error ? putErr.message : String(putErr || '');
+              diag.push(`intent1_put=fail:${m.slice(0, 120).replace(/\s+/g, ' ')}`);
+              if (putErr instanceof Error && (putErr as any)?.name === 'AbortError') {
+                throw new Error('La subida tardó demasiado. Prueba con un MP3 más pequeño.');
+              }
+            }
+          } else {
+            const key = (prepOut?.key || '').toString().trim();
+            diag.push('intent1_server=ok');
+            console.log('[UPLOAD_AUDIO_VOICE] OK via server upload', diag.join(' | '));
+            return { url, key };
+          }
+        } else {
+          diag.push(`intent1_prep=skip:${prepOut?.ok === false ? prepOut.error : `HTTP ${prep?.status}`}`);
         }
-        const key = (prepOut?.key || '').toString().trim();
-        return { url, key };
+      } catch (prepErr) {
+        const m = prepErr instanceof Error ? prepErr.message : String(prepErr || '');
+        diag.push(`intent1_prep=fail:${m.slice(0, 120).replace(/\s+/g, ' ')}`);
+        if (prepErr instanceof Error && (prepErr as any)?.name === 'AbortError') {
+          throw new Error('El servidor tardó demasiado en responder. Revisa tu internet.');
+        }
       }
 
-      // Si el servidor dice que R2 no está listo o hay un error, usamos la subida inline (buffer)
-      try {
-        return await uploadInline();
-      } catch {
+      if (!skipInline) {
+        try {
+          return await uploadInline();
+        } catch {
+          return await uploadWithGenericPrep();
+        }
+      } else {
+        diag.push('skip_inline=true -> directo a intent3');
         return await uploadWithGenericPrep();
       }
     } catch (error) {
-      console.log('Error en uploadAudioForVoice, intentando respaldo...', error);
+      diag.push(`chain_top_catch:${(error instanceof Error ? error.message : String(error || '')).slice(0, 120).replace(/\s+/g, ' ')}`);
+      console.log('[UPLOAD_AUDIO_VOICE] chain catch, saltando a fallback...', diag.join(' | '));
       try {
-        return await uploadInline();
+        if (!skipInline) {
+          return await uploadInline();
+        }
       } catch {
-        return await uploadWithGenericPrep();
+        // intenta el tercero si falla inline
       }
+      return await uploadWithGenericPrep();
     }
   };
 
@@ -1913,7 +2002,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setExternalAudioLabel('');
       setUploadProgress(100);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'No se pudo subir el audio.';
+      const raw = e instanceof Error ? e.message : String(e || '');
+      const looksLikeNetwork =
+        /failed to fetch|networkerror|network error|load failed|fetch failed|typeerror.*failed|abort|timeout|net::/i.test(raw) ||
+        !raw.trim();
+      const msg = looksLikeNetwork
+        ? 'No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e inténtalo de nuevo. Si sigue fallando, prueba con un archivo MP3 más pequeño.'
+        : raw || 'No se pudo subir el audio.';
       setAudioUploadError(msg);
       alert(msg);
     } finally {
