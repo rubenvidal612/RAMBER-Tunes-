@@ -16526,14 +16526,43 @@ const uploadAudioSupabaseHandler = (() => {
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
     const bucket = "ramber-tunes";
-    const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
-    const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
-    const fname = safeFileName(title);
-    const rand = Math.random().toString(36).slice(2, 10);
-    const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
+    const wantFetchUrl = typeof payload?.fetchSignedUrl === "boolean" ? !!payload.fetchSignedUrl : String(payload?.mode || "").toLowerCase() === "fetchsignedurl";
+    const keyInPayload = (payload?.key || payload?.path || "").toString().trim();
     const userId = String(auth.user.id || "");
 
     try {
+      // MODO ESPECIAL: Segunda llamada DESPUÉS de que el cliente terminó de subir (POST multipart).
+      // El cliente envía key/fetchSignedUrl=1 y AHORA SÍ generamos la URL firmada de reproducción
+      // (el objeto YA existe en storage.objects, así que no habrá "Object not found").
+      if (wantFetchUrl && keyInPayload) {
+        const safeKey = keyInPayload.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/^\/+/, "").slice(0, 500);
+        if (!safeKey || !/^(uploads\/(audio|avatars|profiles|))\//i.test(safeKey + "/")) {
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_denied_path", key: safeKey.slice(0, 200) })); } catch {}
+          return send(res, 403, { ok: false, error: "Ruta no permitida para firmar URL" });
+        }
+        try {
+          const t0 = Date.now();
+          const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
+          if (signed.error) throw signed.error;
+          const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
+          const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+          const dt = Date.now() - t0;
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_ok", key: safeKey.slice(0, 200), durationMs: dt })); } catch {}
+          return send(res, 200, { ok: true, url, key: safeKey });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_failed", key: safeKey.slice(0, 200), error: msg.slice(0, 800) })); } catch {}
+          return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción (fetchSignedUrl)", detail: msg.slice(0, 800) });
+        }
+      }
+
+      // MODO 1 (ADMIN INLINE) (<=3MB): el cliente envía bytes aquí, admin sube directo (sin multipart).
+      // El objeto se crea AHORA MISMO, así que sí podemos llamar createSignedUrl en la MISMA respuesta.
+      const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
+      const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
+      const fname = safeFileName(title);
+      const rand = Math.random().toString(36).slice(2, 10);
+      const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
       let inline: Uint8Array | null = null;
       let inlineSizeBytes = 0;
       if (typeof payload?.file === "string") {
@@ -16544,7 +16573,6 @@ const uploadAudioSupabaseHandler = (() => {
       }
       inlineSizeBytes = inline ? inline.byteLength : 0;
 
-      // MODO 1: INLINE (<= 3 MB, sin Signed URL ni multipart). Admin sube directamente, saltando todo RLS/CORS.
       const maxInline = Math.floor(3 * 1024 * 1024);
       if (inline && inlineSizeBytes > 0 && inlineSizeBytes <= maxInline) {
         try {
@@ -16565,9 +16593,10 @@ const uploadAudioSupabaseHandler = (() => {
         }
       }
 
-      // MODO 2: DIRECTO SIGNED UPLOAD (>4.3 MB o sin file en payload).
-      // Devuelve createSignedUploadUrl (administrador firma) que acepta POST multipart/form-data con campo "file".
-      // Al firmar con ADMIN service_role, la URL tiene privilegios y NO le afectan policies RLS de storage.objects.
+      // MODO 2 (PREP / SIGNED UPLOAD DIRECTO) (>3MB o sin inline file).
+      // ¡¡IMPORTANTE!! NO llamamos createSignedUrl aquí -> el objeto NO EXISTE AÚN (no se ha hecho el POST multipart del cliente).
+      // Si llamamos createSignedUrl aquí dará "Object not found" y tumbará la request (mode: prep_get_failed).
+      // Solo devolvemos uploadUrl, key y el via. El cliente hará después la segunda llamada a fetchSignedUrl=1 para obtener la url final.
       const t0 = Date.now();
       const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
       const dtPrep = Date.now() - t0;
@@ -16584,18 +16613,21 @@ const uploadAudioSupabaseHandler = (() => {
         return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
       }
 
-      const signed = await auth.admin.storage.from(bucket).createSignedUrl(pathKey || key, 60 * 60 * 2);
-      if (signed.error) {
-        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_get_failed", key, contentType, fname, error: String(signed.error?.message || signed.error || "").slice(0, 600), durationPrepMs: dtPrep })); } catch {}
-        return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción en Supabase", detail: String(signed.error?.message || signed.error || "").slice(0, 800) });
-      }
-      const rawUrl = ((signed.data as any)?.signedUrl || "").toString().trim();
-      const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : new URL(rawUrl || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+      // ✅ NO INTENTES createSignedUrl(pathKey) aquí -> "Object not found" SIEMPRE (objeto no existe todavía).
       try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct" })); } catch {}
-      return send(res, 200, { ok: true, uploadUrl, url, key: pathKey || key, contentType, via: "supabase_signed_direct", uploadMethod: "POST_FORM" });
+      return send(res, 200, {
+        ok: true,
+        uploadUrl,
+        key: pathKey || key,
+        contentType,
+        via: "supabase_signed_direct",
+        uploadMethod: "POST_FORM",
+        // Campo que el cliente usa para saber que DEBE hacer la segunda llamada a fetchSignedUrl=1
+        needsFetchSignedUrl: true,
+      });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
-      try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "global_catch", key: (key || "").slice(0, 200), contentType, fname, error: String(detail || "").slice(0, 1000) })); } catch {}
+      try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "global_catch", key: String((keyInPayload || (payload?.key as any)) || "").slice(0, 200), contentType: String((payload as any)?.contentType || ""), fname: String((payload as any)?.title || ""), error: String(detail || "").slice(0, 1000) })); } catch {}
       return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(detail || "").slice(0, 1000) });
     }
   };

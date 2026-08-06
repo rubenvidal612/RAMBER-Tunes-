@@ -1381,9 +1381,35 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           body: formData,
         }, timeoutPut);
         if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
+        // ✅ Subida multipart terminó BIEN.
+        // Ahora pedimos la URL firmada de reproducción en LA SEGUNDA LLAMADA fetchSignedUrl=1
+        // (antes lo intentaba en la prep y fallaba con "Object not found" porque el objeto no existía todavía).
+        let finalUrl = url;
+        const needsFetch = !!prepOut?.needsFetchSignedUrl || !finalUrl;
+        if (needsFetch && key) {
+          diag.push('intent4_fetch_signed=1');
+          try {
+            const prepSigned = await fetchWithTimeout('/api/upload-audio-supabase', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+              body: JSON.stringify({ fetchSignedUrl: true, key }),
+            }, timeoutPrep);
+            const prepRawSigned = await prepSigned.text().catch(() => '');
+            const prepSignedOut = parseJsonSafe(prepRawSigned);
+            if (!(prepSigned.ok && prepSignedOut?.ok)) {
+              throw new Error((prepSignedOut?.detail || prepSignedOut?.error || `No pude firmar la URL final (HTTP ${prepSigned.status}).`).toString());
+            }
+            finalUrl = (prepSignedOut?.url || '').toString().trim() || finalUrl;
+          } catch (signedErr) {
+            const msgSigned = signedErr instanceof Error ? signedErr.message : String(signedErr || '');
+            diag.push(`intent4_fetch_signed=fail:${msgSigned.slice(0, 120).replace(/\s+/g, ' ')}`);
+            throw signedErr;
+          }
+        }
+        if (!finalUrl) throw new Error('No recibí la URL final del audio en Supabase (después de fetchSignedUrl).');
         diag.push('intent4_signed=ok');
         console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload >3MB)', diag.join(' | '));
-        return { url, key };
+        return { url: finalUrl, key };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e || '');
         // Señal interna: si era inline oversize, saltar a intento Signed Upload sin mostrar error
@@ -1403,14 +1429,35 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const uploadUrl = (prepOut2?.uploadUrl || '').toString().trim();
             const url = (prepOut2?.url || '').toString().trim();
             const key = (prepOut2?.key || '').toString().trim();
-            if (!uploadUrl || !url) throw new Error('No recibí la URL de subida de Supabase.');
+            if (!uploadUrl || !key) throw new Error('No recibí la URL de subida de Supabase.');
             const fd = new FormData();
             fd.append('file', file, name || 'audio.mp3');
             const put = await fetchWithTimeout(uploadUrl, { method: 'POST', body: fd }, timeoutPut);
             if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
+            // ✅ POST FormData finalizado -> segunda llamada fetchSignedUrl para URL de reproducción
+            let finalUrl = url;
+            const needsFetch = !!prepOut2?.needsFetchSignedUrl || !finalUrl;
+            if (needsFetch && key) {
+              diag.push('intent4_retry_fetch_signed=1');
+              const prepSigned2 = await fetchWithTimeout('/api/upload-audio-supabase', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                body: JSON.stringify({ fetchSignedUrl: true, key }),
+              }, timeoutPrep);
+              const prepRawS2 = await prepSigned2.text().catch(() => '');
+              const prepS2 = parseJsonSafe(prepRawS2);
+              if (prepSigned2.ok && prepS2?.ok) {
+                finalUrl = (prepS2?.url || '').toString().trim() || finalUrl;
+              } else {
+                const s2err = (prepS2?.detail || prepS2?.error || `No pude firmar URL final (retry, HTTP ${prepSigned2.status})`).toString();
+                diag.push(`intent4_retry_fetch_signed=fail:${s2err.slice(0, 120).replace(/\s+/g, ' ')}`);
+                throw new Error(s2err);
+              }
+            }
+            if (!finalUrl) throw new Error('No recibí la URL final del audio en Supabase (retry).');
             diag.push('intent4_signed=ok');
             console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload por retry >3MB)', diag.join(' | '));
-            return { url, key };
+            return { url: finalUrl, key };
           } catch (inner) {
             throw inner;
           }
