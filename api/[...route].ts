@@ -16559,6 +16559,7 @@ const uploadAudioSupabaseHandler = (() => {
               // Fallback: si storage.objects no se puede viajar por el schema público (caso raro), intentamos via rpc
               try { console.error("[UPLOAD_AUDIO_SUPABASE] owner_id update except:", String(ownerErr instanceof Error ? ownerErr.message : ownerErr || "").slice(0, 400)); } catch {}
             }
+          }
             const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
             if (signed.error) throw signed.error;
             const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
