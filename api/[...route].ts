@@ -16532,8 +16532,6 @@ const uploadAudioSupabaseHandler = (() => {
 
     try {
       // MODO ESPECIAL: Segunda llamada DESPUÉS de que el cliente terminó de subir (POST multipart).
-      // El cliente envía key/fetchSignedUrl=1 y AHORA SÍ generamos la URL firmada de reproducción
-      // (el objeto YA existe en storage.objects, así que no habrá "Object not found").
       if (wantFetchUrl && keyInPayload) {
         const safeKey = keyInPayload.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/^\/+/, "").slice(0, 500);
         if (!safeKey || !/^(uploads\/(audio|avatars|profiles|))\//i.test(safeKey + "/")) {
@@ -16556,8 +16554,6 @@ const uploadAudioSupabaseHandler = (() => {
         }
       }
 
-      // MODO 1 (ADMIN INLINE) (<=3MB): el cliente envía bytes aquí, admin sube directo (sin multipart).
-      // El objeto se crea AHORA MISMO, así que sí podemos llamar createSignedUrl en la MISMA respuesta.
       const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
       const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
       const fname = safeFileName(title);
@@ -16593,37 +16589,147 @@ const uploadAudioSupabaseHandler = (() => {
         }
       }
 
-      // MODO 2 (PREP / SIGNED UPLOAD DIRECTO) (>3MB o sin inline file).
-      // ¡¡IMPORTANTE!! NO llamamos createSignedUrl aquí -> el objeto NO EXISTE AÚN (no se ha hecho el POST multipart del cliente).
-      // Si llamamos createSignedUrl aquí dará "Object not found" y tumbará la request (mode: prep_get_failed).
-      // Solo devolvemos uploadUrl, key y el via. El cliente hará después la segunda llamada a fetchSignedUrl=1 para obtener la url final.
+      // MODO 2 (DIRECTO) > 3MB: usamos S3 createPresignedPost con endpoint S3 compatible de Supabase Storage
+      // (createSignedUploadUrl de Supabase SDK requiere header Authorization en el POST y falla en Chrome Desktop con "header must have required property 'authorization'").
+      // createPresignedPost NO necesita headers auth: toda la firma está en los `fields`. 100% compatible.
       const t0 = Date.now();
+      const anonKey = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+      const projectRef = (() => {
+        try {
+          const u = new URL(auth.supabaseUrl || process.env.SUPABASE_URL || "");
+          const h = u.hostname.toLowerCase();
+          const m = h.match(/^([a-z0-9_-]{8,})\.(supabase\.co|supabase\.in|supabase\.net)$/i);
+          return (m && m[1]) || "";
+        } catch { return ""; }
+      })();
+      const s3Endpoint = projectRef ? `https://${projectRef}.supabase.co/storage/v1/s3` : "";
+      if (!anonKey || !projectRef || !s3Endpoint) {
+        // Fallback: createSignedUploadUrl de Supabase SDK + headers al cliente (si S3 endpoint no está disponible)
+        const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
+        const dtPrep = Date.now() - t0;
+        if (error) {
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_failed", key, contentType, fname, error: String(error?.message || error || "").slice(0, 800) })); } catch {}
+          return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
+        }
+        const uploadUrl: string = (data as any)?.signedUrl || "";
+        const pathKey: string = (data as any)?.path || key;
+        if (!uploadUrl) return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
+        try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_supabase_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
+        return send(res, 200, {
+          ok: true,
+          uploadUrl,
+          key: pathKey || key,
+          contentType,
+          via: "supabase_signed_direct_sdk",
+          uploadMethod: "POST_FORM",
+          needsFetchSignedUrl: true,
+          headers: {
+            "apikey": anonKey,
+            "authorization": `Bearer ${anonKey}`,
+          },
+        });
+      }
+
+      // ✅ Ruta correcta: S3 createPresignedPost (no requiere headers Authorization/apikey en el cliente)
+      const { S3Client, CreateMultipartUploadCommand } = await getR2AwsSdk();
+      const s3Presigner = await getR2Presigner();
+      const createPresignedPost = s3Presigner.createPresignedPost;
+      const s3Client = new S3Client({
+        region: "us-east-1",
+        endpoint: s3Endpoint,
+        forcePathStyle: true,
+        credentials: {
+          accessKeyId: anonKey,
+          secretAccessKey: "service_role_admin_signed_via_service_role_stub",
+        },
+      });
+      // ✅ Para S3 de Supabase, hay que autenticar con el SERVICE ROLE (porque createPresignedPost lo firma el S3Client).
+      const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+      if (serviceKey) {
+        const { S3Client: S3ClientB } = await getR2AwsSdk();
+        const goodClient = new S3ClientB({
+          region: "us-east-1",
+          endpoint: s3Endpoint,
+          forcePathStyle: true,
+          credentials: {
+            accessKeyId: serviceKey,
+            secretAccessKey: serviceKey,
+          },
+        });
+        (s3Client as any).destroy && (s3Client as any).destroy();
+        // Crear presigned post usando service role creds (admin)
+        try {
+          const maxFileBytes = Math.max(1, 150 * 1024 * 1024); // 150 MB máximo
+          const post = await createPresignedPost(goodClient, {
+            Bucket: bucket,
+            Key: key,
+            Expires: 60 * 20, // 20 minutos (tiempo para subir sin prisa)
+            Conditions: [
+              ["content-length-range", 1, maxFileBytes],
+              ["starts-with", "$Content-Type", "audio/"],
+              { acl: "private" },
+            ],
+            Fields: {
+              acl: "private",
+              "Content-Type": contentType,
+            },
+          });
+          const dtPrep = Date.now() - t0;
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_s3_presigned_post_ok", key: (post?.fields?.key || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, s3Endpoint, projectRef, via: "supabase_s3_presigned_post" })); } catch {}
+          return send(res, 200, {
+            ok: true,
+            uploadUrl: post?.url || s3Endpoint + "/" + bucket,
+            key,
+            contentType,
+            via: "supabase_s3_presigned_post",
+            uploadMethod: "POST_FORM_FIELDS",
+            uploadFields: post?.fields || {},
+            needsFetchSignedUrl: true,
+            // NO headers: la firma está 100% en los fields -> no pedirá 'authorization' header
+            headers: {},
+          });
+        } catch (s3Err) {
+          const s3Msg = s3Err instanceof Error ? s3Err.message : String(s3Err || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_s3_presigned_post_failed", key: key.slice(0, 200), contentType, fname, error: s3Msg.slice(0, 1200), s3Endpoint, projectRef })); } catch {}
+          // FALLBACK a createSignedUploadUrl SDK + headers
+          const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
+          if (error) return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase (fallback SDK)", detail: String(error?.message || error || "").slice(0, 1000) });
+          const uploadUrl: string = (data as any)?.signedUrl || "";
+          const pathKey: string = (data as any)?.path || key;
+          if (!uploadUrl) return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase (fallback)" });
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_supabase_ok_sdk_fallback", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: Date.now() - t0, via: "supabase_signed_direct_sdk_fallback" })); } catch {}
+          return send(res, 200, {
+            ok: true,
+            uploadUrl,
+            key: pathKey || key,
+            contentType,
+            via: "supabase_signed_direct_sdk_fallback",
+            uploadMethod: "POST_FORM",
+            needsFetchSignedUrl: true,
+            headers: { "apikey": anonKey, "authorization": `Bearer ${anonKey}` },
+          });
+        } finally {
+          try { (goodClient as any).destroy && (goodClient as any).destroy(); } catch {}
+        }
+      }
+
+      // Si no hay service key disponible (raro): fallback createSignedUploadUrl SDK + headers
       const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
       const dtPrep = Date.now() - t0;
-      if (error) {
-        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_failed", key, contentType, fname, error: String(error?.message || error || "").slice(0, 800) })); } catch {}
-        return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
-      }
-
+      if (error) return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
       const uploadUrl: string = (data as any)?.signedUrl || "";
       const pathKey: string = (data as any)?.path || key;
-
-      if (!uploadUrl) {
-        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_missing_url", key, contentType, fname })); } catch {}
-        return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
-      }
-
-      // ✅ NO INTENTES createSignedUrl(pathKey) aquí -> "Object not found" SIEMPRE (objeto no existe todavía).
-      try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct" })); } catch {}
+      if (!uploadUrl) return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
+      try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_supabase_ok_noservicekey", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
       return send(res, 200, {
         ok: true,
         uploadUrl,
         key: pathKey || key,
         contentType,
-        via: "supabase_signed_direct",
+        via: "supabase_signed_direct_sdk",
         uploadMethod: "POST_FORM",
-        // Campo que el cliente usa para saber que DEBE hacer la segunda llamada a fetchSignedUrl=1
         needsFetchSignedUrl: true,
+        headers: { "apikey": anonKey, "authorization": `Bearer ${anonKey}` },
       });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);

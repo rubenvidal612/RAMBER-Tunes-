@@ -1377,26 +1377,53 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const formData = new FormData();
         const filename = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
         const finalBlob = file instanceof Blob ? file : new Blob([file], { type: contentType });
-        // Supabase Storage createSignedUploadUrl espera EXACTAMENTE un campo llamado "file" (multipart/form-data).
-        // Usamos 3er argumento para fijar nombre (quita diferencias Chrome Desktop vs móvil).
-        formData.append('file', finalBlob, filename);
+        // Método nuevo (recomendado): S3 createPresignedPost ADMIN. La firma ESTÁ dentro de uploadFields (NO necesita headers Authorization/apikey).
+        // IMPORTANTE: en S3 Presigned Post, los fields deben ir ANTES que el 'file'.
+        const method = String(prepOut?.uploadMethod || prepOut?.via || 'POST_FORM').toUpperCase();
+        const hasPresignedFields = method === 'POST_FORM_FIELDS' && prepOut?.uploadFields && typeof prepOut.uploadFields === 'object';
+        if (hasPresignedFields) {
+          const entries = Object.entries(prepOut!.uploadFields as Record<string, any>);
+          for (const [k, v] of entries) {
+            const sVal = (v === null || v === undefined) ? '' : String(v);
+            formData.append(k, sVal);
+          }
+          // El campo 'file' SIEMPRE al final en presigned post.
+          formData.append('file', finalBlob, filename);
+          diag.push('intent4_presigned_post');
+        } else {
+          // Fallback antiguo: Supabase createSignedUploadUrl SDK.
+          // Supabase exige HEADER 'apikey' y/o 'Authorization: Bearer ...' en el POST multipart real (no solo en la query).
+          formData.append('file', finalBlob, filename);
+        }
         let put: Response | undefined;
         let putRespText = '';
         try {
+          // Construimos headers: SOLO los que envía el servidor (presigned fields NO necesita nada).
+          const prepHeaders = (prepOut?.headers && typeof prepOut.headers === 'object') ? (prepOut.headers as Record<string, string>) : {};
+          const extraHdrs: Record<string, string> = {};
+          for (const [k, v] of Object.entries(prepHeaders)) {
+            if (!v) continue;
+            extraHdrs[k] = String(v);
+          }
+          // ⚠️ NO agregar Content-Type manualmente: el navegador debe generar multipart/form-data; boundary=... automáticamente.
+          //    Si lo ponemos tú, el boundary no coincide y Supabase no puede parsear el multipart.
           put = await fetchWithTimeout(uploadUrl, {
             method: 'POST',
-            // ✅ IMPORTANTE: NO establecer manualmente Content-Type. El navegador debe establecerlo
-            // automáticamente con el "boundary=..." correcto; si lo ponemos manualmente, se rompe.
+            ...(Object.keys(extraHdrs).length > 0 ? { headers: extraHdrs } : {}),
             body: formData,
           }, timeoutPut);
           putRespText = await put.text().catch(() => '');
           if (!put.ok) {
-            // Log del BODY COMPLETO de error de Supabase Storage para diagnosticar 400 en Chrome Desktop
+            // Log del BODY COMPLETO de error de Supabase Storage para diagnosticar
             const status = put?.status ?? 0;
             const statusText = put?.statusText ?? '';
             console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
               status, statusText, responseText: (putRespText || '').slice(0, 2000),
               responseTextLength: (putRespText || '').length,
+              method,
+              hasPresignedFields,
+              sentHeadersKeys: Object.keys(extraHdrs),
+              fieldsCount: hasPresignedFields ? Object.keys((prepOut!.uploadFields as any) || {}).length : 0,
               filename,
               contentType,
               file_type: (file as any)?.type || '',
@@ -1405,7 +1432,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               blob_size: finalBlob.size,
               uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
             }, null, 2));
-            // Intentar extraer mensaje legible si es JSON
             let msgExtra = '';
             try {
               const parsed = JSON.parse(putRespText || '{}');
@@ -1414,10 +1440,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${status}${statusText ? ' ' + statusText : ''})${msgExtra ? ': ' + msgExtra : ''}. Respuesta completa: ${(putRespText || '').slice(0, 240)}`);
           }
         } catch (errAny) {
-          if (put && !put.ok) throw errAny; // error ya formateado
+          if (put && !put.ok) throw errAny;
           const msgAny = errAny instanceof Error ? errAny.message : String(errAny || '');
           console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (exception):', JSON.stringify({
             error: msgAny.slice(0, 800),
+            method,
             filename, contentType, file_size: Number((file as any)?.size || 0),
           }, null, 2));
           throw errAny;
@@ -1478,11 +1505,29 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const fd = new FormData();
             const filenameR = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
             const finalBlobR = file instanceof Blob ? file : new Blob([file], { type: contentType });
-            fd.append('file', finalBlobR, filenameR);
+            const methodR = String(prepOut2?.uploadMethod || prepOut2?.via || 'POST_FORM').toUpperCase();
+            const hasFieldsR = methodR === 'POST_FORM_FIELDS' && prepOut2?.uploadFields && typeof prepOut2.uploadFields === 'object';
+            if (hasFieldsR) {
+              // IMPORTANTE: S3 Presigned Post -> fields PRIMERO, 'file' AL FINAL.
+              const entries = Object.entries((prepOut2!.uploadFields as any) || {});
+              for (const [k, v] of entries) fd.append(k, (v === null || v === undefined) ? '' : String(v));
+              fd.append('file', finalBlobR, filenameR);
+              diag.push('intent4_retry_presigned_post');
+            } else {
+              // Fallback createSignedUploadUrl SDK
+              fd.append('file', finalBlobR, filenameR);
+            }
             let putR: Response | undefined;
             let putRText = '';
             try {
-              putR = await fetchWithTimeout(uploadUrl, { method: 'POST', body: fd }, timeoutPut);
+              const prepHdrs = (prepOut2?.headers && typeof prepOut2.headers === 'object') ? (prepOut2.headers as Record<string, string>) : {};
+              const extraHdrs: Record<string, string> = {};
+              for (const [k, v] of Object.entries(prepHdrs)) if (v) extraHdrs[k] = String(v);
+              putR = await fetchWithTimeout(uploadUrl, {
+                method: 'POST',
+                ...(Object.keys(extraHdrs).length > 0 ? { headers: extraHdrs } : {}),
+                body: fd,
+              }, timeoutPut);
               putRText = await putR.text().catch(() => '');
               if (!putR.ok) {
                 const status = putR?.status ?? 0;
@@ -1490,6 +1535,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
                   status, statusText, responseText: (putRText || '').slice(0, 2000),
                   responseTextLength: (putRText || '').length,
+                  method: methodR,
+                  hasPresignedFields: hasFieldsR,
+                  sentHeadersKeys: Object.keys(extraHdrs),
+                  fieldsCount: hasFieldsR ? Object.keys((prepOut2!.uploadFields as any) || {}).length : 0,
                   filename: filenameR,
                   contentType,
                   file_type: (file as any)?.type || '',
