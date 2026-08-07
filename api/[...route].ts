@@ -16533,7 +16533,7 @@ const uploadAudioSupabaseHandler = (() => {
     try {
       // MODO ESPECIAL: Segunda llamada DESPUÉS de que el cliente terminó de subir (POST multipart).
       if (wantFetchUrl && keyInPayload) {
-        const safeKey = keyInPayload.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/^\/+/, "").slice(0, 500);
+        let safeKey = keyInPayload.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/^\/+/, "").slice(0, 500);
         if (!safeKey || !/^(uploads\/(audio|avatars|profiles|))\//i.test(safeKey + "/")) {
           try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_denied_path", key: safeKey.slice(0, 200) })); } catch {}
           return send(res, 403, { ok: false, error: "Ruta no permitida para firmar URL" });
@@ -16601,7 +16601,7 @@ const uploadAudioSupabaseHandler = (() => {
           // Si el primer list() devuelve 0 archivos (consistencia eventual Supabase MUY extrema,
           // o path malo) — reintentamos el propio list() con 500ms entre intentos hasta 3.
           // NUNCA ABORTAMOS SI SIGUE VACÍO: usamos safeKey / keyInPayload como fallback final en el loop de firmas.
-          let listedNames: Array<{ name: string; fullPath: string; created_at: any; }> = [];
+          listedNames = [];
           const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
           try {
             const folderPath = `uploads/audio/${userId}`;
