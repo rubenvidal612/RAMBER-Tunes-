@@ -16540,28 +16540,28 @@ const uploadAudioSupabaseHandler = (() => {
         }
         try {
           const t0 = Date.now();
-          // ✅ PASO IMPORTANTE: Actualizar owner_id=auth.user.id para que esta fila en storage.objects
-          // pertenezca al usuario (así policies de SELECT/UPDATE/DELETE que usan auth.uid() funcionan).
-          // Se usa el admin client (salta RLS) así que funciona sin policy de UPDATE.
           try {
             const now = new Date().toISOString();
-            const meta = {} as any;
+            let ownerUpdOk = false;
             try {
-              const { error: updErr } = await auth.admin
+              const { error: errA } = await auth.admin
                 .schema("storage")
                 .from("objects")
                 .update({ owner_id: userId, updated_at: now } as any)
                 .eq("name" as any, safeKey)
                 .eq("bucket_id" as any, bucket);
-              if (updErr) {
-                console.error("[UPLOAD_AUDIO_SUPABASE] owner_id update failed (from path):", String(updErr?.message || updErr || "").slice(0, 400));
-              }
-            } catch (ownerErr) {
-              // Fallback: si storage.objects no se puede viajar por el schema público (caso raro), intentamos via rpc
-              try { console.error("[UPLOAD_AUDIO_SUPABASE] owner_id update except:", String(ownerErr instanceof Error ? ownerErr.message : ownerErr || "").slice(0, 400)); } catch {}
+              if (!errA) ownerUpdOk = true;
+              else try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id update err (schema storage, no fatal):", String((errA as any)?.message || errA || "").slice(0, 400)); } catch {}
+            } catch (schemaErr) {
+              try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id update schema fail (no fatal):", String(schemaErr instanceof Error ? schemaErr.message : schemaErr || "").slice(0, 400)); } catch {}
             }
+            if (ownerUpdOk) try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "owner_id_updated", key: safeKey.slice(0, 200) })); } catch {}
+            else try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id update skipped (no fatal) -> owner_id = NULL temporal, pero se reproduce OK."); } catch {}
+          } catch (_e) {
+            try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id try outer (no fatal)."); } catch {}
           }
-            const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
+
+          const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
             if (signed.error) throw signed.error;
             const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
             const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
