@@ -1375,12 +1375,53 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           return { url, key };
         }
         const formData = new FormData();
-        formData.append('file', file, name || 'audio.mp3');
-        const put = await fetchWithTimeout(uploadUrl, {
-          method: 'POST',
-          body: formData,
-        }, timeoutPut);
-        if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
+        const filename = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
+        const finalBlob = file instanceof Blob ? file : new Blob([file], { type: contentType });
+        // Supabase Storage createSignedUploadUrl espera EXACTAMENTE un campo llamado "file" (multipart/form-data).
+        // Usamos 3er argumento para fijar nombre (quita diferencias Chrome Desktop vs móvil).
+        formData.append('file', finalBlob, filename);
+        let put: Response | undefined;
+        let putRespText = '';
+        try {
+          put = await fetchWithTimeout(uploadUrl, {
+            method: 'POST',
+            // ✅ IMPORTANTE: NO establecer manualmente Content-Type. El navegador debe establecerlo
+            // automáticamente con el "boundary=..." correcto; si lo ponemos manualmente, se rompe.
+            body: formData,
+          }, timeoutPut);
+          putRespText = await put.text().catch(() => '');
+          if (!put.ok) {
+            // Log del BODY COMPLETO de error de Supabase Storage para diagnosticar 400 en Chrome Desktop
+            const status = put?.status ?? 0;
+            const statusText = put?.statusText ?? '';
+            console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
+              status, statusText, responseText: (putRespText || '').slice(0, 2000),
+              responseTextLength: (putRespText || '').length,
+              filename,
+              contentType,
+              file_type: (file as any)?.type || '',
+              file_size: Number((file as any)?.size || 0),
+              blob_type: finalBlob.type,
+              blob_size: finalBlob.size,
+              uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
+            }, null, 2));
+            // Intentar extraer mensaje legible si es JSON
+            let msgExtra = '';
+            try {
+              const parsed = JSON.parse(putRespText || '{}');
+              msgExtra = (parsed?.error || parsed?.message || parsed?.msg || '').toString().trim();
+            } catch {}
+            throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${status}${statusText ? ' ' + statusText : ''})${msgExtra ? ': ' + msgExtra : ''}. Respuesta completa: ${(putRespText || '').slice(0, 240)}`);
+          }
+        } catch (errAny) {
+          if (put && !put.ok) throw errAny; // error ya formateado
+          const msgAny = errAny instanceof Error ? errAny.message : String(errAny || '');
+          console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (exception):', JSON.stringify({
+            error: msgAny.slice(0, 800),
+            filename, contentType, file_size: Number((file as any)?.size || 0),
+          }, null, 2));
+          throw errAny;
+        }
         // ✅ Subida multipart terminó BIEN.
         // Ahora pedimos la URL firmada de reproducción en LA SEGUNDA LLAMADA fetchSignedUrl=1
         // (antes lo intentaba en la prep y fallaba con "Object not found" porque el objeto no existía todavía).
@@ -1397,7 +1438,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const prepRawSigned = await prepSigned.text().catch(() => '');
             const prepSignedOut = parseJsonSafe(prepRawSigned);
             if (!(prepSigned.ok && prepSignedOut?.ok)) {
-              throw new Error((prepSignedOut?.detail || prepSignedOut?.error || `No pude firmar la URL final (HTTP ${prepSigned.status}).`).toString());
+              const extra = (prepSignedOut?.detail || prepSignedOut?.error || `HTTP ${prepSigned.status}`).toString();
+              console.error('[UPLOAD_AUDIO_VOICE] Intento4 fetchSignedUrl FAIL:', JSON.stringify({
+                status: prepSigned.status, responseText: prepRawSigned.slice(0, 800), key: key.slice(0, 200), extra,
+              }, null, 2));
+              throw new Error(`No pude firmar la URL final de reproducción. ${extra}`.trim());
             }
             finalUrl = (prepSignedOut?.url || '').toString().trim() || finalUrl;
           } catch (signedErr) {
@@ -1431,9 +1476,39 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const key = (prepOut2?.key || '').toString().trim();
             if (!uploadUrl || !key) throw new Error('No recibí la URL de subida de Supabase.');
             const fd = new FormData();
-            fd.append('file', file, name || 'audio.mp3');
-            const put = await fetchWithTimeout(uploadUrl, { method: 'POST', body: fd }, timeoutPut);
-            if (!put.ok) throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${put.status}).`);
+            const filenameR = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
+            const finalBlobR = file instanceof Blob ? file : new Blob([file], { type: contentType });
+            fd.append('file', finalBlobR, filenameR);
+            let putR: Response | undefined;
+            let putRText = '';
+            try {
+              putR = await fetchWithTimeout(uploadUrl, { method: 'POST', body: fd }, timeoutPut);
+              putRText = await putR.text().catch(() => '');
+              if (!putR.ok) {
+                const status = putR?.status ?? 0;
+                const statusText = putR?.statusText ?? '';
+                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
+                  status, statusText, responseText: (putRText || '').slice(0, 2000),
+                  responseTextLength: (putRText || '').length,
+                  filename: filenameR,
+                  contentType,
+                  file_type: (file as any)?.type || '',
+                  file_size: Number((file as any)?.size || 0),
+                  blob_type: finalBlobR.type,
+                  blob_size: finalBlobR.size,
+                  uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
+                }, null, 2));
+                let msgExtra = '';
+                try {
+                  const parsed = JSON.parse(putRText || '{}');
+                  msgExtra = (parsed?.error || parsed?.message || parsed?.msg || '').toString().trim();
+                } catch {}
+                throw new Error(`No se pudo subir el audio a Supabase Storage (retry, HTTP ${status}${statusText ? ' ' + statusText : ''})${msgExtra ? ': ' + msgExtra : ''}. Respuesta: ${(putRText || '').slice(0, 240)}`);
+              }
+            } catch (errR) {
+              if (putR && !putR.ok) throw errR;
+              throw errR;
+            }
             // ✅ POST FormData finalizado -> segunda llamada fetchSignedUrl para URL de reproducción
             let finalUrl = url;
             const needsFetch = !!prepOut2?.needsFetchSignedUrl || !finalUrl;
@@ -1450,6 +1525,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 finalUrl = (prepS2?.url || '').toString().trim() || finalUrl;
               } else {
                 const s2err = (prepS2?.detail || prepS2?.error || `No pude firmar URL final (retry, HTTP ${prepSigned2.status})`).toString();
+                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY fetchSignedUrl FAIL:', JSON.stringify({
+                  status: prepSigned2.status, responseText: prepRawS2.slice(0, 800), key: key.slice(0, 200),
+                  s2err: s2err.slice(0, 500),
+                }, null, 2));
                 diag.push(`intent4_retry_fetch_signed=fail:${s2err.slice(0, 120).replace(/\s+/g, ' ')}`);
                 throw new Error(s2err);
               }
