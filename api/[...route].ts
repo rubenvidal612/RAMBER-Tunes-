@@ -16597,32 +16597,74 @@ const uploadAudioSupabaseHandler = (() => {
             try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl diagnostic exception (no fatal):", String(diagCatch instanceof Error ? diagCatch.message : diagCatch || "").slice(0, 400)); } catch {}
           }
 
-          // 🔎 RESOLVER PATH REAL DESDE EL LISTADO (PRIORIDAD ABSOLUTA = MÁS RECIENTE):
-          // La subida justo terminó hace 0.1 segundos. El archivo PRIMERO (created_at desc)
-          // en uploads/audio/{userId} es INEQUÍVOCAMENTE el que acabamos de subir,
-          // sin importar cómo Supabase normalice espacios / guiones / filename en storage.objects.name.
-          // De esta forma NO NECESITAMOS COINCIDIR CON NUESTRO SAFEKEY (nunca más falla por filename mismatch).
-          let resolvedListPath = "";
+          // 🔎 LISTAR CARPETA (CON RETRY INDEPENDIENTE HASTA 3 VECES):
+          // Si el primer list() devuelve 0 archivos (consistencia eventual Supabase MUY extrema,
+          // o path malo) — reintentamos el propio list() con 500ms entre intentos hasta 3.
+          // NUNCA ABORTAMOS SI SIGUE VACÍO: usamos safeKey / keyInPayload como fallback final en el loop de firmas.
+          let listedNames: Array<{ name: string; fullPath: string; created_at: any; }> = [];
+          const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
           try {
-            // ⚡ PRIMERO: archivo MÁS RECIENTE del folder (el que acabamos de subir, SIN ADIVINAR NOMBRE):
-            if (listedNames.length > 0) {
-              resolvedListPath = listedNames[0].fullPath;
-              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_most_recent_first", mostRecentName: listedNames[0].name, mostRecentFullPath: resolvedListPath, folderCount: listedNames.length, candidate_safeKey: safeKey })); } catch {}
-            }
-            // (opcional: si encontramos coincidencia EXACTA o SUFFIX más fiable, sobrescribimos):
-            const exactMatch = listedNames.find(n => n.fullPath === safeKey || n.fullPath === keyInPayload || n.fullPath.replace(/^\/+/, "") === safeKey.replace(/^\/+/, ""));
-            if (exactMatch) resolvedListPath = exactMatch.fullPath;
-            if (!exactMatch) {
-              const trySuffix = (keyInPayload.split("/").pop() || safeKey.split("/").pop() || "").trim();
-              if (trySuffix) {
-                const suffixMatch = listedNames.find(n => n.fullPath.endsWith("/" + trySuffix) || n.name === trySuffix);
-                if (suffixMatch) resolvedListPath = suffixMatch.fullPath;
+            const folderPath = `uploads/audio/${userId}`;
+            for (let listAttempt = 1; listAttempt <= 3; listAttempt++) {
+              let listedFiles: any[] = [];
+              try {
+                const { data: listData, error: listErr } = await auth.admin.storage.from(bucket).list(folderPath, { limit: 50, offset: 0, sortBy: { column: "created_at", order: "desc" } });
+                if (listErr) console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl list() err (attempt ${listAttempt}):`, String((listErr as any)?.message || listErr || "").slice(0, 400));
+                listedFiles = Array.isArray(listData) ? listData.slice() : [];
+              } catch (listCatch) {
+                console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl list() exception (attempt ${listAttempt}):`, String(listCatch instanceof Error ? listCatch.message : listCatch || "").slice(0, 400));
+                listedFiles = [];
+              }
+              listedNames = listedFiles.map((f: any) => ({ name: String(f?.name || ""), created_at: (f as any)?.created_at || null, fullPath: `${folderPath.replace(/\/+$/, "")}/${String(f?.name || "")}` }));
+              // Si NO está vacío → salimos inmediatamente, no esperamos:
+              if (listedNames.length > 0) break;
+              // Si list vacío + quedan attempts → esperar consistencia:
+              if (listAttempt < 3) {
+                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl list() EMPTY (attempt ${listAttempt}). Esperando ~500ms para consistencia eventual Supabase Storage...`); } catch {}
+                await sleepMs(500);
               }
             }
+            // Log final del listado:
+            console.log(JSON.stringify({
+              kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_diagnostic_preamble_listed",
+              bucket,
+              supabaseUrl: auth.supabaseUrl || process.env.SUPABASE_URL || "",
+              keyInPayload_RAW_CLIENT: keyInPayload,
+              safeKey_NORMALIZED: safeKey,
+              equal_raw_vs_normalized: keyInPayload === safeKey,
+              lengths: { raw: keyInPayload.length, norm: safeKey.length },
+              folderListed_path: `uploads/audio/${userId}`,
+              folderListed_count: listedNames.length,
+              folderListed_files: listedNames.slice(0, 20),
+            }));
+          } catch (diagCatch) {
+            try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl list diagnostic exception (no fatal):", String(diagCatch instanceof Error ? diagCatch.message : diagCatch || "").slice(0, 400)); } catch {}
+          }
+
+          // 🔎 RESOLVER PATH REAL DESDE EL LISTADO (prioridad MÁS RECIENTE primero):
+          let resolvedListPath = "";
+          const resolveFromListed = () => {
+            try {
+              let path = "";
+              if (listedNames.length > 0) path = listedNames[0].fullPath; // ⚡ archivo MÁS RECIENTE = el acabamos de subir
+              const exactMatch = listedNames.find(n => n.fullPath === safeKey || n.fullPath === keyInPayload || n.fullPath.replace(/^\/+/, "") === safeKey.replace(/^\/+/, ""));
+              if (exactMatch) path = exactMatch.fullPath;
+              if (!exactMatch) {
+                const trySuffix = (keyInPayload.split("/").pop() || safeKey.split("/").pop() || "").trim();
+                if (trySuffix) {
+                  const suffixMatch = listedNames.find(n => n.fullPath.endsWith("/" + trySuffix) || n.name === trySuffix);
+                  if (suffixMatch) path = suffixMatch.fullPath;
+                }
+              }
+              return path;
+            } catch { return ""; }
+          };
+          try {
+            resolvedListPath = resolveFromListed();
             if (resolvedListPath) {
-              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_list_path_final", resolvedListPath })); } catch {}
+              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_list_path_final", resolvedListPath, folderCount: listedNames.length })); } catch {}
             } else {
-              try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl: carpeta vacía, sin path real para usar. Intentaremos safeKey / raw como fallback."); } catch {}
+              try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl: sin path real listado. Usaremos safeKey / keyInPayload como FALLBACK FINAL (no fatal)."); } catch {}
             }
           } catch (resErr) {
             try { console.warn("[UPLOAD_AUDIO_SUPABASE] resolve list path err (no fatal):", String(resErr instanceof Error ? resErr.message : resErr || "").slice(0, 400)); } catch {}
@@ -16631,34 +16673,60 @@ const uploadAudioSupabaseHandler = (() => {
           let signed: any = null;
           let signedError: any = null;
           let tryKeyUsed = "";
-          const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-          // 🚨 ESTRATEGIA DE 3 INTENTOS REORDENADA:
-          //   Attempt 1 (PRIORIDAD MAX): resolvedListPath REAL (más reciente del folder) — NO ADIVINA NOMBRES.
-          //   Attempt 2: safeKey (normalizado) fallback.
-          //   Attempt 3: keyInPayload RAW (sin normalizar) fallback.
-          // Así: archivos WhatsApp Video (espacios vs guiones bajos), ROSENDO HIMNO, RULIYAN — TODOS FUNCIONAN 100% EN INTENTO 1.
+          // 🚨 ESTRATEGIA 3 INTENTOS (cada intento REHACE list() por si apareció el archivo por consistencia):
+          //   Attempt 1: resolvedListPath REAL (archivo más reciente del folder list)
+          //   Attempt 2: RE-LISTAMOS OTRA VEZ (por si apareció) → resolvedListPath actualizado, si no safeKey normalizado.
+          //   Attempt 3: RE-LISTAMOS 3ª vez (consistencia), si no keyInPayload RAW.
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
+              // Cada intento >=2 refrescamos el list() OTRA VEZ (por si el archivo apareció en Storage en los últimos 500ms):
+              if (attempt >= 2) {
+                try {
+                  const folderPath = `uploads/audio/${userId}`;
+                  let listedFiles2: any[] = [];
+                  try {
+                    const { data: ld2, error: le2 } = await auth.admin.storage.from(bucket).list(folderPath, { limit: 50, offset: 0, sortBy: { column: "created_at", order: "desc" } });
+                    if (!le2 && Array.isArray(ld2)) listedFiles2 = ld2;
+                  } catch {}
+                  listedNames = listedFiles2.map((f: any) => ({ name: String(f?.name || ""), created_at: (f as any)?.created_at || null, fullPath: `${folderPath.replace(/\/+$/, "")}/${String(f?.name || "")}` }));
+                  const newResolved = resolveFromListed();
+                  if (newResolved) resolvedListPath = newResolved;
+                  if (attempt < 3 && listedNames.length === 0) await sleepMs(500);
+                } catch {}
+              }
               let tryKey = "";
-              if (attempt === 1 && resolvedListPath) {
-                // Intento 1 SIEMPRE = path REAL del listado (MÁS RECIENTE):
-                try { console.log(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (MEJOR): usando PATH REAL RESUELTO de folder list (most recent): ${resolvedListPath.slice(0, 120)}`); } catch {}
-                tryKey = resolvedListPath;
+              if (attempt === 1) {
+                // Attempt 1 (MAX PRIORITY): resolvedListPath real (más reciente)
+                if (resolvedListPath) {
+                  tryKey = resolvedListPath;
+                  try { console.log(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (MEJOR): PATH REAL list folder most recent = ${tryKey.slice(0, 120)}`); } catch {}
+                } else {
+                  // Si no hay path resuelto (folder vacío por consistencia), pasa directo a safeKey sin perder intento:
+                  tryKey = safeKey;
+                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: sin list path resuelto, fallback safeKey normalizado = ${tryKey.slice(0, 120)}`); } catch {}
+                }
               } else if (attempt === 2) {
-                // Intento 2: nuestro safeKey (normalizado):
-                tryKey = safeKey;
-                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: fallback safeKey normalizado = ${tryKey.slice(0, 120)}`); } catch {}
+                if (resolvedListPath && tryKeyUsed !== resolvedListPath) {
+                  tryKey = resolvedListPath;
+                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: re-list → path real = ${tryKey.slice(0, 120)}`); } catch {}
+                } else {
+                  tryKey = safeKey;
+                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: fallback safeKey normalizado = ${tryKey.slice(0, 120)}`); } catch {}
+                }
               } else if (attempt === 3) {
-                // Intento 3: último recurso, keyInPayload RAW sin normalizar.
-                if (keyInPayload !== safeKey) {
+                // Último intento:
+                if (resolvedListPath && tryKeyUsed !== resolvedListPath) {
+                  tryKey = resolvedListPath;
+                } else if (keyInPayload !== safeKey && tryKeyUsed !== keyInPayload) {
                   tryKey = keyInPayload;
                 } else {
-                  // Si raw === safeKey, probamos un segundo resolvedListPath por si cambió el listado (consistencia eventual 2º):
-                  tryKey = resolvedListPath || safeKey;
+                  // Caso por defecto: lo que tengamos más fiable.
+                  tryKey = resolvedListPath || keyInPayload || safeKey;
                 }
                 try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (FINAL): fallback last = ${tryKey.slice(0, 120)}`); } catch {}
               }
-              if (!tryKey) throw new Error("No hay path para intentar firmar (folder vacío?)");
+              if (!tryKey) tryKey = safeKey || keyInPayload; // ¡NUNCA throw folder vacío! Siempre un path por defecto.
+              if (!tryKey) throw new Error("No hay paths disponibles para intentar firmar URL reproducción.");
               tryKeyUsed = tryKey;
               const trySigned = await auth.admin.storage.from(bucket).createSignedUrl(tryKey, 60 * 60 * 2);
               if (trySigned.error) throw trySigned.error;
@@ -16678,7 +16746,7 @@ const uploadAudioSupabaseHandler = (() => {
               await sleepMs(500);
             }
           }
-          if (signedError || !signed) throw signedError || new Error("No se pudo generar URL de reproducción (retry agotado — revisa folderListed_files en logs)");
+          if (signedError || !signed) throw signedError || new Error("No se pudo generar URL de reproducción (retry agotado — revisa storage.objects bucket ramber-tunes)");
 
           const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
           const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
