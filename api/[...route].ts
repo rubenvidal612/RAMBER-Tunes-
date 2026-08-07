@@ -16561,7 +16561,32 @@ const uploadAudioSupabaseHandler = (() => {
             try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id try outer (no fatal)."); } catch {}
           }
 
-          const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
+          // (NO BLOQUEANTE owner_id update) -> VER Bloque anterior completo...
+          // Ahora generar URL de reproducción. Caso típico: Object not found por consistencia eventual.
+          // Strategy: retries hasta 3, 500ms entre ellos, SOLO si error contiene "Object not found".
+          let signed: any = null;
+          let signedError: any = null;
+          const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const trySigned = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
+              if (trySigned.error) throw trySigned.error;
+              signed = trySigned;
+              signedError = null;
+              break;
+            } catch (signedErr) {
+              const msg = String((signedErr as any)?.message || signedErr || "").toLowerCase();
+              const isObjectNotFound = msg.includes("object not found");
+              if (!isObjectNotFound || attempt === 3) {
+                signedError = signedErr;
+                break;
+              }
+              try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl retry attempt=${attempt} (Object not found) -> waiting ~500ms... key=${safeKey.slice(0, 120)}`); } catch {}
+              await sleepMs(500);
+            }
+          }
+          if (signedError || !signed) throw signedError || new Error("No se pudo generar URL de reproducción (retry agotado)");
+
             if (signed.error) throw signed.error;
             const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
             const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
