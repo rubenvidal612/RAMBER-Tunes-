@@ -16548,7 +16548,8 @@ const uploadAudioSupabaseHandler = (() => {
             const meta = {} as any;
             try {
               const { error: updErr } = await auth.admin
-                .from("storage.objects" as any)
+                .schema("storage")
+                .from("objects")
                 .update({ owner_id: userId, updated_at: now } as any)
                 .eq("name" as any, safeKey)
                 .eq("bucket_id" as any, bucket);
