@@ -16813,14 +16813,16 @@ const uploadAudioSupabaseHandler = (() => {
         key: pathKey || key,
         contentType,
         via: "supabase_signed_direct_sdk",
-        uploadMethod: "POST_FORM",
+        // ✅ createSignedUploadUrl() de Supabase SDK crea una URL firmada para método PUT BLOB DIRECTO.
+        // NO usar POST FormData (multipart) aquí — método incompat; causa "Object not found" persistente.
+        uploadMethod: "PUT_BLOB",
         needsFetchSignedUrl: true,
-        // ✅ Headers que el cliente DEBE enviar en el POST multipart para no tener
-        //    "header must have required property 'authorization'".
-        //    Usamos ANON key (segura para el cliente) + el Bearer ANON.
+        // Headers que el cliente DEBE enviar JUNTO al PUT (junto a la firma de la URL):
         headers: {
+          "x-ms-blob-type": "BlockBlob",
           "apikey": anonKey,
           "authorization": `Bearer ${anonKey}`,
+          "content-type": contentType,
         },
       });
     } catch (e) {

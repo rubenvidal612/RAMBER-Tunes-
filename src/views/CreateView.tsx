@@ -1377,51 +1377,59 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const formData = new FormData();
         const filename = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
         const finalBlob = file instanceof Blob ? file : new Blob([file], { type: contentType });
-        // Método nuevo (recomendado): S3 createPresignedPost ADMIN. La firma ESTÁ dentro de uploadFields (NO necesita headers Authorization/apikey).
-        // IMPORTANTE: en S3 Presigned Post, los fields deben ir ANTES que el 'file'.
         const method = String(prepOut?.uploadMethod || prepOut?.via || 'POST_FORM').toUpperCase();
         const hasPresignedFields = method === 'POST_FORM_FIELDS' && prepOut?.uploadFields && typeof prepOut.uploadFields === 'object';
-        if (hasPresignedFields) {
+        const isPutBlobDirect = method === 'PUT_BLOB';
+        let putBody: any = null;
+        let putMethod: 'POST' | 'PUT' = 'POST';
+        if (isPutBlobDirect) {
+          putMethod = 'PUT';
+          putBody = finalBlob;
+          diag.push('intent4_put_blob_direct');
+        } else if (hasPresignedFields) {
           const entries = Object.entries(prepOut!.uploadFields as Record<string, any>);
           for (const [k, v] of entries) {
             const sVal = (v === null || v === undefined) ? '' : String(v);
             formData.append(k, sVal);
           }
-          // El campo 'file' SIEMPRE al final en presigned post.
           formData.append('file', finalBlob, filename);
+          putBody = formData;
           diag.push('intent4_presigned_post');
         } else {
-          // Fallback antiguo: Supabase createSignedUploadUrl SDK.
-          // Supabase exige HEADER 'apikey' y/o 'Authorization: Bearer ...' en el POST multipart real (no solo en la query).
           formData.append('file', finalBlob, filename);
+          putBody = formData;
+          diag.push('intent4_formdata_post_fallback');
         }
         let put: Response | undefined;
         let putRespText = '';
         try {
-          // Construimos headers: SOLO los que envía el servidor (presigned fields NO necesita nada).
           const prepHeaders = (prepOut?.headers && typeof prepOut.headers === 'object') ? (prepOut.headers as Record<string, string>) : {};
           const extraHdrs: Record<string, string> = {};
           for (const [k, v] of Object.entries(prepHeaders)) {
             if (!v) continue;
+            const kLower = k.toLowerCase();
+            if (!isPutBlobDirect && kLower === 'content-type') continue;
             extraHdrs[k] = String(v);
           }
-          // ⚠️ NO agregar Content-Type manualmente: el navegador debe generar multipart/form-data; boundary=... automáticamente.
-          //    Si lo ponemos tú, el boundary no coincide y Supabase no puede parsear el multipart.
+          if (isPutBlobDirect && !extraHdrs['content-type'] && !extraHdrs['Content-Type']) {
+            extraHdrs['content-type'] = finalBlob.type || contentType || 'application/octet-stream';
+          }
           put = await fetchWithTimeout(uploadUrl, {
-            method: 'POST',
+            method: putMethod,
             ...(Object.keys(extraHdrs).length > 0 ? { headers: extraHdrs } : {}),
-            body: formData,
+            body: putBody,
           }, timeoutPut);
           putRespText = await put.text().catch(() => '');
           if (!put.ok) {
-            // Log del BODY COMPLETO de error de Supabase Storage para diagnosticar
             const status = put?.status ?? 0;
             const statusText = put?.statusText ?? '';
-            console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
+            console.error('[UPLOAD_AUDIO_VOICE] Intento4 UPLOAD FAIL:', JSON.stringify({
               status, statusText, responseText: (putRespText || '').slice(0, 2000),
               responseTextLength: (putRespText || '').length,
               method,
+              putMethod,
               hasPresignedFields,
+              isPutBlobDirect,
               sentHeadersKeys: Object.keys(extraHdrs),
               fieldsCount: hasPresignedFields ? Object.keys((prepOut!.uploadFields as any) || {}).length : 0,
               filename,
@@ -1442,9 +1450,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         } catch (errAny) {
           if (put && !put.ok) throw errAny;
           const msgAny = errAny instanceof Error ? errAny.message : String(errAny || '');
-          console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (exception):', JSON.stringify({
+          console.error('[UPLOAD_AUDIO_VOICE] Intento4 UPLOAD FAIL (exception):', JSON.stringify({
             error: msgAny.slice(0, 800),
             method,
+            putMethod,
+            isPutBlobDirect,
             filename, contentType, file_size: Number((file as any)?.size || 0),
           }, null, 2));
           throw errAny;
@@ -1507,36 +1517,54 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const finalBlobR = file instanceof Blob ? file : new Blob([file], { type: contentType });
             const methodR = String(prepOut2?.uploadMethod || prepOut2?.via || 'POST_FORM').toUpperCase();
             const hasFieldsR = methodR === 'POST_FORM_FIELDS' && prepOut2?.uploadFields && typeof prepOut2.uploadFields === 'object';
-            if (hasFieldsR) {
-              // IMPORTANTE: S3 Presigned Post -> fields PRIMERO, 'file' AL FINAL.
+            const isPutBlobR = methodR === 'PUT_BLOB';
+            let putRBody: any = null;
+            let putRMethod: 'POST' | 'PUT' = 'POST';
+            if (isPutBlobR) {
+              putRMethod = 'PUT';
+              putRBody = finalBlobR;
+              diag.push('intent4_retry_put_blob_direct');
+            } else if (hasFieldsR) {
               const entries = Object.entries((prepOut2!.uploadFields as any) || {});
               for (const [k, v] of entries) fd.append(k, (v === null || v === undefined) ? '' : String(v));
               fd.append('file', finalBlobR, filenameR);
+              putRBody = fd;
               diag.push('intent4_retry_presigned_post');
             } else {
-              // Fallback createSignedUploadUrl SDK
               fd.append('file', finalBlobR, filenameR);
+              putRBody = fd;
+              diag.push('intent4_retry_formdata_post_fallback');
             }
             let putR: Response | undefined;
             let putRText = '';
             try {
               const prepHdrs = (prepOut2?.headers && typeof prepOut2.headers === 'object') ? (prepOut2.headers as Record<string, string>) : {};
               const extraHdrs: Record<string, string> = {};
-              for (const [k, v] of Object.entries(prepHdrs)) if (v) extraHdrs[k] = String(v);
+              for (const [k, v] of Object.entries(prepHdrs)) {
+                if (!v) continue;
+                const kLower = k.toLowerCase();
+                if (!isPutBlobR && kLower === 'content-type') continue;
+                extraHdrs[k] = String(v);
+              }
+              if (isPutBlobR && !extraHdrs['content-type'] && !extraHdrs['Content-Type']) {
+                extraHdrs['content-type'] = finalBlobR.type || contentType || 'application/octet-stream';
+              }
               putR = await fetchWithTimeout(uploadUrl, {
-                method: 'POST',
+                method: putRMethod,
                 ...(Object.keys(extraHdrs).length > 0 ? { headers: extraHdrs } : {}),
-                body: fd,
+                body: putRBody,
               }, timeoutPut);
               putRText = await putR.text().catch(() => '');
               if (!putR.ok) {
                 const status = putR?.status ?? 0;
                 const statusText = putR?.statusText ?? '';
-                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
+                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY UPLOAD FAIL:', JSON.stringify({
                   status, statusText, responseText: (putRText || '').slice(0, 2000),
                   responseTextLength: (putRText || '').length,
                   method: methodR,
+                  putRMethod,
                   hasPresignedFields: hasFieldsR,
+                  isPutBlobR,
                   sentHeadersKeys: Object.keys(extraHdrs),
                   fieldsCount: hasFieldsR ? Object.keys((prepOut2!.uploadFields as any) || {}).length : 0,
                   filename: filenameR,
