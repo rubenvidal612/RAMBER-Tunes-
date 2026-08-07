@@ -34,6 +34,67 @@ export const CREDIT_COSTS = {
 
 export function round2(n: number) { 
   return Math.round(n * 100) / 100; 
+}
+
+function isIsoInPast(iso: any) {
+  const s = String(iso || "").trim();
+  if (!s) return false;
+  const ms = new Date(s).getTime();
+  if (!Number.isFinite(ms)) return false;
+  return ms < Date.now();
+}
+
+function isMissingColumnError(error: any) {
+  const msg = String((error as any)?.message || error || "");
+  return /column.*does not exist|relation.*does not exist/i.test(msg);
+}
+
+export async function getActiveBatchCredits(admin: any, userId: string): Promise<number> {
+  try {
+    const { data, error } = await admin
+      .from("credit_batches")
+      .select("remaining_credits, expires_at, is_expired")
+      .eq("user_id", userId)
+      .eq("is_expired", false);
+    if (error) {
+      if (isMissingColumnError(error) || /relation.*credit_batches.*does not exist/i.test(String(error?.message || error || ""))) {
+        return 0;
+      }
+      return 0;
+    }
+    const now = Date.now();
+    let total = 0;
+    const rows = Array.isArray(data) ? data : [];
+    for (const r of rows) {
+      const remaining = Number((r as any).remaining_credits ?? 0);
+      if (!Number.isFinite(remaining) || remaining <= 0) continue;
+      const expIso = String((r as any).expires_at || "").trim();
+      if (expIso) {
+        const expMs = new Date(expIso).getTime();
+        if (Number.isFinite(expMs) && expMs <= now) continue;
+      }
+      total += remaining;
+    }
+    return round2(total);
+  } catch {
+    return 0;
+  }
+}
+
+export async function totalUserCreditsAvailable(admin: any, userId: string, profile?: any): Promise<number> {
+  const p = profile ?? null;
+  const prof = p ?? (await (async () => {
+    try {
+      const { data } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+      return data ?? {};
+    } catch {
+      return {};
+    }
+  })());
+  const globalExpired = isIsoInPast((prof as any)?.credits_expires_at);
+  const profileCredits = globalExpired ? 0 : creditsFromProfile(prof);
+  const batchCredits = await getActiveBatchCredits(admin, userId);
+  return round2(profileCredits + batchCredits);
 } 
 
 export function toCounts(credits: number): CreditCounts { 
@@ -86,67 +147,85 @@ function pickWritableCreditsColumn(profile: any): "zingy_credits" | "ramber_cred
   return null; 
 } 
 
-export async function adjustUserCredits(admin: any, userId: string, deltaCredits: number) { 
-  const delta = Number(deltaCredits); 
-  if (!Number.isFinite(delta) || !delta) return { ok: true as const }; 
+export async function adjustUserCredits(admin: any, userId: string, deltaCredits: number) {
+  const delta = Number(deltaCredits);
+  if (!Number.isFinite(delta) || !delta) return { ok: true as const };
 
-  for (let i = 0; i < 4; i++) { 
-    const { data: profile, error: readErr } = await admin 
-      .from("profiles") 
-      .select("*") 
-      .eq("id", userId) 
-      .maybeSingle(); 
-    if (readErr) return { ok: false as const, error: readErr.message }; 
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
 
-    const current = creditsFromProfile(profile); 
-    let next = round2(Math.max(0, current + delta)); 
-    if (delta > 0) next = Math.min(next, 2000); 
-    const col = pickWritableCreditsColumn(profile); 
-    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." }; 
-    const patch: any = { [col]: next }; 
-    if (delta > 0) { 
-      const expiresAt = new Date(); 
-      expiresAt.setDate(expiresAt.getDate() + 60); 
-      patch.credits_expires_at = expiresAt.toISOString(); 
-    } 
+    const currentProfileCredits = creditsFromProfile(profile);
+    const batchCredits = await getActiveBatchCredits(admin, userId);
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
+    const current = globalExpired && delta < 0 ? 0 : currentProfileCredits;
+    let next = round2(Math.max(0, current + delta));
+    if (delta > 0) {
+      const cap = 2000;
+      const maxProfileAllowed = round2(Math.max(0, cap - batchCredits));
+      next = Math.min(next, maxProfileAllowed);
+    }
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
+    const patch: any = { [col]: next };
+    if (delta > 0) {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 60);
+      patch.credits_expires_at = expiresAt.toISOString();
+    }
 
-    const { error: updErr } = await admin 
-      .from("profiles") 
-      .update(patch) 
-      .eq("id", userId); 
+    const { error: updErr } = await admin
+      .from("profiles")
+      .update(patch)
+      .eq("id", userId);
 
-    if (!updErr) return { ok: true as const, credits: next }; 
-  } 
+    if (!updErr) return { ok: true as const, credits: next };
+  }
 
-  return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." }; 
-} 
+  return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
+}
 
-export async function consumeUserCredits(admin: any, userId: string, costCredits: number) { 
-  const cost = round2(Number(costCredits)); 
-  if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const }; 
+export async function consumeUserCredits(admin: any, userId: string, costCredits: number) {
+  const cost = round2(Number(costCredits));
+  if (!Number.isFinite(cost) || cost <= 0) return { ok: true as const };
 
-  for (let i = 0; i < 4; i++) { 
-    const { data: profile, error: readErr } = await admin 
-      .from("profiles") 
-      .select("*") 
-      .eq("id", userId) 
-      .maybeSingle(); 
-    if (readErr) return { ok: false as const, error: readErr.message }; 
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
 
-    const current = creditsFromProfile(profile); 
-    if (current < cost) return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: current }; 
+    const batchCredits = await getActiveBatchCredits(admin, userId);
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
+    const profileCredits = globalExpired ? 0 : creditsFromProfile(profile);
+    const totalAvailable = round2(profileCredits + batchCredits);
 
-    const next = round2(Math.max(0, current - cost)); 
-    const col = pickWritableCreditsColumn(profile); 
-    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." }; 
+    if (globalExpired && batchCredits <= 0) {
+      return { ok: false as const, error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar.", credits: 0 };
+    }
 
-    const { error: updErr } = await admin 
-      .from("profiles") 
-      .update({ [col]: next }) 
-      .eq("id", userId); 
+    if (totalAvailable < cost) {
+      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
+    }
 
-    if (!updErr) return { ok: true as const, credits: next }; 
-  } 
+    const current = creditsFromProfile(profile);
+    const next = round2(Math.max(0, current - cost));
+    const col = pickWritableCreditsColumn(profile);
+    if (!col) return { ok: false as const, error: "Falta columna de créditos en profiles (zingy_credits o ramber_credits)." };
 
-  return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." }; 
+    const { error: updErr } = await admin
+      .from("profiles")
+      .update({ [col]: next })
+      .eq("id", userId);
+
+    if (!updErr) return { ok: true as const, credits: next };
+  }
+
+  return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
 }

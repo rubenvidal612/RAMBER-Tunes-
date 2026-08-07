@@ -1283,12 +1283,319 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               : ext === 'm4a' || ext === 'mp4'
                 ? 'audio/mp4'
                 : 'audio/mpeg');
+    const sizeBytes = Number(file?.size || 0);
+    const sizeKb = Math.round(sizeBytes / 1024);
+    const sizeMb = sizeBytes / (1024 * 1024);
+    const SKIP_INLINE_BYTES = 3 * 1024 * 1024; // 3 MB - seguro bajo el límite Vercel (~4.5MB) y evita FUNCTION_PAYLOAD_TOO_LARGE
+    const skipInline = sizeBytes > SKIP_INLINE_BYTES;
+    const diag: string[] = [`size=${sizeKb}KB`, `ct=${contentType}`];
+    if (skipInline) diag.push(`skip_inline=1 (size > ${Math.round(SKIP_INLINE_BYTES / 1024 / 1024)}MB)`);
+
+    const isPayloadTooLarge = (statusCode: number, text: string | null | undefined): boolean => {
+      if (statusCode === 413) return true;
+      const haystack = (text || '').toString().toLowerCase();
+      if (!haystack) return false;
+      return (
+        haystack.includes('function_payload_too_large') ||
+        haystack.includes('request entity too large') ||
+        haystack.includes('payload too large') ||
+        haystack.includes('body is too large') ||
+        haystack.includes('413')
+      );
+    };
+
+    const timeoutPrep = 30000;
+    const timeoutPut = Math.max(45000, Math.min(240000, Math.ceil(sizeMb) * 15000 + 45000));
+    const timeoutInline = Math.max(55000, Math.min(240000, Math.ceil(sizeMb) * 30000 + 55000));
+    diag.push(`timeout_put=${Math.round(timeoutPut / 1000)}s`, `timeout_inline=${Math.round(timeoutInline / 1000)}s`);
 
     const parseJsonSafe = (raw: string) => {
       try {
         return raw ? JSON.parse(raw) : {};
       } catch {
         return { error: raw || '' };
+      }
+    };
+
+    const fetchWithTimeout = (input: RequestInfo, init: RequestInit = {}, timeoutMs = 45000): Promise<Response> => {
+      const controller = new AbortController();
+      const initAny = init as any;
+      const existingSignal = initAny?.signal as AbortSignal | undefined;
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+      if (existingSignal) {
+        const onExternalAbort = () => controller.abort((existingSignal as any)?.reason);
+        if (existingSignal.aborted) {
+          clearTimeout(t);
+          controller.abort(onExternalAbort as any);
+        } else {
+          existingSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+      }
+      return fetch(input, { ...(init as any), signal: controller.signal }).finally(() => clearTimeout(t));
+    };
+
+    const uploadSupabaseDirect = async () => {
+      const useInline = sizeBytes > 0 && sizeBytes <= SKIP_INLINE_BYTES;
+      diag.push(`intent4_mode=${useInline ? "admin_inline_bytes" : "signed_upload_url"}`);
+
+      let prep: Response | undefined;
+      try {
+        if (useInline) {
+          diag.push(`intent4_inline_size=${sizeKb}KB`);
+          const arrayBuffer = await file.arrayBuffer();
+          const fileArray = Array.from(new Uint8Array(arrayBuffer));
+          prep = await fetchWithTimeout('/api/upload-audio-supabase', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ title: name, contentType, file: fileArray }),
+          }, timeoutInline);
+        } else {
+          prep = await fetchWithTimeout('/api/upload-audio-supabase', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ title: name, contentType }),
+          }, timeoutPrep);
+        }
+        const prepRaw = await prep.text().catch(() => '');
+        if (isPayloadTooLarge(prep.status, prepRaw)) {
+          throw new Error('(supabase_inline_oversize_skip)'); // Señal interna: pasar a signed upload
+        }
+        const prepOut = parseJsonSafe(prepRaw);
+        if (!(prep.ok && prepOut?.ok)) {
+          throw new Error((prepOut?.detail || prepOut?.error || `No pude preparar la subida final (Supabase, HTTP ${prep.status}).`).toString());
+        }
+        const url = (prepOut?.url || '').toString().trim();
+        const key = (prepOut?.key || '').toString().trim();
+        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+        const modo = String(prepOut?.via || '').toString().trim();
+        if (modo === 'supabase_admin_inline' || !uploadUrl) {
+          if (!url) throw new Error('No recibí la URL final del audio en Supabase');
+          diag.push('intent4_inline=ok');
+          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect admin inline (<=3MB)', diag.join(' | '));
+          return { url, key };
+        }
+        const formData = new FormData();
+        const filename = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
+        const finalBlob = file instanceof Blob ? file : new Blob([file], { type: contentType });
+        // Método nuevo (recomendado): S3 createPresignedPost ADMIN. La firma ESTÁ dentro de uploadFields (NO necesita headers Authorization/apikey).
+        // IMPORTANTE: en S3 Presigned Post, los fields deben ir ANTES que el 'file'.
+        const method = String(prepOut?.uploadMethod || prepOut?.via || 'POST_FORM').toUpperCase();
+        const hasPresignedFields = method === 'POST_FORM_FIELDS' && prepOut?.uploadFields && typeof prepOut.uploadFields === 'object';
+        if (hasPresignedFields) {
+          const entries = Object.entries(prepOut!.uploadFields as Record<string, any>);
+          for (const [k, v] of entries) {
+            const sVal = (v === null || v === undefined) ? '' : String(v);
+            formData.append(k, sVal);
+          }
+          // El campo 'file' SIEMPRE al final en presigned post.
+          formData.append('file', finalBlob, filename);
+          diag.push('intent4_presigned_post');
+        } else {
+          // Fallback antiguo: Supabase createSignedUploadUrl SDK.
+          // Supabase exige HEADER 'apikey' y/o 'Authorization: Bearer ...' en el POST multipart real (no solo en la query).
+          formData.append('file', finalBlob, filename);
+        }
+        let put: Response | undefined;
+        let putRespText = '';
+        try {
+          // Construimos headers: SOLO los que envía el servidor (presigned fields NO necesita nada).
+          const prepHeaders = (prepOut?.headers && typeof prepOut.headers === 'object') ? (prepOut.headers as Record<string, string>) : {};
+          const extraHdrs: Record<string, string> = {};
+          for (const [k, v] of Object.entries(prepHeaders)) {
+            if (!v) continue;
+            extraHdrs[k] = String(v);
+          }
+          // ⚠️ NO agregar Content-Type manualmente: el navegador debe generar multipart/form-data; boundary=... automáticamente.
+          //    Si lo ponemos tú, el boundary no coincide y Supabase no puede parsear el multipart.
+          put = await fetchWithTimeout(uploadUrl, {
+            method: 'POST',
+            ...(Object.keys(extraHdrs).length > 0 ? { headers: extraHdrs } : {}),
+            body: formData,
+          }, timeoutPut);
+          putRespText = await put.text().catch(() => '');
+          if (!put.ok) {
+            // Log del BODY COMPLETO de error de Supabase Storage para diagnosticar
+            const status = put?.status ?? 0;
+            const statusText = put?.statusText ?? '';
+            console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
+              status, statusText, responseText: (putRespText || '').slice(0, 2000),
+              responseTextLength: (putRespText || '').length,
+              method,
+              hasPresignedFields,
+              sentHeadersKeys: Object.keys(extraHdrs),
+              fieldsCount: hasPresignedFields ? Object.keys((prepOut!.uploadFields as any) || {}).length : 0,
+              filename,
+              contentType,
+              file_type: (file as any)?.type || '',
+              file_size: Number((file as any)?.size || 0),
+              blob_type: finalBlob.type,
+              blob_size: finalBlob.size,
+              uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
+            }, null, 2));
+            let msgExtra = '';
+            try {
+              const parsed = JSON.parse(putRespText || '{}');
+              msgExtra = (parsed?.error || parsed?.message || parsed?.msg || '').toString().trim();
+            } catch {}
+            throw new Error(`No se pudo subir el audio a Supabase Storage (HTTP ${status}${statusText ? ' ' + statusText : ''})${msgExtra ? ': ' + msgExtra : ''}. Respuesta completa: ${(putRespText || '').slice(0, 240)}`);
+          }
+        } catch (errAny) {
+          if (put && !put.ok) throw errAny;
+          const msgAny = errAny instanceof Error ? errAny.message : String(errAny || '');
+          console.error('[UPLOAD_AUDIO_VOICE] Intento4 POST FormData FAIL (exception):', JSON.stringify({
+            error: msgAny.slice(0, 800),
+            method,
+            filename, contentType, file_size: Number((file as any)?.size || 0),
+          }, null, 2));
+          throw errAny;
+        }
+        // ✅ Subida multipart terminó BIEN.
+        // Ahora pedimos la URL firmada de reproducción en LA SEGUNDA LLAMADA fetchSignedUrl=1
+        // (antes lo intentaba en la prep y fallaba con "Object not found" porque el objeto no existía todavía).
+        let finalUrl = url;
+        const needsFetch = !!prepOut?.needsFetchSignedUrl || !finalUrl;
+        if (needsFetch && key) {
+          diag.push('intent4_fetch_signed=1');
+          try {
+            const prepSigned = await fetchWithTimeout('/api/upload-audio-supabase', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+              body: JSON.stringify({ fetchSignedUrl: true, key }),
+            }, timeoutPrep);
+            const prepRawSigned = await prepSigned.text().catch(() => '');
+            const prepSignedOut = parseJsonSafe(prepRawSigned);
+            if (!(prepSigned.ok && prepSignedOut?.ok)) {
+              const extra = (prepSignedOut?.detail || prepSignedOut?.error || `HTTP ${prepSigned.status}`).toString();
+              console.error('[UPLOAD_AUDIO_VOICE] Intento4 fetchSignedUrl FAIL:', JSON.stringify({
+                status: prepSigned.status, responseText: prepRawSigned.slice(0, 800), key: key.slice(0, 200), extra,
+              }, null, 2));
+              throw new Error(`No pude firmar la URL final de reproducción. ${extra}`.trim());
+            }
+            finalUrl = (prepSignedOut?.url || '').toString().trim() || finalUrl;
+          } catch (signedErr) {
+            const msgSigned = signedErr instanceof Error ? signedErr.message : String(signedErr || '');
+            diag.push(`intent4_fetch_signed=fail:${msgSigned.slice(0, 120).replace(/\s+/g, ' ')}`);
+            throw signedErr;
+          }
+        }
+        if (!finalUrl) throw new Error('No recibí la URL final del audio en Supabase (después de fetchSignedUrl).');
+        diag.push('intent4_signed=ok');
+        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload >3MB)', diag.join(' | '));
+        return { url: finalUrl, key };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e || '');
+        // Señal interna: si era inline oversize, saltar a intento Signed Upload sin mostrar error
+        if (msg && /supabase_inline_oversize_skip/i.test(msg)) {
+          diag.push('intent4_inline_oversize -> retry as signed');
+          try {
+            const prepRetry = await fetchWithTimeout('/api/upload-audio-supabase', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+              body: JSON.stringify({ title: name, contentType }),
+            }, timeoutPrep);
+            const prepRaw2 = await prepRetry.text().catch(() => '');
+            const prepOut2 = parseJsonSafe(prepRaw2);
+            if (!(prepRetry.ok && prepOut2?.ok)) {
+              throw new Error((prepOut2?.detail || prepOut2?.error || `No pude preparar la subida final (HTTP ${prepRetry.status}).`).toString());
+            }
+            const uploadUrl = (prepOut2?.uploadUrl || '').toString().trim();
+            const url = (prepOut2?.url || '').toString().trim();
+            const key = (prepOut2?.key || '').toString().trim();
+            if (!uploadUrl || !key) throw new Error('No recibí la URL de subida de Supabase.');
+            const fd = new FormData();
+            const filenameR = name && name.trim() ? name.trim() : (file?.name || 'audio.mp3').toString().trim();
+            const finalBlobR = file instanceof Blob ? file : new Blob([file], { type: contentType });
+            const methodR = String(prepOut2?.uploadMethod || prepOut2?.via || 'POST_FORM').toUpperCase();
+            const hasFieldsR = methodR === 'POST_FORM_FIELDS' && prepOut2?.uploadFields && typeof prepOut2.uploadFields === 'object';
+            if (hasFieldsR) {
+              // IMPORTANTE: S3 Presigned Post -> fields PRIMERO, 'file' AL FINAL.
+              const entries = Object.entries((prepOut2!.uploadFields as any) || {});
+              for (const [k, v] of entries) fd.append(k, (v === null || v === undefined) ? '' : String(v));
+              fd.append('file', finalBlobR, filenameR);
+              diag.push('intent4_retry_presigned_post');
+            } else {
+              // Fallback createSignedUploadUrl SDK
+              fd.append('file', finalBlobR, filenameR);
+            }
+            let putR: Response | undefined;
+            let putRText = '';
+            try {
+              const prepHdrs = (prepOut2?.headers && typeof prepOut2.headers === 'object') ? (prepOut2.headers as Record<string, string>) : {};
+              const extraHdrs: Record<string, string> = {};
+              for (const [k, v] of Object.entries(prepHdrs)) if (v) extraHdrs[k] = String(v);
+              putR = await fetchWithTimeout(uploadUrl, {
+                method: 'POST',
+                ...(Object.keys(extraHdrs).length > 0 ? { headers: extraHdrs } : {}),
+                body: fd,
+              }, timeoutPut);
+              putRText = await putR.text().catch(() => '');
+              if (!putR.ok) {
+                const status = putR?.status ?? 0;
+                const statusText = putR?.statusText ?? '';
+                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY POST FormData FAIL (Chrome Desktop?):', JSON.stringify({
+                  status, statusText, responseText: (putRText || '').slice(0, 2000),
+                  responseTextLength: (putRText || '').length,
+                  method: methodR,
+                  hasPresignedFields: hasFieldsR,
+                  sentHeadersKeys: Object.keys(extraHdrs),
+                  fieldsCount: hasFieldsR ? Object.keys((prepOut2!.uploadFields as any) || {}).length : 0,
+                  filename: filenameR,
+                  contentType,
+                  file_type: (file as any)?.type || '',
+                  file_size: Number((file as any)?.size || 0),
+                  blob_type: finalBlobR.type,
+                  blob_size: finalBlobR.size,
+                  uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
+                }, null, 2));
+                let msgExtra = '';
+                try {
+                  const parsed = JSON.parse(putRText || '{}');
+                  msgExtra = (parsed?.error || parsed?.message || parsed?.msg || '').toString().trim();
+                } catch {}
+                throw new Error(`No se pudo subir el audio a Supabase Storage (retry, HTTP ${status}${statusText ? ' ' + statusText : ''})${msgExtra ? ': ' + msgExtra : ''}. Respuesta: ${(putRText || '').slice(0, 240)}`);
+              }
+            } catch (errR) {
+              if (putR && !putR.ok) throw errR;
+              throw errR;
+            }
+            // ✅ POST FormData finalizado -> segunda llamada fetchSignedUrl para URL de reproducción
+            let finalUrl = url;
+            const needsFetch = !!prepOut2?.needsFetchSignedUrl || !finalUrl;
+            if (needsFetch && key) {
+              diag.push('intent4_retry_fetch_signed=1');
+              const prepSigned2 = await fetchWithTimeout('/api/upload-audio-supabase', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+                body: JSON.stringify({ fetchSignedUrl: true, key }),
+              }, timeoutPrep);
+              const prepRawS2 = await prepSigned2.text().catch(() => '');
+              const prepS2 = parseJsonSafe(prepRawS2);
+              if (prepSigned2.ok && prepS2?.ok) {
+                finalUrl = (prepS2?.url || '').toString().trim() || finalUrl;
+              } else {
+                const s2err = (prepS2?.detail || prepS2?.error || `No pude firmar URL final (retry, HTTP ${prepSigned2.status})`).toString();
+                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY fetchSignedUrl FAIL:', JSON.stringify({
+                  status: prepSigned2.status, responseText: prepRawS2.slice(0, 800), key: key.slice(0, 200),
+                  s2err: s2err.slice(0, 500),
+                }, null, 2));
+                diag.push(`intent4_retry_fetch_signed=fail:${s2err.slice(0, 120).replace(/\s+/g, ' ')}`);
+                throw new Error(s2err);
+              }
+            }
+            if (!finalUrl) throw new Error('No recibí la URL final del audio en Supabase (retry).');
+            diag.push('intent4_signed=ok');
+            console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload por retry >3MB)', diag.join(' | '));
+            return { url: finalUrl, key };
+          } catch (inner) {
+            throw inner;
+          }
+        }
+        diag.push(`intent4=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
+        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadSupabaseDirect', diag.join(' | '));
+        if (e instanceof Error && (e as any)?.name === 'AbortError') {
+          throw new Error('La subida final tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
+        }
+        throw e;
       }
     };
 
@@ -1302,24 +1609,37 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         .replace(/[^a-zA-Z0-9._-]+/g, '_')
         .slice(0, 80) || 'audio';
       const key = `uploads/audio/${uid}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${safeName}`;
-      const prep = await fetch('/api/account/upload-profile-image', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ path: key, contentType }),
-      });
-      const prepRaw = await prep.text().catch(() => '');
-      const prepOut = parseJsonSafe(prepRaw);
-      if (!(prep.ok && prepOut?.ok)) {
-        throw new Error((prepOut?.detail || prepOut?.error || 'No pude preparar la subida alternativa del audio.').toString());
+      let prep: Response | undefined;
+      try {
+        prep = await fetchWithTimeout('/api/account/upload-profile-image', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ path: key, contentType }),
+        }, timeoutPrep);
+        const prepRaw = await prep.text().catch(() => '');
+        const prepOut = parseJsonSafe(prepRaw);
+        if (!(prep.ok && prepOut?.ok)) {
+          throw new Error((prepOut?.detail || prepOut?.error || `No pude preparar la subida alternativa (HTTP ${prep.status}).`).toString());
+        }
+        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+        const url = (prepOut?.url || '').toString().trim();
+        if (!uploadUrl || !url) {
+          throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida del audio.').toString());
+        }
+        const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, timeoutPut);
+        if (!put.ok) throw new Error(`No se pudo subir el audio al almacenamiento (HTTP ${put.status}).`);
+        diag.push('intent3=ok');
+        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadWithGenericPrep', diag.join(' | '));
+        return { url, key };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e || '');
+        diag.push(`intent3=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
+        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadWithGenericPrep', diag.join(' | '));
+        if (e instanceof Error && (e as any)?.name === 'AbortError') {
+          throw new Error('La subida alternativa tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
+        }
+        throw e;
       }
-      const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
-      const url = (prepOut?.url || '').toString().trim();
-      if (!uploadUrl || !url) {
-        throw new Error((prepOut?.detail || prepOut?.error || 'No recibí la URL de subida del audio.').toString());
-      }
-      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
-      if (!put.ok) throw new Error(`No se pudo subir el audio (HTTP ${put.status}).`);
-      return { url, key };
     };
 
     const readAsDataUrl = (f: File) =>
@@ -1331,53 +1651,137 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       });
 
     const uploadInline = async () => {
+      // SKIP EXPLÍCITO: si archivo es mayor que límite Vercel, NO intentar fetch inline NUNCA.
+      if (skipInline) {
+        diag.push('uploadInline_SKIP=1 (too large)');
+        throw new Error('(inline_oversize_skip)');
+      }
       const arrayBuffer = await file.arrayBuffer();
       const fileArray = Array.from(new Uint8Array(arrayBuffer));
-      const r = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: name, contentType, file: fileArray }),
-      });
-      const raw = await r.text().catch(() => '');
-      const out = parseJsonSafe(raw);
-      const url = (out?.url || '').toString().trim();
-      const key = (out?.key || '').toString().trim();
-      if (r.ok && out?.ok && url) return { url, key };
-      throw new Error((out?.detail || out?.error || 'No pude subir el audio al servidor.').toString());
+      let r: Response | undefined;
+      try {
+        r = await fetchWithTimeout('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: name, contentType, file: fileArray }),
+        }, timeoutInline);
+        const raw = await r.text().catch(() => '');
+        // Si Vercel devuelve 413 PAYLOAD TOO LARGE → señal para saltarse a intento 3/4 (no mostrar rojo)
+        if (isPayloadTooLarge(r.status, raw)) {
+          diag.push('uploadInline_413=1 (skip)');
+          throw new Error('(inline_413_skip)');
+        }
+        const out = parseJsonSafe(raw);
+        const url = (out?.url || '').toString().trim();
+        const key = (out?.key || '').toString().trim();
+        if (r.ok && out?.ok && url) {
+          diag.push('intent2=ok');
+          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadInline', diag.join(' | '));
+          return { url, key };
+        }
+        throw new Error((out?.detail || out?.error || `No pude subir el audio (HTTP ${r.status}).`).toString());
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e || '');
+        if (msg && /inline_oversize_skip|inline_413_skip/i.test(msg)) {
+          throw e; // Señal interna, lo captura el caller y sigue al siguiente intento SILENCIOSAMENTE.
+        }
+        diag.push(`intent2=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
+        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadInline', diag.join(' | '));
+        if (e instanceof Error && (e as any)?.name === 'AbortError') {
+          throw new Error('La subida por servidor tardó demasiado. Usa un MP3 más pequeño o activa subida directa.');
+        }
+        throw e;
+      }
+    };
+
+    const fallbackChain = async (alreadyTriedInline = false) => {
+      let inlineTried = alreadyTriedInline;
+      if (!skipInline && !inlineTried) {
+        inlineTried = true;
+        try { return await uploadInline(); } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e || '');
+          // Si era oversize o 413: continúa silenciosamente al siguiente intento.
+          if (msg && /inline_oversize_skip|inline_413_skip/i.test(msg)) {
+            diag.push('fallback_inline_skipped -> siguiente intento');
+          } else {
+            throw e;
+          }
+        }
+      }
+      try { return await uploadWithGenericPrep(); } catch { /* sigue */ }
+      return await uploadSupabaseDirect();
     };
 
     try {
-      const prep = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: name, contentType }),
-      });
-      const prepRaw = await prep.text().catch(() => '');
-      const prepOut = parseJsonSafe(prepRaw);
-      
-      if (prep.ok && prepOut?.ok) {
-        const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
-        const url = (prepOut?.url || '').toString().trim();
-        if (uploadUrl) {
-          const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
-          if (!put.ok) throw new Error('Error en subida directa a R2');
+      let prep: Response | undefined;
+      try {
+        prep = await fetchWithTimeout('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: name, contentType }),
+        }, timeoutPrep);
+        const prepRaw = await prep.text().catch(() => '');
+        const prepOut = parseJsonSafe(prepRaw);
+
+        if (prep.ok && prepOut?.ok) {
+          const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
+          const url = (prepOut?.url || '').toString().trim();
+          if (uploadUrl) {
+            try {
+              const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, timeoutPut);
+              if (!put.ok) {
+                diag.push(`intent1_put_fail_http=${put.status}`);
+                console.log('[UPLOAD_AUDIO_VOICE] FAIL intent1 PUT', diag.join(' | '));
+                throw new Error(`Error en subida directa a R2 (HTTP ${put.status}).`);
+              }
+              const key = (prepOut?.key || '').toString().trim();
+              diag.push('intent1=ok');
+              console.log('[UPLOAD_AUDIO_VOICE] OK via direct R2', diag.join(' | '));
+              return { url, key };
+            } catch (putErr) {
+              // Fall through to fallback chain (inline then profile-image then supabase direct)
+              const m = putErr instanceof Error ? putErr.message : String(putErr || '');
+              diag.push(`intent1_put=fail:${m.slice(0, 120).replace(/\s+/g, ' ')}`);
+              if (putErr instanceof Error && (putErr as any)?.name === 'AbortError') {
+                throw new Error('La subida tardó demasiado. Prueba con un MP3 más pequeño.');
+              }
+              return await fallbackChain(false);
+            }
+          } else {
+            const key = (prepOut?.key || '').toString().trim();
+            diag.push('intent1_server=ok');
+            console.log('[UPLOAD_AUDIO_VOICE] OK via server upload', diag.join(' | '));
+            return { url, key };
+          }
+        } else {
+          diag.push(`intent1_prep=skip:${prepOut?.ok === false ? prepOut.error : `HTTP ${prep?.status}`}`);
         }
-        const key = (prepOut?.key || '').toString().trim();
-        return { url, key };
+      } catch (prepErr) {
+        const m = prepErr instanceof Error ? prepErr.message : String(prepErr || '');
+        diag.push(`intent1_prep=fail:${m.slice(0, 120).replace(/\s+/g, ' ')}`);
+        if (prepErr instanceof Error && (prepErr as any)?.name === 'AbortError') {
+          throw new Error('El servidor tardó demasiado en responder. Revisa tu internet.');
+        }
       }
 
-      // Si el servidor dice que R2 no está listo o hay un error, usamos la subida inline (buffer)
-      try {
-        return await uploadInline();
-      } catch {
-        return await uploadWithGenericPrep();
-      }
+      return await fallbackChain(false);
     } catch (error) {
-      console.log('Error en uploadAudioForVoice, intentando respaldo...', error);
+      const errMsg = error instanceof Error ? error.message : String(error || '');
+      diag.push(`chain_top_catch:${errMsg.slice(0, 120).replace(/\s+/g, ' ')}`);
+      console.log('[UPLOAD_AUDIO_VOICE] chain catch, saltando a fallback completo...', diag.join(' | '));
       try {
-        return await uploadInline();
-      } catch {
-        return await uploadWithGenericPrep();
+        return await fallbackChain(true);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e || '');
+        // Si fue oversize skip de inline → pasar al siguiente intento sin mostrar (evita 413 rojo)
+        if (m && /inline_oversize_skip|inline_413_skip/i.test(m)) {
+          try {
+            return await uploadWithGenericPrep();
+          } catch {
+            return await uploadSupabaseDirect();
+          }
+        }
+        throw e;
       }
     }
   };
@@ -1913,7 +2317,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setExternalAudioLabel('');
       setUploadProgress(100);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'No se pudo subir el audio.';
+      const raw = e instanceof Error ? e.message : String(e || '');
+      const looksLikeNetwork =
+        /failed to fetch|networkerror|network error|load failed|fetch failed|typeerror.*failed|abort|timeout|net::/i.test(raw) ||
+        !raw.trim();
+      const msg = looksLikeNetwork
+        ? 'No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e inténtalo de nuevo. Si sigue fallando, prueba con un archivo MP3 más pequeño.'
+        : raw || 'No se pudo subir el audio.';
       setAudioUploadError(msg);
       alert(msg);
     } finally {

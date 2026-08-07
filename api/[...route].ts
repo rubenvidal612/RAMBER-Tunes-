@@ -441,12 +441,28 @@ async function getSignedR2PutUrl(key: string, contentType: string, expiresIn: nu
   const client = await getR2Client();
   const { PutObjectCommand } = await getR2AwsSdk();
   const { getSignedUrl } = await getR2Presigner();
+  const ct = (contentType || "application/octet-stream").toString().trim() || "application/octet-stream";
   const command = new PutObjectCommand({
     Bucket: env.bucketName,
     Key: key,
-    ContentType: contentType,
+    ContentType: ct,
+    CacheControl: "max-age=604800, immutable",
   });
-  return await getSignedUrl(client, command, { expiresIn });
+  const signed = await getSignedUrl(client, command, { expiresIn, unhoistableHeaders: new Set(["content-type"]) });
+  try {
+    const u = new URL(signed);
+    const hasAmzHeaders =
+      u.searchParams.has("X-Amz-Algorithm") ||
+      u.searchParams.has("X-Amz-Credential") ||
+      u.searchParams.has("X-Amz-Signature");
+    if (hasAmzHeaders) {
+      u.searchParams.delete("X-Amz-SignedHeaders");
+      u.searchParams.set("X-Amz-SignedHeaders", "host");
+    }
+    return u.toString();
+  } catch {
+    return signed;
+  }
 }
 
 async function deleteFromR2(paths: string[]): Promise<number> {
@@ -799,13 +815,16 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   } catch {
   }
 
+  let cachedPlan: any = null;
+  let planRejection: any = null;
   try {
     const plan = await getUserPlan(admin, userId);
+    cachedPlan = plan;
     const key = String((plan as any)?.plan_key || "").toLowerCase();
     const exp = (plan as any)?.plan_expires_at;
     const active = Boolean((plan as any)?.plan_active);
     if ((key === "inicio" || key === "productor") && exp && !active) {
-      return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+      planRejection = { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
     }
   } catch {
   }
@@ -819,31 +838,25 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       continue;
     }
 
-    // Paso 1: calcular total disponible (lotes FIFO + perfil)
-    const profileCredits = creditsFromProfile(profile);
     const batchCredits = await getActiveBatchCredits(admin, userId);
+    const profileCreditsRaw = creditsFromProfile(profile);
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
+    const profileCredits = globalExpired ? 0 : profileCreditsRaw;
     const totalAvailable = round2(profileCredits + batchCredits);
 
-    // Regla de vencimiento global (2 meses desde la última compra):
-    // si credits_expires_at venció, se considera que TODO el saldo venció (incluyendo minis).
-    const creditsExpiresAt = profile.credits_expires_at;
-    if (creditsExpiresAt) {
-      const expiresDate = new Date(creditsExpiresAt);
-      const now = new Date();
-      if (expiresDate < now) {
-        return {
-          ok: false as const,
-          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
-        };
-      }
+    if (globalExpired && batchCredits <= 0) {
+      if (planRejection) return planRejection;
+      return {
+        ok: false as const,
+        error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
+      };
     }
 
     if (totalAvailable < cost) {
+      if (planRejection) return planRejection;
       return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
     }
 
-    // Paso 2: consumir primero de lotes (FIFO, el que vence antes primero).
-    // pending = lo que no alcanzaron los lotes y debe salir del perfil global.
     const pendingAfterBatches = await consumeBatchCreditsFifo(admin, userId, cost);
 
     if (pendingAfterBatches <= 0) {
@@ -851,11 +864,9 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       return { ok: true as const, credits: remainingTotal };
     }
 
-    // Paso 3: el resto se consume de la columna global del perfil (sistema Pack Inicio/Productor).
-    // Para esto, volvemos a calcular los créditos del perfil por si la tabla
-    // credit_batches aún no existe (entonces pendingAfterBatches == cost y vamos a la lógica original).
-    const currentProfile = creditsFromProfile(profile);
+    const currentProfile = globalExpired ? 0 : creditsFromProfile(profile);
     if (currentProfile < pendingAfterBatches) {
+      if (planRejection) return planRejection;
       return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
     }
     const next = round2(Math.max(0, currentProfile - pendingAfterBatches));
@@ -867,6 +878,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     return { ok: false as const, error: upd.error };
   }
 
+  if (planRejection) return planRejection;
   return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
 }
 
@@ -879,6 +891,33 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
   } catch {
   }
 
+  for (let i = 0; i < 4; i++) {
+    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (readErr) return { ok: false as const, error: readErr.message };
+    if (!profile) {
+      const created = await ensureProfileExists(admin, userId);
+      if (!created.ok) return { ok: false as const, error: created.error };
+      continue;
+    }
+
+    const batchCredits = await getActiveBatchCredits(admin, userId);
+    const profileCredits = creditsFromProfile(profile);
+    const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
+    const effectiveProfileCredits = globalExpired ? 0 : profileCredits;
+    const totalAvailable = round2(effectiveProfileCredits + batchCredits);
+
+    if (globalExpired && batchCredits <= 0) {
+      return {
+        ok: false as const,
+        error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
+      };
+    }
+
+    if (totalAvailable >= cost) {
+      return { ok: true as const, credits: totalAvailable };
+    }
+  }
+
   try {
     const plan = await getUserPlan(admin, userId);
     const key = String((plan as any)?.plan_key || "").toLowerCase();
@@ -890,38 +929,7 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
   } catch {
   }
 
-  for (let i = 0; i < 4; i++) {
-    const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
-    if (readErr) return { ok: false as const, error: readErr.message };
-    if (!profile) {
-      const created = await ensureProfileExists(admin, userId);
-      if (!created.ok) return { ok: false as const, error: created.error };
-      continue;
-    }
-
-    const profileCredits = creditsFromProfile(profile);
-    const batchCredits = await getActiveBatchCredits(admin, userId);
-    const totalAvailable = round2(profileCredits + batchCredits);
-
-    const creditsExpiresAt = profile.credits_expires_at;
-    if (creditsExpiresAt) {
-      const expiresDate = new Date(creditsExpiresAt);
-      const now = new Date();
-      if (expiresDate < now) {
-        return {
-          ok: false as const,
-          error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
-        };
-      }
-    }
-
-    if (totalAvailable < cost) {
-      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
-    }
-    return { ok: true as const, credits: totalAvailable };
-  }
-
-  return { ok: false as const, error: "No pude validar créditos (intenta otra vez)." };
+  return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar." };
 }
 
 function isAdminEmail(email?: string | null) {
@@ -8597,35 +8605,56 @@ const uploadProfileImageHandler = (() => {
     const path = typeof payload?.path === "string" ? payload.path.trim() : "";
     const data = payload?.data;
     const contentType = typeof payload?.contentType === "string" ? payload.contentType.trim() : "image/webp";
+    const userId = String(auth.user.id || "").trim();
 
     if (!path) return send(res, 400, { error: "Falta path" });
 
+    const cleanedPath = path.replace(/^\/+/, "");
+    const allowedPrefixes = [`uploads/audio/${userId}/`, `uploads/${userId}/`, `avatars/${userId}/`, `profiles/${userId}/`];
+    const isAllowedPath = allowedPrefixes.some((p) => cleanedPath.startsWith(p));
+    if (!isAllowedPath) {
+      try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "path_rejected", path: (cleanedPath || "").slice(0, 300), contentType })); } catch {}
+      return send(res, 403, { error: "No autorizado para escribir en este path" });
+    }
+
     try {
-      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(path)}`;
+      const url = `${originFromReq(req)}/api/r2/object?key=${encodeURIComponent(cleanedPath)}`;
 
       if (!data || !Array.isArray(data)) {
-        const uploadUrl = await getSignedR2PutUrl(path, contentType || "application/octet-stream", 60 * 10);
-        return send(res, 200, { ok: true, uploadUrl, url, key: path, via: "direct" });
+        try {
+          const uploadUrl = await getSignedR2PutUrl(cleanedPath, contentType || "application/octet-stream", 60 * 10);
+          try { console.log(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "direct_prep_ok", path: (cleanedPath || "").slice(0, 300), contentType, via: "direct", signedPut: true })); } catch {}
+          return send(res, 200, { ok: true, uploadUrl, url, key: cleanedPath, via: "direct" });
+        } catch (r2Err) {
+          const msg = r2Err instanceof Error ? r2Err.message : String(r2Err || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "direct_prep_failed", path: (cleanedPath || "").slice(0, 300), contentType, error: String(msg || "").slice(0, 600) })); } catch {}
+          throw r2Err;
+        }
       }
 
       const buf = Buffer.from(data);
-      if (shouldModeratePath(path) && buf.length > 0) {
+      if (shouldModeratePath(cleanedPath) && buf.length > 0) {
         const check = await moderateImageWithGoogleVision(buf);
         if (!check.ok) {
           const needsKey = String(check.error || "").toLowerCase().includes("api key");
           const hint = needsKey
             ? "Falta configurar GOOGLE_VISION_API_KEY en Vercel (Google Cloud Vision API)."
             : "";
+          try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "server_moderation_rejected", path: (cleanedPath || "").slice(0, 300), sizeBytes: buf.length, error: String(check.error || "").slice(0, 600) })); } catch {}
           return send(res, 400, { error: check.error || "Imagen no permitida", hint: hint || undefined });
         }
       }
-      await uploadToR2(path, buf, contentType);
-      return send(res, 200, { ok: true, url, key: path, via: "server" });
+      const t0 = Date.now();
+      await uploadToR2(cleanedPath, buf, contentType);
+      const dt = Date.now() - t0;
+      try { console.log(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "server_ok", path: (cleanedPath || "").slice(0, 300), contentType, sizeBytes: buf.length, durationMs: dt, via: "server" })); } catch {}
+      return send(res, 200, { ok: true, url, key: cleanedPath, via: "server" });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
         ? "Falta configurar Cloudflare R2 en Vercel"
         : "Error subiendo imagen";
+      try { console.error(JSON.stringify({ kind: "UPLOAD_PROFILE_IMAGE", userId, mode: "global_catch", path: (cleanedPath || "").slice(0, 300), contentType, error: String(detail || "").slice(0, 1200) })); } catch {}
       return send(res, 500, { error: msg, detail: String(detail || "").slice(0, 1200) });
     }
   };
@@ -16355,53 +16384,401 @@ const uploadAudioHandler = (() => {
     const fname = safeFileName(title);
     const rand = Math.random().toString(36).slice(2, 10);
     const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
+    const userId = String(auth.user.id || "");
 
     try {
       // Intentar usar R2 si está configurado
       let inline: Uint8Array | null = null;
+      let inlineSizeBytes = 0;
       if (typeof payload?.file === "string") {
         const b64 = payload.file.includes(",") ? payload.file.split(",")[1] : payload.file;
         inline = new Uint8Array(Buffer.from(b64, "base64"));
       } else {
         inline = fileArrayToUint8(payload?.file);
       }
+      inlineSizeBytes = inline ? inline.byteLength : 0;
+
       if (inline) {
-        const maxBytes = 25 * 1024 * 1024;
+        const maxBytes = 3 * 1024 * 1024; // 3 MB - seguro bajo el límite Vercel (~4.5MB) para evitar FUNCTION_PAYLOAD_TOO_LARGE
         if (inline.byteLength > maxBytes) {
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_rejected_oversize", key, sizeBytes: inlineSizeBytes, maxBytes, contentType, fname })); } catch {}
           return send(res, 413, {
             ok: false,
             error: "Audio muy pesado",
-            message: "Ese MP3 está muy pesado para subirlo por el servidor. Intenta con un MP3 más ligero o habilita CORS en R2 para subida directa.",
+            message: "Ese MP3 está muy pesado para subirlo por el servidor. Se usará subida directa a Supabase Storage.",
           });
         }
         try {
+          const t0 = Date.now();
           await uploadToR2(key, inline, contentType);
+          const dt = Date.now() - t0;
           const url = await getSignedR2Url(key, 60 * 60 * 2);
-          return send(res, 200, { ok: true, url, key, contentType, via: "server" });
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_r2_ok", key, sizeBytes: inlineSizeBytes, contentType, fname, durationMs: dt, via: "server_r2" })); } catch {}
+          return send(res, 200, { ok: true, url, key, contentType, via: "server_r2" });
         } catch (r2Error) {
-          const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true });
-          if (up.error) throw up.error;
-          const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
-          if (signed.error) throw signed.error;
-          const raw = (signed.data as any)?.signedUrl || "";
-          const url = /^https?:\/\//i.test(String(raw)) ? String(raw) : new URL(String(raw || ""), auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
-          return send(res, 200, { ok: true, url, key: "", contentType, via: "supabase" });
+          const r2Msg = r2Error instanceof Error ? r2Error.message : String(r2Error || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_r2_failed", key, sizeBytes: inlineSizeBytes, contentType, fname, error: r2Msg.slice(0, 500) })); } catch {}
+          try {
+            const t0 = Date.now();
+            const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true });
+            if (up.error) throw up.error;
+            const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
+            if (signed.error) throw signed.error;
+            const raw = (signed.data as any)?.signedUrl || "";
+            const url = /^https?:\/\//i.test(String(raw)) ? String(raw) : new URL(String(raw || ""), auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+            const dt = Date.now() - t0;
+            try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_supabase_ok", key, sizeBytes: inlineSizeBytes, contentType, fname, durationMs: dt, via: "server_supabase" })); } catch {}
+            return send(res, 200, { ok: true, url, key, contentType, via: "server_supabase" });
+          } catch (supErr) {
+            const supMsg = supErr instanceof Error ? supErr.message : String(supErr || "");
+            try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_supabase_failed", key, sizeBytes: inlineSizeBytes, contentType, fname, error: supMsg.slice(0, 500) })); } catch {}
+            throw supErr;
+          }
         }
       }
 
       try {
         const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
         const url = await getSignedR2Url(key, 60 * 60 * 2);
+        try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "direct_prep_ok", key, contentType, fname, via: "direct", signedPut: true })); } catch {}
         return send(res, 200, { ok: true, uploadUrl, url, key, contentType, via: "direct" });
       } catch (r2Error) {
-        return send(res, 200, { ok: false, error: "No pude preparar la subida del audio", detail: "R2 no está configurado para subida directa. Vuelve a intentar para subir por servidor." });
+        const msg = r2Error instanceof Error ? r2Error.message : String(r2Error || "");
+        const isMissingEnv = /Missing required R2 environment variables/i.test(msg || "");
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "direct_prep_failed", key, contentType, fname, error: msg.slice(0, 500), missingEnv: isMissingEnv })); } catch {}
+        return send(res, 200, {
+          ok: false,
+          error: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - subiendo por servidor" : "No pude preparar la subida del audio",
+          detail: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - vuelve a intentar para subir por servidor." : "R2 no está configurado para subida directa. Vuelve a intentar para subir por servidor."
+        });
       }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       const msg = /Missing required R2 environment variables/i.test(detail || "")
         ? "Falta configurar Cloudflare R2 en Vercel - subiendo por servidor"
         : "No pude preparar la subida del audio";
+      try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "global_catch", key: (key || "").slice(0, 200), contentType, fname, error: String(detail || "").slice(0, 800) })); } catch {}
       return send(res, 500, { ok: false, error: msg, detail });
+    }
+  };
+})();
+
+const uploadAudioSupabaseHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function safeFileName(name: string) {
+    const s = (name || "").toString().trim();
+    const cleaned = s.replaceAll("\\", "/").split("/").pop() || "audio.mp3";
+    return cleaned.replaceAll(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "audio.mp3";
+  }
+
+  function fileArrayToUint8(arr: any): Uint8Array | null {
+    if (!Array.isArray(arr)) return null;
+    const out = new Uint8Array(arr.length);
+    for (let i = 0; i < arr.length; i++) {
+      const n = Number(arr[i]);
+      if (!Number.isFinite(n)) return null;
+      out[i] = n & 0xff;
+    }
+    return out;
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL as string | undefined || "";
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY as string | undefined || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY as string | undefined || "";
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Falta configurar Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)." };
+    }
+    const createClient = await getSupabaseCreateClient();
+    const token = (req.headers["authorization"] || "").toString().trim().replace(/^Bearer\s+/i, "").trim();
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin, supabaseUrl };
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const bucket = "ramber-tunes";
+    const wantFetchUrl = typeof payload?.fetchSignedUrl === "boolean" ? !!payload.fetchSignedUrl : String(payload?.mode || "").toLowerCase() === "fetchsignedurl";
+    const keyInPayload = (payload?.key || payload?.path || "").toString().trim();
+    const userId = String(auth.user.id || "");
+
+    try {
+      // MODO ESPECIAL: Segunda llamada DESPUÉS de que el cliente terminó de subir (POST multipart).
+      if (wantFetchUrl && keyInPayload) {
+        const safeKey = keyInPayload.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/^\/+/, "").slice(0, 500);
+        if (!safeKey || !/^(uploads\/(audio|avatars|profiles|))\//i.test(safeKey + "/")) {
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_denied_path", key: safeKey.slice(0, 200) })); } catch {}
+          return send(res, 403, { ok: false, error: "Ruta no permitida para firmar URL" });
+        }
+        try {
+          const t0 = Date.now();
+          try {
+            const now = new Date().toISOString();
+            let ownerUpdOk = false;
+            try {
+              const { error: errA } = await auth.admin
+                .schema("storage")
+                .from("objects")
+                .update({ owner_id: userId, updated_at: now } as any)
+                .eq("name" as any, safeKey)
+                .eq("bucket_id" as any, bucket);
+              if (!errA) ownerUpdOk = true;
+              else try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id update err (schema storage, no fatal):", String((errA as any)?.message || errA || "").slice(0, 400)); } catch {}
+            } catch (schemaErr) {
+              try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id update schema fail (no fatal):", String(schemaErr instanceof Error ? schemaErr.message : schemaErr || "").slice(0, 400)); } catch {}
+            }
+            if (ownerUpdOk) try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "owner_id_updated", key: safeKey.slice(0, 200) })); } catch {}
+            else try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id update skipped (no fatal) -> owner_id = NULL temporal, pero se reproduce OK."); } catch {}
+          } catch (_e) {
+            try { console.warn("[UPLOAD_AUDIO_SUPABASE] owner_id try outer (no fatal)."); } catch {}
+          }
+
+          // (NO BLOQUEANTE owner_id update) -> VER Bloque anterior completo...
+          // Ahora generar URL de reproducción. Caso típico: Object not found por consistencia eventual.
+          // Strategy: retries hasta 3, 500ms entre ellos, SOLO si error contiene "Object not found".
+          //   Attempt 1 -> safeKey (normalizado)
+          //   Attempt 2 -> keyInPayload RAW (sin normalizar)
+          //   Attempt 3 -> ✅ PATH REAL extraído del listado list(folder) — INFALIBLE, coincide con storage.objects.name.
+          // 🔍 DIAGNÓSTICO (ANTES DE CUALQUIER COSA): keyInPayload CRUDO vs safeKey normalizado + bucket + list().
+          let listedNames: Array<{ name: string; fullPath: string; created_at: any; }> = [];
+          try {
+            const folderPath = `uploads/audio/${userId}`;
+            let listedFiles: any[] = [];
+            try {
+              const { data: listData, error: listErr } = await auth.admin.storage.from(bucket).list(folderPath, { limit: 50, offset: 0, sortBy: { column: "created_at", order: "desc" } });
+              if (listErr) console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl bucket.list() error:", String((listErr as any)?.message || listErr || "").slice(0, 400));
+              listedFiles = Array.isArray(listData) ? listData.slice() : [];
+            } catch (listCatch) {
+              console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl bucket.list() exception:", String(listCatch instanceof Error ? listCatch.message : listCatch || "").slice(0, 400));
+              listedFiles = [];
+            }
+            listedNames = listedFiles.map((f: any) => ({ name: String(f?.name || ""), created_at: (f as any)?.created_at || null, fullPath: `${folderPath.replace(/\/+$/, "")}/${String(f?.name || "")}` }));
+            console.log(JSON.stringify({
+              kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_diagnostic_preamble",
+              bucket,
+              supabaseUrl: auth.supabaseUrl || process.env.SUPABASE_URL || "",
+              keyInPayload_RAW_CLIENT: keyInPayload,
+              safeKey_NORMALIZED: safeKey,
+              equal_raw_vs_normalized: keyInPayload === safeKey,
+              lengths: { raw: keyInPayload.length, norm: safeKey.length },
+              folderListed_path: folderPath,
+              folderListed_count: listedNames.length,
+              folderListed_files: listedNames,
+            }));
+          } catch (diagCatch) {
+            try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl diagnostic exception (no fatal):", String(diagCatch instanceof Error ? diagCatch.message : diagCatch || "").slice(0, 400)); } catch {}
+          }
+
+          // 🔎 RESOLVER PATH REAL DESDE EL LISTADO:
+          // Usamos este path como último recurso (attempt 3). Garantiza coincidencia 100% con storage.objects.name real.
+          let resolvedListPath = "";
+          try {
+            // (a) Coincidencia EXACTA:
+            const exactMatch = listedNames.find(n => n.fullPath === safeKey || n.fullPath === keyInPayload || n.fullPath.replace(/^\/+/, "") === safeKey.replace(/^\/+/, ""));
+            if (exactMatch) resolvedListPath = exactMatch.fullPath;
+            if (!resolvedListPath) {
+              // (b) Coincidencia por ÚLTIMO SEGMENTO de filename (supabase puede normalizar prefijos slashes):
+              const trySuffix = (keyInPayload.split("/").pop() || safeKey.split("/").pop() || "").trim();
+              if (trySuffix) {
+                const suffixMatch = listedNames.find(n => n.fullPath.endsWith("/" + trySuffix) || n.name === trySuffix);
+                if (suffixMatch) resolvedListPath = suffixMatch.fullPath;
+              }
+            }
+            if (!resolvedListPath && listedNames.length > 0) {
+              // (c) Fallback: archivo MÁS RECIENTE (primero, sort created_at desc):
+              resolvedListPath = listedNames[0].fullPath;
+            }
+            if (resolvedListPath) {
+              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_list_path", safeKey, resolvedListPath, via: exactMatch ? "exact" : (keyInPayload.split("/").pop() || safeKey.split("/").pop() ? "suffix" : "most_recent") })); } catch {}
+            } else {
+              try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl: sin archivos en folder list para resolver path real."); } catch {}
+            }
+          } catch (resErr) {
+            try { console.warn("[UPLOAD_AUDIO_SUPABASE] resolve list path err (no fatal):", String(resErr instanceof Error ? resErr.message : resErr || "").slice(0, 400)); } catch {}
+          }
+
+          let signed: any = null;
+          let signedError: any = null;
+          let tryKeyUsed = "";
+          const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              let tryKey = safeKey;
+              if (attempt === 2) {
+                if (keyInPayload !== safeKey) {
+                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: fallback a KEY_IN_PAYLOAD RAW (sin normalizar). key=${keyInPayload.slice(0, 120)}`); } catch {}
+                  tryKey = keyInPayload;
+                } else if (resolvedListPath && resolvedListPath !== safeKey) {
+                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: no raw diverge, pasamos DIRECTO a path real listado = ${resolvedListPath.slice(0, 120)}`); } catch {}
+                  tryKey = resolvedListPath || safeKey;
+                }
+              }
+              if (attempt === 3 && resolvedListPath && (!tryKeyUsed || tryKeyUsed !== resolvedListPath)) {
+                // Attempt 3 SIEMPRE prueba el path REAL del listado (resuelto desde storage.objects real):
+                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (FINAL): usando PATH REAL RESUELTO de folder list: ${resolvedListPath.slice(0, 120)}`); } catch {}
+                tryKey = resolvedListPath;
+              }
+              if (!tryKey) throw new Error("No hay path para intentar firmar (folder vacío?)");
+              tryKeyUsed = tryKey;
+              const trySigned = await auth.admin.storage.from(bucket).createSignedUrl(tryKey, 60 * 60 * 2);
+              if (trySigned.error) throw trySigned.error;
+              signed = trySigned;
+              signedError = null;
+              // Guardar cuál key resolvió para devolvérsela al cliente:
+              safeKey = tryKey;
+              break;
+            } catch (signedErr) {
+              const msg = String((signedErr as any)?.message || signedErr || "").toLowerCase();
+              const isObjectNotFound = msg.includes("object not found");
+              if (!isObjectNotFound || attempt === 3) {
+                signedError = signedErr;
+                break;
+              }
+              try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl retry attempt=${attempt} (Object not found) -> waiting ~500ms... tryKey=${tryKeyUsed.slice(0, 120)}`); } catch {}
+              await sleepMs(500);
+            }
+          }
+          if (signedError || !signed) throw signedError || new Error("No se pudo generar URL de reproducción (retry agotado — revisa folderListed_files en logs)");
+
+          const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
+          const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+          const dt = Date.now() - t0;
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_ok", key: safeKey.slice(0, 200), finalTryKey: tryKeyUsed.slice(0, 200), durationMs: dt, resolvedListPath: resolvedListPath ? resolvedListPath.slice(0, 200) : "" })); } catch {}
+          return send(res, 200, { ok: true, url, key: safeKey });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e || "");
+            try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_failed", key: safeKey.slice(0, 200), error: msg.slice(0, 800) })); } catch {}
+            return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción (fetchSignedUrl)", detail: msg.slice(0, 800) });
+          }
+        }
+
+      const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
+      const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
+      const fname = safeFileName(title);
+      const rand = Math.random().toString(36).slice(2, 10);
+      const key = `uploads/audio/${auth.user.id}/${Date.now()}_${rand}_${fname}`;
+      let inline: Uint8Array | null = null;
+      let inlineSizeBytes = 0;
+      if (typeof payload?.file === "string") {
+        const b64 = payload.file.includes(",") ? payload.file.split(",")[1] : payload.file;
+        inline = new Uint8Array(Buffer.from(b64, "base64"));
+      } else {
+        inline = fileArrayToUint8(payload?.file);
+      }
+      inlineSizeBytes = inline ? inline.byteLength : 0;
+
+      const maxInline = Math.floor(3 * 1024 * 1024);
+      if (inline && inlineSizeBytes > 0 && inlineSizeBytes <= maxInline) {
+        try {
+          const t0 = Date.now();
+          const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true, cacheControl: "max-age=604800, immutable" });
+          if (up.error) throw up.error;
+          const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
+          if (signed.error) throw signed.error;
+          const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
+          const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+          const dt = Date.now() - t0;
+          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "admin_inline_ok", key: (key || "").slice(0, 200), sizeBytes: inlineSizeBytes, contentType, fname, durationMs: dt, via: "supabase_admin_inline" })); } catch {}
+          return send(res, 200, { ok: true, url, key, contentType, via: "supabase_admin_inline" });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e || "");
+          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "admin_inline_failed", key: (key || "").slice(0, 200), sizeBytes: inlineSizeBytes, contentType, fname, error: msg.slice(0, 1000) })); } catch {}
+          throw e;
+        }
+      }
+
+      // MODO 2 (DIRECTO SIGNED UPLOAD) > 3MB:
+      // Usamos EXCLUSIVAMENTE createSignedUploadUrl del SDK admin (service_role).
+      // Esto funciona porque:
+      //  (1) La firma del endpoint la hace ADMIN (service_role) -> URL VÁLIDA siempre.
+      //  (2) El INSERT en storage.objects pasa por RLS PERO nuestra nueva policy
+      //      anon_insert_ramber_tunes_uploads_paths TO public PERMITE INSERT SIEMPRE
+      //      que bucket='ramber-tunes' y path empiece por uploads/audio (no necesita auth.uid())
+      //      -> eso soluciona el 403 RLS ("row violates row-level security policy").
+      //  (3) DESPUÉS de que el cliente termina el upload y llama fetchSignedUrl=1,
+      //      el servidor ADMIN actualiza owner_id=auth.user.id en la fila de storage.objects,
+      //      así SELECT/UPDATE/DELETE siguen funcionando con auth.uid() normal.
+      const t0 = Date.now();
+      const anonKey = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+      const urlBase = (auth.supabaseUrl || process.env.SUPABASE_URL || "").toString().trim();
+
+      // Crear signed upload URL con ADMIN SDK (siempre válida por service_role)
+      const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
+      const dtPrep = Date.now() - t0;
+      if (error) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_failed", key, contentType, fname, error: String(error?.message || error || "").slice(0, 800) })); } catch {}
+        return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
+      }
+      const uploadUrl: string = (data as any)?.signedUrl || "";
+      const pathKey: string = (data as any)?.path || key;
+      if (!uploadUrl) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_missing_url", key, contentType, fname })); } catch {}
+        return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
+      }
+      // 🔍 DIAGNÓSTICO: Comparar el key QUE NOSOTROS CREAMOS vs el path que DEVUELVE Supabase.
+      // A veces Supabase normaliza slashes / quita caracteres / encoding, y esto causa Object not found luego.
+      try {
+        console.log(JSON.stringify({
+          kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_paths_compare",
+          key_original: key,
+          supabase_returned_data_path: pathKey,
+          key_equals_supabase_path: key === pathKey,
+          bucket,
+          supabaseUrl: auth.supabaseUrl || process.env.SUPABASE_URL || "",
+          contentType,
+          fname,
+          via: "supabase_signed_direct_sdk",
+        }));
+      } catch {}
+      try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
+      return send(res, 200, {
+        ok: true,
+        uploadUrl,
+        key: pathKey || key,
+        contentType,
+        via: "supabase_signed_direct_sdk",
+        uploadMethod: "POST_FORM",
+        needsFetchSignedUrl: true,
+        // ✅ Headers que el cliente DEBE enviar en el POST multipart para no tener
+        //    "header must have required property 'authorization'".
+        //    Usamos ANON key (segura para el cliente) + el Bearer ANON.
+        headers: {
+          "apikey": anonKey,
+          "authorization": `Bearer ${anonKey}`,
+        },
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "global_catch", key: String((keyInPayload || (payload?.key as any)) || "").slice(0, 200), contentType: String((payload as any)?.contentType || ""), fname: String((payload as any)?.title || ""), error: String(detail || "").slice(0, 1000) })); } catch {}
+      return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(detail || "").slice(0, 1000) });
     }
   };
 })();
@@ -16786,6 +17163,7 @@ export default async function handler(req: any, res: any) {
     if (head === "social") return socialHandler(req, res);
     if (head === "vendor") return vendorHandler(req, res);
     if (head === "upload-audio") return uploadAudioHandler(req, res);
+    if (head === "upload-audio-supabase") return uploadAudioSupabaseHandler(req, res);
     if (head === "r2" && next === "object") return r2ObjectHandler(req, res);
     if (head === "share" && next === "preview") return sharePreviewHandler(req, res);
     if (head === "share" && next === "song" && third === "audio") return shareSongAudioHandler(req, res);
