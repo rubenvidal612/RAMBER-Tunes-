@@ -16564,12 +16564,46 @@ const uploadAudioSupabaseHandler = (() => {
           // (NO BLOQUEANTE owner_id update) -> VER Bloque anterior completo...
           // Ahora generar URL de reproducción. Caso típico: Object not found por consistencia eventual.
           // Strategy: retries hasta 3, 500ms entre ellos, SOLO si error contiene "Object not found".
+          // 🔍 DIAGNÓSTICO (ANTES DE CUALQUIER COSA): keyInPayload CRUDO vs safeKey normalizado + bucket + list().
+          try {
+            const folderPath = `uploads/audio/${userId}`;
+            let listedFiles: any[] = [];
+            try {
+              const { data: listData, error: listErr } = await auth.admin.storage.from(bucket).list(folderPath, { limit: 50, offset: 0, sortBy: { column: "created_at", order: "desc" } });
+              if (listErr) console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl bucket.list() error:", String((listErr as any)?.message || listErr || "").slice(0, 400));
+              listedFiles = Array.isArray(listData) ? listData.slice() : [];
+            } catch (listCatch) {
+              console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl bucket.list() exception:", String(listCatch instanceof Error ? listCatch.message : listCatch || "").slice(0, 400));
+              listedFiles = [];
+            }
+            const listedNames = listedFiles.map((f: any) => ({ name: String(f?.name || ""), id: String((f as any)?.id || "").slice(0, 12), created_at: (f as any)?.created_at || null, fullPath: `${folderPath}/${String(f?.name || "")}` }));
+            console.log(JSON.stringify({
+              kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_diagnostic_preamble",
+              bucket,
+              supabaseUrl: auth.supabaseUrl || process.env.SUPABASE_URL || "",
+              keyInPayload_RAW_CLIENT: keyInPayload,
+              safeKey_NORMALIZED: safeKey,
+              equal_raw_vs_normalized: keyInPayload === safeKey,
+              lengths: { raw: keyInPayload.length, norm: safeKey.length },
+              folderListed_path: folderPath,
+              folderListed_count: listedNames.length,
+              folderListed_files: listedNames,
+            }));
+          } catch (diagCatch) {
+            try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl diagnostic exception (no fatal):", String(diagCatch instanceof Error ? diagCatch.message : diagCatch || "").slice(0, 400)); } catch {}
+          }
           let signed: any = null;
           let signedError: any = null;
           const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              const trySigned = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
+              // Intentar safeKey (normalizado) siempre. En attempt 3 probar TAMBIEN keyInPayload CRUDO sin normalizar (fallback).
+              let tryKey = safeKey;
+              if (attempt === 3 && keyInPayload !== safeKey) {
+                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=3: fallback a KEY_IN_PAYLOAD RAW (sin normalizar). key=${keyInPayload}`); } catch {}
+                tryKey = keyInPayload;
+              }
+              const trySigned = await auth.admin.storage.from(bucket).createSignedUrl(tryKey, 60 * 60 * 2);
               if (trySigned.error) throw trySigned.error;
               signed = trySigned;
               signedError = null;
@@ -16663,6 +16697,21 @@ const uploadAudioSupabaseHandler = (() => {
         try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_missing_url", key, contentType, fname })); } catch {}
         return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
       }
+      // 🔍 DIAGNÓSTICO: Comparar el key QUE NOSOTROS CREAMOS vs el path que DEVUELVE Supabase.
+      // A veces Supabase normaliza slashes / quita caracteres / encoding, y esto causa Object not found luego.
+      try {
+        console.log(JSON.stringify({
+          kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_paths_compare",
+          key_original: key,
+          supabase_returned_data_path: pathKey,
+          key_equals_supabase_path: key === pathKey,
+          bucket,
+          supabaseUrl: auth.supabaseUrl || process.env.SUPABASE_URL || "",
+          contentType,
+          fname,
+          via: "supabase_signed_direct_sdk",
+        }));
+      } catch {}
       try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
       return send(res, 200, {
         ok: true,
