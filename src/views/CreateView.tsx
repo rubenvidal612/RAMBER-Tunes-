@@ -1924,7 +1924,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (status === 'wait_validating' && validateInfo) {
           setVoiceValidateInfo(validateInfo);
           setVoiceCreateStep('recording_verify');
-          startVoiceRecorder('verify', 10).catch((e) => {
+          startVoiceRecorder('verify').catch((e) => {
             setVoiceCreateError(e instanceof Error ? e.message : String(e));
             setVoiceCreateStep('phrase_ready');
           });
@@ -4628,7 +4628,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     const previewUrl = isVerifyStep ? voiceVerifyPreviewUrl : voiceSourcePreviewUrl;
 
                     const pickRecord = () => {
-                      startVoiceRecorder(isVerifyStep ? 'verify' : 'source', isVerifyStep ? 10 : undefined).catch((e) => {
+                      startVoiceRecorder(isVerifyStep ? 'verify' : 'source').catch((e) => {
                         setVoiceCreateError(e instanceof Error ? e.message : String(e));
                       });
                     };
@@ -5127,7 +5127,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         {(() => {
                           const maxMs = voiceRecorderMaxMs || 0;
                           const elapsed = Math.max(0, voiceRecorderElapsedMs || 0);
-                          const remainingSec = maxMs ? Math.max(0, Math.ceil((maxMs - elapsed) / 1000)) : Math.floor(elapsed / 1000);
+                          const elapsedSec = Math.floor(elapsed / 1000);
+                          const remainingSec = maxMs ? Math.max(0, Math.ceil((maxMs - elapsed) / 1000)) : elapsedSec;
+                          const displaySec = maxMs ? remainingSec : elapsedSec;
                           const pct = maxMs ? Math.max(0, Math.min(1, elapsed / maxMs)) : 0;
                           const radius = 44;
                           const stroke = 8;
@@ -5179,10 +5181,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               </div>
 
                               <div className="mt-2 text-slate-300 text-sm tabular-nums">
-                                {voiceRecorderMaxMs ? `${remainingSec}s` : `${remainingSec}s`}
+                                {displaySec}s
                               </div>
                               <div className="mt-1 text-slate-500 text-xs">
-                                {voiceRecorderMaxMs ? 'Presiona el botón antes de que termine el contador.' : voiceRecorderState === 'recording' ? 'Grabando…' : 'Listo'}
+                                {maxMs
+                                  ? 'Presiona el botón antes de que termine el contador.'
+                                  : voiceRecorderState === 'recording'
+                                    ? 'Grabando… cuando termines pulsa el botón para finalizar.'
+                                    : 'Listo'}
                               </div>
                             </div>
                           );
@@ -5322,7 +5328,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         type="button"
                         onClick={() => {
                           setVoiceCreateError('');
-                          startVoiceRecorder('verify', 10).catch((e) => {
+                          startVoiceRecorder('verify').catch((e) => {
                             setVoiceCreateError(e instanceof Error ? e.message : String(e));
                           });
                         }}
