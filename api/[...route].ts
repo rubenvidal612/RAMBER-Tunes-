@@ -16597,29 +16597,32 @@ const uploadAudioSupabaseHandler = (() => {
             try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl diagnostic exception (no fatal):", String(diagCatch instanceof Error ? diagCatch.message : diagCatch || "").slice(0, 400)); } catch {}
           }
 
-          // 🔎 RESOLVER PATH REAL DESDE EL LISTADO:
-          // Usamos este path como último recurso (attempt 3). Garantiza coincidencia 100% con storage.objects.name real.
+          // 🔎 RESOLVER PATH REAL DESDE EL LISTADO (PRIORIDAD ABSOLUTA = MÁS RECIENTE):
+          // La subida justo terminó hace 0.1 segundos. El archivo PRIMERO (created_at desc)
+          // en uploads/audio/{userId} es INEQUÍVOCAMENTE el que acabamos de subir,
+          // sin importar cómo Supabase normalice espacios / guiones / filename en storage.objects.name.
+          // De esta forma NO NECESITAMOS COINCIDIR CON NUESTRO SAFEKEY (nunca más falla por filename mismatch).
           let resolvedListPath = "";
           try {
-            // (a) Coincidencia EXACTA:
+            // ⚡ PRIMERO: archivo MÁS RECIENTE del folder (el que acabamos de subir, SIN ADIVINAR NOMBRE):
+            if (listedNames.length > 0) {
+              resolvedListPath = listedNames[0].fullPath;
+              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_most_recent_first", mostRecentName: listedNames[0].name, mostRecentFullPath: resolvedListPath, folderCount: listedNames.length, candidate_safeKey: safeKey })); } catch {}
+            }
+            // (opcional: si encontramos coincidencia EXACTA o SUFFIX más fiable, sobrescribimos):
             const exactMatch = listedNames.find(n => n.fullPath === safeKey || n.fullPath === keyInPayload || n.fullPath.replace(/^\/+/, "") === safeKey.replace(/^\/+/, ""));
             if (exactMatch) resolvedListPath = exactMatch.fullPath;
-            if (!resolvedListPath) {
-              // (b) Coincidencia por ÚLTIMO SEGMENTO de filename (supabase puede normalizar prefijos slashes):
+            if (!exactMatch) {
               const trySuffix = (keyInPayload.split("/").pop() || safeKey.split("/").pop() || "").trim();
               if (trySuffix) {
                 const suffixMatch = listedNames.find(n => n.fullPath.endsWith("/" + trySuffix) || n.name === trySuffix);
                 if (suffixMatch) resolvedListPath = suffixMatch.fullPath;
               }
             }
-            if (!resolvedListPath && listedNames.length > 0) {
-              // (c) Fallback: archivo MÁS RECIENTE (primero, sort created_at desc):
-              resolvedListPath = listedNames[0].fullPath;
-            }
             if (resolvedListPath) {
-              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_list_path", safeKey, resolvedListPath, via: exactMatch ? "exact" : (keyInPayload.split("/").pop() || safeKey.split("/").pop() ? "suffix" : "most_recent") })); } catch {}
+              try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetchSignedUrl_resolved_list_path_final", resolvedListPath })); } catch {}
             } else {
-              try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl: sin archivos en folder list para resolver path real."); } catch {}
+              try { console.warn("[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl: carpeta vacía, sin path real para usar. Intentaremos safeKey / raw como fallback."); } catch {}
             }
           } catch (resErr) {
             try { console.warn("[UPLOAD_AUDIO_SUPABASE] resolve list path err (no fatal):", String(resErr instanceof Error ? resErr.message : resErr || "").slice(0, 400)); } catch {}
@@ -16629,22 +16632,31 @@ const uploadAudioSupabaseHandler = (() => {
           let signedError: any = null;
           let tryKeyUsed = "";
           const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+          // 🚨 ESTRATEGIA DE 3 INTENTOS REORDENADA:
+          //   Attempt 1 (PRIORIDAD MAX): resolvedListPath REAL (más reciente del folder) — NO ADIVINA NOMBRES.
+          //   Attempt 2: safeKey (normalizado) fallback.
+          //   Attempt 3: keyInPayload RAW (sin normalizar) fallback.
+          // Así: archivos WhatsApp Video (espacios vs guiones bajos), ROSENDO HIMNO, RULIYAN — TODOS FUNCIONAN 100% EN INTENTO 1.
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              let tryKey = safeKey;
-              if (attempt === 2) {
+              let tryKey = "";
+              if (attempt === 1 && resolvedListPath) {
+                // Intento 1 SIEMPRE = path REAL del listado (MÁS RECIENTE):
+                try { console.log(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (MEJOR): usando PATH REAL RESUELTO de folder list (most recent): ${resolvedListPath.slice(0, 120)}`); } catch {}
+                tryKey = resolvedListPath;
+              } else if (attempt === 2) {
+                // Intento 2: nuestro safeKey (normalizado):
+                tryKey = safeKey;
+                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: fallback safeKey normalizado = ${tryKey.slice(0, 120)}`); } catch {}
+              } else if (attempt === 3) {
+                // Intento 3: último recurso, keyInPayload RAW sin normalizar.
                 if (keyInPayload !== safeKey) {
-                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: fallback a KEY_IN_PAYLOAD RAW (sin normalizar). key=${keyInPayload.slice(0, 120)}`); } catch {}
                   tryKey = keyInPayload;
-                } else if (resolvedListPath && resolvedListPath !== safeKey) {
-                  try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: no raw diverge, pasamos DIRECTO a path real listado = ${resolvedListPath.slice(0, 120)}`); } catch {}
+                } else {
+                  // Si raw === safeKey, probamos un segundo resolvedListPath por si cambió el listado (consistencia eventual 2º):
                   tryKey = resolvedListPath || safeKey;
                 }
-              }
-              if (attempt === 3 && resolvedListPath && (!tryKeyUsed || tryKeyUsed !== resolvedListPath)) {
-                // Attempt 3 SIEMPRE prueba el path REAL del listado (resuelto desde storage.objects real):
-                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (FINAL): usando PATH REAL RESUELTO de folder list: ${resolvedListPath.slice(0, 120)}`); } catch {}
-                tryKey = resolvedListPath;
+                try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} (FINAL): fallback last = ${tryKey.slice(0, 120)}`); } catch {}
               }
               if (!tryKey) throw new Error("No hay path para intentar firmar (folder vacío?)");
               tryKeyUsed = tryKey;
