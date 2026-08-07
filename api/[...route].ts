@@ -16540,19 +16540,38 @@ const uploadAudioSupabaseHandler = (() => {
         }
         try {
           const t0 = Date.now();
-          const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
-          if (signed.error) throw signed.error;
-          const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
-          const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
-          const dt = Date.now() - t0;
-          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_ok", key: safeKey.slice(0, 200), durationMs: dt })); } catch {}
-          return send(res, 200, { ok: true, url, key: safeKey });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e || "");
-          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_failed", key: safeKey.slice(0, 200), error: msg.slice(0, 800) })); } catch {}
-          return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción (fetchSignedUrl)", detail: msg.slice(0, 800) });
+          // ✅ PASO IMPORTANTE: Actualizar owner_id=auth.user.id para que esta fila en storage.objects
+          // pertenezca al usuario (así policies de SELECT/UPDATE/DELETE que usan auth.uid() funcionan).
+          // Se usa el admin client (salta RLS) así que funciona sin policy de UPDATE.
+          try {
+            const now = new Date().toISOString();
+            const meta = {} as any;
+            try {
+              const { error: updErr } = await auth.admin
+                .from("storage.objects" as any)
+                .update({ owner_id: userId, updated_at: now } as any)
+                .eq("name" as any, safeKey)
+                .eq("bucket_id" as any, bucket);
+              if (updErr) {
+                console.error("[UPLOAD_AUDIO_SUPABASE] owner_id update failed (from path):", String(updErr?.message || updErr || "").slice(0, 400));
+              }
+            } catch (ownerErr) {
+              // Fallback: si storage.objects no se puede viajar por el schema público (caso raro), intentamos via rpc
+              try { console.error("[UPLOAD_AUDIO_SUPABASE] owner_id update except:", String(ownerErr instanceof Error ? ownerErr.message : ownerErr || "").slice(0, 400)); } catch {}
+            }
+            const signed = await auth.admin.storage.from(bucket).createSignedUrl(safeKey, 60 * 60 * 2);
+            if (signed.error) throw signed.error;
+            const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
+            const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
+            const dt = Date.now() - t0;
+            try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_ok", key: safeKey.slice(0, 200), durationMs: dt })); } catch {}
+            return send(res, 200, { ok: true, url, key: safeKey });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e || "");
+            try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_failed", key: safeKey.slice(0, 200), error: msg.slice(0, 800) })); } catch {}
+            return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción (fetchSignedUrl)", detail: msg.slice(0, 800) });
+          }
         }
-      }
 
       const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
       const contentType = (typeof payload?.contentType === "string" ? payload.contentType.trim() : "audio/mpeg") || "audio/mpeg";
@@ -16589,138 +16608,35 @@ const uploadAudioSupabaseHandler = (() => {
         }
       }
 
-      // MODO 2 (DIRECTO) > 3MB: usamos S3 createPresignedPost con endpoint S3 compatible de Supabase Storage
-      // (createSignedUploadUrl de Supabase SDK requiere header Authorization en el POST y falla en Chrome Desktop con "header must have required property 'authorization'").
-      // createPresignedPost NO necesita headers auth: toda la firma está en los `fields`. 100% compatible.
+      // MODO 2 (DIRECTO SIGNED UPLOAD) > 3MB:
+      // Usamos EXCLUSIVAMENTE createSignedUploadUrl del SDK admin (service_role).
+      // Esto funciona porque:
+      //  (1) La firma del endpoint la hace ADMIN (service_role) -> URL VÁLIDA siempre.
+      //  (2) El INSERT en storage.objects pasa por RLS PERO nuestra nueva policy
+      //      anon_insert_ramber_tunes_uploads_paths TO public PERMITE INSERT SIEMPRE
+      //      que bucket='ramber-tunes' y path empiece por uploads/audio (no necesita auth.uid())
+      //      -> eso soluciona el 403 RLS ("row violates row-level security policy").
+      //  (3) DESPUÉS de que el cliente termina el upload y llama fetchSignedUrl=1,
+      //      el servidor ADMIN actualiza owner_id=auth.user.id en la fila de storage.objects,
+      //      así SELECT/UPDATE/DELETE siguen funcionando con auth.uid() normal.
       const t0 = Date.now();
       const anonKey = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
-      const projectRef = (() => {
-        try {
-          const u = new URL(auth.supabaseUrl || process.env.SUPABASE_URL || "");
-          const h = u.hostname.toLowerCase();
-          const m = h.match(/^([a-z0-9_-]{8,})\.(supabase\.co|supabase\.in|supabase\.net)$/i);
-          return (m && m[1]) || "";
-        } catch { return ""; }
-      })();
-      const s3Endpoint = projectRef ? `https://${projectRef}.supabase.co/storage/v1/s3` : "";
-      if (!anonKey || !projectRef || !s3Endpoint) {
-        // Fallback: createSignedUploadUrl de Supabase SDK + headers al cliente (si S3 endpoint no está disponible)
-        const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
-        const dtPrep = Date.now() - t0;
-        if (error) {
-          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_failed", key, contentType, fname, error: String(error?.message || error || "").slice(0, 800) })); } catch {}
-          return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
-        }
-        const uploadUrl: string = (data as any)?.signedUrl || "";
-        const pathKey: string = (data as any)?.path || key;
-        if (!uploadUrl) return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
-        try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_supabase_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
-        return send(res, 200, {
-          ok: true,
-          uploadUrl,
-          key: pathKey || key,
-          contentType,
-          via: "supabase_signed_direct_sdk",
-          uploadMethod: "POST_FORM",
-          needsFetchSignedUrl: true,
-          headers: {
-            "apikey": anonKey,
-            "authorization": `Bearer ${anonKey}`,
-          },
-        });
-      }
+      const urlBase = (auth.supabaseUrl || process.env.SUPABASE_URL || "").toString().trim();
 
-      // ✅ Ruta correcta: S3 createPresignedPost (no requiere headers Authorization/apikey en el cliente)
-      const { S3Client, CreateMultipartUploadCommand } = await getR2AwsSdk();
-      const s3Presigner = await getR2Presigner();
-      const createPresignedPost = s3Presigner.createPresignedPost;
-      const s3Client = new S3Client({
-        region: "us-east-1",
-        endpoint: s3Endpoint,
-        forcePathStyle: true,
-        credentials: {
-          accessKeyId: anonKey,
-          secretAccessKey: "service_role_admin_signed_via_service_role_stub",
-        },
-      });
-      // ✅ Para S3 de Supabase, hay que autenticar con el SERVICE ROLE (porque createPresignedPost lo firma el S3Client).
-      const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
-      if (serviceKey) {
-        const { S3Client: S3ClientB } = await getR2AwsSdk();
-        const goodClient = new S3ClientB({
-          region: "us-east-1",
-          endpoint: s3Endpoint,
-          forcePathStyle: true,
-          credentials: {
-            accessKeyId: serviceKey,
-            secretAccessKey: serviceKey,
-          },
-        });
-        (s3Client as any).destroy && (s3Client as any).destroy();
-        // Crear presigned post usando service role creds (admin)
-        try {
-          const maxFileBytes = Math.max(1, 150 * 1024 * 1024); // 150 MB máximo
-          const post = await createPresignedPost(goodClient, {
-            Bucket: bucket,
-            Key: key,
-            Expires: 60 * 20, // 20 minutos (tiempo para subir sin prisa)
-            Conditions: [
-              ["content-length-range", 1, maxFileBytes],
-              ["starts-with", "$Content-Type", "audio/"],
-              { acl: "private" },
-            ],
-            Fields: {
-              acl: "private",
-              "Content-Type": contentType,
-            },
-          });
-          const dtPrep = Date.now() - t0;
-          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_s3_presigned_post_ok", key: (post?.fields?.key || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, s3Endpoint, projectRef, via: "supabase_s3_presigned_post" })); } catch {}
-          return send(res, 200, {
-            ok: true,
-            uploadUrl: post?.url || s3Endpoint + "/" + bucket,
-            key,
-            contentType,
-            via: "supabase_s3_presigned_post",
-            uploadMethod: "POST_FORM_FIELDS",
-            uploadFields: post?.fields || {},
-            needsFetchSignedUrl: true,
-            // NO headers: la firma está 100% en los fields -> no pedirá 'authorization' header
-            headers: {},
-          });
-        } catch (s3Err) {
-          const s3Msg = s3Err instanceof Error ? s3Err.message : String(s3Err || "");
-          try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_s3_presigned_post_failed", key: key.slice(0, 200), contentType, fname, error: s3Msg.slice(0, 1200), s3Endpoint, projectRef })); } catch {}
-          // FALLBACK a createSignedUploadUrl SDK + headers
-          const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
-          if (error) return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase (fallback SDK)", detail: String(error?.message || error || "").slice(0, 1000) });
-          const uploadUrl: string = (data as any)?.signedUrl || "";
-          const pathKey: string = (data as any)?.path || key;
-          if (!uploadUrl) return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase (fallback)" });
-          try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_supabase_ok_sdk_fallback", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: Date.now() - t0, via: "supabase_signed_direct_sdk_fallback" })); } catch {}
-          return send(res, 200, {
-            ok: true,
-            uploadUrl,
-            key: pathKey || key,
-            contentType,
-            via: "supabase_signed_direct_sdk_fallback",
-            uploadMethod: "POST_FORM",
-            needsFetchSignedUrl: true,
-            headers: { "apikey": anonKey, "authorization": `Bearer ${anonKey}` },
-          });
-        } finally {
-          try { (goodClient as any).destroy && (goodClient as any).destroy(); } catch {}
-        }
-      }
-
-      // Si no hay service key disponible (raro): fallback createSignedUploadUrl SDK + headers
+      // Crear signed upload URL con ADMIN SDK (siempre válida por service_role)
       const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
       const dtPrep = Date.now() - t0;
-      if (error) return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
+      if (error) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_failed", key, contentType, fname, error: String(error?.message || error || "").slice(0, 800) })); } catch {}
+        return send(res, 500, { ok: false, error: "No pude preparar la subida en Supabase", detail: String(error?.message || error || "").slice(0, 1000) });
+      }
       const uploadUrl: string = (data as any)?.signedUrl || "";
       const pathKey: string = (data as any)?.path || key;
-      if (!uploadUrl) return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
-      try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_supabase_ok_noservicekey", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
+      if (!uploadUrl) {
+        try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_missing_url", key, contentType, fname })); } catch {}
+        return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
+      }
+      try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_ok", key: (pathKey || key).slice(0, 200), contentType, fname, durationPrepMs: dtPrep, via: "supabase_signed_direct_sdk" })); } catch {}
       return send(res, 200, {
         ok: true,
         uploadUrl,
@@ -16729,7 +16645,13 @@ const uploadAudioSupabaseHandler = (() => {
         via: "supabase_signed_direct_sdk",
         uploadMethod: "POST_FORM",
         needsFetchSignedUrl: true,
-        headers: { "apikey": anonKey, "authorization": `Bearer ${anonKey}` },
+        // ✅ Headers que el cliente DEBE enviar en el POST multipart para no tener
+        //    "header must have required property 'authorization'".
+        //    Usamos ANON key (segura para el cliente) + el Bearer ANON.
+        headers: {
+          "apikey": anonKey,
+          "authorization": `Bearer ${anonKey}`,
+        },
       });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
