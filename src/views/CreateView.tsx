@@ -3097,20 +3097,29 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const handleCoverFromAudio = async () => {
     if (!onSongCreated) return;
     if (!audioUploadUrl) {
-      alert('Primero sube tu audio.');
+      const msgMissing = 'Primero sube tu audio.';
+      setAudioUploadError(msgMissing);
+      alert(msgMissing);
       return;
     }
     const dur = Number(audioDurationSec || 0);
     if (Number.isFinite(dur) && dur > 0) {
       if (dur > 60 * 8) {
-        alert('Tu audio dura más de 8 minutos. El cover solo permite hasta 8 minutos.');
+        const mins8 = Math.floor(dur / 60);
+        const secs8 = Math.floor(dur % 60);
+        const msgDur = `Tu audio dura ${mins8}:${secs8.toString().padStart(2, '0')} (${Math.floor(dur)}s). El Cover solo permite hasta 8 minutos (480 segundos). Usa un audio más corto o recorta este.`;
+        setAudioUploadError(msgDur);
+        alert(msgDur);
         return;
       }
       if (model === 'V4_5ALL' && dur > 60) {
-        alert('Con el modelo V4.5 ALL el audio debe durar máximo 1 minuto. Cambia de modelo o usa un audio más corto.');
+        const msgV45 = `Con el modelo V4.5 ALL el audio debe durar máximo 1 minuto. Tu audio dura ${Math.floor(dur)} segundos. Cambia a modelo V5 o V5.5, o usa un audio más corto (≤ 60s).`;
+        setAudioUploadError(msgV45);
+        alert(msgV45);
         return;
       }
     }
+    setAudioUploadError(null);
     setIsSubmitting(true);
     try {
       const t = await getAccessToken();
