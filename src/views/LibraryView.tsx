@@ -52,6 +52,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const libraryContainerRef = useRef<HTMLDivElement>(null);
   const [selectedSongId, setSelectedSongId] = useState('');
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [selectedDetailTab, setSelectedDetailTab] = useState<'informacion' | 'letra' | 'detalles' | 'estadisticas'>('informacion');
 
   // Efecto para hacer scroll automático cuando se agregan nuevas canciones
   useEffect(() => {
@@ -102,10 +103,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [countdownShareSong, setCountdownShareSong] = useState<SongItem | null>(null);
   const [countdownClientLabel, setCountdownClientLabel] = useState('');
   const [countdownValue, setCountdownValue] = useState('24');
-  const [countdownUnit, setCountdownUnit] = useState<'hours' | 'days'>('hours');
+  const [countdownUnit, setCountdownUnit] = useState<'minutes' | 'hours' | 'days'>('hours');
   const [countdownBusy, setCountdownBusy] = useState(false);
-  const [countdownShareUrl, setCountdownShareUrl] = useState('');
-  const [countdownShareNotice, setCountdownShareNotice] = useState('');
+  const [shareResult, setShareResult] = useState<null | {
+    url: string;
+    title: string;
+    description: string;
+    isCountdown: boolean;
+  }>(null);
 
   const [songDurationsSec, setSongDurationsSec] = useState<Record<string, number>>(() => {
     try {
@@ -675,7 +680,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     setCountdownShareSong(song);
     setCountdownClientLabel('');
     setCountdownBusy(false);
-    setCountdownShareNotice('');
+    setShareResult(null);
     try {
       const t = await getAccessToken();
       if (!t.ok) return;
@@ -697,21 +702,28 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
   };
 
-  const showPreviewLink = async (_song: SongItem, shareUrl: string) => {
+  const showPreviewLink = async (_song: SongItem, shareUrl: string, options?: { isCountdown?: boolean; description?: string }) => {
     const cleanUrl = String(shareUrl || '').trim();
     if (!cleanUrl) {
       alert('No hay link para compartir.');
       return;
     }
-    setCountdownShareUrl(cleanUrl);
-    setCountdownShareNotice('Listo. Ya quedó generado el link con reloj.');
+    setShareResult({
+      url: cleanUrl,
+      title: options?.isCountdown ? 'Enlace temporal creado' : 'Enlace creado',
+      description: options?.description || (options?.isCountdown
+        ? 'Este link abrirá el preview con cuenta regresiva.'
+        : 'Este link abrirá el preview público sin cuenta regresiva.'),
+      isCountdown: Boolean(options?.isCountdown),
+    });
   };
 
   const createCountdownShare = async () => {
     const song = countdownShareSong;
     if (!song?.id) return;
     const amount = Math.max(1, Math.floor(Number(countdownValue) || 1));
-    const hours = countdownUnit === 'days' ? amount * 24 : amount;
+    const hours = countdownUnit === 'days' ? amount * 24 : countdownUnit === 'hours' ? amount : 0;
+    const countdownMinutes = countdownUnit === 'minutes' ? amount : 0;
     setCountdownBusy(true);
     try {
       const t = await getAccessToken();
@@ -727,6 +739,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           clientLabel: countdownClientLabel,
           hasCountdown: true,
           countdown_hours: hours,
+          countdown_minutes: countdownMinutes,
+          countdown_unit: countdownUnit,
         }),
       });
       const out = await r.json().catch(() => ({}));
@@ -736,7 +750,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       }
       const url = String(out?.url || '').trim();
       setCountdownShareSong(null);
-      await showPreviewLink(song, url);
+      const unitLabel = countdownUnit === 'days' ? 'días' : countdownUnit === 'hours' ? 'horas' : 'minutos';
+      await showPreviewLink(song, url, {
+        isCountdown: true,
+        description: `Listo. El enlace temporal estará activo por ${amount} ${unitLabel}.`,
+      });
     } catch (e: any) {
       alert('Error inesperado: ' + (e?.message || String(e)));
     } finally {
@@ -745,22 +763,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   const shareSongCard = async (song: SongItem) => {
-    const title = (song?.title || 'Canción').toString();
     const shareUrl = song?.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
-    try {
-      if (navigator.share && shareUrl) {
-        await navigator.share({ title: `LucIAna | Music - ${title}`, url: shareUrl });
-        return;
-      }
-    } catch {
-    }
     if (shareUrl) {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        alert('Copiado al portapapeles.');
-      } catch {
-        alert(shareUrl);
-      }
+      await showPreviewLink(song, shareUrl, {
+        isCountdown: false,
+        description: 'Compártelo con tu cliente. Este enlace no expira automáticamente.',
+      });
       return;
     }
     alert('No hay link para compartir.');
@@ -1528,6 +1536,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     setSelectedSongId(visibleSongs[0].id);
   }, [activeTab, visibleSongs, activeSongId, selectedSongId]);
 
+  useEffect(() => {
+    setSelectedDetailTab('informacion');
+  }, [selectedSongId]);
+
   const selectedSong = useMemo(() => {
     if (!visibleSongs.length) return null;
     return visibleSongs.find((song) => song.id === selectedSongId) || visibleSongs[0] || null;
@@ -1563,6 +1575,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
   const getSongLyrics = (song: SongItem | null) => String(song?.lyrics || '').trim();
 
+  const getSongSubtitle = (song: SongItem | null) => {
+    if (!song) return '';
+    const style = Array.isArray((song as any)?.style)
+      ? ((song as any)?.style as string[]).filter(Boolean).slice(0, 3).join(', ')
+      : String((song as any)?.style || '').trim();
+    return [song.genre, style, (song as any)?.publicGenre].filter(Boolean).join(' · ');
+  };
+
   const renderSongDetailPanel = (song: SongItem, mode: 'desktop' | 'mobile' = 'desktop') => {
     const durationSec = Number(songDurationsSec[song.id] || 0);
     const createdLabel = fmtSongDate(song.createdAt);
@@ -1570,147 +1590,210 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const lyrics = getSongLyrics(song);
     const folderName = folderNameById.get(songFolderId[song.id] || '') || '';
     const isMobilePanel = mode === 'mobile';
-    const details = [
-      song.genre ? `Género: ${song.genre}` : '',
-      (song as any)?.publicGenre ? `Categoría pública: ${String((song as any).publicGenre).trim()}` : '',
-      folderName ? `Carpeta: ${folderName}` : '',
-      song.id ? `ID: ${song.id}` : '',
-    ].filter(Boolean);
+    const infoRows = [
+      { label: 'Duración', value: durationSec > 0 ? fmtDuration(durationSec) : 'Pendiente' },
+      { label: 'Fecha de creación', value: createdLabel || 'Sin fecha' },
+      { label: 'Versión', value: formatModelBadge(song) },
+      { label: 'Modelo', value: formatModelBadge(song) },
+      { label: 'Tipo', value: song.isCover ? 'Cover' : 'Completa' },
+      { label: 'Visibilidad', value: song.isPublic ? 'Pública' : 'Privada' },
+    ];
+    const detailRows = [
+      { label: 'Estado', value: formatSongStatus(song) },
+      { label: 'Carpeta', value: folderName || 'Sin carpeta' },
+      { label: 'Género', value: song.genre || 'Sin género' },
+      { label: 'ID', value: song.id || 'Sin ID' },
+    ];
+    const lyricLines = lyrics ? lyrics.split(/\r?\n/).filter(Boolean).length : 0;
+    const statRows = [
+      { label: 'Líneas de letra', value: lyricLines > 0 ? String(lyricLines) : '0' },
+      { label: 'Prompt', value: prompt ? 'Disponible' : 'No guardado' },
+      { label: 'Audio', value: song.audioUrl ? 'Listo' : 'Pendiente' },
+      { label: 'Compartir', value: song.isPublic ? 'Público' : 'Privado' },
+    ];
+    const tabs = [
+      { id: 'informacion', label: 'Información' },
+      { id: 'letra', label: 'Letra' },
+      { id: 'detalles', label: 'Detalles técnicos' },
+      { id: 'estadisticas', label: 'Estadísticas' },
+    ] as const;
 
-    return (
-      <div
-        className={cn(
-          "rounded-[30px] border border-white/10 bg-[#0b111b]/95 shadow-[0_24px_80px_rgba(0,0,0,0.32)]",
-          isMobilePanel ? "max-h-[85vh] overflow-y-auto" : "max-h-[calc(100vh-8rem)] overflow-y-auto"
-        )}
-      >
-        <div className="p-4 sm:p-5 space-y-5">
-          <div className="rounded-[26px] overflow-hidden border border-white/10 bg-white/[0.04]">
-            <div className="aspect-square bg-slate-900">
-              <img
-                src={getSongCoverSrc(song)}
-                onError={() => {
-                  const sid = String(song.id || '').trim();
-                  if (!sid) return;
-                  setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
-                }}
-                alt={song.title || 'Cover'}
-                className="w-full h-full object-cover"
-              />
+    const panelContent = (() => {
+      if (selectedDetailTab === 'letra') {
+        return (
+          <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Letra completa</div>
+            <div className="mt-3 max-h-[320px] overflow-y-auto pr-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">
+              {lyrics || 'Esta canción no tiene letra guardada todavía.'}
             </div>
           </div>
-
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-200">
-                {formatModelBadge(song)}
-              </span>
-              <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold text-slate-200">
-                {formatSongStatus(song)}
-              </span>
-              <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold text-slate-400">
-                {song.isCover ? 'Cover' : 'Canción'}
-              </span>
-            </div>
-            <h2 className="mt-3 text-2xl font-extrabold text-white leading-tight">
-              {song.title || 'Pista sin título'}
-            </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-              <span>{durationSec > 0 ? fmtDuration(durationSec) : 'Duración pendiente'}</span>
-              {createdLabel ? <span>{createdLabel}</span> : null}
-              <span>{song.isPublic ? 'Visible en tu perfil' : 'Privada'}</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => onPlaySong(song)}
-              disabled={!song.audioUrl}
-              className={cn(
-                "h-11 rounded-full font-extrabold text-sm transition-colors",
-                song.audioUrl
-                  ? "bg-white text-black hover:bg-slate-200"
-                  : "bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed"
-              )}
-            >
-              {activeSongId === song.id && isPlaying ? 'Reproduciendo' : 'Reproducir'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMenuSong(song)}
-              className="h-11 rounded-full border border-white/10 bg-white/[0.05] text-slate-100 font-extrabold text-sm hover:bg-white/[0.09] transition-colors"
-            >
-              Opciones
-            </button>
-          </div>
-
-          <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-4">
-            <div className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Reproductor</div>
-            {song.audioUrl ? (
-              <audio controls src={song.audioUrl} className="mt-3 w-full" />
-            ) : (
-              <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-400">
-                Esta canción todavía no tiene un audio listo para reproducir.
+        );
+      }
+      if (selectedDetailTab === 'detalles') {
+        return (
+          <div className="space-y-3">
+            {detailRows.map((row) => (
+              <div key={row.label} className="grid grid-cols-[130px_minmax(0,1fr)] gap-3 rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="text-xs text-slate-500">{row.label}</div>
+                <div className="text-sm text-slate-200 break-words">{row.value}</div>
               </div>
-            )}
+            ))}
           </div>
-
+        );
+      }
+      if (selectedDetailTab === 'estadisticas') {
+        return (
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Duración</div>
-              <div className="mt-2 text-lg font-extrabold text-white">{durationSec > 0 ? fmtDuration(durationSec) : 'Pendiente'}</div>
-            </div>
-            <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Modelo</div>
-              <div className="mt-2 text-lg font-extrabold text-white">{formatModelBadge(song)}</div>
-            </div>
-            <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Creación</div>
-              <div className="mt-2 text-sm font-semibold text-slate-200">{createdLabel || 'Sin fecha'}</div>
-            </div>
-            <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Estado</div>
-              <div className="mt-2 text-sm font-semibold text-slate-200">{formatSongStatus(song)}</div>
-            </div>
+            {statRows.map((row) => (
+              <div key={row.label} className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{row.label}</div>
+                <div className="mt-2 text-lg font-bold text-white">{row.value}</div>
+              </div>
+            ))}
           </div>
-
-          <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-4">
-            <div className="flex items-center gap-2 text-white font-bold">
-              <Music2 className="w-4 h-4 text-purple-300" />
-              Prompt e instrucción musical
-            </div>
+        );
+      }
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            {infoRows.map((row) => (
+              <div key={row.label} className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{row.label}</div>
+                <div className="mt-2 text-sm font-semibold text-slate-200 break-words">{row.value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Prompt utilizado</div>
             <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">
               {prompt || 'Esta canción no tiene prompt o instrucción musical guardada.'}
             </div>
           </div>
+        </div>
+      );
+    })();
 
-          <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-4">
-            <div className="flex items-center gap-2 text-white font-bold">
-              <FileText className="w-4 h-4 text-cyan-300" />
-              Letra
-            </div>
-            <div className="mt-3 max-h-64 overflow-y-auto pr-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">
-              {lyrics || 'Esta canción no tiene letra guardada todavía.'}
+    return (
+      <div
+        className={cn(
+          "rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(6,10,20,0.98),rgba(4,7,14,0.96))] shadow-[0_24px_80px_rgba(0,0,0,0.35)]",
+          isMobilePanel ? "max-h-[85vh] overflow-hidden" : "max-h-[calc(100dvh-7.5rem)] overflow-y-auto"
+        )}
+      >
+        <div className="flex min-h-0 flex-col">
+          <div className="shrink-0 border-b border-white/10 p-4">
+            <div className="flex items-start gap-4">
+              <div className="h-24 w-24 shrink-0 overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.04]">
+                <img
+                  src={getSongCoverSrc(song)}
+                  onError={() => {
+                    const sid = String(song.id || '').trim();
+                    if (!sid) return;
+                    setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+                  }}
+                  alt={song.title || 'Cover'}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-xl font-extrabold text-white">{song.title || 'Pista sin título'}</div>
+                    <div className="mt-1 text-xs text-slate-400">{getSongSubtitle(song) || 'Canción en tu biblioteca'}</div>
+                  </div>
+                  {!isMobilePanel ? (
+                    <button
+                      type="button"
+                      onClick={() => setMenuSong(song)}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-200 transition-colors hover:bg-white/[0.08]"
+                      aria-label="Opciones"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">{formatSongStatus(song)}</span>
+                  <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-300">{formatModelBadge(song)}</span>
+                  <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-400">{song.isPublic ? 'Público' : 'Privado'}</span>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onPlaySong(song)}
+                    disabled={!song.audioUrl}
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+                      song.audioUrl ? "border-white/10 bg-white text-black hover:bg-slate-200" : "border-white/10 bg-white/[0.04] text-slate-500"
+                    )}
+                    aria-label="Reproducir"
+                  >
+                    {activeSongId === song.id && isPlaying ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleLikeForSong(song)}
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+                      likedSongIds[song.id] ? "border-fuchsia-400/30 bg-fuchsia-500/15 text-fuchsia-200" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                    )}
+                    aria-label="Me gusta"
+                  >
+                    <ThumbsUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openSharePicker(song)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-300 transition-colors hover:bg-white/[0.08]"
+                    aria-label="Compartir"
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMenuSong(song)}
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/[0.08]"
+                  >
+                    Opciones
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-4">
-            <div className="flex items-center gap-2 text-white font-bold">
-              <BadgeCheck className="w-4 h-4 text-emerald-300" />
-              Información adicional
+          <div className="shrink-0 border-b border-white/10 px-4">
+            <div className="flex gap-5 overflow-x-auto no-scrollbar">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedDetailTab(tab.id)}
+                  className={cn(
+                    "relative whitespace-nowrap py-3 text-sm transition-colors",
+                    selectedDetailTab === tab.id ? "text-fuchsia-300" : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  {tab.label}
+                  {selectedDetailTab === tab.id ? (
+                    <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-fuchsia-500" />
+                  ) : null}
+                </button>
+              ))}
             </div>
-            <div className="mt-3 space-y-2 text-sm text-slate-300">
-              {details.length > 0 ? details.map((item) => (
-                <div key={item} className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
-                  {item}
-                </div>
-              )) : (
-                <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-slate-400">
-                  No hay información adicional disponible.
-                </div>
-              )}
-            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+            {panelContent}
+          </div>
+
+          <div className="shrink-0 border-t border-white/10 p-4">
+            {song.audioUrl ? (
+              <audio controls src={song.audioUrl} className="w-full" />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-400">
+                Esta canción todavía no tiene un audio listo para reproducir.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1719,14 +1802,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
   return (
     <div ref={libraryContainerRef} className="flex-1 min-h-0 flex flex-col pt-2 relative overflow-y-auto">
-      <div className="p-4 space-y-4">
+      <div className="shrink-0 p-4 space-y-4">
         {activeTab === 'canciones' && (
           <>
             <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
               <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-400">Mi biblioteca</div>
-                <h1 className="mt-2 text-white font-extrabold text-2xl">Mis canciones</h1>
-                <p className="mt-1 text-sm text-slate-400">Todas tus canciones y proyectos sin salir de la biblioteca.</p>
+                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-400">Biblioteca</div>
+                <h1 className="mt-2 text-white font-extrabold text-2xl">Biblioteca</h1>
+                <p className="mt-1 text-sm text-slate-400">Todas tus canciones y proyectos en un solo lugar.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1838,7 +1921,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="pb-24">
         {activeTab === 'video' && (
           <div className="p-4 space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -1967,32 +2050,51 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
         {activeTab === 'canciones' && (
           <div className="p-4 space-y-4">
-            {/* Search Bar */}
-            <div className="relative flex items-center gap-2">
-               <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-               <input 
-                 type="text" 
-                 placeholder="Buscar por nombre o ID" 
-                 value={searchDraft}
-                 onChange={(e) => setSearchDraft(e.target.value)}
-                 onKeyDown={(e) => {
-                   if (e.key === 'Enter') {
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_180px_190px] gap-3">
+              <div className="relative flex items-center gap-2">
+                 <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                 <input
+                   type="text"
+                   placeholder="Buscar canción por título o estilo..."
+                   value={searchDraft}
+                   onChange={(e) => setSearchDraft(e.target.value)}
+                   onKeyDown={(e) => {
+                     if (e.key === 'Enter') {
+                       const q = normalizeSearchText(searchDraft);
+                       setSearchQuery(q);
+                     }
+                   }}
+                   className="w-full bg-white/5 border border-white/10 rounded-full py-3 pl-10 pr-[92px] text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
+                 />
+                 <button
+                   type="button"
+                   onClick={() => {
                      const q = normalizeSearchText(searchDraft);
                      setSearchQuery(q);
-                   }
-                 }}
-                 className="w-full bg-white/5 border border-white/5 rounded-full py-2.5 pl-10 pr-[92px] text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
-               />
-               <button
-                 type="button"
-                 onClick={() => {
-                   const q = normalizeSearchText(searchDraft);
-                   setSearchQuery(q);
-                 }}
-                 className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/15 active:bg-white/20 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-100 transition-colors"
-               >
-                 Buscar
-               </button>
+                   }}
+                   className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/15 active:bg-white/20 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-100 transition-colors"
+                 >
+                   Buscar
+                 </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFiltersOpen(true)}
+                className="h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] transition-colors flex items-center justify-center gap-2"
+              >
+                <Settings2 className="w-4 h-4" /> Filtros
+              </button>
+              <label className="h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-slate-300 flex items-center gap-3">
+                <span className="shrink-0 text-slate-400">Ordenar por:</span>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value === 'oldest' ? 'oldest' : 'newest')}
+                  className="min-w-0 flex-1 bg-transparent text-white outline-none"
+                >
+                  <option value="newest" className="bg-[#0b0f16]">Más recientes</option>
+                  <option value="oldest" className="bg-[#0b0f16]">Más antiguas</option>
+                </select>
+              </label>
             </div>
 
             {pendingTasks.length > 0 && !showTrash && (
@@ -2475,42 +2577,37 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)] gap-4 items-start">
-                  <div className="rounded-[30px] border border-white/10 bg-[#0b111b]/90 overflow-hidden">
-                    <div className="hidden md:grid grid-cols-[minmax(0,1.9fr)_84px_92px_116px_120px_54px_54px] gap-3 px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-slate-500 border-b border-white/10">
-                      <div>Canción</div>
-                      <div>Duración</div>
-                      <div>Modelo</div>
-                      <div>Estado</div>
-                      <div>Fecha</div>
-                      <div className="text-center">Play</div>
-                      <div className="text-center">Más</div>
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.56fr)_minmax(320px,0.88fr)] gap-4 items-start">
+                  <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(8,12,24,0.96),rgba(4,6,14,0.98))] min-h-0 flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                      <div>
+                        <div className="text-white font-bold">Canciones</div>
+                        <div className="text-xs text-slate-500">{visibleSongs.length} resultado(s)</div>
+                      </div>
+                      <div className="text-[11px] text-yellow-300">Los archivos se conservan durante 14 días.</div>
                     </div>
 
-                    <div className="divide-y divide-white/10">
+                    <div className="p-3 space-y-3">
                       {visibleSongs.map((song) => {
                         const durationSec = Number(songDurationsSec[song.id] || 0);
                         const folderName = folderNameById.get(songFolderId[song.id] || '') || '';
                         const createdLabel = fmtSongDate(song.createdAt);
                         const isSelected = selectedSong?.id === song.id;
-                        const isUploaded =
-                          !song.isCover &&
-                          !song.sunoTaskId &&
-                          !song.sunoAudioId &&
-                          Boolean(song.audioUrl) &&
-                          String(song.coverUrl || '').startsWith('data:image/svg+xml');
+                        const isLiked = Boolean(likedSongIds[song.id]);
 
                         return (
                           <div
                             key={song.id}
                             onClick={() => openSongDetails(song)}
                             className={cn(
-                              "group cursor-pointer px-3 py-3 md:px-5 md:py-4 transition-colors",
-                              isSelected ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"
+                              "group cursor-pointer rounded-[24px] border px-4 py-3 transition-all",
+                              isSelected
+                                ? "border-fuchsia-500/40 bg-fuchsia-500/[0.08] shadow-[0_0_0_1px_rgba(168,85,247,0.18)]"
+                                : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
                             )}
                           >
-                            <div className="md:hidden flex items-start gap-3">
-                              <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-slate-900 shrink-0">
+                            <div className="flex items-center gap-4">
+                              <div className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[18px] border border-white/10 bg-slate-900">
                                 <img
                                   src={getSongCoverSrc(song)}
                                   onError={() => {
@@ -2519,61 +2616,54 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                     setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
                                   }}
                                   alt={song.title || 'Cover'}
-                                  className="w-full h-full object-cover"
+                                  className="h-full w-full object-cover"
                                 />
                                 {durationSec > 0 ? (
-                                  <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
+                                  <div className="absolute bottom-1 right-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-white">
                                     {fmtDuration(durationSec)}
                                   </div>
                                 ) : null}
                               </div>
+
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="text-sm font-extrabold text-white truncate">{song.title || 'Pista sin título'}</div>
-                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                                      <span>{formatModelBadge(song)}</span>
-                                      <span>{formatSongStatus(song)}</span>
-                                      {createdLabel ? <span>{createdLabel}</span> : null}
+                                    <div className="truncate text-sm md:text-[15px] font-extrabold text-white">{song.title || 'Pista sin título'}</div>
+                                    <div className="mt-1 truncate text-xs text-slate-400">
+                                      {getSongSubtitle(song) || 'Sin información adicional'}
                                     </div>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setMenuSong(song);
-                                    }}
-                                    className={cn(
-                                      "w-9 h-9 rounded-full border flex items-center justify-center transition-all shrink-0",
-                                      menuSong?.id === song.id ? "bg-white/15 border-white/25" : "bg-white/5 border-white/10 hover:bg-white/10"
-                                    )}
-                                    aria-label="Opciones"
-                                  >
-                                    <MoreVertical className="w-4 h-4 text-slate-300" />
-                                  </button>
-                                </div>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  {song.genre ? <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] text-slate-300">{song.genre}</span> : null}
-                                  {folderName ? <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] text-slate-300">📁 {folderName}</span> : null}
-                                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] text-slate-300">{song.isPublic ? 'Pública' : 'Privada'}</span>
-                                </div>
-                                {!showTrash ? (
-                                  <div className="mt-3 flex items-center gap-2">
+                                  <div className="hidden xl:flex items-center gap-2">
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        onPlaySong(song);
+                                        if (!showTrash) onPlaySong(song);
                                       }}
-                                      disabled={!song.audioUrl}
+                                      disabled={showTrash || !song.audioUrl}
                                       className={cn(
-                                        "h-9 px-4 rounded-full text-xs font-extrabold transition-colors",
-                                        song.audioUrl
-                                          ? "bg-white text-black hover:bg-slate-200"
-                                          : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
+                                        "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+                                        showTrash || !song.audioUrl
+                                          ? "border-white/10 bg-white/[0.04] text-slate-600 cursor-not-allowed"
+                                          : "border-white/10 bg-white/[0.05] text-slate-100 hover:bg-white/[0.1]"
                                       )}
+                                      aria-label="Reproducir"
                                     >
-                                      {activeSongId === song.id && isPlaying ? 'Sonando' : 'Reproducir'}
+                                      {activeSongId === song.id && isPlaying ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleLikeForSong(song);
+                                      }}
+                                      className={cn(
+                                        "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
+                                        isLiked ? "border-fuchsia-400/30 bg-fuchsia-500/15 text-fuchsia-200" : "border-white/10 bg-white/[0.05] text-slate-300 hover:bg-white/[0.1]"
+                                      )}
+                                      aria-label="Me gusta"
+                                    >
+                                      <ThumbsUp className="h-4 w-4" />
                                     </button>
                                     <button
                                       type="button"
@@ -2582,163 +2672,88 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                         openSharePicker(song);
                                       }}
                                       disabled={Boolean(songActionBusy[song.id])}
-                                      className={cn(
-                                        "w-9 h-9 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors",
-                                        songActionBusy[song.id] ? "opacity-60" : ""
-                                      )}
+                                      className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-slate-300 hover:bg-white/[0.1] transition-colors"
+                                      aria-label="Compartir"
                                     >
-                                      <Share2 className="w-4 h-4 text-slate-300" />
+                                      <Share2 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadSongCard(song);
+                                      }}
+                                      disabled={Boolean(songActionBusy[song.id])}
+                                      className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-slate-300 hover:bg-white/[0.1] transition-colors"
+                                      aria-label="Descargar"
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setMenuSong(song);
+                                      }}
+                                      className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-slate-300 hover:bg-white/[0.1] transition-colors"
+                                      aria-label="Opciones"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
                                     </button>
                                   </div>
-                                ) : null}
-                              </div>
-                            </div>
+                                </div>
 
-                            <div className="hidden md:grid grid-cols-[minmax(0,1.9fr)_84px_92px_116px_120px_54px_54px] gap-3 items-center">
-                              <div className="min-w-0 flex items-center gap-3">
-                                <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-slate-900 shrink-0">
-                                  <img
-                                    src={getSongCoverSrc(song)}
-                                    onError={() => {
-                                      const sid = String(song.id || '').trim();
-                                      if (!sid) return;
-                                      setBrokenCovers((prev) => (prev[sid] ? prev : { ...prev, [sid]: true }));
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">{formatSongStatus(song)}</span>
+                                  <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-300">{formatModelBadge(song)}</span>
+                                  <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-400">{song.isPublic ? 'Pública' : 'Privada'}</span>
+                                  {folderName ? <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-400">📁 {folderName}</span> : null}
+                                </div>
+
+                                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                                  <span>{createdLabel ? `Creada: ${createdLabel}` : 'Sin fecha'}</span>
+                                  <span>{song.id ? `ID: ${song.id}` : 'Sin ID'}</span>
+                                </div>
+
+                                <div className="mt-3 flex xl:hidden flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!showTrash) onPlaySong(song);
                                     }}
-                                    alt={song.title || 'Cover'}
-                                    className="w-full h-full object-cover"
-                                  />
-                                  {durationSec > 0 ? (
-                                    <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
-                                      {fmtDuration(durationSec)}
-                                    </div>
-                                  ) : null}
-                                  {song.isCover ? (
-                                    <div className="absolute top-1 left-1 rounded bg-white/10 px-1 text-[8px] font-bold text-white">COVER</div>
-                                  ) : isUploaded ? (
-                                    <div className="absolute top-1 left-1 rounded border border-emerald-400/20 bg-emerald-500/10 px-1 text-[8px] font-bold text-emerald-200">SUBIDO</div>
-                                  ) : null}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <div className="text-sm font-extrabold text-white truncate">{song.title || 'Pista sin título'}</div>
-                                    <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
-                                      {song.isCover ? 'Cover' : 'Canción'}
-                                    </span>
-                                    {folderName ? (
-                                      <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-slate-300">
-                                        📁 {folderName}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                                    {song.genre ? <span className="truncate max-w-[180px]">{song.genre}</span> : null}
-                                    <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">ID: {song.id}</span>
-                                  </div>
-                                  {!showTrash ? (
-                                    <div className="mt-3 flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setMenuSong(song);
-                                        }}
-                                        className={cn(
-                                          "border px-3 py-1 rounded-full text-xs transition-colors",
-                                          song.isPublic
-                                            ? "bg-emerald-500/15 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-200"
-                                            : "bg-white/5 hover:bg-white/10 border-white/10 text-slate-200"
-                                        )}
-                                      >
-                                        {song.isPublic ? 'Público' : 'Privado'}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openSharePicker(song);
-                                        }}
-                                        disabled={Boolean(songActionBusy[song.id])}
-                                        className={cn(
-                                          "w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors",
-                                          songActionBusy[song.id] ? "opacity-60" : ""
-                                        )}
-                                      >
-                                        <Share2 className="w-3.5 h-3.5 text-slate-300" />
-                                      </button>
-                                      {downloadingSongId === song.id ? (
-                                        <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/10">
-                                          <span className="text-xs text-slate-300">...</span>
-                                        </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            downloadSongCard(song);
-                                          }}
-                                          disabled={Boolean(songActionBusy[song.id])}
-                                          className={cn(
-                                            "w-7 h-7 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors",
-                                            songActionBusy[song.id] ? "opacity-60" : ""
-                                          )}
-                                          title="Descargar"
-                                        >
-                                          <Download className="w-3.5 h-3.5 text-slate-300" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="mt-2 text-[11px] text-red-300/80">
-                                      {song.deletedAt ? `Eliminada ${fmtSongDate(song.deletedAt || undefined)}` : 'En papelera'}
-                                    </div>
-                                  )}
+                                    disabled={showTrash || !song.audioUrl}
+                                    className={cn(
+                                      "rounded-full px-3 py-2 text-xs font-semibold border transition-colors",
+                                      showTrash || !song.audioUrl
+                                        ? "border-white/10 bg-white/[0.04] text-slate-600 cursor-not-allowed"
+                                        : "border-white/10 bg-white/[0.05] text-slate-100"
+                                    )}
+                                  >
+                                    Reproducir
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openSharePicker(song);
+                                    }}
+                                    className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-slate-200"
+                                  >
+                                    Compartir
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setMenuSong(song);
+                                    }}
+                                    className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-slate-200"
+                                  >
+                                    Más
+                                  </button>
                                 </div>
                               </div>
-
-                              <div className="text-sm font-semibold text-slate-200">
-                                {durationSec > 0 ? fmtDuration(durationSec) : 'Pend.'}
-                              </div>
-                              <div className="text-sm font-semibold text-emerald-200">
-                                {formatModelBadge(song)}
-                              </div>
-                              <div className="text-sm text-slate-300">
-                                {formatSongStatus(song)}
-                              </div>
-                              <div className="text-sm text-slate-400">
-                                {createdLabel || 'Sin fecha'}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (!showTrash) onPlaySong(song);
-                                }}
-                                disabled={showTrash || !song.audioUrl}
-                                className={cn(
-                                  "w-11 h-11 rounded-full border flex items-center justify-center transition-colors",
-                                  showTrash || !song.audioUrl
-                                    ? "bg-white/[0.03] border-white/10 text-slate-600 cursor-not-allowed"
-                                    : "bg-white text-black border-white hover:bg-slate-200"
-                                )}
-                                aria-label="Reproducir"
-                              >
-                                {activeSongId === song.id && isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setMenuSong(song);
-                                }}
-                                className={cn(
-                                  "w-11 h-11 rounded-full border flex items-center justify-center transition-all",
-                                  menuSong?.id === song.id ? "bg-white/15 border-white/25" : "bg-white/5 border-white/10 hover:bg-white/10"
-                                )}
-                                aria-label="Opciones"
-                                aria-pressed={menuSong?.id === song.id}
-                              >
-                                <MoreVertical className="w-4 h-4 text-slate-300" />
-                              </button>
                             </div>
                           </div>
                         );
@@ -2746,7 +2761,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     </div>
                   </div>
 
-                  <div className="hidden xl:block xl:sticky xl:top-4">
+                  <div className="hidden xl:block xl:sticky xl:top-4 min-h-0">
                     {selectedSong ? renderSongDetailPanel(selectedSong, 'desktop') : null}
                   </div>
                 </div>
@@ -2996,12 +3011,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       )}
 
       {sharePickerSong && (
-        <div className="fixed inset-0 z-[280] bg-black/70 flex items-end md:items-center justify-center">
+        <div className="fixed inset-0 z-[280] bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setSharePickerSong(null)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="relative w-full md:max-w-[640px] bg-[linear-gradient(180deg,rgba(9,12,24,0.98),rgba(5,7,16,0.99))] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_25px_90px_rgba(0,0,0,0.5)]">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between">
               <div>
-                <div className="text-white font-extrabold">Compartir</div>
+                <div className="text-white font-extrabold text-xl">Compartir</div>
                 <div className="text-slate-400 text-sm truncate">{sharePickerSong.title || 'Canción'}</div>
               </div>
               <button
@@ -3011,13 +3026,31 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 ✕
               </button>
             </div>
-            <div className="p-4 space-y-3">
+            <div className="p-5 space-y-4">
+              <div className="rounded-[26px] border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden border border-white/10 bg-white/5 shrink-0">
+                  {sharePickerSong.coverUrl ? (
+                    <img src={sharePickerSong.coverUrl} alt={sharePickerSong.title || 'Canción'} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">Sin portada</div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-white font-extrabold text-lg truncate">{sharePickerSong.title || 'Canción'}</div>
+                  <div className="mt-1 text-slate-400 text-sm">Elige cómo quieres compartir este preview con tu cliente.</div>
+                </div>
+              </div>
               <button
                 onClick={() => openCountdownShare(sharePickerSong).catch(() => {})}
-                className="w-full text-left rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-4"
+                className="w-full text-left rounded-[26px] border border-fuchsia-500/40 bg-[linear-gradient(180deg,rgba(77,29,149,0.26),rgba(31,10,61,0.3))] px-5 py-5 shadow-[0_0_0_1px_rgba(168,85,247,0.12)]"
               >
-                <div className="text-white font-extrabold text-sm">Compartir con Cuenta Regresiva</div>
-                <div className="mt-1 text-slate-300 text-xs">Usa un reloj para que el cliente pague más rápido.</div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-white font-extrabold text-base">Compartir con Cuenta Regresiva</div>
+                    <div className="mt-1 text-slate-300 text-sm">El enlace expirará automáticamente y mostrará un contador elegante al cliente.</div>
+                  </div>
+                  <div className="mt-1 w-4 h-4 rounded-full border-2 border-fuchsia-300 shadow-[0_0_0_4px_rgba(168,85,247,0.18)]" />
+                </div>
               </button>
               <button
                 onClick={async () => {
@@ -3025,23 +3058,31 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   setSharePickerSong(null);
                   if (currentSong) await shareSongCard(currentSong);
                 }}
-                className="w-full text-left rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
+                className="w-full text-left rounded-[26px] border border-white/10 bg-white/[0.03] px-5 py-5"
               >
-                <div className="text-white font-extrabold text-sm">Sin Cuenta Regresiva</div>
-                <div className="mt-1 text-slate-300 text-xs">Usa exactamente el flujo actual, sin cambios.</div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-white font-extrabold text-base">Sin Cuenta Regresiva</div>
+                    <div className="mt-1 text-slate-300 text-sm">El enlace no expirará automáticamente y abrirá el preview público normal.</div>
+                  </div>
+                  <div className="mt-1 w-4 h-4 rounded-full border border-white/40" />
+                </div>
               </button>
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+                Tus canciones están protegidas. El cliente podrá escuchar el preview, pero no descargarlo desde el enlace público.
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {countdownShareSong && (
-        <div className="fixed inset-0 z-[281] bg-black/70 flex items-end md:items-center justify-center">
+        <div className="fixed inset-0 z-[281] bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setCountdownShareSong(null)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[560px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="relative w-full md:max-w-[640px] bg-[linear-gradient(180deg,rgba(9,12,24,0.98),rgba(5,7,16,0.99))] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_25px_90px_rgba(0,0,0,0.5)]">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between">
               <div>
-                <div className="text-white font-extrabold">Compartir con Cuenta Regresiva</div>
+                <div className="text-white font-extrabold text-xl">Compartir con Cuenta Regresiva</div>
                 <div className="text-slate-400 text-sm truncate">{countdownShareSong.title || 'Canción'}</div>
               </div>
               <button
@@ -3051,29 +3092,30 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 ✕
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              <div className="text-sm text-slate-300">
-                Esto es para cuando vendes maquetas a clientes: tendrán este tiempo para pagarte.
+            <div className="p-5 space-y-4">
+              <div className="rounded-[24px] border border-fuchsia-500/20 bg-fuchsia-500/10 px-4 py-4 text-sm text-fuchsia-100">
+                Configura el tiempo real del enlace temporal. Mantengo la lógica actual de expiración y solo estoy mejorando la presentación.
               </div>
               <input
                 value={countdownClientLabel}
                 onChange={(e) => setCountdownClientLabel(e.target.value)}
                 placeholder="Nombre o referencia del cliente"
-                className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none"
+                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white placeholder:text-slate-500 outline-none"
               />
-              <div className="grid grid-cols-[1fr,120px] gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr,180px] gap-3">
                 <input
                   type="number"
                   min={1}
                   value={countdownValue}
                   onChange={(e) => setCountdownValue(e.target.value)}
-                  className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none"
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none"
                 />
                 <select
                   value={countdownUnit}
-                  onChange={(e) => setCountdownUnit(e.target.value === 'days' ? 'days' : 'hours')}
-                  className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none bg-transparent"
+                  onChange={(e) => setCountdownUnit(e.target.value === 'days' ? 'days' : e.target.value === 'minutes' ? 'minutes' : 'hours')}
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none"
                 >
+                  <option value="minutes">Minutos</option>
                   <option value="hours">Horas</option>
                   <option value="days">Días</option>
                 </select>
@@ -3081,66 +3123,67 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               <button
                 onClick={() => createCountdownShare().catch(() => {})}
                 disabled={countdownBusy}
-                className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm disabled:opacity-60"
+                className="w-full h-[52px] rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-extrabold text-sm disabled:opacity-60"
               >
-                {countdownBusy ? 'Creando link…' : 'Crear link con reloj'}
+                {countdownBusy ? 'Creando enlace…' : 'Crear enlace temporal'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {countdownShareUrl && (
-        <div className="fixed inset-0 z-[282] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => { setCountdownShareUrl(''); setCountdownShareNotice(''); }} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[560px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+      {shareResult && (
+        <div className="fixed inset-0 z-[282] bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setShareResult(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[640px] bg-[linear-gradient(180deg,rgba(9,12,24,0.98),rgba(5,7,16,0.99))] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_25px_90px_rgba(0,0,0,0.5)]">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between">
               <div>
-                <div className="text-white font-extrabold">Link creado</div>
-                <div className="text-slate-400 text-sm">Este es el link que abre el reproductor con la cuenta regresiva.</div>
+                <div className="text-white font-extrabold text-xl">{shareResult.title}</div>
+                <div className="text-slate-400 text-sm">{shareResult.description}</div>
               </div>
               <button
-                onClick={() => { setCountdownShareUrl(''); setCountdownShareNotice(''); }}
+                onClick={() => setShareResult(null)}
                 className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
               >
                 ✕
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              <textarea
-                readOnly
-                value={countdownShareUrl}
-                onFocus={(e) => e.target.select()}
-                className="w-full min-h-[96px] bg-white/5 border border-white/10 rounded-2xl p-3 text-slate-100 text-sm outline-none resize-none"
-              />
+            <div className="p-5 space-y-4">
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">{shareResult.isCountdown ? 'Enlace temporal' : 'Enlace público'}</div>
+                <textarea
+                  readOnly
+                  value={shareResult.url}
+                  onFocus={(e) => e.target.select()}
+                  className="mt-3 w-full min-h-[96px] bg-transparent text-slate-100 text-sm outline-none resize-none"
+                />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
                   onClick={async () => {
-                    const done = await copyCountdownLink(countdownShareUrl);
+                    const done = await copyCountdownLink(shareResult.url);
                     if (done) {
-                      setCountdownShareNotice('Link copiado.');
+                      setShareResult((prev) => prev ? { ...prev, description: 'Link copiado. Ya puedes enviarlo a tu cliente.' } : prev);
                       return;
                     }
-                    setCountdownShareNotice('No pude copiarlo automático. Mantén presionado el texto del link para copiarlo manualmente.');
+                    setShareResult((prev) => prev ? { ...prev, description: 'No pude copiarlo automático. Mantén presionado el link para copiarlo manualmente.' } : prev);
                   }}
-                  className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm"
+                  className="w-full h-[52px] rounded-full bg-white text-black font-extrabold text-sm"
                 >
-                  Copiar link
+                  Copiar enlace
                 </button>
                 <a
-                  href={countdownShareUrl}
+                  href={shareResult.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="w-full h-[48px] rounded-full bg-white/5 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center justify-center"
+                  className="w-full h-[52px] rounded-full bg-white/5 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center justify-center"
                 >
                   Abrir preview
                 </a>
               </div>
-              {countdownShareNotice ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-                  {countdownShareNotice}
-                </div>
-              ) : null}
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+                Esta canción está protegida. El cliente podrá escuchar el preview, pero no descargarla directamente desde este enlace.
+              </div>
             </div>
           </div>
         </div>

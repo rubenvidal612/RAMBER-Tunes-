@@ -3015,7 +3015,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {currentTab !== 'landing' ? <Banner /> : null}
+      {currentTab !== 'landing' && currentTab !== 'biblioteca' ? <Banner /> : null}
       
       <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
@@ -3125,14 +3125,17 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && (
+              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                    <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
                )}
 
                {/* Library / Results View (Right) */}
-               <div className="flex-1 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30 relative z-10 w-full min-w-[300px]">
+               <div className={cn(
+                 "flex-1 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30 relative z-10 w-full min-w-[300px]",
+                 currentTab === 'biblioteca' ? "overflow-y-auto" : ""
+               )}>
                 {currentTab === 'voces' ? (
                   <CreateView
                     onSongCreated={addCancion}
@@ -3760,11 +3763,75 @@ export default function App() {
   );
 }
 
+function formatSharedClock(totalSeconds: number) {
+  const safe = Math.max(0, Math.floor(Number.isFinite(totalSeconds) ? totalSeconds : 0));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatSharedDate(iso?: string | null) {
+  const raw = String(iso || '').trim();
+  if (!raw) return 'Sin fecha';
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return 'Sin fecha';
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(dt);
+  } catch {
+    return raw;
+  }
+}
+
+function getCountdownParts(expiresAt?: string | null) {
+  const raw = String(expiresAt || '').trim();
+  if (!raw) return { days: '00', hours: '00', minutes: '00', seconds: '00', expired: false };
+  const end = new Date(raw).getTime();
+  if (!Number.isFinite(end)) return { days: '00', hours: '00', minutes: '00', seconds: '00', expired: false };
+  const diffMs = Math.max(0, end - Date.now());
+  const totalSec = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  return {
+    days: String(days).padStart(2, '0'),
+    hours: String(hours).padStart(2, '0'),
+    minutes: String(minutes).padStart(2, '0'),
+    seconds: String(seconds).padStart(2, '0'),
+    expired: diffMs <= 0,
+  };
+}
+
+function buildWhatsAppHref(phone?: string | null, songTitle?: string) {
+  const digits = String(phone || '').replace(/\D+/g, '');
+  if (!digits) return '';
+  const text = encodeURIComponent(`Hola, escuché el preview de "${String(songTitle || 'tu canción')}" y quiero más información.`);
+  return `https://wa.me/${digits}?text=${text}`;
+}
+
 function SharedSongPage({ shareId }: { shareId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [data, setData] = useState<{ id: string; title: string; audioUrl: string; coverUrl?: string } | null>(null);
-  const [showPlayer, setShowPlayer] = useState(true);
+  const [data, setData] = useState<{
+    id: string;
+    title: string;
+    audioUrl: string;
+    coverUrl?: string;
+    description?: string;
+    lyrics?: string;
+    genre?: string;
+    model?: string;
+    createdAt?: string | null;
+    isPublic?: boolean;
+    sellerName?: string;
+    sellerPhone?: string;
+  } | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
@@ -3817,17 +3884,28 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           setError((out?.error || 'Este link no existe o ya no está disponible.').toString());
           return;
         }
-        const title = (out?.title || 'Canción').toString();
-        const audioUrl = (out?.audioUrl || out?.audio_url || '').toString().trim();
-        const coverUrl = (out?.coverUrl || out?.cover_url || '').toString().trim();
+        const title = String(out?.title || 'Canción');
+        const audioUrl = String(out?.audioUrl || out?.audio_url || '').trim();
+        const coverUrl = String(out?.coverUrl || out?.cover_url || '').trim();
         if (!audioUrl) {
           setError('Este link no tiene audio para reproducir.');
           return;
         }
-        const id = (out?.id || shareId).toString();
-        const playUrl = `/api/share/song/audio?id=${encodeURIComponent(id)}`;
-        setData({ id, title, audioUrl: playUrl, coverUrl: coverUrl || undefined });
-        setShowPlayer(true);
+        const id = String(out?.id || shareId);
+        setData({
+          id,
+          title,
+          audioUrl: `/api/share/song/audio?id=${encodeURIComponent(id)}`,
+          coverUrl: coverUrl || undefined,
+          description: String(out?.description || '').trim() || undefined,
+          lyrics: String(out?.lyrics || '').trim() || undefined,
+          genre: String(out?.genre || '').trim() || undefined,
+          model: String(out?.model || '').trim() || undefined,
+          createdAt: out?.createdAt || null,
+          isPublic: Boolean(out?.isPublic),
+          sellerName: String(out?.sellerName || '').trim() || undefined,
+          sellerPhone: String(out?.sellerPhone || '').trim() || undefined,
+        });
       })
       .catch(() => {
         if (!alive) return;
@@ -3871,29 +3949,13 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       }
       await a.play();
       setIsPlaying(true);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'No pude reproducir esta canción.';
-      const isNoSource = String(msg || '').toLowerCase().includes('supported source');
-      if (isNoSource) {
-        try {
-          const bust = `${data.audioUrl}${data.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
-          const bustSrc = new URL(bust, window.location.origin).toString();
-          a.src = '';
-          a.src = bustSrc;
-          await a.play();
-          setIsPlaying(true);
-          return;
-        } catch {
-        }
-      }
+    } catch {
       try {
         const bust = `${data.audioUrl}${data.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
-        const bustSrc = new URL(bust, window.location.origin).toString();
         a.src = '';
-        a.src = bustSrc;
+        a.src = new URL(bust, window.location.origin).toString();
         await a.play();
         setIsPlaying(true);
-        return;
       } catch {
       }
     }
@@ -3916,114 +3978,165 @@ function SharedSongPage({ shareId }: { shareId: string }) {
     setShareSheetUrl(url);
   };
 
+  const whatsappHref = buildWhatsAppHref(data?.sellerPhone, data?.title);
+  const infoRows = data ? [
+    { label: 'Duración', value: playerDuration > 0 ? formatSharedClock(playerDuration) : 'Cargando...' },
+    { label: 'Fecha', value: formatSharedDate(data.createdAt) },
+    { label: 'Modelo', value: data.model || 'No especificado' },
+    { label: 'Visibilidad', value: data.isPublic ? 'Pública' : 'Privada' },
+  ] : [];
+
   return (
-    <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
-      <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
-        <a href="/" className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">L</div>
-          <div className="min-w-0">
-            <div className="font-extrabold leading-tight truncate">LucIAna</div>
-            <div className="text-[11px] text-slate-400 leading-tight truncate">Reproductor oficial</div>
-          </div>
-        </a>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => shareThis().catch(() => {})}
-            className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
-          >
-            <Share2 className="w-4 h-4" /> Compartir
-          </button>
-          <a href="/" className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-sm flex items-center justify-center">
-            Abrir app
+    <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(91,33,182,0.25),transparent_38%),linear-gradient(180deg,#05070f_0%,#04060b_100%)] text-white">
+      <div className="sticky top-0 z-20 border-b border-white/10 bg-black/45 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1220px] items-center justify-between gap-3 px-4 py-4">
+          <a href="/" className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-yellow-400 text-2xl font-light text-black">L</div>
+            <div className="min-w-0">
+              <div className="truncate text-base font-extrabold">LucIAna Music</div>
+              <div className="truncate text-[11px] uppercase tracking-[0.28em] text-slate-500">Preview protegido</div>
+            </div>
           </a>
+          <div className="flex items-center gap-2">
+            <button onClick={() => shareThis().catch(() => {})} className="flex h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 hover:bg-white/10">
+              <Share2 className="h-4 w-4" /> Compartir
+            </button>
+            <a href="/" className="hidden h-11 items-center justify-center rounded-full bg-white px-4 text-sm font-extrabold text-black md:flex">Abrir app</a>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-[1220px] px-4 py-6 md:py-8">
         {loading ? (
-          <div className="p-6 text-slate-300">Cargando…</div>
+          <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-8 text-slate-300">Cargando preview...</div>
         ) : error ? (
-          <div className="p-6">
-            <div className="text-xl font-extrabold">No se pudo abrir</div>
-            <div className="mt-2 text-slate-300">{error}</div>
-            <div className="mt-5 flex items-center gap-2">
-              <button
-                onClick={() => window.location.reload()}
-                className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm"
-              >
-                Reintentar
-              </button>
-            </div>
+          <div className="rounded-[32px] border border-red-500/20 bg-red-500/10 p-8">
+            <div className="text-2xl font-extrabold">No se pudo abrir</div>
+            <div className="mt-2 text-slate-200">{error}</div>
+            <button onClick={() => window.location.reload()} className="mt-5 h-11 rounded-full border border-white/10 bg-white/5 px-5 text-sm font-extrabold text-white">
+              Reintentar
+            </button>
           </div>
         ) : data ? (
-          <div className="p-5 max-w-[980px] mx-auto w-full">
-            <div className="flex flex-col md:flex-row gap-5">
-              <div className="w-full md:w-[360px] shrink-0">
-                <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-white/5 aspect-square">
-                  {data.coverUrl ? (
-                    <img src={data.coverUrl} alt="Cover" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400">Sin portada</div>
-                  )}
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_360px]">
+            <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,18,32,0.96),rgba(6,8,15,0.98))] p-5 md:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+              <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+                <div className="space-y-4">
+                  <div className="aspect-square overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04]">
+                    {data.coverUrl ? (
+                      <img src={data.coverUrl} alt={data.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-slate-500">Sin portada</div>
+                    )}
+                  </div>
+                  <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                    <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">LucIAna Music</div>
+                    <div className="mt-2 text-sm text-slate-300">Esta canción está protegida.</div>
+                    <div className="mt-1 text-sm text-slate-400">No es posible descargarla desde este enlace.</div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-2xl md:text-3xl font-extrabold break-words">{data.title}</div>
-                <div className="mt-1 text-sm text-slate-400">Disponible en LucIAna | Music</div>
 
-                <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
-                  <button
-                    onClick={async () => {
-                      setShowPlayer(true);
-                      await togglePlay();
-                    }}
-                    className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold"
-                  >
-                    {isPlaying ? 'Pausar' : 'Reproducir'}
-                  </button>
-                  <div className="mt-3 text-[11px] text-slate-500 break-words">ID: {data.id}</div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-fuchsia-100">Preview público</span>
+                    {data.genre ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-slate-200">{data.genre}</span> : null}
+                    {data.model ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-slate-200">{data.model}</span> : null}
+                  </div>
+
+                  <div className="mt-4 text-3xl font-black leading-tight md:text-5xl">{data.title}</div>
+                  <div className="mt-3 text-sm text-slate-400">
+                    {data.sellerName ? `Compartido por ${data.sellerName}` : 'Disponible para escuchar en LucIAna Music'}
+                  </div>
+
+                  <div className="mt-6 rounded-[28px] border border-white/10 bg-white/[0.03] p-4 md:p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <button onClick={() => togglePlay().catch(() => {})} className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow-[0_12px_30px_rgba(139,92,246,0.35)]">
+                        {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="ml-0.5 h-6 w-6" />}
+                      </button>
+                      <div className="flex-1">
+                        <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                          <span>{formatSharedClock(playerTime)}</span>
+                          <span>{playerDuration > 0 ? formatSharedClock(playerDuration) : '--:--'}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(playerDuration, 1)}
+                          value={Math.min(playerTime, Math.max(playerDuration, 1))}
+                          onChange={(e) => {
+                            const a = audioRef.current;
+                            const next = Number(e.target.value);
+                            if (!a || !Number.isFinite(next)) return;
+                            try {
+                              a.currentTime = next;
+                            } catch {
+                            }
+                            setPlayerTime(next);
+                          }}
+                          className="h-2 w-full cursor-pointer accent-fuchsia-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {data.description ? (
+                    <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Información básica</div>
+                      <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-200">{data.description}</div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-start gap-3">
+                      <Shield className="mt-0.5 h-5 w-5 text-violet-300" />
+                      <div>
+                        <div className="font-extrabold text-white">Solo escucha</div>
+                        <div className="mt-1 text-sm leading-6 text-slate-300">
+                          Este preview es únicamente para escuchar la canción. No ofrece descarga directa del archivo.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {whatsappHref ? (
+                    <div className="mt-5 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4">
+                      <div className="text-sm font-bold text-emerald-100">¿Te gustó esta canción?</div>
+                      <a href={whatsappHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 text-sm font-extrabold text-black">
+                        <MessageCircle className="h-4 w-4" />
+                        Contactar por WhatsApp
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
               </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Detalles</div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  {infoRows.map((item) => (
+                    <div key={item.label} className="rounded-[22px] border border-white/10 bg-black/20 p-4">
+                      <div className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{item.label}</div>
+                      <div className="mt-2 text-sm font-bold text-white">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {data.lyrics ? (
+                <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-slate-500">
+                    <Info className="h-4 w-4" />
+                    Información adicional
+                  </div>
+                  <div className="mt-3 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-slate-300">{data.lyrics}</div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
       </div>
-
-      {showPlayer && data ? (
-        <MiniPlayer
-          song={{ id: data.id, title: data.title, description: 'Disponible en LucIAna | Music', audioUrl: data.audioUrl } as any}
-          isPlaying={isPlaying}
-          onPlayPause={() => togglePlay().catch(() => {})}
-          onClose={() => {
-            setShowPlayer(false);
-            setIsPlaying(false);
-            setPlayerTime(0);
-            setPlayerDuration(0);
-            const a = audioRef.current;
-            if (a) {
-              try {
-                a.pause();
-              } catch {
-              }
-              a.src = '';
-            }
-          }}
-          placement="default"
-          currentTime={playerTime}
-          duration={playerDuration}
-          onSeek={(t) => {
-            const a = audioRef.current;
-            if (!a) return;
-            const dur = Number.isFinite(Number(a.duration)) ? Number(a.duration) : 0;
-            const next = Math.max(0, Math.min(Number.isFinite(Number(t)) ? Number(t) : 0, dur));
-            try {
-              a.currentTime = next;
-            } catch {
-            }
-            setPlayerTime(next);
-          }}
-        />
-      ) : null}
 
       <audio
         ref={audioRef}
@@ -4054,31 +4167,26 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       />
 
       {toast ? (
-        <div className="fixed left-0 right-0 bottom-[92px] z-[320] flex justify-center px-4 pointer-events-none">
-          <div className="bg-black/80 border border-white/10 backdrop-blur-md text-slate-100 text-sm font-semibold px-4 py-2 rounded-full">
+        <div className="fixed bottom-6 left-0 right-0 z-[320] flex justify-center px-4 pointer-events-none">
+          <div className="rounded-full border border-white/10 bg-black/80 px-4 py-2 text-sm font-semibold text-slate-100 backdrop-blur-md">
             {toast}
           </div>
         </div>
       ) : null}
 
       {shareSheetUrl ? (
-        <div className="fixed inset-0 z-[350] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+        <div className="fixed inset-0 z-[350] flex items-end justify-center bg-black/80 backdrop-blur-sm md:items-center">
+          <button className="absolute inset-0 h-full w-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
+          <div className="relative w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[#0a0a0a] md:max-w-[520px] md:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
               <div className="text-white font-extrabold truncate">Compartir</div>
-              <button
-                onClick={() => setShareSheetUrl(null)}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
-              >
-                ✕
-              </button>
+              <button onClick={() => setShareSheetUrl(null)} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-200">✕</button>
             </div>
-            <div className="p-4 space-y-3">
-              <div className="text-slate-300 text-sm">Copia este link:</div>
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-words text-slate-100 text-sm">{shareSheetUrl}</div>
+            <div className="space-y-3 p-4">
+              <div className="text-sm text-slate-300">Copia este link:</div>
+              <div className="break-words rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-100">{shareSheetUrl}</div>
               <button
-                className="w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm"
+                className="flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-white text-sm font-extrabold text-black"
                 onClick={async () => {
                   const ok = await copyToClipboard(shareSheetUrl);
                   if (ok) {
@@ -4089,7 +4197,8 @@ function SharedSongPage({ shareId }: { shareId: string }) {
                   }
                 }}
               >
-                Copiar link
+                <Copy className="h-4 w-4" />
+                Copiar enlace
               </button>
             </div>
           </div>
@@ -4112,17 +4221,20 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     expiresAt?: string | null;
     isPaid: boolean;
     clientLabel?: string;
-    unlockPrice?: number;
-  createdBy?: string;
-} | null>(null);
-  const [showPlayer, setShowPlayer] = useState(false);
+    description?: string;
+    lyrics?: string;
+    genre?: string;
+    model?: string;
+    songCreatedAt?: string | null;
+    isPublic?: boolean;
+    sellerName?: string;
+    sellerPhone?: string;
+  } | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
   const [toast, setToast] = useState('');
   const [shareSheetUrl, setShareSheetUrl] = useState<string | null>(null);
-  const [isPaymentLoading, setIsPaymentLoading] = useState(false);
-  const [unlockPrice, setUnlockPrice] = useState(250);
   const toastTimerRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [, setTick] = useState(0);
@@ -4139,7 +4251,23 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       return true;
     } catch {
     }
-    return false;
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -4161,21 +4289,24 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
           return;
         }
         setData({
-        id: String(out?.id || shareId),
-        songId,
-        title: String(out?.title || "Canción"),
-        audioUrl: String(out?.audioUrl || `/api/share/song/audio?id=${encodeURIComponent(songId)}`),
-        coverUrl: String(out?.coverUrl || "").trim() || undefined,
-        hasCountdown: Boolean(out?.hasCountdown),
-        expiresAt: out?.expiresAt || null,
-        isPaid: Boolean(out?.isPaid),
-        clientLabel: String(out?.clientLabel || "").trim(),
-        unlockPrice: Number(out?.unlockPrice) || 250,
-        createdBy: String(out?.createdBy || ""),
-      });
-      if (out?.unlockPrice) {
-        setUnlockPrice(Number(out.unlockPrice));
-      }
+          id: String(out?.id || shareId),
+          songId,
+          title: String(out?.title || 'Canción'),
+          audioUrl: String(out?.audioUrl || `/api/share/song/audio?id=${encodeURIComponent(songId)}`),
+          coverUrl: String(out?.coverUrl || '').trim() || undefined,
+          hasCountdown: Boolean(out?.hasCountdown),
+          expiresAt: out?.expiresAt || null,
+          isPaid: Boolean(out?.isPaid),
+          clientLabel: String(out?.clientLabel || '').trim() || undefined,
+          description: String(out?.description || '').trim() || undefined,
+          lyrics: String(out?.lyrics || '').trim() || undefined,
+          genre: String(out?.genre || '').trim() || undefined,
+          model: String(out?.model || '').trim() || undefined,
+          songCreatedAt: out?.songCreatedAt || null,
+          isPublic: Boolean(out?.isPublic),
+          sellerName: String(out?.sellerName || '').trim() || undefined,
+          sellerPhone: String(out?.sellerPhone || '').trim() || undefined,
+        });
       })
       .catch(() => {
         if (!alive) return;
@@ -4213,11 +4344,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
         (payload) => {
           const newIsPaid = Boolean((payload.new as any)?.is_paid);
           if (newIsPaid) {
-            setData((prev) => prev ? {
-              ...prev,
-              isPaid: newIsPaid,
-              audioUrl: `/api/share/song/audio?id=${encodeURIComponent(prev.songId)}`,
-            } : prev);
+            setData((prev) => prev ? { ...prev, isPaid: true } : prev);
           }
         }
       )
@@ -4227,37 +4354,12 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     };
   }, [shareId]);
 
-  const handleUnlock = async () => {
-    try {
-      setIsPaymentLoading(true);
-      setError('');
-      const response = await fetch('/api/share/preview/create-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shareId }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Error al crear el pago');
-      if (result.init_point) {
-        window.location.href = result.init_point;
-      } else {
-        throw new Error('No se recibió la URL de pago');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error al procesar el pago');
-      showToast(err.message || 'Error al procesar el pago');
-    } finally {
-      setIsPaymentLoading(false);
-    }
-  };
-
   const expiredByTime = (() => {
     if (!data?.hasCountdown || data?.isPaid || !data?.expiresAt) return false;
     const end = new Date(data.expiresAt).getTime();
     if (!Number.isFinite(end)) return false;
     return Date.now() >= end;
   })();
-
   const isLocked = Boolean(data && !data.isPaid && expiredByTime);
 
   useEffect(() => {
@@ -4284,23 +4386,11 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     a.src = '';
   }, [data?.audioUrl]);
 
-  const formatCountdown = (expiresAt?: string | null) => {
-    if (!expiresAt) return 'Sin fecha';
-    const end = new Date(expiresAt).getTime();
-    if (!Number.isFinite(end)) return 'Sin fecha';
-    const diff = Math.max(0, end - Date.now());
-    const total = Math.floor(diff / 1000);
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
-
   const togglePlay = async () => {
     const a = audioRef.current;
     if (!a || !data?.audioUrl) return;
     if (isLocked) {
-      showToast('Preview expirado — contacta a tu vendedor para continuar.');
+      showToast('Este enlace ya no está disponible. Contacta a tu vendedor para continuar.');
       return;
     }
     try {
@@ -4317,6 +4407,14 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       await a.play();
       setIsPlaying(true);
     } catch {
+      try {
+        const bust = `${data.audioUrl}${data.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        a.src = '';
+        a.src = new URL(bust, window.location.origin).toString();
+        await a.play();
+        setIsPlaying(true);
+      } catch {
+      }
     }
   };
 
@@ -4337,200 +4435,220 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     setShareSheetUrl(url);
   };
 
+  const countdown = getCountdownParts(data?.expiresAt);
+  const whatsappHref = buildWhatsAppHref(data?.sellerPhone, data?.title);
+  const infoRows = data ? [
+    { label: 'Duración', value: playerDuration > 0 ? formatSharedClock(playerDuration) : 'Cargando...' },
+    { label: 'Fecha', value: formatSharedDate(data.songCreatedAt) },
+    { label: 'Modelo', value: data.model || 'No especificado' },
+    { label: 'Visibilidad', value: data.isPublic ? 'Pública' : 'Privada' },
+  ] : [];
+
   return (
-    <div className="min-h-[100dvh] w-full bg-black text-white flex flex-col">
-      <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
-        <a href="/" className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">L</div>
-          <div className="min-w-0">
-            <div className="font-extrabold leading-tight truncate">LucIAna</div>
-            <div className="text-[11px] text-slate-400 leading-tight truncate">Reproductor oficial</div>
-          </div>
-        </a>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => shareThis().catch(() => {})}
-            className="h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-extrabold text-sm flex items-center gap-2"
-          >
-            <Share2 className="w-4 h-4" /> Compartir
-          </button>
-          <a href="/" className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-sm flex items-center justify-center">
-            Abrir app
+    <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(91,33,182,0.28),transparent_36%),linear-gradient(180deg,#05070f_0%,#04060b_100%)] text-white">
+      <div className="sticky top-0 z-20 border-b border-white/10 bg-black/45 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1220px] items-center justify-between gap-3 px-4 py-4">
+          <a href="/" className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-yellow-400 text-2xl font-light text-black">L</div>
+            <div className="min-w-0">
+              <div className="truncate text-base font-extrabold">LucIAna Music</div>
+              <div className="truncate text-[11px] uppercase tracking-[0.28em] text-slate-500">Preview para cliente</div>
+            </div>
           </a>
+          <div className="flex items-center gap-2">
+            <button onClick={() => shareThis().catch(() => {})} className="flex h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 hover:bg-white/10">
+              <Share2 className="h-4 w-4" /> Compartir
+            </button>
+            <a href="/" className="hidden h-11 items-center justify-center rounded-full bg-white px-4 text-sm font-extrabold text-black md:flex">Abrir app</a>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-[1220px] px-4 py-6 md:py-8">
         {loading ? (
-          <div className="p-6 text-slate-300">Cargando…</div>
+          <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-8 text-slate-300">Cargando preview...</div>
         ) : error ? (
-          <div className="p-6">
-            <div className="text-xl font-extrabold">No se pudo abrir</div>
-            <div className="mt-2 text-slate-300">{error}</div>
+          <div className="rounded-[32px] border border-red-500/20 bg-red-500/10 p-8">
+            <div className="text-2xl font-extrabold">No se pudo abrir</div>
+            <div className="mt-2 text-slate-200">{error}</div>
           </div>
         ) : data ? (
-          <div className="p-5 max-w-[980px] mx-auto w-full">
+          <>
             {data.hasCountdown ? (
               <div className={cn(
-                "mb-5 relative overflow-hidden rounded-3xl border p-5 md:p-6 shadow-[0_18px_60px_rgba(0,0,0,0.28)]",
-                isLocked && !data.isPaid
-                  ? "border-red-400/40 bg-gradient-to-br from-red-500/20 via-red-500/10 to-black/20"
-                  : "border-amber-300/40 bg-gradient-to-br from-amber-300/25 via-yellow-400/10 to-black/20"
+                "mb-6 overflow-hidden rounded-[32px] border p-5 md:p-6 shadow-[0_24px_80px_rgba(0,0,0,0.4)]",
+                isLocked ? "border-red-500/20 bg-red-500/10" : "border-fuchsia-500/20 bg-[linear-gradient(180deg,rgba(109,40,217,0.18),rgba(8,8,16,0.7))]"
               )}>
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className={cn(
-                    "absolute -top-16 -right-10 h-40 w-40 rounded-full blur-3xl",
-                    isLocked && !data.isPaid ? "bg-red-400/20" : "bg-amber-300/25"
-                  )} />
-                </div>
-                <div className="relative">
-                  <div className={cn(
-                    "inline-flex items-center rounded-full border px-3 py-1 text-[11px] md:text-xs font-bold uppercase tracking-[0.24em]",
-                    isLocked && !data.isPaid
-                      ? "border-red-300/35 bg-red-400/10 text-red-100"
-                      : "border-amber-200/35 bg-black/20 text-amber-100"
-                  )}>
-                    {data.isPaid ? 'Acceso liberado' : 'Tiempo restante'}
+                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-slate-100 inline-flex items-center gap-2">
+                      {isLocked ? <AlertTriangle className="h-3.5 w-3.5" /> : <BadgeCheck className="h-3.5 w-3.5" />}
+                      {isLocked ? 'Enlace expirado' : data.isPaid ? 'Acceso autorizado' : 'Cuenta regresiva activa'}
+                    </div>
+                    <div className="mt-3 text-lg font-extrabold md:text-2xl">
+                      {isLocked ? 'Este enlace ya no está disponible.' : 'Este enlace es temporal.'}
+                    </div>
+                    <div className="mt-2 max-w-2xl text-sm leading-6 text-slate-200/90">
+                      {isLocked
+                        ? 'Contacta a tu vendedor para continuar.'
+                        : 'Escucha el preview mientras el enlace siga activo. Cuando el temporizador termine, dejará de reproducirse.'}
+                    </div>
                   </div>
-                  <div className={cn(
-                    "mt-3 font-black leading-none tracking-[0.08em] text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)]",
-                    data.isPaid ? "text-3xl md:text-4xl" : "text-4xl md:text-6xl"
-                  )}>
-                    {data.isPaid ? 'Pago confirmado' : formatCountdown(data.expiresAt)}
-                  </div>
-                  <div className="mt-2 text-sm md:text-base text-slate-200/90 max-w-2xl">
-                    {data.isPaid
-                      ? 'Este preview quedó desbloqueado por tu vendedor.'
-                      : 'Esta canción se eliminará al terminar el temporizador. Contacta a tu vendedor para continuar.'}
-                  </div>
+                  {!isLocked ? (
+                    <div className="grid grid-cols-4 gap-2 md:gap-3">
+                      {[
+                        { label: 'Días', value: countdown.days },
+                        { label: 'Horas', value: countdown.hours },
+                        { label: 'Minutos', value: countdown.minutes },
+                        { label: 'Segundos', value: countdown.seconds },
+                      ].map((item) => (
+                        <div key={item.label} className="min-w-[72px] rounded-[22px] border border-white/10 bg-black/25 px-3 py-3 text-center">
+                          <div className="text-2xl font-black">{item.value}</div>
+                          <div className="mt-1 text-[10px] uppercase tracking-[0.24em] text-slate-400">{item.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
 
-            <div className="flex flex-col md:flex-row gap-5">
-              <div className="w-full md:w-[360px] shrink-0">
-                <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-white/5 aspect-square">
-                  {data.coverUrl ? (
-                    <img src={data.coverUrl} alt="Cover" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400">Sin portada</div>
-                  )}
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-2xl md:text-3xl font-extrabold break-words">{data.title}</div>
-                <div className="mt-1 text-sm text-slate-400">
-                  {data.clientLabel ? `Cliente: ${data.clientLabel}` : 'Preview para cliente'}
-                </div>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_360px]">
+              <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,18,32,0.96),rgba(6,8,15,0.98))] p-5 md:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+                <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+                  <div className="space-y-4">
+                    <div className="aspect-square overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04]">
+                      {data.coverUrl ? (
+                        <img src={data.coverUrl} alt={data.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-slate-500">Sin portada</div>
+                      )}
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Protección</div>
+                      <div className="mt-2 text-sm text-slate-300">Esta canción está protegida.</div>
+                      <div className="mt-1 text-sm text-slate-400">No es posible descargarla desde este enlace.</div>
+                    </div>
+                  </div>
 
-                <div className="mt-5 bg-white/5 border border-white/10 rounded-3xl p-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap gap-2">
+                      {data.clientLabel ? <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-fuchsia-100">{data.clientLabel}</span> : null}
+                      {data.genre ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-slate-200">{data.genre}</span> : null}
+                      {data.model ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-slate-200">{data.model}</span> : null}
+                    </div>
 
-                  {!data.isPaid ? (
-                    <>
-                      <button
-                        onClick={async () => {
-                          if (isLocked) return;
-                          setShowPlayer(true);
-                          await togglePlay();
-                        }}
-                        disabled={isLocked}
-                        className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold disabled:opacity-60"
-                      >
-                        {isLocked ? 'Preview expirado' : isPlaying ? 'Pausar' : 'Reproducir'}
-                      </button>
+                    <div className="mt-4 text-3xl font-black leading-tight md:text-5xl">{data.title}</div>
+                    <div className="mt-3 text-sm text-slate-400">
+                      {data.sellerName ? `Preview enviado por ${data.sellerName}` : 'Preview para cliente de LucIAna Music'}
+                    </div>
 
-                      {isAdminEmail(data.createdBy) || data.createdBy === 'jesusmanuelmartinezgonzalez3@gmail.com' ? (
+                    <div className="mt-6 rounded-[28px] border border-white/10 bg-white/[0.03] p-4 md:p-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                         <button
-                          onClick={handleUnlock}
-                          disabled={isPaymentLoading}
-                          className="w-full h-[46px] rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold disabled:opacity-60 mt-3 flex items-center justify-center gap-2"
+                          onClick={() => togglePlay().catch(() => {})}
+                          disabled={isLocked}
+                          className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow-[0_12px_30px_rgba(139,92,246,0.35)] disabled:opacity-50"
                         >
-                          {isPaymentLoading ? (
-                            <>
-                              <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                              Procesando pago...
-                            </>
-                          ) : (
-                            `Descargar por $${unlockPrice}`
-                          )}
+                          {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="ml-0.5 h-6 w-6" />}
                         </button>
-                      ) : null}
-
+                        <div className="flex-1">
+                          <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                            <span>{formatSharedClock(playerTime)}</span>
+                            <span>{playerDuration > 0 ? formatSharedClock(playerDuration) : '--:--'}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(playerDuration, 1)}
+                            value={Math.min(playerTime, Math.max(playerDuration, 1))}
+                            onChange={(e) => {
+                              if (isLocked) return;
+                              const a = audioRef.current;
+                              const next = Number(e.target.value);
+                              if (!a || !Number.isFinite(next)) return;
+                              try {
+                                a.currentTime = next;
+                              } catch {
+                              }
+                              setPlayerTime(next);
+                            }}
+                            disabled={isLocked}
+                            className="h-2 w-full cursor-pointer accent-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+                      </div>
                       {isLocked ? (
-                        <div className="mt-3 text-sm text-red-200">
-                          Preview expirado — contacta a tu vendedor para continuar.
+                        <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                          Este enlace ya no está disponible. Contacta a tu vendedor para continuar.
                         </div>
                       ) : null}
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={async () => {
-                          setShowPlayer(true);
-                          await togglePlay();
-                        }}
-                        className="w-full h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold"
-                      >
-                        {isPlaying ? 'Pausar' : 'Reproducir'}
-                      </button>
+                    </div>
 
-                      <a
-                        href={data.audioUrl}
-                        download={`${data.title}.mp3`}
-                        className="w-full h-[46px] rounded-full bg-indigo-500 hover:bg-indigo-400 text-white font-extrabold flex items-center justify-center gap-2 mt-3"
-                      >
-                        <Download className="w-5 h-5" />
-                        Descargar canción
-                      </a>
-                    </>
-                  )}
+                    {data.description ? (
+                      <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                        <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Información básica</div>
+                        <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-200">{data.description}</div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex items-start gap-3">
+                        <Shield className="mt-0.5 h-5 w-5 text-violet-300" />
+                        <div>
+                          <div className="font-extrabold text-white">Solo escucha</div>
+                          <div className="mt-1 text-sm leading-6 text-slate-300">
+                            Este preview público es únicamente para escuchar. No ofrece descarga directa ni muestra un precio fijo.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {whatsappHref ? (
+                      <div className="mt-5 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4">
+                        <div className="text-sm font-bold text-emerald-100">¿Te gustó esta canción?</div>
+                        <a href={whatsappHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 text-sm font-extrabold text-black">
+                          <MessageCircle className="h-4 w-4" />
+                          Contactar por WhatsApp
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
+
+              <div className="space-y-4">
+                <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">Detalles</div>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    {infoRows.map((item) => (
+                      <div key={item.label} className="rounded-[22px] border border-white/10 bg-black/20 p-4">
+                        <div className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{item.label}</div>
+                        <div className="mt-2 text-sm font-bold text-white">{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {data.lyrics ? (
+                  <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-slate-500">
+                      <Info className="h-4 w-4" />
+                      Información adicional
+                    </div>
+                    <div className="mt-3 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-slate-300">{data.lyrics}</div>
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
+          </>
         ) : null}
       </div>
-
-      {showPlayer && data && !isLocked ? (
-        <MiniPlayer
-          song={{ id: data.songId, title: data.title, description: 'Disponible en LucIAna | Music', audioUrl: data.audioUrl } as any}
-          isPlaying={isPlaying}
-          onPlayPause={() => togglePlay().catch(() => {})}
-          onClose={() => {
-            setShowPlayer(false);
-            setIsPlaying(false);
-            setPlayerTime(0);
-            setPlayerDuration(0);
-            const a = audioRef.current;
-            if (a) {
-              try {
-                a.pause();
-              } catch {
-              }
-              a.src = '';
-            }
-          }}
-          placement="default"
-          currentTime={playerTime}
-          duration={playerDuration}
-          onSeek={(t) => {
-            const a = audioRef.current;
-            if (!a) return;
-            try {
-              a.currentTime = t;
-            } catch {
-            }
-            setPlayerTime(t);
-          }}
-        />
-      ) : null}
 
       <audio
         ref={audioRef}
         preload="metadata"
-        onEnded={() => {
-          setIsPlaying(false);
-        }}
+        onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
         onError={() => setIsPlaying(false)}
@@ -4556,31 +4674,26 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       />
 
       {toast ? (
-        <div className="fixed left-0 right-0 bottom-[92px] z-[320] flex justify-center px-4 pointer-events-none">
-          <div className="bg-black/80 border border-white/10 backdrop-blur-md text-slate-100 text-sm font-semibold px-4 py-2 rounded-full">
+        <div className="fixed bottom-6 left-0 right-0 z-[320] flex justify-center px-4 pointer-events-none">
+          <div className="rounded-full border border-white/10 bg-black/80 px-4 py-2 text-sm font-semibold text-slate-100 backdrop-blur-md">
             {toast}
           </div>
         </div>
       ) : null}
 
       {shareSheetUrl ? (
-        <div className="fixed inset-0 z-[350] bg-black/70 flex items-end md:items-center justify-center">
-          <button className="absolute inset-0 w-full h-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
-          <div className="relative w-full md:max-w-[520px] bg-[#0a0a0a] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden mb-[92px] md:mb-0">
-            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+        <div className="fixed inset-0 z-[350] flex items-end justify-center bg-black/80 backdrop-blur-sm md:items-center">
+          <button className="absolute inset-0 h-full w-full" onClick={() => setShareSheetUrl(null)} aria-label="Cerrar" />
+          <div className="relative w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[#0a0a0a] md:max-w-[520px] md:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
               <div className="text-white font-extrabold truncate">Compartir</div>
-              <button
-                onClick={() => setShareSheetUrl(null)}
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
-              >
-                ✕
-              </button>
+              <button onClick={() => setShareSheetUrl(null)} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-200">✕</button>
             </div>
-            <div className="p-4 space-y-3">
-              <div className="text-slate-300 text-sm">Copia este link:</div>
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-words text-slate-100 text-sm">{shareSheetUrl}</div>
+            <div className="space-y-3 p-4">
+              <div className="text-sm text-slate-300">Copia este link:</div>
+              <div className="break-words rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-100">{shareSheetUrl}</div>
               <button
-                className="w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm"
+                className="flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-white text-sm font-extrabold text-black"
                 onClick={async () => {
                   const ok = await copyToClipboard(shareSheetUrl);
                   if (ok) {
@@ -4591,7 +4704,8 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                   }
                 }}
               >
-                Copiar link
+                <Copy className="h-4 w-4" />
+                Copiar enlace
               </button>
             </div>
           </div>

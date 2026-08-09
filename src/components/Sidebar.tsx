@@ -91,7 +91,7 @@ export function Sidebar({ currentTab, onChange }: SidebarProps) {
             )}
           >
             <Library className="w-5 h-5" />
-            <span className="text-sm">Mis Canciones</span>
+            <span className="text-sm">Biblioteca</span>
           </button>
 
           <button

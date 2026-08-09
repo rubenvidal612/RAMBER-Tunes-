@@ -106,8 +106,30 @@ try {
 // #endregion
 
 const isProd = Boolean((import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD);
-if ('serviceWorker' in navigator && isProd) {
+const isLocalDevHost = (() => {
+  try {
+    const host = (window.location.hostname || '').toString().trim().toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+  } catch {
+    return false;
+  }
+})();
+
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (isProd && !isLocalDevHost) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      return;
+    }
+
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => Promise.allSettled(regs.map((r) => r.unregister())))
+      .catch(() => {});
+
+    if ('caches' in window) {
+      caches.keys()
+        .then((keys) => Promise.allSettled(keys.map((key) => caches.delete(key))))
+        .catch(() => {});
+    }
   });
 }

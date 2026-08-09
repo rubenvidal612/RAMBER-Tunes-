@@ -30,7 +30,7 @@ export function BottomNav({ currentTab, onChange }: BottomNavProps) {
     { id: 'landing', label: 'Inicio', icon: Home },
     { id: 'inicio', label: 'Canciones', icon: Music2 },
     { id: 'studio', label: 'Crear', icon: Sparkles },
-    { id: 'biblioteca', label: 'Mis Canciones', icon: Library },
+    { id: 'biblioteca', label: 'Biblioteca', icon: Library },
   ];
 
   const menuItems: MenuItem[] = [

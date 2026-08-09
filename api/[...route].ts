@@ -9613,7 +9613,7 @@ const shareHandler = (() => {
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
       const { data, error } = await admin
         .from("library_items")
-        .select("id, title, audio_url, cover_url, deleted_at, type")
+        .select("id, user_id, title, description, lyrics, genre, suno_model, audio_url, cover_url, created_at, is_public, deleted_at, type")
         .eq("id", id.slice(0, 200))
         .eq("type", "song")
         .maybeSingle();
@@ -9623,13 +9623,35 @@ const shareHandler = (() => {
       const audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
       const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
       const coverUrl = typeof (data as any).cover_url === "string" ? (data as any).cover_url.trim() : "";
+      let sellerName = "";
+      let sellerPhone = "";
+      try {
+        const getUserById = (admin?.auth as any)?.admin?.getUserById;
+        const userId = String((data as any)?.user_id || "").trim();
+        if (userId && typeof getUserById === "function") {
+          const uout = await getUserById.call((admin.auth as any).admin, userId);
+          const user = uout?.data?.user || null;
+          const meta: any = (user as any)?.user_metadata ?? (user as any)?.raw_user_meta_data ?? {};
+          sellerName = String(meta?.full_name || meta?.name || meta?.display_name || "").trim();
+          sellerPhone = String(meta?.contact_phone || "").trim();
+        }
+      } catch {
+      }
       if (!audioUrl) return send(res, 404, { error: "No hay audio para compartir" });
 
       return send(res, 200, {
         id: String((data as any).id || ""),
         title,
+        description: String((data as any).description || ""),
+        lyrics: String((data as any).lyrics || ""),
+        genre: String((data as any).genre || ""),
+        model: String((data as any).suno_model || ""),
+        createdAt: (data as any).created_at || null,
+        isPublic: Boolean((data as any).is_public),
         audioUrl,
         coverUrl: coverUrl || "",
+        sellerName,
+        sellerPhone,
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
@@ -9769,17 +9791,30 @@ const sharePreviewHandler = (() => {
       const share = pr.data as any;
       if (!share) return send(res, 404, { error: "Preview no encontrado" });
 
-      // Get creator email
+      // Get creator contact info from profile/auth metadata
       const { data: creatorProfile } = await admin
         .from("profiles")
         .select("email")
         .eq("id", share.created_by)
         .maybeSingle();
       const creatorEmail = (creatorProfile as any)?.email || "";
+      let creatorName = "";
+      let creatorPhone = "";
+      try {
+        const getUserById = (admin?.auth as any)?.admin?.getUserById;
+        if (typeof getUserById === "function") {
+          const uout = await getUserById.call((admin.auth as any).admin, String((share as any).created_by || ""));
+          const user = uout?.data?.user || null;
+          const meta: any = (user as any)?.user_metadata ?? (user as any)?.raw_user_meta_data ?? {};
+          creatorName = String(meta?.full_name || meta?.name || meta?.display_name || "").trim();
+          creatorPhone = String(meta?.contact_phone || "").trim();
+        }
+      } catch {
+      }
 
       const sr = await admin
         .from("library_items")
-        .select("id, title, audio_url, cover_url, deleted_at, type")
+        .select("id, title, description, lyrics, genre, suno_model, audio_url, cover_url, created_at, is_public, deleted_at, type")
         .eq("id", String((share as any).song_id || "").trim())
         .eq("type", "song")
         .maybeSingle();
@@ -9810,9 +9845,17 @@ const song = sr.data as any;
         paidAt: (share as any).paid_at || null,
         createdAt: (share as any).created_at || null,
         title: String(song?.title || "Canción"),
+        description: String(song?.description || ""),
+        lyrics: String(song?.lyrics || ""),
+        genre: String(song?.genre || ""),
+        model: String(song?.suno_model || ""),
+        songCreatedAt: (song as any)?.created_at || null,
+        isPublic: Boolean((song as any)?.is_public),
         audioUrl: previewAudioUrl,
         coverUrl: String(song?.cover_url || ""),
         unlockPrice: unlockPrice,
+        sellerName: creatorName || "",
+        sellerPhone: creatorPhone || "",
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
@@ -10188,6 +10231,8 @@ const vendorHandler = (() => {
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     const clientLabel = typeof body?.clientLabel === "string" ? body.clientLabel.trim().slice(0, 120) : "";
     const hours = normalizeHours(body?.countdown_hours);
+    const countdownMinutes = Math.max(0, Math.floor(Number(body?.countdown_minutes) || 0));
+    const countdownUnit = typeof body?.countdown_unit === "string" ? body.countdown_unit.trim().toLowerCase() : "";
     if (!songId) return send(res, 400, { error: "Falta songId" });
 
     // Get vendor settings to check force_countdown_only
@@ -10200,7 +10245,12 @@ const vendorHandler = (() => {
     
     // Enforce countdown if force_countdown_only is true
     const hasCountdown = forceCountdown ? true : Boolean(body?.hasCountdown);
-    if (hasCountdown && hours < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
+    const durationMinutes = (() => {
+      if (!hasCountdown) return 0;
+      if (countdownUnit === "minutes" && countdownMinutes > 0) return countdownMinutes;
+      return Math.max(0, hours) * 60;
+    })();
+    if (hasCountdown && durationMinutes < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
     if (forceCountdown && !hasCountdown) return send(res, 400, { error: "Debes activar el temporizador." });
 
     try {
@@ -10216,7 +10266,7 @@ const vendorHandler = (() => {
       if (!sr.data) return send(res, 404, { error: "No encontré esa canción" });
       if (!String((sr.data as any)?.audio_url || "").trim()) return send(res, 400, { error: "Esta canción no tiene audio" });
 
-      const expiresAt = hasCountdown ? new Date(Date.now() + hours * 60 * 60 * 1000).toISOString() : null;
+      const expiresAt = hasCountdown ? new Date(Date.now() + durationMinutes * 60 * 1000).toISOString() : null;
       const row = {
         song_id: songId,
         created_by: auth.user.id,
@@ -10254,6 +10304,7 @@ const vendorHandler = (() => {
         expiresAt: share?.expires_at || null,
         isPaid: Boolean(share?.is_paid),
         createdAt: share?.created_at || null,
+        durationMinutes,
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
