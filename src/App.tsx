@@ -77,8 +77,8 @@ class ViewErrorBoundary extends Component<
 function tabFromPathname(pathname: string): ViewTab {
   const p = (pathname || '/').toString().trim().toLowerCase();
   if (p === '/' || /^\/studio(?:\/|$)/i.test(p) || /^\/crear(?:\/|$)/i.test(p)) return 'studio';
-  if (/^\/inicio(?:\/|$)/i.test(p)) return 'inicio';
-  if (/^\/app-inicio(?:\/|$)/i.test(p)) return 'landing';
+  if (/^\/inicio(?:\/|$)/i.test(p) || /^\/app-inicio(?:\/|$)/i.test(p)) return 'landing';
+  if (/^\/canciones(?:\/|$)/i.test(p)) return 'inicio';
   if (/^\/masterizar(?:\/|$)/i.test(p)) return 'masterizar';
   if (/^\/vendedor(?:\/|$)/i.test(p) || /^\/vendor(?:\/|$)/i.test(p)) return 'vendedor';
   if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
@@ -94,9 +94,9 @@ function tabFromPathname(pathname: string): ViewTab {
 function pathnameFromTab(tab: ViewTab): string {
   switch (tab) {
     case 'inicio':
-      return '/inicio';
+      return '/canciones';
     case 'landing':
-      return '/app-inicio';
+      return '/inicio';
     case 'masterizar':
       return '/masterizar';
     case 'vendedor':
@@ -3015,14 +3015,17 @@ export default function App() {
           </div>
         </div>
       )}
-      <Banner />
+      {currentTab !== 'landing' ? <Banner /> : null}
       
       <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
-        <div className={`${currentTab === 'inicio' ? 'home-mobile-layout' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
+        <div className={`${currentTab === 'landing' ? 'home-mobile-layout' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
+           {currentTab === 'landing' && (
+             <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
+           )}
            {currentTab === 'inicio' && (
              isAuthed ? (
-                <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
+                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} isAdmin={isAdmin} />
              ) : (
                <InicioLanding
                  email={authEmail}
@@ -3034,7 +3037,6 @@ export default function App() {
                />
              )
            )}
-           {currentTab === 'landing' && <InicioPlaceholder />}
            {currentTab === 'studio' && (
              <CreateView
                onSongCreated={addCancion}
@@ -3095,30 +3097,30 @@ export default function App() {
            )}
         </div>
         {/* Desktop 3-column layout */}
-        <div className={`${currentTab === 'inicio' ? 'home-desktop-layout' : 'hidden md:flex'} flex-1 min-h-0 overflow-hidden`}>
+        <div className={`${currentTab === 'landing' ? 'home-desktop-layout' : 'hidden md:flex'} flex-1 min-h-0 overflow-hidden`}>
            {/* Sidebar */}
            <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col">
              <Sidebar currentTab={currentTab} onChange={handleTabChange} />
            </div>
 
-           {currentTab === 'inicio' ? (
+            {currentTab === 'landing' ? (
               <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
-              {isAuthed ? (
-                 <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
-              ) : (
-                <InicioLanding
-                  email={authEmail}
-                  onGoStudio={() => setCurrentTab('studio')}
-                  onGoLibrary={() => setCurrentTab('biblioteca')}
-                  onOpenPlans={() => {
-                    setIsPricingOpen(true);
-                  }}
-                />
-              )}
+                <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
              </div>
-           ) : currentTab === 'landing' ? (
+            ) : currentTab === 'inicio' ? (
              <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
-               <InicioPlaceholder />
+               {isAuthed ? (
+                 <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} isAdmin={isAdmin} />
+               ) : (
+                 <InicioLanding
+                   email={authEmail}
+                   onGoStudio={() => setCurrentTab('studio')}
+                   onGoLibrary={() => setCurrentTab('biblioteca')}
+                   onOpenPlans={() => {
+                     setIsPricingOpen(true);
+                   }}
+                 />
+               )}
              </div>
            ) : (
              <>
