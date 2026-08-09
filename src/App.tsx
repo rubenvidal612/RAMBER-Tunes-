@@ -12,6 +12,7 @@ import { LucianaBotView } from './views/LucianaBotView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
 import { VendorView } from './views/VendorView';
+import { HomeLandingView } from './views/HomeLandingView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -3018,10 +3019,10 @@ export default function App() {
       
       <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
-        <div className="flex-1 flex flex-col md:hidden pb-[76px] relative overflow-hidden">
+        <div className={`${currentTab === 'inicio' ? 'home-mobile-layout' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
            {currentTab === 'inicio' && (
              isAuthed ? (
-               <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} isAdmin={isAdmin} />
+                <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
              ) : (
                <InicioLanding
                  email={authEmail}
@@ -3094,16 +3095,16 @@ export default function App() {
            )}
         </div>
         {/* Desktop 3-column layout */}
-        <div className="hidden md:flex flex-1 min-h-0 overflow-hidden">
+        <div className={`${currentTab === 'inicio' ? 'home-desktop-layout' : 'hidden md:flex'} flex-1 min-h-0 overflow-hidden`}>
            {/* Sidebar */}
            <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col">
              <Sidebar currentTab={currentTab} onChange={handleTabChange} />
            </div>
 
            {currentTab === 'inicio' ? (
-             <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
+              <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
               {isAuthed ? (
-                <InicioSocial onPlaySong={playSong} onGoStudio={() => setCurrentTab('studio')} isAdmin={isAdmin} />
+                 <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
               ) : (
                 <InicioLanding
                   email={authEmail}
