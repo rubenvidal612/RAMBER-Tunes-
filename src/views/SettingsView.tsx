@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Share, HelpCircle, MessageSquare, FileText, Shield, Bell } from 'lucide-react';
+import { BarChart3, Bell, ChevronRight, Coins, CreditCard, FileText, HelpCircle, MessageSquare, RefreshCcw, Share, Shield, UserCog, Users } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { isAdminEmail } from '@/lib/authz';
 import { cn } from '@/lib/utils';
 
-export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void }) {
+export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOffice = false, pageMode = false }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void; initialOffice?: boolean; pageMode?: boolean }) {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const { credits, creditsExpiresAt, planExpiresAt, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
-  const [isOfficeOpen, setIsOfficeOpen] = useState(false);
+  const [isOfficeOpen, setIsOfficeOpen] = useState(initialOffice);
   const [officeTab, setOfficeTab] = useState<'resumen' | 'colaboradores'>('resumen');
   const [officeSaldoOpen, setOfficeSaldoOpen] = useState(false);
   const [officeMensajesOpen, setOfficeMensajesOpen] = useState(false);
@@ -73,6 +73,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
   const [collaboratorsReportError, setCollaboratorsReportError] = useState('');
   const [collaboratorsReport, setCollaboratorsReport] = useState<any[]>([]);
   const officeCreditosRef = useRef<HTMLDivElement | null>(null);
+  const initialOfficeLoadedRef = useRef(false);
 
   const TELEGRAM_GROUP_URL = 'https://t.me/+sgw5bsAX9utmZDEx';
   const TELEGRAM_INVITE_HASH = 'sgw5bsAX9utmZDEx';
@@ -308,6 +309,12 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
       setOfficeLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!initialOffice || !isAdmin || initialOfficeLoadedRef.current) return;
+    initialOfficeLoadedRef.current = true;
+    openOffice().catch(() => {});
+  }, [initialOffice, isAdmin]);
 
   const loadCollaboratorsData = async (periodOverride?: 'day' | 'week' | 'month') => {
     if (!supabaseBrowser) return;
@@ -815,6 +822,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
     const payments = officeData?.payments || {};
     const daily = Array.isArray(payments?.daily_7d) ? payments.daily_7d : [];
     const balance = officeData?.balance || {};
+    const maxDailySales = Math.max(1, ...daily.map((item: any) => Number(item?.mxn ?? item?.amount ?? item?.total ?? 0) || 0));
     const diag = officeData?.diag || {};
     const feedback = officeData?.feedback || {};
     const feedbackItems = Array.isArray(feedback?.items) ? feedback.items : [];
@@ -846,22 +854,27 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
     };
 
     return (
-      <div className="flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 z-[100] bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl fixed inset-0 pb-safe">
-        <div className="flex items-center gap-4 p-4 sticky top-0 bg-gradient-to-r from-black/40 via-indigo-950/40 to-black/30 z-10 backdrop-blur-xl border-b border-white/10">
-          <button onClick={() => setIsOfficeOpen(false)} className="p-2 text-slate-300 hover:text-white glass-card rounded-full">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6"><path d="M15 18l-6-6 6-6"></path></svg>
-          </button>
-          <div className="text-white font-extrabold">OFICINA</div>
+      <div className={cn('flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300 bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/95 backdrop-blur-3xl', pageMode ? 'relative flex-1 min-h-0 z-0' : 'fixed inset-0 z-[100] pb-safe')}>
+        <div className="flex items-center gap-4 px-5 py-4 sticky top-0 bg-gradient-to-r from-[#070a12]/95 via-indigo-950/45 to-[#070a12]/95 z-10 backdrop-blur-xl border-b border-white/10">
+          {!pageMode ? (
+            <button onClick={() => setIsOfficeOpen(false)} className="p-2 text-slate-300 hover:text-white glass-card rounded-full">
+              <ChevronRight className="w-6 h-6 rotate-180" />
+            </button>
+          ) : (
+            <span className="grid h-10 w-10 place-items-center rounded-xl border border-amber-400/20 bg-amber-400/10 text-amber-300"><Shield className="h-5 w-5" /></span>
+          )}
+          <div><div className="text-white font-extrabold">Oficina</div><div className="text-[10px] text-slate-400">Panel de administración</div></div>
+          {pageMode ? <button type="button" onClick={() => openOffice().catch(() => {})} disabled={officeLoading} className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-bold text-slate-200 hover:bg-white/10 disabled:opacity-50"><RefreshCcw className={cn('h-4 w-4', officeLoading && 'animate-spin')} />Actualizar</button> : null}
         </div>
 
-        <div className="p-6 space-y-6 max-w-3xl mx-auto w-full">
+        <div className={cn('p-5 lg:p-6 space-y-5 mx-auto w-full', pageMode ? 'max-w-[1500px]' : 'max-w-3xl')}>
           {officeError && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-200">
               {officeError}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
+          <div className={cn('grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2', pageMode && 'hidden')}>
             <button
               onClick={() => setOfficeTab('resumen')}
               className={cn(
@@ -885,28 +898,103 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates }: { onClos
           {officeTab === 'resumen' ? (
             <>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-400/15 rounded-2xl p-4">
-              <div className="text-xs text-slate-200/80 font-semibold">Usuarios</div>
-              <div className="text-2xl font-extrabold text-white mt-1">{totalUsersReal}</div>
-              <div className="text-[11px] text-slate-300/80 mt-1">Activos 30d: {active30dReal}</div>
-            </div>
-            <div className="bg-gradient-to-br from-cyan-500/20 to-transparent border border-cyan-400/15 rounded-2xl p-4">
-              <div className="text-xs text-slate-200/80 font-semibold">Registros</div>
-              <div className="text-2xl font-extrabold text-white mt-1">{new7dReal}</div>
-              <div className="text-[11px] text-slate-300/80 mt-1">Últimos 7 días</div>
-            </div>
-            <div className="bg-gradient-to-br from-yellow-500/25 to-transparent border border-yellow-400/15 rounded-2xl p-4">
-              <div className="text-xs text-slate-200/80 font-semibold">Ventas (hoy)</div>
-              <div className="text-2xl font-extrabold text-white mt-1">${Number(payments?.today?.mxn ?? 0).toFixed(0)}</div>
-              <div className="text-[11px] text-slate-300/80 mt-1">{Number(payments?.today?.count ?? 0)} pagos</div>
-            </div>
-            <div className="bg-gradient-to-br from-violet-500/20 to-transparent border border-violet-400/15 rounded-2xl p-4">
-              <div className="text-xs text-slate-200/80 font-semibold">Mes</div>
-              <div className="text-2xl font-extrabold text-white mt-1">${Number(payments?.month?.mxn ?? 0).toFixed(0)}</div>
-              <div className="text-[11px] text-slate-300/80 mt-1">{Number(payments?.month?.count ?? 0)} pagos</div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: 'Usuarios', value: totalUsersReal, detail: `Activos: ${active30dReal} · Nuevos: ${new7dReal}`, image: '/assets/tool-clone-voice.png', tone: 'border-emerald-400/25 text-emerald-300', icon: Users },
+              { label: 'Ventas hoy', value: `$${Number(payments?.today?.mxn ?? 0).toFixed(0)}`, detail: `${Number(payments?.today?.count ?? 0)} pagos`, image: '/assets/tool-mastering.png', tone: 'border-cyan-400/25 text-cyan-300', icon: CreditCard },
+              { label: 'Ventas del mes', value: `$${Number(payments?.month?.mxn ?? 0).toFixed(0)}`, detail: `${Number(payments?.month?.count ?? 0)} pagos`, image: '/assets/tool-create-music.png', tone: 'border-fuchsia-400/25 text-fuchsia-300', icon: BarChart3 },
+              { label: 'Saldo proveedor (Suno)', value: balance?.provider_credits == null ? '—' : Number(balance.provider_credits).toLocaleString('es-MX'), detail: 'Créditos disponibles', image: '/assets/tool-wav-audio.png', tone: 'border-amber-400/25 text-amber-300', icon: Coins },
+            ].map((card) => {
+              const Icon = card.icon;
+              return (
+                <div key={card.label} className={cn('relative min-h-[138px] overflow-hidden rounded-2xl border bg-[#0b1020]', card.tone)}>
+                  <img src={card.image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#070a12] via-[#070a12]/90 to-[#070a12]/35" />
+                  <div className="relative flex h-full flex-col justify-between p-4">
+                    <div className="flex items-center justify-between gap-3"><div className="text-[11px] font-extrabold uppercase tracking-[0.12em]">{card.label}</div><Icon className="h-5 w-5 opacity-90" /></div>
+                    <div><div className="mt-4 text-3xl font-black text-white">{card.value}</div><div className="mt-1 text-[11px] font-medium text-slate-300">{card.detail}</div></div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+
+          {pageMode ? (
+            <div className="grid gap-4 xl:grid-cols-[0.9fr_1.15fr_1.15fr]">
+              <section className="rounded-3xl border border-white/10 bg-[#090e1a]/95 p-5 shadow-2xl shadow-black/30">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-cyan-300">Actividad reciente</div>
+                    <div className="mt-1 text-[10px] text-slate-500">Movimientos más recientes</div>
+                  </div>
+                  <Bell className="h-5 w-5 text-slate-600" />
+                </div>
+                <div className="space-y-2">
+                  {(activeUsers.length ? activeUsers.slice(0, 3) : [
+                    { full_name: 'Sin actividad reciente', email: 'Los movimientos aparecerán aquí' },
+                  ]).map((item: any, index: number) => (
+                    <button key={item?.id || item?.email || index} type="button" onClick={() => activeUsers.length && item?.email && openUserDetail(String(item.email))} className="flex w-full items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3 text-left hover:bg-white/[0.06]">
+                      <span className={cn('h-2 w-2 shrink-0 rounded-full', activeUsers.length ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.85)]' : 'bg-slate-600')} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-bold text-slate-100">{String(item?.full_name || item?.email || 'Usuario')}</span>
+                        <span className="mt-0.5 block truncate text-[9px] text-slate-500">{activeUsers.length ? (item?.last_sign_in_at ? fmtOfficeDate(String(item.last_sign_in_at)) : String(item?.email || 'Actividad registrada')) : String(item?.email || '')}</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-slate-700" />
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setOfficeUsersActivityOpen(true)} className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-[10px] font-bold text-slate-200 hover:bg-white/10">Ver toda la actividad</button>
+              </section>
+
+              <section className="rounded-3xl border border-white/10 bg-[#090e1a]/95 p-5 shadow-2xl shadow-black/30">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-violet-300">Ventas por día</div>
+                    <div className="mt-1 text-[10px] text-slate-500">Últimos 7 días</div>
+                  </div>
+                  <BarChart3 className="h-5 w-5 text-violet-400" />
+                </div>
+                <div className="relative flex h-36 items-end gap-2 overflow-hidden rounded-2xl border border-white/5 bg-black/20 px-3 pb-3 pt-5">
+                  <div className="pointer-events-none absolute inset-x-3 top-1/3 border-t border-dashed border-white/[0.07]" />
+                  <div className="pointer-events-none absolute inset-x-3 top-2/3 border-t border-dashed border-white/[0.07]" />
+                  {(daily.length ? daily.slice(-7) : Array.from({ length: 7 }, (_, index) => ({ label: `${index + 1}`, mxn: 0 }))).map((item: any, index: number) => {
+                    const amount = Number(item?.mxn ?? item?.amount ?? item?.total ?? 0) || 0;
+                    const height = amount > 0 ? Math.max(14, Math.round((amount / maxDailySales) * 100)) : 6;
+                    return (
+                      <div key={item?.date || item?.day || index} className="group z-[1] flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                        <div className="relative w-full flex-1"><div className="absolute bottom-0 w-full rounded-t-md bg-gradient-to-t from-violet-700 via-violet-500 to-fuchsia-400 shadow-[0_0_14px_rgba(168,85,247,.3)] transition-all group-hover:brightness-125" style={{ height: `${height}%` }} title={`$${amount.toFixed(0)}`} /></div>
+                        <span className="max-w-full truncate text-[8px] text-slate-500">{String(item?.label || item?.day || item?.date || index + 1).slice(-5)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button type="button" onClick={() => setOfficeReporteOpen(true)} className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-[10px] font-bold text-slate-200 hover:bg-white/10">Ver reporte completo</button>
+              </section>
+
+              <section className="rounded-3xl border border-white/10 bg-[#090e1a]/95 p-5 shadow-2xl shadow-black/30">
+                <div className="mb-4 text-xs font-extrabold uppercase tracking-[0.12em] text-blue-300">Accesos rápidos</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    { label: 'Créditos de usuarios', detail: 'Enviar o quitar créditos', icon: Coins, action: () => setOfficeCreditosOpen(true), color: 'text-blue-300' },
+                    { label: 'Planes', detail: 'Cambiar planes y créditos', icon: CreditCard, action: () => setOfficePlanesOpen(true), color: 'text-emerald-300' },
+                    { label: 'Usuarios', detail: 'Buscar y administrar', icon: Users, action: () => setOfficeUsersActivityOpen(true), color: 'text-cyan-300' },
+                    { label: 'Ventas y reportes', detail: 'Ver reportes y estadísticas', icon: BarChart3, action: () => setOfficeReporteOpen(true), color: 'text-rose-300' },
+                    { label: 'Mensajes', detail: 'Mensajes del sistema', icon: MessageSquare, action: () => setOfficeMensajesOpen(true), color: 'text-fuchsia-300' },
+                    { label: 'Colaboradores', detail: 'Gestionar colaboradores', icon: UserCog, action: () => setOfficeTab('colaboradores'), color: 'text-orange-300' },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button key={item.label} type="button" onClick={item.action} className="group flex min-h-[68px] items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3 text-left hover:border-violet-400/25 hover:bg-white/[0.06]">
+                        <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/5', item.color)}><Icon className="h-[18px] w-[18px]" /></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-bold text-white">{item.label}</span><span className="mt-1 block truncate text-[8px] text-slate-500">{item.detail}</span></span>
+                        <ChevronRight className="h-4 w-4 text-slate-700 transition-transform group-hover:translate-x-0.5" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          ) : null}
 
           <div className="bg-gradient-to-r from-emerald-500/10 via-white/5 to-transparent border border-emerald-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficeUsersActivityOpen((v) => !v)} className="w-full flex items-center justify-between">

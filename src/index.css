@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -11,7 +11,7 @@
 }
 
 body {
-  background-color: #020617;
+  background-color: #050711;
   background-image: 
     radial-gradient(circle at 0% 0%, #1e1b4b 0%, transparent 50%),
     radial-gradient(circle at 100% 100%, #312e81 0%, transparent 50%),
@@ -20,6 +20,196 @@ body {
   color: #f1f5f9;
   font-family: var(--font-sans);
   overscroll-behavior-y: none;
+}
+
+:root {
+  color-scheme: dark;
+  --lm-bg: #050711;
+  --lm-panel: #090d18;
+  --lm-panel-2: #0d1220;
+  --lm-line: rgba(148, 163, 184, 0.14);
+  --lm-purple: #9b5cff;
+  --lm-pink: #ec4899;
+  --lm-gold: #facc15;
+  --lm-muted: #8b95aa;
+}
+
+button, input, textarea, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+
+.luciana-topbar {
+  height: 72px;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  z-index: 70;
+  border-bottom: 1px solid var(--lm-line);
+  background: rgba(5, 7, 17, .94);
+  backdrop-filter: blur(18px);
+}
+
+.luciana-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.luciana-brand-logo { width: 36px; height: 36px; border-radius: 10px; object-fit: cover; box-shadow: 0 0 24px rgba(250, 204, 21, .18); }
+.luciana-brand-name { color: white; font-size: 17px; font-weight: 800; letter-spacing: -.035em; white-space: nowrap; }
+.luciana-brand-name span { color: #b65cff; }
+.luciana-brand-name b { color: #687086; font-weight: 400; margin: 0 2px; }
+.luciana-icon-button { width: 42px; height: 42px; border-radius: 14px; border: 1px solid var(--lm-line); color: #d9deea; align-items: center; justify-content: center; position: relative; background: #0b101c; transition: .2s ease; }
+.luciana-icon-button:hover { color: white; border-color: rgba(155,92,255,.45); background: #111727; }
+.luciana-notification-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; right: 9px; top: 8px; background: #ec4899; box-shadow: 0 0 0 3px #0b101c; }
+.luciana-credit-pill { min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 14px; background: #0b101c; border: 1px solid var(--lm-line); color: #fff; transition: .2s ease; }
+.luciana-credit-pill:hover { border-color: rgba(250,204,21,.38); transform: translateY(-1px); }
+.luciana-credit-pill strong { font-size: 13px; line-height: 1; }
+.luciana-credit-icon { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: #090b12; background: var(--lm-gold); }
+.luciana-bank-pill { align-items: center; gap: 7px; color: var(--lm-muted); font-size: 12px; }
+.luciana-bank-pill strong { color: white; }
+
+.luciana-sidebar { width: 100%; min-height: 0; height: 100%; display: flex; flex-direction: column; background: #070a12; }
+.luciana-sidebar-scroll { padding: 22px 14px; overflow-y: auto; }
+.luciana-sidebar-label { margin: 0 10px 10px; color: #596277; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+.luciana-sidebar-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 11px; border: 1px solid transparent; border-radius: 11px; color: #8f99ad; font-size: 13px; font-weight: 600; text-align: left; transition: .18s ease; }
+.luciana-sidebar-item:hover { color: #eef1f8; background: rgba(255,255,255,.035); }
+.luciana-sidebar-item.is-active { color: white; border-color: rgba(155,92,255,.2); background: linear-gradient(90deg, rgba(116,50,220,.27), rgba(116,50,220,.09)); box-shadow: inset 3px 0 0 var(--lm-purple); }
+.luciana-sidebar-item.is-active svg { color: #c084fc; }
+.luciana-sidebar-item small { margin-left: auto; color: #596277; font-size: 8px; text-transform: uppercase; }
+.luciana-sidebar-footer { margin-top: auto; padding: 13px; border-top: 1px solid var(--lm-line); display: grid; gap: 9px; }
+.luciana-help-card { display: flex; align-items: center; gap: 10px; color: #adb5c5; text-align: left; padding: 9px 10px; border-radius: 12px; }
+.luciana-help-card:hover { background: rgba(255,255,255,.04); color: white; }
+.luciana-help-card > span { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: rgba(155,92,255,.12); color: #b77aff; }
+.luciana-help-card strong, .luciana-help-card small { display: block; }
+.luciana-help-card strong { font-size: 11px; }
+.luciana-help-card small { color: #657086; font-size: 9px; margin-top: 2px; }
+.luciana-sidebar-credits { padding: 10px 12px; border: 1px solid rgba(250,204,21,.15); border-radius: 13px; background: rgba(250,204,21,.055); text-align: left; }
+.luciana-sidebar-credits small { display: block; color: #9a8534; font-size: 9px; }
+.luciana-sidebar-credits strong { display: flex; align-items: center; gap: 6px; color: #f5d949; font-size: 11px; margin-top: 4px; }
+
+.luciana-bottom-nav { position: fixed; z-index: 100; bottom: 0; left: 0; right: 0; height: calc(68px + env(safe-area-inset-bottom)); padding: 7px 8px env(safe-area-inset-bottom); display: grid; grid-template-columns: repeat(4, 1fr); background: rgba(6,8,15,.97); border-top: 1px solid var(--lm-line); backdrop-filter: blur(20px); }
+.luciana-bottom-nav > button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #687186; font-size: 9px; font-weight: 700; border-radius: 12px; }
+.luciana-bottom-nav > button.is-active { color: #c084fc; background: rgba(155,92,255,.08); }
+
+.luciana-mobile-menu { position: fixed; inset: 0; z-index: 150; display: flex; align-items: flex-end; }
+.luciana-mobile-menu-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.72); backdrop-filter: blur(7px); }
+.luciana-mobile-menu > section { position: relative; width: 100%; border-radius: 26px 26px 0 0; padding: 20px 16px calc(22px + env(safe-area-inset-bottom)); border: 1px solid var(--lm-line); border-bottom: 0; background: #090d18; box-shadow: 0 -30px 80px rgba(0,0,0,.55); }
+.luciana-mobile-menu header { display: flex; justify-content: space-between; align-items: center; margin: 0 3px 17px; }
+.luciana-mobile-menu header small { color: #9b5cff; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.luciana-mobile-menu header h2 { font-size: 20px; font-weight: 800; letter-spacing: -.03em; margin-top: 3px; }
+.luciana-mobile-menu header button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--lm-line); color: #aab2c2; }
+.luciana-mobile-menu-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.luciana-mobile-menu-grid > button { min-height: 112px; padding: 13px; display: flex; flex-direction: column; align-items: flex-start; text-align: left; border-radius: 17px; border: 1px solid var(--lm-line); background: #0d1220; }
+.luciana-mobile-menu-grid > button.is-active { border-color: rgba(155,92,255,.45); box-shadow: inset 0 0 30px rgba(116,50,220,.12); }
+.luciana-mobile-menu-grid > button > span { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 11px; color: #bd83ff; background: rgba(155,92,255,.12); }
+.luciana-mobile-menu-grid strong { font-size: 12px; margin-top: 10px; }
+.luciana-mobile-menu-grid small { font-size: 9px; color: #707b90; margin-top: 3px; }
+
+@media (max-width: 639px) {
+  .luciana-topbar { height: 60px; padding: 0 12px; }
+  .luciana-brand-logo { width: 32px; height: 32px; border-radius: 9px; }
+  .luciana-brand-name { font-size: 15px; }
+  .luciana-credit-pill { min-height: 38px; border-radius: 12px; }
+  .luciana-credit-icon { width: 27px; height: 27px; border-radius: 9px; }
+  .luciana-icon-button { width: 38px; height: 38px; border-radius: 12px; }
+}
+
+.luciana-home { background: #080b14; }
+.luciana-home-hero { position: relative; min-height: 350px; overflow: hidden; display: grid; grid-template-columns: minmax(0,1.1fr) minmax(340px,.9fr); align-items: center; padding: 42px clamp(24px,5vw,70px); border-bottom: 1px solid var(--lm-line); background: #070a12; }
+.luciana-home-hero::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, #070a12 0%, rgba(7,10,18,.96) 38%, rgba(7,10,18,.34) 72%, rgba(7,10,18,.08) 100%); }
+.luciana-home-copy { position: relative; z-index: 2; max-width: 660px; }
+.luciana-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #bd83ff; font-size: 10px; letter-spacing: .16em; font-weight: 800; }
+.luciana-home-copy h1 { margin-top: 12px; color: white; font-size: clamp(32px,4.2vw,60px); line-height: .99; font-weight: 800; letter-spacing: -.055em; }
+.luciana-home-copy h1 span { color: #d58cff; }
+.luciana-home-copy p { max-width: 570px; margin-top: 17px; color: #9aa4b8; font-size: 14px; line-height: 1.6; }
+.luciana-home-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 23px; }
+.luciana-primary-button, .luciana-secondary-button { min-height: 44px; border-radius: 13px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: white; font-size: 12px; font-weight: 800; transition: .2s ease; }
+.luciana-primary-button { background: linear-gradient(120deg,#7c3aed,#b64fff); box-shadow: 0 12px 35px rgba(124,58,237,.28); }
+.luciana-secondary-button { border: 1px solid var(--lm-line); background: rgba(255,255,255,.045); }
+.luciana-primary-button:hover, .luciana-secondary-button:hover { transform: translateY(-2px); }
+.luciana-home-art { position: absolute; inset: 0 0 0 40%; min-width: 0; }
+.luciana-home-art img { width: 100%; height: 100%; object-fit: cover; object-position: 68% center; filter: saturate(.92) contrast(1.04); }
+.luciana-home-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: 28px clamp(20px,4vw,52px) 12px; }
+.luciana-home-toolbar small { color: #9653e8; font-size: 9px; font-weight: 800; letter-spacing: .14em; }
+.luciana-home-toolbar h2 { color: white; font-size: 23px; font-weight: 800; letter-spacing: -.035em; margin-top: 2px; }
+.luciana-search-box { min-width: 290px; height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 13px; border: 1px solid var(--lm-line); border-radius: 13px; background: #0c111d; color: #687186; }
+.luciana-search-box input { width: 100%; min-width: 0; color: white; background: transparent; outline: none; font-size: 11px; }
+.luciana-home-tabs { display: flex; gap: 5px; padding: 6px clamp(20px,4vw,52px) 0; }
+.luciana-home-tabs button { padding: 8px 14px; border-radius: 10px; color: #737d91; font-size: 11px; font-weight: 700; }
+.luciana-home-tabs button.is-active { color: white; background: rgba(155,92,255,.13); }
+.luciana-home-section { padding: 12px clamp(20px,4vw,52px) 30px; }
+.luciana-song-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; }
+.luciana-song-card { min-width: 0; overflow: hidden; border: 1px solid var(--lm-line); border-radius: 18px; background: #0c101b; transition: .22s ease; }
+.luciana-song-card:hover { transform: translateY(-3px); border-color: rgba(155,92,255,.38); box-shadow: 0 18px 45px rgba(0,0,0,.3); }
+.luciana-song-cover { position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; background: #111625; }
+.luciana-song-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
+.luciana-song-card:hover .luciana-song-cover img { transform: scale(1.035); }
+.luciana-song-cover > span:first-child { position: absolute; inset: 0; display: grid; place-items: center; color: #8452c5; }
+.luciana-song-play { position: absolute; right: 12px; bottom: 12px; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; color: white; background: rgba(10,8,17,.82); border: 1px solid rgba(255,255,255,.17); backdrop-filter: blur(10px); }
+.luciana-song-info { padding: 13px 14px 15px; min-width: 0; }
+.luciana-genre-card { position: relative; overflow: hidden; height: 170px; border-radius: 18px; border: 1px solid var(--lm-line); background: #0c101b; text-align: left; }
+.luciana-empty-card { min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed rgba(148,163,184,.2); border-radius: 18px; background: rgba(255,255,255,.02); color: #a766f0; }
+
+/* Crear: flujo personalizado, legible y guiado */
+.luciana-create-heading { max-width: 760px; margin-inline: auto; width: 100%; }
+.luciana-custom-form { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin-inline: auto; }
+.luciana-step-card { padding: 22px; border-radius: 22px; border: 1px solid rgba(148,163,184,.16); background: linear-gradient(145deg, rgba(18,25,40,.96), rgba(10,14,24,.96)); box-shadow: 0 18px 50px rgba(0,0,0,.18); }
+.luciana-step-title { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 17px; }
+.luciana-step-title > span { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 12px; color: white; background: linear-gradient(145deg,#7c3aed,#a855f7); font-weight: 900; box-shadow: 0 8px 22px rgba(147,51,234,.3); }
+.luciana-step-title h2 { color: white; font-size: 18px; line-height: 1.2; font-weight: 850; letter-spacing: -.025em; }
+.luciana-step-title p { margin-top: 5px; color: #8f9bb0; font-size: 12px; line-height: 1.5; }
+.luciana-choice-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.luciana-choice-card { position: relative; min-height: 92px; padding: 16px; display: flex; align-items: center; gap: 13px; text-align: left; border-radius: 16px; border: 1px solid rgba(148,163,184,.18); background: rgba(7,11,19,.7); color: #9ca8bc; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.luciana-choice-card:hover { transform: translateY(-1px); border-color: rgba(192,132,252,.48); background: rgba(25,18,42,.72); }
+.luciana-choice-card > svg { flex: 0 0 auto; color: #b77bff; }
+.luciana-choice-card > span { display: flex; flex-direction: column; min-width: 0; }
+.luciana-choice-card strong { color: white; font-size: 14px; font-weight: 800; }
+.luciana-choice-card small { margin-top: 4px; color: #7f8ba0; font-size: 11px; line-height: 1.35; }
+.luciana-choice-card > i { flex: 0 0 auto; width: 16px; height: 16px; margin-left: auto; border-radius: 999px; border: 2px solid #5d687a; }
+.luciana-choice-card.is-selected { border-color: #a855f7; background: linear-gradient(135deg,rgba(88,28,135,.3),rgba(20,13,35,.86)); box-shadow: inset 0 0 0 1px rgba(192,132,252,.08); }
+.luciana-choice-card.is-selected > i { border: 5px solid #c084fc; background: white; }
+.luciana-choice-card.is-audio { border-color: #20d9b0; background: linear-gradient(135deg,rgba(5,150,105,.22),rgba(7,17,25,.86)); }
+.luciana-choice-card.is-audio > svg { color: #2dd4bf; }
+.luciana-converter-link { width: 100%; margin-top: 12px; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 9px; border-radius: 14px; border: 1px solid rgba(45,212,191,.45); color: #cbd5e1; background: rgba(4,27,29,.35); font-size: 12px; font-weight: 800; }
+.luciana-converter-link:hover { border-color: #2dd4bf; color: white; background: rgba(13,148,136,.15); }
+.luciana-master-hero { position: relative; min-height: 310px; overflow: hidden; display: flex; align-items: center; border-radius: 28px; border: 1px solid rgba(192,132,252,.2); background: #070a12; box-shadow: 0 25px 70px rgba(0,0,0,.35); }
+.luciana-master-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 70% center; opacity: .82; }
+.luciana-master-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(5,8,15,.98) 0%,rgba(5,8,15,.89) 42%,rgba(5,8,15,.18) 85%); }
+.luciana-master-hero-copy { position: relative; z-index: 1; max-width: 580px; padding: 42px; }
+.luciana-master-hero-copy h1 { margin-top: 16px; color: white; font-size: clamp(34px,4.4vw,58px); line-height: 1; font-weight: 900; letter-spacing: -.055em; }
+.luciana-master-hero-copy p { max-width: 520px; margin-top: 15px; color: #a8b1c3; font-size: 14px; line-height: 1.6; }
+.luciana-master-price { display: flex; align-items: baseline; gap: 9px; margin-top: 22px; }
+.luciana-master-price strong { color: #fbbf24; font-size: 22px; font-weight: 900; }
+.luciana-master-price span { color: #838da1; font-size: 12px; font-weight: 700; }
+.luciana-library-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 14px 2px 6px; }
+.luciana-library-heading h1 { margin-top: 3px; color: white; font-size: 30px; font-weight: 900; letter-spacing: -.045em; }
+.luciana-library-heading p { margin-top: 4px; color: #8994a8; font-size: 12px; }
+.luciana-library-heading > button { min-height: 40px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 13px; color: white; background: linear-gradient(135deg,#7c3aed,#a855f7); font-size: 12px; font-weight: 850; box-shadow: 0 10px 26px rgba(126,34,206,.25); }
+.luciana-library-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+.luciana-library-stats > div { min-height: 98px; padding: 15px; display: flex; flex-direction: column; border-radius: 17px; border: 1px solid rgba(148,163,184,.15); background: linear-gradient(145deg,rgba(17,24,39,.92),rgba(8,12,21,.92)); }
+.luciana-library-stats span { color: #9ca7b9; font-size: 11px; font-weight: 750; }
+.luciana-library-stats strong { margin-top: 5px; color: white; font-size: 25px; line-height: 1; font-weight: 900; }
+.luciana-library-stats small { margin-top: auto; color: #657085; font-size: 9px; }
+
+@media (max-width: 1100px) { .luciana-song-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width: 780px) {
+  .luciana-home-hero { min-height: 360px; grid-template-columns: 1fr; padding: 31px 20px; }
+  .luciana-home-copy { max-width: 90%; }
+  .luciana-home-art { position: absolute; inset: 0 0 0 16%; width: auto; height: auto; opacity: .48; }
+  .luciana-home-art img { object-position: 68% center; }
+  .luciana-home-toolbar { align-items: flex-start; padding-top: 22px; }
+  .luciana-search-box { min-width: 42px; width: 42px; padding: 0; justify-content: center; }
+  .luciana-search-box input { display: none; }
+  .luciana-song-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; }
+  .luciana-home-actions { flex-direction: column; align-items: stretch; max-width: 260px; }
+  .luciana-home-toolbar h2 { font-size: 20px; }
+  .luciana-step-card { padding: 17px; border-radius: 18px; }
+  .luciana-choice-grid { grid-template-columns: 1fr; }
+  .luciana-master-hero { min-height: 360px; }
+  .luciana-master-hero > img { object-position: 72% center; opacity: .55; }
+  .luciana-master-hero-copy { padding: 26px 22px; }
+  .luciana-library-heading { align-items: flex-start; }
+  .luciana-library-heading h1 { font-size: 26px; }
+  .luciana-library-heading p { max-width: 230px; }
+  .luciana-library-heading > button { width: 42px; padding: 0; font-size: 0; }
+  .luciana-library-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 
 html {
@@ -78,4 +268,3 @@ html {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
-

@@ -1,152 +1,79 @@
-import { Home, Sparkles, Library, User, MessageCircleMore, HelpCircle, Users, Volume2, Clock3, Music2 } from 'lucide-react';
+import {
+  Bot, CircleHelp, Clock3, Coins, Home, Library, Mic2, Sparkles,
+  Shield, Volume2, WalletCards,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
-
 
 interface SidebarProps {
   currentTab: ViewTab;
   onChange: (tab: ViewTab) => void;
+  isAdmin?: boolean;
 }
 
-export function Sidebar({ currentTab, onChange }: SidebarProps) {
+const primaryItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
+  { id: 'landing', label: 'Inicio', icon: Home },
+  { id: 'studio', label: 'Crear', icon: Sparkles },
+  { id: 'biblioteca', label: 'Mis canciones', icon: Library },
+  { id: 'voces', label: 'Clonador de voz', icon: Mic2 },
+  { id: 'masterizar', label: 'Masterizar', icon: Volume2 },
+  { id: 'planes', label: 'Comprar créditos', icon: Coins },
+];
+
+const accountItems: Array<{ id: ViewTab; label: string; icon: typeof Home; adminOnly?: boolean }> = [
+  { id: 'oficina', label: 'Oficina', icon: Shield, adminOnly: true },
+  { id: 'vendedor', label: 'Vendedor', icon: Clock3 },
+];
+
+function NavButton({ id, label, icon: Icon, currentTab, onChange }: {
+  key?: ViewTab;
+  id: ViewTab;
+  label: string;
+  icon: typeof Home;
+  currentTab: ViewTab;
+  onChange: (tab: ViewTab) => void;
+}) {
+  const active = currentTab === id;
   return (
-    <div className="w-[240px] flex flex-col glass-panel border-y-0 border-l-0 overflow-y-auto bg-gradient-to-b from-indigo-500/5 via-transparent to-fuchsia-500/5">
-      <div className="p-4 space-y-6">
-        
-        <div>
-          <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Menú</div>
+    <button type="button" onClick={() => onChange(id)} className={cn('luciana-sidebar-item', active && 'is-active')}>
+      <Icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
+      <span>{label}</span>
+      {id === 'landing' ? <small>Próximamente</small> : null}
+    </button>
+  );
+}
 
-          <button
-            onClick={() => onChange('landing')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'landing'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Home className="w-5 h-5" />
-            <span className="text-sm">Inicio</span>
-          </button>
-
-          <button
-            onClick={() => onChange('inicio')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'inicio'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Music2 className="w-5 h-5" />
-            <span className="text-sm">Canciones</span>
-          </button>
-
-          <button
-            onClick={() => onChange('voces')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'voces'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Users className="w-5 h-5" />
-            <span className="text-sm">Clonador de Voz</span>
-          </button>
-
-          <button
-            onClick={() => onChange('studio')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'studio'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Sparkles className="w-5 h-5" />
-            <span className="text-sm">Crear</span>
-          </button>
-
-          <button
-            onClick={() => onChange('masterizar')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'masterizar'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Volume2 className="w-5 h-5" />
-            <span className="text-sm">Masterizar</span>
-          </button>
-
-          <button
-            onClick={() => onChange('biblioteca')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-1",
-              currentTab === 'biblioteca'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Library className="w-5 h-5" />
-            <span className="text-sm">Biblioteca</span>
-          </button>
-
-          <button
-            onClick={() => onChange('perfil')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              currentTab === 'perfil'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <User className="w-5 h-5" />
-            <span className="text-sm">Perfil</span>
-          </button>
-
-          <button
-            onClick={() => onChange('vendedor')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mt-1",
-              currentTab === 'vendedor'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <Clock3 className="w-5 h-5" />
-            <span className="text-sm">Vendedor</span>
-          </button>
+export function Sidebar({ currentTab, onChange, isAdmin = false }: SidebarProps) {
+  return (
+    <aside className="luciana-sidebar">
+      <nav className="luciana-sidebar-scroll">
+        <p className="luciana-sidebar-label">MENÚ</p>
+        <div className="space-y-1">
+          {primaryItems.map((item) => (
+            <NavButton key={item.id} id={item.id} label={item.label} icon={item.icon} currentTab={currentTab} onChange={onChange} />
+          ))}
         </div>
 
-        {/* ASISTENTE */}
-        <div>
-          <div className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Asistente</div>
-          <button
-            onClick={() => onChange('luciana')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              currentTab === 'luciana'
-                ? "bg-indigo-500/20 text-indigo-400 font-bold"
-                : "text-slate-400 hover:text-white hover:bg-white/5 font-medium"
-            )}
-          >
-            <MessageCircleMore className="w-5 h-5" />
-            <span className="text-sm">LucIAna Bot</span>
-          </button>
+        <p className="luciana-sidebar-label mt-7">ASISTENTE</p>
+        <NavButton id="luciana" label="LucIAna Bot" icon={Bot} currentTab={currentTab} onChange={onChange} />
+
+        <p className="luciana-sidebar-label mt-7">CUENTA</p>
+        <div className="space-y-1">
+          {accountItems.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+            <NavButton key={item.id} id={item.id} label={item.label} icon={item.icon} currentTab={currentTab} onChange={onChange} />
+          ))}
         </div>
-        
-      </div>
-      
-      <div className="px-4 pb-6 mt-auto">
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
-          <HelpCircle className="w-5 h-5" />
-          <span className="text-sm font-medium">Centro de ayuda</span>
+      </nav>
+
+      <div className="luciana-sidebar-footer">
+        <button type="button" className="luciana-help-card">
+          <span><CircleHelp className="w-5 h-5" /></span>
+          <div><strong>¿Necesitas ayuda?</strong><small>Centro de ayuda</small></div>
+        </button>
+        <button type="button" onClick={() => onChange('planes')} className="luciana-sidebar-credits">
+          <div><small>Créditos disponibles</small><strong><WalletCards className="w-4 h-4" /> Obtener créditos</strong></div>
         </button>
       </div>
-
-    </div>
+    </aside>
   );
 }

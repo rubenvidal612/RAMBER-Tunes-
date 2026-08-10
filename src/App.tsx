@@ -21,7 +21,6 @@ import { isAdminEmail } from './lib/authz';
 import { ensureAnonSession, getAccessToken, signInWithGoogle, supabaseBrowser } from './lib/supabaseBrowser';
 import { CREDIT_COSTS } from './lib/credits';
 
-import { Banner } from './components/Banner';
 import { Sidebar } from './components/Sidebar';
 import { ArrowRight, BadgeCheck, Cast, ChevronDown, Copy, Download, MessageCircle, MoreVertical, Music2, Rocket, Shield, Share2, Sparkles, Wand2, Repeat2, Play, Pause, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
@@ -83,6 +82,7 @@ function tabFromPathname(pathname: string): ViewTab {
   if (/^\/vendedor(?:\/|$)/i.test(p) || /^\/vendor(?:\/|$)/i.test(p)) return 'vendedor';
   if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
   if (/^\/perfil(?:\/|$)/i.test(p) || /^\/profile(?:\/|$)/i.test(p)) return 'perfil';
+  if (/^\/oficina(?:\/|$)/i.test(p) || /^\/office(?:\/|$)/i.test(p)) return 'oficina';
   if (/^\/luciana(?:\/|$)/i.test(p) || /^\/chatbot(?:\/|$)/i.test(p)) return 'luciana';
   if (/^\/clonador(?:\/|$)/i.test(p) || /^\/voces(?:\/|$)/i.test(p)) return 'voces';
   if (/^\/karaoke(?:\/|$)/i.test(p)) return 'karaoke';
@@ -105,6 +105,8 @@ function pathnameFromTab(tab: ViewTab): string {
       return '/biblioteca';
     case 'perfil':
       return '/perfil';
+    case 'oficina':
+      return '/oficina';
     case 'luciana':
       return '/chatbot';
     case 'voces':
@@ -2981,6 +2983,7 @@ export default function App() {
         credits={displayCredits}
         bankCredits={internalCredits}
         showBank={false}
+        hideMenu
       />
       {pullDistance > 0 || isPullRefreshing ? (
         <div className="md:hidden absolute left-0 right-0 top-14 z-[60] flex justify-center pointer-events-none">
@@ -3015,8 +3018,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {currentTab !== 'landing' && currentTab !== 'biblioteca' ? <Banner /> : null}
-      
       <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
         {/* Mobile View Switching */}
         <div className={`${currentTab === 'landing' ? 'home-mobile-layout' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
@@ -3072,6 +3073,11 @@ export default function App() {
            {currentTab === 'luciana' && <LucianaBotView />}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
+          {currentTab === 'oficina' && (isAdmin ? (
+            <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} />
+          ) : (
+            <div className="flex-1 grid place-items-center p-6 text-center"><div><Shield className="mx-auto h-10 w-10 text-violet-400" /><div className="mt-3 font-extrabold text-white">Área privada</div><div className="mt-1 text-sm text-slate-400">Oficina está disponible únicamente para la cuenta administradora.</div></div></div>
+          ))}
           {currentTab === 'biblioteca' && (
             <ViewErrorBoundary title="Biblioteca">
               <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />
@@ -3100,7 +3106,7 @@ export default function App() {
         <div className={`${currentTab === 'landing' ? 'home-desktop-layout' : 'hidden md:flex'} flex-1 min-h-0 overflow-hidden`}>
            {/* Sidebar */}
            <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col">
-             <Sidebar currentTab={currentTab} onChange={handleTabChange} />
+             <Sidebar currentTab={currentTab} onChange={handleTabChange} isAdmin={isAdmin} />
            </div>
 
             {currentTab === 'landing' ? (
@@ -3125,7 +3131,7 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && (
+              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'oficina' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                    <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
@@ -3162,6 +3168,12 @@ export default function App() {
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (
                  <VendorView />
+              ) : currentTab === 'oficina' ? (
+                isAdmin ? (
+                  <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} />
+                ) : (
+                  <div className="flex-1 grid place-items-center p-6 text-center"><div><Shield className="mx-auto h-10 w-10 text-violet-400" /><div className="mt-3 font-extrabold text-white">Área privada</div><div className="mt-1 text-sm text-slate-400">Oficina está disponible únicamente para la cuenta administradora.</div></div></div>
+                )
               ) : currentTab === 'planes' ? (
                 <PricingView
                   onClose={() => {

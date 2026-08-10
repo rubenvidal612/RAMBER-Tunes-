@@ -1,4 +1,4 @@
-export type ViewTab = 'inicio' | 'landing' | 'mv' | 'studio' | 'karaoke' | 'voces' | 'biblioteca' | 'perfil' | 'luciana' | 'masterizar' | 'vendedor' | 'planes';
+export type ViewTab = 'inicio' | 'landing' | 'mv' | 'studio' | 'karaoke' | 'voces' | 'biblioteca' | 'perfil' | 'luciana' | 'masterizar' | 'vendedor' | 'oficina' | 'planes';
 export type CreateMode = 'facil' | 'personalizado';
 export type LibraryTab = 'canciones' | 'video' | 'vibes' | 'listas';
 
