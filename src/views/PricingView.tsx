@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Sparkles, Package, Zap, Crown, Gift } from 'lucide-react';
+import { Check, Sparkles, Package, Zap, Crown, Gift, ShieldCheck, Headphones, LockKeyhole, Info, ArrowRight, RefreshCcw } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { getAccessToken } from '@/lib/supabaseBrowser';
 import { CREDIT_COSTS } from '@/lib/credits';
@@ -7,6 +7,7 @@ const isDev = typeof window !== 'undefined' && (window.location.hostname === 'lo
 
 interface PricingViewProps {
   onClose: () => void;
+  pageMode?: boolean;
 }
 
 interface MiniPack {
@@ -39,7 +40,7 @@ const miniPackIcon = (idx: number) => {
   return { Icon: icons[i], ...colors[i] };
 };
 
-export function PricingView({ onClose }: PricingViewProps) {
+export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
   const { credits, refreshCredits } = useUserCredits();
   const [isBusy, setIsBusy] = useState(false);
   const [miniPacks, setMiniPacks] = useState<MiniPack[] | null>(null);
@@ -162,6 +163,105 @@ export function PricingView({ onClose }: PricingViewProps) {
       setIsBusy(false);
     }
   };
+
+  const packsToShow = miniPacks && miniPacks.length > 0 ? miniPacks.slice(0, 3) : FALLBACK_MINI_PACKS;
+  const planCards = [
+    ...packsToShow.map((pack, index) => ({
+      type: 'mini' as const,
+      pack,
+      label: index === 0 ? 'Mini Pack' : index === 1 ? 'Pack Chico' : 'Pack Mediano',
+      icon: index === 0 ? Gift : index === 1 ? Zap : Package,
+      accent: index === 0 ? 'rose' : index === 1 ? 'amber' : 'orange',
+      popular: index === 2,
+    })),
+    { type: 'inicio' as const, label: 'Pack Inicio', icon: Crown, accent: 'blue', popular: false },
+  ];
+
+  const accentClasses: Record<string, { border: string; text: string; badge: string; button: string; glow: string }> = {
+    rose: { border: 'border-rose-500/50', text: 'text-rose-400', badge: 'bg-rose-500', button: 'from-rose-600 to-pink-500', glow: 'shadow-rose-950/30' },
+    amber: { border: 'border-amber-500/50', text: 'text-amber-400', badge: 'bg-amber-500', button: 'from-amber-500 to-orange-400', glow: 'shadow-amber-950/30' },
+    orange: { border: 'border-orange-500/70', text: 'text-orange-400', badge: 'bg-orange-500', button: 'from-orange-600 to-orange-400', glow: 'shadow-orange-950/40' },
+    blue: { border: 'border-blue-500/50', text: 'text-blue-400', badge: 'bg-blue-600', button: 'from-blue-700 to-blue-500', glow: 'shadow-blue-950/30' },
+  };
+
+  if (pageMode) {
+    return (
+      <div className="relative flex-1 min-h-0 overflow-y-auto bg-[#050911] text-white">
+        <div className="relative overflow-hidden border-b border-white/10 px-5 py-7 sm:px-8 lg:px-10">
+          <img src="/assets/landing-neon-headphones.png" alt="" className="absolute inset-y-0 right-0 h-full w-[62%] object-cover opacity-45" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#050911] via-[#050911]/90 to-[#050911]/35" />
+          <div className="relative max-w-[1420px] mx-auto">
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Planes de Recarga</h1>
+            <p className="mt-2 text-sm text-slate-400">Elige la opción que mejor se adapte a ti y sigue creando música sin límites.</p>
+            <div className="mt-7 grid max-w-4xl grid-cols-2 gap-4 sm:grid-cols-4">
+              {[
+                { icon: ShieldCheck, title: 'Pago seguro', detail: 'Transacciones 100% protegidas' },
+                { icon: Zap, title: 'Activación inmediata', detail: 'Recibe tus créditos al instante' },
+                { icon: Headphones, title: 'Soporte 24/7', detail: 'Estamos para ayudarte' },
+                { icon: LockKeyhole, title: 'Confidencialidad', detail: 'Tu información siempre segura' },
+              ].map((item) => {
+                const Icon = item.icon;
+                return <div key={item.title} className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-violet-400/20 bg-violet-500/10 text-blue-300"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-xs font-bold text-white">{item.title}</span><span className="mt-0.5 block text-[9px] text-slate-500">{item.detail}</span></span></div>;
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto w-full max-w-[1420px] space-y-5 px-5 py-6 pb-28 sm:px-8 lg:px-10">
+          <div className="flex items-start gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/[0.07] p-4 text-sm text-slate-300">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+            <div className="flex-1"><span className="block">Los <b className="text-blue-300">Mini Packs</b> son compras únicas con vigencia de 30 días.</span><span className="block">El <b className="text-blue-300">Pack Inicio</b> es un plan mensual con renovación automática.</span></div>
+            <Info className="h-4 w-4 shrink-0 text-slate-400" />
+          </div>
+
+          {loadingMini ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[0,1,2,3].map((item) => <div key={item} className="h-[500px] animate-pulse rounded-3xl border border-white/10 bg-white/5" />)}</div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {planCards.map((card, index) => {
+                const isInicio = card.type === 'inicio';
+                const pack = card.type === 'mini' ? card.pack : null;
+                const songsCount = isInicio ? 200 : displaySongsForPack(pack!);
+                const creditsCount = isInicio ? 1200 : Number(pack?.credits_amount || 0);
+                const price = isInicio ? 350 : Number(pack?.price_mxn || 0);
+                const Icon = card.icon;
+                const accent = accentClasses[card.accent];
+                const features = isInicio
+                  ? ['200 canciones', 'Total 1200 créditos', 'Incluye ChatBot', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
+                  : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Clonación de voz', ...(index === 2 ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
+                return (
+                  <article key={isInicio ? 'inicio' : pack!.pack_key} className={`relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border ${accent.border} bg-gradient-to-b from-white/[0.055] via-[#090b11] to-[#07080c] p-5 shadow-2xl ${accent.glow}`}>
+                    <div className={`pointer-events-none absolute -right-16 -top-14 h-44 w-44 rounded-full blur-3xl opacity-20 ${accent.badge}`} />
+                    {card.popular ? <span className="absolute right-0 top-0 rounded-bl-2xl bg-orange-950/70 px-4 py-2 text-[10px] font-black text-orange-400">Más popular</span> : null}
+                    <div className="relative">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black text-white ${accent.badge}`}>{card.label}</span>
+                      <Icon className={`mt-5 h-9 w-9 ${accent.text}`} />
+                      <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `${songsCount} Canciones`}</div>
+                      <div className="mt-2 flex items-end gap-2"><span className="text-4xl font-black">${price.toFixed(0)}</span><span className="pb-1 text-xs font-bold text-slate-300">MXN{isInicio ? ' / mes' : ''}</span></div>
+                      <div className="mt-1 text-[10px] text-slate-400">{isInicio ? 'Plan recurrente' : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}</div>
+                    </div>
+                    <ul className="relative mt-6 flex-1 space-y-3">
+                      {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
+                    </ul>
+                    <button type="button" disabled={isBusy} onClick={() => isInicio ? buy('inicio') : buyMini(pack!.pack_key)} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
+                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : `Comprar $${price.toFixed(0)}`}<ArrowRight className="h-4 w-4" />
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#0b101c] p-5 sm:flex-row">
+            <div className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-2xl border border-violet-400/20 bg-violet-500/10 text-violet-300"><ShieldCheck className="h-6 w-6" /></span><span><span className="block font-extrabold text-violet-300">Tus compras están protegidas</span><span className="mt-1 block text-xs text-slate-400">Tus pagos son 100% seguros y tu información está encriptada.</span></span></div>
+            <div className="flex items-center gap-2 text-[10px] font-black text-slate-300"><span className="rounded border border-white/10 bg-white/5 px-3 py-2">VISA</span><span className="rounded border border-white/10 bg-white/5 px-3 py-2">Mastercard</span><span className="rounded border border-white/10 bg-white/5 px-3 py-2">AMEX</span><span className="rounded border border-white/10 bg-white/5 px-3 py-2">OXXO</span></div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div><div className="text-sm font-bold">Saldo disponible: {Number(credits || 0).toLocaleString('es-MX')}</div><div className="mt-1 text-[10px] text-slate-500">Aproximadamente {songs} canciones · {versions} versiones A y B</div></div><button type="button" onClick={() => refreshCredits()} disabled={isBusy} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"><RefreshCcw className="h-4 w-4" /></button></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full bg-[#0a0a0a] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300 z-[200] fixed inset-0 pb-safe text-white md:bg-black/80 md:backdrop-blur-sm md:items-center md:justify-center md:p-8">

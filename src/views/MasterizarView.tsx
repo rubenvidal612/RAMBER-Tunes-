@@ -45,20 +45,13 @@ export function MasterizarView() {
   const isOwner = OWNER_EMAILS.includes((user?.email || '').trim().toLowerCase());
   
   // Get mode from URL query params
-  const [mode, setMode] = useState<'credits' | 'unlimited'>('unlimited');
+  const [mode, setMode] = useState<'credits' | 'unlimited'>('credits');
   const uploadSectionRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const modeParam = params.get('mode');
-      setMode(modeParam === 'credits' ? 'credits' : 'unlimited');
-      
-      // Scroll to upload section after a small delay
-      setTimeout(() => {
-        uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 300);
+      setMode('credits');
     }
   }, []);
   const publicShareUrl = useMemo(() => {
@@ -260,7 +253,7 @@ export function MasterizarView() {
       */
       
       if (!processResult?.downloadUrl && !isOwner) {
-        setProcessingError('Preview listo. Para descargar el MP3 completo necesitas tener 12 créditos disponibles.');
+        setProcessingError('Preview listo. Para descargar el MP3 completo necesitas tener 10 créditos disponibles.');
       }
     } catch (error: any) {
       setProcessingError(error?.message || 'Error al procesar el archivo');
@@ -364,19 +357,16 @@ export function MasterizarView() {
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-b from-gray-900 to-black text-white p-4 pb-[140px] md:p-8 md:pb-8">
       <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-12">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <Volume2 className="w-12 h-12 text-purple-500" />
-            <h1 className="text-4xl md:text-5xl font-bold">
-              Masterizar (12 Créditos)
-            </h1>
+        <div className="luciana-master-hero mb-10">
+          <img src="/assets/luciana-studio-hero.png" alt="Estudio profesional de masterización" />
+          <div className="luciana-master-hero-copy">
+            <div className="inline-flex items-center gap-2 rounded-full border border-purple-400/25 bg-purple-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-purple-300">
+              <Volume2 className="h-4 w-4" /> Sonido profesional
+            </div>
+            <h1>Masteriza tu canción</h1>
+            <p>Mejora claridad, volumen y presencia con nuestro proceso profesional en FFmpeg.</p>
+            <div className="luciana-master-price"><strong>10 créditos</strong><span>por canción · preview gratis</span></div>
           </div>
-          <p className="text-xl text-gray-300 mb-4">
-            <>Masteriza tu canción usando <span className="text-green-400 font-bold">12 créditos</span></>
-          </p>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            Sube cualquier canción en MP3 y obtén un preview gratis.
-          </p>
         </div>
 
         <div className="hidden">
@@ -579,7 +569,7 @@ export function MasterizarView() {
                     <div className="space-y-4">
                       <div className="text-sm text-gray-300">
                         <span className="text-emerald-400">
-                          La descarga consume 12 créditos.
+                          La descarga consume 10 créditos.
                         </span>
                       </div>
                       
@@ -593,7 +583,7 @@ export function MasterizarView() {
                         ) : (
                           <Download className="w-4 h-4 mr-2" />
                         )}
-                        {isProcessing ? 'Procesando descarga...' : 'Descargar MP3 Masterizado (12 créditos)'}
+                        {isProcessing ? 'Procesando descarga...' : 'Descargar MP3 Masterizado (10 créditos)'}
                       </button>
                       
                       {!isLoggedIn && (
@@ -651,7 +641,7 @@ export function MasterizarView() {
               </div>
               <h3 className="text-xl font-bold mb-3">Descarga</h3>
               <p className="text-gray-400">
-                Cada descarga masterizada consume 12 créditos de tu saldo.
+                Cada descarga masterizada consume 10 créditos de tu saldo.
               </p>
             </div>
           </div>
@@ -672,7 +662,7 @@ export function MasterizarView() {
               <div>
                 <h3 className="text-lg font-semibold mb-2">¿Necesito créditos para usar el servicio?</h3>
                 <p className="text-gray-400">
-                  Puedes subir canciones y escuchar el preview gratis sin créditos. Solo necesitas 12 créditos para descargar el archivo masterizado completo.
+                  Puedes subir canciones y escuchar el preview gratis sin créditos. Solo necesitas 10 créditos para descargar el archivo masterizado completo.
                 </p>
               </div>
               
@@ -690,7 +680,7 @@ export function MasterizarView() {
           <div className="inline-block bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-2xl p-8">
             <h2 className="text-3xl font-bold mb-4">¡Comienza a Masterizar Hoy!</h2>
             <p className="text-xl text-gray-300 mb-6">
-              Por solo <span className="text-green-400 font-bold">12 créditos por canción</span>
+              Por solo <span className="text-green-400 font-bold">10 créditos por canción</span>
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

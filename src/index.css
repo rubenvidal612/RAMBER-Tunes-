@@ -169,6 +169,17 @@ button { -webkit-tap-highlight-color: transparent; }
 .luciana-choice-card.is-audio > svg { color: #2dd4bf; }
 .luciana-converter-link { width: 100%; margin-top: 12px; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 9px; border-radius: 14px; border: 1px solid rgba(45,212,191,.45); color: #cbd5e1; background: rgba(4,27,29,.35); font-size: 12px; font-weight: 800; }
 .luciana-converter-link:hover { border-color: #2dd4bf; color: white; background: rgba(13,148,136,.15); }
+.luciana-voice-progress { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 5px; padding: 13px clamp(14px,3vw,30px); border-bottom: 1px solid rgba(148,163,184,.12); background: rgba(6,10,18,.72); }
+.luciana-voice-progress-step { position: relative; display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 5px; color: #657085; }
+.luciana-voice-progress-step:not(:last-child)::after { content: ''; position: absolute; left: calc(50% + 17px); top: 15px; width: calc(100% - 30px); height: 2px; background: #263142; }
+.luciana-voice-progress-step span { position: relative; z-index: 1; display: grid; width: 30px; height: 30px; place-items: center; border: 2px solid #40506a; border-radius: 999px; background: #0b101b; font-size: 12px; font-weight: 900; }
+.luciana-voice-progress-step small { overflow: hidden; max-width: 100%; color: inherit; font-size: 10px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.luciana-voice-progress-step.is-active { color: #d8b4fe; }
+.luciana-voice-progress-step.is-active span { border-color: #a855f7; color: white; background: linear-gradient(145deg,#7c3aed,#a855f7); box-shadow: 0 0 0 5px rgba(168,85,247,.14), 0 8px 20px rgba(139,92,246,.28); }
+.luciana-voice-progress-step.is-complete { color: #62e7c6; }
+.luciana-voice-progress-step.is-complete span { border-color: #16b996; color: #8ff4dc; background: rgba(6,78,59,.5); }
+.luciana-voice-progress-step.is-complete:not(:last-child)::after { background: linear-gradient(90deg,#16b996,#7c3aed); }
+.luciana-voice-wizard > .grid > div > input:focus { box-shadow: 0 0 0 3px rgba(168,85,247,.12); }
 .luciana-master-hero { position: relative; min-height: 310px; overflow: hidden; display: flex; align-items: center; border-radius: 28px; border: 1px solid rgba(192,132,252,.2); background: #070a12; box-shadow: 0 25px 70px rgba(0,0,0,.35); }
 .luciana-master-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 70% center; opacity: .82; }
 .luciana-master-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(5,8,15,.98) 0%,rgba(5,8,15,.89) 42%,rgba(5,8,15,.18) 85%); }
@@ -202,6 +213,8 @@ button { -webkit-tap-highlight-color: transparent; }
   .luciana-home-toolbar h2 { font-size: 20px; }
   .luciana-step-card { padding: 17px; border-radius: 18px; }
   .luciana-choice-grid { grid-template-columns: 1fr; }
+  .luciana-voice-progress { gap: 1px; padding-inline: 10px; }
+  .luciana-voice-progress-step small { font-size: 8px; }
   .luciana-master-hero { min-height: 360px; }
   .luciana-master-hero > img { object-position: 72% center; opacity: .55; }
   .luciana-master-hero-copy { padding: 26px 22px; }

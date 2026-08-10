@@ -3086,6 +3086,7 @@ export default function App() {
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
           {currentTab === 'planes' && (
             <PricingView
+              pageMode
               onClose={() => {
                 setCurrentTab('studio');
               }}
@@ -3127,6 +3128,19 @@ export default function App() {
                    }}
                  />
                )}
+             </div>
+           ) : currentTab === 'studio' ? (
+             <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30">
+               <CreateView
+                 onSongCreated={addCancion}
+                 credits={displayCredits}
+                 openPersonaPickerSignal={personaPickerNonce}
+                 onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')}
+                 onGoLibrary={() => setCurrentTab('biblioteca')}
+                 onOpenBalance={() => setIsBalanceOpen(true)}
+                 prefill={studioPrefill || undefined}
+                 prefillNonce={studioPrefillNonce}
+               />
              </div>
            ) : (
              <>
@@ -3176,6 +3190,7 @@ export default function App() {
                 )
               ) : currentTab === 'planes' ? (
                 <PricingView
+                  pageMode
                   onClose={() => {
                     setCurrentTab('studio');
                   }}

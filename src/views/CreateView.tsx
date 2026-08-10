@@ -126,7 +126,7 @@ interface CreateViewProps {
 }
 
 export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, onGoLibrary, onOpenBalance, standaloneVoices, onExitVoices, onOpenCreateVoiceFullScreen, openCreateVoiceSignal, prefill, prefillNonce }: CreateViewProps) {
-  const [mode, setMode] = useState<CreateMode>('facil');
+  const [mode, setMode] = useState<CreateMode>('personalizado');
   const [instrumental, setInstrumental] = useState(false);
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -202,8 +202,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const easyModeWizardRef = useRef<HTMLDivElement | null>(null);
 
   const [weirdness, setWeirdness] = useState(75);
-  const [styleInfluence, setStyleInfluence] = useState(40);
-  const [audioInfluence, setAudioInfluence] = useState(20);
+  const [styleInfluence, setStyleInfluence] = useState(70);
+  const [audioInfluence, setAudioInfluence] = useState(30);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
@@ -637,8 +637,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const raw = localStorage.getItem('ramber_create_draft_v1');
       if (!raw) return;
       const d = JSON.parse(raw);
-      const m = typeof d?.mode === 'string' ? d.mode : '';
-      if (m === 'facil' || m === 'personalizado') setMode(m);
+      setMode('personalizado');
       setInstrumental(Boolean(d?.instrumental));
       if (typeof d?.description === 'string') setDescription(d.description);
       if (typeof d?.instructions === 'string') setInstructions(d.instructions);
@@ -678,7 +677,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       localStorage.setItem(
         'ramber_create_draft_v1',
         JSON.stringify({
-          mode,
+          mode: 'personalizado',
           instrumental,
           description,
           instructions,
@@ -3678,9 +3677,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       {!standaloneVoices && (
         <>
+      <div className="luciana-create-heading px-4 pt-5">
+        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-purple-400">Estudio personalizado</div>
+        <h1 className="mt-1 text-2xl font-black text-white">Crear tu canción</h1>
+        <p className="mt-1 text-sm text-slate-400">Completa cada sección de arriba hacia abajo.</p>
+      </div>
       {/* Top Header Tabs */}
       <div className="flex items-center justify-between px-4 mt-4 mb-4">
-        <div className="flex bg-white/5 rounded-full p-1 border border-white/5">
+        <div className="hidden bg-white/5 rounded-full p-1 border border-white/5">
           <button 
             onClick={() => setMode('facil')}
             className={cn(
@@ -3713,12 +3717,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 style={{ colorScheme: 'dark' }}
                 className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
               >
-                <option value="V5_5" className="bg-[#0b0f16] text-slate-200">V5.5</option>
-                <option value="V5" className="bg-[#0b0f16] text-slate-200">V5</option>
-                <option value="V4_5PLUS" className="bg-[#0b0f16] text-slate-200">V4.5+</option>
-                <option value="V4_5ALL" className="bg-[#0b0f16] text-slate-200">V4.5 All</option>
-                <option value="V4_5" className="bg-[#0b0f16] text-slate-200">V4.5</option>
-                <option value="V4" className="bg-[#0b0f16] text-slate-200">V4</option>
+                <option value="V5_5" className="bg-[#0b0f16] text-slate-200">SUNO V5.5 · Clonación de voz</option>
+                <option value="V5" className="bg-[#0b0f16] text-slate-200">SUNO V5</option>
+                <option value="V4_5PLUS" className="bg-[#0b0f16] text-slate-200">SUNO V4.5+</option>
+                <option value="V4_5ALL" className="bg-[#0b0f16] text-slate-200">SUNO V4.5 All</option>
+                <option value="V4_5" className="bg-[#0b0f16] text-slate-200">SUNO V4.5</option>
+                <option value="V4" className="bg-[#0b0f16] text-slate-200">SUNO V4</option>
               </select>
               <ChevronDown className="w-4 h-4 text-slate-200 -ml-3 pointer-events-none" />
             </div>
@@ -3730,7 +3734,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClick={() => setIsModelMenuOpen((v) => !v)}
             className="hidden md:flex items-center gap-2 border border-white/20 hover:border-white/40 rounded-full px-3 py-1.5 hover:bg-white/5 transition-colors"
           >
-            <span className="text-xs font-semibold text-slate-200">{model === 'V5_5' ? 'V5.5' : model === 'V4_5PLUS' ? 'V4.5+' : model === 'V4_5ALL' ? 'V4.5 All' : model === 'V4_5' ? 'V4.5' : model}</span>
+            <span className="text-xs font-semibold text-slate-200">{model === 'V5_5' ? 'SUNO V5.5 · Clonación de voz' : model === 'V4_5PLUS' ? 'SUNO V4.5+' : model === 'V4_5ALL' ? 'SUNO V4.5 All' : model === 'V4_5' ? 'SUNO V4.5' : `SUNO ${model}`}</span>
             <ChevronDown className={cn("w-4 h-4 text-slate-200 transition-transform", isModelMenuOpen ? "rotate-180" : "rotate-0")} />
           </button>
 
@@ -3740,12 +3744,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               className="hidden md:block absolute right-0 mt-2 w-[160px] bg-[#0b0f16] border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.55)] z-[90]"
             >
               {[
-                { value: 'V5_5', label: 'V5.5' },
-                { value: 'V5', label: 'V5' },
-                { value: 'V4_5PLUS', label: 'V4.5+' },
-                { value: 'V4_5ALL', label: 'V4.5 All' },
-                { value: 'V4_5', label: 'V4.5' },
-                { value: 'V4', label: 'V4' },
+                { value: 'V5_5', label: 'SUNO V5.5 · Clonación de voz' },
+                { value: 'V5', label: 'SUNO V5' },
+                { value: 'V4_5PLUS', label: 'SUNO V4.5+' },
+                { value: 'V4_5ALL', label: 'SUNO V4.5 All' },
+                { value: 'V4_5', label: 'SUNO V4.5' },
+                { value: 'V4', label: 'SUNO V4' },
               ].map((m) => (
                 <button
                   key={m.value}
@@ -4060,7 +4064,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
             {/* Botones de opción */}
             <div className="flex flex-col gap-4 mb-8">
-              {/* Botón: Masterizar por 12 créditos */}
+              {/* Botón: Masterizar por 10 créditos */}
               <button
                 type="button"
                 onClick={() => {
@@ -4075,11 +4079,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 }}
               >
                 <span className="text-5xl">💰</span>
-                <span className="text-center leading-tight">Masterizar por 12 Créditos</span>
+                <span className="text-center leading-tight">Masterizar por 10 Créditos</span>
               </button>
 
               <p className="text-gray-400 text-sm text-center italic">
-                Sube tu MP3, escucha el preview gratis y descarga el resultado completo por 12 créditos.
+                Sube tu MP3, escucha el preview gratis y descarga el resultado completo por 10 créditos.
               </p>
             </div>
           </div>
@@ -4515,8 +4519,27 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               </button>
             </div>
 
+            <div className="luciana-voice-progress" aria-label="Progreso de clonación de voz">
+              {(() => {
+                const activeStep = (
+                  voiceCreateStep === 'trim' ? 1
+                    : ['segment', 'generating_phrase'].includes(voiceCreateStep) ? 2
+                    : ['recording_verify', 'phrase_ready', 'pick_verify', 'generating_voice'].includes(voiceCreateStep) ? 3
+                    : ['skill', 'details'].includes(voiceCreateStep) ? 4
+                    : 0
+                );
+                const steps = ['Perfil', 'Audio', 'Fragmento', 'Verificación', 'Listo'];
+                return steps.map((label, index) => (
+                  <div key={label} className={`luciana-voice-progress-step ${index === activeStep ? 'is-active' : ''} ${index < activeStep ? 'is-complete' : ''}`}>
+                    <span>{index + 1}</span>
+                    <small>{label}</small>
+                  </div>
+                ));
+              })()}
+            </div>
+
             <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center bg-gradient-to-b from-white/5 to-transparent">
-              <div className="w-full">
+              <div className="w-full luciana-voice-wizard">
               {voiceCreateError ? (
                 voiceVerifyFailed ? (
                   <div className="mb-4 bg-red-500/10 border border-red-500/25 rounded-2xl p-4 text-red-200">
@@ -6724,9 +6747,51 @@ function CustomForm({
   
 
   return (
-    <div ref={masterizarUploadRef}>
+    <div ref={masterizarUploadRef} className="luciana-custom-form">
+      <section className="luciana-step-card">
+        <div className="luciana-step-title">
+          <span>1</span>
+          <div>
+            <h2>¿Qué voz quieres usar?</h2>
+            <p>Elige una voz estándar o abre el proceso para crear tu perfil de voz.</p>
+          </div>
+        </div>
+        <div className="luciana-choice-grid">
+          <button type="button" onClick={() => onClearPersona?.()} className={cn('luciana-choice-card', !selectedPersona?.voiceId && 'is-selected')}>
+            <Mic className="w-6 h-6" />
+            <span><strong>Voz estándar</strong><small>Una voz de alta calidad generada por IA</small></span><i />
+          </button>
+          <button type="button" onClick={onOpenPersonaPicker} className={cn('luciana-choice-card', selectedPersona?.voiceId && 'is-selected')}>
+            <User className="w-6 h-6" />
+            <span><strong>Clonar voz</strong><small>Crea o elige primero un perfil de voz</small></span><i />
+          </button>
+        </div>
+      </section>
+
+      <section className="luciana-step-card">
+        <div className="luciana-step-title">
+          <span>2</span>
+          <div>
+            <h2>¿Tienes un audio?</h2>
+            <p>Si lo subes, podremos usarlo como referencia y obtener la letra.</p>
+          </div>
+        </div>
+        <div className="luciana-choice-grid">
+          <button type="button" onClick={() => audioFile ? onOpenAudioModal?.() : audioInputRef?.current?.click?.()} className={cn('luciana-choice-card', (audioFile || audioUploadUrl) && 'is-selected is-audio')}>
+            <Upload className="w-6 h-6" />
+            <span><strong>Subir mi audio</strong><small>Archivo MP3 · máximo 7 minutos</small></span><i />
+          </button>
+          <button type="button" onClick={() => onClearAudio?.()} className={cn('luciana-choice-card', !audioFile && !audioUploadUrl && 'is-selected')}>
+            <Music className="w-6 h-6" />
+            <span><strong>No tengo audio</strong><small>Escribiré o crearé la letra aquí</small></span><i />
+          </button>
+        </div>
+        <button type="button" className="luciana-converter-link" onClick={openMp3Converter}>
+          <AudioLines className="w-5 h-5" /> Convertir mi archivo a MP3
+        </button>
+      </section>
       {/* PRIMERA FILA: Subir Audio / Quiero Cantarlo */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="hidden grid-cols-2 gap-3 mb-4">
         {/* Botón Subir Mi Archivo de Audio */}
         <button
           type="button"
@@ -6805,7 +6870,7 @@ function CustomForm({
       />
 
       {/* SEGUNDA FILA: Masterizar / Clonador de Voz */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="hidden grid-cols-2 gap-3 mb-4">
         {/* Botón Masterizar */}
         <button
           type="button"
@@ -7165,17 +7230,17 @@ function CustomForm({
         {showMoreOptions && (
           <div className="mt-4 space-y-4">
             <SliderRow
-              label="Weirdness"
+              label="Nivel de creatividad"
               value={weirdness}
               onChange={setWeirdness}
             />
             <SliderRow
-              label="Influencia de estilo"
+              label="Peso de la instrucción"
               value={styleInfluence}
               onChange={setStyleInfluence}
             />
             <SliderRow
-              label="Influencia de audio"
+              label="Peso del audio original"
               value={audioInfluence}
               onChange={setAudioInfluence}
             />
@@ -7361,7 +7426,9 @@ function SliderRow({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="text-slate-300 text-sm font-semibold">{label}</div>
-        <div className="text-slate-400 text-sm">{v}%</div>
+        <div className={cn("text-sm font-bold", hot ? "text-red-400" : "text-slate-400")}>
+          {v}%{hot ? ' · No recomendable' : ''}
+        </div>
       </div>
       <input
         type="range"
