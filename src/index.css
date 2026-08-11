@@ -115,8 +115,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .luciana-mobile-drawer-item.is-active { color: white; border-color: rgba(155,92,255,.2); background: linear-gradient(90deg, rgba(116,50,220,.27), rgba(116,50,220,.09)); box-shadow: inset 3px 0 0 var(--lm-purple); }
 .luciana-mobile-drawer-item.is-active svg { color: #c084fc; }
 .luciana-mobile-drawer-text { display: grid; gap: 2px; }
-.luciana-mobile-drawer-text strong { font-size: 13px; font-weight: 700; }
-.luciana-mobile-drawer-text small { font-size: 10px; color: #596277; }
+.luciana-mobile-drawer-text strong { font-size: 15px; font-weight: 700; }
+.luciana-mobile-drawer-text small { font-size: 11px; color: #596277; }
 
 @media (max-width: 639px) {
   .luciana-topbar { height: 60px; padding: 0 12px; }

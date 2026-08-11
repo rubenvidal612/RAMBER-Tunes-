@@ -1828,7 +1828,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="hidden md:grid grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Total canciones</div>
                 <div className="mt-2 text-3xl font-extrabold text-white">{canciones.length}</div>
