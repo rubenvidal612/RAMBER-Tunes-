@@ -763,6 +763,19 @@ function audioExtensionFromContentType(rawContentType: any) {
   return "mp3";
 }
 
+function normalizeBackendSourceUrl(req: any, rawUrl: any) {
+  const value = String(rawUrl || "").trim();
+  if (!value) return "";
+  if (value.startsWith("/")) return absoluteUrlFromReq(req, value);
+  if (/^https?:\/\//i.test(value)) return value;
+  return "";
+}
+
+function isSourceObjectNotFoundError(error: any) {
+  const message = (error instanceof Error ? error.message : String(error || "")).toLowerCase();
+  return message.includes("http 404") || message.includes("not found") || message.includes("no such key");
+}
+
 async function uploadBufferToSunoTempFile(buf: Buffer, contentType: string, fileName: string, uploadPath: string) {
   const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
   const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
@@ -801,21 +814,36 @@ async function uploadBufferToSunoTempFile(buf: Buffer, contentType: string, file
 }
 
 async function prepareCoverUploadUrlForSuno(req: any, uploadUrlRaw: string, uploadPathRaw: string, userId: string, titleRaw: string) {
-  let sourceUrl = String(uploadUrlRaw || "").trim();
+  const fallbackSourceUrl = normalizeBackendSourceUrl(req, uploadUrlRaw);
   const uploadPath = String(uploadPathRaw || "").trim();
+  if (!uploadPath && !fallbackSourceUrl) {
+    throw new Error("No recibí una URL final válida del audio.");
+  }
+
+  let sourceUrl = fallbackSourceUrl;
+  let fetchedAudio: { buf: Buffer; contentType: string } | null = null;
 
   if (uploadPath) {
     const signedUrl = await getSignedR2Url(uploadPath, PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS);
-    if (typeof signedUrl === "string" && signedUrl.trim()) sourceUrl = signedUrl.trim();
+    if (typeof signedUrl === "string" && signedUrl.trim()) {
+      try {
+        fetchedAudio = await fetchUrlToBuffer(signedUrl.trim());
+        sourceUrl = signedUrl.trim();
+      } catch (error) {
+        if (!(isSourceObjectNotFoundError(error) && fallbackSourceUrl)) {
+          throw error;
+        }
+      }
+    }
   }
 
-  if (typeof sourceUrl === "string" && sourceUrl.trim().startsWith("/")) {
-    sourceUrl = absoluteUrlFromReq(req, sourceUrl.trim());
+  if (!fetchedAudio) {
+    if (!fallbackSourceUrl) throw new Error("No recibí una URL HTTP/HTTPS válida del audio.");
+    fetchedAudio = await fetchUrlToBuffer(fallbackSourceUrl);
+    sourceUrl = fallbackSourceUrl;
   }
 
-  if (!sourceUrl) throw new Error("No recibí una URL final válida del audio.");
-
-  const { buf, contentType } = await fetchUrlToBuffer(sourceUrl);
+  const { buf, contentType } = fetchedAudio;
   const ext = audioExtensionFromContentType(contentType);
   const safeStem = String(titleRaw || "cover").trim().replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cover";
   const safeUserId = String(userId || "user").trim().replace(/[^a-zA-Z0-9_-]+/g, "").slice(0, 60) || "user";
