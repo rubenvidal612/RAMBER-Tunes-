@@ -108,6 +108,24 @@ function getStageItems(stage) {
   }));
 }
 
+function stageToPercent(stage) {
+  if (stage === 'ready') return 100;
+  if (stage === 'processing') return 75;
+  if (stage === 'generating') return 45;
+  if (stage === 'preparing') return 15;
+  return 0;
+}
+
+function isFailureProviderStatus(value) {
+  const s = String(value || '').trim().toUpperCase();
+  if (!s) return false;
+  if (s === 'FAILED') return true;
+  if (s.endsWith('_FAILED')) return true;
+  if (s === 'CALLBACK_EXCEPTION') return true;
+  if (s === 'SENSITIVE_WORD_ERROR') return true;
+  return false;
+}
+
 function normalizeLyricsTags(t) {
   const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
   const mapped = lines.map((line) => {
@@ -791,14 +809,41 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
   const readyCount = Number(session?.readyTrackCount || 0);
   const notificationsEnabled = Boolean(session?.notifyWhenReady);
   const notificationPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
-  const heroTitle = stage === 'ready' ? 'Tus 2 canciones ya están listas' : '¡Se están generando tus 2 canciones!';
-  const heroSubtitle = stage === 'ready' ? 'Ya puedes escucharlas en tu Biblioteca.' : 'Esto puede tardar unos minutos.';
-  const heroMessage = stage === 'ready' ? 'Puedes abrir tu Biblioteca ahora mismo para escucharlas.' : 'Puedes seguir usando LucIAna. Te avisaremos cuando estén listas.';
+  const redirectGuardRef = useRef(false);
+  const heroTitle =
+    stage === 'failed'
+      ? 'No se pudo completar la generación'
+      : stage === 'ready'
+        ? 'Tus 2 canciones ya están listas'
+        : '¡Se están generando tus 2 canciones!';
+  const heroSubtitle =
+    stage === 'failed'
+      ? 'Ocurrió un error mientras el proveedor generaba tu canción.'
+      : stage === 'ready'
+        ? 'Ya puedes escucharlas en tu Biblioteca.'
+        : 'Esto puede tardar unos minutos.';
+  const heroMessage =
+    stage === 'failed'
+      ? (session?.error || 'Intenta de nuevo o cambia un poco el audio / instrucción y vuelve a generar.')
+      : stage === 'ready'
+        ? 'Puedes abrir tu Biblioteca ahora mismo para escucharlas.'
+        : 'Puedes seguir usando LucIAna. Te avisaremos cuando estén listas.';
   const cards = [
     { key: 'song-1', title: 'Canción 1', subtitle: 'Versión original', accent: 'purple' },
     { key: 'song-2', title: 'Canción 2', subtitle: 'Segunda versión', accent: 'cyan' },
   ];
-  const stageItems = getStageItems(stage);
+
+  useEffect(() => {
+    if (redirectGuardRef.current) return;
+    if (stage !== 'ready') return;
+    if (!session?.completedAt) return;
+    if (readyCount < 2) return;
+    redirectGuardRef.current = true;
+    const t = window.setTimeout(() => {
+      onGoLibrary?.();
+    }, 1000);
+    return () => window.clearTimeout(t);
+  }, [stage, readyCount, session?.completedAt, onGoLibrary]);
 
   return (
     <section className={`generation-stage ${stage === 'ready' ? 'ready' : ''}`}>
@@ -818,7 +863,16 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
 
       <div className="generation-cards">
         {cards.map((card, index) => {
-          const done = stage === 'ready' && readyCount >= index + 1;
+          const cardStage = readyCount >= index + 1 ? 'ready' : stage;
+          const done = cardStage === 'ready';
+          const percent = stageToPercent(cardStage);
+          const stageItems = getStageItems(cardStage);
+          const pillLabel =
+            cardStage === 'failed'
+              ? 'Error'
+              : cardStage === 'ready'
+                ? `Lista · ${percent}%`
+                : `${stageItems.find((x) => x.state === 'active')?.label || 'En generación'} · ${percent}%`;
           return (
             <article key={card.key} className={`generation-card ${card.accent} ${done ? 'done' : ''}`}>
               <div className="generation-card-main">
@@ -832,7 +886,7 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
                       <h2>{card.title}</h2>
                       <p>{card.subtitle}</p>
                     </div>
-                    <span className={`generation-state-pill ${card.accent}`}>{done ? 'Lista' : 'En generación'}</span>
+                    <span className={`generation-state-pill ${card.accent}`}>{pillLabel}</span>
                   </div>
                   <div className={`generation-wave ${card.accent}`} aria-hidden="true">
                     {Array.from({ length: 26 }).map((_, bar) => (
@@ -840,14 +894,21 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
                     ))}
                   </div>
                   <div className="generation-card-note">
-                    {done ? 'Audio real disponible en tu Biblioteca.' : 'LucIAna sigue consultando el estado real del proveedor.'}
+                    {stage === 'failed'
+                      ? 'Ocurrió un error. No se hará redirección automática.'
+                      : done
+                        ? 'Audio real disponible en tu Biblioteca.'
+                        : 'LucIAna sigue consultando el estado real del proveedor.'}
                   </div>
                 </div>
               </div>
               <div className="generation-card-side">
                 <div className={`generation-ring ${card.accent} ${done ? 'done' : 'indeterminate'}`}>
                   <div className="generation-ring-inner">
-                    {done ? <Check size={24} /> : <Loader2 size={24} className="animate-spin" />}
+                    <div style={{ display: 'grid', placeItems: 'center', gap: 10 }}>
+                      {cardStage === 'failed' ? <X size={22} /> : done ? <Check size={24} /> : <Loader2 size={24} className="animate-spin" />}
+                      <div style={{ fontSize: 18, fontWeight: 900 }}>{percent}%</div>
+                    </div>
                   </div>
                 </div>
                 <ul className="generation-status-list">
@@ -1332,9 +1393,60 @@ function ApprovedCreateContent(props) {
       const list = migrateLegacyIfNeeded();
       setHasPendingTask(Array.isArray(list) && list.length > 0);
       const session = readGenerationSession();
-      setGenerationSession(session);
       const taskId = typeof session?.taskId === 'string' ? session.taskId.trim() : '';
       const match = taskId ? (Array.isArray(list) ? list.find((item) => String(item?.taskId || '').trim() === taskId) : null) : null;
+
+      if (session && taskId) {
+        const now = Date.now();
+        const patch = {};
+        const matchProviderStatus = String(match?.providerStatus || '').trim();
+        const nextProviderStatus = matchProviderStatus || String(session?.providerStatus || '').trim();
+        const matchPct = Number(match?.progressPct);
+        const hasMatchPct = Number.isFinite(matchPct) && matchPct >= 0 && matchPct <= 100;
+        const sessionPct = Number(session?.progressPct);
+        const hasSessionPct = Number.isFinite(sessionPct) && sessionPct >= 0 && sessionPct <= 100;
+        const nextPct = hasMatchPct ? matchPct : hasSessionPct ? sessionPct : null;
+
+        if (nextProviderStatus && String(session?.providerStatus || '').trim() !== nextProviderStatus) {
+          patch.providerStatus = nextProviderStatus;
+        }
+        if (nextPct != null && Number(session?.progressPct) !== Number(nextPct)) {
+          patch.progressPct = nextPct;
+        }
+
+        if (nextProviderStatus && nextProviderStatus.toUpperCase() === 'FIRST_SUCCESS') {
+          const nextReady = Math.max(Number(session?.readyTrackCount || 0), 1);
+          if (Number(session?.readyTrackCount || 0) !== nextReady) patch.readyTrackCount = nextReady;
+        }
+
+        if (match && isFailureProviderStatus(nextProviderStatus)) {
+          const rawErr = String(match?.lastError || match?.error || session?.error || '').trim();
+          patch.failedAt = session?.failedAt || now;
+          patch.error = rawErr || 'Error en la generación';
+        }
+
+        if (!match && !session?.completedAt && !session?.failedAt) {
+          if (isFailureProviderStatus(nextProviderStatus)) {
+            patch.failedAt = now;
+            patch.error = String(session?.error || 'Error en la generación').trim() || 'Error en la generación';
+          } else {
+            patch.completedAt = now;
+            patch.readyTrackCount = Math.max(2, Number(session?.readyTrackCount || 0));
+          }
+        }
+
+        const changed = Object.keys(patch).length > 0;
+        if (changed) {
+          const nextSession = { ...session, ...patch, updatedAt: now };
+          writeGenerationSession(nextSession);
+          setGenerationSession(nextSession);
+        } else {
+          setGenerationSession(session);
+        }
+      } else {
+        setGenerationSession(session);
+      }
+
       setCurrentPendingTask(match || null);
     };
     tick();
