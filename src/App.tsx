@@ -3,6 +3,7 @@ import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { MiniPlayer } from './components/MiniPlayer';
 import { CreateView } from './views/CreateView';
+import { ApprovedCreatePreview } from './ApprovedCreatePreview';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
 import { KaraokeView } from './views/KaraokeView';
@@ -3039,16 +3040,16 @@ export default function App() {
              )
            )}
            {currentTab === 'studio' && (
-             <CreateView
-               onSongCreated={addCancion}
-               credits={displayCredits}
-               openPersonaPickerSignal={personaPickerNonce}
-               onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')}
-               onGoLibrary={() => setCurrentTab('biblioteca')}
-               onOpenBalance={() => setIsBalanceOpen(true)}
-               prefill={studioPrefill || undefined}
-               prefillNonce={studioPrefillNonce}
-             />
+             <div className="flex-1 min-h-0">
+               <ApprovedCreatePreview
+                 credits={displayCredits}
+                 onSongCreated={addCancion}
+                 onGoLibrary={() => setCurrentTab('biblioteca')}
+                 onOpenBalance={() => setIsBalanceOpen(true)}
+                 prefill={studioPrefill || undefined}
+                 prefillNonce={studioPrefillNonce}
+               />
+             </div>
            )}
            {currentTab === 'voces' && (
              <CreateView
@@ -3130,12 +3131,10 @@ export default function App() {
                )}
              </div>
            ) : currentTab === 'studio' ? (
-             <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30">
-               <CreateView
-                 onSongCreated={addCancion}
+             <div className="flex-1 min-w-0 bg-[#07111d]">
+               <ApprovedCreatePreview
                  credits={displayCredits}
-                 openPersonaPickerSignal={personaPickerNonce}
-                 onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')}
+                 onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
                  onOpenBalance={() => setIsBalanceOpen(true)}
                  prefill={studioPrefill || undefined}

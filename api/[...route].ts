@@ -436,6 +436,11 @@ async function getSignedR2Url(key: string, expiresIn: number = 3600): Promise<st
   return await getSignedUrl(client, command, { expiresIn });
 }
 
+// Suno y otros proveedores externos pueden tardar bastante en entrar a la cola
+// antes de intentar descargar el archivo de origen. Para estos casos no usamos
+// la firma corta por defecto.
+const PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24;
+
 async function getSignedR2PutUrl(key: string, contentType: string, expiresIn: number = 600): Promise<string> {
   const env = getR2Env();
   const client = await getR2Client();
@@ -746,6 +751,84 @@ async function providerFetchJson(path: string, init?: RequestInit) {
     data = null;
   }
   return { res, data, text };
+}
+
+function audioExtensionFromContentType(rawContentType: any) {
+  const contentType = String(rawContentType || "").trim().toLowerCase().split(";")[0].trim();
+  if (contentType === "audio/wav" || contentType === "audio/x-wav") return "wav";
+  if (contentType === "audio/ogg") return "ogg";
+  if (contentType === "audio/aac") return "aac";
+  if (contentType === "audio/flac") return "flac";
+  if (contentType === "audio/mp4" || contentType === "audio/x-m4a" || contentType === "audio/m4a") return "m4a";
+  return "mp3";
+}
+
+async function uploadBufferToSunoTempFile(buf: Buffer, contentType: string, fileName: string, uploadPath: string) {
+  const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
+  const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
+  if (!apiKey) throw new Error("Falta SUNO_API_KEY en variables de entorno");
+
+  const safeUploadPath = String(uploadPath || "ramber-cover-source").trim().replace(/^\/+/, "").replace(/\/+$/, "") || "ramber-cover-source";
+  const safeFileName = String(fileName || `cover_${Date.now()}.mp3`).trim().replace(/[\\/:*?"<>|]+/g, "_") || `cover_${Date.now()}.mp3`;
+  const mime = String(contentType || "").trim() || "audio/mpeg";
+
+  const form = new FormData();
+  form.append("file", new Blob([buf], { type: mime }), safeFileName);
+  form.append("uploadPath", safeUploadPath);
+  form.append("fileName", safeFileName);
+
+  const res = await fetch("https://sunoapiorg.redpandaai.co/api/file-stream-upload", {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  const text = await res.text().catch(() => "");
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  const downloadUrl = String(data?.data?.downloadUrl || "").trim();
+  const filePath = String(data?.data?.filePath || "").trim();
+  if (!(res.ok && data?.success && Number(data?.code || 0) === 200 && downloadUrl)) {
+    const detail = String(data?.msg || data?.error || text || `HTTP ${res.status}`).trim();
+    throw new Error(detail || "No se pudo subir el audio temporal a Suno.");
+  }
+
+  return { downloadUrl, filePath };
+}
+
+async function prepareCoverUploadUrlForSuno(req: any, uploadUrlRaw: string, uploadPathRaw: string, userId: string, titleRaw: string) {
+  let sourceUrl = String(uploadUrlRaw || "").trim();
+  const uploadPath = String(uploadPathRaw || "").trim();
+
+  if (uploadPath) {
+    const signedUrl = await getSignedR2Url(uploadPath, PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS);
+    if (typeof signedUrl === "string" && signedUrl.trim()) sourceUrl = signedUrl.trim();
+  }
+
+  if (typeof sourceUrl === "string" && sourceUrl.trim().startsWith("/")) {
+    sourceUrl = absoluteUrlFromReq(req, sourceUrl.trim());
+  }
+
+  if (!sourceUrl) throw new Error("No recibí una URL final válida del audio.");
+
+  const { buf, contentType } = await fetchUrlToBuffer(sourceUrl);
+  const ext = audioExtensionFromContentType(contentType);
+  const safeStem = String(titleRaw || "cover").trim().replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cover";
+  const safeUserId = String(userId || "user").trim().replace(/[^a-zA-Z0-9_-]+/g, "").slice(0, 60) || "user";
+  const fileName = `${safeStem}_${Date.now()}.${ext}`;
+  const uploaded = await uploadBufferToSunoTempFile(buf, contentType, fileName, `ramber-cover-source/${safeUserId}`);
+  if (!uploaded?.downloadUrl) throw new Error("Suno no devolvió una URL temporal descargable para el audio.");
+
+  return {
+    uploadUrl: uploaded.downloadUrl,
+    sourceUrl,
+    tempFilePath: uploaded.filePath || "",
+    contentType,
+  };
 }
 
 async function adjustUserCredits(admin: any, userId: string, deltaCredits: number) {
@@ -1851,49 +1934,6 @@ const sunoHandler = (() => {
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
-    const body: any = {
-      model,
-      callBackUrl,
-      uploadUrl,
-      prompt: (prompt || " ").slice(0, 5000),
-      title: title.slice(0, 100),
-      style: style.slice(0, 1000),
-      tags: style.slice(0, 1000),
-      instrumental,
-      customMode: true,
-    };
-
-    if (uploadPath) {
-      try {
-        const signedUrl = await getSignedR2Url(uploadPath, 60 * 60 * 2);
-        if (typeof signedUrl === "string" && signedUrl.trim()) body.uploadUrl = signedUrl.trim();
-      } catch {
-      }
-    }
-
-    if (typeof body.uploadUrl === "string" && body.uploadUrl.trim().startsWith("/")) {
-      body.uploadUrl = absoluteUrlFromReq(req, body.uploadUrl.trim());
-    }
-
-    const styleWeight = Number(payload?.styleWeight);
-    if (Number.isFinite(styleWeight)) body.styleWeight = clamp01(styleWeight);
-    const weirdnessConstraint = Number(payload?.weirdnessConstraint);
-    if (Number.isFinite(weirdnessConstraint)) body.weirdnessConstraint = clamp01(weirdnessConstraint);
-    const audioWeight = Number(payload?.audioWeight);
-    if (Number.isFinite(audioWeight)) body.audioWeight = clamp01(audioWeight);
-
-    const negativeTags = firstString(payload, ["negativeTags", "negative_tags"]);
-    if (negativeTags) body.negativeTags = negativeTags.slice(0, 1000);
-    const vocalGender = firstString(payload, ["vocalGender", "vocal_gender"]);
-    if (vocalGender) body.vocalGender = vocalGender.slice(0, 10);
-
-    const personaId = firstString(payload, ["personaId", "persona_id"]);
-    if (personaId) {
-      if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
-      body.personaId = personaId.slice(0, 200);
-    }
-    const personaModel = personaModelHint;
-    if (personaModel) body.personaModel = personaModel.slice(0, 200);
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
@@ -1904,6 +1944,48 @@ const sunoHandler = (() => {
         const available = await ensureUserHasCreditsAvailable(auth.admin, user.id, cost);
         if (!available.ok) return send(res, 402, { error: available.error || "Créditos insuficientes. Recarga para continuar." });
       }
+
+      let preparedAudio: any = null;
+      try {
+        preparedAudio = await prepareCoverUploadUrlForSuno(req, uploadUrl, uploadPath, user.id, title);
+      } catch (e) {
+        return send(res, 502, {
+          error: "No se pudo preparar el audio para el cover.",
+          detail: e instanceof Error ? e.message : String(e),
+        });
+      }
+
+      const body: any = {
+        model,
+        callBackUrl,
+        uploadUrl: String(preparedAudio?.uploadUrl || "").trim(),
+        prompt: (prompt || " ").slice(0, 5000),
+        title: title.slice(0, 100),
+        style: style.slice(0, 1000),
+        tags: style.slice(0, 1000),
+        instrumental,
+        customMode: true,
+      };
+
+      const styleWeight = Number(payload?.styleWeight);
+      if (Number.isFinite(styleWeight)) body.styleWeight = clamp01(styleWeight);
+      const weirdnessConstraint = Number(payload?.weirdnessConstraint);
+      if (Number.isFinite(weirdnessConstraint)) body.weirdnessConstraint = clamp01(weirdnessConstraint);
+      const audioWeight = Number(payload?.audioWeight);
+      if (Number.isFinite(audioWeight)) body.audioWeight = clamp01(audioWeight);
+
+      const negativeTags = firstString(payload, ["negativeTags", "negative_tags"]);
+      if (negativeTags) body.negativeTags = negativeTags.slice(0, 1000);
+      const vocalGender = firstString(payload, ["vocalGender", "vocal_gender"]);
+      if (vocalGender) body.vocalGender = vocalGender.slice(0, 10);
+
+      const personaId = firstString(payload, ["personaId", "persona_id"]);
+      if (personaId) {
+        if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
+        body.personaId = personaId.slice(0, 200);
+      }
+      const personaModel = personaModelHint;
+      if (personaModel) body.personaModel = personaModel.slice(0, 200);
 
       const paths = [
         "/api/v1/generate/upload-cover",
