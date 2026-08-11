@@ -2980,7 +2980,7 @@ export default function App() {
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
-        onCreditsClick={() => setIsBalanceOpen(true)}
+        onCreditsClick={() => handleTabChange('planes')}
         credits={displayCredits}
         bankCredits={internalCredits}
         showBank={false}
@@ -3045,7 +3045,7 @@ export default function App() {
                  credits={displayCredits}
                  onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
-                 onOpenBalance={() => setIsBalanceOpen(true)}
+                 onOpenBalance={() => handleTabChange('planes')}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
                />
@@ -3056,7 +3056,7 @@ export default function App() {
                onSongCreated={addCancion}
                credits={displayCredits}
                onGoLibrary={() => setCurrentTab('biblioteca')}
-               onOpenBalance={() => setIsBalanceOpen(true)}
+               onOpenBalance={() => handleTabChange('planes')}
                standaloneVoices
                onExitVoices={() => setCurrentTab('studio')}
                prefill={studioPrefill || undefined}
@@ -3136,7 +3136,7 @@ export default function App() {
                  credits={displayCredits}
                  onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
-                 onOpenBalance={() => setIsBalanceOpen(true)}
+                 onOpenBalance={() => handleTabChange('planes')}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
                />
@@ -3146,7 +3146,7 @@ export default function App() {
                {/* Create View (Middle) */}
               {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'oficina' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                   <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => setIsBalanceOpen(true)} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
+                   <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => handleTabChange('planes')} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
                )}
 
@@ -3160,7 +3160,7 @@ export default function App() {
                     onSongCreated={addCancion}
                     credits={displayCredits}
                     onGoLibrary={() => setCurrentTab('biblioteca')}
-                    onOpenBalance={() => setIsBalanceOpen(true)}
+                    onOpenBalance={() => handleTabChange('planes')}
                     standaloneVoices
                     onExitVoices={() => setCurrentTab('studio')}
                     prefill={studioPrefill || undefined}
@@ -3638,7 +3638,7 @@ export default function App() {
         </div>
       )}
       <div className="md:hidden">
-        <BottomNav currentTab={currentTab} onChange={handleTabChange} />
+        <BottomNav currentTab={currentTab} onChange={handleTabChange} isAdmin={isAdmin} />
       </div>
       
       <audio 

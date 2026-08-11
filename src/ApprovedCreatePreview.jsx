@@ -1438,18 +1438,12 @@ function ApprovedCreateContent(props) {
   const [creditsGate, setCreditsGate] = useState(null);
   const [hasPendingTask, setHasPendingTask] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState("");
-  const [generationSession, setGenerationSession] = useState(() => readGenerationSession());
-  const [currentPendingTask, setCurrentPendingTask] = useState(null);
-  const [completedView, setCompletedView] = useState(null);
-  const [completedSongs, setCompletedSongs] = useState([]);
-  const [isLoadingCompletedSongs, setIsLoadingCompletedSongs] = useState(false);
-  const [completedSongsError, setCompletedSongsError] = useState('');
-  const [completedFetchNonce, setCompletedFetchNonce] = useState(0);
   const audioRequestVersionRef = useRef(0);
   const contentAreaRef = useRef(null);
   const previousStepRef = useRef(step);
 
   useEffect(() => { ensureAnonSession().catch(() => {}); }, []);
+  useEffect(() => { clearGenerationSession(); }, []);
 
   useEffect(() => {
     const previousStep = previousStepRef.current;
@@ -1492,62 +1486,6 @@ function ApprovedCreateContent(props) {
     const tick = () => {
       const list = migrateLegacyIfNeeded();
       setHasPendingTask(Array.isArray(list) && list.length > 0);
-      const session = readGenerationSession();
-      const taskId = typeof session?.taskId === 'string' ? session.taskId.trim() : '';
-      const match = taskId ? (Array.isArray(list) ? list.find((item) => String(item?.taskId || '').trim() === taskId) : null) : null;
-
-      if (session && taskId) {
-        const now = Date.now();
-        const patch = {};
-        const matchProviderStatus = String(match?.providerStatus || '').trim();
-        const nextProviderStatus = matchProviderStatus || String(session?.providerStatus || '').trim();
-        const matchPct = Number(match?.progressPct);
-        const hasMatchPct = Number.isFinite(matchPct) && matchPct >= 0 && matchPct <= 100;
-        const sessionPct = Number(session?.progressPct);
-        const hasSessionPct = Number.isFinite(sessionPct) && sessionPct >= 0 && sessionPct <= 100;
-        const nextPct = hasMatchPct ? matchPct : hasSessionPct ? sessionPct : null;
-
-        if (nextProviderStatus && String(session?.providerStatus || '').trim() !== nextProviderStatus) {
-          patch.providerStatus = nextProviderStatus;
-        }
-        if (nextPct != null && Number(session?.progressPct) !== Number(nextPct)) {
-          patch.progressPct = nextPct;
-        }
-
-        if (nextProviderStatus && nextProviderStatus.toUpperCase() === 'FIRST_SUCCESS') {
-          const nextReady = Math.max(Number(session?.readyTrackCount || 0), 1);
-          if (Number(session?.readyTrackCount || 0) !== nextReady) patch.readyTrackCount = nextReady;
-        }
-
-        if (match && isFailureProviderStatus(nextProviderStatus)) {
-          const rawErr = String(match?.lastError || match?.error || session?.error || '').trim();
-          patch.failedAt = session?.failedAt || now;
-          patch.error = rawErr || 'Error en la generación';
-        }
-
-        if (!match && !session?.completedAt && !session?.failedAt) {
-          if (isFailureProviderStatus(nextProviderStatus)) {
-            patch.failedAt = now;
-            patch.error = String(session?.error || 'Error en la generación').trim() || 'Error en la generación';
-          } else {
-            patch.completedAt = now;
-            patch.readyTrackCount = Math.max(2, Number(session?.readyTrackCount || 0));
-          }
-        }
-
-        const changed = Object.keys(patch).length > 0;
-        if (changed) {
-          const nextSession = { ...session, ...patch, updatedAt: now };
-          writeGenerationSession(nextSession);
-          setGenerationSession(nextSession);
-        } else {
-          setGenerationSession(session);
-        }
-      } else {
-        setGenerationSession(session);
-      }
-
-      setCurrentPendingTask(match || null);
     };
     tick();
     const id = window.setInterval(tick, 1500);
@@ -1785,18 +1723,10 @@ function ApprovedCreateContent(props) {
   };
 
   const handleToggleNotifications = async (nextValue) => {
-    const session = readGenerationSession();
-    if (!session) return false;
     if (!nextValue) {
-      const nextSession = { ...session, notifyWhenReady: false, updatedAt: Date.now() };
-      writeGenerationSession(nextSession);
-      setGenerationSession(nextSession);
       return true;
     }
     if (typeof Notification === 'undefined') {
-      const nextSession = { ...session, notifyWhenReady: false, updatedAt: Date.now() };
-      writeGenerationSession(nextSession);
-      setGenerationSession(nextSession);
       return false;
     }
     let permission = Notification.permission;
@@ -1808,14 +1738,6 @@ function ApprovedCreateContent(props) {
       }
     }
     const enabled = permission === 'granted';
-    const nextSession = {
-      ...session,
-      notifyWhenReady: enabled,
-      notificationPermission: permission,
-      updatedAt: Date.now(),
-    };
-    writeGenerationSession(nextSession);
-    setGenerationSession(nextSession);
     if (enabled) setToast('Te notificaremos cuando estén listas.');
     return enabled;
   };
@@ -2109,7 +2031,23 @@ function ApprovedCreateContent(props) {
             try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
           } catch {}
           setToast('La voz que elegiste expiró. Se generará la canción sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
-          if (onGoLibrary) setTimeout(() => onGoLibrary(), 1200);
+          clearGenerationSession();
+          removeSelectedAudio({ nextAudioSource: 'none' });
+          setData((prev) => ({
+            ...prev,
+            title: '',
+            lyrics: '',
+            lyricInstruction: '',
+            aiLyricsGenerated: false,
+            style: '',
+            styleOriginal: '',
+            styleTranslated: false,
+            negative: '',
+            audioSource: 'none',
+            file: null,
+          }));
+          setStep(0);
+          if (onGoLibrary) onGoLibrary();
           return true;
         }
         setToast(msg);
@@ -2142,26 +2080,24 @@ function ApprovedCreateContent(props) {
         });
         window.localStorage.setItem(pendingListKey, JSON.stringify(list));
         try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
-        const session = {
-          taskId,
-          kind: hasAudioCover ? 'upload-cover' : 'generate',
-          title: normalizedSongTitle,
-          startedAt: acceptedAt,
-          expectedTrackCount: 2,
-          readyTrackCount: 0,
-          notifyWhenReady: Boolean(readGenerationSession()?.notifyWhenReady),
-          notificationPermission: typeof Notification !== 'undefined' ? Notification.permission : 'default',
-          completedAt: null,
-          failedAt: null,
-          error: '',
-          updatedAt: acceptedAt,
-        };
-        writeGenerationSession(session);
-        setGenerationSession(session);
-        const match = list.find((item) => String(item?.taskId || '').trim() === taskId) || null;
-        setCurrentPendingTask(match);
       } catch {}
-      setToast('¡Se aceptó la generación! Te mostraremos el progreso real aquí mismo.');
+      clearGenerationSession();
+      removeSelectedAudio({ nextAudioSource: 'none' });
+      setData((prev) => ({
+        ...prev,
+        title: '',
+        lyrics: '',
+        lyricInstruction: '',
+        aiLyricsGenerated: false,
+        style: '',
+        styleOriginal: '',
+        styleTranslated: false,
+        negative: '',
+        audioSource: 'none',
+        file: null,
+      }));
+      setStep(0);
+      if (onGoLibrary) onGoLibrary();
       return true;
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Error creando la canción');
@@ -2197,159 +2133,35 @@ function ApprovedCreateContent(props) {
     clearAudioTranscriptionState: () => setAudioLyricsStatus(''),
     removeSelectedAudio,
   };
-
-  useEffect(() => {
-    if (!generationSession?.failedAt) return;
-    setToast(generationSession.error || 'La generación no pudo completarse.');
-    clearGenerationSession();
-    setGenerationSession(null);
-    setCurrentPendingTask(null);
-  }, [generationSession?.failedAt]);
-
-  useEffect(() => {
-    if (!generationSession?.taskId) return;
-    if (generationSession?.failedAt) return;
-    const stage = getGenerationStage(generationSession, currentPendingTask);
-    if (stage !== 'ready') return;
-    const taskId = String(generationSession.taskId || '').trim();
-    if (!taskId) return;
-    if (completedView?.taskId === taskId) return;
-    setCompletedView({ taskId, title: generationSession?.title || '' });
-    clearGenerationSession();
-    setGenerationSession(null);
-    setCurrentPendingTask(null);
-  }, [generationSession?.taskId, generationSession?.completedAt, generationSession?.readyTrackCount, currentPendingTask?.providerStatus, generationSession?.failedAt, completedView?.taskId]);
-
-  useEffect(() => {
-    const taskId = String(completedView?.taskId || '').trim();
-    if (!taskId) return;
-    let cancelled = false;
-    const run = async () => {
-      setIsLoadingCompletedSongs(true);
-      setCompletedSongsError('');
-      setCompletedSongs([]);
-      try {
-        const t = await getAccessToken();
-        if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
-        const maxAttempts = 12;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          const r = await fetch('/api/library/list?deleted=0', { headers: { authorization: `Bearer ${t.token}` } });
-          const out = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude cargar Mis Canciones.').toString());
-          const rows = Array.isArray(out?.songs) ? out.songs : [];
-          const matches = rows
-            .filter((s) => String(s?.suno_task_id || s?.sunoTaskId || '').trim() === taskId)
-            .map((s) => ({
-              id: String(s?.id || '').trim(),
-              title: String(s?.title || '').trim() || 'Canción',
-              audioUrl: String(s?.audio_url || s?.audioUrl || '').trim(),
-              createdAt: String(s?.created_at || '').trim(),
-              sunoTaskId: String(s?.suno_task_id || s?.sunoTaskId || '').trim(),
-              sunoAudioId: String(s?.suno_audio_id || s?.sunoAudioId || '').trim(),
-            }))
-            .filter((x) => x.id && x.audioUrl);
-          matches.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-          if (matches.length >= 2) {
-            if (!cancelled) setCompletedSongs(matches.slice(0, 2));
-            return;
-          }
-          if (attempt < maxAttempts) await new Promise((r2) => setTimeout(r2, 900));
-        }
-        if (!cancelled) setCompletedSongsError('No encontré las 2 canciones en Mis Canciones todavía. Pulsa “Ver en Mis canciones” o actualiza la Biblioteca.');
-      } catch (e) {
-        if (!cancelled) setCompletedSongsError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (!cancelled) setIsLoadingCompletedSongs(false);
-      }
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [completedView?.taskId, completedFetchNonce]);
-
-  const isGeneratingViewOpen = Boolean(generationSession?.taskId && !generationSession?.failedAt);
-  const isCompletedViewOpen = Boolean(completedView?.taskId);
-  const isOverlayViewOpen = isGeneratingViewOpen || isCompletedViewOpen;
   const content = useMemo(() => {
-    if (isCompletedViewOpen) {
-      return (
-        <CompletedSongsView
-          title={String(completedView?.title || '').trim()}
-          songs={completedSongs}
-          isLoading={isLoadingCompletedSongs}
-          error={completedSongsError}
-          onRetry={() => setCompletedFetchNonce((n) => n + 1)}
-          onGoLibrary={onGoLibrary}
-          onCreateAnother={() => {
-            setCompletedView(null);
-            setCompletedSongs([]);
-            setCompletedSongsError('');
-            setIsLoadingCompletedSongs(false);
-            setCompletedFetchNonce(0);
-            removeSelectedAudio({ nextAudioSource: 'none' });
-            setData((prev) => ({
-              ...prev,
-              title: '',
-              lyrics: '',
-              lyricInstruction: '',
-              aiLyricsGenerated: false,
-              style: '',
-              styleOriginal: '',
-              styleTranslated: false,
-              negative: '',
-              audioSource: 'none',
-              file: null,
-            }));
-            setStep(0);
-          }}
-        />
-      );
-    }
-    if (isGeneratingViewOpen) {
-      return (
-        <GeneratingSongsView
-          session={generationSession}
-          pendingItem={currentPendingTask}
-          onGoLibrary={onGoLibrary}
-          onToggleNotify={handleToggleNotifications}
-          onClearSession={() => {
-            clearGenerationSession();
-            setGenerationSession(null);
-            setCurrentPendingTask(null);
-            setStep(0);
-          }}
-        />
-      );
-    }
     return step === 0 ? <StartStep data={data} setData={setData} setToast={setToast} handlers={sharedHandlers} /> :
       step === 1 ? <LyricsStep data={data} setData={setData} setToast={setToast} handlers={sharedHandlers} /> :
       step === 2 ? <StyleStep data={data} setData={setData} creativity={creativity} setCreativity={setCreativity} instruction={instruction} setInstruction={setInstruction} audioWeight={audioWeight} setAudioWeight={setAudioWeight} setToast={setToast} handlers={sharedHandlers} /> :
       <ReviewStep data={data} setData={setData} creativity={creativity} instruction={instruction} audioWeight={audioWeight} setToast={setToast} handlers={sharedHandlers} />;
   },
-    [isGeneratingViewOpen, generationSession, currentPendingTask, step, data, creativity, instruction, audioWeight, isUploadingAudio, isGeneratingLyrics, isSubmitting, creditsGate, credits, hasPendingTask]
+    [step, data, creativity, instruction, audioWeight, isUploadingAudio, isGeneratingLyrics, isSubmitting, creditsGate, credits, hasPendingTask]
   );
 
   return (
     <div className="approved-flow-shell">
-      <main className="main-area" style={isOverlayViewOpen ? { gridTemplateRows: 'minmax(0,1fr)' } : undefined}>
-        {!isOverlayViewOpen ? <Stepper step={step} onStep={setStep} /> : null}
+      <main className="main-area">
+        <Stepper step={step} onStep={setStep} />
         <div className="content-area" ref={contentAreaRef}>
           {content}
-          {!isOverlayViewOpen ? (
-            <footer className="step-footer">
-              {step > 0 && (
-                <button className="back-button" onClick={() => setStep(step - 1)}>
-                  <ArrowLeft size={20} />
-                  {`Volver a ${steps[step - 1]}`}
-                </button>
-              )}
-              {step < 3 && (
-                <button className="next-button" onClick={() => setStep(step + 1)}>
-                  Continuar a {steps[step + 1]}
-                  <ArrowRight size={21} />
-                </button>
-              )}
-            </footer>
-          ) : null}
+          <footer className="step-footer">
+            {step > 0 && (
+              <button className="back-button" onClick={() => setStep(step - 1)}>
+                <ArrowLeft size={20} />
+                {`Volver a ${steps[step - 1]}`}
+              </button>
+            )}
+            {step < 3 && (
+              <button className="next-button" onClick={() => setStep(step + 1)}>
+                Continuar a {steps[step + 1]}
+                <ArrowRight size={21} />
+              </button>
+            )}
+          </footer>
         </div>
       </main>
       {creditsGate ? (

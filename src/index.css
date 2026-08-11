@@ -102,6 +102,22 @@ button { -webkit-tap-highlight-color: transparent; }
 .luciana-mobile-menu-grid strong { font-size: 12px; margin-top: 10px; }
 .luciana-mobile-menu-grid small { font-size: 9px; color: #707b90; margin-top: 3px; }
 
+.luciana-mobile-drawer { position: fixed; inset: 0; z-index: 150; display: flex; align-items: stretch; justify-content: flex-start; }
+.luciana-mobile-drawer-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.72); backdrop-filter: blur(7px); }
+.luciana-mobile-drawer-panel { position: relative; height: 100%; width: min(330px, 86vw); background: #070a12; border-right: 1px solid var(--lm-line); box-shadow: 30px 0 70px rgba(0,0,0,.6); display: flex; flex-direction: column; }
+.luciana-mobile-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px; border-bottom: 1px solid var(--lm-line); }
+.luciana-mobile-drawer-header small { color: #9b5cff; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.luciana-mobile-drawer-header h2 { font-size: 18px; font-weight: 800; letter-spacing: -.02em; margin-top: 4px; }
+.luciana-mobile-drawer-header button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--lm-line); color: #aab2c2; }
+.luciana-mobile-drawer-list { padding: 14px 10px 18px; overflow-y: auto; display: grid; gap: 6px; }
+.luciana-mobile-drawer-item { width: 100%; min-height: 46px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 14px; border: 1px solid transparent; color: #8f99ad; text-align: left; }
+.luciana-mobile-drawer-item:hover { color: #eef1f8; background: rgba(255,255,255,.035); }
+.luciana-mobile-drawer-item.is-active { color: white; border-color: rgba(155,92,255,.2); background: linear-gradient(90deg, rgba(116,50,220,.27), rgba(116,50,220,.09)); box-shadow: inset 3px 0 0 var(--lm-purple); }
+.luciana-mobile-drawer-item.is-active svg { color: #c084fc; }
+.luciana-mobile-drawer-text { display: grid; gap: 2px; }
+.luciana-mobile-drawer-text strong { font-size: 13px; font-weight: 700; }
+.luciana-mobile-drawer-text small { font-size: 10px; color: #596277; }
+
 @media (max-width: 639px) {
   .luciana-topbar { height: 60px; padding: 0 12px; }
   .luciana-brand-logo { width: 32px; height: 32px; border-radius: 9px; }
