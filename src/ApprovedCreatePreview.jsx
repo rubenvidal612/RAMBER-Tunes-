@@ -1285,8 +1285,22 @@ function ApprovedCreateContent(props) {
   const [generationSession, setGenerationSession] = useState(() => readGenerationSession());
   const [currentPendingTask, setCurrentPendingTask] = useState(null);
   const audioRequestVersionRef = useRef(0);
+  const contentAreaRef = useRef(null);
+  const previousStepRef = useRef(step);
 
   useEffect(() => { ensureAnonSession().catch(() => {}); }, []);
+
+  useEffect(() => {
+    const previousStep = previousStepRef.current;
+    previousStepRef.current = step;
+    if (previousStep === step) return;
+    if (contentAreaRef.current && typeof contentAreaRef.current.scrollTo === 'function') {
+      contentAreaRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [step]);
 
   useEffect(() => {
     const readList = () => {
@@ -2010,7 +2024,7 @@ function ApprovedCreateContent(props) {
     <div className="approved-flow-shell">
       <main className="main-area" style={isGeneratingViewOpen ? { gridTemplateRows: 'minmax(0,1fr)' } : undefined}>
         {!isGeneratingViewOpen ? <Stepper step={step} onStep={setStep} /> : null}
-        <div className="content-area">
+        <div className="content-area" ref={contentAreaRef}>
           {content}
           {!isGeneratingViewOpen ? (
             <footer className="step-footer">
