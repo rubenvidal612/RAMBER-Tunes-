@@ -108,14 +108,6 @@ function getStageItems(stage) {
   }));
 }
 
-function stageToPercent(stage) {
-  if (stage === 'ready') return 100;
-  if (stage === 'processing') return 75;
-  if (stage === 'generating') return 45;
-  if (stage === 'preparing') return 15;
-  return 0;
-}
-
 function isFailureProviderStatus(value) {
   const s = String(value || '').trim().toUpperCase();
   if (!s) return false;
@@ -124,6 +116,14 @@ function isFailureProviderStatus(value) {
   if (s === 'CALLBACK_EXCEPTION') return true;
   if (s === 'SENSITIVE_WORD_ERROR') return true;
   return false;
+}
+
+function getProviderPct(pendingItem, session) {
+  const rawA = Number(pendingItem?.progressPct);
+  const rawB = Number(session?.progressPct);
+  const picked = Number.isFinite(rawA) ? rawA : Number.isFinite(rawB) ? rawB : null;
+  if (picked == null) return null;
+  return Math.max(0, Math.min(100, picked));
 }
 
 function normalizeLyricsTags(t) {
@@ -804,12 +804,120 @@ function CompactAudioPlayer({ src }) {
   );
 }
 
+function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibrary, onCreateAnother }) {
+  return (
+    <section className="generation-stage ready">
+      <div className="generation-hero">
+        <div className="generation-hero-icon"><Check size={28} /></div>
+        <h1>Tus 2 canciones ya están listas</h1>
+        <p className="generation-hero-subtitle">Ya puedes escucharlas aquí mismo.</p>
+        <p className="generation-hero-copy">{title ? `Canción: ${title}` : 'Listo. Puedes reproducirlas ahora.'}</p>
+      </div>
+
+      <div className="generation-cards">
+        {isLoading ? (
+          <div className="glass-card rounded-3xl p-6 border border-white/10 bg-white/[0.03] text-slate-200">
+            <div className="flex items-center gap-3">
+              <Loader2 size={22} className="animate-spin" />
+              <div>
+                <div className="font-extrabold">Cargando tus audios…</div>
+                <div className="text-xs text-slate-400">Ya se guardaron en “Mis Canciones”. Estamos trayéndolos para reproducirlos aquí.</div>
+              </div>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="glass-card rounded-3xl p-6 border border-white/10 bg-white/[0.03] text-slate-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={22} className="text-amber-200 shrink-0" />
+              <div className="min-w-0">
+                <div className="font-extrabold">Tus canciones ya terminaron, pero no pude cargarlas aquí</div>
+                <div className="text-xs text-slate-400 break-words">{error}</div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button type="button" className="generation-secondary-button" onClick={() => onRetry?.()}>
+                    Reintentar aquí
+                  </button>
+                  <button type="button" className="generation-secondary-button" onClick={() => onGoLibrary?.()}>
+                    Ver en Mis canciones
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          (Array.isArray(songs) ? songs : []).map((song, idx) => (
+            <article key={song?.id || idx} className={`generation-card ${idx === 0 ? 'purple' : 'cyan'} done`}>
+              <div className="generation-card-main">
+                <div className="generation-cover">
+                  <div className="generation-cover-glow" />
+                  <MusicNote size={46} />
+                </div>
+                <div className="generation-copy">
+                  <div className="generation-title-row">
+                    <div className="min-w-0">
+                      <h2 className="truncate">{String(song?.title || `Canción ${idx + 1}`)}</h2>
+                      <p>{idx === 0 ? 'Canción 1' : 'Canción 2'}</p>
+                    </div>
+                    <span className={`generation-state-pill ${idx === 0 ? 'purple' : 'cyan'}`}>Lista</span>
+                  </div>
+                  {song?.audioUrl ? <CompactAudioPlayer src={String(song.audioUrl)} /> : null}
+                </div>
+              </div>
+              <div className="generation-card-side">
+                <div className={`generation-ring ${idx === 0 ? 'purple' : 'cyan'} done`}>
+                  <div className="generation-ring-inner">
+                    <Check size={24} />
+                  </div>
+                </div>
+                <ul className="generation-status-list">
+                  {getStageItems('ready').map((item) => (
+                    <li key={`${song?.id || idx}-${item.key}`} className={item.key === 'ready' ? 'active' : 'complete'}>
+                      <span className="dot" />
+                      <span>{item.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
+      {!isLoading && !error && Array.isArray(songs) && songs.length > 0 ? (
+        <div className="audio-lyrics-notice info" style={{ marginTop: 16 }}>
+          <Info size={18} />
+          <div>
+            <div style={{ fontWeight: 900 }}>Tus canciones se guardarán durante 14 días en ‘Mis Canciones’.</div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="generation-footer-banner">
+        <div>
+          <strong>¿Qué quieres hacer ahora?</strong>
+          <span>Puedes escucharlas aquí o verlas en “Mis Canciones”.</span>
+        </div>
+        <div className="generation-footer-actions">
+          <button type="button" className="generation-link-button" onClick={() => onGoLibrary?.()}>
+            Ver en Mis canciones
+            <ArrowRight size={18} />
+          </button>
+          <button type="button" className="generation-secondary-button" onClick={() => onRetry?.()}>
+            Reintentar cargar aquí
+          </button>
+          <button type="button" className="generation-secondary-button" onClick={() => onCreateAnother?.()}>
+            Crear otra canción
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify, onClearSession }) {
   const stage = getGenerationStage(session, pendingItem);
   const readyCount = Number(session?.readyTrackCount || 0);
   const notificationsEnabled = Boolean(session?.notifyWhenReady);
   const notificationPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
-  const redirectGuardRef = useRef(false);
   const heroTitle =
     stage === 'failed'
       ? 'No se pudo completar la generación'
@@ -828,22 +936,11 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
       : stage === 'ready'
         ? 'Puedes abrir tu Biblioteca ahora mismo para escucharlas.'
         : 'Puedes seguir usando LucIAna. Te avisaremos cuando estén listas.';
+  const providerPct = getProviderPct(pendingItem, session);
   const cards = [
     { key: 'song-1', title: 'Canción 1', subtitle: 'Versión original', accent: 'purple' },
     { key: 'song-2', title: 'Canción 2', subtitle: 'Segunda versión', accent: 'cyan' },
   ];
-
-  useEffect(() => {
-    if (redirectGuardRef.current) return;
-    if (stage !== 'ready') return;
-    if (!session?.completedAt) return;
-    if (readyCount < 2) return;
-    redirectGuardRef.current = true;
-    const t = window.setTimeout(() => {
-      onGoLibrary?.();
-    }, 1000);
-    return () => window.clearTimeout(t);
-  }, [stage, readyCount, session?.completedAt, onGoLibrary]);
 
   return (
     <section className={`generation-stage ${stage === 'ready' ? 'ready' : ''}`}>
@@ -865,14 +962,14 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
         {cards.map((card, index) => {
           const cardStage = readyCount >= index + 1 ? 'ready' : stage;
           const done = cardStage === 'ready';
-          const percent = stageToPercent(cardStage);
           const stageItems = getStageItems(cardStage);
+          const suffix = providerPct != null && cardStage !== 'ready' ? ` · ${Math.round(providerPct)}%` : '';
           const pillLabel =
             cardStage === 'failed'
               ? 'Error'
               : cardStage === 'ready'
-                ? `Lista · ${percent}%`
-                : `${stageItems.find((x) => x.state === 'active')?.label || 'En generación'} · ${percent}%`;
+                ? 'Lista'
+                : `${stageItems.find((x) => x.state === 'active')?.label || 'En generación'}${suffix}`;
           return (
             <article key={card.key} className={`generation-card ${card.accent} ${done ? 'done' : ''}`}>
               <div className="generation-card-main">
@@ -907,7 +1004,7 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
                   <div className="generation-ring-inner">
                     <div style={{ display: 'grid', placeItems: 'center', gap: 10 }}>
                       {cardStage === 'failed' ? <X size={22} /> : done ? <Check size={24} /> : <Loader2 size={24} className="animate-spin" />}
-                      <div style={{ fontSize: 18, fontWeight: 900 }}>{percent}%</div>
+                      {providerPct != null && cardStage !== 'ready' ? <div style={{ fontSize: 18, fontWeight: 900 }}>{Math.round(providerPct)}%</div> : null}
                     </div>
                   </div>
                 </div>
@@ -962,11 +1059,9 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
             Ver mis canciones
             <ArrowRight size={18} />
           </button>
-          {stage === 'ready' && (
-            <button type="button" className="generation-secondary-button" onClick={() => onClearSession?.()}>
-              Seguir creando
-            </button>
-          )}
+          <button type="button" className="generation-secondary-button" onClick={() => onClearSession?.()}>
+            Seguir creando
+          </button>
         </div>
       </div>
     </section>
@@ -1345,6 +1440,11 @@ function ApprovedCreateContent(props) {
   const [audioUploadError, setAudioUploadError] = useState("");
   const [generationSession, setGenerationSession] = useState(() => readGenerationSession());
   const [currentPendingTask, setCurrentPendingTask] = useState(null);
+  const [completedView, setCompletedView] = useState(null);
+  const [completedSongs, setCompletedSongs] = useState([]);
+  const [isLoadingCompletedSongs, setIsLoadingCompletedSongs] = useState(false);
+  const [completedSongsError, setCompletedSongsError] = useState('');
+  const [completedFetchNonce, setCompletedFetchNonce] = useState(0);
   const audioRequestVersionRef = useRef(0);
   const contentAreaRef = useRef(null);
   const previousStepRef = useRef(step);
@@ -2106,8 +2206,104 @@ function ApprovedCreateContent(props) {
     setCurrentPendingTask(null);
   }, [generationSession?.failedAt]);
 
+  useEffect(() => {
+    if (!generationSession?.taskId) return;
+    if (generationSession?.failedAt) return;
+    const stage = getGenerationStage(generationSession, currentPendingTask);
+    if (stage !== 'ready') return;
+    const taskId = String(generationSession.taskId || '').trim();
+    if (!taskId) return;
+    if (completedView?.taskId === taskId) return;
+    setCompletedView({ taskId, title: generationSession?.title || '' });
+    clearGenerationSession();
+    setGenerationSession(null);
+    setCurrentPendingTask(null);
+  }, [generationSession?.taskId, generationSession?.completedAt, generationSession?.readyTrackCount, currentPendingTask?.providerStatus, generationSession?.failedAt, completedView?.taskId]);
+
+  useEffect(() => {
+    const taskId = String(completedView?.taskId || '').trim();
+    if (!taskId) return;
+    let cancelled = false;
+    const run = async () => {
+      setIsLoadingCompletedSongs(true);
+      setCompletedSongsError('');
+      setCompletedSongs([]);
+      try {
+        const t = await getAccessToken();
+        if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+        const maxAttempts = 12;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const r = await fetch('/api/library/list?deleted=0', { headers: { authorization: `Bearer ${t.token}` } });
+          const out = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude cargar Mis Canciones.').toString());
+          const rows = Array.isArray(out?.songs) ? out.songs : [];
+          const matches = rows
+            .filter((s) => String(s?.suno_task_id || s?.sunoTaskId || '').trim() === taskId)
+            .map((s) => ({
+              id: String(s?.id || '').trim(),
+              title: String(s?.title || '').trim() || 'Canción',
+              audioUrl: String(s?.audio_url || s?.audioUrl || '').trim(),
+              createdAt: String(s?.created_at || '').trim(),
+              sunoTaskId: String(s?.suno_task_id || s?.sunoTaskId || '').trim(),
+              sunoAudioId: String(s?.suno_audio_id || s?.sunoAudioId || '').trim(),
+            }))
+            .filter((x) => x.id && x.audioUrl);
+          matches.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+          if (matches.length >= 2) {
+            if (!cancelled) setCompletedSongs(matches.slice(0, 2));
+            return;
+          }
+          if (attempt < maxAttempts) await new Promise((r2) => setTimeout(r2, 900));
+        }
+        if (!cancelled) setCompletedSongsError('No encontré las 2 canciones en Mis Canciones todavía. Pulsa “Ver en Mis canciones” o actualiza la Biblioteca.');
+      } catch (e) {
+        if (!cancelled) setCompletedSongsError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setIsLoadingCompletedSongs(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [completedView?.taskId, completedFetchNonce]);
+
   const isGeneratingViewOpen = Boolean(generationSession?.taskId && !generationSession?.failedAt);
+  const isCompletedViewOpen = Boolean(completedView?.taskId);
+  const isOverlayViewOpen = isGeneratingViewOpen || isCompletedViewOpen;
   const content = useMemo(() => {
+    if (isCompletedViewOpen) {
+      return (
+        <CompletedSongsView
+          title={String(completedView?.title || '').trim()}
+          songs={completedSongs}
+          isLoading={isLoadingCompletedSongs}
+          error={completedSongsError}
+          onRetry={() => setCompletedFetchNonce((n) => n + 1)}
+          onGoLibrary={onGoLibrary}
+          onCreateAnother={() => {
+            setCompletedView(null);
+            setCompletedSongs([]);
+            setCompletedSongsError('');
+            setIsLoadingCompletedSongs(false);
+            setCompletedFetchNonce(0);
+            removeSelectedAudio({ nextAudioSource: 'none' });
+            setData((prev) => ({
+              ...prev,
+              title: '',
+              lyrics: '',
+              lyricInstruction: '',
+              aiLyricsGenerated: false,
+              style: '',
+              styleOriginal: '',
+              styleTranslated: false,
+              negative: '',
+              audioSource: 'none',
+              file: null,
+            }));
+            setStep(0);
+          }}
+        />
+      );
+    }
     if (isGeneratingViewOpen) {
       return (
         <GeneratingSongsView
@@ -2134,11 +2330,11 @@ function ApprovedCreateContent(props) {
 
   return (
     <div className="approved-flow-shell">
-      <main className="main-area" style={isGeneratingViewOpen ? { gridTemplateRows: 'minmax(0,1fr)' } : undefined}>
-        {!isGeneratingViewOpen ? <Stepper step={step} onStep={setStep} /> : null}
+      <main className="main-area" style={isOverlayViewOpen ? { gridTemplateRows: 'minmax(0,1fr)' } : undefined}>
+        {!isOverlayViewOpen ? <Stepper step={step} onStep={setStep} /> : null}
         <div className="content-area" ref={contentAreaRef}>
           {content}
-          {!isGeneratingViewOpen ? (
+          {!isOverlayViewOpen ? (
             <footer className="step-footer">
               {step > 0 && (
                 <button className="back-button" onClick={() => setStep(step - 1)}>
