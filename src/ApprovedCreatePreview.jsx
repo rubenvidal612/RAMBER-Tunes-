@@ -20,6 +20,8 @@ import { ensureAnonSession, getAccessToken } from "./lib/supabaseBrowser";
 const pendingListKey = 'ramber.pendingSunoTasks_v1';
 const pendingLegacyKey = 'ramber.pendingSunoTask';
 const generationSessionKey = 'ramber.createGenerationSession_v1';
+const sunoVoicesCacheKey = 'ramber.suno_voices_v1';
+const returnToCreateVoicePickerKey = 'ramber.return_to_create_voice_picker_v1';
 const mp3ConverterUrl = 'https://online-audio-converter.com/sp/';
 
 function readPendingTasks() {
@@ -390,23 +392,82 @@ function VoiceMeter({ onFinished }) {
 
 function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   const [wizardStep, setWizardStep] = useState(0);
-  const [profile, setProfile] = useState({ name: "", description: "", style: "Pop", level: "beginner", sourceAudio: null, verifyAudio: null, audioDuration: 420, start: 0, end: 10 });
-  const [countdown, setCountdown] = useState(10);
-  const [timerRunning, setTimerRunning] = useState(true);
+  const [profile, setProfile] = useState({
+    name: "",
+    description: "",
+    style: "Pop",
+    level: "beginner",
+    sourceAudio: null,
+    verifyAudio: null,
+    audioDuration: 420,
+    start: 0,
+    end: 10,
+  });
+  const [sourceUpload, setSourceUpload] = useState({ url: "", key: "", loading: false, error: "" });
+  const [verifyUpload, setVerifyUpload] = useState({ url: "", key: "", loading: false, error: "" });
+  const [validation, setValidation] = useState({
+    taskId: "",
+    status: "",
+    phrase: "",
+    loading: false,
+    error: "",
+  });
+  const [voiceGen, setVoiceGen] = useState({
+    taskId: "",
+    status: "",
+    voiceId: "",
+    loading: false,
+    error: "",
+    isAvailable: null,
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const sourceUploadReqRef = useRef(0);
+  const verifyUploadReqRef = useRef(0);
   const wizardSteps = ["Perfil", "Audio original", "Frase", "Verificación", "Listo"];
   const sourceReady = Boolean(profile.sourceAudio);
   const verificationReady = Boolean(profile.verifyAudio);
-  useEffect(() => {
-    if (wizardStep !== 2 || !timerRunning || countdown <= 0) return undefined;
-    const timer = window.setInterval(() => setCountdown((seconds) => Math.max(0, seconds - 1)), 1000);
-    return () => window.clearInterval(timer);
-  }, [wizardStep, timerRunning, countdown]);
-  const repeatPhrase = () => { setCountdown(10); setTimerRunning(true); };
-  const sampleFile = (type) => {
-    const sample = { name: type === "source" ? "voz-original-prueba.mp3" : "frase-verificacion-prueba.mp3" };
-    setProfile({ ...profile, [type === "source" ? "sourceAudio" : "verifyAudio"]: sample, ...(type === "source" ? { audioDuration: 420, start: 0, end: 10 } : {}) });
-    setToast("Archivo de prueba agregado solo al prototipo local.");
+  const language = "es";
+
+  const uploadWizardAudio = async (file, kind) => {
+    if (!file) return;
+    const requestRef = kind === "source" ? sourceUploadReqRef : verifyUploadReqRef;
+    const nextReq = requestRef.current + 1;
+    requestRef.current = nextReq;
+    if (kind === "source") setSourceUpload({ url: "", key: "", loading: true, error: "" });
+    if (kind === "verify") setVerifyUpload({ url: "", key: "", loading: true, error: "" });
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        if (requestRef.current !== nextReq) return;
+        const msg = t.error || "No se pudo iniciar sesión.";
+        if (kind === "source") setSourceUpload({ url: "", key: "", loading: false, error: msg });
+        if (kind === "verify") setVerifyUpload({ url: "", key: "", loading: false, error: msg });
+        setToast(msg);
+        return;
+      }
+      if (requestRef.current !== nextReq) return;
+      const uploaded = await uploadAudioForVoice(t.token, file);
+      if (requestRef.current !== nextReq) return;
+      const url = (uploaded?.url || "").toString().trim();
+      const key = (uploaded?.key || "").toString().trim();
+      if (!url) throw new Error("No recibí la URL final del audio.");
+      if (kind === "source") setSourceUpload({ url, key, loading: false, error: "" });
+      if (kind === "verify") setVerifyUpload({ url, key, loading: false, error: "" });
+      setToast(kind === "source" ? "Audio original subido correctamente." : "Audio de verificación subido correctamente.");
+    } catch (e) {
+      if (requestRef.current !== nextReq) return;
+      const raw = e instanceof Error ? e.message : String(e || "");
+      const looksLikeNetwork = /failed to fetch|networkerror|network error|load failed|fetch failed|typeerror.*failed|abort|timeout|net::/i.test(raw) || !raw.trim();
+      const msg = looksLikeNetwork
+        ? "No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e inténtalo de nuevo."
+        : raw || "No se pudo subir el audio.";
+      if (kind === "source") setSourceUpload({ url: "", key: "", loading: false, error: msg });
+      if (kind === "verify") setVerifyUpload({ url: "", key: "", loading: false, error: msg });
+      setToast(msg);
+    }
   };
+
   const acceptMp3 = (file, field) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".mp3")) {
@@ -415,18 +476,299 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     }
     if (field !== "sourceAudio") {
       setProfile((current) => ({ ...current, [field]: file }));
+      uploadWizardAudio(file, "verify").catch(() => {});
       return;
     }
     const audio = new Audio(URL.createObjectURL(file));
-    audio.addEventListener("loadedmetadata", () => {
-      const duration = Math.max(1, Math.floor(audio.duration));
-      setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: duration, start: 0, end: Math.min(10, duration) }));
-      URL.revokeObjectURL(audio.src);
-    }, { once: true });
-    audio.addEventListener("error", () => {
-      setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
-      URL.revokeObjectURL(audio.src);
-    }, { once: true });
+    audio.addEventListener(
+      "loadedmetadata",
+      () => {
+        const duration = Math.max(1, Math.floor(audio.duration));
+        setProfile((current) => ({
+          ...current,
+          sourceAudio: file,
+          audioDuration: duration,
+          start: 0,
+          end: Math.min(10, duration),
+        }));
+        URL.revokeObjectURL(audio.src);
+        uploadWizardAudio(file, "source").catch(() => {});
+      },
+      { once: true },
+    );
+    audio.addEventListener(
+      "error",
+      () => {
+        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
+        URL.revokeObjectURL(audio.src);
+        uploadWizardAudio(file, "source").catch(() => {});
+      },
+      { once: true },
+    );
+  };
+
+  const pollValidateInfo = async (taskId) => {
+    const t = await getAccessToken();
+    if (!t.ok) {
+      setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+      return;
+    }
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 8 * 60 * 1000) {
+      await new Promise((r) => setTimeout(r, 2200));
+      const qr = await fetch(`/api/suno/voice-validate-info?taskId=${encodeURIComponent(taskId)}`, {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await qr.json().catch(() => ({}));
+      if (!qr.ok) continue;
+      const status = String(out?.status || "").trim();
+      const phrase = String(out?.validateInfo || "").trim();
+      if (status) setValidation((current) => ({ ...current, status }));
+      if (phrase) {
+        setValidation((current) => ({ ...current, loading: false, error: "", phrase }));
+        return;
+      }
+      if (status === "fail" || status === "processing_validate_fail") {
+        const msg = String(out?.errorMessage || out?.detail || out?.error || "No se pudo obtener la frase de verificación.").trim();
+        setValidation((current) => ({ ...current, loading: false, error: msg }));
+        return;
+      }
+    }
+    setValidation((current) => ({ ...current, loading: false, error: "La frase está tardando demasiado. Intenta más tarde." }));
+  };
+
+  const startValidate = async () => {
+    if (validation.taskId && validation.phrase) return true;
+    setValidation({ taskId: "", status: "", phrase: "", loading: true, error: "" });
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        return false;
+      }
+      const voiceUrl = (sourceUpload.url || "").toString().trim();
+      if (!voiceUrl) {
+        setValidation((current) => ({ ...current, loading: false, error: "Primero sube el audio original para obtener una URL válida." }));
+        return false;
+      }
+      const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
+      const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
+      const r = await fetch("/api/suno/voice-validate", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = String(out?.detail?.msg || out?.detail || out?.error || "No se pudo iniciar la validación de voz.").trim();
+        setValidation((current) => ({ ...current, loading: false, error: msg }));
+        return false;
+      }
+      const taskId = String(out?.taskId || "").trim();
+      if (!taskId) {
+        setValidation((current) => ({ ...current, loading: false, error: "No recibí taskId de validación." }));
+        return false;
+      }
+      setValidation((current) => ({ ...current, taskId, loading: true, error: "" }));
+      await pollValidateInfo(taskId);
+      return true;
+    } catch (e) {
+      setValidation((current) => ({ ...current, loading: false, error: e instanceof Error ? e.message : "Error iniciando validación de voz." }));
+      return false;
+    }
+  };
+
+  const regeneratePhrase = async () => {
+    const currentTaskId = String(validation.taskId || "").trim();
+    if (!currentTaskId) return;
+    setValidation((current) => ({ ...current, loading: true, error: "", phrase: "" }));
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        return;
+      }
+      const r = await fetch("/api/suno/voice-regenerate", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ taskId: currentTaskId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = String(out?.detail || out?.error || "No se pudo regenerar la frase.").trim();
+        setValidation((current) => ({ ...current, loading: false, error: msg }));
+        return;
+      }
+      const nextTaskId = String(out?.taskId || "").trim();
+      if (!nextTaskId) {
+        setValidation((current) => ({ ...current, loading: false, error: "No recibí taskId al regenerar la frase." }));
+        return;
+      }
+      setValidation((current) => ({ ...current, taskId: nextTaskId, loading: true, error: "", phrase: "" }));
+      await pollValidateInfo(nextTaskId);
+    } catch (e) {
+      setValidation((current) => ({ ...current, loading: false, error: e instanceof Error ? e.message : "No se pudo regenerar la frase." }));
+    }
+  };
+
+  const pollVoiceRecordInfo = async (taskId) => {
+    const t = await getAccessToken();
+    if (!t.ok) {
+      setVoiceGen((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+      return;
+    }
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 25 * 60 * 1000) {
+      await new Promise((r) => setTimeout(r, 4500));
+      const qr = await fetch(`/api/suno/voice-record-info?taskId=${encodeURIComponent(taskId)}`, {
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await qr.json().catch(() => ({}));
+      if (!qr.ok) continue;
+      const status = String(out?.status || "").trim();
+      const voiceId = String(out?.voiceId || "").trim();
+      setVoiceGen((current) => ({ ...current, status }));
+      if (status === "success" && voiceId) {
+        setVoiceGen((current) => ({ ...current, loading: false, error: "", voiceId, status }));
+        return;
+      }
+      if (status === "processing_validate_fail" || status === "fail") {
+        const msg = String(out?.errorMessage || out?.detail || out?.error || "La creación de voz falló.").trim();
+        setVoiceGen((current) => ({ ...current, loading: false, error: msg }));
+        return;
+      }
+    }
+    setVoiceGen((current) => ({ ...current, loading: false, error: "La voz está tardando demasiado. Intenta más tarde." }));
+  };
+
+  const checkAvailability = async (taskId) => {
+    const t = await getAccessToken();
+    if (!t.ok) return null;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 3 * 60 * 1000) {
+      const r = await fetch("/api/suno/voice-check-voice", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ task_id: taskId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (r.ok) {
+        const available = Boolean(out?.isAvailable);
+        if (available) return true;
+      }
+      await new Promise((r2) => setTimeout(r2, 2500));
+    }
+    return false;
+  };
+
+  const startGenerateVoice = async () => {
+    const validationTaskId = String(validation.taskId || "").trim();
+    if (!validationTaskId) {
+      setVoiceGen((current) => ({ ...current, error: "Falta taskId de validación. Regresa y genera la frase primero." }));
+      return false;
+    }
+    const verifyUrl = String(verifyUpload.url || "").trim();
+    if (!verifyUrl) {
+      setVoiceGen((current) => ({ ...current, error: "Primero sube el audio de verificación para obtener una URL válida." }));
+      return false;
+    }
+    setVoiceGen({ taskId: "", status: "", voiceId: "", loading: true, error: "", isAvailable: null });
+    setSaveError("");
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setVoiceGen((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        return false;
+      }
+      const body = {
+        taskId: validationTaskId,
+        verifyUrl,
+        voiceName: profile.name,
+        description: profile.description,
+        style: profile.style,
+        singerSkillLevel: profile.level,
+      };
+      const r = await fetch("/api/suno/voice-generate", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
+        body: JSON.stringify(body),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = String(out?.detail || out?.error || "No se pudo iniciar la creación de voz.").trim();
+        setVoiceGen((current) => ({ ...current, loading: false, error: msg }));
+        return false;
+      }
+      const taskId = String(out?.taskId || "").trim();
+      if (!taskId) {
+        setVoiceGen((current) => ({ ...current, loading: false, error: "No recibí taskId de creación de voz." }));
+        return false;
+      }
+      setVoiceGen((current) => ({ ...current, taskId, loading: true, error: "" }));
+      await pollVoiceRecordInfo(taskId);
+      const available = await checkAvailability(taskId);
+      setVoiceGen((current) => ({ ...current, isAvailable: available }));
+      return true;
+    } catch (e) {
+      setVoiceGen((current) => ({ ...current, loading: false, error: e instanceof Error ? e.message : "No se pudo crear la voz." }));
+      return false;
+    }
+  };
+
+  const saveToSunoVoices = async () => {
+    const voiceId = String(voiceGen.voiceId || "").trim();
+    const taskId = String(voiceGen.taskId || "").trim();
+    if (!voiceId) return false;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setSaveError(t.error || "No se pudo iniciar sesión.");
+        return false;
+      }
+      const meta = {
+        description: profile.description,
+        singerSkillLevel: profile.level,
+        profileImageUrl: "",
+        style: profile.style,
+        language,
+      };
+      const r = await fetch("/api/suno/voices", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({
+          sunoVoiceId: voiceId,
+          name: profile.name,
+          status: voiceGen.isAvailable ? "ready" : "processing",
+          taskId,
+          meta,
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = String(out?.detail || out?.error || "No se pudo guardar el personaje.").trim();
+        setSaveError(msg);
+        return false;
+      }
+      try {
+        const raw = window.localStorage.getItem(sunoVoicesCacheKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const list = Array.isArray(parsed) ? parsed : [];
+        const next = [
+          { voiceId, name: profile.name, createdAt: new Date().toISOString(), taskId, status: voiceGen.isAvailable ? "ready" : "processing", profileImageUrl: "", description: profile.description, singerSkillLevel: profile.level },
+          ...list.filter((x) => String(x?.voiceId || x?.voice_id || "").trim() !== voiceId),
+        ];
+        window.localStorage.setItem(sunoVoicesCacheKey, JSON.stringify(next.slice(0, 50)));
+      } catch {}
+      return true;
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "No se pudo guardar el personaje.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -436,24 +778,141 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         <div className="wizard-progress">{wizardSteps.map((label,index)=><div key={label} className={index === wizardStep ? "active" : index < wizardStep ? "done" : ""}><span>{index < wizardStep ? <Check size={14} weight="bold" /> : index + 1}</span><small>{label}</small></div>)}</div>
         <div className="wizard-body">
           {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Estos datos te ayudarán a reconocer y reutilizar esta voz.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><label>Descripción<input value={profile.description} onChange={(e)=>setProfile({...profile,description:e.target.value})} placeholder="Ejemplo: Voz cálida para baladas" /></label><div className="wizard-fields"><label>Estilo vocal<select value={profile.style} onChange={(e)=>setProfile({...profile,style:e.target.value})}><option>Pop</option><option>Balada</option><option>Regional</option><option>Rock</option><option>Otro</option></select></label><label>Nivel del cantante<select value={profile.level} onChange={(e)=>setProfile({...profile,level:e.target.value})}><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option><option value="professional">Profesional</option></select></label></div><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
-          {wizardStep === 1 && <div className="wizard-section"><h3>Sube el audio original de tu voz</h3><p>Este es el audio que Suno utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p><label className="wizard-upload"><UploadSimple size={35}/><strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong><small>Solo archivos MP3</small><input type="file" accept="audio/mpeg,.mp3" onChange={(e)=>acceptMp3(e.target.files[0],"sourceAudio")}/></label><div className="sample-actions"><button onClick={()=>sampleFile("source")}><FolderOpen size={18}/> Usar audio de prueba</button><a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={18}/> Convertir a MP3</a></div>{sourceReady && <div className="segment-box"><div><strong>Selecciona el fragmento vocal</strong><InfoTip title="¿Qué fragmento elegir?">La línea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.</InfoTip></div><div className="timeline-summary"><span>Inicio <strong>{formatTime(profile.start)}</strong></span><span>Fragmento seleccionado: <strong>{formatTime(profile.end-profile.start)}</strong></span><span>Final <strong>{formatTime(profile.end)}</strong></span></div><div className="dual-timeline" style={{"--timeline-start":`${(profile.start/profile.audioDuration)*100}%`,"--timeline-end":`${(profile.end/profile.audioDuration)*100}%`}}><div className="timeline-track"/><input aria-label="Inicio del fragmento" type="range" min="0" max={Math.max(0,profile.audioDuration-1)} value={profile.start} onInput={(e)=>setProfile({...profile,start:Math.min(Number(e.currentTarget.value),profile.end-1)})}/><input aria-label="Final del fragmento" type="range" min="1" max={profile.audioDuration} value={profile.end} onInput={(e)=>setProfile({...profile,end:Math.max(Number(e.currentTarget.value),profile.start+1)})}/></div><div className="timeline-scale"><span>0:00</span><span>Audio completo</span><Waveform size={20}/><span>{formatTime(profile.audioDuration)}</span></div></div>}</div>}
-          {wizardStep === 2 && <div className="wizard-section phrase-section"><h3>Frase de verificación</h3><p>Suno genera esta frase después de analizar el audio original. El cliente debe cantarla exactamente como aparece.</p><div className="phrase-card"><Microphone size={32}/><blockquote>“Las melodías llenan el aire mientras mi corazón canta con alegría esta noche.”</blockquote></div><div className="wizard-info"><Info size={19}/><span>Puedes cantar la frase las veces que necesites. Canta de forma continua y evita dejar silencios largos entre cada repetición.</span></div><VoiceMeter onFinished={()=>setWizardStep(3)}/><small className="phrase-help">La barra se moverá con tu voz. Cuando termines, pasarás a subir el audio de verificación.</small></div>}
-          {wizardStep === 3 && <div className="wizard-section"><h3>Sube la frase cantada</h3><p>Este segundo audio confirma la identidad de la voz. No es el mismo archivo utilizado para entrenarla.</p><label className="wizard-upload verify"><Microphone size={35}/><strong>{profile.verifyAudio?.name || "Subir audio de verificación"}</strong><small>La frase exacta, cantada y en formato MP3</small><input type="file" accept="audio/mpeg,.mp3" onChange={(e)=>acceptMp3(e.target.files[0],"verifyAudio")}/></label><div className="sample-actions"><button onClick={()=>sampleFile("verify")}><FolderOpen size={18}/> Usar verificación de prueba</button><a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={18}/> Convertir a MP3</a></div></div>}
-          {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon"><Check size={34} weight="bold"/></div><h3>Perfil listo para esta prueba</h3><p>Los dos audios y los datos del perfil están completos.</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Audios</span><strong>Audio original + verificación</strong></div><div className="wizard-info"><Info size={19}/><span>En la integración real, aquí esperaremos el procesamiento, guardaremos el voiceId y comprobaremos su disponibilidad.</span></div></div>}
+          {wizardStep === 1 && <div className="wizard-section"><h3>Sube el audio original de tu voz</h3><p>Este es el audio que Suno utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p><label className="wizard-upload"><UploadSimple size={35}/><strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong><small>Solo archivos MP3</small><input type="file" accept="audio/mpeg,.mp3" onChange={(e)=>acceptMp3(e.target.files[0],"sourceAudio")}/></label><div className="sample-actions"><a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={18}/> Convertir a MP3</a></div>{sourceUpload.loading ? <div className="audio-upload-status" style={{ marginTop: 10 }}><Loader2 size={18} className="animate-spin" /> Subiendo audio…</div> : sourceUpload.error ? <div className="audio-upload-status error">{sourceUpload.error}</div> : sourceUpload.url ? <div className="audio-upload-status success">Audio subido. URL lista para validar.</div> : null}{sourceReady && <div className="segment-box"><div><strong>Selecciona el fragmento vocal</strong><InfoTip title="¿Qué fragmento elegir?">La línea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.</InfoTip></div><div className="timeline-summary"><span>Inicio <strong>{formatTime(profile.start)}</strong></span><span>Fragmento seleccionado: <strong>{formatTime(profile.end-profile.start)}</strong></span><span>Final <strong>{formatTime(profile.end)}</strong></span></div><div className="dual-timeline" style={{"--timeline-start":`${(profile.start/profile.audioDuration)*100}%`,"--timeline-end":`${(profile.end/profile.audioDuration)*100}%`}}><div className="timeline-track"/><input aria-label="Inicio del fragmento" type="range" min="0" max={Math.max(0,profile.audioDuration-1)} value={profile.start} onInput={(e)=>setProfile({...profile,start:Math.min(Number(e.currentTarget.value),profile.end-1)})}/><input aria-label="Final del fragmento" type="range" min="1" max={profile.audioDuration} value={profile.end} onInput={(e)=>setProfile({...profile,end:Math.max(Number(e.currentTarget.value),profile.start+1)})}/></div><div className="timeline-scale"><span>0:00</span><span>Audio completo</span><Waveform size={20}/><span>{formatTime(profile.audioDuration)}</span></div></div>}</div>}
+          {wizardStep === 2 && <div className="wizard-section phrase-section"><h3>Frase de verificación</h3><p>Suno genera esta frase después de analizar el audio original. El cliente debe cantarla exactamente como aparece.</p>{validation.loading ? <div className="wizard-info"><Loader2 size={18} className="animate-spin" /><span>Generando frase…</span></div> : validation.error ? <div className="wizard-info"><Info size={19}/><span>{validation.error}</span></div> : null}{validation.phrase ? <div className="phrase-card"><Microphone size={32}/><blockquote>“{validation.phrase}”</blockquote></div> : null}<div className="sample-actions"><button disabled={!validation.taskId || validation.loading} onClick={regeneratePhrase}><ArrowRight size={18}/> Regenerar frase</button></div><div className="wizard-info"><Info size={19}/><span>Puedes cantar la frase las veces que necesites. Canta de forma continua y evita dejar silencios largos entre cada repetición.</span></div>{validation.phrase ? <><VoiceMeter onFinished={()=>setWizardStep(3)}/><small className="phrase-help">La barra se moverá con tu voz. Cuando termines, pasarás a subir el audio de verificación.</small></> : null}</div>}
+          {wizardStep === 3 && <div className="wizard-section"><h3>Sube la frase cantada</h3><p>Este segundo audio confirma la identidad de la voz. No es el mismo archivo utilizado para entrenarla.</p><label className="wizard-upload verify"><Microphone size={35}/><strong>{profile.verifyAudio?.name || "Subir audio de verificación"}</strong><small>La frase exacta, cantada y en formato MP3</small><input type="file" accept="audio/mpeg,.mp3" onChange={(e)=>acceptMp3(e.target.files[0],"verifyAudio")}/></label><div className="sample-actions"><a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={18}/> Convertir a MP3</a></div>{verifyUpload.loading ? <div className="audio-upload-status" style={{ marginTop: 10 }}><Loader2 size={18} className="animate-spin" /> Subiendo audio…</div> : verifyUpload.error ? <div className="audio-upload-status error">{verifyUpload.error}</div> : verifyUpload.url ? <div className="audio-upload-status success">Audio subido. Listo para crear la voz.</div> : null}{voiceGen.error ? <div className="audio-upload-status error">{voiceGen.error}</div> : null}</div>}
+          {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo para crear"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final de Suno." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Al continuar, crearemos tu personaje con Suno Voice."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false ? <div className="wizard-info"><Info size={19}/><span>La voz aún no aparece como disponible. Puedes guardarla y estará lista en unos minutos.</span></div> : null}</div>}
         </div>
-        <div className="wizard-footer"><button className="wizard-back" disabled={wizardStep === 0} onClick={()=>setWizardStep(Math.max(0,wizardStep-1))}><ArrowLeft size={18}/> Atrás</button>{wizardStep < 4 ? <button className="wizard-next" disabled={(wizardStep===0&&!profile.name.trim())||(wizardStep===1&&(!sourceReady||profile.end<=profile.start))||(wizardStep===3&&!verificationReady)} onClick={()=>setWizardStep(wizardStep+1)}>Continuar <ArrowRight size={18}/></button> : <button className="wizard-next" onClick={()=>onComplete({name:profile.name,style:profile.style,level:profile.level,voiceId:"voice_preview_001"})}><Check size={18} weight="bold"/> Usar este perfil</button>}</div>
+        <div className="wizard-footer"><button className="wizard-back" disabled={wizardStep === 0 || validation.loading || voiceGen.loading || saving} onClick={()=>setWizardStep(Math.max(0,wizardStep-1))}><ArrowLeft size={18}/> Atrás</button>{wizardStep < 4 ? <button className="wizard-next" disabled={(wizardStep===0&&!profile.name.trim())||(wizardStep===1&&(!sourceReady||profile.end<=profile.start||sourceUpload.loading||!sourceUpload.url))||(wizardStep===2&&(validation.loading||!validation.phrase))||(wizardStep===3&&(!verificationReady||verifyUpload.loading||!verifyUpload.url))} onClick={async ()=>{if(wizardStep===1){const ok=await startValidate();if(ok){setWizardStep(2);}return;}if(wizardStep===3){setWizardStep(4);await startGenerateVoice();return;}setWizardStep(wizardStep+1);}}>Continuar <ArrowRight size={18}/></button> : <button className="wizard-next" disabled={!voiceGen.voiceId||saving||voiceGen.loading} onClick={async ()=>{const ok=await saveToSunoVoices();if(!ok)return;onComplete({name:profile.name,style:profile.style,level:profile.level,voiceId:voiceGen.voiceId});}}><Check size={18} weight="bold"/> Guardar y usar</button>}</div>
       </div>
     </div>
   );
 }
 
 function StartStep({ data, setData, setToast, handlers }) {
-  const [cloneWizardOpen, setCloneWizardOpen] = useState(false);
+  const [clonePickerOpen, setClonePickerOpen] = useState(false);
+  const [personasLoading, setPersonasLoading] = useState(false);
+  const [personasError, setPersonasError] = useState('');
+  const [personas, setPersonas] = useState([]);
+  const previousVoiceRef = useRef(null);
   const fileName = data.file?.name;
   const uploading = Boolean(handlers?.isUploadingAudio);
   const uploadedAudioUrl = (handlers?.audioUploadUrl || '').toString().trim();
   const uploadError = (handlers?.audioUploadError || '').toString().trim();
   const hasSelectedAudio = Boolean(data.file || uploadedAudioUrl || uploading || uploadError);
+
+  const normalizePersona = (raw) => {
+    const meta = raw?.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta : null;
+    const voiceId = String(raw?.suno_voice_id || raw?.voiceId || raw?.voice_id || '').trim();
+    if (!voiceId) return null;
+    return {
+      voiceId,
+      name: String(raw?.name || raw?.voice_name || 'Voz').trim(),
+      createdAt: String(raw?.created_at || raw?.createdAt || new Date().toISOString()).trim() || new Date().toISOString(),
+      status: String(raw?.status || '').trim() || undefined,
+      taskId: String(raw?.last_task_id || raw?.task_id || raw?.taskId || '').trim() || undefined,
+      profileImageUrl: meta && typeof meta?.profileImageUrl === 'string' ? String(meta.profileImageUrl).trim() : typeof raw?.profileImageUrl === 'string' ? String(raw.profileImageUrl).trim() : undefined,
+      description: meta && typeof meta?.description === 'string' ? String(meta.description) : typeof raw?.description === 'string' ? String(raw.description) : undefined,
+      singerSkillLevel: meta && typeof meta?.singerSkillLevel === 'string' ? String(meta.singerSkillLevel) : typeof raw?.singerSkillLevel === 'string' ? String(raw.singerSkillLevel) : undefined,
+      tags: meta && Array.isArray(meta?.tags) ? meta.tags.filter((x) => typeof x === 'string' && x.trim()).map((x) => String(x).trim()) : Array.isArray(raw?.tags) ? raw.tags.filter((x) => typeof x === 'string' && x.trim()).map((x) => String(x).trim()) : undefined,
+      isPublic: meta && typeof meta?.isPublic === 'boolean' ? Boolean(meta.isPublic) : typeof raw?.isPublic === 'boolean' ? Boolean(raw.isPublic) : undefined,
+    };
+  };
+
+  const loadPersonasFromLocalCache = () => {
+    try {
+      const raw = window.localStorage.getItem(sunoVoicesCacheKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const list = Array.isArray(parsed) ? parsed : [];
+      const clean = list
+        .map((v) => normalizePersona(v))
+        .filter(Boolean)
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      setPersonas(clean);
+      return clean;
+    } catch {
+      setPersonas([]);
+      return [];
+    }
+  };
+
+  const loadPersonasFromDb = async () => {
+    const t = await getAccessToken();
+    if (!t.ok) return loadPersonasFromLocalCache();
+    const r = await fetch('/api/suno/voices', { headers: { authorization: `Bearer ${t.token}` } });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return loadPersonasFromLocalCache();
+    const rows = Array.isArray(out?.voices) ? out.voices : [];
+    const clean = rows
+      .map((v) => normalizePersona(v))
+      .filter(Boolean)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    setPersonas(clean);
+    try {
+      window.localStorage.setItem(sunoVoicesCacheKey, JSON.stringify(clean.slice(0, 50)));
+    } catch {}
+    return clean;
+  };
+
+  const closeClonePicker = ({ keepSelection } = {}) => {
+    setClonePickerOpen(false);
+    if (keepSelection) return;
+    const prev = previousVoiceRef.current;
+    if (!prev) return;
+    setData((current) => ({
+      ...current,
+      voice: prev.voice,
+      model: prev.model,
+      voiceProfile: prev.voiceProfile,
+    }));
+  };
+
+  const openClonePicker = () => {
+    previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
+    setData((current) => ({ ...current, voice: 'clone', model: 'SUNO V5.5', voiceProfile: null }));
+    setClonePickerOpen(true);
+  };
+
+  const goCreatePersona = () => {
+    try {
+      window.localStorage.setItem(returnToCreateVoicePickerKey, '1');
+    } catch {}
+    closeClonePicker({ keepSelection: true });
+    handlers?.onGoCloneVoice?.();
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const shouldOpen = window.localStorage.getItem(returnToCreateVoicePickerKey);
+      if (!shouldOpen) return;
+      window.localStorage.removeItem(returnToCreateVoicePickerKey);
+      openClonePicker();
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!clonePickerOpen) return;
+    let cancelled = false;
+    setPersonasLoading(true);
+    setPersonasError('');
+    loadPersonasFromDb()
+      .catch(() => loadPersonasFromLocalCache())
+      .catch(() => [])
+      .then((list) => {
+        if (cancelled) return;
+        if (Array.isArray(list)) return;
+        setPersonas([]);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPersonasLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clonePickerOpen]);
+
   const chooseFile = async (file) => {
     if (!file) return;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
@@ -473,10 +932,34 @@ function StartStep({ data, setData, setToast, handlers }) {
   return (
     <section className="start-step">
       <div className="project-cover"><img src="/assets/cover-luz-madrugada.png" alt="Portada violeta con luna dorada"/><div><span>PROYECTO ACTUAL</span><strong>Mi nueva canción</strong><small>Guardado hace 2 minutos</small></div></div>
-      <div className="section-title"><span className="eyebrow">PASO 1 DE 4</span><h1>¿Cómo quieres comenzar?</h1><p>Primero dinos si tienes un audio y qué tipo de voz quieres usar.</p></div>
+      <div className="section-title"><span className="eyebrow">PASO 1 DE 4</span><h1>¿Cómo quieres comenzar?</h1><p>Primero elige la voz/personaje y después decide si tienes un audio.</p></div>
       <div className="start-grid">
         <div className="decision-group">
-          <div className="decision-heading"><span>1</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
+          <div className="decision-heading"><span>1</span><div><h2>¿Qué voz quieres usar?</h2><p>Podrás cambiar esta elección antes de generar.</p></div></div>
+          <button className={data.voice === "standard" ? "decision-card selected" : "decision-card"} onClick={() => setData({ ...data, voice: "standard", model: data.model === "SUNO V5.5" ? "SUNO V5" : data.model })}>
+            <span className="choice-icon"><Microphone size={28} /></span>
+            <span><strong>Voz estándar</strong><small>Una voz de alta calidad generada por IA</small></span>
+            <InfoTip title="Voz estándar">Elige esta opción si no necesitas usar una voz clonada.</InfoTip>
+            <span className="radio" />
+          </button>
+          <button className={data.voice === "clone" ? "decision-card selected" : "decision-card"} onClick={openClonePicker}>
+            <span className="choice-icon"><Users size={28} /></span>
+            <span><strong>Clonar voz <em>SUNO V5.5</em></strong><small>Usa una voz clonada para tu canción</small></span>
+            <InfoTip title="Clonación de Voz">Disponible con SUNO V5.5 para usar una voz previamente clonada.</InfoTip>
+            <span className="radio" />
+          </button>
+          <div className="selection-summary"><Check size={18} weight="bold" /><span>{data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
+          {data.voiceProfile && <div className="voice-profile-chip"><Users size={19}/><span><small>Personaje seleccionado</small><strong>{data.voiceProfile.name}</strong></span><button onClick={openClonePicker}>Cambiar</button></div>}
+          {typeof handlers?.credits === 'number' && (
+            <div className="selection-summary" style={{ marginTop: 12, padding: '10px 14px', borderRadius: 16, background: 'rgba(138,69,217,0.1)', border: '1px solid rgba(184,100,240,0.25)' }}>
+              <Coins size={18} style={{ color: '#b864f0' }}/>
+              <span style={{ fontSize: 13 }}><strong style={{ color: '#fff' }}>{handlers.credits.toFixed ? handlers.credits.toFixed(1) : handlers.credits}</strong> créditos disponibles</span>
+            </div>
+          )}
+        </div>
+
+        <div className="decision-group">
+          <div className="decision-heading"><span>2</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
           <label className={data.audioSource === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
             <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
             <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
@@ -514,32 +997,91 @@ function StartStep({ data, setData, setToast, handlers }) {
           <a className="converter-button" href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={20} /> Convertir mi archivo a MP3 <ArrowRight size={18} /></a>
           <p className="external-note">Ayuda opcional: abre un convertidor gratuito externo</p>
         </div>
-
-        <div className="decision-group">
-          <div className="decision-heading"><span>2</span><div><h2>¿Qué voz quieres usar?</h2><p>Podrás cambiar esta elección antes de generar.</p></div></div>
-          <button className={data.voice === "standard" ? "decision-card selected" : "decision-card"} onClick={() => setData({ ...data, voice: "standard", model: data.model === "SUNO V5.5" ? "SUNO V5" : data.model })}>
-            <span className="choice-icon"><Microphone size={28} /></span>
-            <span><strong>Voz estándar</strong><small>Una voz de alta calidad generada por IA</small></span>
-            <InfoTip title="Voz estándar">Elige esta opción si no necesitas usar una voz clonada.</InfoTip>
-            <span className="radio" />
-          </button>
-          <button className={data.voice === "clone" ? "decision-card selected" : "decision-card"} onClick={() => { setData({ ...data, voice: "clone", model: "SUNO V5.5" }); setCloneWizardOpen(true); }}>
-            <span className="choice-icon"><Users size={28} /></span>
-            <span><strong>Clonar voz <em>SUNO V5.5</em></strong><small>Usa una voz clonada para tu canción</small></span>
-            <InfoTip title="Clonación de Voz">Disponible con SUNO V5.5 para usar una voz previamente clonada.</InfoTip>
-            <span className="radio" />
-          </button>
-          <div className="selection-summary"><Check size={18} weight="bold" /><span>{data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
-          {data.voiceProfile && <div className="voice-profile-chip"><Users size={19}/><span><small>Perfil seleccionado</small><strong>{data.voiceProfile.name}</strong></span><button onClick={()=>setCloneWizardOpen(true)}>Cambiar</button></div>}
-          {typeof handlers?.credits === 'number' && (
-            <div className="selection-summary" style={{ marginTop: 12, padding: '10px 14px', borderRadius: 16, background: 'rgba(138,69,217,0.1)', border: '1px solid rgba(184,100,240,0.25)' }}>
-              <Coins size={18} style={{ color: '#b864f0' }}/>
-              <span style={{ fontSize: 13 }}><strong style={{ color: '#fff' }}>{handlers.credits.toFixed ? handlers.credits.toFixed(1) : handlers.credits}</strong> créditos disponibles</span>
-            </div>
-          )}
-        </div>
       </div>
-      {cloneWizardOpen && <CloneVoiceWizard setToast={setToast} onClose={()=>setCloneWizardOpen(false)} onComplete={(voiceProfile)=>{setData({...data,voice:"clone",model:"SUNO V5.5",voiceProfile});setCloneWizardOpen(false);setToast("Perfil de voz seleccionado para la canción.");}}/>}
+      {clonePickerOpen ? (
+        <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Elegir personaje de voz">
+          <div className="persona-modal">
+            <div className="persona-modal-header">
+              <div>
+                <small>CLONAR VOZ</small>
+                <h2>Elige tu personaje</h2>
+              </div>
+              <button type="button" className="wizard-close" aria-label="Cerrar" onClick={() => closeClonePicker({ keepSelection: false })}>
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="persona-modal-options">
+              <div className="persona-option is-active">
+                <strong>Opción A</strong>
+                <span>Usar un personaje de voz guardado</span>
+                <small>Selecciona uno de tus personajes existentes.</small>
+              </div>
+              <button type="button" className="persona-option action" onClick={goCreatePersona}>
+                <strong>Opción B</strong>
+                <span>Crear personaje de voz nuevo</span>
+                <small>Te llevaremos al Clonador de voz.</small>
+              </button>
+            </div>
+
+            <div className="persona-modal-body">
+              {personasLoading ? (
+                <div className="persona-state">
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Cargando tus personajes…</span>
+                </div>
+              ) : personasError ? (
+                <div className="persona-state error">
+                  <Info size={18} />
+                  <span>{personasError}</span>
+                </div>
+              ) : personas.length === 0 ? (
+                <div className="persona-empty">
+                  <div className="persona-empty-title">Aún no tienes personajes de voz creados.</div>
+                  <button type="button" className="wizard-next" onClick={goCreatePersona}>
+                    <Users size={18} />
+                    Crear mi primer personaje
+                  </button>
+                </div>
+              ) : (
+                <div className="persona-grid">
+                  {personas.map((p) => (
+                    <button
+                      key={p.voiceId}
+                      type="button"
+                      className={data.voiceProfile?.voiceId === p.voiceId ? "persona-card is-selected" : "persona-card"}
+                      onClick={() => {
+                        setData((current) => ({
+                          ...current,
+                          voice: 'clone',
+                          model: 'SUNO V5.5',
+                          voiceProfile: {
+                            voiceId: p.voiceId,
+                            name: p.name,
+                            profileImageUrl: p.profileImageUrl,
+                            description: p.description,
+                            singerSkillLevel: p.singerSkillLevel,
+                          },
+                        }));
+                        closeClonePicker({ keepSelection: true });
+                        setToast("Personaje seleccionado para la canción.");
+                      }}
+                    >
+                      <span className="persona-avatar">
+                        {p.profileImageUrl ? <img src={p.profileImageUrl} alt="" /> : <Users size={18} />}
+                      </span>
+                      <span className="persona-card-text">
+                        <strong>{p.name}</strong>
+                        <small>{p.singerSkillLevel || p.description || `ID: ${p.voiceId.slice(0, 8)}`}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1398,6 +1940,7 @@ function ApprovedCreateContent(props) {
     credits = 0,
     onSongCreated,
     onGoLibrary,
+    onGoCloneVoice,
     onOpenBalance,
     prefill,
     prefillNonce,
@@ -2124,6 +2667,7 @@ function ApprovedCreateContent(props) {
     creditsGate,
     setCreditsGate,
     onOpenBalance,
+    onGoCloneVoice,
     credits,
     hasPendingTask,
     audioUploadUrl,

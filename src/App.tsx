@@ -3045,6 +3045,7 @@ export default function App() {
                  credits={displayCredits}
                  onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
+                 onGoCloneVoice={() => setCurrentTab('voces')}
                  onOpenBalance={() => handleTabChange('planes')}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
@@ -3127,6 +3128,7 @@ export default function App() {
                  credits={displayCredits}
                  onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
+                 onGoCloneVoice={() => setCurrentTab('voces')}
                  onOpenBalance={() => handleTabChange('planes')}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
