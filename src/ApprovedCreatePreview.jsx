@@ -430,7 +430,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   };
 
   return (
-    <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Crear perfil de voz">
+    <div className="wizard-overlay" data-step={wizardStep} role="dialog" aria-modal="true" aria-label="Crear perfil de voz">
       <div className="voice-wizard">
         <div className="wizard-header"><div><span className="eyebrow">SUNO V5.5 · CLONACIÓN DE VOZ</span><h2>Crear perfil de voz</h2></div><button className="wizard-close" aria-label="Cerrar creación de perfil" onClick={onClose}><X size={23} /></button></div>
         <div className="wizard-progress">{wizardSteps.map((label,index)=><div key={label} className={index === wizardStep ? "active" : index < wizardStep ? "done" : ""}><span>{index < wizardStep ? <Check size={14} weight="bold" /> : index + 1}</span><small>{label}</small></div>)}</div>
@@ -2224,6 +2224,7 @@ function ApprovedCloneVoiceContent({ onClose }) {
 const approvedCloneCss = approvedCss + `
 .approved-clone-shell{position:relative;height:100%;min-height:0;overflow:hidden;background:radial-gradient(circle at 70% 25%,rgba(66,38,105,.13),transparent 28%),var(--bg)}
 .approved-clone-shell .wizard-overlay{position:absolute}
+@media(max-width:1023px){.approved-clone-shell .wizard-overlay[data-step="0"]{padding-bottom:calc(18px + 68px + env(safe-area-inset-bottom))}}
 `;
 
 export function ApprovedCloneVoicePreview({ onClose }) {
