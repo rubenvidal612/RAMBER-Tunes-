@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
 
 const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const DOWNLOAD_SOON_TOAST = 'Tu archivo se descargará en un momento.';
 
 interface LibraryViewProps {
   canciones: SongItem[];
@@ -15,6 +16,7 @@ interface LibraryViewProps {
   vibes: VibeItem[];
   onAddVibe: (v: VibeItem) => void;
   onPlaySong: (s: SongItem) => void;
+  onToast?: (message: string) => void;
   onOpenElenco?: (s: SongItem) => void;
   onDeleteSong?: (id: string) => void;
   onRestoreSong?: (id: string) => void;
@@ -25,7 +27,7 @@ interface LibraryViewProps {
   onStartCover?: (song: SongItem) => void;
 }
 
-export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onOpenElenco, onDeleteSong, onRestoreSong, onPurgeSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
+export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, onPlaySong, onToast, onOpenElenco, onDeleteSong, onRestoreSong, onPurgeSong, onRefreshSongs, activeSongId, isPlaying, onStartCover }: LibraryViewProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('canciones');
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -572,6 +574,20 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     return u;
   };
 
+  const formatGenderPresentation = (raw: string) => {
+    const s = (raw || '').toString().trim();
+    const lower = s.toLowerCase();
+    if (lower === 'm') return 'Masculino';
+    if (lower === 'f') return 'Femenino';
+    return s;
+  };
+
+  const toastDownloadSoon = () => {
+    try {
+      onToast?.(DOWNLOAD_SOON_TOAST);
+    } catch {}
+  };
+
   const sanitizeFileName = (s: string) =>
     (s || '')
       .toString()
@@ -603,6 +619,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
   const downloadToDevice = async (url: string, filename: string) => {
     try {
+      toastDownloadSoon();
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = await res.arrayBuffer();
@@ -1560,7 +1577,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     return [
       String((song as any)?.description || '').trim(),
       style ? `Style: ${style}` : '',
-      song.genre ? `Género: ${song.genre}` : '',
+      song.genre ? `Género: ${formatGenderPresentation(song.genre)}` : '',
     ].filter(Boolean).join('\n');
   };
 
@@ -1580,7 +1597,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const style = Array.isArray((song as any)?.style)
       ? ((song as any)?.style as string[]).filter(Boolean).slice(0, 3).join(', ')
       : String((song as any)?.style || '').trim();
-    return [song.genre, style, (song as any)?.publicGenre].filter(Boolean).join(' · ');
+    const gender = song.genre ? formatGenderPresentation(song.genre) : '';
+    return [gender, style, (song as any)?.publicGenre].filter(Boolean).join(' · ');
   };
 
   const renderSongDetailPanel = (song: SongItem, mode: 'desktop' | 'mobile' = 'desktop') => {
@@ -1601,7 +1619,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const detailRows = [
       { label: 'Estado', value: formatSongStatus(song) },
       { label: 'Carpeta', value: folderName || 'Sin carpeta' },
-      { label: 'Género', value: song.genre || 'Sin género' },
+      { label: 'Género', value: song.genre ? formatGenderPresentation(song.genre) : 'Sin género' },
       { label: 'ID', value: song.id || 'Sin ID' },
     ];
     const lyricLines = lyrics ? lyrics.split(/\r?\n/).filter(Boolean).length : 0;
@@ -1683,7 +1701,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         <div className="flex min-h-0 flex-col">
           <div className="shrink-0 border-b border-white/10 p-4">
             <div className="flex items-start gap-4">
-              <div className="h-24 w-24 shrink-0 overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.04]">
+              <div
+                className="h-24 w-24 shrink-0 overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.04]"
+                onClick={() => {
+                  if (song.audioUrl) onPlaySong(song);
+                }}
+              >
                 <img
                   src={getSongCoverSrc(song)}
                   onError={() => {
@@ -2592,7 +2615,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             )}
                           >
                             <div className="flex items-center gap-4">
-                              <div className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[18px] border border-white/10 bg-slate-900">
+                              <div
+                                className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[18px] border border-white/10 bg-slate-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openSongDetails(song);
+                                  if (!showTrash && song.audioUrl) onPlaySong(song);
+                                }}
+                              >
                                 <img
                                   src={getSongCoverSrc(song)}
                                   onError={() => {
@@ -2850,7 +2880,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-white font-bold truncate">{song.title || 'Pista sin título'}</div>
-                            <div className="text-slate-400 text-xs truncate">{song.genre || ' '}</div>
+                            <div className="text-slate-400 text-xs truncate">{formatGenderPresentation(song.genre || '') || ' '}</div>
                           </div>
                           <button
                             onClick={(e) => {
@@ -3194,6 +3224,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onPlay={() => onPlaySong(menuSong)}
           onElenco={() => onOpenElenco?.(menuSong)}
           onStartCover={() => onStartCover?.(menuSong)}
+          onToast={onToast}
           onOpenLists={() => setActiveTab('listas')}
           onMoveToFolder={() => {
             setMoveFolderSong(menuSong);
@@ -3648,6 +3679,7 @@ function SongOptionsSheet({
   onPlay,
   onElenco,
   onStartCover,
+  onToast,
   onOpenLists,
   onMoveToFolder,
   onShare,
@@ -3664,6 +3696,7 @@ function SongOptionsSheet({
   onPlay: () => void;
   onElenco?: () => void;
   onStartCover?: () => void;
+  onToast?: (message: string) => void;
   onOpenLists?: () => void;
   onMoveToFolder?: () => void;
   onShare?: () => void;
@@ -3676,7 +3709,6 @@ function SongOptionsSheet({
   const [published, setPublished] = useState(Boolean((song as any)?.isPublic));
   const [showPublish, setShowPublish] = useState(false);
   const [publishGenre, setPublishGenre] = useState<string>(((song as any)?.publicGenre || '').toString());
-  const [isPinnedToProfile, setIsPinnedToProfile] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [showPersonaSave, setShowPersonaSave] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
@@ -3736,6 +3768,12 @@ function SongOptionsSheet({
   const [voiceCloneProgress, setVoiceCloneProgress] = useState<string>('');
   const [downloadsAllowed, setDownloadsAllowed] = useState<boolean | null>(null);
 
+  const toastDownloadSoon = () => {
+    try {
+      onToast?.(DOWNLOAD_SOON_TOAST);
+    } catch {}
+  };
+
   useEffect(() => {
     if (!showVoiceClone) setVoiceCloneProgress('');
   }, [showVoiceClone]);
@@ -3746,26 +3784,7 @@ function SongOptionsSheet({
     setShowPublish(false);
     setShowEditTitle(false);
     setTitleText(((song as any)?.title || '').toString());
-    setIsPinnedToProfile(false);
-    let alive = true;
-    (async () => {
-      if (isDeleted) return;
-      const sid = (song?.id || '').toString().trim();
-      if (!sid) return;
-      const t = await getAccessToken();
-      if (!t.ok) return;
-      const r = await fetch('/api/profile/pins', { headers: { authorization: `Bearer ${t.token}` } });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok || out?.ok === false) return;
-      const items = Array.isArray(out?.items) ? out.items : [];
-      const pinned = items.some((x: any) => String(x?.songId || x?.song_id || '').trim() === sid);
-      if (!alive) return;
-      setIsPinnedToProfile(pinned);
-    })().catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [song?.id, isDeleted]);
+  }, [song?.id]);
 
   useEffect(() => {
     setIsLiked(false);
@@ -4382,37 +4401,6 @@ function SongOptionsSheet({
     }
   };
 
-  const togglePinToProfile = async () => {
-    if (isDeleted) return;
-    const sid = (song?.id || '').toString().trim();
-    if (!sid) return;
-    setIsBusy(true);
-    try {
-      const t = await getAccessToken();
-      if (!t.ok) {
-        alert(t.error || 'No se pudo iniciar sesión.');
-        return;
-      }
-      const next = !isPinnedToProfile;
-      const r = await fetch('/api/profile/pin', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ songId: sid, pin: next }),
-      });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok || out?.ok === false) {
-        const msg = (out?.error || out?.detail || 'No pude actualizar tu perfil.').toString();
-        const hint = (out?.hint || '').toString();
-        alert([msg, hint].filter(Boolean).join('\n\n'));
-        return;
-      }
-      setIsPinnedToProfile(next);
-      alert(next ? 'Listo. Se agregó a tu perfil.' : 'Listo. Se quitó de tu perfil.');
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
   const setSongPublic = async (makePublic: boolean, genre: string) => {
     if (isDeleted) return;
     setIsBusy(true);
@@ -4475,6 +4463,7 @@ function SongOptionsSheet({
 
   const downloadBlobToDevice = async (blob: Blob, filename: string) => {
     try {
+      toastDownloadSoon();
       const obj = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = obj;
@@ -4530,6 +4519,7 @@ function SongOptionsSheet({
 
   const downloadToDevice = async (url: string, filename: string) => {
     try {
+      toastDownloadSoon();
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = await res.arrayBuffer();
@@ -4964,6 +4954,7 @@ function SongOptionsSheet({
         alert('No recibí taskId del video.');
         return;
       }
+      toastDownloadSoon();
       try {
         await navigator.clipboard.writeText(mp4TaskId);
         alert(`Listo. El video se está generando en la pestaña "Video".\n\nTaskId (copiado):\n${mp4TaskId}`);
@@ -5063,6 +5054,7 @@ function SongOptionsSheet({
         alert('No recibí taskId de separación.');
         return;
       }
+      toastDownloadSoon();
       const pendingListKey = 'ramber.pendingSunoTasks_v1';
       const pendingLegacyKey = 'ramber.pendingSunoTask';
       try {
@@ -5644,16 +5636,6 @@ function SongOptionsSheet({
             <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all" onClick={share} disabled={isBusy}>
               <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
             </button>
-            {!isDeleted && (
-              <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
-                onClick={() => togglePinToProfile().catch(() => {})}
-                disabled={isBusy}
-              >
-                <BadgeCheck className="w-5 h-5 text-slate-300" />{' '}
-                <span className="text-slate-200 font-semibold">{isPinnedToProfile ? 'Quitar de mi perfil' : 'Añadir a mi perfil'}</span>
-              </button>
-            )}
             {!isDeleted && (
               <button
                 className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"

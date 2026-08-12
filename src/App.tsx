@@ -3072,7 +3072,7 @@ export default function App() {
           ))}
           {currentTab === 'biblioteca' && (
             <ViewErrorBoundary title="Biblioteca">
-              <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />
+              <LibraryView canciones={canciones} cancionesEliminadas={cancionesEliminadas} vibes={vibes} onAddVibe={addVibe} onPlaySong={playSong} onToast={showToast} onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })} onDeleteSong={deleteCancion} onRestoreSong={restoreCancion} onPurgeSong={purgeCancion} onRefreshSongs={refreshLibrary} activeSongId={activeSong?.id} isPlaying={isPlaying} onStartCover={startCoverFromSong} />
             </ViewErrorBoundary>
           )}
           {currentTab === 'perfil' && <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />}
@@ -3184,6 +3184,7 @@ export default function App() {
                       vibes={vibes}
                       onAddVibe={addVibe}
                       onPlaySong={playSong}
+                      onToast={showToast}
                       onOpenElenco={(s) => playSong(s, { openMode: 'elenco' })}
                       onDeleteSong={deleteCancion}
                       onRestoreSong={restoreCancion}

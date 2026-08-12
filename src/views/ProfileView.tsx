@@ -642,9 +642,6 @@ export function ProfileView({
                 </div>
               ))}
             </div>
-            <div className="mt-4 text-[11px] text-slate-400">
-              Para agregar más, ve a Biblioteca → 3 puntitos → “Añadir a mi perfil”.
-            </div>
           </div>
         ) : (
           <div className="flex-1 px-6 flex flex-col items-center justify-center text-center pb-8 mt-[-30px]">
