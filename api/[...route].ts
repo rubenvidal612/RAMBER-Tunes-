@@ -4580,6 +4580,38 @@ notify pgrst, 'reload schema';`;
       }
     }
 
+    if (method === "PATCH" || method === "PUT") {
+      const auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      if (!payload) return send(res, 400, { error: "Body inválido" });
+
+      const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]) || "";
+      const name = firstString(payload, ["name", "voiceName", "voice_name"]) || "";
+
+      if (!sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId" });
+      if (!name.trim()) return send(res, 400, { error: "Falta name" });
+
+      try {
+        const { data: saved, error } = await auth.admin
+          .from("suno_voices")
+          .update({
+            name: name.trim().slice(0, 160),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", auth.user.id)
+          .eq("suno_voice_id", sunoVoiceId.slice(0, 200))
+          .select("*")
+          .single();
+
+        if (error) throw error;
+        return send(res, 200, { ok: true, voice: saved });
+      } catch (e) {
+        return send(res, 500, { error: "Error actualizando voz de Suno", detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
     if (method === "DELETE") {
       const auth = await requireUser(req);
       if (!auth.ok) return send(res, auth.status, { error: auth.error });

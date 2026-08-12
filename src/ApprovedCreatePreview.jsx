@@ -3,6 +3,7 @@ import {
   ArrowLeft, ArrowRight, Library as Books, BadgeCheck as Certificate,
   MessageCircle as ChatCircle, Check, Coins, Download as DownloadSimple,
   FileText, Film as FilmStrip, Folder, FolderOpen, Home as House, Info, List,
+  MoreHorizontal,
   WandSparkles as MagicWand, Mic as Microphone, Music2 as MusicNote, Pause,
   Pencil as PencilSimple, Play, ListMusic as Playlist, CircleHelp as Question,
   Scissors, Share2 as ShareNetwork, SlidersHorizontal, Sparkles as Sparkle,
@@ -794,6 +795,11 @@ function StartStep({ data, setData, setToast, handlers }) {
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personasError, setPersonasError] = useState('');
   const [personas, setPersonas] = useState([]);
+  const [personaMenuOpen, setPersonaMenuOpen] = useState('');
+  const [editingPersona, setEditingPersona] = useState(null);
+  const [editingName, setEditingName] = useState('');
+  const [deletingPersona, setDeletingPersona] = useState(null);
+  const [personaActionLoading, setPersonaActionLoading] = useState(false);
   const previousVoiceRef = useRef(null);
   const fileName = data.file?.name;
   const uploading = Boolean(handlers?.isUploadingAudio);
@@ -819,17 +825,31 @@ function StartStep({ data, setData, setToast, handlers }) {
     };
   };
 
+  const sortPersonas = (list) =>
+    list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  const writePersonasCache = (list) => {
+    try {
+      window.localStorage.setItem(sunoVoicesCacheKey, JSON.stringify((Array.isArray(list) ? list : []).slice(0, 50)));
+    } catch {}
+  };
+
+  const applyPersonas = (list) => {
+    const clean = sortPersonas(
+      (Array.isArray(list) ? list : [])
+        .map((v) => normalizePersona(v))
+        .filter(Boolean),
+    );
+    setPersonas(clean);
+    writePersonasCache(clean);
+    return clean;
+  };
+
   const loadPersonasFromLocalCache = () => {
     try {
       const raw = window.localStorage.getItem(sunoVoicesCacheKey);
       const parsed = raw ? JSON.parse(raw) : null;
-      const list = Array.isArray(parsed) ? parsed : [];
-      const clean = list
-        .map((v) => normalizePersona(v))
-        .filter(Boolean)
-        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-      setPersonas(clean);
-      return clean;
+      return applyPersonas(Array.isArray(parsed) ? parsed : []);
     } catch {
       setPersonas([]);
       return [];
@@ -842,20 +862,48 @@ function StartStep({ data, setData, setToast, handlers }) {
     const r = await fetch('/api/suno/voices', { headers: { authorization: `Bearer ${t.token}` } });
     const out = await r.json().catch(() => ({}));
     if (!r.ok) return loadPersonasFromLocalCache();
-    const rows = Array.isArray(out?.voices) ? out.voices : [];
-    const clean = rows
-      .map((v) => normalizePersona(v))
-      .filter(Boolean)
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    setPersonas(clean);
-    try {
-      window.localStorage.setItem(sunoVoicesCacheKey, JSON.stringify(clean.slice(0, 50)));
-    } catch {}
-    return clean;
+    return applyPersonas(Array.isArray(out?.voices) ? out.voices : []);
+  };
+
+  const updateSelectedPersona = (persona) => {
+    setData((current) => ({
+      ...current,
+      voice: 'clone',
+      model: 'SUNO V5.5',
+      voiceProfile: persona,
+    }));
+  };
+
+  const clearSelectedPersonaByVoiceId = (voiceId) => {
+    setData((current) =>
+      String(current?.voiceProfile?.voiceId || '').trim() === String(voiceId || '').trim()
+        ? { ...current, voiceProfile: null }
+        : current,
+    );
+    if (previousVoiceRef.current && String(previousVoiceRef.current?.voiceProfile?.voiceId || '').trim() === String(voiceId || '').trim()) {
+      previousVoiceRef.current = {
+        ...previousVoiceRef.current,
+        voiceProfile: null,
+      };
+    }
+  };
+
+  const handleSelectStandardVoice = () => {
+    setData((current) => ({
+      ...current,
+      voice: 'standard',
+      model: current.model === 'SUNO V5.5' ? 'SUNO V5' : current.model,
+      voiceProfile: null,
+    }));
+    setClonePickerOpen(false);
+    setPersonaMenuOpen('');
   };
 
   const closeClonePicker = ({ keepSelection } = {}) => {
     setClonePickerOpen(false);
+    setPersonaMenuOpen('');
+    setEditingPersona(null);
+    setDeletingPersona(null);
     if (keepSelection) return;
     const prev = previousVoiceRef.current;
     if (!prev) return;
@@ -913,6 +961,105 @@ function StartStep({ data, setData, setToast, handlers }) {
     };
   }, [clonePickerOpen]);
 
+  const openRenamePersona = (persona) => {
+    setPersonaMenuOpen('');
+    setDeletingPersona(null);
+    setEditingPersona(persona);
+    setEditingName(String(persona?.name || ''));
+  };
+
+  const openDeletePersona = (persona) => {
+    setPersonaMenuOpen('');
+    setEditingPersona(null);
+    setDeletingPersona(persona);
+  };
+
+  const savePersonaRename = async () => {
+    const persona = editingPersona;
+    const nextName = String(editingName || '').trim();
+    if (!persona) return;
+    if (!nextName) {
+      setToast('Escribe un nombre para el personaje.');
+      return;
+    }
+    setPersonaActionLoading(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setToast(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/voices', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ sunoVoiceId: persona.voiceId, name: nextName }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setToast((out?.error || out?.detail || 'No se pudo actualizar el nombre del personaje.').toString());
+        return;
+      }
+      const saved = normalizePersona(out?.voice || { ...persona, name: nextName });
+      const nextList = sortPersonas(personas.map((item) => (item.voiceId === persona.voiceId ? saved : item)).filter(Boolean));
+      setPersonas(nextList);
+      writePersonasCache(nextList);
+      setData((current) =>
+        String(current?.voiceProfile?.voiceId || '').trim() === persona.voiceId
+          ? { ...current, voiceProfile: { ...current.voiceProfile, name: saved.name } }
+          : current,
+      );
+      if (previousVoiceRef.current && String(previousVoiceRef.current?.voiceProfile?.voiceId || '').trim() === persona.voiceId) {
+        previousVoiceRef.current = {
+          ...previousVoiceRef.current,
+          voiceProfile: {
+            ...previousVoiceRef.current.voiceProfile,
+            name: saved.name,
+          },
+        };
+      }
+      setEditingPersona(null);
+      setEditingName('');
+      setToast('Nombre del personaje actualizado.');
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo actualizar el nombre del personaje.');
+    } finally {
+      setPersonaActionLoading(false);
+    }
+  };
+
+  const deletePersona = async () => {
+    const persona = deletingPersona;
+    if (!persona) return;
+    setPersonaActionLoading(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setToast(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/voices', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ sunoVoiceId: persona.voiceId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setToast((out?.error || out?.detail || 'No se pudo eliminar el personaje.').toString());
+        return;
+      }
+      const nextList = personas.filter((item) => item.voiceId !== persona.voiceId);
+      setPersonas(nextList);
+      writePersonasCache(nextList);
+      clearSelectedPersonaByVoiceId(persona.voiceId);
+      setDeletingPersona(null);
+      setToast('Personaje eliminado.');
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo eliminar el personaje.');
+    } finally {
+      setPersonaActionLoading(false);
+    }
+  };
+
   const chooseFile = async (file) => {
     if (!file) return;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
@@ -936,7 +1083,7 @@ function StartStep({ data, setData, setToast, handlers }) {
       <div className="start-grid">
         <div className="decision-group">
           <div className="decision-heading"><span>1</span><div><h2>¿Qué voz quieres usar?</h2><p>Podrás cambiar esta elección antes de generar.</p></div></div>
-          <button className={data.voice === "standard" ? "decision-card selected" : "decision-card"} onClick={() => setData({ ...data, voice: "standard", model: data.model === "SUNO V5.5" ? "SUNO V5" : data.model })}>
+          <button className={data.voice === "standard" ? "decision-card selected" : "decision-card"} onClick={handleSelectStandardVoice}>
             <span className="choice-icon"><Microphone size={28} /></span>
             <span><strong>Voz estándar</strong><small>Una voz de alta calidad generada por IA</small></span>
             <InfoTip title="Voz estándar">Elige esta opción si no necesitas usar una voz clonada.</InfoTip>
@@ -1046,40 +1193,95 @@ function StartStep({ data, setData, setToast, handlers }) {
               ) : (
                 <div className="persona-grid">
                   {personas.map((p) => (
-                    <button
-                      key={p.voiceId}
-                      type="button"
-                      className={data.voiceProfile?.voiceId === p.voiceId ? "persona-card is-selected" : "persona-card"}
-                      onClick={() => {
-                        setData((current) => ({
-                          ...current,
-                          voice: 'clone',
-                          model: 'SUNO V5.5',
-                          voiceProfile: {
+                    <div key={p.voiceId} className={data.voiceProfile?.voiceId === p.voiceId ? "persona-card is-selected" : "persona-card"}>
+                      <button
+                        type="button"
+                        className="persona-card-select"
+                        onClick={() => {
+                          updateSelectedPersona({
                             voiceId: p.voiceId,
                             name: p.name,
                             profileImageUrl: p.profileImageUrl,
                             description: p.description,
                             singerSkillLevel: p.singerSkillLevel,
-                          },
-                        }));
-                        closeClonePicker({ keepSelection: true });
-                        setToast("Personaje seleccionado para la canción.");
-                      }}
-                    >
-                      <span className="persona-avatar">
-                        {p.profileImageUrl ? <img src={p.profileImageUrl} alt="" /> : <Users size={18} />}
-                      </span>
-                      <span className="persona-card-text">
-                        <strong>{p.name}</strong>
-                        <small>{p.singerSkillLevel || p.description || `ID: ${p.voiceId.slice(0, 8)}`}</small>
-                      </span>
-                    </button>
+                          });
+                          closeClonePicker({ keepSelection: true });
+                          setToast("Personaje seleccionado para la canción.");
+                        }}
+                      >
+                        <span className="persona-avatar">
+                          {p.profileImageUrl ? <img src={p.profileImageUrl} alt="" /> : <Users size={18} />}
+                        </span>
+                        <span className="persona-card-text">
+                          <strong>{p.name}</strong>
+                          <small>{p.singerSkillLevel || p.description || `ID: ${p.voiceId.slice(0, 8)}`}</small>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="persona-card-menu-trigger"
+                        aria-label={`Opciones de ${p.name}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPersonaMenuOpen((current) => (current === p.voiceId ? '' : p.voiceId));
+                        }}
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                      {personaMenuOpen === p.voiceId ? (
+                        <div className="persona-card-menu">
+                          <button type="button" onClick={() => openRenamePersona(p)}>
+                            <PencilSimple size={16} />
+                            Editar nombre
+                          </button>
+                          <button type="button" className="danger" onClick={() => openDeletePersona(p)}>
+                            <Trash size={16} />
+                            Eliminar personaje
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               )}
             </div>
           </div>
+          {editingPersona ? (
+            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Editar nombre del personaje">
+              <div className="persona-dialog">
+                <h3>Editar nombre</h3>
+                <p>Cambia el nombre visible de este personaje. Su voiceId no cambia.</p>
+                <label>
+                  Nombre actual
+                  <input value={editingName} onChange={(e) => setEditingName(e.target.value)} placeholder="Nombre del personaje" maxLength={160} />
+                </label>
+                <div className="persona-dialog-actions">
+                  <button type="button" className="wizard-back" disabled={personaActionLoading} onClick={() => setEditingPersona(null)}>Cancelar</button>
+                  <button type="button" className="wizard-next" disabled={personaActionLoading || !editingName.trim()} onClick={savePersonaRename}>
+                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} weight="bold" />}
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {deletingPersona ? (
+            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Eliminar personaje">
+              <div className="persona-dialog">
+                <h3>¿Eliminar este personaje?</h3>
+                <p>Esta acción no se puede deshacer.</p>
+                <div className="persona-delete-name">{deletingPersona.name}</div>
+                <div className="persona-dialog-actions">
+                  <button type="button" className="wizard-back" disabled={personaActionLoading} onClick={() => setDeletingPersona(null)}>Cancelar</button>
+                  <button type="button" className="wizard-next danger" disabled={personaActionLoading} onClick={deletePersona}>
+                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash size={18} />}
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
