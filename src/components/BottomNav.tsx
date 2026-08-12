@@ -33,8 +33,8 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
   const menuActive = menuItems.some((item) => item.id === currentTab);
 
   const go = (tab: ViewTab) => {
-    onChange(tab);
     setIsMenuOpen(false);
+    onChange(tab);
   };
 
   const drawerItems: Array<{ id: ViewTab; label: string; description?: string; icon: typeof Home }> = [

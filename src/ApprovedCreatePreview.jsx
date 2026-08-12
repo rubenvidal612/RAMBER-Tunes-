@@ -479,7 +479,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           <div className="decision-heading"><span>1</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
           <label className={data.audioSource === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
             <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-            <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3, WAV o M4A"}</small></span>
+            <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
             {hasSelectedAudio ? (
               <button
                 type="button"
