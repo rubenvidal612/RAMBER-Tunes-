@@ -1308,9 +1308,6 @@ export default function App() {
   const loadSongs = async (deleted: boolean) => {
     const t = await getAccessToken();
     if (!t.ok) return { ok: false as const, error: t.error };
-    // #region debug-point D:library-load-start
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"D",location:"src/App.tsx:loadSongs:start",msg:"[DEBUG] Solicitando biblioteca",data:{deleted,userToken:!!t.token},ts:Date.now()})}).catch(()=>{});
-    // #endregion
     const r = await fetch(`/api/library/list?deleted=${deleted ? '1' : '0'}`, {
       headers: { authorization: `Bearer ${t.token}` },
     });
@@ -1322,9 +1319,6 @@ export default function App() {
         return {};
       }
     })();
-    // #region debug-point C:library-load-result
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:loadSongs:result",msg:"[DEBUG] Respuesta biblioteca recibida",data:{deleted,httpOk:r.ok,httpStatus:r.status,rawCount:Array.isArray(out?.songs)?out.songs.length:-1,cleanupDeleted:Number(out?.cleanup_deleted||0),error:(out?.error||"").toString().slice(0,200)},ts:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!r.ok) {
       const detail = (out?.detail || out?.error || rawText || '').toString().trim().replace(/\s+/g, ' ').slice(0, 220);
       const reason = detail ? `HTTP ${r.status}: ${detail}` : `HTTP ${r.status}`;
@@ -1336,9 +1330,6 @@ export default function App() {
     }
     const list = Array.isArray(out?.songs) ? out.songs : [];
     const songs = list.map(mapSongRow).filter((s: SongItem) => s.id);
-    // #region debug-point C:library-load-mapped
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:loadSongs:mapped",msg:"[DEBUG] Biblioteca mapeada en frontend",data:{deleted,rawCount:list.length,mappedCount:songs.length,firstIds:songs.slice(0,5).map((s)=>s.id)},ts:Date.now()})}).catch(()=>{});
-    // #endregion
     return {
       ok: true as const,
       songs,
@@ -1356,9 +1347,6 @@ export default function App() {
     }
     const d = await loadSongs(true);
     if (d.ok) setCancionesEliminadas(d.songs);
-    // #region debug-point C:library-refresh-summary
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-songs-missing",runId:"pre-fix",hypothesisId:"C",location:"src/App.tsx:refreshLibrary:summary",msg:"[DEBUG] Biblioteca refrescada",data:{activeOk:a.ok,activeCount:a.ok?a.songs.length:-1,deletedOk:d.ok,deletedCount:d.ok?d.songs.length:-1,activeError:!a.ok?(a.error||"").toString().slice(0,200):"",deletedError:!d.ok?(d.error||"").toString().slice(0,200):""},ts:Date.now()})}).catch(()=>{});
-    // #endregion
     if (a.ok && a.cleanupDeleted && a.cleanupDeleted > 0) {
       showToast(`Se eliminaron automáticamente ${a.cleanupDeleted} canciones (plan gratis: 15 días).`);
     }
@@ -1833,9 +1821,6 @@ export default function App() {
       alert('Esta canción no tiene audio para hacer cover.');
       return;
     }
-    // #region debug-point A:library-to-cover
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"library-cover-audio",runId:"pre-fix",hypothesisId:"A",location:"src/App.tsx:startCoverFromSong",msg:"[DEBUG] Biblioteca envia audio a cover",data:{songId,title:(song?.title||"").toString(),rawUrl,url,audioPath,sunoTaskId:(song?.sunoTaskId||"").toString(),sunoAudioId:(song?.sunoAudioId||"").toString()},ts:Date.now()})}).catch(()=>{});
-    // #endregion
     setStudioPrefill({ type: 'cover', song: { ...song, audioUrl: url, audioPath } });
     setStudioPrefillNonce((n) => n + 1);
     setCurrentTab('studio');
