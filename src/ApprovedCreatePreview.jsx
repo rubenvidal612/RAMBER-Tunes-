@@ -2224,7 +2224,6 @@ function ApprovedCloneVoiceContent({ onClose }) {
 const approvedCloneCss = approvedCss + `
 .approved-clone-shell{position:relative;height:100%;min-height:0;overflow:hidden;background:radial-gradient(circle at 70% 25%,rgba(66,38,105,.13),transparent 28%),var(--bg)}
 .approved-clone-shell .wizard-overlay{position:absolute}
-@media(max-width:1023px){.approved-clone-shell .wizard-overlay[data-step="0"]{padding-bottom:calc(18px + 68px + env(safe-area-inset-bottom))}}
 `;
 
 export function ApprovedCloneVoicePreview({ onClose }) {
