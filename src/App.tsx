@@ -3,7 +3,7 @@ import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { MiniPlayer } from './components/MiniPlayer';
 import { CreateView } from './views/CreateView';
-import { ApprovedCreatePreview } from './ApprovedCreatePreview';
+import { ApprovedCreatePreview, ApprovedCloneVoicePreview } from './ApprovedCreatePreview';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
 import { KaraokeView } from './views/KaraokeView';
@@ -3052,16 +3052,7 @@ export default function App() {
              </div>
            )}
            {currentTab === 'voces' && (
-             <CreateView
-               onSongCreated={addCancion}
-               credits={displayCredits}
-               onGoLibrary={() => setCurrentTab('biblioteca')}
-               onOpenBalance={() => handleTabChange('planes')}
-               standaloneVoices
-               onExitVoices={() => setCurrentTab('studio')}
-               prefill={studioPrefill || undefined}
-               prefillNonce={studioPrefillNonce}
-             />
+            <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
            )}
            {currentTab === 'karaoke' && (
              <div className="flex-1 flex items-center justify-center px-6">
@@ -3156,16 +3147,7 @@ export default function App() {
                  currentTab === 'biblioteca' ? "overflow-y-auto" : ""
                )}>
                 {currentTab === 'voces' ? (
-                  <CreateView
-                    onSongCreated={addCancion}
-                    credits={displayCredits}
-                    onGoLibrary={() => setCurrentTab('biblioteca')}
-                    onOpenBalance={() => handleTabChange('planes')}
-                    standaloneVoices
-                    onExitVoices={() => setCurrentTab('studio')}
-                    prefill={studioPrefill || undefined}
-                    prefillNonce={studioPrefillNonce}
-                  />
+                 <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
                 ) : currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />
               ) : currentTab === 'karaoke' ? (

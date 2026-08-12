@@ -1860,21 +1860,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             </button>
             <button
               onClick={() => {
-                setActiveTab('video');
-                loadVideos().catch(() => {});
-              }}
-              className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
-            >
-              <Video className="w-4 h-4" /> Video
-            </button>
-            <button
-              onClick={() => setIsFiltersOpen(true)}
-              className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
-            >
-              <Settings2 className="w-4 h-4" /> Filtros
-            </button>
-            <button
-              onClick={() => {
                 setShowTrash((v) => !v);
                 onRefreshSongs?.();
               }}
