@@ -9753,12 +9753,17 @@ const shareHandler = (() => {
     try {
       const createClient = await getSupabaseCreateClient();
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-      const { data, error } = await admin
+      const idRaw = id.slice(0, 200);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idRaw);
+      const isNumeric = /^[0-9]+$/.test(idRaw);
+      let query = admin
         .from("library_items")
         .select("id, user_id, title, description, lyrics, genre, suno_model, audio_url, cover_url, created_at, is_public, deleted_at, type")
-        .eq("id", id.slice(0, 200))
-        .eq("type", "song")
-        .maybeSingle();
+        .eq("type", "song");
+      if (isUuid) query = query.eq("id", idRaw);
+      else if (isNumeric) query = query.eq("suno_audio_id", idRaw);
+      else return send(res, 404, { error: "No encontrada" });
+      const { data, error } = await query.maybeSingle();
       if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
       if (!data || data.deleted_at) return send(res, 404, { error: "No encontrada" });
 
@@ -10877,15 +10882,21 @@ const shareSongAudioHandler = (() => {
     try {
       const createClient = await getSupabaseCreateClient();
       const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-      const { data, error } = await admin
+      const idRaw = id.slice(0, 200);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idRaw);
+      const isNumeric = /^[0-9]+$/.test(idRaw);
+      let query = admin
         .from("library_items")
         .select("id, title, audio_url, cover_url, deleted_at, type, suno_task_id, suno_audio_id")
-        .eq("id", id.slice(0, 200))
-        .eq("type", "song")
-        .maybeSingle();
+        .eq("type", "song");
+      if (isUuid) query = query.eq("id", idRaw);
+      else if (isNumeric) query = query.eq("suno_audio_id", idRaw);
+      else return sendJson(res, 404, { error: "No encontrada" });
+      const { data, error } = await query.maybeSingle();
       if (error) return sendJson(res, 500, { error: "No pude buscar la canción", detail: error.message });
       if (!data || (data as any).deleted_at) return sendJson(res, 404, { error: "No encontrada" });
 
+      const rowId = String((data as any).id || "").trim().slice(0, 200);
       const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
       let audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
       const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
@@ -10907,7 +10918,7 @@ const shareSongAudioHandler = (() => {
           if (fresh.coverUrl && !(typeof (data as any).cover_url === "string" && (data as any).cover_url.trim())) {
             patch.cover_url = fresh.coverUrl.slice(0, 2000);
           }
-          await admin.from("library_items").update(patch).eq("id", id.slice(0, 200)).eq("type", "song");
+          if (rowId) await admin.from("library_items").update(patch).eq("id", rowId).eq("type", "song");
         }
       }
 
@@ -10948,7 +10959,7 @@ const shareSongAudioHandler = (() => {
           if (fresh.coverUrl && !(typeof (data as any).cover_url === "string" && (data as any).cover_url.trim())) {
             patch.cover_url = fresh.coverUrl.slice(0, 2000);
           }
-          await admin.from("library_items").update(patch).eq("id", id.slice(0, 200)).eq("type", "song");
+          if (rowId) await admin.from("library_items").update(patch).eq("id", rowId).eq("type", "song");
         }
       }
 

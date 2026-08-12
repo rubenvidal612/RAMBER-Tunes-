@@ -780,7 +780,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   const shareSongCard = async (song: SongItem) => {
-    const shareUrl = song?.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
+    const shareUrl = song?.id ? `https://lucianamusic.app/share/${encodeURIComponent(song.id)}` : '';
     if (shareUrl) {
       await showPreviewLink(song, shareUrl, {
         isCountdown: false,

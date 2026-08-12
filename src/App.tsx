@@ -832,7 +832,23 @@ export default function App() {
   };
 
   const showToast = (message: string) => {
-    setToast(message);
+    const text = String(message || '').trim();
+    if (!text) return;
+    const lower = text.toLowerCase();
+    const isError =
+      lower.includes('error') ||
+      lower.includes('no pude') ||
+      lower.includes('no se pudo') ||
+      lower.includes('fall') ||
+      lower.includes('inválid') ||
+      lower.includes('insuficient') ||
+      lower.includes('deneg') ||
+      lower.includes('expir');
+    if (isError) {
+      showStyledAlert(text);
+      return;
+    }
+    setToast(text);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
@@ -2962,6 +2978,40 @@ export default function App() {
           </div>
         </div>
       ) : null}
+      {activeAlert ? (
+        <div className="absolute inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5">
+          <div className={`w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl p-6 ${alertMeta.ring}`}>
+            <div className="flex items-start gap-4">
+              <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${alertMeta.iconBg}`}>
+                <alertMeta.Icon className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-white font-extrabold text-lg">{alertMeta.title}</div>
+                <div className="mt-2 text-sm text-slate-200 whitespace-pre-wrap break-words max-h-[46vh] overflow-auto pr-1">
+                  {activeAlertText}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeStyledAlert}
+                className="shrink-0 w-9 h-9 rounded-full bg-white/5 border border-white/10 text-slate-200 flex items-center justify-center"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={closeStyledAlert}
+                className={`w-full h-[44px] rounded-full font-extrabold text-sm ${alertMeta.button}`}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <TopBar
         className="flex-shrink-0"
         onMenuClick={() => setIsSettingsOpen(true)}
@@ -3220,7 +3270,7 @@ export default function App() {
                   onClick={async () => {
                     const id = (activeSong?.id || '').toString().trim();
                     if (!id) return;
-                    const shareUrl = `${window.location.origin}/share/${encodeURIComponent(id)}`;
+                    const shareUrl = `https://lucianamusic.app/share/${encodeURIComponent(id)}`;
                     try {
                       if (navigator.share) {
                         await navigator.share({ title: `LucIAna | Music - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
@@ -4846,7 +4896,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
 
   const shareSong = async (s: { id: string; title: string }) => {
     const title = (s?.title || 'Canción').toString().trim();
-    const url = s?.id ? `${window.location.origin}/share/${encodeURIComponent(s.id)}` : '';
+    const url = s?.id ? `https://lucianamusic.app/share/${encodeURIComponent(s.id)}` : '';
     if (!url) return;
     try {
       if (navigator.share) {

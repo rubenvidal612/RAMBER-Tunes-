@@ -266,7 +266,7 @@ export function ProfileView({
 
   const shareSong = async (song: SongItem) => {
     const title = (song?.title || 'Canción').toString().trim();
-    const url = song?.id ? `${window.location.origin}/share/${encodeURIComponent(song.id)}` : '';
+    const url = song?.id ? `https://lucianamusic.app/share/${encodeURIComponent(song.id)}` : '';
     if (!url) {
       alert('No hay link para compartir.');
       return;
