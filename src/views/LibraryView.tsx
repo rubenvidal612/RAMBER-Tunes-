@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, MessageCircle, Music2, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, ChevronRight, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
@@ -5460,136 +5460,459 @@ function SongOptionsSheet({
 
   let sheet: any = null;
   try {
+    const genderLabel = (() => {
+      const s = (song.genre || '').toString().trim();
+      const lower = s.toLowerCase();
+      if (lower === 'm') return 'Masculino';
+      if (lower === 'f') return 'Femenino';
+      return s;
+    })();
+    const modelLabel = (() => {
+      const raw = (song.sunoModel || '').toString().trim();
+      const upper = raw.toUpperCase();
+      if (!upper) return 'N/D';
+      if (upper.includes('V5')) return 'V5';
+      if (upper.includes('V4')) return 'V4.5';
+      return raw;
+    })();
+    const statusLabel = song.audioUrl ? (song.isCover ? 'Cover' : 'Completa') : 'En producción';
+    const visibilityLabel = song.isPublic ? 'Público' : 'Privado';
     sheet = (
-      <div className="fixed inset-0 z-[2147483647] flex items-end md:items-center justify-center bg-black/60" style={{ zIndex: 2147483647 }}>
+      <div className="fixed inset-0 z-[2147483647] flex items-end lg:items-center justify-center bg-black/60" style={{ zIndex: 2147483647 }}>
         <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
-        <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
-          <div className="flex justify-center py-3 shrink-0">
+        <div className="relative w-full lg:max-w-[980px] bg-[#0b0f16] border border-white/10 rounded-t-3xl lg:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
+          <div className="flex justify-center py-3 shrink-0 lg:hidden">
             <div className="w-12 h-1 bg-white/20 rounded-full" />
           </div>
 
-          <div className="flex-1 overflow-y-auto overscroll-contain pb-6">
-          <div className="px-5 pb-4">
-            <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                <img
-                  src={coverSrc}
-                  onError={() => onCoverError?.()}
-                  alt="Cover"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-white font-extrabold text-lg truncate">{song.title || 'Pista sin título'}</div>
-                <div className="text-slate-400 text-sm truncate">Ruben</div>
-                <div className="text-slate-500 text-xs mt-1">{isDeleted ? `Eliminada: ${fmt(song.deletedAt || undefined)}` : `Creada: ${fmt(song.createdAt || undefined)}`}</div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="shrink-0 bg-green-500/20 text-green-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                    {(() => {
-                      const raw = (song.sunoModel || '').toString().trim();
-                      if (!raw) return 'Modelo: N/D';
-                      if (raw === 'V5_5') return 'Modelo: V5.5';
-                      if (raw === 'V4_5PLUS') return 'Modelo: V4.5+';
-                      if (raw === 'V4_5ALL') return 'Modelo: V4.5 All';
-                      if (raw === 'V4_5') return 'Modelo: V4.5';
-                      return `Modelo: ${raw}`;
-                    })()}
-                  </span>
-                  <span className="shrink-0 bg-white/10 text-slate-200 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                    {(song.lyrics || '').toString().trim() ? 'Letra: sí' : 'Letra: no'}
-                  </span>
+          <div className="flex-1 overflow-y-auto overscroll-contain">
+            <div className="shrink-0 border-b border-white/10 px-5 pb-4 pt-2 lg:pt-5">
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 lg:w-20 lg:h-20 rounded-2xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                  <img src={coverSrc} onError={() => onCoverError?.()} alt="Cover" className="w-full h-full object-cover" />
                 </div>
-                {(() => {
-                  const d = (song.description || '').toString().trim();
-                  if (!d) return null;
-                  return <div className="mt-2 text-[11px] text-slate-400 break-words line-clamp-2">Instrucción/estilo: {d}</div>;
-                })()}
-              </div>
-              <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10" onClick={onClose} type="button">
-                ✕
-              </button>
-            </div>
-          </div>
-
-        <div className="px-5 pb-4">
-          <div className="grid grid-cols-3 gap-3">
-            <button
-              className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 active:bg-white/15 active:scale-[0.99] transition-all"
-              onClick={() => {
-                onClose();
-                onOpenLists?.();
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <ListMusic className="w-5 h-5 text-slate-200" />
-                <div className="text-slate-200 font-semibold text-sm">Agregar a lista</div>
-              </div>
-            </button>
-            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 active:bg-white/15 active:scale-[0.99] transition-all" onClick={() => share().catch(() => {})}>
-              <div className="flex items-center gap-3">
-                <Share2 className="w-5 h-5 text-slate-200" />
-                <div className="text-slate-200 font-semibold text-sm">Compartir</div>
-              </div>
-            </button>
-            <button className="glass-card rounded-2xl p-4 text-left hover:bg-white/10 active:bg-white/15 active:scale-[0.99] transition-all" onClick={() => alert('Próximamente')}>
-              <div className="flex items-center gap-3">
-                <MessageCircle className="w-5 h-5 text-slate-200" />
-                <div className="text-slate-200 font-semibold text-sm">Comentar</div>
-              </div>
-            </button>
-          </div>
-          {!isDeleted && (
-            <button
-              className="mt-3 w-full glass-card rounded-2xl p-4 text-left hover:bg-white/10 transition-colors"
-              onClick={() => {
-                onClose();
-                onElenco?.();
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <Cast className="w-5 h-5 text-slate-200" />
-                <div className="text-slate-200 font-semibold text-sm">Elenco</div>
-              </div>
-            </button>
-          )}
-        </div>
-
-        <div className="px-5 pb-5">
-          <div className="glass-card rounded-2xl overflow-hidden">
-            {!isDeleted && (
-              <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-b border-white/5 bg-gradient-to-r from-emerald-500/10 to-transparent"
-                onClick={() => {
-                  if (!song.audioUrl) {
-                    alert('Esta canción no tiene audio para hacer cover.');
-                    return;
-                  }
-                  onClose();
-                  onStartCover?.();
-                }}
-                disabled={isBusy}
-              >
-                <Music2 className="w-5 h-5 text-emerald-300" /> <span className="text-slate-200 font-extrabold">Cover (nueva versión)</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-b border-white/5"
-                onClick={() => onMoveToFolder?.()}
-                disabled={isBusy}
-              >
-                <ListMusic className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Mover a carpeta</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <>
-                <button
-                  className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-amber-500/10 to-transparent"
-                  onClick={() => coverPhotoInputRef.current?.click()}
-                  disabled={isBusy}
-                >
-                  <ImageIcon className="w-5 h-5 text-amber-300" /> <span className="text-slate-200 font-extrabold">Subir foto de portada</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white font-extrabold text-lg lg:text-xl truncate">{song.title || 'Pista sin título'}</div>
+                  {genderLabel ? <div className="mt-1 text-slate-300 text-sm truncate">{genderLabel}</div> : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="shrink-0 bg-emerald-500/20 text-emerald-200 text-[10px] font-extrabold px-2 py-0.5 rounded-full">{statusLabel}</span>
+                    <span className="shrink-0 bg-white/10 text-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full">{modelLabel}</span>
+                    <span className="shrink-0 bg-white/10 text-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full">{visibilityLabel}</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10 shrink-0" onClick={onClose} type="button">
+                  ✕
                 </button>
+              </div>
+            </div>
+
+            <div className="px-5 pb-6 pt-4">
+              <div className="lg:hidden">
+                {isDeleted ? (
+                  <div className="space-y-3">
+                    <button className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-emerald-200 font-extrabold hover:bg-emerald-500/15 transition-colors" onClick={() => onRestore()} disabled={isBusy}>
+                      Recuperar
+                    </button>
+                    <button
+                      className="w-full rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 font-extrabold hover:bg-red-500/15 transition-colors"
+                      onClick={() => {
+                        if (confirm('¿Eliminar definitivamente? Esta acción no se puede deshacer.')) onPurge();
+                      }}
+                      disabled={isBusy}
+                    >
+                      Eliminar definitivamente
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <button
+                      className="w-full flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
+                      onClick={() => coverPhotoInputRef.current?.click()}
+                      disabled={isBusy}
+                    >
+                      <div className="flex items-center gap-3">
+                        <ImageIcon className="w-5 h-5 text-slate-200" />
+                        <span className="text-slate-100 font-semibold">Subir foto de portada</span>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-slate-500" />
+                    </button>
+
+                    <button
+                      className="w-full flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
+                      onClick={() => ensureCommercialPlanOrWarn().then((ok) => ok && setShowLicense(true))}
+                      disabled={isBusy}
+                    >
+                      <div className="flex items-center gap-3">
+                        <BadgeCheck className="w-5 h-5 text-slate-200" />
+                        <span className="text-slate-100 font-semibold">Licencia Comercial</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
+                        <ChevronRight className="w-5 h-5 text-slate-500" />
+                      </div>
+                    </button>
+
+                    <div className="pt-2">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Editar y administrar</div>
+                      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors" onClick={() => setShowEditTitle(true)} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            <Pencil className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Editar nombre</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => setShowLyrics(true)} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Letra</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={share} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            <Share2 className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Compartir</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => setShowTrim(true)} disabled={isBusy || !(song.audioUrl || '').toString().trim()}>
+                          <div className="flex items-center gap-3">
+                            <Scissors className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Recortar canción</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Descargar y crear</div>
+                      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors" onClick={download} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
+                            <span className="text-slate-100 font-semibold">Descargar MP3</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        {canShowWav ? (
+                          <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={downloadWav} disabled={isBusy}>
+                            <div className="flex items-center gap-3">
+                              {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
+                              <span className="text-slate-100 font-semibold">Descargar WAV</span>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-slate-500" />
+                          </button>
+                        ) : null}
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            <Video className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Video (MP4)</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            <AudioLines className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Eliminar voz / Karaoke</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
+                          <div className="flex items-center gap-3">
+                            <AudioLines className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">STEMS (Pistas separadas)</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Más opciones</div>
+                      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                        <button
+                          className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors"
+                          onClick={() => {
+                            onClose();
+                            onOpenLists?.();
+                          }}
+                          disabled={isBusy}
+                        >
+                          <div className="flex items-center gap-3">
+                            <ListMusic className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Agregar a lista</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        <button
+                          className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
+                          onClick={() => {
+                            onClose();
+                            onMoveToFolder?.();
+                          }}
+                          disabled={isBusy}
+                        >
+                          <div className="flex items-center gap-3">
+                            <FolderPlus className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Mover a carpeta</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
+                        {!isDeleted && onElenco ? (
+                          <button
+                            className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
+                            onClick={() => {
+                              onClose();
+                              onElenco();
+                            }}
+                            disabled={isBusy}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Cast className="w-5 h-5 text-slate-200" />
+                              <span className="text-slate-100 font-semibold">Elenco</span>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-slate-500" />
+                          </button>
+                        ) : null}
+                        {!isDeleted ? (
+                          <button
+                            className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
+                            onClick={() => {
+                              if (published) {
+                                setSongPublic(false, '').catch(() => {});
+                                return;
+                              }
+                              setShowPublish(true);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Shield className="w-5 h-5 text-slate-200" />
+                              <span className="text-slate-100 font-semibold">Privado / Público</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-200 font-extrabold">
+                                {published ? 'Público' : 'Privado'}
+                              </span>
+                              <ChevronRight className="w-5 h-5 text-slate-500" />
+                            </div>
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <button
+                      className="w-full mt-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 font-extrabold hover:bg-red-500/15 transition-colors flex items-center justify-between"
+                      onClick={() => {
+                        if (confirm('¿Seguro que quieres eliminar esta canción?')) onDelete();
+                      }}
+                      disabled={isBusy}
+                    >
+                      <span>Eliminar canción</span>
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="hidden lg:block">
+                {isDeleted ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button className="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-emerald-200 font-extrabold hover:bg-emerald-500/15 transition-colors" onClick={() => onRestore()} disabled={isBusy}>
+                      Recuperar
+                    </button>
+                    <button
+                      className="rounded-3xl border border-red-500/30 bg-red-500/10 px-4 py-4 text-red-200 font-extrabold hover:bg-red-500/15 transition-colors"
+                      onClick={() => {
+                        if (confirm('¿Eliminar definitivamente? Esta acción no se puede deshacer.')) onPurge();
+                      }}
+                      disabled={isBusy}
+                    >
+                      Eliminar definitivamente
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-left hover:bg-white/[0.06] transition-colors" onClick={() => coverPhotoInputRef.current?.click()} disabled={isBusy}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-fuchsia-500/15 border border-fuchsia-500/20 flex items-center justify-center">
+                              <ImageIcon className="w-5 h-5 text-fuchsia-200" />
+                            </div>
+                            <div className="text-slate-100 font-extrabold">Subir foto de portada</div>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-600" />
+                        </div>
+                        <div className="mt-2 text-sm text-slate-400">Personaliza la portada de tu canción.</div>
+                      </button>
+
+                      <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-left hover:bg-white/[0.06] transition-colors" onClick={() => ensureCommercialPlanOrWarn().then((ok) => ok && setShowLicense(true))} disabled={isBusy}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
+                              <BadgeCheck className="w-5 h-5 text-emerald-200" />
+                            </div>
+                            <div>
+                              <div className="text-slate-100 font-extrabold">Licencia Comercial</div>
+                              <div className="mt-1 text-sm text-slate-400">Tu canción cuenta con licencia comercial.</div>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-600" />
+                        </div>
+                        <div className="mt-3">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
+                        </div>
+                      </button>
+                    </div>
+
+                    <div className="mt-6">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Editar y administrar</div>
+                      <div className="mt-3 grid grid-cols-4 gap-3">
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => setShowEditTitle(true)} disabled={isBusy}>
+                          <Pencil className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Editar nombre</div>
+                        </button>
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => setShowLyrics(true)} disabled={isBusy}>
+                          <FileText className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Letra</div>
+                        </button>
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={share} disabled={isBusy}>
+                          <Share2 className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Compartir</div>
+                        </button>
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => setShowTrim(true)} disabled={isBusy || !(song.audioUrl || '').toString().trim()}>
+                          <Scissors className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Recortar canción</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Descargar y crear</div>
+                      <div className="mt-3 grid grid-cols-5 gap-3">
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={download} disabled={isBusy}>
+                          {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Descargar MP3</div>
+                        </button>
+                        {canShowWav ? (
+                          <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={downloadWav} disabled={isBusy}>
+                            {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
+                            <div className="mt-3 text-slate-100 font-semibold text-sm">Descargar WAV</div>
+                          </button>
+                        ) : (
+                          <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 opacity-40">
+                            <Download className="w-5 h-5 text-slate-500" />
+                            <div className="mt-3 text-slate-400 font-semibold text-sm">Descargar WAV</div>
+                          </div>
+                        )}
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
+                          <Video className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Video (MP4)</div>
+                        </button>
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
+                          <AudioLines className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Eliminar voz / Karaoke</div>
+                        </button>
+                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
+                          <AudioLines className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">STEMS</div>
+                          <div className="mt-1 text-[12px] text-slate-500">Pistas separadas</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Más opciones</div>
+                      <div className="mt-3 grid grid-cols-4 gap-3">
+                        <button
+                          className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
+                          onClick={() => {
+                            onClose();
+                            onOpenLists?.();
+                          }}
+                          disabled={isBusy}
+                        >
+                          <ListMusic className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Agregar a lista</div>
+                        </button>
+                        <button
+                          className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
+                          onClick={() => {
+                            onClose();
+                            onMoveToFolder?.();
+                          }}
+                          disabled={isBusy}
+                        >
+                          <FolderPlus className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Mover a carpeta</div>
+                        </button>
+                        {!isDeleted && onElenco ? (
+                          <button
+                            className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
+                            onClick={() => {
+                              onClose();
+                              onElenco();
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Cast className="w-5 h-5 text-slate-200" />
+                            <div className="mt-3 text-slate-100 font-semibold text-sm">Elenco</div>
+                          </button>
+                        ) : (
+                          <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 opacity-40">
+                            <Cast className="w-5 h-5 text-slate-500" />
+                            <div className="mt-3 text-slate-400 font-semibold text-sm">Elenco</div>
+                          </div>
+                        )}
+                        {!isDeleted ? (
+                          <button
+                            className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
+                            onClick={() => {
+                              if (published) {
+                                setSongPublic(false, '').catch(() => {});
+                                return;
+                              }
+                              setShowPublish(true);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Shield className="w-5 h-5 text-slate-200" />
+                            <div className="mt-3 text-slate-100 font-semibold text-sm">Privado / Público</div>
+                            <div className="mt-1 text-[12px] text-slate-500">{published ? 'Público' : 'Privado'}</div>
+                          </button>
+                        ) : (
+                          <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 opacity-40">
+                            <Shield className="w-5 h-5 text-slate-500" />
+                            <div className="mt-3 text-slate-400 font-semibold text-sm">Privado / Público</div>
+                            <div className="mt-1 text-[12px] text-slate-500">No disponible</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      className="mt-6 w-full rounded-3xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-left hover:bg-red-500/15 transition-colors"
+                      onClick={() => {
+                        if (confirm('¿Seguro que quieres eliminar esta canción?')) onDelete();
+                      }}
+                      disabled={isBusy}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-red-200 font-extrabold">Eliminar canción</div>
+                          <div className="mt-1 text-sm text-red-200/70">Esta acción no se puede deshacer</div>
+                        </div>
+                        <Trash2 className="w-5 h-5 text-red-200" />
+                      </div>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {!isDeleted ? (
                 <input
                   ref={coverPhotoInputRef}
                   type="file"
@@ -5602,160 +5925,9 @@ function SongOptionsSheet({
                     uploadCoverPhoto(f).catch(() => {});
                   }}
                 />
-              </>
-            )}
-          {!isDeleted && (
-            <button
-              className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
-              onClick={() => ensureCommercialPlanOrWarn().then((ok) => ok && setShowLicense(true))}
-              disabled={isBusy}
-            >
-              <div className="flex items-center gap-3">
-                <BadgeCheck className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Licencia Comercial</span>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
-            </button>
-          )}
+              ) : null}
+            </div>
           </div>
-
-          <div className="glass-card rounded-2xl overflow-hidden mt-4">
-            <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-b border-white/5"
-              onClick={() => setShowEditTitle(true)}
-              disabled={isBusy || isDeleted}
-            >
-              <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Editar nombre</span>
-            </button>
-            <button
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all"
-              onClick={() => setShowLyrics(true)}
-              disabled={isBusy}
-            >
-              <FileText className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Letra</span>
-            </button>
-            <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all" onClick={share} disabled={isBusy}>
-              <Share2 className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Compartir</span>
-            </button>
-            {!isDeleted && (
-              <button
-                className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
-                onClick={() => setShowTrim(true)}
-                disabled={isBusy || !(song.audioUrl || '').toString().trim()}
-              >
-                <Scissors className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Recortar canción</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={download} disabled={isBusy}>
-                <div className="flex items-center gap-3">
-                  {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-300" />}
-                  <span className="text-slate-200 font-semibold">Descargar</span>
-                </div>
-                {downloadsAllowed === false ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-extrabold">CON PLAN</span> : null}
-              </button>
-            )}
-            {canShowWav && (
-              <button className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={downloadWav} disabled={isBusy}>
-                <div className="flex items-center gap-3">
-                  {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-300" />}
-                  <span className="text-slate-200 font-semibold">Descargar WAV</span>
-                </div>
-                {downloadsAllowed === false ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-extrabold">CON PLAN</span> : null}
-              </button>
-            )}
-            {downloadsAllowed === false && !isDeleted && (
-              <div className="px-4 py-3 border-t border-white/5 text-[12px] text-slate-400">
-                🎵 Puedes escuchar tu canción normalmente y la tendrás guardada en Biblioteca. 
-                <br/>
-                💾 Para <strong>descargarla</strong> (MP3, WAV, Letras), necesitas activar un <strong>plan de recarga</strong>.
-              </div>
-            )}
-            {downloadsAllowed === false && !isDeleted && (
-              <button 
-                className="w-full flex items-center justify-center gap-2 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold"
-                onClick={() => window.location.href = '/planes'}
-              >
-                <span>💰</span>
-                <span>Comprar Plan de $350 para Descargar Canciones</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
-                <Video className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Video (MP4)</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
-                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Eliminar voz (Karaoke)</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
-                <AudioLines className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">Instrumentos y voces (Stems)</span>
-              </button>
-            )}
-            {!isDeleted && (
-              <button
-                className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 active:bg-white/10 active:scale-[0.99] transition-all border-t border-white/5"
-                onClick={() => {
-                  if (published) {
-                    setSongPublic(false, '').catch(() => {});
-                    return;
-                  }
-                  setShowPublish(true);
-                }}
-                disabled={isBusy}
-              >
-                <div className="flex items-center gap-3">
-                  <Pencil className="w-5 h-5 text-slate-300" /> <span className="text-slate-200 font-semibold">{published ? 'Público' : 'Privado'}</span>
-                </div>
-                <div className={cn("w-12 h-7 rounded-full p-1 transition-colors", published ? "bg-emerald-500" : "bg-white/10")}>
-                  <div className={cn("w-5 h-5 rounded-full bg-white transition-transform", published ? "translate-x-5" : "translate-x-0")} />
-                </div>
-              </button>
-            )}
-          </div>
-
-          {isDeleted ? (
-            <>
-              <button
-                className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-emerald-300 hover:bg-emerald-500/10 transition-colors"
-                onClick={() => onRestore()}
-                disabled={isBusy}
-              >
-                <Repeat2 className="w-5 h-5" /> <span className="font-extrabold">Recuperar</span>
-              </button>
-              <button
-                className="w-full mt-3 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"
-                onClick={() => {
-                  if (confirm('¿Eliminar definitivamente? Esta acción no se puede deshacer.')) onPurge();
-                }}
-                disabled={isBusy}
-              >
-                <Trash2 className="w-5 h-5" /> <span className="font-extrabold">Eliminar definitivamente</span>
-              </button>
-            </>
-          ) : (
-            <button
-              className="w-full mt-4 glass-card rounded-2xl p-4 flex items-center gap-3 text-red-400 hover:bg-red-500/10 transition-colors"
-              onClick={() => {
-                if (confirm('¿Seguro que quieres eliminar esta canción?')) onDelete();
-              }}
-              disabled={isBusy}
-            >
-              <Trash2 className="w-5 h-5" /> <span className="font-extrabold">Eliminar</span>
-            </button>
-          )}
-
-          <button
-            className="w-full mt-3 bg-white/5 border border-white/10 rounded-full py-3 text-slate-200 font-semibold hover:bg-white/10 transition-colors"
-            onClick={onPlay}
-            disabled={isBusy}
-          >
-            Reproducir
-          </button>
-        </div>
-        </div>
       </div>
 
       {showPersonaSave && (
