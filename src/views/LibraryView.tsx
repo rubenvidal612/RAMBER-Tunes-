@@ -5612,6 +5612,22 @@ function SongOptionsSheet({
                           </div>
                           <ChevronRight className="w-5 h-5 text-slate-500" />
                         </button>
+                        {onStartCover ? (
+                          <button
+                            className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
+                            onClick={() => {
+                              onClose();
+                              onStartCover();
+                            }}
+                            disabled={isBusy}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Sparkles className="w-5 h-5 text-slate-200" />
+                              <span className="text-slate-100 font-semibold">Crear Cover</span>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-slate-500" />
+                          </button>
+                        ) : null}
                         <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
                           <div className="flex items-center gap-3">
                             <AudioLines className="w-5 h-5 text-slate-200" />
@@ -5792,7 +5808,7 @@ function SongOptionsSheet({
 
                     <div className="mt-6">
                       <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Descargar y crear</div>
-                      <div className="mt-3 grid grid-cols-5 gap-3">
+                      <div className="mt-3 grid grid-cols-3 gap-3">
                         <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={download} disabled={isBusy}>
                           {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
                           <div className="mt-3 text-slate-100 font-semibold text-sm">Descargar MP3</div>
@@ -5812,6 +5828,19 @@ function SongOptionsSheet({
                           <Video className="w-5 h-5 text-slate-200" />
                           <div className="mt-3 text-slate-100 font-semibold text-sm">Video (MP4)</div>
                         </button>
+                        {onStartCover ? (
+                          <button
+                            className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
+                            onClick={() => {
+                              onClose();
+                              onStartCover();
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Sparkles className="w-5 h-5 text-slate-200" />
+                            <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover</div>
+                          </button>
+                        ) : null}
                         <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
                           <AudioLines className="w-5 h-5 text-slate-200" />
                           <div className="mt-3 text-slate-100 font-semibold text-sm">Eliminar voz / Karaoke</div>
