@@ -38,7 +38,6 @@ function NavButton({ id, label, icon: Icon, currentTab, onChange }: {
     <button type="button" onClick={() => onChange(id)} className={cn('luciana-sidebar-item', active && 'is-active')}>
       <Icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
       <span>{label}</span>
-      {id === 'landing' ? <small>Próximamente</small> : null}
     </button>
   );
 }
