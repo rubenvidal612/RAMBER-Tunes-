@@ -98,3 +98,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     padding-bottom:calc(18px + 68px + env(safe-area-inset-bottom))
   }
 }
+.wizard-state-card{border:1px solid rgba(243,208,139,.35);background:rgba(243,208,139,.06);border-radius:14px;padding:16px 16px;display:grid;gap:8px;text-align:left}
+.wizard-state-card h4{margin:0;font:800 20px Manrope;color:#ffe3a5}
+.wizard-state-card p{margin:0;color:#c9d2df;line-height:1.45}
+.wizard-state-card.warning{border-color:rgba(243,208,139,.35);background:rgba(243,208,139,.06)}
+.wizard-state-card.error{border-color:rgba(255,133,133,.35);background:rgba(255,133,133,.06)}
+.wizard-state-card.error h4{color:#ffd0d0}
