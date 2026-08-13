@@ -592,8 +592,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     end: 10,
   });
   const [sourceUpload, setSourceUpload] = useState({ url: "", key: "", loading: false, error: "" });
-  const [verifyUpload, setVerifyUpload] = useState({ url: "", key: "", loading: false, error: "" });
+  const [verifyUpload, setVerifyUpload] = useState({ clientAttemptId: "", url: "", key: "", loading: false, error: "" });
   const [validation, setValidation] = useState({
+    clientAttemptId: "",
     taskId: "",
     status: "",
     phrase: "",
@@ -647,6 +648,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   const [wizardNotice, setWizardNotice] = useState(null);
   const wizardBodyRef = useRef(null);
   const postRejectValidateReqRef = useRef(0);
+  const activeClientAttemptIdRef = useRef("");
+  const validateAttemptRef = useRef("");
+  const validateStartReqRef = useRef(0);
+  const validateLockRef = useRef({ running: false, clientAttemptId: "" });
+  const regenPhraseLockRef = useRef({ running: false, clientAttemptId: "" });
+  const verifyAttemptIdRef = useRef("");
   const pendingAutoRecoverRef = useRef({ nonce: 0, requested: false });
   const wizardSteps = ["Perfil", "Audio original", "Frase", "Verificación", "Listo"];
   const sourceReady = Boolean(profile.sourceAudio);
@@ -718,11 +725,18 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
 
   useEffect(() => {
     return () => {
+      activeClientAttemptIdRef.current = "";
+      validateLockRef.current = { running: false, clientAttemptId: "" };
+      regenPhraseLockRef.current = { running: false, clientAttemptId: "" };
       cancelVerificationFlow();
       cleanupPhraseRecording();
       cleanupSourcePlayer();
     };
   }, []);
+
+  useEffect(() => {
+    activeClientAttemptIdRef.current = String(validation.clientAttemptId || "").trim();
+  }, [validation.clientAttemptId]);
 
   useEffect(() => {
     if (!validation.loading || validation.phrase || validation.error) {
@@ -903,6 +917,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
           }
           const url = URL.createObjectURL(blob);
           phraseRecorderUrlRef.current = url;
+          verifyAttemptIdRef.current = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
           setProfile((current) => ({ ...current, verifyAudio: file }));
           setPhraseRecording((current) => ({ ...current, recording: false, mimeType: finalMime, url, seconds: current.seconds }));
         } finally {
@@ -979,10 +994,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   };
 
   const resetVerificationState = () => {
-    setVerifyUpload({ url: "", key: "", loading: false, error: "" });
+    const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
+    setVerifyUpload({ clientAttemptId, url: "", key: "", loading: false, error: "" });
     setVoiceGen({ taskId: "", status: "", voiceId: "", loading: false, error: "", isAvailable: null });
     verifyAutoRef.current = { key: "", attempt: 0, running: false };
     verifyLastErrorRef.current = "";
+    verifyAttemptIdRef.current = "";
   };
 
   const uploadWizardAudio = async (file, kind) => {
@@ -991,14 +1008,20 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     const nextReq = requestRef.current + 1;
     requestRef.current = nextReq;
     if (kind === "source") setSourceUpload({ url: "", key: "", loading: true, error: "" });
-    if (kind === "verify") setVerifyUpload({ url: "", key: "", loading: true, error: "" });
+    if (kind === "verify") {
+      const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
+      setVerifyUpload({ clientAttemptId, url: "", key: "", loading: true, error: "" });
+    }
     try {
       const t = await getAccessToken();
       if (!t.ok) {
         if (requestRef.current !== nextReq) return;
         const msg = t.error || "No se pudo iniciar sesión.";
         if (kind === "source") setSourceUpload({ url: "", key: "", loading: false, error: msg });
-        if (kind === "verify") setVerifyUpload({ url: "", key: "", loading: false, error: msg });
+        if (kind === "verify") {
+          const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
+          setVerifyUpload({ clientAttemptId, url: "", key: "", loading: false, error: msg });
+        }
         setToast(msg);
         return;
       }
@@ -1009,7 +1032,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       const key = (uploaded?.key || "").toString().trim();
       if (!url) throw new Error("No recibí la URL final del audio.");
       if (kind === "source") setSourceUpload({ url, key, loading: false, error: "" });
-      if (kind === "verify") setVerifyUpload({ url, key, loading: false, error: "" });
+      if (kind === "verify") {
+        const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
+        setVerifyUpload({ clientAttemptId, url, key, loading: false, error: "" });
+      }
       setToast(kind === "source" ? "Audio original subido correctamente." : "Audio de verificación subido correctamente.");
       return { url, key };
     } catch (e) {
@@ -1020,7 +1046,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         ? "No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e inténtalo de nuevo."
         : raw || "No se pudo subir el audio.";
       if (kind === "source") setSourceUpload({ url: "", key: "", loading: false, error: msg });
-      if (kind === "verify") setVerifyUpload({ url: "", key: "", loading: false, error: msg });
+      if (kind === "verify") {
+        const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
+        setVerifyUpload({ clientAttemptId, url: "", key: "", loading: false, error: msg });
+      }
       setToast(msg);
       return null;
     }
@@ -1065,10 +1094,16 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     );
   };
 
-  const pollValidateInfo = async (taskId) => {
+  const makeClientAttemptId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+  const pollValidateInfo = async (taskId, clientAttemptId) => {
     const t = await getAccessToken();
     if (!t.ok) {
-      setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+      setValidation((current) =>
+        current.clientAttemptId !== clientAttemptId || current.taskId !== taskId
+          ? current
+          : { ...current, loading: false, error: t.error || "No se pudo iniciar sesión." },
+      );
       return null;
     }
 
@@ -1082,9 +1117,17 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       if (!qr.ok) continue;
       const status = String(out?.status || "").trim();
       const phrase = String(out?.validateInfo || "").trim();
-      if (status) setValidation((current) => ({ ...current, status }));
+      if (status) {
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId || current.taskId !== taskId ? current : { ...current, status },
+        );
+      }
       if (phrase) {
-        setValidation((current) => ({ ...current, loading: false, error: "", phrase }));
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId || current.taskId !== taskId
+            ? current
+            : { ...current, loading: false, error: "", phrase, status: status || current.status },
+        );
         return phrase;
       }
       if (status === "fail" || status === "processing_validate_fail") {
@@ -1092,26 +1135,61 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         const friendly = /server exception|contact customer service/i.test(raw)
           ? "No pudimos preparar la frase. Intenta nuevamente."
           : "No pudimos preparar la frase. Intenta nuevamente.";
-        setValidation((current) => ({ ...current, loading: false, error: friendly }));
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId || current.taskId !== taskId ? current : { ...current, loading: false, error: friendly },
+        );
         return null;
       }
     }
-    setValidation((current) => ({ ...current, loading: false, error: "La frase está tardando demasiado. Intenta más tarde." }));
+    setValidation((current) =>
+      current.clientAttemptId !== clientAttemptId || current.taskId !== taskId
+        ? current
+        : { ...current, loading: false, error: "La frase está tardando demasiado. Intenta más tarde." },
+    );
     return null;
   };
 
   const startValidate = async () => {
-    if (validation.taskId && validation.phrase) return true;
-    setValidation({ taskId: "", status: "", phrase: "", loading: true, error: "" });
+    const existingClientAttemptId = String(validation.clientAttemptId || "").trim();
+    if (validateLockRef.current.running) return false;
+    validateLockRef.current = { running: true, clientAttemptId: existingClientAttemptId || validateLockRef.current.clientAttemptId };
+    if (validation.loading) {
+      validateLockRef.current.running = false;
+      return false;
+    }
+    const existingTaskId = String(validation.taskId || "").trim();
+    if (existingTaskId) {
+      if (validation.phrase) return true;
+      setValidation((current) => ({ ...current, loading: true, error: "" }));
+      try {
+        const phrase = await pollValidateInfo(existingTaskId, existingClientAttemptId);
+        return Boolean(phrase);
+      } finally {
+        if (validateLockRef.current.clientAttemptId === existingClientAttemptId) validateLockRef.current.running = false;
+      }
+    }
+    const clientAttemptId = makeClientAttemptId();
+    activeClientAttemptIdRef.current = clientAttemptId;
+    validateAttemptRef.current = clientAttemptId;
+    validateLockRef.current = { running: true, clientAttemptId };
+    const reqId = validateStartReqRef.current + 1;
+    validateStartReqRef.current = reqId;
+    setValidation({ clientAttemptId, taskId: "", status: "", phrase: "", loading: true, error: "" });
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: t.error || "No se pudo iniciar sesión." },
+        );
         return false;
       }
       const voiceUrl = (sourceUpload.url || "").toString().trim();
       if (!voiceUrl) {
-        setValidation((current) => ({ ...current, loading: false, error: "Primero sube el audio original para obtener una URL válida." }));
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId
+            ? current
+            : { ...current, loading: false, error: "Primero sube el audio original para obtener una URL válida." },
+        );
         return false;
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
@@ -1119,32 +1197,53 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       const r = await fetch("/api/suno/voice-validate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language }),
+        body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language, clientAttemptId }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
         const msg = String(out?.detail?.msg || out?.detail || out?.error || "No se pudo iniciar la validación de voz.").trim();
-        setValidation((current) => ({ ...current, loading: false, error: msg }));
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: msg },
+        );
         return false;
       }
       const taskId = String(out?.taskId || "").trim();
       if (!taskId) {
-        setValidation((current) => ({ ...current, loading: false, error: "No recibí taskId de validación." }));
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: "No recibí taskId de validación." },
+        );
         return false;
       }
-      setValidation((current) => ({ ...current, taskId, loading: true, error: "" }));
-      await pollValidateInfo(taskId);
-      return true;
+      if (validateStartReqRef.current !== reqId || validateAttemptRef.current !== clientAttemptId) return false;
+      setValidation((current) =>
+        current.clientAttemptId !== clientAttemptId ? current : { ...current, taskId, loading: true, error: "", phrase: "" },
+      );
+      const phrase = await pollValidateInfo(taskId, clientAttemptId);
+      return Boolean(phrase);
     } catch (e) {
-      setValidation((current) => ({ ...current, loading: false, error: e instanceof Error ? e.message : "Error iniciando validación de voz." }));
+      setValidation((current) =>
+        current.clientAttemptId !== clientAttemptId
+          ? current
+          : { ...current, loading: false, error: e instanceof Error ? e.message : "Error iniciando validación de voz." },
+      );
       return false;
+    } finally {
+      if (validateLockRef.current.clientAttemptId === clientAttemptId) validateLockRef.current.running = false;
     }
   };
 
   const regeneratePhrase = async () => {
     const currentTaskId = String(validation.taskId || "").trim();
     if (!currentTaskId) return;
-    setValidation((current) => ({ ...current, loading: true, error: "", phrase: "" }));
+    if (regenPhraseLockRef.current.running) return;
+    const nextClientAttemptId = makeClientAttemptId();
+    regenPhraseLockRef.current = { running: true, clientAttemptId: nextClientAttemptId };
+    activeClientAttemptIdRef.current = nextClientAttemptId;
+    validateAttemptRef.current = nextClientAttemptId;
+    validateStartReqRef.current += 1;
+    cancelVerificationFlow();
+    verifyAttemptIdRef.current = "";
+    setValidation((current) => ({ ...current, clientAttemptId: nextClientAttemptId, loading: true, error: "", phrase: "" }));
     try {
       const t = await getAccessToken();
       if (!t.ok) {
@@ -1154,7 +1253,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       const r = await fetch("/api/suno/voice-regenerate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ taskId: currentTaskId }),
+        body: JSON.stringify({ taskId: currentTaskId, clientAttemptId: nextClientAttemptId }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -1167,10 +1266,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         setValidation((current) => ({ ...current, loading: false, error: "No recibí taskId al regenerar la frase." }));
         return;
       }
-      setValidation((current) => ({ ...current, taskId: nextTaskId, loading: true, error: "", phrase: "" }));
-      await pollValidateInfo(nextTaskId);
+      setValidation((current) => ({ ...current, clientAttemptId: nextClientAttemptId, taskId: nextTaskId, loading: true, error: "", phrase: "" }));
+      await pollValidateInfo(nextTaskId, nextClientAttemptId);
     } catch (e) {
       setValidation((current) => ({ ...current, loading: false, error: e instanceof Error ? e.message : "No se pudo regenerar la frase." }));
+    } finally {
+      if (regenPhraseLockRef.current.clientAttemptId === nextClientAttemptId) regenPhraseLockRef.current.running = false;
     }
   };
 
@@ -1388,59 +1489,89 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     );
   };
 
-  const startNewValidationTask = async () => {
-    setValidation({ taskId: "", status: "", phrase: "", loading: true, error: "" });
-    const t = await getAccessToken();
-    if (!t.ok) {
-      setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
-      return null;
+  const startNewValidationTask = async (forcedClientAttemptId) => {
+    const clientAttemptId = String(forcedClientAttemptId || "").trim() || makeClientAttemptId();
+    if (validateLockRef.current.running) return null;
+    validateLockRef.current = { running: true, clientAttemptId };
+    activeClientAttemptIdRef.current = clientAttemptId;
+    validateAttemptRef.current = clientAttemptId;
+    setValidation({ clientAttemptId, taskId: "", status: "", phrase: "", loading: true, error: "" });
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: t.error || "No se pudo iniciar sesión." },
+        );
+        return null;
+      }
+      const voiceUrl = (sourceUpload.url || "").toString().trim();
+      if (!voiceUrl) {
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId
+            ? current
+            : { ...current, loading: false, error: "Tu audio original aún no tiene una URL válida. Vuelve a intentarlo." },
+        );
+        return null;
+      }
+      const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
+      const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
+      const r = await fetch("/api/suno/voice-validate", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language, clientAttemptId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const raw = String(out?.detail?.msg || out?.detail || out?.error || "").trim();
+        const msg = isTemporaryErrorMessage(raw)
+          ? "No pudimos preparar la frase. Hubo un problema temporal. Intenta nuevamente."
+          : "No pudimos preparar la frase. Intenta nuevamente.";
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: msg },
+        );
+        return null;
+      }
+      const taskId = String(out?.taskId || "").trim();
+      if (!taskId) {
+        setValidation((current) =>
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: "No pudimos preparar la frase. Intenta nuevamente." },
+        );
+        return null;
+      }
+      setValidation((current) =>
+        current.clientAttemptId !== clientAttemptId ? current : { ...current, taskId, loading: true, error: "", phrase: "" },
+      );
+      const phrase = await pollValidateInfo(taskId, clientAttemptId);
+      if (!phrase) return null;
+      return taskId;
+    } finally {
+      if (validateLockRef.current.clientAttemptId === clientAttemptId) validateLockRef.current.running = false;
     }
-    const voiceUrl = (sourceUpload.url || "").toString().trim();
-    if (!voiceUrl) {
-      setValidation((current) => ({ ...current, loading: false, error: "Tu audio original aún no tiene una URL válida. Vuelve a intentarlo." }));
-      return null;
-    }
-    const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
-    const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
-    const r = await fetch("/api/suno/voice-validate", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-      body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language }),
-    });
-    const out = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const raw = String(out?.detail?.msg || out?.detail || out?.error || "").trim();
-      const msg = isTemporaryErrorMessage(raw)
-        ? "No pudimos preparar la frase. Hubo un problema temporal. Intenta nuevamente."
-        : "No pudimos preparar la frase. Intenta nuevamente.";
-      setValidation((current) => ({ ...current, loading: false, error: msg }));
-      return null;
-    }
-    const taskId = String(out?.taskId || "").trim();
-    if (!taskId) {
-      setValidation((current) => ({ ...current, loading: false, error: "No pudimos preparar la frase. Intenta nuevamente." }));
-      return null;
-    }
-    setValidation((current) => ({ ...current, taskId, loading: true, error: "", phrase: "" }));
-    const phrase = await pollValidateInfo(taskId);
-    if (!phrase) return null;
-    return taskId;
   };
 
   const handleRegeneratePhrase = async () => {
     if (regenPhraseBusy) return;
     const currentTaskId = String(validation.taskId || "").trim();
     if (!currentTaskId) return;
+    if (regenPhraseLockRef.current.running) return;
+    const nextClientAttemptId = makeClientAttemptId();
+    regenPhraseLockRef.current = { running: true, clientAttemptId: nextClientAttemptId };
+    activeClientAttemptIdRef.current = nextClientAttemptId;
+    validateAttemptRef.current = nextClientAttemptId;
+    validateStartReqRef.current += 1;
+    cancelVerificationFlow();
     const reqId = regenPhraseReqRef.current + 1;
     regenPhraseReqRef.current = reqId;
     setRegenPhraseBusy(true);
     setWizardNotice(null);
     try {
+      clearRejectedVerification();
+      setValidation((current) => ({ ...current, clientAttemptId: nextClientAttemptId, loading: true, error: "", phrase: "" }));
       const currentInfo = await getValidateInfoOnce(currentTaskId);
       if (regenPhraseReqRef.current !== reqId) return;
       const currentStatus = normalizeStatus(currentInfo.ok ? currentInfo.status : "");
       if (isIncompatibleValidationStatus(currentStatus) || indicatesInvalidTask(currentInfo.error)) {
-        const ok = await startNewValidationTask();
+        const ok = await startNewValidationTask(nextClientAttemptId);
         if (!ok) {
           setWizardNotice({
             kind: "regen_failed",
@@ -1449,13 +1580,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
             actionLabel: "Intentar nuevamente",
           });
         } else {
-          clearRejectedVerification();
           setWizardStep(2);
         }
         return;
       }
 
-      setValidation((current) => ({ ...current, loading: true, error: "", phrase: "" }));
       const t = await getAccessToken();
       if (!t.ok) {
         setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
@@ -1465,13 +1594,13 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       const r = await fetch("/api/suno/voice-regenerate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ taskId: currentTaskId }),
+        body: JSON.stringify({ taskId: currentTaskId, clientAttemptId: nextClientAttemptId }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
         const raw = String(out?.detail || out?.error || "").trim();
         if (indicatesInvalidTask(raw) || isIncompatibleValidationStatus(currentStatus)) {
-          const ok = await startNewValidationTask();
+          const ok = await startNewValidationTask(nextClientAttemptId);
           if (!ok) {
             setWizardNotice({
               kind: "regen_failed",
@@ -1480,7 +1609,6 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
               actionLabel: "Intentar nuevamente",
             });
           } else {
-            clearRejectedVerification();
             setWizardStep(2);
           }
           return;
@@ -1510,8 +1638,15 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         return;
       }
 
-      setValidation((current) => ({ ...current, taskId: nextTaskId, loading: true, error: "", phrase: "" }));
-      const phrase = await pollValidateInfo(nextTaskId);
+      setValidation((current) => ({
+        ...current,
+        clientAttemptId: nextClientAttemptId,
+        taskId: nextTaskId,
+        loading: true,
+        error: "",
+        phrase: "",
+      }));
+      const phrase = await pollValidateInfo(nextTaskId, nextClientAttemptId);
       if (!phrase) {
         setWizardNotice({
           kind: "regen_failed",
@@ -1521,11 +1656,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         });
         return;
       }
-      clearRejectedVerification();
       setWizardStep(2);
     } finally {
       if (regenPhraseReqRef.current === reqId) setRegenPhraseBusy(false);
       pendingAutoRecoverRef.current.requested = false;
+      if (regenPhraseLockRef.current.clientAttemptId === nextClientAttemptId) regenPhraseLockRef.current.running = false;
     }
   };
 
@@ -1579,6 +1714,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         description: profile.description,
         style: profile.style,
         singerSkillLevel: profile.level,
+        clientAttemptId: String(validation.clientAttemptId || "").trim() || undefined,
       };
       const r = await fetch("/api/suno/voice-generate", {
         method: "POST",
@@ -1616,10 +1752,25 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   const startVerificationFlow = async ({ force = false } = {}) => {
     const validationTaskId = String(validation.taskId || "").trim();
     if (!validationTaskId) return;
+    const clientAttemptId = String(validation.clientAttemptId || "").trim();
+    if (!clientAttemptId) {
+      setVoiceGen((current) => ({ ...current, loading: false, error: "Necesitamos preparar la frase antes de verificar tu voz." }));
+      return;
+    }
     const file = profile.verifyAudio;
     if (!file) return;
+    if (verifyAttemptIdRef.current && verifyAttemptIdRef.current !== clientAttemptId) {
+      verifyAutoRef.current.running = false;
+      setVoiceGen((current) => ({
+        ...current,
+        loading: false,
+        error: "La grabación no corresponde a la frase actual. Prepararemos una frase nueva para que puedas grabarla.",
+        status: "needs_new_phrase",
+      }));
+      return;
+    }
     const sig = `${file.name}|${file.size}|${file.lastModified}`;
-    const key = `${validationTaskId}|${sig}|${force ? "force" : "auto"}|${verifyAutoRef.current.attempt}`;
+    const key = `${clientAttemptId}|${validationTaskId}|${sig}|${force ? "force" : "auto"}|${verifyAutoRef.current.attempt}`;
     if (!force && (verifyAutoRef.current.running || verifyAutoRef.current.key === key)) return;
     const runId = verifyFlowRunRef.current + 1;
     verifyFlowRunRef.current = runId;
@@ -1630,7 +1781,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       const current = await getValidateInfoOnce(validationTaskId);
       if (verifyFlowRunRef.current !== runId) return;
       if (current.ok) {
-        setValidation((v) => ({ ...v, status: current.status || v.status, phrase: current.validateInfo || v.phrase }));
+        setValidation((v) =>
+          v.taskId !== validationTaskId || v.clientAttemptId !== clientAttemptId
+            ? v
+            : { ...v, status: current.status || v.status, phrase: current.validateInfo || v.phrase },
+        );
       }
 
       const s0 = normalizeStatus(current.ok ? current.status : "");
@@ -1679,7 +1834,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         return;
       }
 
-      let uploadedUrl = String(verifyUpload.url || "").trim();
+      let uploadedUrl = String(verifyUpload.clientAttemptId === clientAttemptId ? verifyUpload.url : "").trim();
       if (!uploadedUrl) {
         setVerifyUpload((c) => ({ ...c, loading: true, error: "" }));
         const uploaded = await uploadWizardAudio(file, "verify");
@@ -1852,7 +2007,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
                         const taskId = String(validation.taskId || "").trim();
                         if (taskId) {
                           setValidation((current) => ({ ...current, loading: true, error: "", phrase: "" }));
-                          pollValidateInfo(taskId).catch(() => {});
+                          pollValidateInfo(taskId, validation.clientAttemptId).catch(() => {});
                           return;
                         }
                         startValidate().catch(() => {});
@@ -1938,7 +2093,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
           {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
           {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Completa los pasos anteriores para crear tu perfil de voz."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false ? <div className="wizard-info"><Info size={19}/><span>Tu voz aún no aparece como disponible. Puedes guardarla y estará lista en unos minutos.</span></div> : null}</div>}
         </div>
-        <div className="wizard-footer"><button className="wizard-back" disabled={wizardStep === 0 || validation.loading || voiceGen.loading || saving || phraseRecording.recording || phraseCountdown.active} onClick={()=>setWizardStep(Math.max(0,wizardStep-1))}><ArrowLeft size={18}/> Atrás</button>{wizardStep < 4 ? <button className="wizard-next" disabled={(wizardStep===0&&!profile.name.trim())||(wizardStep===1&&(!sourceReady||profile.end<=profile.start||sourceUpload.loading||!sourceUpload.url||sourcePlayerBlocking))||(wizardStep===2&&(validation.loading||!validation.phrase||!verificationReady||phraseRecording.recording||phraseCountdown.active))||(wizardStep===3||wizardStep===4)} onClick={async ()=>{if(wizardStep===1){const ok=await startValidate();if(ok){setWizardStep(2);}return;}if(wizardStep===2){resetVerificationState();setWizardStep(3);return;}setWizardStep(wizardStep+1);}}>Continuar <ArrowRight size={18}/></button> : <button className="wizard-next" disabled={!voiceGen.voiceId||saving||voiceGen.loading} onClick={async ()=>{const ok=await saveToSunoVoices();if(!ok)return;cleanupPhraseRecording();onComplete({name:profile.name,style:profile.style,level:profile.level,voiceId:voiceGen.voiceId});}}><Check size={18} weight="bold"/> Guardar y usar</button>}</div>
+        <div className="wizard-footer"><button className="wizard-back" disabled={wizardStep === 0 || validation.loading || voiceGen.loading || saving || phraseRecording.recording || phraseCountdown.active} onClick={()=>setWizardStep(Math.max(0,wizardStep-1))}><ArrowLeft size={18}/> Atrás</button>{wizardStep < 4 ? <button className="wizard-next" disabled={(wizardStep===0&&!profile.name.trim())||(wizardStep===1&&(!sourceReady||profile.end<=profile.start||sourceUpload.loading||!sourceUpload.url||sourcePlayerBlocking||validation.loading))||(wizardStep===2&&(validation.loading||!validation.phrase||!verificationReady||phraseRecording.recording||phraseCountdown.active))||(wizardStep===3||wizardStep===4)} onClick={async ()=>{if(wizardStep===1){const ok=await startValidate();if(ok){setWizardStep(2);}return;}if(wizardStep===2){resetVerificationState();setWizardStep(3);return;}setWizardStep(wizardStep+1);}}>Continuar <ArrowRight size={18}/></button> : <button className="wizard-next" disabled={!voiceGen.voiceId||saving||voiceGen.loading} onClick={async ()=>{const ok=await saveToSunoVoices();if(!ok)return;cleanupPhraseRecording();onComplete({name:profile.name,style:profile.style,level:profile.level,voiceId:voiceGen.voiceId});}}><Check size={18} weight="bold"/> Guardar y usar</button>}</div>
       </div>
     </div>
   );

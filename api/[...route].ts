@@ -215,6 +215,21 @@ let cachedR2Client: any | null = null;
 let cachedR2Aws: any | null = null;
 let cachedR2Presigner: any | null = null;
 
+const voiceValidateIdempotencyCache = new Map();
+const VOICE_VALIDATE_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+
+function cleanupVoiceValidateIdempotencyCache(now) {
+  if (voiceValidateIdempotencyCache.size <= 220) return;
+  for (const [k, v] of voiceValidateIdempotencyCache.entries()) {
+    if (!v || !v.expiresAt || v.expiresAt <= now) voiceValidateIdempotencyCache.delete(k);
+  }
+  if (voiceValidateIdempotencyCache.size <= 220) return;
+  const keys = Array.from(voiceValidateIdempotencyCache.keys());
+  for (let i = 0; i < keys.length && voiceValidateIdempotencyCache.size > 220; i += 1) {
+    voiceValidateIdempotencyCache.delete(keys[i]);
+  }
+}
+
 function getR2Env(): R2Env {
   if (cachedR2Env) return cachedR2Env;
   const accountId = (process.env.R2_ACCOUNT_ID || "").toString().trim();
@@ -3136,6 +3151,63 @@ const sunoHandler = (() => {
     const vocalEndS = Math.max(0, Math.floor(vocalEndSRaw));
     if (vocalEndS <= vocalStartS) return send(res, 400, { error: "vocalEndS debe ser mayor que vocalStartS" });
 
+    const clientAttemptId = firstString(payload, ["clientAttemptId", "client_attempt_id"]);
+    const cleanAttemptId = (clientAttemptId || "").toString().trim().slice(0, 140);
+    const fingerprint = `${voiceUrl}|${vocalStartS}|${vocalEndS}|${language}`;
+    const idemKey = cleanAttemptId ? `${auth.user.id}|${cleanAttemptId}` : "";
+
+    if (cleanAttemptId) {
+      try {
+        const existing = await auth.admin
+          .from("suno_tasks")
+          .select("task_id")
+          .eq("user_id", auth.user.id)
+          .eq("kind", "voice-validate")
+          .eq("client_attempt_id", cleanAttemptId)
+          .limit(1);
+        const rowTaskId = String(existing?.data?.[0]?.task_id || "").trim();
+        if (!existing?.error && rowTaskId) return send(res, 200, { taskId: rowTaskId });
+      } catch {
+      }
+    }
+
+    if (idemKey) {
+      const now = Date.now();
+      cleanupVoiceValidateIdempotencyCache(now);
+      const existing = voiceValidateIdempotencyCache.get(idemKey);
+      if (existing && existing.expiresAt && existing.expiresAt > now) {
+        if (existing.fingerprint && existing.fingerprint !== fingerprint) {
+          return send(res, 409, { error: "Ese intento ya fue usado para otra validación. Genera una frase nueva e inténtalo otra vez." });
+        }
+        if (existing.taskId) {
+          return send(res, 200, { taskId: String(existing.taskId || "").trim() });
+        }
+        if (existing.promise) {
+          try {
+            const awaited = await existing.promise;
+            const existingTaskId = String(awaited || "").trim();
+            if (existingTaskId) return send(res, 200, { taskId: existingTaskId });
+          } catch {
+          }
+        }
+      }
+
+      let resolveFn = null;
+      let rejectFn = null;
+      const promise = new Promise((resolve, reject) => {
+        resolveFn = resolve;
+        rejectFn = reject;
+      });
+      voiceValidateIdempotencyCache.set(idemKey, {
+        expiresAt: now + VOICE_VALIDATE_IDEMPOTENCY_TTL_MS,
+        fingerprint,
+        taskId: "",
+        promise,
+        resolveFn,
+        rejectFn,
+      });
+    }
+
     try {
       // Si Suno falla descargando URLs externas (aun siendo accesibles), subimos el archivo a su
       // servicio temporal (File Upload API) y usamos ese downloadUrl.
@@ -3220,12 +3292,60 @@ const sunoHandler = (() => {
       if (!taskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
 
       try {
-        await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-validate", cost: 0, consumed: false });
+        const row = {
+          task_id: taskId,
+          user_id: auth.user.id,
+          kind: "voice-validate",
+          cost: 0,
+          consumed: false,
+          client_attempt_id: cleanAttemptId || null,
+        };
+        const ins1 = await auth.admin.from("suno_tasks").insert(row);
+        if (ins1?.error) {
+          if (isMissingColumnError(ins1.error)) {
+            await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-validate", cost: 0, consumed: false });
+          } else if (String(ins1.error.code || "") === "23505" && cleanAttemptId) {
+            const existing = await auth.admin
+              .from("suno_tasks")
+              .select("task_id")
+              .eq("user_id", auth.user.id)
+              .eq("kind", "voice-validate")
+              .eq("client_attempt_id", cleanAttemptId)
+              .limit(1);
+            const existingTaskId = String(existing?.data?.[0]?.task_id || "").trim();
+            if (existingTaskId) return send(res, 200, { taskId: existingTaskId });
+          }
+        }
       } catch {
       }
 
+      if (idemKey) {
+        const row = voiceValidateIdempotencyCache.get(idemKey);
+        if (row && row.fingerprint === fingerprint) {
+          row.taskId = taskId;
+          if (row.resolveFn) {
+            try {
+              row.resolveFn(taskId);
+            } catch {
+            }
+          }
+          voiceValidateIdempotencyCache.set(idemKey, row);
+        }
+      }
       return send(res, 200, { taskId });
     } catch (e) {
+      if (idemKey) {
+        const row = voiceValidateIdempotencyCache.get(idemKey);
+        if (row && row.fingerprint === fingerprint) {
+          if (row.rejectFn) {
+            try {
+              row.rejectFn(e instanceof Error ? e.message : String(e));
+            } catch {
+            }
+          }
+          voiceValidateIdempotencyCache.delete(idemKey);
+        }
+      }
       return send(res, 502, { error: "Error iniciando validación de voz", detail: e instanceof Error ? e.message : String(e) });
     }
   }

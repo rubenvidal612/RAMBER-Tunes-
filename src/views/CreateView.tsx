@@ -264,6 +264,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [voiceValidateTaskId, setVoiceValidateTaskId] = useState('');
   const voiceValidateTaskIdRef = useRef<string>('');
   const [voiceValidateInfo, setVoiceValidateInfo] = useState('');
+  const [voiceClientAttemptId, setVoiceClientAttemptId] = useState('');
+  const voiceClientAttemptIdRef = useRef<string>('');
+  const voiceValidateLockRef = useRef(false);
+  const voiceGenerateLockRef = useRef(false);
+  const voiceVerifyAttemptIdRef = useRef<string>('');
+  const voiceValidatePollReqRef = useRef(0);
   const [voiceVerifyFile, setVoiceVerifyFile] = useState<File | null>(null);
   const [voiceVerifyPreviewUrl, setVoiceVerifyPreviewUrl] = useState('');
   const [voiceGenerateTaskId, setVoiceGenerateTaskId] = useState('');
@@ -301,6 +307,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const voiceRecorderBarsTimerRef = useRef<number | null>(null);
   const voiceRecorderAudioCtxRef = useRef<AudioContext | null>(null);
   const voiceRecorderAnalyserRef = useRef<AnalyserNode | null>(null);
+
+  const makeVoiceClientAttemptId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
   const [voiceSkillLevel, setVoiceSkillLevel] = useState('');
   const [voiceDetailsName, setVoiceDetailsName] = useState('');
@@ -517,6 +525,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           const file = new File([blob], `grabacion_${Date.now()}.${ext}`, { type: blob.type });
 
           if (modeAtStart === 'verify') {
+            voiceVerifyAttemptIdRef.current = String(voiceClientAttemptIdRef.current || voiceClientAttemptId || '').trim();
             setVoiceVerifyFile(file);
             setVoiceCreateError('');
             setVoiceCreateStep('generating_voice');
@@ -1370,7 +1379,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         if (modo === 'supabase_admin_inline' || !uploadUrl) {
           if (!url) throw new Error('No recibí la URL final del audio en Supabase');
           diag.push('intent4_inline=ok');
-          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect admin inline (<=3MB)', diag.join(' | '));
           return { url, key };
         }
         const formData = new FormData();
@@ -1422,23 +1430,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           if (!put.ok) {
             const status = put?.status ?? 0;
             const statusText = put?.statusText ?? '';
-            console.error('[UPLOAD_AUDIO_VOICE] Intento4 UPLOAD FAIL:', JSON.stringify({
-              status, statusText, responseText: (putRespText || '').slice(0, 2000),
-              responseTextLength: (putRespText || '').length,
-              method,
-              putMethod,
-              hasPresignedFields,
-              isPutBlobDirect,
-              sentHeadersKeys: Object.keys(extraHdrs),
-              fieldsCount: hasPresignedFields ? Object.keys((prepOut!.uploadFields as any) || {}).length : 0,
-              filename,
-              contentType,
-              file_type: (file as any)?.type || '',
-              file_size: Number((file as any)?.size || 0),
-              blob_type: finalBlob.type,
-              blob_size: finalBlob.size,
-              uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
-            }, null, 2));
             let msgExtra = '';
             try {
               const parsed = JSON.parse(putRespText || '{}');
@@ -1449,13 +1440,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         } catch (errAny) {
           if (put && !put.ok) throw errAny;
           const msgAny = errAny instanceof Error ? errAny.message : String(errAny || '');
-          console.error('[UPLOAD_AUDIO_VOICE] Intento4 UPLOAD FAIL (exception):', JSON.stringify({
-            error: msgAny.slice(0, 800),
-            method,
-            putMethod,
-            isPutBlobDirect,
-            filename, contentType, file_size: Number((file as any)?.size || 0),
-          }, null, 2));
           throw errAny;
         }
         // ✅ Subida multipart terminó BIEN.
@@ -1475,9 +1459,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             const prepSignedOut = parseJsonSafe(prepRawSigned);
             if (!(prepSigned.ok && prepSignedOut?.ok)) {
               const extra = (prepSignedOut?.detail || prepSignedOut?.error || `HTTP ${prepSigned.status}`).toString();
-              console.error('[UPLOAD_AUDIO_VOICE] Intento4 fetchSignedUrl FAIL:', JSON.stringify({
-                status: prepSigned.status, responseText: prepRawSigned.slice(0, 800), key: key.slice(0, 200), extra,
-              }, null, 2));
               throw new Error(`No pude firmar la URL final de reproducción. ${extra}`.trim());
             }
             finalUrl = (prepSignedOut?.url || '').toString().trim() || finalUrl;
@@ -1489,7 +1470,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         }
         if (!finalUrl) throw new Error('No recibí la URL final del audio en Supabase (después de fetchSignedUrl).');
         diag.push('intent4_signed=ok');
-        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload >3MB)', diag.join(' | '));
         return { url: finalUrl, key };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e || '');
@@ -1557,23 +1537,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               if (!putR.ok) {
                 const status = putR?.status ?? 0;
                 const statusText = putR?.statusText ?? '';
-                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY UPLOAD FAIL:', JSON.stringify({
-                  status, statusText, responseText: (putRText || '').slice(0, 2000),
-                  responseTextLength: (putRText || '').length,
-                  method: methodR,
-                  putRMethod,
-                  hasPresignedFields: hasFieldsR,
-                  isPutBlobR,
-                  sentHeadersKeys: Object.keys(extraHdrs),
-                  fieldsCount: hasFieldsR ? Object.keys((prepOut2!.uploadFields as any) || {}).length : 0,
-                  filename: filenameR,
-                  contentType,
-                  file_type: (file as any)?.type || '',
-                  file_size: Number((file as any)?.size || 0),
-                  blob_type: finalBlobR.type,
-                  blob_size: finalBlobR.size,
-                  uploadUrl_host: (() => { try { return new URL(uploadUrl || '').host; } catch { return ''; } })(),
-                }, null, 2));
                 let msgExtra = '';
                 try {
                   const parsed = JSON.parse(putRText || '{}');
@@ -1601,24 +1564,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 finalUrl = (prepS2?.url || '').toString().trim() || finalUrl;
               } else {
                 const s2err = (prepS2?.detail || prepS2?.error || `No pude firmar URL final (retry, HTTP ${prepSigned2.status})`).toString();
-                console.error('[UPLOAD_AUDIO_VOICE] Intento4 RETRY fetchSignedUrl FAIL:', JSON.stringify({
-                  status: prepSigned2.status, responseText: prepRawS2.slice(0, 800), key: key.slice(0, 200),
-                  s2err: s2err.slice(0, 500),
-                }, null, 2));
                 diag.push(`intent4_retry_fetch_signed=fail:${s2err.slice(0, 120).replace(/\s+/g, ' ')}`);
                 throw new Error(s2err);
               }
             }
             if (!finalUrl) throw new Error('No recibí la URL final del audio en Supabase (retry).');
             diag.push('intent4_signed=ok');
-            console.log('[UPLOAD_AUDIO_VOICE] OK via uploadSupabaseDirect (signed upload por retry >3MB)', diag.join(' | '));
             return { url: finalUrl, key };
           } catch (inner) {
             throw inner;
           }
         }
         diag.push(`intent4=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
-        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadSupabaseDirect', diag.join(' | '));
         if (e instanceof Error && (e as any)?.name === 'AbortError') {
           throw new Error('La subida final tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
         }
@@ -1656,12 +1613,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, timeoutPut);
         if (!put.ok) throw new Error(`No se pudo subir el audio al almacenamiento (HTTP ${put.status}).`);
         diag.push('intent3=ok');
-        console.log('[UPLOAD_AUDIO_VOICE] OK via uploadWithGenericPrep', diag.join(' | '));
         return { url, key };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e || '');
         diag.push(`intent3=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
-        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadWithGenericPrep', diag.join(' | '));
         if (e instanceof Error && (e as any)?.name === 'AbortError') {
           throw new Error('La subida alternativa tardó demasiado. Intenta con un MP3 más pequeño o con mejor internet.');
         }
@@ -1703,7 +1658,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const key = (out?.key || '').toString().trim();
         if (r.ok && out?.ok && url) {
           diag.push('intent2=ok');
-          console.log('[UPLOAD_AUDIO_VOICE] OK via uploadInline', diag.join(' | '));
           return { url, key };
         }
         throw new Error((out?.detail || out?.error || `No pude subir el audio (HTTP ${r.status}).`).toString());
@@ -1713,7 +1667,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           throw e; // Señal interna, lo captura el caller y sigue al siguiente intento SILENCIOSAMENTE.
         }
         diag.push(`intent2=fail:${msg.slice(0, 120).replace(/\s+/g, ' ')}`);
-        console.log('[UPLOAD_AUDIO_VOICE] FAIL via uploadInline', diag.join(' | '));
         if (e instanceof Error && (e as any)?.name === 'AbortError') {
           throw new Error('La subida por servidor tardó demasiado. Usa un MP3 más pequeño o activa subida directa.');
         }
@@ -1758,12 +1711,10 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               const put = await fetchWithTimeout(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file }, timeoutPut);
               if (!put.ok) {
                 diag.push(`intent1_put_fail_http=${put.status}`);
-                console.log('[UPLOAD_AUDIO_VOICE] FAIL intent1 PUT', diag.join(' | '));
                 throw new Error(`Error en subida directa a R2 (HTTP ${put.status}).`);
               }
               const key = (prepOut?.key || '').toString().trim();
               diag.push('intent1=ok');
-              console.log('[UPLOAD_AUDIO_VOICE] OK via direct R2', diag.join(' | '));
               return { url, key };
             } catch (putErr) {
               // Fall through to fallback chain (inline then profile-image then supabase direct)
@@ -1777,7 +1728,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           } else {
             const key = (prepOut?.key || '').toString().trim();
             diag.push('intent1_server=ok');
-            console.log('[UPLOAD_AUDIO_VOICE] OK via server upload', diag.join(' | '));
             return { url, key };
           }
         } else {
@@ -1795,7 +1745,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error || '');
       diag.push(`chain_top_catch:${errMsg.slice(0, 120).replace(/\s+/g, ' ')}`);
-      console.log('[UPLOAD_AUDIO_VOICE] chain catch, saltando a fallback completo...', diag.join(' | '));
       try {
         return await fallbackChain(true);
       } catch (e) {
@@ -1861,24 +1810,29 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   };
 
   const generateValidationPhrase = async () => {
-    if (voiceBusy) return;
+    if (voiceValidateLockRef.current) return;
+    voiceValidateLockRef.current = true;
     setVoiceCreateError('');
     if (!voiceConsent) {
       setVoiceCreateError('Marca la casilla de consentimiento para continuar.');
+      voiceValidateLockRef.current = false;
       return;
     }
     const name = (newVoiceName || '').toString().trim();
     if (!name) {
       setVoiceCreateError('Ponle un nombre a tu voz.');
+      voiceValidateLockRef.current = false;
       return;
     }
     if (!voiceSourceFile) {
       setVoiceCreateError('Selecciona un audio para crear la voz.');
+      voiceValidateLockRef.current = false;
       return;
     }
     const d = Number(voiceSourceDurationSec || 0);
     if (!Number.isFinite(d) || d <= 0) {
       setVoiceCreateError('No pude leer la duración del audio. Prueba con otro archivo.');
+      voiceValidateLockRef.current = false;
       return;
     }
     const trimmed = clampVoiceTrim(Number(voiceStartSec || 0), Number(voiceEndSec || voiceTrimMaxSec), d);
@@ -1886,8 +1840,24 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     const end = Math.max(0, Math.floor(Number(trimmed.end || 0)));
     if (end <= start) {
       setVoiceCreateError('El recorte es inválido. Ajusta el inicio y el final.');
+      voiceValidateLockRef.current = false;
       return;
     }
+
+    const clientAttemptId = makeVoiceClientAttemptId();
+    voiceClientAttemptIdRef.current = clientAttemptId;
+    setVoiceClientAttemptId(clientAttemptId);
+    voiceValidatePollReqRef.current += 1;
+    const pollReqId = voiceValidatePollReqRef.current;
+    voiceVerifyAttemptIdRef.current = '';
+    setVoiceVerifyFailed(false);
+    setVoiceVerifyFile(null);
+    setVoiceVerifyPreviewUrl('');
+    setVoiceValidateInfo('');
+    setVoiceValidateTaskId('');
+    voiceValidateTaskIdRef.current = '';
+    setVoiceGenerateTaskId('');
+    setVoiceGeneratedVoiceId('');
 
     setVoiceBusy(true);
     setVoiceCreateStep('generating_phrase');
@@ -1901,18 +1871,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const r = await fetch('/api/suno/voice-validate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ voiceUrl: cleanVoiceUrl, vocalStartS: start, vocalEndS: end, language: 'es' }),
+        body: JSON.stringify({ voiceUrl: cleanVoiceUrl, vocalStartS: start, vocalEndS: end, language: 'es', clientAttemptId }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error((out?.detail || out?.error || 'No pude iniciar la validación.').toString());
       const taskId = String(out?.taskId || '').trim();
       if (!taskId) throw new Error('No recibí taskId para la frase de validación.');
+      if (voiceValidatePollReqRef.current !== pollReqId || voiceClientAttemptIdRef.current !== clientAttemptId) return;
       setVoiceValidateTaskId(taskId);
       voiceValidateTaskIdRef.current = taskId;
 
       const startedAt = Date.now();
       while (Date.now() - startedAt < 3 * 60 * 1000) {
+        if (voiceValidatePollReqRef.current !== pollReqId || voiceClientAttemptIdRef.current !== clientAttemptId) return;
         await new Promise((r) => setTimeout(r, 2500));
+        if (voiceValidatePollReqRef.current !== pollReqId || voiceClientAttemptIdRef.current !== clientAttemptId) return;
         const qr = await fetch(`/api/suno/voice-validate-info?taskId=${encodeURIComponent(taskId)}`, {
           headers: { authorization: `Bearer ${t.token}` },
         });
@@ -1921,6 +1894,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const status = String(qout?.status || '').trim();
         const validateInfo = String(qout?.validateInfo || '').trim();
         if (status === 'wait_validating' && validateInfo) {
+          if (voiceValidatePollReqRef.current !== pollReqId || voiceClientAttemptIdRef.current !== clientAttemptId) return;
           setVoiceValidateInfo(validateInfo);
           setVoiceCreateStep('recording_verify');
           startVoiceRecorder('verify').catch((e) => {
@@ -1935,19 +1909,30 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
       throw new Error('La frase está tardando demasiado. Intenta de nuevo.');
     } catch (e) {
+      if (voiceClientAttemptIdRef.current !== clientAttemptId) return;
       setVoiceCreateError(e instanceof Error ? e.message : String(e));
       setVoiceCreateStep('segment');
     } finally {
       setVoiceBusy(false);
+      voiceValidateLockRef.current = false;
     }
   };
 
   const generateCustomVoice = async (verifyFileArg?: File) => {
-    if (voiceBusy) return;
+    if (voiceGenerateLockRef.current) return;
+    voiceGenerateLockRef.current = true;
     setVoiceCreateError('');
     setVoiceVerifyFailed(false);
     if (!voiceConsent) {
       setVoiceCreateError('Marca la casilla de consentimiento para continuar.');
+      voiceGenerateLockRef.current = false;
+      return;
+    }
+    const clientAttemptId = String(voiceClientAttemptIdRef.current || voiceClientAttemptId || '').trim();
+    if (!clientAttemptId) {
+      setVoiceCreateError('Necesitamos generar la frase de validación antes de verificar.');
+      setVoiceCreateStep('segment');
+      voiceGenerateLockRef.current = false;
       return;
     }
     const rawName = (newVoiceName || '').toString().trim();
@@ -1957,11 +1942,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     if (!validationTaskId) {
       setVoiceCreateError('Falta el taskId de validación. Regresa y genera la frase de validación otra vez.');
       setVoiceCreateStep('segment');
+      voiceGenerateLockRef.current = false;
       return;
     }
     const verifyFile = verifyFileArg || voiceVerifyFile;
     if (!verifyFile) {
       setVoiceCreateError('Graba o sube la frase para validar.');
+      voiceGenerateLockRef.current = false;
+      return;
+    }
+    if (voiceVerifyAttemptIdRef.current && voiceVerifyAttemptIdRef.current !== clientAttemptId) {
+      setVoiceCreateError('La grabación no corresponde a la frase actual. Genera una frase nueva e inténtalo de nuevo.');
+      setVoiceCreateStep('segment');
+      voiceGenerateLockRef.current = false;
       return;
     }
 
@@ -1981,6 +1974,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           taskId: validationTaskId,
           verifyUrl: cleanVerifyUrl,
           voiceName: name,
+          clientAttemptId,
         }),
       });
       const out = await r.json().catch(() => ({}));
@@ -1992,7 +1986,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       let foundVoiceId = '';
       const startedAt = Date.now();
       while (Date.now() - startedAt < 25 * 60 * 1000) {
+        if (String(voiceClientAttemptIdRef.current || '').trim() !== clientAttemptId) return;
         await new Promise((r) => setTimeout(r, 4500));
+        if (String(voiceClientAttemptIdRef.current || '').trim() !== clientAttemptId) return;
         const qr = await fetch(`/api/suno/voice-record-info?taskId=${encodeURIComponent(genTaskId)}`, {
           headers: { authorization: `Bearer ${t.token}` },
         });
@@ -2018,6 +2014,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       let available: boolean | null = null;
       const availStarted = Date.now();
       while (Date.now() - availStarted < 3 * 60 * 1000) {
+        if (String(voiceClientAttemptIdRef.current || '').trim() !== clientAttemptId) return;
         const ar = await fetch('/api/suno/voice-check-voice', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
@@ -2042,6 +2039,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoiceSkillLevel('');
       setVoiceCreateStep('skill');
     } catch (e) {
+      if (String(voiceClientAttemptIdRef.current || '').trim() !== clientAttemptId) return;
       const raw = e instanceof Error ? e.message : String(e);
       const lower = (raw || '').toString().toLowerCase();
       const isValidateFail =
@@ -2058,11 +2056,18 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoiceCreateStep('pick_verify');
     } finally {
       setVoiceBusy(false);
+      voiceGenerateLockRef.current = false;
     }
   };
 
   const repeatVoiceValidation = () => {
     if (voiceBusy) return;
+    voiceValidatePollReqRef.current += 1;
+    voiceClientAttemptIdRef.current = '';
+    setVoiceClientAttemptId('');
+    voiceVerifyAttemptIdRef.current = '';
+    voiceValidateLockRef.current = false;
+    voiceGenerateLockRef.current = false;
     setVoiceVerifyFailed(false);
     setVoiceCreateError('');
     setVoiceVerifyFile(null);
@@ -2078,6 +2083,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const cancelVoiceValidation = () => {
     if (voiceBusy) return;
+    voiceValidatePollReqRef.current += 1;
+    voiceClientAttemptIdRef.current = '';
+    setVoiceClientAttemptId('');
+    voiceVerifyAttemptIdRef.current = '';
+    voiceValidateLockRef.current = false;
+    voiceGenerateLockRef.current = false;
     setVoiceVerifyFailed(false);
     setVoiceCreateError('');
     setVoiceVerifyFile(null);
