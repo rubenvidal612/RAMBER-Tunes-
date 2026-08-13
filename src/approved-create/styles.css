@@ -93,4 +93,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     min-height:44px;
   }
 }
-@media(max-width:1023px){.wizard-overlay[data-step="0"]{padding-bottom:calc(18px + 68px + env(safe-area-inset-bottom))}}
+@media(max-width:1023px){
+  .wizard-overlay{
+    padding-bottom:calc(18px + 68px + env(safe-area-inset-bottom))
+  }
+}
