@@ -10084,7 +10084,7 @@ const sharePreviewHandler = (() => {
       const songIsNumeric = /^[0-9]+$/.test(songIdRaw);
       let songQuery = admin
         .from("library_items")
-        .select("id, title, description, lyrics, genre, suno_model, audio_url, cover_url, created_at, is_public, deleted_at, type, suno_audio_id")
+        .select("id, title, description, lyrics, suno_model, audio_url, cover_url, created_at, deleted_at, type, suno_audio_id")
         .eq("type", "song");
       if (songIsNumeric) songQuery = songQuery.eq("id", songIdRaw);
       else if (songIsUuid) songQuery = songQuery.eq("suno_audio_id", songIdRaw);
@@ -10119,10 +10119,10 @@ const song = sr.data as any;
         title: String(song?.title || "Canción"),
         description: String(song?.description || ""),
         lyrics: String(song?.lyrics || ""),
-        genre: String(song?.genre || ""),
+        genre: "",
         model: String(song?.suno_model || ""),
         songCreatedAt: (song as any)?.created_at || null,
-        isPublic: Boolean((song as any)?.is_public),
+        isPublic: false,
         audioUrl: previewAudioUrl,
         coverUrl: String(song?.cover_url || ""),
         unlockPrice: unlockPrice,
