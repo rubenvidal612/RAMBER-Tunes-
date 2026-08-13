@@ -10079,12 +10079,17 @@ const sharePreviewHandler = (() => {
       } catch {
       }
 
-      const sr = await admin
+      const songIdRaw = String((share as any).song_id || "").trim();
+      const songIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(songIdRaw);
+      const songIsNumeric = /^[0-9]+$/.test(songIdRaw);
+      let songQuery = admin
         .from("library_items")
-        .select("id, title, description, lyrics, genre, suno_model, audio_url, cover_url, created_at, is_public, deleted_at, type")
-        .eq("id", String((share as any).song_id || "").trim())
-        .eq("type", "song")
-        .maybeSingle();
+        .select("id, title, description, lyrics, genre, suno_model, audio_url, cover_url, created_at, is_public, deleted_at, type, suno_audio_id")
+        .eq("type", "song");
+      if (songIsNumeric) songQuery = songQuery.eq("id", songIdRaw);
+      else if (songIsUuid) songQuery = songQuery.eq("suno_audio_id", songIdRaw);
+      else songQuery = songQuery.eq("id", songIdRaw);
+      const sr = await songQuery.maybeSingle();
       if (sr.error) return send(res, 500, { error: "No pude buscar la canción", detail: sr.error.message });
       if (!sr.data || (sr.data as any).deleted_at) return send(res, 404, { error: "La canción ya no está disponible" });
 
@@ -10103,7 +10108,7 @@ const song = sr.data as any;
       return send(res, 200, {
         ok: true,
         id: String((share as any).id || ""),
-        songId: String((share as any).song_id || ""),
+        songId: String(song?.id || (share as any).song_id || ""),
         createdBy: creatorEmail || String((share as any).created_by || ""),
         clientLabel: String((share as any).client_label || ""),
         hasCountdown: Boolean((share as any).has_countdown),
@@ -10157,8 +10162,25 @@ const song = sr.data as any;
         : false;
       if (expiredByTime) return send(res, 410, { error: "Preview expirado" });
 
+      const rawSongId = String(share?.song_id || "").trim();
+      let resolvedSongId = rawSongId;
+      const rawIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawSongId);
+      const rawIsNumeric = /^[0-9]+$/.test(rawSongId);
+      if (rawSongId && !rawIsNumeric) {
+        try {
+          let sq = admin.from("library_items").select("id, deleted_at, type").eq("type", "song");
+          sq = rawIsUuid ? sq.eq("suno_audio_id", rawSongId) : sq.eq("id", rawSongId);
+          const sr = await sq.maybeSingle();
+          if (!sr.error && sr.data && !(sr.data as any)?.deleted_at) {
+            resolvedSongId = String((sr.data as any)?.id || rawSongId).trim();
+          }
+        } catch {
+        }
+      }
+      if (!resolvedSongId) return send(res, 404, { error: "La canción ya no está disponible" });
+
       res.statusCode = 307;
-      res.setHeader("location", `/api/share/song/audio?id=${encodeURIComponent(String(share?.song_id || ""))}${pickQuery(req, "dl") ? "&dl=1" : ""}`);
+      res.setHeader("location", `/api/share/song/audio?id=${encodeURIComponent(resolvedSongId)}${pickQuery(req, "dl") ? "&dl=1" : ""}`);
       res.end();
       return;
     } catch (e) {

@@ -4103,7 +4103,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       <div className="sticky top-0 z-20 border-b border-white/10 bg-black/45 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1220px] items-center justify-between gap-3 px-4 py-4">
           <a href="/" className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-yellow-400 text-2xl font-light text-black">L</div>
+            <img src="/assets/luciana-music-logo.jpeg" alt="Logo de LucIAna Music" className="h-11 w-11 rounded-2xl object-cover shadow-[0_0_18px_rgba(250,204,21,0.25)]" />
             <div className="min-w-0">
               <div className="truncate text-base font-extrabold">LucIAna Music</div>
               <div className="truncate text-[11px] uppercase tracking-[0.28em] text-slate-500">Preview protegido</div>
@@ -4561,7 +4561,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       <div className="sticky top-0 z-20 border-b border-white/10 bg-black/45 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1220px] items-center justify-between gap-3 px-4 py-4">
           <a href="/" className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-yellow-400 text-2xl font-light text-black">L</div>
+            <img src="/assets/luciana-music-logo.jpeg" alt="Logo de LucIAna Music" className="h-11 w-11 rounded-2xl object-cover shadow-[0_0_18px_rgba(250,204,21,0.25)]" />
             <div className="min-w-0">
               <div className="truncate text-base font-extrabold">LucIAna Music</div>
               <div className="truncate text-[11px] uppercase tracking-[0.28em] text-slate-500">Preview para cliente</div>
