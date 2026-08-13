@@ -466,36 +466,37 @@ function Stepper({ step, onStep }) {
   );
 }
 
-function VoiceMeter({ onFinished }) {
+function VoiceMeter({ onFinished, stream, mode = "default" }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const audioContextRef = useRef(null);
   const animationRef = useRef(null);
+  const ownsStreamRef = useRef(false);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
 
   const stopListening = () => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    if (ownsStreamRef.current) streamRef.current?.getTracks().forEach((track) => track.stop());
     audioContextRef.current?.close();
     streamRef.current = null;
     audioContextRef.current = null;
+    ownsStreamRef.current = false;
     setListening(false);
   };
 
   useEffect(() => () => stopListening(), []);
 
-  const startListening = async () => {
+  const startListeningWithStream = async (nextStream) => {
     setError("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const context = new AudioContextClass();
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.78;
-      context.createMediaStreamSource(stream).connect(analyser);
-      streamRef.current = stream;
+      context.createMediaStreamSource(nextStream).connect(analyser);
+      streamRef.current = nextStream;
       audioContextRef.current = context;
       setListening(true);
 
@@ -530,12 +531,51 @@ function VoiceMeter({ onFinished }) {
     }
   };
 
+  const startListening = async () => {
+    setError("");
+    try {
+      const nextStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ownsStreamRef.current = true;
+      await startListeningWithStream(nextStream);
+    } catch {
+      setError("Permite el acceso al micrófono para que la barra pueda detectar tu voz.");
+    }
+  };
+
+  useEffect(() => {
+    if (!stream) return;
+    if (mode !== "indicator") return;
+    stopListening();
+    ownsStreamRef.current = false;
+    startListeningWithStream(stream).catch(() => {});
+    return () => stopListening();
+  }, [stream, mode]);
+
   const finish = () => {
     stopListening();
     onFinished();
   };
 
-  return <div className="voice-meter"><div className={`voice-meter-display ${listening ? "active" : ""}`}><canvas ref={canvasRef} width="620" height="82" aria-label="Medidor de intensidad de voz"/><span>{listening ? "Escuchando tu voz…" : "El medidor comenzará cuando actives el micrófono"}</span></div>{error && <small className="voice-meter-error">{error}</small>}{!listening ? <button className="wizard-next phrase-finish" onClick={startListening}><Microphone size={19}/> Comenzar a cantar</button> : <button className="wizard-next phrase-finish recording" onClick={finish}><Check size={19} weight="bold"/> Terminé de cantar</button>}</div>;
+  return (
+    <div className="voice-meter">
+      <div className={`voice-meter-display ${listening ? "active" : ""}`}>
+        <canvas ref={canvasRef} width="620" height="82" aria-label="Medidor de intensidad de voz" />
+        <span>{listening ? "Escuchando tu voz…" : "El medidor comenzará cuando actives el micrófono"}</span>
+      </div>
+      {error && <small className="voice-meter-error">{error}</small>}
+      {mode !== "indicator" ? (
+        !listening ? (
+          <button className="wizard-next phrase-finish" onClick={startListening}>
+            <Microphone size={19} /> Comenzar a cantar
+          </button>
+        ) : (
+          <button className="wizard-next phrase-finish recording" onClick={finish}>
+            <Check size={19} weight="bold" /> Terminé de cantar
+          </button>
+        )
+      ) : null}
+    </div>
+  );
 }
 
 function CloneVoiceWizard({ onClose, onComplete, setToast }) {
@@ -578,6 +618,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   const phraseRecorderChunksRef = useRef([]);
   const phraseRecorderUrlRef = useRef("");
   const verifyAutoRef = useRef({ key: "", attempt: 0, running: false });
+  const verifyFlowRunRef = useRef(0);
+  const verifyLastErrorRef = useRef("");
   const [phraseRecording, setPhraseRecording] = useState({
     recording: false,
     seconds: 0,
@@ -585,14 +627,21 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     mimeType: "",
     url: "",
   });
+  const [phraseMeterStream, setPhraseMeterStream] = useState(null);
   const wizardSteps = ["Perfil", "Audio original", "Frase", "Verificación", "Listo"];
   const sourceReady = Boolean(profile.sourceAudio);
   const verificationReady = Boolean(profile.verifyAudio);
   const language = "es";
 
+  const cancelVerificationFlow = () => {
+    verifyFlowRunRef.current += 1;
+    verifyAutoRef.current.running = false;
+  };
+
   const cleanupPhraseRecording = () => {
     if (phraseRecordingTimerRef.current) window.clearInterval(phraseRecordingTimerRef.current);
     phraseRecordingTimerRef.current = 0;
+    setPhraseMeterStream(null);
     try {
       if (phraseRecorderRef.current && phraseRecorderRef.current.state !== "inactive") {
         phraseRecorderRef.current.stop();
@@ -622,7 +671,16 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     }));
   };
 
-  useEffect(() => cleanupPhraseRecording, []);
+  useEffect(() => {
+    return () => {
+      cancelVerificationFlow();
+      cleanupPhraseRecording();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (wizardStep !== 3) cancelVerificationFlow();
+  }, [wizardStep]);
 
   const pickRecorderMimeType = () => {
     const candidates = [
@@ -654,12 +712,57 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     return "m4a";
   };
 
+  const validateRecordedBlob = async (blob) => {
+    if (!blob || !blob.size) return { ok: false, duration: 0 };
+    const url = URL.createObjectURL(blob);
+    try {
+      const duration = await new Promise((resolve, reject) => {
+        const audio = new Audio();
+        let done = false;
+        const finish = (value, isError) => {
+          if (done) return;
+          done = true;
+          if (isError) reject(new Error("invalid_audio"));
+          else resolve(value);
+        };
+        const timer = window.setTimeout(() => finish(0, true), 3500);
+        audio.addEventListener(
+          "loadedmetadata",
+          () => {
+            window.clearTimeout(timer);
+            const d = Number(audio.duration);
+            if (!Number.isFinite(d) || d <= 0.1) finish(0, true);
+            else finish(d, false);
+          },
+          { once: true },
+        );
+        audio.addEventListener(
+          "error",
+          () => {
+            window.clearTimeout(timer);
+            finish(0, true);
+          },
+          { once: true },
+        );
+        audio.src = url;
+      });
+      return { ok: true, duration: Number(duration) || 0 };
+    } catch {
+      return { ok: false, duration: 0 };
+    } finally {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    }
+  };
+
   const startPhraseRecording = async () => {
     setPhraseRecording((current) => ({ ...current, error: "" }));
     cleanupPhraseRecording();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       phraseRecordingStreamRef.current = stream;
+      setPhraseMeterStream(stream);
       const mimeType = pickRecorderMimeType();
       let recorder;
       try {
@@ -672,33 +775,46 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         if (e.data && e.data.size > 0) phraseRecorderChunksRef.current.push(e.data);
       });
       recorder.addEventListener("stop", () => {
-        try {
-          if (phraseRecordingTimerRef.current) window.clearInterval(phraseRecordingTimerRef.current);
-          phraseRecordingTimerRef.current = 0;
-          const chunks = phraseRecorderChunksRef.current;
-          phraseRecorderChunksRef.current = [];
-          const finalMime = String(recorder.mimeType || mimeType || "audio/mp4").trim() || "audio/mp4";
-          const blob = new Blob(chunks, { type: finalMime });
-          const ext = extFromMime(finalMime);
-          const file = new File([blob], `verificacion_${Date.now()}.${ext}`, { type: finalMime });
-          if (phraseRecorderUrlRef.current) {
-            try {
-              URL.revokeObjectURL(phraseRecorderUrlRef.current);
-            } catch {}
+        (async () => {
+          try {
+            if (phraseRecordingTimerRef.current) window.clearInterval(phraseRecordingTimerRef.current);
+            phraseRecordingTimerRef.current = 0;
+            const chunks = phraseRecorderChunksRef.current;
+            phraseRecorderChunksRef.current = [];
+            const finalMime = String(recorder.mimeType || mimeType || "audio/mp4").trim() || "audio/mp4";
+            const blob = new Blob(chunks, { type: finalMime });
+            const check = await validateRecordedBlob(blob);
+            if (!check.ok) {
+              setPhraseRecording((current) => ({
+                ...current,
+                recording: false,
+                error: "No pudimos guardar correctamente la grabación. Intenta grabarla otra vez.",
+              }));
+              setProfile((current) => ({ ...current, verifyAudio: null }));
+              return;
+            }
+            const ext = extFromMime(finalMime);
+            const file = new File([blob], `verificacion_${Date.now()}.${ext}`, { type: finalMime });
+            if (phraseRecorderUrlRef.current) {
+              try {
+                URL.revokeObjectURL(phraseRecorderUrlRef.current);
+              } catch {}
+            }
+            const url = URL.createObjectURL(blob);
+            phraseRecorderUrlRef.current = url;
+            setProfile((current) => ({ ...current, verifyAudio: file }));
+            setPhraseRecording((current) => ({ ...current, recording: false, mimeType: finalMime, url, seconds: current.seconds }));
+          } finally {
+            setPhraseMeterStream(null);
+            if (phraseRecordingStreamRef.current) {
+              try {
+                phraseRecordingStreamRef.current.getTracks().forEach((t) => t.stop());
+              } catch {}
+            }
+            phraseRecordingStreamRef.current = null;
+            phraseRecorderRef.current = null;
           }
-          const url = URL.createObjectURL(blob);
-          phraseRecorderUrlRef.current = url;
-          setProfile((current) => ({ ...current, verifyAudio: file }));
-          setPhraseRecording((current) => ({ ...current, recording: false, mimeType: finalMime, url, seconds: current.seconds }));
-        } finally {
-          if (phraseRecordingStreamRef.current) {
-            try {
-              phraseRecordingStreamRef.current.getTracks().forEach((t) => t.stop());
-            } catch {}
-          }
-          phraseRecordingStreamRef.current = null;
-          phraseRecorderRef.current = null;
-        }
+        })().catch(() => {});
       });
       phraseRecorderRef.current = recorder;
       recorder.start();
@@ -732,6 +848,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     setVerifyUpload({ url: "", key: "", loading: false, error: "" });
     setVoiceGen({ taskId: "", status: "", voiceId: "", loading: false, error: "", isAvailable: null });
     verifyAutoRef.current = { key: "", attempt: 0, running: false };
+    verifyLastErrorRef.current = "";
   };
 
   const uploadWizardAudio = async (file, kind) => {
@@ -969,6 +1086,103 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     return false;
   };
 
+  const normalizeStatus = (value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_");
+
+  const isIncompatibleValidationStatus = (status) => {
+    const s = normalizeStatus(status);
+    return s === "fail" || s === "processing_validate_fail";
+  };
+
+  const isProcessingValidationStatus = (status) => {
+    const s = normalizeStatus(status);
+    if (!s) return true;
+    if (s === "wait_validating") return false;
+    if (s === "success") return false;
+    if (isIncompatibleValidationStatus(s)) return false;
+    return true;
+  };
+
+  const getValidateInfoOnce = async (taskId) => {
+    const t = await getAccessToken();
+    if (!t.ok) return { ok: false, error: t.error || "No se pudo iniciar sesión.", status: "", validateInfo: "", raw: null };
+    const qr = await fetch(`/api/suno/voice-validate-info?taskId=${encodeURIComponent(taskId)}`, {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const out = await qr.json().catch(() => ({}));
+    if (!qr.ok) {
+      const msg = String(out?.detail || out?.error || "No se pudo consultar el estado de validación.").trim();
+      return { ok: false, error: msg, status: "", validateInfo: "", raw: out };
+    }
+    const status = String(out?.status || "").trim();
+    const validateInfo = String(out?.validateInfo || "").trim();
+    return { ok: true, error: "", status, validateInfo, raw: out };
+  };
+
+  const checkExistingResultIfAny = async (validationTaskId, runId) => {
+    if (verifyFlowRunRef.current !== runId) return false;
+    const t = await getAccessToken();
+    if (!t.ok) return false;
+    const qr = await fetch(`/api/suno/voice-record-info?taskId=${encodeURIComponent(validationTaskId)}`, {
+      headers: { authorization: `Bearer ${t.token}` },
+    });
+    const out = await qr.json().catch(() => ({}));
+    if (!qr.ok) return false;
+    const status = String(out?.status || "").trim();
+    const voiceId = String(out?.voiceId || "").trim();
+    if (status) setVoiceGen((current) => ({ ...current, status }));
+    if (normalizeStatus(status) === "success" && voiceId) {
+      setVoiceGen((current) => ({ ...current, loading: false, error: "", voiceId, status }));
+      setWizardStep(4);
+      return true;
+    }
+    return false;
+  };
+
+  const prepareNewPhrase = async (reason, runId) => {
+    if (verifyFlowRunRef.current !== runId) return;
+    cancelVerificationFlow();
+    verifyLastErrorRef.current = "needs_new_phrase";
+    const msg = "La sesión de verificación ya no está disponible. Prepararemos una frase nueva.";
+    setVoiceGen((current) => ({ ...current, loading: false, error: msg, status: "needs_new_phrase" }));
+    cleanupPhraseRecording();
+    setProfile((current) => ({ ...current, verifyAudio: null }));
+    resetVerificationState();
+    setWizardStep(2);
+    try {
+      await regeneratePhrase();
+    } catch {
+      setToast(msg);
+    }
+  };
+
+  const waitForWaitValidating = async (validationTaskId, runId) => {
+    const startedAt = Date.now();
+    let attempts = 0;
+    let delayMs = 1200;
+    while (Date.now() - startedAt < 60 * 1000 && attempts < 18) {
+      if (verifyFlowRunRef.current !== runId) return { ok: false, status: "", validateInfo: "" };
+      const info = await getValidateInfoOnce(validationTaskId);
+      if (!info.ok) return { ok: false, status: "", validateInfo: "" };
+      const s = normalizeStatus(info.status);
+      if (s === "wait_validating") return { ok: true, status: info.status, validateInfo: info.validateInfo };
+      if (s === "success") return { ok: false, status: info.status, validateInfo: info.validateInfo, success: true };
+      if (isIncompatibleValidationStatus(s)) return { ok: false, status: info.status, validateInfo: info.validateInfo, incompatible: true };
+      if (isProcessingValidationStatus(s)) {
+        setVoiceGen((current) => ({ ...current, loading: true, status: "preparing_validation", error: "" }));
+        await new Promise((r) => setTimeout(r, delayMs));
+        attempts += 1;
+        delayMs = Math.min(5200, Math.floor(delayMs * 1.35));
+        continue;
+      }
+      return { ok: false, status: info.status, validateInfo: info.validateInfo, incompatible: true };
+    }
+    return { ok: false, status: "", validateInfo: "" };
+  };
+
   const startGenerateVoice = async (verifyUrlOverride) => {
     const validationTaskId = String(validation.taskId || "").trim();
     if (!validationTaskId) {
@@ -1003,7 +1217,13 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = String(out?.detail || out?.error || "No se pudo iniciar la creación de voz.").trim();
+        const raw = String(out?.detail || out?.error || "No se pudo iniciar la creación de voz.").trim();
+        const looksInvalidStatus = /validate record is not in valid status/i.test(raw);
+        if (looksInvalidStatus) {
+          setVoiceGen((current) => ({ ...current, loading: false, error: "La sesión de verificación ya no está disponible. Prepararemos una frase nueva." }));
+          return { ok: false, needsNewPhrase: true, raw };
+        }
+        const msg = raw || "No se pudo iniciar la creación de voz.";
         setVoiceGen((current) => ({ ...current, loading: false, error: msg }));
         return false;
       }
@@ -1031,28 +1251,101 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     const sig = `${file.name}|${file.size}|${file.lastModified}`;
     const key = `${validationTaskId}|${sig}|${force ? "force" : "auto"}|${verifyAutoRef.current.attempt}`;
     if (!force && (verifyAutoRef.current.running || verifyAutoRef.current.key === key)) return;
+    const runId = verifyFlowRunRef.current + 1;
+    verifyFlowRunRef.current = runId;
     verifyAutoRef.current = { key, attempt: verifyAutoRef.current.attempt, running: true };
-    setVerifyUpload({ url: "", key: "", loading: true, error: "" });
-    setVoiceGen((current) => ({ ...current, loading: true, error: "" }));
+    verifyLastErrorRef.current = "";
+    setVoiceGen((current) => ({ ...current, loading: true, error: "", status: "preparing_validation" }));
     try {
-      const uploaded = await uploadWizardAudio(file, "verify");
-      if (!uploaded?.url) {
-        setVoiceGen((current) => ({ ...current, loading: false }));
+      const current = await getValidateInfoOnce(validationTaskId);
+      if (verifyFlowRunRef.current !== runId) return;
+      if (current.ok) {
+        setValidation((v) => ({ ...v, status: current.status || v.status, phrase: current.validateInfo || v.phrase }));
+      }
+
+      const s0 = normalizeStatus(current.ok ? current.status : "");
+      if (s0 === "success") {
+        const done = await checkExistingResultIfAny(validationTaskId, runId);
         verifyAutoRef.current.running = false;
+        if (done) return;
+        setVoiceGen((current2) => ({ ...current2, loading: true, status: "preparing_validation", error: "" }));
         return;
       }
-      const ok = await startGenerateVoice(uploaded.url);
+
+      if (isIncompatibleValidationStatus(s0)) {
+        verifyAutoRef.current.running = false;
+        await prepareNewPhrase("incompatible_status", runId);
+        return;
+      }
+
+      if (s0 !== "wait_validating" && isProcessingValidationStatus(s0)) {
+        const waited = await waitForWaitValidating(validationTaskId, runId);
+        if (verifyFlowRunRef.current !== runId) return;
+        if (waited?.incompatible) {
+          verifyAutoRef.current.running = false;
+          await prepareNewPhrase("incompatible_after_wait", runId);
+          return;
+        }
+        if (waited?.success) {
+          const done = await checkExistingResultIfAny(validationTaskId, runId);
+          verifyAutoRef.current.running = false;
+          if (done) return;
+        }
+        if (!waited?.ok) {
+          verifyAutoRef.current.running = false;
+          setVoiceGen((current2) => ({ ...current2, loading: false, error: "La verificación está tardando demasiado. Intenta nuevamente." }));
+          verifyLastErrorRef.current = "unknown";
+          return;
+        }
+      }
+
+      if (verifyFlowRunRef.current !== runId) return;
+      const readyInfo = await getValidateInfoOnce(validationTaskId);
+      if (verifyFlowRunRef.current !== runId) return;
+      const readyStatus = normalizeStatus(readyInfo.ok ? readyInfo.status : "");
+      if (readyStatus !== "wait_validating") {
+        verifyAutoRef.current.running = false;
+        await prepareNewPhrase("not_wait_validating", runId);
+        return;
+      }
+
+      let uploadedUrl = String(verifyUpload.url || "").trim();
+      if (!uploadedUrl) {
+        setVerifyUpload((c) => ({ ...c, loading: true, error: "" }));
+        const uploaded = await uploadWizardAudio(file, "verify");
+        if (verifyFlowRunRef.current !== runId) return;
+        uploadedUrl = String(uploaded?.url || "").trim();
+        if (!uploadedUrl) {
+          setVoiceGen((current2) => ({ ...current2, loading: false }));
+          verifyAutoRef.current.running = false;
+          verifyLastErrorRef.current = "upload";
+          return;
+        }
+      }
+
+      setVoiceGen((current2) => ({ ...current2, loading: true, error: "", status: "" }));
+      const gen = await startGenerateVoice(uploadedUrl);
       verifyAutoRef.current.running = false;
-      if (!ok) return;
+      if (gen && typeof gen === "object" && gen.needsNewPhrase) {
+        await prepareNewPhrase("provider_invalid_status", runId);
+        return;
+      }
     } catch {
       verifyAutoRef.current.running = false;
+      verifyLastErrorRef.current = "unknown";
     }
   };
 
   const wantsNewPhrase = (msg) => {
     const text = String(msg || "").toLowerCase();
     if (!text) return false;
-    return text.includes("venc") || text.includes("expired") || text.includes("invalid task") || text.includes("not found");
+    return (
+      text.includes("venc") ||
+      text.includes("expired") ||
+      text.includes("invalid task") ||
+      text.includes("not found") ||
+      text.includes("validate record is not in valid status")
+    );
   };
 
   useEffect(() => {
@@ -1134,8 +1427,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         <div className="wizard-body">
           {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Estos datos te ayudarán a reconocer y reutilizar esta voz.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><label>Descripción<input value={profile.description} onChange={(e)=>setProfile({...profile,description:e.target.value})} placeholder="Ejemplo: Voz cálida para baladas" /></label><div className="wizard-fields"><label>Estilo vocal<select value={profile.style} onChange={(e)=>setProfile({...profile,style:e.target.value})}><option>Pop</option><option>Balada</option><option>Regional</option><option>Rock</option><option>Otro</option></select></label><label>Nivel del cantante<select value={profile.level} onChange={(e)=>setProfile({...profile,level:e.target.value})}><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option><option value="professional">Profesional</option></select></label></div><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
           {wizardStep === 1 && <div className="wizard-section"><h3>Sube el audio original de tu voz</h3><p>Este es el audio que se utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p><label className="wizard-upload"><UploadSimple size={35}/><strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong><small>Solo archivos MP3</small><input type="file" accept="audio/mpeg,.mp3" onChange={(e)=>acceptMp3(e.target.files[0],"sourceAudio")}/></label><div className="sample-actions"><a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={18}/> Convertir a MP3</a></div>{sourceUpload.loading ? <div className="audio-upload-status" style={{ marginTop: 10 }}><Loader2 size={18} className="animate-spin" /> Subiendo audio…</div> : sourceUpload.error ? <div className="audio-upload-status error">{sourceUpload.error}</div> : sourceUpload.url ? <div className="audio-upload-status success">Audio subido. URL lista para validar.</div> : null}{sourceReady && <div className="segment-box"><div><strong>Selecciona el fragmento vocal</strong><InfoTip title="¿Qué fragmento elegir?">La línea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.</InfoTip></div><div className="timeline-summary"><span>Inicio <strong>{formatTime(profile.start)}</strong></span><span>Fragmento seleccionado: <strong>{formatTime(profile.end-profile.start)}</strong></span><span>Final <strong>{formatTime(profile.end)}</strong></span></div><div className="dual-timeline" style={{"--timeline-start":`${(profile.start/profile.audioDuration)*100}%`,"--timeline-end":`${(profile.end/profile.audioDuration)*100}%`}}><div className="timeline-track"/><input aria-label="Inicio del fragmento" type="range" min="0" max={Math.max(0,profile.audioDuration-1)} value={profile.start} onInput={(e)=>setProfile({...profile,start:Math.min(Number(e.currentTarget.value),profile.end-1)})}/><input aria-label="Final del fragmento" type="range" min="1" max={profile.audioDuration} value={profile.end} onInput={(e)=>setProfile({...profile,end:Math.max(Number(e.currentTarget.value),profile.start+1)})}/></div><div className="timeline-scale"><span>0:00</span><span>Audio completo</span><Waveform size={20}/><span>{formatTime(profile.audioDuration)}</span></div></div>}</div>}
-          {wizardStep === 2 && <div className="wizard-section phrase-section"><h3>Frase de verificación</h3><p><strong>Canta la frase una sola vez</strong></p><p>Canta exactamente las palabras mostradas, con voz clara y sin ruido. Puedes usar la melodía que prefieras. Cuando termines, pulsa Detener grabación.</p><small className="phrase-help">Si quieres intentarlo otra vez, utiliza Repetir grabación.</small>{validation.loading ? <div className="wizard-info"><Loader2 size={18} className="animate-spin" /><span>Generando frase…</span></div> : validation.error ? <div className="wizard-info"><Info size={19}/><span>{validation.error}</span></div> : null}{validation.phrase ? <div className="phrase-card"><Microphone size={32}/><blockquote>“{validation.phrase}”</blockquote></div> : null}<div className="sample-actions"><button disabled={!validation.taskId || validation.loading} onClick={regeneratePhrase}><ArrowRight size={18}/> Regenerar frase</button></div><div className="wizard-info"><Info size={19}/><span>Usa Regenerar frase solo si el sistema te pide una frase nueva o si la frase ya no funciona.</span></div>{phraseRecording.error ? <div className="wizard-info"><Info size={19}/><span>{phraseRecording.error}</span></div> : null}{validation.phrase ? <div className="sample-actions">{!phraseRecording.recording ? <button className="wizard-next phrase-finish" type="button" onClick={startPhraseRecording}><Microphone size={19}/> Comenzar grabación</button> : <button className="wizard-next phrase-finish recording" type="button" onClick={stopPhraseRecording}><Check size={19} weight="bold"/> Detener grabación</button>}</div> : null}{phraseRecording.recording ? <small className="phrase-help">Grabando… {formatTime(phraseRecording.seconds)}</small> : null}{verificationReady && phraseRecording.url ? <div className="profile-preview" style={{ marginTop: 14 }}><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{phraseRecording.mimeType || (profile.verifyAudio?.type || "")}</small><audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /><div className="sample-actions" style={{ marginTop: 12 }}><button type="button" onClick={() => { cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); resetVerificationState(); }}>Repetir grabación</button></div><small className="phrase-help">Esto reemplaza solo esta grabación. La frase seguirá siendo la misma.</small></div> : null}<small className="phrase-help">Necesitas una grabación válida para continuar.</small></div>}
-          {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>Verificando tu voz…</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error) && voiceGen.status !== "fail" && voiceGen.status !== "processing_validate_fail")) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.status === "fail" || voiceGen.status === "processing_validate_fail") ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" onClick={() => { resetVerificationState(); cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); setWizardStep(2); }}>Repetir frase</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading} onClick={() => { resetVerificationState(); cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); regeneratePhrase(); setWizardStep(2); }}>Regenerar frase</button></div> : null}</div>}
+          {wizardStep === 2 && <div className="wizard-section phrase-section"><h3>Frase de verificación</h3><p><strong>Canta la frase una sola vez</strong></p><p>Canta exactamente las palabras mostradas, con voz clara y sin ruido. Puedes usar la melodía que prefieras. Cuando termines, pulsa Detener grabación.</p><small className="phrase-help">Si quieres intentarlo otra vez, utiliza Repetir grabación.</small>{validation.loading ? <div className="wizard-info"><Loader2 size={18} className="animate-spin" /><span>Generando frase…</span></div> : validation.error ? <div className="wizard-info"><Info size={19}/><span>{validation.error}</span></div> : null}{validation.phrase ? <div className="phrase-card"><Microphone size={32}/><blockquote>“{validation.phrase}”</blockquote></div> : null}<div className="sample-actions"><button disabled={!validation.taskId || validation.loading} onClick={() => { resetVerificationState(); cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); regeneratePhrase(); }}><ArrowRight size={18}/> Regenerar frase</button></div><div className="wizard-info"><Info size={19}/><span>Usa Regenerar frase solo si el sistema te pide una frase nueva o si la frase ya no funciona.</span></div>{phraseRecording.error ? <div className="wizard-info"><Info size={19}/><span>{phraseRecording.error}</span></div> : null}{validation.phrase ? <div className="sample-actions">{!phraseRecording.recording ? <button className="wizard-next phrase-finish" type="button" onClick={startPhraseRecording}><Microphone size={19}/> Comenzar grabación</button> : <button className="wizard-next phrase-finish recording" type="button" onClick={stopPhraseRecording}><Check size={19} weight="bold"/> Detener grabación</button>}</div> : null}{phraseRecording.recording && phraseMeterStream ? <VoiceMeter stream={phraseMeterStream} mode="indicator" /> : null}{phraseRecording.recording ? <small className="phrase-help">Grabando… {formatTime(phraseRecording.seconds)}</small> : null}{verificationReady && phraseRecording.url ? <div className="profile-preview" style={{ marginTop: 14 }}><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{phraseRecording.mimeType || (profile.verifyAudio?.type || "")}</small><audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /><div className="sample-actions" style={{ marginTop: 12 }}><button type="button" onClick={() => { cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); resetVerificationState(); }}>Repetir grabación</button></div><small className="phrase-help">Esto reemplaza solo esta grabación. La frase seguirá siendo la misma.</small></div> : null}<small className="phrase-help">Necesitas una grabación válida para continuar.</small></div>}
+          {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.status === "fail" || voiceGen.status === "processing_validate_fail") ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" onClick={() => { resetVerificationState(); cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); setWizardStep(2); }}>Repetir frase</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading} onClick={() => { resetVerificationState(); cleanupPhraseRecording(); setProfile((current) => ({ ...current, verifyAudio: null })); regeneratePhrase(); setWizardStep(2); }}>Regenerar frase</button></div> : null}</div>}
           {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Completa los pasos anteriores para crear tu perfil de voz."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false ? <div className="wizard-info"><Info size={19}/><span>Tu voz aún no aparece como disponible. Puedes guardarla y estará lista en unos minutos.</span></div> : null}</div>}
         </div>
         <div className="wizard-footer"><button className="wizard-back" disabled={wizardStep === 0 || validation.loading || voiceGen.loading || saving || phraseRecording.recording} onClick={()=>setWizardStep(Math.max(0,wizardStep-1))}><ArrowLeft size={18}/> Atrás</button>{wizardStep < 4 ? <button className="wizard-next" disabled={(wizardStep===0&&!profile.name.trim())||(wizardStep===1&&(!sourceReady||profile.end<=profile.start||sourceUpload.loading||!sourceUpload.url))||(wizardStep===2&&(validation.loading||!validation.phrase||!verificationReady||phraseRecording.recording))||(wizardStep===3||wizardStep===4)} onClick={async ()=>{if(wizardStep===1){const ok=await startValidate();if(ok){setWizardStep(2);}return;}if(wizardStep===2){resetVerificationState();setWizardStep(3);return;}setWizardStep(wizardStep+1);}}>Continuar <ArrowRight size={18}/></button> : <button className="wizard-next" disabled={!voiceGen.voiceId||saving||voiceGen.loading} onClick={async ()=>{const ok=await saveToSunoVoices();if(!ok)return;cleanupPhraseRecording();onComplete({name:profile.name,style:profile.style,level:profile.level,voiceId:voiceGen.voiceId});}}><Check size={18} weight="bold"/> Guardar y usar</button>}</div>
