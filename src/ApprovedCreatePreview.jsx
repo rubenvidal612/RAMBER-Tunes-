@@ -1498,6 +1498,10 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
   const improving = Boolean(handlers?.isBoostingStyle);
   const translating = Boolean(handlers?.isTranslatingStyle);
   const showAudioInfluence = data.audioSource === 'upload' && (Boolean(data.file) || Boolean(handlers?.audioUploadUrl) || Boolean(handlers?.isUploadingAudio) || Boolean(handlers?.audioUploadError));
+  const needsAudioReupload =
+    Boolean(handlers?.audioReuploadNeeded) &&
+    data.audioSource === 'upload' &&
+    !showAudioInfluence;
   const openPrecisionHelp = () => {
     const text =
       "Rareza\n" +
