@@ -33,6 +33,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
   const [menuSong, setMenuSong] = useState<SongItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
+  const mobileHeaderMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const mobileHeaderMenuRef = useRef<HTMLDivElement>(null);
+  const [mobileFilterSortOpen, setMobileFilterSortOpen] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
   const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
   const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{
@@ -151,6 +155,37 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       return s;
     }
   };
+
+  const activeFilterCount = useMemo(() => {
+    const n1 = String(filterFrom || '').trim() ? 1 : 0;
+    const n2 = String(filterTo || '').trim() ? 1 : 0;
+    const n3 = sortOrder !== 'newest' ? 1 : 0;
+    return n1 + n2 + n3;
+  }, [filterFrom, filterTo, sortOrder]);
+
+  useEffect(() => {
+    if (!mobileHeaderMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileHeaderMenuOpen(false);
+    };
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      const btn = mobileHeaderMenuBtnRef.current;
+      const menu = mobileHeaderMenuRef.current;
+      if (btn && btn.contains(t)) return;
+      if (menu && menu.contains(t)) return;
+      setMobileHeaderMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('touchstart', onDown, { passive: true } as any);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('touchstart', onDown as any);
+    };
+  }, [mobileHeaderMenuOpen]);
 
   const makeFallbackCoverSvgUrl = (seed: string) => {
     const s = (seed || 'cancion').toString().slice(0, 80);
@@ -1824,30 +1859,97 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   return (
-    <div ref={libraryContainerRef} className="flex-1 min-h-0 flex flex-col pt-2 relative overflow-y-auto">
-      <div className="shrink-0 p-4 space-y-4">
+    <div ref={libraryContainerRef} className="flex-1 min-h-0 flex flex-col pt-1 md:pt-2 relative overflow-y-auto">
+      <div className="shrink-0 p-3 md:p-4 space-y-3 md:space-y-4">
         {activeTab === 'canciones' && (
           <>
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 md:gap-4">
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-400">Biblioteca</div>
-                <h1 className="mt-2 text-white font-extrabold text-2xl">Biblioteca</h1>
-                <p className="mt-1 text-sm text-slate-400">Todas tus canciones y proyectos en un solo lugar.</p>
+                <h1 className="mt-1 md:mt-2 text-white font-extrabold text-2xl">Biblioteca</h1>
+                <p className="mt-1 text-[13px] md:text-sm text-slate-400 leading-snug">Todas tus canciones y proyectos en un solo lugar.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onRefreshSongs?.()}
-                  className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-4 py-2 text-sm font-semibold text-slate-200 transition-colors"
-                >
-                  Actualizar
-                </button>
-                <button
-                  type="button"
                   onClick={() => window.location.assign('/crear')}
-                  className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-95 text-white rounded-full px-4 py-2 text-sm font-extrabold transition-colors flex items-center gap-2"
+                  className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-95 text-white rounded-full px-3.5 py-2 md:px-4 md:py-2 text-xs md:text-sm font-extrabold transition-colors flex items-center gap-2 min-h-[44px]"
                 >
                   <Plus className="w-4 h-4" /> Nueva canción
+                </button>
+                <div className="relative md:hidden">
+                  <button
+                    ref={mobileHeaderMenuBtnRef}
+                    type="button"
+                    onClick={() => setMobileHeaderMenuOpen((v) => !v)}
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-3.5 py-2 text-xs font-extrabold text-slate-100 transition-colors flex items-center gap-2 min-h-[44px]"
+                    aria-haspopup="menu"
+                    aria-expanded={mobileHeaderMenuOpen}
+                  >
+                    <MoreVertical className="w-4 h-4" /> Más opciones
+                  </button>
+                  {mobileHeaderMenuOpen ? (
+                    <div
+                      ref={mobileHeaderMenuRef}
+                      role="menu"
+                      className="absolute right-0 mt-2 w-[220px] rounded-2xl border border-white/10 bg-[#0b0f16] shadow-[0_20px_70px_rgba(0,0,0,0.65)] p-2 z-50"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMobileHeaderMenuOpen(false);
+                          onRefreshSongs?.();
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/5 text-sm text-slate-100 font-semibold flex items-center gap-2"
+                      >
+                        <Repeat2 className="w-4 h-4" /> Actualizar
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => setMobileHeaderMenuOpen(false)}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/5 text-sm text-slate-100 font-semibold flex items-center gap-2"
+                      >
+                        <BadgeCheck className="w-4 h-4" /> Publicado
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMobileHeaderMenuOpen(false);
+                          setShowTrash((v) => !v);
+                          onRefreshSongs?.();
+                        }}
+                        className={cn(
+                          "w-full text-left px-3 py-2 rounded-xl hover:bg-white/5 text-sm text-slate-100 font-semibold flex items-center gap-2",
+                          showTrash ? "text-red-200" : ""
+                        )}
+                      >
+                        <Trash2 className="w-4 h-4" /> {showTrash ? "Biblioteca" : "Papelera"}
+                      </button>
+                      {!showTrash ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMobileHeaderMenuOpen(false);
+                            createFolderQuick();
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/5 text-sm text-slate-100 font-semibold flex items-center gap-2"
+                        >
+                          <FolderPlus className="w-4 h-4" /> Nueva carpeta
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRefreshSongs?.()}
+                  className="hidden md:flex bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-4 py-2 text-sm font-semibold text-slate-200 transition-colors items-center gap-2"
+                >
+                  Actualizar
                 </button>
               </div>
             </div>
@@ -1877,7 +1979,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         )}
         {/* Top Filters (Me gusta, Publicado, Filtros) */}
         {activeTab === 'canciones' && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <div className="hidden md:flex items-center gap-2 overflow-x-auto no-scrollbar">
             <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors">
               Publicado
             </button>
@@ -1906,13 +2008,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         )}
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-white/5 space-x-6 overflow-x-auto no-scrollbar">
+        <div className="flex border-b border-white/5 space-x-4 md:space-x-6 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "py-3 text-sm font-medium relative whitespace-nowrap transition-colors",
+                "py-2.5 md:py-3 text-sm font-medium relative whitespace-nowrap transition-colors",
                 activeTab === tab.id ? "text-slate-100" : "text-slate-500"
               )}
             >
@@ -1924,7 +2026,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           ))}
         </div>
 
-        <div className="text-xs text-yellow-300">
+        <div className="text-[11px] text-yellow-300">
           Los archivos se conservan durante 14 días.
         </div>
       </div>
@@ -2057,7 +2159,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         )}
 
         {activeTab === 'canciones' && (
-          <div className="p-4 space-y-4">
+          <div className="p-3 md:p-4 space-y-3 md:space-y-4">
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_180px_190px] gap-3">
               <div className="relative flex items-center gap-2">
                  <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2072,7 +2174,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                        setSearchQuery(q);
                      }
                    }}
-                   className="w-full bg-white/5 border border-white/10 rounded-full py-3 pl-10 pr-[92px] text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-full py-2.5 md:py-3 pl-10 pr-[92px] text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 transition-colors"
                  />
                  <button
                    type="button"
@@ -2080,19 +2182,31 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                      const q = normalizeSearchText(searchDraft);
                      setSearchQuery(q);
                    }}
-                   className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/15 active:bg-white/20 border border-white/10 rounded-full px-4 py-2 text-xs font-extrabold text-slate-100 transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/15 active:bg-white/20 border border-white/10 rounded-full px-3.5 py-2 text-xs font-extrabold text-slate-100 transition-colors"
                  >
                    Buscar
                  </button>
               </div>
               <button
                 type="button"
+                onClick={() => setMobileFilterSortOpen((v) => !v)}
+                className="md:hidden h-[44px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] transition-colors flex items-center justify-center gap-2"
+              >
+                <Settings2 className="w-4 h-4" /> Filtrar y ordenar
+                {activeFilterCount > 0 ? (
+                  <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-[20px] rounded-full bg-fuchsia-500/20 text-fuchsia-100 text-[11px] font-extrabold px-1.5">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
                 onClick={() => setIsFiltersOpen(true)}
-                className="h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] transition-colors flex items-center justify-center gap-2"
+                className="hidden md:flex h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] transition-colors items-center justify-center gap-2"
               >
                 <Settings2 className="w-4 h-4" /> Filtros
               </button>
-              <label className="h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-slate-300 flex items-center gap-3">
+              <label className="hidden md:flex h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-slate-300 items-center gap-3">
                 <span className="shrink-0 text-slate-400">Ordenar por:</span>
                 <select
                   value={sortOrder}
@@ -2104,6 +2218,29 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 </select>
               </label>
             </div>
+
+            {mobileFilterSortOpen ? (
+              <div className="md:hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setIsFiltersOpen(true)}
+                  className="w-full h-[44px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] transition-colors flex items-center justify-center gap-2"
+                >
+                  <Settings2 className="w-4 h-4" /> Filtros
+                </button>
+                <label className="w-full h-[44px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-slate-300 flex items-center gap-3">
+                  <span className="shrink-0 text-slate-400">Ordenar por:</span>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value === 'oldest' ? 'oldest' : 'newest')}
+                    className="min-w-0 flex-1 bg-transparent text-white outline-none"
+                  >
+                    <option value="newest" className="bg-[#0b0f16]">Más recientes</option>
+                    <option value="oldest" className="bg-[#0b0f16]">Más antiguas</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
 
             {pendingTasks.length > 0 && !showTrash && (
               <div className="space-y-3">
@@ -2592,7 +2729,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         <div className="text-white font-bold">Canciones</div>
                         <div className="text-xs text-slate-500">{visibleSongs.length} resultado(s)</div>
                       </div>
-                      <div className="text-[11px] text-yellow-300">Los archivos se conservan durante 14 días.</div>
                     </div>
 
                     <div className="p-3 space-y-3">
