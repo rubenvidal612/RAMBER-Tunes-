@@ -13848,14 +13848,15 @@ const aiHandler = (() => {
       "Entrega solo la letra, sin explicación.";
     const userPrompt =
       "Genera una letra para una canción en español con estructura clara. " +
-      "Usa etiquetas: [Intro], [Verso], [Coro], [Puente], [Outro]. " +
+      "Regla obligatoria: Todas las etiquetas de estructura, indicaciones musicales, efectos, voces, instrumentos y direcciones de interpretación deben escribirse exclusivamente entre corchetes [ ]. Nunca deben escribirse entre paréntesis ( ). " +
+      "Usa etiquetas como: [Intro], [Verso], [Coro], [Puente], [Outro]. " +
       "Tema: " +
       topic +
       "\nGénero vocal: " +
       gender +
       "\nEstilo musical: " +
       style +
-      "\nNo uses comillas ni markdown.";
+      "\nEntrega solo la letra. No uses comillas ni markdown.";
 
     const baseModels = [
       "gemini-3.1-flash-lite-preview",
@@ -13947,7 +13948,7 @@ const aiHandler = (() => {
         .trim();
 
     const base = cleanLine(topic);
-    const extra = cleanLine(`Estilo: ${style}. Voz: ${gender}.`);
+    const extra = cleanLine(`Estilo: ${style}. Voz: ${gender}. Etiquetas: solo [ ], nunca ( ).`);
     let prompt = base;
     if (extra && (base.length + 3 + extra.length) <= 200) prompt = `${base} | ${extra}`;
     prompt = cleanLine(prompt).slice(0, 200);

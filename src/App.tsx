@@ -722,7 +722,8 @@ export default function App() {
   const [studioPrefill, setStudioPrefill] = useState<null | { type: 'cover'; song: SongItem }>(null);
   const [toast, setToast] = useState<string>('');
   const toastTimerRef = useRef<number | null>(null);
-  const [alertQueue, setAlertQueue] = useState<Array<{ id: string; message: string }>>([]);
+  const [alertQueue, setAlertQueue] = useState<Array<{ id: string; message: string; title?: string; tone?: 'error' | 'success' | 'warning' | 'info'; actions?: Array<{ id: string; label: string; kind?: 'cancel' | 'primary' | 'danger' }> }>>([]);
+  const alertActionHandlersRef = useRef<Record<string, () => void>>({});
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const pricingPrevUrlRef = useRef<string | null>(null);
   const [isBalanceOpen, setIsBalanceOpen] = useState(false);
@@ -732,6 +733,7 @@ export default function App() {
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [isAuthBooting, setIsAuthBooting] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
+  const [authUserId, setAuthUserId] = useState('');
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -853,37 +855,60 @@ export default function App() {
     toastTimerRef.current = window.setTimeout(() => setToast(''), 4500);
   };
 
-  const showStyledAlert = (message: string) => {
-    const text = String(message || '').trim();
+  const showStyledAlert = (input: string | { title?: string; message: string; tone?: 'error' | 'success' | 'warning' | 'info'; actions?: Array<{ label: string; kind?: 'cancel' | 'primary' | 'danger'; onPress?: () => void }> }) => {
+    const obj = typeof input === 'string' ? { message: input } : (input || { message: '' });
+    const text = String(obj.message || '').trim();
     if (!text) return;
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    setAlertQueue((prev) => [...prev, { id, message: text }]);
+    const title = obj.title ? String(obj.title || '').trim() : '';
+    const tone = obj.tone;
+    const rawActions = Array.isArray((obj as any).actions) ? (obj as any).actions : [];
+    const actions = rawActions
+      .filter((a: any) => a && typeof a === 'object' && String(a.label || '').trim())
+      .slice(0, 3)
+      .map((a: any, idx: number) => {
+        const actionId = `${id}_a${idx}`;
+        const onPress = typeof a.onPress === 'function' ? a.onPress : null;
+        if (onPress) alertActionHandlersRef.current[actionId] = onPress;
+        return { id: actionId, label: String(a.label || '').trim(), kind: a.kind };
+      });
+    setAlertQueue((prev) => [...prev, { id, message: text, title: title || undefined, tone, actions: actions.length ? actions : undefined }]);
   };
 
   const closeStyledAlert = () => {
-    setAlertQueue((prev) => prev.slice(1));
+    setAlertQueue((prev) => {
+      const head = prev[0];
+      if (head?.actions && Array.isArray(head.actions)) {
+        for (const a of head.actions) {
+          if (a?.id && alertActionHandlersRef.current[a.id]) delete alertActionHandlersRef.current[a.id];
+        }
+      }
+      return prev.slice(1);
+    });
   };
 
   const activeAlert = alertQueue[0] || null;
   const activeAlertText = (activeAlert?.message || '').trim();
   const activeAlertLower = activeAlertText.toLowerCase();
-  const activeAlertTone = activeAlertLower.includes('error') ||
-    activeAlertLower.includes('no pude') ||
-    activeAlertLower.includes('fall') ||
-    activeAlertLower.includes('inválid') ||
-    activeAlertLower.includes('insuficient')
-    ? 'error'
-    : activeAlertLower.includes('listo') ||
-        activeAlertLower.includes('copiado') ||
-        activeAlertLower.includes('guardad') ||
-        activeAlertLower.includes('actualiz')
-      ? 'success'
-      : activeAlertLower.includes('importante') ||
-          activeAlertLower.includes('necesita') ||
-          activeAlertLower.includes('primero') ||
-          activeAlertLower.includes('espera')
-        ? 'warning'
-        : 'info';
+  const activeAlertTone = activeAlert?.tone
+    ? activeAlert.tone
+    : activeAlertLower.includes('error') ||
+        activeAlertLower.includes('no pude') ||
+        activeAlertLower.includes('fall') ||
+        activeAlertLower.includes('inválid') ||
+        activeAlertLower.includes('insuficient')
+      ? 'error'
+      : activeAlertLower.includes('listo') ||
+          activeAlertLower.includes('copiado') ||
+          activeAlertLower.includes('guardad') ||
+          activeAlertLower.includes('actualiz')
+        ? 'success'
+        : activeAlertLower.includes('importante') ||
+            activeAlertLower.includes('necesita') ||
+            activeAlertLower.includes('primero') ||
+            activeAlertLower.includes('espera')
+          ? 'warning'
+          : 'info';
 
   const alertMeta = activeAlertTone === 'error'
     ? {
@@ -916,6 +941,7 @@ export default function App() {
             iconBg: 'bg-cyan-500/15 text-cyan-200 border-cyan-400/20',
             button: 'bg-gradient-to-r from-cyan-500 to-indigo-500 text-white',
           };
+  const alertTitle = (activeAlert?.title || '').toString().trim() || alertMeta.title;
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -1121,10 +1147,12 @@ export default function App() {
       if (!session) {
         if (!alive) return;
         setAuthEmail('');
+        setAuthUserId('');
         setIsAuthBooting(false);
         return;
       }
       const email = (session?.user?.email || '').toString().trim().toLowerCase();
+      const nextUserId = (session?.user?.id || '').toString().trim();
       const ok = email && (email.endsWith('@gmail.com') || email.endsWith('@googlemail.com'));
       if (!ok) {
         if (signingOut) return;
@@ -1134,11 +1162,13 @@ export default function App() {
         } catch {}
         if (!alive) return;
         setAuthEmail('');
+        setAuthUserId('');
         setIsAuthBooting(false);
         return;
       }
       if (!alive) return;
       setAuthEmail(email);
+      setAuthUserId(nextUserId);
       setIsAuthBooting(false);
     };
     supabaseBrowser.auth
@@ -2986,7 +3016,7 @@ export default function App() {
                 <alertMeta.Icon className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-white font-extrabold text-lg">{alertMeta.title}</div>
+                <div className="text-white font-extrabold text-lg">{alertTitle}</div>
                 <div className="mt-2 text-sm text-slate-200 whitespace-pre-wrap break-words max-h-[46vh] overflow-auto pr-1">
                   {activeAlertText}
                 </div>
@@ -3000,14 +3030,46 @@ export default function App() {
                 ✕
               </button>
             </div>
-            <div className="mt-5">
-              <button
-                type="button"
-                onClick={closeStyledAlert}
-                className={`w-full h-[44px] rounded-full font-extrabold text-sm ${alertMeta.button}`}
-              >
-                Cerrar
-              </button>
+            <div className="mt-5 flex flex-col gap-3">
+              {Array.isArray(activeAlert?.actions) && activeAlert.actions.length > 0 ? (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {activeAlert.actions.map((action) => {
+                    const kind = action?.kind || 'primary';
+                    const base =
+                      kind === 'cancel'
+                        ? 'bg-white/5 border border-white/10 text-white'
+                        : kind === 'danger'
+                          ? 'bg-gradient-to-r from-red-500 to-fuchsia-500 text-white'
+                          : alertMeta.button;
+                    const onPress = () => {
+                      const fn = action?.id ? alertActionHandlersRef.current[action.id] : null;
+                      closeStyledAlert();
+                      try {
+                        if (fn) fn();
+                      } catch {
+                      }
+                    };
+                    return (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={onPress}
+                        className={`flex-1 h-[44px] rounded-full font-extrabold text-sm ${base}`}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={closeStyledAlert}
+                  className={`w-full h-[44px] rounded-full font-extrabold text-sm ${alertMeta.button}`}
+                >
+                  Cerrar
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -3076,12 +3138,14 @@ export default function App() {
            )}
            {currentTab === 'studio' && (
              <div className="flex-1 min-h-0">
-               <ApprovedCreatePreview
+              <ApprovedCreatePreview
                  credits={displayCredits}
                  onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
                  onGoCloneVoice={() => setCurrentTab('voces')}
                  onOpenBalance={() => handleTabChange('planes')}
+                onShowAlert={showStyledAlert}
+                authUserId={authUserId}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
                />
@@ -3159,12 +3223,14 @@ export default function App() {
              </div>
            ) : currentTab === 'studio' ? (
              <div className="flex-1 min-w-0 bg-[#07111d]">
-               <ApprovedCreatePreview
+              <ApprovedCreatePreview
                  credits={displayCredits}
                  onSongCreated={addCancion}
                  onGoLibrary={() => setCurrentTab('biblioteca')}
                  onGoCloneVoice={() => setCurrentTab('voces')}
                  onOpenBalance={() => handleTabChange('planes')}
+                onShowAlert={showStyledAlert}
+                authUserId={authUserId}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
                />

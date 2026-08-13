@@ -145,7 +145,24 @@ function normalizeLyricsTags(t) {
         innerLower.startsWith('pre-coro') || innerLower.startsWith('pre coro') ||
         innerLower.startsWith('bridge') || innerLower.startsWith('puente') ||
         innerLower.startsWith('outro') || innerLower.startsWith('intro');
-      if (innerIsTag || inner.length < 30) return `[${inner}]`;
+      const innerSafe = innerLower.normalize('NFKD').replaceAll(/[^\p{L}\p{N}\s-]+/gu, '').trim();
+      const innerLooksLikeInstruction =
+        Boolean(innerSafe) &&
+        innerSafe.length <= 48 &&
+        (innerIsTag ||
+          innerSafe === 'instrumental' ||
+          innerSafe.startsWith('intro ') ||
+          innerSafe.startsWith('outro ') ||
+          innerSafe.startsWith('final') ||
+          innerSafe.startsWith('solo') ||
+          innerSafe.startsWith('pausa') ||
+          innerSafe.startsWith('break') ||
+          innerSafe.startsWith('interludio') ||
+          innerSafe.startsWith('voz ') ||
+          innerSafe.startsWith('voces ') ||
+          innerSafe.startsWith('sube ') ||
+          innerSafe.startsWith('baja '));
+      if (innerLooksLikeInstruction) return `[${inner}]`;
     }
     const lower = s.toLowerCase();
     const isTag =
@@ -157,7 +174,18 @@ function normalizeLyricsTags(t) {
       lower.startsWith('outro') || lower.startsWith('intro');
     if (isTag && !s.startsWith('[')) return `[${s.replaceAll(':', '').trim()}]`;
     if (s.startsWith('[') && s.endsWith(']')) return s;
-    if (s.endsWith(':') && s.length < 20) return `[${s.slice(0, -1).trim()}]`;
+    if (s.endsWith(':') && s.length < 32) {
+      const candidate = s.slice(0, -1).trim();
+      const candidateLower = candidate.toLowerCase();
+      const candidateIsTag =
+        candidateLower === 'coro' || candidateLower.startsWith('coro ') ||
+        candidateLower === 'chorus' || candidateLower.startsWith('chorus ') ||
+        candidateLower.startsWith('verso') || candidateLower.startsWith('verse') ||
+        candidateLower.startsWith('pre-coro') || candidateLower.startsWith('pre coro') ||
+        candidateLower.startsWith('bridge') || candidateLower.startsWith('puente') ||
+        candidateLower.startsWith('outro') || candidateLower.startsWith('intro');
+      if (candidateIsTag) return `[${candidate}]`;
+    }
     return line;
   });
   return mapped.join('\n').replaceAll(/\n{3,}/g, '\n\n').trim();
@@ -255,8 +283,115 @@ function InfoTip({ title, children }) {
   );
 }
 
-function RangeSetting({ label, help, value, onChange }) {
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Boolean(window.matchMedia(query).matches);
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    let m = null;
+    try {
+      m = window.matchMedia(query);
+    } catch {
+      m = null;
+    }
+    if (!m) return undefined;
+    const onChange = () => setMatches(Boolean(m.matches));
+    onChange();
+    if (typeof m.addEventListener === 'function') {
+      m.addEventListener('change', onChange);
+      return () => m.removeEventListener('change', onChange);
+    }
+    if (typeof m.addListener === 'function') {
+      m.addListener(onChange);
+      return () => m.removeListener(onChange);
+    }
+    return undefined;
+  }, [query]);
+  return matches;
+}
+
+function RangeSetting({ label, help, value, onChange, scrollGuard }) {
   const notRecommended = value >= 87;
+  const touchStartRef = useRef(null);
+  const touchModeRef = useRef('idle');
+  const pendingValueRef = useRef(null);
+  const onTouchStart = (e) => {
+    if (!scrollGuard) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    touchStartRef.current = { x: t.clientX, y: t.clientY, value: Number(value || 0) };
+    touchModeRef.current = 'unknown';
+    pendingValueRef.current = null;
+  };
+  const onTouchMove = (e) => {
+    if (!scrollGuard) return;
+    const start = touchStartRef.current;
+    const t = e.touches && e.touches[0];
+    if (!start || !t) return;
+    if (touchModeRef.current !== 'unknown') return;
+    const dx = Math.abs(t.clientX - start.x);
+    const dy = Math.abs(t.clientY - start.y);
+    if (dy > 10 && dy > dx + 4) {
+      touchModeRef.current = 'scroll';
+      pendingValueRef.current = null;
+      try {
+        e.currentTarget.value = String(start.value);
+      } catch {}
+      return;
+    }
+    if (dx > 10 && dx > dy + 4) {
+      touchModeRef.current = 'drag';
+      const pending = pendingValueRef.current;
+      if (pending != null) onChange(Number(pending));
+    }
+  };
+  const onTouchEnd = (e) => {
+    if (!scrollGuard) return;
+    const mode = touchModeRef.current;
+    const pending = pendingValueRef.current;
+    const start = touchStartRef.current;
+    if (mode === 'unknown' && pending != null) {
+      onChange(Number(pending));
+    }
+    if (mode === 'scroll' && start) {
+      onChange(Number(start.value));
+      try {
+        if (e && e.currentTarget) e.currentTarget.value = String(start.value);
+      } catch {}
+    }
+    touchStartRef.current = null;
+    touchModeRef.current = 'idle';
+    pendingValueRef.current = null;
+  };
+  const handleValueChange = (e) => {
+    const start = touchStartRef.current;
+    if (!scrollGuard || !start) {
+      onChange(Number(e.currentTarget.value));
+      return;
+    }
+    const mode = touchModeRef.current;
+    const next = Number(e.currentTarget.value);
+    if (mode === 'scroll') {
+      try {
+        e.currentTarget.value = String(start.value);
+      } catch {}
+      return;
+    }
+    if (mode === 'unknown') {
+      pendingValueRef.current = next;
+      try {
+        e.currentTarget.value = String(start.value);
+      } catch {}
+      return;
+    }
+    onChange(next);
+  };
   return (
     <div className={notRecommended ? "range-setting warning-range" : "range-setting"}>
       <div className="range-heading">
@@ -267,7 +402,19 @@ function RangeSetting({ label, help, value, onChange }) {
         </div>
         <output><span>{value}%</span>{notRecommended && <small>No recomendable</small>}</output>
       </div>
-      <input aria-label={label} type="range" min="0" max="100" value={value} onInput={(e) => onChange(Number(e.currentTarget.value))} onChange={(e) => onChange(Number(e.currentTarget.value))} />
+      <input
+        aria-label={label}
+        type="range"
+        min="0"
+        max="100"
+        value={value}
+        onInput={handleValueChange}
+        onChange={handleValueChange}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+      />
     </div>
   );
 }
@@ -806,6 +953,7 @@ function StartStep({ data, setData, setToast, handlers }) {
   const uploadedAudioUrl = (handlers?.audioUploadUrl || '').toString().trim();
   const uploadError = (handlers?.audioUploadError || '').toString().trim();
   const hasSelectedAudio = Boolean(data.file || uploadedAudioUrl || uploading || uploadError);
+  const needsAudioReupload = Boolean(handlers?.audioReuploadNeeded) && data.audioSource === 'upload' && !hasSelectedAudio;
 
   const normalizePersona = (raw) => {
     const meta = raw?.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta : null;
@@ -1344,11 +1492,46 @@ function LyricsStep({ data, setData, setToast, handlers }) {
 
 function StyleStep({ data, setData, creativity, setCreativity, instruction, setInstruction, audioWeight, setAudioWeight, setToast, handlers }) {
   const [modelOpen, setModelOpen] = useState(false);
+  const isMobileLayout = useMediaQuery('(max-width: 700px)');
+  const [precisionOpen, setPrecisionOpen] = useState(() => !isMobileLayout);
+  useEffect(() => { setPrecisionOpen(!isMobileLayout); }, [isMobileLayout]);
   const improving = Boolean(handlers?.isBoostingStyle);
   const translating = Boolean(handlers?.isTranslatingStyle);
+  const showAudioInfluence = data.audioSource === 'upload' && (Boolean(data.file) || Boolean(handlers?.audioUploadUrl) || Boolean(handlers?.isUploadingAudio) || Boolean(handlers?.audioUploadError));
+  const openPrecisionHelp = () => {
+    const text =
+      "Rareza\n" +
+      "Controla qué tan tradicional o creativa puede ser la canción.\n\n" +
+      "- Un porcentaje bajo produce resultados más seguros, predecibles y convencionales.\n" +
+      "- Un porcentaje alto permite combinaciones más originales, inesperadas o experimentales.\n" +
+      "- Se recomienda comenzar en 50%.\n" +
+      "- Bájalo si la canción sale desordenada, extraña o se aleja demasiado de lo solicitado.\n" +
+      "- Súbelo si las canciones se sienten demasiado parecidas, simples o predecibles.\n\n" +
+      "Influencia del estilo\n" +
+      "Controla qué tanto debe respetarse la descripción escrita en el campo de estilo musical.\n\n" +
+      "- Un porcentaje bajo da mayor libertad para interpretar el estilo.\n" +
+      "- Un porcentaje alto intenta seguir con más fuerza los géneros, instrumentos, ritmo y ambiente solicitados.\n" +
+      "- Se recomienda comenzar en 50%.\n" +
+      "- Bájalo si el resultado se siente rígido o poco natural.\n" +
+      "- Súbelo si no está respetando suficientemente el género, los instrumentos o el ambiente solicitado.\n\n" +
+      "Influencia del audio\n" +
+      "Solo aparece cuando se utiliza un audio de referencia. Controla cuánto debe conservarse de su melodía, ritmo, estructura o interpretación.\n\n" +
+      "- Un porcentaje bajo permite crear una versión más diferente.\n" +
+      "- Un porcentaje alto intenta conservar más características del audio original.\n" +
+      "- Se recomienda comenzar en 25%.\n" +
+      "- Bájalo si el resultado se parece demasiado al audio original.\n" +
+      "- Súbelo si se está perdiendo la melodía, el ritmo o la esencia de la referencia.\n" +
+      "- Los valores altos pueden limitar la libertad creativa, por lo que conviene aumentarlo gradualmente.";
+    if (handlers?.onShowAlert) {
+      handlers.onShowAlert({ title: 'Ajustes de precisión', message: text, tone: 'info' });
+      return;
+    }
+    setToast(text);
+  };
   const currentStyleLanguage = detectPromptLanguage(data.style);
   const translateLabel = currentStyleLanguage === 'en' ? 'Traducir al español' : 'Traducir al inglés';
   const updateStyle = (value) => setData({ ...data, style: value, styleTranslated: false });
+  const precisionControlsId = 'precision-controls';
   return (
     <section className="two-columns">
       <div>
@@ -1380,12 +1563,60 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
         <textarea className="short-area" value={data.negative} onChange={(e) => setData({ ...data, negative: e.target.value })} placeholder="Ejemplo: Sin batería fuerte, sin voz robótica..." />
         <div className="gender-section"><div className="gender-heading"><div><strong>Tipo de voz</strong><p>Elige qué voz interpretará la canción.</p></div><InfoTip title="Tipo de voz">Esta opción indica a Suno si deseas una voz masculina o femenina.</InfoTip></div><div className="gender-buttons"><button className={data.vocalGender === "m" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"m"})}><User size={24}/><span><strong>Voz de hombre</strong><small>Voz masculina</small></span><span className="radio"/></button><button className={data.vocalGender === "f" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"f"})}><User size={24}/><span><strong>Voz de mujer</strong><small>Voz femenina</small></span><span className="radio"/></button></div></div>
       </div>
-      <div className="settings-panel">
-        <h2>Ajustes de precisión</h2><p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-        <RangeSetting label="Nivel de creatividad" help="Qué tan diferente puede ser el resultado" value={creativity} onChange={setCreativity} />
-        <RangeSetting label="Peso de la instrucción" help="Cuánto seguirá tus indicaciones" value={instruction} onChange={setInstruction} />
-        <RangeSetting label="Peso del audio original" help="Cuánto respetará el audio que subiste" value={audioWeight} onChange={setAudioWeight} />
+      <div className={isMobileLayout ? "settings-panel precision-collapsible" : "settings-panel"}>
+        {isMobileLayout ? (
+          <>
+            <button
+              type="button"
+              className="precision-toggle"
+              aria-expanded={precisionOpen}
+              aria-controls={precisionControlsId}
+              onClick={() => setPrecisionOpen((v) => !v)}
+            >
+              <span className="precision-toggle-text">Ajustes de precisión</span>
+              <span className={precisionOpen ? "precision-toggle-icon open" : "precision-toggle-icon"} aria-hidden="true">▾</span>
+            </button>
+            <div id={precisionControlsId} className="precision-collapsible-body" hidden={!precisionOpen}>
+              <div className="precision-help-row">
+                <span className="precision-help-title">Ajustes de precisión</span>
+                <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisión" onClick={openPrecisionHelp}>
+                  <Info size={19} weight="bold" />
+                </button>
+              </div>
+              <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
+              <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} scrollGuard />
+              <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />
+              {showAudioInfluence ? (
+                <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="settings-panel-title">
+              <h2>Ajustes de precisión</h2>
+              <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisión" onClick={openPrecisionHelp}>
+                <Info size={19} weight="bold" />
+              </button>
+            </div>
+            <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
+            <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} />
+            <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} />
+            {showAudioInfluence ? (
+              <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} />
+            ) : null}
+          </>
+        )}
       </div>
+      {needsAudioReupload ? (
+        <div className="audio-lyrics-notice info" style={{ marginTop: 16 }}>
+          <Info size={18} />
+          <div>
+            <div style={{ fontWeight: 900 }}>Vuelve a subir tu audio para continuar</div>
+            <div style={{ marginTop: 2 }}>Guardamos tu letra y tus ajustes, pero por seguridad no conservamos el audio al restaurar un borrador.</div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1444,7 +1675,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "SUNO V5.5" : data.model}</strong><small>{data.voice === "clone" ? "Clonación de Voz" : "Modelo seleccionado"}</small></div>
         <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || "Sin archivo cargado"}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
-        <div className="review-card"><span>Ajustes</span><strong>{creativity}% creatividad</strong><small>{instruction}% instrucción · {audioWeight}% audio</small></div>
+        <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
       </div>
       <div className="requirements-box">
@@ -2144,16 +2375,13 @@ function ApprovedCreateContent(props) {
     onGoLibrary,
     onGoCloneVoice,
     onOpenBalance,
+    onShowAlert,
+    authUserId,
     prefill,
     prefillNonce,
   } = props || {};
 
-  const [step, setStep] = useState(0);
-  const [creativity, setCreativity] = useState(75);
-  const [instruction, setInstruction] = useState(70);
-  const [audioWeight, setAudioWeight] = useState(30);
-  const [toast, setToast] = useState("");
-  const [data, setData] = useState({
+  const makeInitialData = () => ({
     lyrics: "",
     lyricsMode: "manual",
     lyricInstruction: "",
@@ -2170,10 +2398,20 @@ function ApprovedCreateContent(props) {
     file: null,
     title: "",
   });
+
+  const safeUserId = (authUserId || '').toString().trim();
+  const draftKey = safeUserId ? `ramber.approved_create_draft_v1.uid_${safeUserId}` : '';
+  const [step, setStep] = useState(0);
+  const [creativity, setCreativity] = useState(50);
+  const [instruction, setInstruction] = useState(50);
+  const [audioWeight, setAudioWeight] = useState(25);
+  const [toast, setToast] = useState("");
+  const [data, setData] = useState(() => makeInitialData());
   const [audioUploadUrl, setAudioUploadUrl] = useState("");
   const [audioUploadPath, setAudioUploadPath] = useState("");
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [audioReuploadNeeded, setAudioReuploadNeeded] = useState(false);
   const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
   const [isBoostingStyle, setIsBoostingStyle] = useState(false);
   const [isTranslatingStyle, setIsTranslatingStyle] = useState(false);
@@ -2186,9 +2424,107 @@ function ApprovedCreateContent(props) {
   const audioRequestVersionRef = useRef(0);
   const contentAreaRef = useRef(null);
   const previousStepRef = useRef(step);
+  const previousUserIdRef = useRef(safeUserId);
 
   useEffect(() => { ensureAnonSession().catch(() => {}); }, []);
   useEffect(() => { clearGenerationSession(); }, []);
+
+  useEffect(() => {
+    if (previousUserIdRef.current === safeUserId) return;
+    previousUserIdRef.current = safeUserId;
+    audioRequestVersionRef.current += 1;
+    setStep(0);
+    setCreativity(50);
+    setInstruction(50);
+    setAudioWeight(25);
+    setToast("");
+    setData(makeInitialData());
+    setAudioUploadUrl('');
+    setAudioUploadPath('');
+    setIsUploadingAudio(false);
+    setUploadProgress(0);
+    setAudioReuploadNeeded(false);
+    setAudioUploadError('');
+    setIsGeneratingLyrics(false);
+    setIsBoostingStyle(false);
+    setIsTranslatingStyle(false);
+    setIsTranscribingAudioLyrics(false);
+    setAudioLyricsStatus('');
+    setIsSubmitting(false);
+    setCreditsGate(null);
+  }, [safeUserId]);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed !== 'object') return;
+      if (typeof parsed.step === 'number' && parsed.step >= 0 && parsed.step <= 3) setStep(parsed.step);
+      if (typeof parsed.creativity === 'number') setCreativity(Math.max(0, Math.min(100, parsed.creativity)));
+      if (typeof parsed.instruction === 'number') setInstruction(Math.max(0, Math.min(100, parsed.instruction)));
+      if (typeof parsed.audioWeight === 'number') setAudioWeight(Math.max(0, Math.min(100, parsed.audioWeight)));
+      if (parsed.data && typeof parsed.data === 'object') {
+        const nextData = { ...parsed.data };
+        const hadAudioRef = Boolean(parsed?.hadAudioReference);
+        setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef));
+        setData((prev) => ({ ...prev, ...nextData, file: null }));
+      }
+      setAudioUploadUrl('');
+      setAudioUploadPath('');
+      setUploadProgress(0);
+    } catch {}
+  }, [draftKey]);
+
+  const resetForNewSong = () => {
+    audioRequestVersionRef.current += 1;
+    if (draftKey) {
+      try { window.localStorage.removeItem(draftKey); } catch {}
+    }
+    setStep(0);
+    setCreativity(50);
+    setInstruction(50);
+    setAudioWeight(25);
+    setToast("");
+    setData(makeInitialData());
+    setAudioUploadUrl('');
+    setAudioUploadPath('');
+    setIsUploadingAudio(false);
+    setUploadProgress(0);
+    setAudioReuploadNeeded(false);
+    setIsTranscribingAudioLyrics(false);
+    setAudioLyricsStatus('');
+    setAudioUploadError('');
+    setIsGeneratingLyrics(false);
+    setIsBoostingStyle(false);
+    setIsTranslatingStyle(false);
+    setIsSubmitting(false);
+    setCreditsGate(null);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (!draftKey) return undefined;
+    const id = window.setTimeout(() => {
+      try {
+        const safeData = { ...data, file: null };
+        const hadAudioReference = Boolean(
+          safeData.audioSource === 'upload' &&
+            (Boolean(data.file) || Boolean(audioUploadUrl) || Boolean(isUploadingAudio) || Boolean(audioUploadError) || Number(uploadProgress || 0) > 0)
+        );
+        const payload = {
+          step,
+          creativity,
+          instruction,
+          audioWeight,
+          data: safeData,
+          hadAudioReference,
+        };
+        window.localStorage.setItem(draftKey, JSON.stringify(payload));
+      } catch {}
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [draftKey, step, creativity, instruction, audioWeight, data]);
 
   useEffect(() => {
     const previousStep = previousStepRef.current;
@@ -2241,6 +2577,7 @@ function ApprovedCreateContent(props) {
     if (!prefillNonce) return;
     if (!prefill) return;
     if (prefill.type !== 'cover') return;
+    resetForNewSong();
     const song = prefill.song;
     const rawUrl = (song?.audioUrl || '').toString().trim();
     const deriveAudioPath = (value) => {
@@ -2285,6 +2622,7 @@ function ApprovedCreateContent(props) {
     setAudioUploadPath('');
     setIsUploadingAudio(false);
     setUploadProgress(0);
+    setAudioReuploadNeeded(false);
     setAudioUploadError('');
     setIsTranscribingAudioLyrics(false);
     setAudioLyricsStatus('');
@@ -2322,6 +2660,7 @@ function ApprovedCreateContent(props) {
       setAudioUploadPath((uploaded?.key || '').toString().trim());
       setUploadProgress(100);
       setAudioUploadError('');
+      setAudioReuploadNeeded(false);
       setToast('Audio MP3 subido correctamente.');
     } catch (e) {
       if (requestVersion !== audioRequestVersionRef.current) return;
@@ -2559,7 +2898,9 @@ function ApprovedCreateContent(props) {
     const requiresUploadedAudio = data.audioSource === 'upload';
     const hasAudioCover = Boolean(audioUploadUrl);
     if (requiresUploadedAudio && !hasAudioCover) {
-      const msg = audioUploadError || 'Tu audio todavía no tiene una URL final válida. Espera a que termine de subirse o vuelve a intentarlo antes de generar el cover.';
+      const msg = audioReuploadNeeded
+        ? 'Vuelve a subir tu audio para continuar. Por seguridad no conservamos el audio al restaurar un borrador.'
+        : audioUploadError || 'Necesitas subir tu audio antes de generar con audio de referencia.';
       setToast(msg);
       return false;
     }
@@ -2652,7 +2993,7 @@ function ApprovedCreateContent(props) {
         payload.title = normalizedSongTitle;
         payload.weirdnessConstraint = creativity / 100;
         payload.styleWeight = instruction / 100;
-        payload.audioWeight = audioWeight / 100;
+        if (hasAudioCover) payload.audioWeight = audioWeight / 100;
         if (inferredGenre && !hasJazzMention) {
           payload.negativeTags = 'jazz, swing, bebop, saxophone';
         }
@@ -2736,9 +3077,11 @@ function ApprovedCreateContent(props) {
                 title: normalizedSongTitle,
                 weirdnessConstraint: creativity / 100,
                 styleWeight: instruction / 100,
-                audioWeight: audioWeight / 100,
                 negativeTags: payload.negativeTags,
               };
+          if (!hasAudioCover) {
+            delete retryPayload.audioWeight;
+          }
           const rr = await fetch(hasAudioCover ? '/api/suno/upload-cover' : '/api/suno/generate', {
             method: 'POST',
             headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
@@ -2860,6 +3203,7 @@ function ApprovedCreateContent(props) {
     handleSubmitGenerate,
     isUploadingAudio,
     uploadProgress,
+    audioReuploadNeeded,
     isGeneratingLyrics,
     isTranscribingAudioLyrics,
     audioLyricsStatus,
@@ -2875,6 +3219,7 @@ function ApprovedCreateContent(props) {
     audioUploadUrl,
     audioUploadError,
     hasUploadedAudio: Boolean(audioUploadUrl),
+    onShowAlert,
     handleToggleNotifications,
     clearAudioTranscriptionState: () => setAudioLyricsStatus(''),
     removeSelectedAudio,
@@ -2888,6 +3233,37 @@ function ApprovedCreateContent(props) {
     [step, data, creativity, instruction, audioWeight, isUploadingAudio, isGeneratingLyrics, isSubmitting, creditsGate, credits, hasPendingTask]
   );
 
+  const hasMeaningfulContent = Boolean(
+    step > 0 ||
+      (data.title || '').toString().trim() ||
+      (data.lyrics || '').toString().trim() ||
+      (data.style || '').toString().trim() ||
+      (data.negative || '').toString().trim() ||
+      (data.lyricInstruction || '').toString().trim() ||
+      data.audioSource !== 'none' ||
+      data.voice !== 'standard' ||
+      data.voiceProfile ||
+      creativity !== 50 ||
+      instruction !== 50 ||
+      audioWeight !== 25
+  );
+  const requestResetForNewSong = () => {
+    if (!hasMeaningfulContent) return;
+    if (typeof onShowAlert === 'function') {
+      onShowAlert({
+        title: '¿Crear otra canción?',
+        message: 'Se eliminará el borrador actual y comenzarás una canción nueva. Esta acción no se puede deshacer.',
+        tone: 'warning',
+        actions: [
+          { label: 'Cancelar', kind: 'cancel' },
+          { label: 'Crear otra canción', kind: 'danger', onPress: resetForNewSong },
+        ],
+      });
+      return;
+    }
+    resetForNewSong();
+  };
+
   return (
     <div className="approved-flow-shell">
       <main className="main-area">
@@ -2895,6 +3271,11 @@ function ApprovedCreateContent(props) {
         <div className="content-area" ref={contentAreaRef}>
           {content}
           <footer className="step-footer">
+            {hasMeaningfulContent ? (
+              <button className="back-button reset-button" type="button" onClick={requestResetForNewSong}>
+                Crear otra canción
+              </button>
+            ) : null}
             {step > 0 && (
               <button className="back-button" onClick={() => setStep(step - 1)}>
                 <ArrowLeft size={20} />
