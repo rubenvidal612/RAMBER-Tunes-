@@ -505,8 +505,16 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
-        const width = canvas.width;
-        const height = canvas.height;
+        const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+        const clientWidth = Math.max(1, Math.floor(canvas.clientWidth || canvas.width || 620));
+        const clientHeight = Math.max(1, Math.floor(canvas.clientHeight || canvas.height || 82));
+        if (canvas.width !== clientWidth * dpr || canvas.height !== clientHeight * dpr) {
+          canvas.width = clientWidth * dpr;
+          canvas.height = clientHeight * dpr;
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const width = clientWidth;
+        const height = clientHeight;
         analyser.getByteFrequencyData(data);
         ctx.clearRect(0, 0, width, height);
         const gradient = ctx.createLinearGradient(0, 0, width, 0);
@@ -514,13 +522,24 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
         gradient.addColorStop(1, "#a764ed");
         ctx.fillStyle = gradient;
         const bars = 36;
+        const half = Math.floor(bars / 2);
         const gap = 4;
-        const barWidth = (width - gap * (bars - 1)) / bars;
-        for (let index = 0; index < bars; index += 1) {
-          const value = data[Math.floor((index / bars) * data.length)] / 255;
+        const centerGap = gap;
+        const totalGaps = gap * Math.max(0, bars - 2) + centerGap;
+        const barWidth = Math.max(2, (width - totalGaps) / bars);
+        const centerX = width / 2;
+        const leftStart = centerX - centerGap / 2 - barWidth;
+        const rightStart = centerX + centerGap / 2;
+        for (let index = 0; index < half; index += 1) {
+          const dataIndex = Math.floor((index / half) * data.length);
+          const value = data[Math.max(0, Math.min(dataIndex, data.length - 1))] / 255;
           const barHeight = Math.max(5, value * (height - 8));
+          const y = (height - barHeight) / 2;
+          const xLeft = leftStart - index * (barWidth + gap);
+          const xRight = rightStart + index * (barWidth + gap);
           ctx.beginPath();
-          ctx.roundRect(index * (barWidth + gap), (height - barHeight) / 2, barWidth, barHeight, 4);
+          ctx.roundRect(xLeft, y, barWidth, barHeight, 4);
+          ctx.roundRect(xRight, y, barWidth, barHeight, 4);
           ctx.fill();
         }
         animationRef.current = requestAnimationFrame(draw);
@@ -559,7 +578,7 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
   return (
     <div className="voice-meter">
       <div className={`voice-meter-display ${listening ? "active" : ""}`}>
-        <canvas ref={canvasRef} width="620" height="82" aria-label="Medidor de intensidad de voz" />
+        <canvas ref={canvasRef} width="620" height="82" style={{ width: "100%", height: 82, display: "block" }} aria-label="Medidor de intensidad de voz" />
         <span>{listening ? "Escuchando tu voz…" : "El medidor comenzará cuando actives el micrófono"}</span>
       </div>
       {error && <small className="voice-meter-error">{error}</small>}
@@ -2675,6 +2694,7 @@ function StartStep({ data, setData, setToast, handlers }) {
   const recordedTakeUrlRef = useRef('');
   const discardRecordedTakeRef = useRef(false);
   const recordedTakeAudioRef = useRef(null);
+  const singStudioRef = useRef(null);
 
   useEffect(() => {
     if (singRecording.recording || singCountdown.active) return;
@@ -3062,11 +3082,34 @@ function StartStep({ data, setData, setToast, handlers }) {
     }, 1000);
   };
 
+  const scrollToSingStudio = () => {
+    const el = singStudioRef.current;
+    if (!el) return;
+    if (typeof window === 'undefined') return;
+    const isMobile = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 700px)').matches : (window.innerWidth || 0) <= 700;
+    if (!isMobile) return;
+    const container = el.closest('.content-area');
+    if (!container || typeof container.scrollTo !== 'function') {
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch {}
+      return;
+    }
+    const elRect = el.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    if (elRect.top >= containerRect.top + 18 && elRect.bottom <= containerRect.bottom - 18) return;
+    const padding = 110;
+    const deltaTop = elRect.top - containerRect.top;
+    const nextTop = Math.max(0, container.scrollTop + deltaTop - padding);
+    container.scrollTo({ top: nextTop, behavior: 'smooth' });
+  };
+
   const openSingFlow = async () => {
     stopSingingCapture({ discardTake: true, preservePreview: false });
     setAudioChoiceMode('record');
     setData((current) => ({ ...current, audioInputMode: 'record' }));
     setSingRecording((current) => ({ ...current, error: '' }));
+    window.setTimeout(scrollToSingStudio, 30);
     if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== 'function') {
       setToast('Tu navegador no permite grabar audio aquí. Usa “Subir mi audio”.');
       return;
@@ -3232,7 +3275,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           ) : null}
 
           {audioChoiceMode === "record" ? (
-            <div className="sing-studio-card">
+            <div className="sing-studio-card" ref={singStudioRef}>
               <div className="sing-studio-header">
                 <div>
                   <strong>Estudio rápido</strong>
