@@ -670,6 +670,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const regenPhraseReqRef = useRef(0);
   const [regenPhraseBusy, setRegenPhraseBusy] = useState(false);
   const [wizardNotice, setWizardNotice] = useState(null);
+  const [sourceContinueBusy, setSourceContinueBusy] = useState(false);
   const wizardBodyRef = useRef(null);
   const postRejectValidateReqRef = useRef(0);
   const activeClientAttemptIdRef = useRef("");
@@ -781,6 +782,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
   useEffect(() => {
     if (wizardStep !== 3) cancelVerificationFlow();
+  }, [wizardStep]);
+
+  useEffect(() => {
+    if (wizardStep !== 1) setSourceContinueBusy(false);
   }, [wizardStep]);
 
   useEffect(() => {
@@ -2555,7 +2560,85 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
           {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Completa los pasos anteriores para crear tu perfil de voz."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false ? <div className="wizard-info"><Info size={19}/><span>Tu voz aún no aparece como disponible. Puedes guardarla y estará lista en unos minutos.</span></div> : null}</div>}
         </div>
-        <div className="wizard-footer"><button className="wizard-back" disabled={wizardStep === 0 || validation.loading || voiceGen.loading || saving || phraseRecording.recording || phraseCountdown.active} onClick={()=>setWizardStep(Math.max(0,wizardStep-1))}><ArrowLeft size={18}/> Atrás</button>{wizardStep < 4 ? <button className="wizard-next" disabled={(wizardStep===0&&!profile.name.trim())||(wizardStep===1&&(!sourceReady||profile.end<=profile.start||sourceUpload.loading||!sourceUpload.url||sourcePlayerBlocking||validation.loading))||(wizardStep===2&&(validation.loading||!validation.phrase||!verificationReady||phraseRecording.recording||phraseCountdown.active))||(wizardStep===3||wizardStep===4)} onClick={async ()=>{if(wizardStep===1){const ok=await startValidate();if(ok){setWizardStep(2);}return;}if(wizardStep===2){resetVerificationState();setWizardStep(3);return;}setWizardStep(wizardStep+1);}}>Continuar <ArrowRight size={18}/></button> : <button className="wizard-next" disabled={!voiceGen.voiceId||saving||voiceGen.loading} onClick={async ()=>{const ok=await saveToSunoVoices();if(!ok)return;cleanupPhraseRecording();onComplete({name:profile.name,style:profile.style,level:profile.level,voiceId:voiceGen.voiceId});}}><Check size={18} weight="bold"/> Guardar y usar</button>}</div>
+        <div className="wizard-footer">
+          <button
+            className="wizard-back"
+            disabled={wizardStep === 0 || sourceContinueBusy || validation.loading || voiceGen.loading || saving || phraseRecording.recording || phraseCountdown.active}
+            onClick={() => setWizardStep(Math.max(0, wizardStep - 1))}
+          >
+            <ArrowLeft size={18} /> Atrás
+          </button>
+
+          {wizardStep < 4 ? (
+            <button
+              className="wizard-next"
+              disabled={
+                sourceContinueBusy ||
+                (wizardStep === 0 && !profile.name.trim()) ||
+                (wizardStep === 1 &&
+                  (!sourceReady ||
+                    profile.end <= profile.start ||
+                    sourceUpload.loading ||
+                    !sourceUpload.url ||
+                    sourcePlayerBlocking ||
+                    validation.loading)) ||
+                (wizardStep === 2 &&
+                  (validation.loading || !validation.phrase || !verificationReady || phraseRecording.recording || phraseCountdown.active)) ||
+                wizardStep === 3 ||
+                wizardStep === 4
+              }
+              onClick={async () => {
+                if (wizardStep === 1) {
+                  if (sourceContinueBusy) return;
+                  setSourceContinueBusy(true);
+                  const ok = await startValidate().catch(() => false);
+                  if (ok) {
+                    setWizardStep(2);
+                    return;
+                  }
+                  setSourceContinueBusy(false);
+                  return;
+                }
+                if (wizardStep === 2) {
+                  resetVerificationState();
+                  setWizardStep(3);
+                  return;
+                }
+                setWizardStep(wizardStep + 1);
+              }}
+            >
+              {wizardStep === 1 && sourceContinueBusy ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span style={{ marginLeft: 8 }}>Procesando audio...</span>
+                </>
+              ) : (
+                <>
+                  Continuar <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              className="wizard-next"
+              disabled={!voiceGen.voiceId || saving || voiceGen.loading}
+              onClick={async () => {
+                const ok = await saveToSunoVoices();
+                if (!ok) return;
+                cleanupPhraseRecording();
+                onComplete({ name: profile.name, style: profile.style, level: profile.level, voiceId: voiceGen.voiceId });
+              }}
+            >
+              <Check size={18} weight="bold" /> Guardar y usar
+            </button>
+          )}
+
+          {wizardStep === 1 && sourceContinueBusy ? (
+            <small style={{ display: "block", margin: "10px auto 0", maxWidth: 420, textAlign: "center", color: "rgba(220,220,240,.86)", lineHeight: 1.25 }}>
+              Estamos preparando tu audio para crear la frase de verificación. Esto puede tardar unos segundos.
+            </small>
+          ) : null}
+        </div>
       </div>
     </div>
   );
