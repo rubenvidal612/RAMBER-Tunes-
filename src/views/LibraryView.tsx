@@ -1953,59 +1953,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 </button>
               </div>
             </div>
-            <div className="hidden md:grid grid-cols-2 xl:grid-cols-4 gap-3">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Total canciones</div>
-                <div className="mt-2 text-3xl font-extrabold text-white">{canciones.length}</div>
-                <div className="mt-1 text-xs text-slate-400">Todas tus creaciones</div>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Completas</div>
-                <div className="mt-2 text-3xl font-extrabold text-white">{canciones.filter((song) => Boolean(song.audioUrl)).length}</div>
-                <div className="mt-1 text-xs text-slate-400">Listas para escuchar</div>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">En producción</div>
-                <div className="mt-2 text-3xl font-extrabold text-white">{pendingTasks.length + pendingRvcCovers.length}</div>
-                <div className="mt-1 text-xs text-slate-400">Generándose ahora</div>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Privadas</div>
-                <div className="mt-2 text-3xl font-extrabold text-white">{canciones.filter((song) => !song.isPublic).length}</div>
-                <div className="mt-1 text-xs text-slate-400">Solo tú puedes verlas</div>
-              </div>
-            </div>
           </>
         )}
         {/* Top Filters (Me gusta, Publicado, Filtros) */}
-        {activeTab === 'canciones' && (
-          <div className="hidden md:flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <button className="flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors">
-              Publicado
-            </button>
-            <button
-              onClick={() => {
-                setShowTrash((v) => !v);
-                onRefreshSongs?.();
-              }}
-              className={cn(
-                "flex-shrink-0 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2",
-                showTrash ? "border-red-400/40 text-red-200" : ""
-              )}
-            >
-              <Trash2 className="w-4 h-4" /> {showTrash ? "Biblioteca" : "Papelera"}
-            </button>
-            {!showTrash && (
-              <button
-                onClick={() => createFolderQuick()}
-                className="flex-shrink-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/10 to-fuchsia-500/10 border border-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
-                title="Crear carpeta"
-              >
-                <FolderPlus className="w-4 h-4" /> + Carpeta
-              </button>
-            )}
-          </div>
-        )}
+        {null}
 
         {/* Navigation Tabs */}
         <div className="flex border-b border-white/5 space-x-4 md:space-x-6 overflow-x-auto no-scrollbar">
@@ -3431,221 +3382,293 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               ) : (
                 <>
                   {(() => {
-                    const activeCount = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length;
-                    const mutedCount = downloadsModalItems.length - activeCount;
+                    const isKaraoke = (downloadsModalKind || '').toLowerCase() === 'separate_vocal';
+                    if (!isKaraoke) {
+                      const activeCount = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length;
+                      const mutedCount = downloadsModalItems.length - activeCount;
+                      return (
+                        <>
+                          <div className="mt-2 text-xs text-slate-400">
+                            {mutedCount > 0 ? `Silenciadas: ${mutedCount} • ` : ''}Listas para descargar: {activeCount}
+                          </div>
+                          <div className="mt-3 flex items-center gap-2 flex-wrap">
+                            <button
+                              className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                              disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
+                              onClick={() => {
+                                const next: Record<string, boolean> = {};
+                                downloadsModalItems.forEach((x) => {
+                                  const k = String(x?.key || '').trim();
+                                  if (!k) return;
+                                  next[k] = true;
+                                });
+                                setDownloadsModalMuted(next);
+                              }}
+                            >
+                              Silenciar todos
+                            </button>
+                            <button
+                              className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                              disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
+                              onClick={() => setDownloadsModalMuted({})}
+                            >
+                              Activar todos
+                            </button>
+                            <button
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                              disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
+                              onClick={async () => {
+                                const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
+                                const text = list.map((x) => `${x.label}: ${x.url}`).join('\n');
+                                try {
+                                  await navigator.clipboard.writeText(text);
+                                  alert('Copiado al portapapeles.');
+                                } catch {
+                                  alert(text);
+                                }
+                              }}
+                            >
+                              Copiar links
+                            </button>
+                            <button
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                              disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
+                              onClick={() => {
+                                const base = sanitizeFileName(downloadsModalTitle || 'stems');
+                                downloadsModalItems.forEach((x) => {
+                                  const name = sanitizeFileName(`${base} - ${x.label}.mp3`);
+                                  downloadToDevice(x.url, name).catch(() => {});
+                                });
+                              }}
+                            >
+                              Descargar todo (archivos)
+                            </button>
+                            <button
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                              disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
+                              onClick={() => {
+                                downloadMixedStemsMp3().catch(() => {});
+                              }}
+                            >
+                              Descargar mezcla (MP3)
+                            </button>
+                            <button
+                              className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
+                              disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
+                              onClick={async () => {
+                                const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
+                                if (list.length === 0) return;
+                                setDownloadsModalZipping(true);
+                                try {
+                                  const t = await getAccessToken();
+                                  if (!t.ok) {
+                                    alert(t.error || 'No se pudo iniciar sesión.');
+                                    return;
+                                  }
+                                  const r = await fetch('/api/library/zip-stems', {
+                                    method: 'POST',
+                                    headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+                                    body: JSON.stringify({
+                                      title: downloadsModalTitle || 'Stems',
+                                      items: list.map((x) => ({
+                                        label: x.label,
+                                        url: x.url,
+                                      })),
+                                    }),
+                                  });
+                                  if (!r.ok) {
+                                    const out = await r.json().catch(() => ({}));
+                                    alert((out?.detail || out?.error || 'No pude preparar el ZIP.').toString());
+                                    return;
+                                  }
+                                  const skipped = Number((r.headers.get('x-ramber-zip-skipped') || '').toString().trim() || '0');
+                                  const blob = await r.blob();
+                                  const obj = URL.createObjectURL(blob);
+                                  const base = sanitizeFileName(downloadsModalTitle || 'stems') || 'stems';
+                                  await downloadToDevice(obj, `${base}.zip`);
+                                  if (Number.isFinite(skipped) && skipped > 0) {
+                                    alert(`Algunas pistas no se pudieron incluir en el ZIP (${skipped}). Vuelve a intentar si las necesitas.`);
+                                  }
+                                  window.setTimeout(() => {
+                                    try {
+                                      URL.revokeObjectURL(obj);
+                                    } catch {
+                                    }
+                                  }, 60_000);
+                                } catch (e) {
+                                  alert(e instanceof Error ? e.message : 'No pude preparar el ZIP.');
+                                } finally {
+                                  setDownloadsModalZipping(false);
+                                }
+                              }}
+                            >
+                              Descargar todo (ZIP)
+                            </button>
+                            <button
+                              className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
+                              onClick={() => removeCompletedDownload(downloadsModalTaskId)}
+                              disabled={!downloadsModalTaskId}
+                            >
+                              Marcar como listo
+                            </button>
+                          </div>
+
+                          {downloadsModalSaving && <div className="mt-3 text-slate-400 text-xs">Guardando en Biblioteca…</div>}
+                          {downloadsModalZipping && <div className="mt-2 text-slate-400 text-xs">Preparando ZIP…</div>}
+                          {downloadsModalMixing && <div className="mt-2 text-slate-400 text-xs">Preparando mezcla MP3…</div>}
+
+                          <div className="mt-4 space-y-2">
+                            {downloadsModalItems.map((it) => (
+                              (() => {
+                                const isMuted = Boolean(downloadsModalMuted[String(it?.key || '').trim()]);
+                                return (
+                              <div
+                                key={`${it.key}:${it.url}`}
+                                className={cn(
+                                  "w-full bg-[#0f1420] border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-[#141c2c] transition-colors",
+                                  isMuted ? "opacity-60" : ""
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-white font-bold truncate flex items-center gap-2">
+                                    <span className="truncate">{it.label}</span>
+                                    {isMuted ? <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-200">MUTE</span> : null}
+                                  </div>
+                                  <div className="text-slate-500 text-xs truncate">{it.url}</div>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <button
+                                    className={cn(
+                                      "bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors",
+                                      isMuted ? "bg-rose-500/10 border-rose-400/20 text-rose-200 hover:bg-rose-500/15" : ""
+                                    )}
+                                    onClick={() => {
+                                      const k = String(it?.key || '').trim();
+                                      if (!k) return;
+                                      setDownloadsModalMuted((prev) => ({ ...prev, [k]: !Boolean(prev?.[k]) }));
+                                    }}
+                                    disabled={downloadsModalZipping}
+                                    title={isMuted ? 'Quitar mute' : 'Poner mute'}
+                                  >
+                                    {isMuted ? (
+                                      <span className="inline-flex items-center gap-2">
+                                        <Volume2 className="w-4 h-4" /> Activar
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-2">
+                                        <VolumeX className="w-4 h-4" /> Mute
+                                      </span>
+                                    )}
+                                  </button>
+                                  <button
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                                    onClick={() => {
+                                      const id = `${downloadsModalTaskId || 'stem'}_${it.key}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+                                      const title = `${downloadsModalTitle || 'Descarga'} - ${it.label}`.slice(0, 120);
+                                      onPlaySong({
+                                        id,
+                                        title,
+                                        description: downloadsModalTitle || undefined,
+                                        audioUrl: it.url,
+                                        coverUrl: downloadsModalCoverUrl || undefined,
+                                        sunoTaskId: downloadsModalTaskId || null,
+                                        sunoAudioId: it.audioId || null,
+                                        isCover: false,
+                                      });
+                                    }}
+                                  >
+                                    Reproducir
+                                  </button>
+                                  <button
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                                    onClick={() => {
+                                      const base = sanitizeFileName(downloadsModalTitle || 'stems');
+                                      const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
+                                      downloadToDevice(it.url, name).catch(() => {});
+                                    }}
+                                    disabled={downloadsModalZipping}
+                                  >
+                                    Descargar
+                                  </button>
+                                </div>
+                              </div>
+                                );
+                              })()
+                            ))}
+                          </div>
+
+                          <div className="mt-4 text-[11px] text-slate-500">Los links pueden expirar. Descárgalos pronto si los vas a guardar.</div>
+                        </>
+                      );
+                    }
+
+                    const instrumental = downloadsModalItems.find((x) => String(x?.key || '').trim() === 'instrumentalUrl') || null;
+                    const vocal = downloadsModalItems.find((x) => String(x?.key || '').trim() === 'vocalUrl') || null;
+                    const blocks = [
+                      instrumental
+                        ? {
+                            item: instrumental,
+                            title: 'Instrumental (Karaoke)',
+                            subtitle: 'Pista instrumental sin voz',
+                          }
+                        : null,
+                      vocal
+                        ? {
+                            item: vocal,
+                            title: 'Voz',
+                            subtitle: 'Pista con voz original',
+                          }
+                        : null,
+                    ].filter(Boolean) as Array<{ item: any; title: string; subtitle: string }>;
+
                     return (
-                      <div className="mt-2 text-xs text-slate-400">
-                        {mutedCount > 0 ? `Silenciadas: ${mutedCount} • ` : ''}Listas para descargar: {activeCount}
-                      </div>
+                      <>
+                        <div className="mt-2 text-xs text-slate-400">Listas para descargar: {blocks.length}</div>
+                        <div className="mt-4 space-y-3">
+                          {blocks.map(({ item: it, title, subtitle }) => (
+                            <div key={`${it.key}:${it.url}`} className="w-full bg-[#0f1420] border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-white font-extrabold truncate">{title}</div>
+                                <div className="mt-1 text-slate-400 text-xs truncate">{subtitle}</div>
+                              </div>
+                              <div className="shrink-0 flex items-center gap-2">
+                                <button
+                                  className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                                  onClick={() => {
+                                    const id = `${downloadsModalTaskId || 'stem'}_${it.key}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+                                    const t = `${downloadsModalTitle || 'Karaoke'} - ${title}`.slice(0, 120);
+                                    onPlaySong({
+                                      id,
+                                      title: t,
+                                      description: downloadsModalTitle || undefined,
+                                      audioUrl: it.url,
+                                      coverUrl: downloadsModalCoverUrl || undefined,
+                                      sunoTaskId: downloadsModalTaskId || null,
+                                      sunoAudioId: it.audioId || null,
+                                      isCover: false,
+                                    });
+                                  }}
+                                >
+                                  Reproducir
+                                </button>
+                                <button
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
+                                  onClick={() => {
+                                    const base = sanitizeFileName(downloadsModalTitle || 'karaoke');
+                                    const name = sanitizeFileName(`${base} - ${title}.mp3`);
+                                    downloadToDevice(it.url, name).catch(() => {});
+                                  }}
+                                >
+                                  Descargar
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 text-[11px] text-slate-500">Los links pueden expirar. Descárgalos pronto si los vas a guardar.</div>
+                      </>
                     );
                   })()}
-                  <div className="mt-3 flex items-center gap-2 flex-wrap">
-                    <button
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
-                      onClick={() => {
-                        const next: Record<string, boolean> = {};
-                        downloadsModalItems.forEach((x) => {
-                          const k = String(x?.key || '').trim();
-                          if (!k) return;
-                          next[k] = true;
-                        });
-                        setDownloadsModalMuted(next);
-                      }}
-                    >
-                      Silenciar todos
-                    </button>
-                    <button
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
-                      onClick={() => setDownloadsModalMuted({})}
-                    >
-                      Activar todos
-                    </button>
-                    <button
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
-                      onClick={async () => {
-                        const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
-                        const text = list.map((x) => `${x.label}: ${x.url}`).join('\n');
-                        try {
-                          await navigator.clipboard.writeText(text);
-                          alert('Copiado al portapapeles.');
-                        } catch {
-                          alert(text);
-                        }
-                      }}
-                    >
-                      Copiar links
-                    </button>
-                    <button
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
-                      onClick={() => {
-                        const base = sanitizeFileName(downloadsModalTitle || 'stems');
-                        downloadsModalItems.forEach((x) => {
-                          const name = sanitizeFileName(`${base} - ${x.label}.mp3`);
-                          downloadToDevice(x.url, name).catch(() => {});
-                        });
-                      }}
-                    >
-                      Descargar todo (archivos)
-                    </button>
-                    <button
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.length === 0 || downloadsModalZipping || downloadsModalMixing}
-                      onClick={() => {
-                        downloadMixedStemsMp3().catch(() => {});
-                      }}
-                    >
-                      Descargar mezcla (MP3)
-                    </button>
-                    <button
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50"
-                      disabled={downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]).length === 0 || downloadsModalZipping || downloadsModalMixing}
-                      onClick={async () => {
-                        const list = downloadsModalItems.filter((x) => !downloadsModalMuted[String(x?.key || '').trim()]);
-                        if (list.length === 0) return;
-                        setDownloadsModalZipping(true);
-                        try {
-                          const t = await getAccessToken();
-                          if (!t.ok) {
-                            alert(t.error || 'No se pudo iniciar sesión.');
-                            return;
-                          }
-                          const r = await fetch('/api/library/zip-stems', {
-                            method: 'POST',
-                            headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-                            body: JSON.stringify({
-                              title: downloadsModalTitle || 'Stems',
-                              items: list.map((x) => ({
-                                label: x.label,
-                                url: x.url,
-                              })),
-                            }),
-                          });
-                          if (!r.ok) {
-                            const out = await r.json().catch(() => ({}));
-                            alert((out?.detail || out?.error || 'No pude preparar el ZIP.').toString());
-                            return;
-                          }
-                          const skipped = Number((r.headers.get('x-ramber-zip-skipped') || '').toString().trim() || '0');
-                          const blob = await r.blob();
-                          const obj = URL.createObjectURL(blob);
-                          const base = sanitizeFileName(downloadsModalTitle || 'stems') || 'stems';
-                          await downloadToDevice(obj, `${base}.zip`);
-                          if (Number.isFinite(skipped) && skipped > 0) {
-                            alert(`Algunas pistas no se pudieron incluir en el ZIP (${skipped}). Vuelve a intentar si las necesitas.`);
-                          }
-                          window.setTimeout(() => {
-                            try {
-                              URL.revokeObjectURL(obj);
-                            } catch {
-                            }
-                          }, 60_000);
-                        } catch (e) {
-                          alert(e instanceof Error ? e.message : 'No pude preparar el ZIP.');
-                        } finally {
-                          setDownloadsModalZipping(false);
-                        }
-                      }}
-                    >
-                      Descargar todo (ZIP)
-                    </button>
-                    <button
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-white/10 px-4 py-2 rounded-full text-sm font-semibold transition-colors"
-                      onClick={() => removeCompletedDownload(downloadsModalTaskId)}
-                      disabled={!downloadsModalTaskId}
-                    >
-                      Marcar como listo
-                    </button>
-                  </div>
-
-                  {downloadsModalSaving && <div className="mt-3 text-slate-400 text-xs">Guardando en Biblioteca…</div>}
-                  {downloadsModalZipping && <div className="mt-2 text-slate-400 text-xs">Preparando ZIP…</div>}
-                  {downloadsModalMixing && <div className="mt-2 text-slate-400 text-xs">Preparando mezcla MP3…</div>}
-
-                  <div className="mt-4 space-y-2">
-                    {downloadsModalItems.map((it) => (
-                      (() => {
-                        const isMuted = Boolean(downloadsModalMuted[String(it?.key || '').trim()]);
-                        return (
-                      <div
-                        key={`${it.key}:${it.url}`}
-                        className={cn(
-                          "w-full bg-[#0f1420] border border-white/10 rounded-2xl p-4 flex items-center justify-between gap-3 hover:bg-[#141c2c] transition-colors",
-                          isMuted ? "opacity-60" : ""
-                        )}
-                      >
-                        <div className="min-w-0">
-                          <div className="text-white font-bold truncate flex items-center gap-2">
-                            <span className="truncate">{it.label}</span>
-                            {isMuted ? <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-200">MUTE</span> : null}
-                          </div>
-                          <div className="text-slate-500 text-xs truncate">{it.url}</div>
-                        </div>
-                        <div className="shrink-0 flex items-center gap-2">
-                          <button
-                            className={cn(
-                              "bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 px-3 py-2 rounded-full text-xs font-semibold transition-colors",
-                              isMuted ? "bg-rose-500/10 border-rose-400/20 text-rose-200 hover:bg-rose-500/15" : ""
-                            )}
-                            onClick={() => {
-                              const k = String(it?.key || '').trim();
-                              if (!k) return;
-                              setDownloadsModalMuted((prev) => ({ ...prev, [k]: !Boolean(prev?.[k]) }));
-                            }}
-                            disabled={downloadsModalZipping}
-                            title={isMuted ? 'Quitar mute' : 'Poner mute'}
-                          >
-                            {isMuted ? (
-                              <span className="inline-flex items-center gap-2">
-                                <Volume2 className="w-4 h-4" /> Activar
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-2">
-                                <VolumeX className="w-4 h-4" /> Mute
-                              </span>
-                            )}
-                          </button>
-                          <button
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
-                            onClick={() => {
-                              const id = `${downloadsModalTaskId || 'stem'}_${it.key}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
-                              const title = `${downloadsModalTitle || 'Descarga'} - ${it.label}`.slice(0, 120);
-                              onPlaySong({
-                                id,
-                                title,
-                                description: downloadsModalTitle || undefined,
-                                audioUrl: it.url,
-                                coverUrl: downloadsModalCoverUrl || undefined,
-                                sunoTaskId: downloadsModalTaskId || null,
-                                sunoAudioId: it.audioId || null,
-                                isCover: false,
-                              });
-                            }}
-                          >
-                            Reproducir
-                          </button>
-                          <button
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/20 px-3 py-2 rounded-full text-xs font-semibold transition-colors"
-                            onClick={() => {
-                              const base = sanitizeFileName(downloadsModalTitle || 'stems');
-                              const name = sanitizeFileName(`${base} - ${it.label}.mp3`);
-                              downloadToDevice(it.url, name).catch(() => {});
-                            }}
-                            disabled={downloadsModalZipping}
-                          >
-                            Descargar
-                          </button>
-                        </div>
-                      </div>
-                        );
-                      })()
-                    ))}
-                  </div>
-
-                  <div className="mt-4 text-[11px] text-slate-500">Los links pueden expirar. Descárgalos pronto si los vas a guardar.</div>
                 </>
               )}
             </div>
