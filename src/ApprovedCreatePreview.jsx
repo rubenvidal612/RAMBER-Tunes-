@@ -2661,6 +2661,40 @@ function StartStep({ data, setData, setToast, handlers }) {
   const uploadError = (handlers?.audioUploadError || '').toString().trim();
   const hasSelectedAudio = Boolean(data.file || uploadedAudioUrl || uploading || uploadError);
   const needsAudioReupload = Boolean(handlers?.audioReuploadNeeded) && data.audioSource === 'upload' && !hasSelectedAudio;
+  const [audioChoiceMode, setAudioChoiceMode] = useState(() => data.audioInputMode || (data.audioSource === 'upload' ? 'upload' : 'none'));
+  const [singCountdown, setSingCountdown] = useState({ active: false, value: '' });
+  const [singRecording, setSingRecording] = useState({ recording: false, seconds: 0, error: '', url: '', mimeType: '' });
+  const [singMeterStream, setSingMeterStream] = useState(null);
+  const [recordedTake, setRecordedTake] = useState(null);
+  const [takePlaying, setTakePlaying] = useState(false);
+  const singRecorderRef = useRef(null);
+  const singStreamRef = useRef(null);
+  const singChunksRef = useRef([]);
+  const singCountdownTimerRef = useRef(0);
+  const singRecordingTimerRef = useRef(0);
+  const recordedTakeUrlRef = useRef('');
+  const discardRecordedTakeRef = useRef(false);
+  const recordedTakeAudioRef = useRef(null);
+
+  useEffect(() => {
+    if (singRecording.recording || singCountdown.active) return;
+    const nextMode = data.audioInputMode || (data.audioSource === 'upload' ? 'upload' : 'none');
+    setAudioChoiceMode(nextMode);
+  }, [data.audioInputMode, data.audioSource, singRecording.recording, singCountdown.active]);
+
+  useEffect(() => () => {
+    if (singCountdownTimerRef.current) window.clearTimeout(singCountdownTimerRef.current);
+    if (singRecordingTimerRef.current) window.clearInterval(singRecordingTimerRef.current);
+    try {
+      if (singRecorderRef.current && singRecorderRef.current.state !== 'inactive') singRecorderRef.current.stop();
+    } catch {}
+    try {
+      singStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+    } catch {}
+    if (recordedTakeUrlRef.current) {
+      try { URL.revokeObjectURL(recordedTakeUrlRef.current); } catch {}
+    }
+  }, []);
 
   const normalizePersona = (raw) => {
     const meta = raw?.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta : null;
@@ -2915,19 +2949,184 @@ function StartStep({ data, setData, setToast, handlers }) {
     }
   };
 
-  const chooseFile = async (file) => {
-    if (!file) return;
+  const revokeRecordedTakeUrl = () => {
+    if (!recordedTakeUrlRef.current) return;
+    try { URL.revokeObjectURL(recordedTakeUrlRef.current); } catch {}
+    recordedTakeUrlRef.current = '';
+  };
+
+  const stopTakePlayback = () => {
+    const audio = recordedTakeAudioRef.current;
+    if (!audio) return;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {}
+    setTakePlaying(false);
+  };
+
+  const clearSingingTake = () => {
+    stopTakePlayback();
+    revokeRecordedTakeUrl();
+    setRecordedTake(null);
+    setSingRecording((current) => ({ ...current, url: '', seconds: 0, mimeType: '', error: '' }));
+  };
+
+  const stopSingingCapture = ({ discardTake = false, preservePreview = false } = {}) => {
+    discardRecordedTakeRef.current = discardTake;
+    if (singCountdownTimerRef.current) window.clearTimeout(singCountdownTimerRef.current);
+    singCountdownTimerRef.current = 0;
+    if (singRecordingTimerRef.current) window.clearInterval(singRecordingTimerRef.current);
+    singRecordingTimerRef.current = 0;
+    setSingCountdown({ active: false, value: '' });
+    setSingMeterStream(null);
+    try {
+      if (singRecorderRef.current && singRecorderRef.current.state !== 'inactive') {
+        singRecorderRef.current.stop();
+      }
+    } catch {}
+    if (!preservePreview && discardTake) clearSingingTake();
+    if (!singRecorderRef.current || singRecorderRef.current.state === 'inactive') {
+      try {
+        singStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+      } catch {}
+      singStreamRef.current = null;
+      setSingRecording((current) => ({ ...current, recording: false }));
+    }
+  };
+
+  const pickRecordingMimeType = () => {
+    if (typeof window === 'undefined' || typeof window.MediaRecorder !== 'function' || typeof window.MediaRecorder.isTypeSupported !== 'function') {
+      return '';
+    }
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+    return candidates.find((candidate) => window.MediaRecorder.isTypeSupported(candidate)) || '';
+  };
+
+  const extensionFromMimeType = (mimeType) => {
+    const value = String(mimeType || '').toLowerCase();
+    if (value.includes('webm')) return 'webm';
+    if (value.includes('wav')) return 'wav';
+    if (value.includes('ogg')) return 'ogg';
+    if (value.includes('aac')) return 'aac';
+    if (value.includes('mp4') || value.includes('m4a')) return 'm4a';
+    return 'mp3';
+  };
+
+  const startRecorderWithStream = (stream) => {
+    const RecorderClass = window.MediaRecorder;
+    const mimeType = pickRecordingMimeType();
+    let recorder;
+    try {
+      recorder = mimeType ? new RecorderClass(stream, { mimeType }) : new RecorderClass(stream);
+    } catch {
+      recorder = new RecorderClass(stream);
+    }
+    singRecorderRef.current = recorder;
+    singChunksRef.current = [];
+    discardRecordedTakeRef.current = false;
+    recorder.addEventListener('dataavailable', (event) => {
+      if (event?.data?.size) singChunksRef.current.push(event.data);
+    });
+    recorder.addEventListener('stop', () => {
+      const shouldDiscard = discardRecordedTakeRef.current;
+      discardRecordedTakeRef.current = false;
+      if (singRecordingTimerRef.current) window.clearInterval(singRecordingTimerRef.current);
+      singRecordingTimerRef.current = 0;
+      try {
+        singStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+      } catch {}
+      singStreamRef.current = null;
+      setSingMeterStream(null);
+      singRecorderRef.current = null;
+      if (shouldDiscard) {
+        setSingRecording((current) => ({ ...current, recording: false, seconds: 0, url: '', mimeType: '', error: '' }));
+        singChunksRef.current = [];
+        return;
+      }
+      const finalMimeType = String(recorder.mimeType || mimeType || 'audio/webm').trim() || 'audio/webm';
+      const blob = new Blob(singChunksRef.current, { type: finalMimeType });
+      singChunksRef.current = [];
+      const nextFile = new File([blob], `luciana-take-${Date.now()}.${extensionFromMimeType(finalMimeType)}`, { type: finalMimeType });
+      stopTakePlayback();
+      revokeRecordedTakeUrl();
+      const nextUrl = URL.createObjectURL(nextFile);
+      recordedTakeUrlRef.current = nextUrl;
+      setRecordedTake(nextFile);
+      setSingRecording((current) => ({ ...current, recording: false, url: nextUrl, mimeType: finalMimeType, error: '' }));
+    });
+    recorder.start();
+    setSingRecording({ recording: true, seconds: 0, error: '', url: '', mimeType: mimeType || '' });
+    singRecordingTimerRef.current = window.setInterval(() => {
+      setSingRecording((current) => (current.recording ? { ...current, seconds: current.seconds + 1 } : current));
+    }, 1000);
+  };
+
+  const openSingFlow = async () => {
+    stopSingingCapture({ discardTake: true, preservePreview: false });
+    setAudioChoiceMode('record');
+    setData((current) => ({ ...current, audioInputMode: 'record' }));
+    setSingRecording((current) => ({ ...current, error: '' }));
+    if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== 'function') {
+      setToast('Tu navegador no permite grabar audio aquí. Usa “Subir mi audio”.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      singStreamRef.current = stream;
+      setSingMeterStream(stream);
+      const countdownSteps = ['3', '2', '1'];
+      let index = 0;
+      setSingCountdown({ active: true, value: countdownSteps[0] });
+      const tick = () => {
+        if (!singStreamRef.current) {
+          setSingCountdown({ active: false, value: '' });
+          return;
+        }
+        index += 1;
+        if (index >= countdownSteps.length) {
+          setSingCountdown({ active: false, value: '' });
+          startRecorderWithStream(stream);
+          return;
+        }
+        setSingCountdown({ active: true, value: countdownSteps[index] });
+        singCountdownTimerRef.current = window.setTimeout(tick, 1000);
+      };
+      singCountdownTimerRef.current = window.setTimeout(tick, 1000);
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e || '');
+      const message = /denied|notallowed|permission/i.test(raw)
+        ? 'No se pudo acceder al micrófono. Revisa los permisos del navegador e inténtalo de nuevo.'
+        : 'No se pudo iniciar la grabación. Inténtalo otra vez.';
+      stopSingingCapture({ discardTake: true, preservePreview: false });
+      setSingRecording((current) => ({ ...current, error: message }));
+      setToast(message);
+    }
+  };
+
+  const chooseFile = async (file, options = {}) => {
+    if (!file) return false;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
     const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || (file.type || '').toString().startsWith('audio/');
     if (!isAudioOk) {
       setToast("Ese archivo no es de audio. Usa MP3, WAV o M4A.");
-      return;
+      return false;
     }
-    setData({ ...data, audioSource: "upload", file });
+    const nextInputMode = typeof options?.inputMode === 'string' ? options.inputMode : 'upload';
+    setAudioChoiceMode(nextInputMode);
+    setData((current) => ({ ...current, audioInputMode: nextInputMode, audioSource: "upload", file }));
     if (handlers?.uploadAudio) {
-      try { await handlers.uploadAudio(file); } catch {}
+      try {
+        const ok = await handlers.uploadAudio(file);
+        if (ok && options?.autoAdvance) handlers?.goToLyricsStep?.();
+        return Boolean(ok);
+      } catch {
+        return false;
+      }
     } else {
       setToast("Audio recibido. En el paso 2 verás la letra detectada.");
+      if (options?.autoAdvance) handlers?.goToLyricsStep?.();
+      return true;
     }
   };
 
@@ -2949,7 +3148,7 @@ function StartStep({ data, setData, setToast, handlers }) {
             <InfoTip title="Clonación de Voz">Disponible con SUNO V5.5 para usar una voz previamente clonada.</InfoTip>
             <span className="radio" />
           </button>
-          <div className="selection-summary"><Check size={18} weight="bold" /><span>{data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
+          <div className="selection-summary"><Check size={18} weight="bold" /><span>{audioChoiceMode === "record" ? "Quiero cantarlo" : data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
           {data.voiceProfile && <div className="voice-profile-chip"><Users size={19}/><span><small>Personaje seleccionado</small><strong>{data.voiceProfile.name}</strong></span><button onClick={openClonePicker}>Cambiar</button></div>}
           {typeof handlers?.credits === 'number' && (
             <div className="selection-summary" style={{ marginTop: 12, padding: '10px 14px', borderRadius: 16, background: 'rgba(138,69,217,0.1)', border: '1px solid rgba(184,100,240,0.25)' }}>
@@ -2961,40 +3160,176 @@ function StartStep({ data, setData, setToast, handlers }) {
 
         <div className="decision-group">
           <div className="decision-heading"><span>2</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
-          <label className={data.audioSource === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
-            <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-            <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
-            {hasSelectedAudio ? (
-              <button
-                type="button"
-                className="audio-remove-button"
-                aria-label="Quitar audio seleccionado"
-                title="Quitar audio"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handlers?.removeSelectedAudio?.();
+          <div className="audio-choice-switcher">
+            <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
+              <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
+              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 · WAV · M4A"}</small></span>
+              {hasSelectedAudio && audioChoiceMode === "upload" ? (
+                <button
+                  type="button"
+                  className="audio-remove-button"
+                  aria-label="Quitar audio seleccionado"
+                  title="Quitar audio"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handlers?.removeSelectedAudio?.({ nextAudioSource: "upload", nextAudioInputMode: "upload" });
+                  }}
+                >
+                  <Trash size={15} />
+                </button>
+              ) : null}
+              <span className="radio" />
+              <input
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a"
+                onClick={() => {
+                  stopSingingCapture({ discardTake: true, preservePreview: false });
+                  setAudioChoiceMode('upload');
+                  setData((current) => ({ ...current, audioInputMode: 'upload' }));
                 }}
-              >
-                <Trash size={15} />
-              </button>
-            ) : null}
-            <span className="radio" />
-            <input type="file" accept="audio/*,.mp3,.wav,.m4a" onChange={(e) => chooseFile(e.target.files[0])} disabled={uploading} />
-          </label>
-          {data.audioSource === "upload" && uploadedAudioUrl ? (
-            <CompactAudioPlayer src={uploadedAudioUrl} />
+                onChange={(e) => chooseFile(e.target.files[0], { inputMode: 'upload' })}
+                disabled={uploading}
+              />
+            </label>
+
+            <button
+              className={audioChoiceMode === "record" ? "decision-card selected" : "decision-card"}
+              onClick={openSingFlow}
+              disabled={uploading}
+            >
+              <span className="choice-icon"><Microphone size={27} /></span>
+              <span><strong>Quiero cantarlo</strong><small>Grábalo aquí con micrófono y úsalo como audio de referencia</small></span>
+              <span className="radio" />
+            </button>
+
+            <button
+              className={audioChoiceMode === "none" ? "decision-card selected" : "decision-card"}
+              onClick={() => {
+                stopSingingCapture({ discardTake: true, preservePreview: false });
+                setAudioChoiceMode('none');
+                handlers?.removeSelectedAudio?.({ nextAudioSource: "none", nextAudioInputMode: "none" });
+              }}
+              disabled={uploading}
+            >
+              <span className="choice-icon"><MusicNote size={27} /></span>
+              <span><strong>No tengo audio</strong><small>Escribiré o crearé la letra en el paso 2</small></span>
+              <span className="radio" />
+            </button>
+          </div>
+
+          {audioChoiceMode === "upload" ? (
+            <>
+              {data.audioSource === "upload" && uploadedAudioUrl ? (
+                <CompactAudioPlayer src={uploadedAudioUrl} />
+              ) : null}
+              {data.audioSource === "upload" && uploadError ? (
+                <div className="audio-upload-status error">{uploadError}</div>
+              ) : data.audioSource === "upload" && uploadedAudioUrl ? (
+                <div className="audio-upload-status success">Audio subido correctamente. Ya puedes escucharlo aquí y continuar.</div>
+              ) : null}
+            </>
           ) : null}
-          {data.audioSource === "upload" && uploadError ? (
-            <div className="audio-upload-status error">{uploadError}</div>
-          ) : data.audioSource === "upload" && uploadedAudioUrl ? (
-            <div className="audio-upload-status success">Audio subido correctamente. Ya puedes escucharlo aquí y continuar.</div>
+
+          {audioChoiceMode === "record" ? (
+            <div className="sing-studio-card">
+              <div className="sing-studio-header">
+                <div>
+                  <strong>Estudio rápido</strong>
+                  <small>Grabaremos tu referencia y la enviaremos por el mismo flujo de “Subir mi audio”.</small>
+                </div>
+                <span className="sing-studio-pill">Micrófono</span>
+              </div>
+
+              {singCountdown.active ? (
+                <div className="sing-countdown-panel">
+                  <small>Prepárate...</small>
+                  <div className="sing-countdown-number">{singCountdown.value}</div>
+                  <p>La grabación comenzará automáticamente al terminar la cuenta regresiva.</p>
+                </div>
+              ) : null}
+
+              {singRecording.recording ? (
+                <div className="sing-live-panel">
+                  <div className="sing-live-status">
+                    <span className="sing-live-dot" />
+                    <strong>Grabando...</strong>
+                    <span>{formatTime(singRecording.seconds)}</span>
+                  </div>
+                  <VoiceMeter stream={singMeterStream} mode="indicator" />
+                  <button className="record-action-button danger" onClick={() => stopSingingCapture({ discardTake: false, preservePreview: true })}>
+                    <Pause size={18} />
+                    Detener
+                  </button>
+                </div>
+              ) : null}
+
+              {!singCountdown.active && !singRecording.recording && singRecording.url ? (
+                <div className="sing-preview-panel">
+                  <audio
+                    ref={recordedTakeAudioRef}
+                    src={singRecording.url}
+                    controls
+                    className="sing-preview-player"
+                    onPlay={() => setTakePlaying(true)}
+                    onPause={() => setTakePlaying(false)}
+                    onEnded={() => setTakePlaying(false)}
+                  />
+                  <div className="sing-preview-actions">
+                    <button
+                      className="record-action-button"
+                      onClick={() => {
+                        const audio = recordedTakeAudioRef.current;
+                        if (!audio) return;
+                        if (audio.paused) audio.play().catch(() => {});
+                        else audio.pause();
+                      }}
+                    >
+                      <Play size={18} />
+                      {takePlaying ? 'Pausar escucha' : 'Escuchar'}
+                    </button>
+                    <button className="record-action-button secondary" onClick={openSingFlow} disabled={uploading}>
+                      <Waveform size={18} />
+                      Empezar de nuevo
+                    </button>
+                    <button
+                      className="record-action-button primary"
+                      onClick={async () => {
+                        if (!recordedTake) return;
+                        const ok = await chooseFile(recordedTake, { inputMode: 'record', autoAdvance: true });
+                        if (ok) setToast('Grabación usada correctamente. Pasamos al siguiente paso.');
+                      }}
+                      disabled={uploading}
+                    >
+                      {uploading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+                      {uploading ? 'Subiendo grabación...' : 'Usar esta grabación'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {!singCountdown.active && !singRecording.recording && !singRecording.url ? (
+                <div className="sing-idle-panel">
+                  <div className="sing-idle-copy">
+                    <strong>Graba tu idea aquí</strong>
+                    <small>Te pediremos permiso del micrófono, haremos una cuenta regresiva 3, 2, 1 y empezaremos a grabar automáticamente.</small>
+                  </div>
+                  <button className="record-action-button primary" onClick={openSingFlow} disabled={uploading}>
+                    <Microphone size={18} />
+                    Comenzar grabación
+                  </button>
+                </div>
+              ) : null}
+
+              {singRecording.error ? (
+                <div className="audio-upload-status error">{singRecording.error}</div>
+              ) : null}
+            </div>
           ) : null}
-          <button className={data.audioSource === "none" ? "decision-card selected" : "decision-card"} onClick={() => handlers?.removeSelectedAudio?.({ nextAudioSource: "none" })} disabled={uploading}>
-            <span className="choice-icon"><MusicNote size={27} /></span>
-            <span><strong>No tengo audio</strong><small>Escribiré o crearé la letra en el paso 2</small></span>
-            <span className="radio" />
-          </button>
+
+          {needsAudioReupload ? (
+            <div className="audio-upload-status error">Este borrador tenía un audio anterior. Vuelve a subirlo para continuar.</div>
+          ) : null}
           <a className="converter-button" href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={20} /> Convertir mi archivo a MP3 <ArrowRight size={18} /></a>
           <p className="external-note">Ayuda opcional: abre un convertidor gratuito externo</p>
         </div>
@@ -3842,14 +4177,41 @@ const approvedCss = `
 .audio-upload-status{margin-top:10px;font-size:13px;line-height:1.45}
 .audio-upload-status.error{color:#ffb4b4}
 .audio-upload-status.success{color:#86ebd8}
+.audio-choice-switcher{display:grid;gap:14px}
+.sing-studio-card{margin-top:14px;padding:18px;border-radius:24px;border:1px solid rgba(168,107,255,.2);background:radial-gradient(circle at top,rgba(113,51,189,.18),transparent 38%),linear-gradient(180deg,rgba(8,15,28,.98),rgba(10,18,33,.92));box-shadow:0 18px 42px rgba(0,0,0,.24);display:grid;gap:16px}
+.sing-studio-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.sing-studio-header strong,.sing-idle-copy strong{display:block;font-size:18px;color:#fff}
+.sing-studio-header small,.sing-idle-copy small{display:block;margin-top:6px;font-size:13px;line-height:1.55;color:#bfc9da}
+.sing-studio-pill{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:999px;border:1px solid rgba(190,151,255,.24);background:rgba(122,60,224,.18);font-size:12px;font-weight:800;color:#ead7ff;white-space:nowrap}
+.sing-countdown-panel,.sing-live-panel,.sing-preview-panel,.sing-idle-panel{padding:16px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:rgba(8,14,26,.72)}
+.sing-countdown-panel{text-align:center;display:grid;gap:8px;justify-items:center}
+.sing-countdown-panel small{font-size:15px;font-weight:700;letter-spacing:.04em;color:#d6c3ff}
+.sing-countdown-panel p{margin:0;max-width:420px;font-size:13px;line-height:1.5;color:#aeb8ca}
+.sing-countdown-number{width:108px;height:108px;border-radius:999px;display:grid;place-items:center;font-size:48px;font-weight:900;color:#fff;background:radial-gradient(circle,rgba(184,100,240,.42),rgba(91,45,155,.12));box-shadow:0 0 0 1px rgba(186,123,255,.18),0 0 40px rgba(164,94,234,.28);animation:singCountdownPulse 1s ease-in-out infinite}
+.sing-live-panel{display:grid;gap:14px}
+.sing-live-status{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:14px;color:#f5f7fb}
+.sing-live-status strong{font-size:16px}
+.sing-live-dot{width:10px;height:10px;border-radius:999px;background:#ff5d73;box-shadow:0 0 0 0 rgba(255,93,115,.55);animation:singPulse 1.2s ease-in-out infinite}
+.sing-preview-panel{display:grid;gap:14px}
+.sing-preview-player{width:100%;border-radius:16px;accent-color:#a855f7;background:#0b1220}
+.sing-preview-actions{display:flex;flex-wrap:wrap;gap:10px}
+.sing-idle-panel{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.record-action-button{min-height:46px;padding:0 16px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#edf2ff;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.record-action-button:hover{transform:translateY(-1px);border-color:rgba(184,100,240,.34);background:rgba(184,100,240,.12)}
+.record-action-button:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.record-action-button.primary{background:linear-gradient(90deg,rgba(124,58,237,.98),rgba(184,100,240,.96));border-color:rgba(206,170,255,.24);color:#fff}
+.record-action-button.secondary{background:rgba(20,31,49,.88)}
+.record-action-button.danger{background:rgba(112,31,56,.24);border-color:rgba(255,110,147,.22);color:#ffd9e2}
 .audio-lyrics-notice{margin:16px 0 6px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.08);background:rgba(11,20,31,.76);display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.55;color:#d8e2f0}
 .audio-lyrics-notice.info{border-color:rgba(33,201,167,.18);color:#bfeee5}
 .audio-lyrics-notice.success{border-color:rgba(135,100,240,.24);background:rgba(56,28,110,.16);color:#ebdefe}
 .audio-lyrics-notice.warning{border-color:rgba(255,189,105,.18);color:#ffe4b8}
+@keyframes singPulse{0%{box-shadow:0 0 0 0 rgba(255,93,115,.55)}70%{box-shadow:0 0 0 10px rgba(255,93,115,0)}100%{box-shadow:0 0 0 0 rgba(255,93,115,0)}}
+@keyframes singCountdownPulse{0%,100%{transform:scale(.94)}50%{transform:scale(1)}}
 @keyframes generationWave{0%,100%{transform:scaleY(.45);opacity:.45}50%{transform:scaleY(1);opacity:1}}
 @keyframes generationSpin{to{transform:rotate(360deg)}}
 @media(max-width:980px){.generation-hero h1{font-size:42px}.generation-title-row h2{font-size:28px}.generation-title-row p{font-size:16px}.generation-card-side{grid-template-columns:auto minmax(150px,1fr)}.generation-ring{width:112px;height:112px}.generation-footer-banner{flex-direction:column;align-items:flex-start}.generation-footer-actions{width:100%;flex-wrap:wrap}}
-@media(max-width:700px){.generation-stage{padding:18px 0 0;gap:14px}.generation-hero{padding:26px 18px 22px;border-radius:24px}.generation-hero::before,.generation-hero::after{display:none}.generation-hero h1{font-size:30px}.generation-hero-subtitle{font-size:17px}.generation-hero-copy{font-size:14px}.generation-ai-banner{margin-top:18px;padding:14px 14px;border-radius:16px}.generation-cards{gap:14px}.generation-card{grid-template-columns:1fr;gap:16px;padding:16px;border-radius:22px}.generation-card-main{align-items:flex-start}.generation-cover{width:82px;height:82px;border-radius:18px}.generation-title-row{align-items:flex-start}.generation-title-row h2{font-size:20px}.generation-title-row p{font-size:13px;margin-top:4px}.generation-state-pill{font-size:11px;padding:6px 10px}.generation-wave{height:28px;gap:3px}.generation-wave span{width:3px}.generation-card-note{font-size:13px}.generation-card-side{grid-template-columns:1fr;justify-items:start;gap:12px}.generation-ring{width:108px;height:108px;justify-self:end;margin-top:-58px}.generation-status-list{gap:8px}.generation-status-list li{font-size:14px}.generation-bottom-grid{grid-template-columns:1fr;gap:12px}.generation-tip-card,.generation-notify-card{padding:16px;border-radius:20px}.generation-tip-copy strong{font-size:17px}.generation-tip-copy span{font-size:13px}.generation-footer-banner{padding:18px 16px;border-radius:22px}.generation-footer-banner strong{font-size:18px}.generation-footer-banner span{font-size:13px}.generation-footer-actions{width:100%;display:grid;grid-template-columns:1fr}.generation-link-button,.generation-secondary-button{width:100%}.audio-preview-player{padding:10px 12px}.audio-preview-row{font-size:11px}.audio-preview-row strong{font-size:12px}}
+@media(max-width:700px){.generation-stage{padding:18px 0 0;gap:14px}.generation-hero{padding:26px 18px 22px;border-radius:24px}.generation-hero::before,.generation-hero::after{display:none}.generation-hero h1{font-size:30px}.generation-hero-subtitle{font-size:17px}.generation-hero-copy{font-size:14px}.generation-ai-banner{margin-top:18px;padding:14px 14px;border-radius:16px}.generation-cards{gap:14px}.generation-card{grid-template-columns:1fr;gap:16px;padding:16px;border-radius:22px}.generation-card-main{align-items:flex-start}.generation-cover{width:82px;height:82px;border-radius:18px}.generation-title-row{align-items:flex-start}.generation-title-row h2{font-size:20px}.generation-title-row p{font-size:13px;margin-top:4px}.generation-state-pill{font-size:11px;padding:6px 10px}.generation-wave{height:28px;gap:3px}.generation-wave span{width:3px}.generation-card-note{font-size:13px}.generation-card-side{grid-template-columns:1fr;justify-items:start;gap:12px}.generation-ring{width:108px;height:108px;justify-self:end;margin-top:-58px}.generation-status-list{gap:8px}.generation-status-list li{font-size:14px}.generation-bottom-grid{grid-template-columns:1fr;gap:12px}.generation-tip-card,.generation-notify-card{padding:16px;border-radius:20px}.generation-tip-copy strong{font-size:17px}.generation-tip-copy span{font-size:13px}.generation-footer-banner{padding:18px 16px;border-radius:22px}.generation-footer-banner strong{font-size:18px}.generation-footer-banner span{font-size:13px}.generation-footer-actions{width:100%;display:grid;grid-template-columns:1fr}.generation-link-button,.generation-secondary-button{width:100%}.audio-preview-player{padding:10px 12px}.audio-preview-row{font-size:11px}.audio-preview-row strong{font-size:12px}.sing-studio-card{padding:14px;border-radius:20px}.sing-studio-header,.sing-idle-panel{grid-template-columns:1fr;display:grid}.sing-countdown-number{width:90px;height:90px;font-size:40px}.sing-live-status{font-size:13px}.sing-preview-actions,.record-action-button{width:100%}}
 `+approvedBaseCss.replaceAll("Manrope","Inter")+approvedMenuCss+approvedCreditCss+approvedDesignCss.replaceAll("Manrope","Inter")+approvedPlayerCss;
 
 const uploadAudioForVoice = async (token, file) => {
@@ -4104,6 +4466,7 @@ function ApprovedCreateContent(props) {
     voice: "standard",
     vocalGender: "",
     voiceProfile: null,
+    audioInputMode: "none",
     audioSource: "none",
     file: null,
     title: "",
@@ -4318,6 +4681,7 @@ function ApprovedCreateContent(props) {
     setUploadProgress(100);
     setData((prev) => ({
       ...prev,
+      audioInputMode: 'upload',
       audioSource: 'upload',
       title: (song?.title || 'Cover').toString().slice(0, 100),
       lyrics: typeof song?.lyrics === 'string' && song.lyrics.trim() ? song.lyrics : prev.lyrics,
@@ -4327,6 +4691,9 @@ function ApprovedCreateContent(props) {
 
   const removeSelectedAudio = (options) => {
     const nextAudioSource = typeof options?.nextAudioSource === 'string' ? options.nextAudioSource : 'upload';
+    const nextAudioInputMode = typeof options?.nextAudioInputMode === 'string'
+      ? options.nextAudioInputMode
+      : (nextAudioSource === 'none' ? 'none' : 'upload');
     audioRequestVersionRef.current += 1;
     setAudioUploadUrl('');
     setAudioUploadPath('');
@@ -4338,6 +4705,7 @@ function ApprovedCreateContent(props) {
     setAudioLyricsStatus('');
     setData((prev) => ({
       ...prev,
+      audioInputMode: nextAudioInputMode,
       audioSource: nextAudioSource,
       file: null,
       lyrics: '',
@@ -4360,7 +4728,7 @@ function ApprovedCreateContent(props) {
         if (requestVersion !== audioRequestVersionRef.current) return;
         setAudioUploadError(t.error || 'No se pudo iniciar sesión.');
         setToast(t.error || 'No se pudo iniciar sesión.');
-        return;
+        return false;
       }
       if (requestVersion !== audioRequestVersionRef.current) return;
       setUploadProgress(40);
@@ -4372,6 +4740,7 @@ function ApprovedCreateContent(props) {
       setAudioUploadError('');
       setAudioReuploadNeeded(false);
       setToast('Audio MP3 subido correctamente.');
+      return true;
     } catch (e) {
       if (requestVersion !== audioRequestVersionRef.current) return;
       const raw = e instanceof Error ? e.message : String(e || '');
@@ -4383,6 +4752,7 @@ function ApprovedCreateContent(props) {
       setAudioUploadPath('');
       setAudioUploadError(msg);
       setToast(msg);
+      return false;
     } finally {
       if (requestVersion !== audioRequestVersionRef.current) return;
       setIsUploadingAudio(false);
@@ -4935,6 +5305,7 @@ function ApprovedCreateContent(props) {
     handleToggleNotifications,
     clearAudioTranscriptionState: () => setAudioLyricsStatus(''),
     removeSelectedAudio,
+    goToLyricsStep: () => setStep(1),
   };
   const content = useMemo(() => {
     return step === 0 ? <StartStep data={data} setData={setData} setToast={setToast} handlers={sharedHandlers} /> :
