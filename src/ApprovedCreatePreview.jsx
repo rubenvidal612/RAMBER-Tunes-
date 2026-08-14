@@ -578,8 +578,16 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
   );
 }
 
-function CloneVoiceWizard({ onClose, onComplete, setToast }) {
+function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const [wizardStep, setWizardStep] = useState(0);
+  const showAlert = (input) => {
+    if (typeof onShowAlert === "function") {
+      onShowAlert(input);
+      return;
+    }
+    const text = typeof input === "string" ? input : String(input?.message || "");
+    if (text) setToast(text);
+  };
   const [profile, setProfile] = useState({
     name: "",
     description: "",
@@ -621,6 +629,22 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
   const verifyAutoRef = useRef({ key: "", attempt: 0, running: false });
   const verifyFlowRunRef = useRef(0);
   const verifyLastErrorRef = useRef("");
+  const [sourceInputMode, setSourceInputMode] = useState("upload");
+  const sourceRecordingTimerRef = useRef(0);
+  const sourceRecordingStreamRef = useRef(null);
+  const sourceRecorderRef = useRef(null);
+  const sourceRecorderChunksRef = useRef([]);
+  const sourceRecorderUrlRef = useRef("");
+  const [sourceRecording, setSourceRecording] = useState({
+    recording: false,
+    seconds: 0,
+    error: "",
+    mimeType: "",
+    url: "",
+  });
+  const [sourceMeterStream, setSourceMeterStream] = useState(null);
+  const [sourceRecordedFile, setSourceRecordedFile] = useState(null);
+  const sourceRecordedAudioRef = useRef(null);
   const [phraseRecording, setPhraseRecording] = useState({
     recording: false,
     seconds: 0,
@@ -730,6 +754,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
       regenPhraseLockRef.current = { running: false, clientAttemptId: "" };
       cancelVerificationFlow();
       cleanupPhraseRecording();
+      cleanupSourceRecording();
       cleanupSourcePlayer();
     };
   }, []);
@@ -815,6 +840,217 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
     if (t.includes("ogg")) return "ogg";
     if (t.includes("webm")) return "webm";
     return "m4a";
+  };
+
+  const cleanupSourceRecording = () => {
+    if (sourceRecordingTimerRef.current) window.clearInterval(sourceRecordingTimerRef.current);
+    sourceRecordingTimerRef.current = 0;
+    setSourceMeterStream(null);
+    try {
+      if (sourceRecorderRef.current && sourceRecorderRef.current.state !== "inactive") {
+        sourceRecorderRef.current.stop();
+      }
+    } catch {}
+    sourceRecorderRef.current = null;
+    if (sourceRecordingStreamRef.current) {
+      try {
+        sourceRecordingStreamRef.current.getTracks().forEach((t) => t.stop());
+      } catch {}
+    }
+    sourceRecordingStreamRef.current = null;
+    sourceRecorderChunksRef.current = [];
+    if (sourceRecorderUrlRef.current) {
+      try {
+        URL.revokeObjectURL(sourceRecorderUrlRef.current);
+      } catch {}
+    }
+    sourceRecorderUrlRef.current = "";
+    setSourceRecordedFile(null);
+    setSourceRecording((current) => ({
+      ...current,
+      recording: false,
+      seconds: 0,
+      error: "",
+      mimeType: "",
+      url: "",
+    }));
+  };
+
+  const resetSourceSelection = () => {
+    cleanupSourcePlayer();
+    cleanupSourceRecording();
+    setSourceUpload({ url: "", key: "", loading: false, error: "" });
+    setProfile((current) => ({
+      ...current,
+      sourceAudio: null,
+      audioDuration: 420,
+      start: 0,
+      end: 10,
+    }));
+  };
+
+  const encodeWav = (audioBuffer) => {
+    const numberOfChannels = Math.min(2, audioBuffer.numberOfChannels || 1);
+    const sampleRate = audioBuffer.sampleRate || 44100;
+    const length = audioBuffer.length || 0;
+    const bytesPerSample = 2;
+    const blockAlign = numberOfChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = length * blockAlign;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeString = (offset, value) => {
+      for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+    };
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bytesPerSample * 8, true);
+    writeString(36, "data");
+    view.setUint32(40, dataSize, true);
+    const channelData = Array.from({ length: numberOfChannels }, (_, idx) => audioBuffer.getChannelData(idx));
+    let offset = 44;
+    for (let i = 0; i < length; i += 1) {
+      for (let ch = 0; ch < numberOfChannels; ch += 1) {
+        const sample = Math.max(-1, Math.min(1, channelData[ch]?.[i] || 0));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+    return buffer;
+  };
+
+  const convertToWavIfNeeded = async (blob, mimeType) => {
+    const t = String(mimeType || blob?.type || "").toLowerCase();
+    if (!t.includes("webm") && !t.includes("ogg")) return null;
+    try {
+      const bytes = await blob.arrayBuffer();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      const ctx = new Ctx();
+      const decoded = await new Promise((resolve, reject) => {
+        try {
+          ctx.decodeAudioData(bytes.slice(0), resolve, reject);
+        } catch (e) {
+          reject(e);
+        }
+      });
+      try {
+        await ctx.close();
+      } catch {}
+      const wavBuffer = encodeWav(decoded);
+      return new File([wavBuffer], `audio_original_${Date.now()}.wav`, { type: "audio/wav" });
+    } catch {
+      return null;
+    }
+  };
+
+  const applySourceAudioFile = (file) => {
+    if (!file) return;
+    const audio = new Audio(URL.createObjectURL(file));
+    audio.addEventListener(
+      "loadedmetadata",
+      () => {
+        const duration = Math.max(1, Math.floor(audio.duration));
+        setProfile((current) => ({
+          ...current,
+          sourceAudio: file,
+          audioDuration: duration,
+          start: 0,
+          end: Math.min(10, duration),
+        }));
+        URL.revokeObjectURL(audio.src);
+        uploadWizardAudio(file, "source").catch(() => {});
+      },
+      { once: true },
+    );
+    audio.addEventListener(
+      "error",
+      () => {
+        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
+        URL.revokeObjectURL(audio.src);
+        uploadWizardAudio(file, "source").catch(() => {});
+      },
+      { once: true },
+    );
+  };
+
+  const startSourceRecording = async () => {
+    if (sourceRecording.recording) return;
+    setSourceRecording((current) => ({ ...current, error: "" }));
+    if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opción Subir audio." });
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sourceRecordingStreamRef.current = stream;
+      setSourceMeterStream(stream);
+      const mimeType = pickRecorderMimeType();
+      const recorder = mimeType ? new window.MediaRecorder(stream, { mimeType }) : new window.MediaRecorder(stream);
+      sourceRecorderChunksRef.current = [];
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event?.data?.size) sourceRecorderChunksRef.current.push(event.data);
+      });
+      recorder.addEventListener("stop", () => {
+        (async () => {
+          const chunks = sourceRecorderChunksRef.current;
+          sourceRecorderChunksRef.current = [];
+          const blobType = String(mimeType || recorder.mimeType || "audio/webm").trim();
+          const blob = new Blob(chunks, { type: blobType });
+          const wav = await convertToWavIfNeeded(blob, blobType);
+          const finalFile = wav || new File([blob], `audio_original_${Date.now()}.${extFromMime(blobType)}`, { type: blobType });
+          if (sourceRecorderUrlRef.current) {
+            try {
+              URL.revokeObjectURL(sourceRecorderUrlRef.current);
+            } catch {}
+          }
+          const url = URL.createObjectURL(finalFile);
+          sourceRecorderUrlRef.current = url;
+          setSourceRecordedFile(finalFile);
+          setSourceRecording((current) => ({ ...current, recording: false, mimeType: finalFile.type || blobType, url }));
+          setSourceMeterStream(null);
+          if (sourceRecordingTimerRef.current) window.clearInterval(sourceRecordingTimerRef.current);
+          sourceRecordingTimerRef.current = 0;
+          if (sourceRecordingStreamRef.current) {
+            try {
+              sourceRecordingStreamRef.current.getTracks().forEach((t) => t.stop());
+            } catch {}
+          }
+          sourceRecordingStreamRef.current = null;
+        })().catch(() => {});
+      });
+      sourceRecorderRef.current = recorder;
+      recorder.start();
+      setSourceRecording((current) => ({ ...current, recording: true, seconds: 0, mimeType: mimeType || "", url: "" }));
+      sourceRecordingTimerRef.current = window.setInterval(() => {
+        setSourceRecording((current) => (current.recording ? { ...current, seconds: current.seconds + 1 } : current));
+      }, 1000);
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e || "");
+      const msg = /denied|notallowed|permission/i.test(raw)
+        ? "No pudimos acceder al micrófono. Revisa los permisos del navegador e inténtalo de nuevo."
+        : "No se pudo iniciar la grabación. Intenta de nuevo.";
+      setSourceRecording((current) => ({ ...current, error: msg }));
+      showAlert({ tone: "error", message: msg });
+    }
+  };
+
+  const stopSourceRecording = () => {
+    try {
+      if (sourceRecorderRef.current && sourceRecorderRef.current.state !== "inactive") {
+        sourceRecorderRef.current.stop();
+        return;
+      }
+    } catch {}
+    cleanupSourceRecording();
   };
 
   const validateRecordedBlob = async (blob) => {
@@ -1951,7 +2187,233 @@ function CloneVoiceWizard({ onClose, onComplete, setToast }) {
         <div className="wizard-progress">{wizardSteps.map((label,index)=><div key={label} className={index === wizardStep ? "active" : index < wizardStep ? "done" : ""}><span>{index < wizardStep ? <Check size={14} weight="bold" /> : index + 1}</span><small>{label}</small></div>)}</div>
         <div className="wizard-body" ref={wizardBodyRef}>
           {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Estos datos te ayudarán a reconocer y reutilizar esta voz.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><label>Descripción<input value={profile.description} onChange={(e)=>setProfile({...profile,description:e.target.value})} placeholder="Ejemplo: Voz cálida para baladas" /></label><div className="wizard-fields"><label>Estilo vocal<select value={profile.style} onChange={(e)=>setProfile({...profile,style:e.target.value})}><option>Pop</option><option>Balada</option><option>Regional</option><option>Rock</option><option>Otro</option></select></label><label>Nivel del cantante<select value={profile.level} onChange={(e)=>setProfile({...profile,level:e.target.value})}><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option><option value="professional">Profesional</option></select></label></div><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
-          {wizardStep === 1 && <div className="wizard-section"><h3>Sube el audio original de tu voz</h3><p>Este es el audio que se utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p><label className="wizard-upload"><UploadSimple size={35}/><strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong><small>Solo archivos MP3</small><input type="file" accept="audio/mpeg,.mp3" onChange={(e)=>acceptMp3(e.target.files[0],"sourceAudio")}/></label><div className="sample-actions"><a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={18}/> Convertir a MP3</a></div>{sourceUpload.loading ? <div className="audio-upload-status" style={{ marginTop: 10 }}><Loader2 size={18} className="animate-spin" /> Subiendo audio…</div> : sourceUpload.error ? <div className="audio-upload-status error">{sourceUpload.error}</div> : sourceUpload.url ? <div className="audio-upload-status success">Audio subido. URL lista para validar.</div> : null}{sourceReady ? <div className="profile-preview" style={{ marginTop: 14 }}><span>Audio seleccionado</span><strong>{profile.sourceAudio?.name || "Audio"}</strong><small>Duración: {formatTime(profile.audioDuration)}</small>{sourcePlayerSrc ? <audio controls preload="metadata" src={sourcePlayerSrc} onError={() => { if (sourcePlayer.mode === "remote" && sourcePlayer.localUrl) { setSourcePlayer((c) => ({ ...c, mode: "local", remoteFailed: true })); return; } setSourcePlayer((c) => ({ ...c, hardError: true, error: "No pudimos reproducir este audio. Vuelve a subirlo." })); }} style={{ width: "100%", marginTop: 10 }} /> : null}{sourcePlayer.error ? <div className="wizard-info" style={{ marginTop: 10 }}><Info size={19} /><span>{sourcePlayer.error}</span></div> : null}</div> : null}{sourceReady && <div className="segment-box"><div><strong>Selecciona el fragmento vocal</strong><InfoTip title="¿Qué fragmento elegir?">La línea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.</InfoTip></div><div className="timeline-summary"><span>Inicio <strong>{formatTime(profile.start)}</strong></span><span>Fragmento seleccionado: <strong>{formatTime(profile.end-profile.start)}</strong></span><span>Final <strong>{formatTime(profile.end)}</strong></span></div><div className="dual-timeline" style={{"--timeline-start":`${(profile.start/profile.audioDuration)*100}%`,"--timeline-end":`${(profile.end/profile.audioDuration)*100}%`}}><div className="timeline-track"/><input aria-label="Inicio del fragmento" type="range" min="0" max={Math.max(0,profile.audioDuration-1)} value={profile.start} onInput={(e)=>setProfile({...profile,start:Math.min(Number(e.currentTarget.value),profile.end-1)})}/><input aria-label="Final del fragmento" type="range" min="1" max={profile.audioDuration} value={profile.end} onInput={(e)=>setProfile({...profile,end:Math.max(Number(e.currentTarget.value),profile.start+1)})}/></div><div className="timeline-scale"><span>0:00</span><span>Audio completo</span><Waveform size={20}/><span>{formatTime(profile.audioDuration)}</span></div></div>}</div>}
+          {wizardStep === 1 && (
+            <div className="wizard-section">
+              <h3>Audio original</h3>
+              <p>¿Cómo quieres proporcionar tu voz?</p>
+
+              <div className="segmented" style={{ marginTop: 10 }}>
+                <button
+                  className={sourceInputMode === "upload" ? "selected" : ""}
+                  type="button"
+                  onClick={() => {
+                    setSourceInputMode("upload");
+                    cleanupSourceRecording();
+                    setSourceRecordedFile(null);
+                  }}
+                >
+                  Subir audio
+                </button>
+                <button
+                  className={sourceInputMode === "sing" ? "selected" : ""}
+                  type="button"
+                  onClick={async () => {
+                    if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+                      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opción Subir audio." });
+                      return;
+                    }
+                    try {
+                      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                      try {
+                        stream.getTracks().forEach((t) => t.stop());
+                      } catch {}
+                      setSourceInputMode("sing");
+                      setSourceRecording((current) => ({ ...current, error: "" }));
+                    } catch (e) {
+                      const raw = e instanceof Error ? e.message : String(e || "");
+                      const msg = /denied|notallowed|permission/i.test(raw)
+                        ? "Permiso de micrófono rechazado. Puedes usar Subir audio."
+                        : "No pudimos acceder al micrófono. Puedes usar Subir audio.";
+                      showAlert({ tone: "error", message: msg });
+                    }
+                  }}
+                >
+                  Cantar aquí
+                </button>
+              </div>
+
+              {sourceInputMode === "upload" ? (
+                <>
+                  <p style={{ marginTop: 14 }}>Este es el audio que se utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p>
+                  <label className="wizard-upload">
+                    <UploadSimple size={35} />
+                    <strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong>
+                    <small>Solo archivos MP3</small>
+                    <input type="file" accept="audio/mpeg,.mp3" onChange={(e) => acceptMp3(e.target.files[0], "sourceAudio")} />
+                  </label>
+                  <div className="sample-actions">
+                    <a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer">
+                      <Waveform size={18} /> Convertir a MP3
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ marginTop: 14 }}>Graba una muestra de tu voz. Cuando termines, podrás escucharla antes de usarla.</p>
+
+                  {sourceRecording.error ? (
+                    <div className="wizard-info" style={{ marginTop: 10 }}>
+                      <Info size={19} />
+                      <span>{sourceRecording.error}</span>
+                    </div>
+                  ) : null}
+
+                  <div className="sample-actions" style={{ marginTop: 12 }}>
+                    {!sourceRecording.recording ? (
+                      <button type="button" className="wizard-next phrase-finish" onClick={startSourceRecording}>
+                        <Microphone size={19} /> Comenzar grabación
+                      </button>
+                    ) : (
+                      <button type="button" className="wizard-next phrase-finish recording" onClick={stopSourceRecording}>
+                        <Check size={19} weight="bold" /> Detener grabación
+                      </button>
+                    )}
+                  </div>
+
+                  {sourceRecording.recording && sourceMeterStream ? <VoiceMeter stream={sourceMeterStream} mode="indicator" /> : null}
+                  {sourceRecording.recording ? <small className="phrase-help">Grabando… {formatTime(sourceRecording.seconds)}</small> : null}
+
+                  {sourceRecordedFile && sourceRecording.url ? (
+                    <div className="profile-preview" style={{ marginTop: 14 }}>
+                      <span>Grabación</span>
+                      <strong>{sourceRecordedFile?.name || "Grabación lista"}</strong>
+                      <small>{sourceRecording.mimeType || (sourceRecordedFile?.type || "")}</small>
+                      <audio ref={sourceRecordedAudioRef} controls src={sourceRecording.url} style={{ width: "100%", marginTop: 10 }} />
+                      <div className="sample-actions" style={{ marginTop: 12 }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = sourceRecordedAudioRef.current;
+                            if (!el) return;
+                            try {
+                              el.currentTime = 0;
+                            } catch {}
+                            el.play?.().catch?.(() => {});
+                          }}
+                        >
+                          Escuchar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            cleanupSourceRecording();
+                            startSourceRecording().catch(() => {});
+                          }}
+                        >
+                          Grabar de nuevo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const f = sourceRecordedFile;
+                            if (!f) return;
+                            applySourceAudioFile(f);
+                            cleanupSourceRecording();
+                            setSourceInputMode("upload");
+                          }}
+                        >
+                          Usar esta grabación
+                        </button>
+                      </div>
+                      <small className="phrase-help">Al usarla, esta grabación entra al mismo flujo que “Subir audio”.</small>
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              {sourceUpload.loading ? (
+                <div className="audio-upload-status" style={{ marginTop: 10 }}>
+                  <Loader2 size={18} className="animate-spin" /> Subiendo audio…
+                </div>
+              ) : sourceUpload.error ? (
+                <div className="audio-upload-status error">{sourceUpload.error}</div>
+              ) : sourceUpload.url ? (
+                <div className="audio-upload-status success">Audio subido. URL lista para validar.</div>
+              ) : null}
+
+              {sourceReady ? (
+                <div className="profile-preview" style={{ marginTop: 14 }}>
+                  <span>Audio seleccionado</span>
+                  <strong>{profile.sourceAudio?.name || "Audio"}</strong>
+                  <small>Duración: {formatTime(profile.audioDuration)}</small>
+                  {sourcePlayerSrc ? (
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={sourcePlayerSrc}
+                      onError={() => {
+                        if (sourcePlayer.mode === "remote" && sourcePlayer.localUrl) {
+                          setSourcePlayer((c) => ({ ...c, mode: "local", remoteFailed: true }));
+                          return;
+                        }
+                        setSourcePlayer((c) => ({ ...c, hardError: true, error: "No pudimos reproducir este audio. Vuelve a subirlo." }));
+                      }}
+                      style={{ width: "100%", marginTop: 10 }}
+                    />
+                  ) : null}
+                  {sourcePlayer.error ? (
+                    <div className="wizard-info" style={{ marginTop: 10 }}>
+                      <Info size={19} />
+                      <span>{sourcePlayer.error}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {sourceReady ? (
+                <div className="segment-box">
+                  <div>
+                    <strong>Selecciona el fragmento vocal</strong>
+                    <InfoTip title="¿Qué fragmento elegir?">
+                      La línea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.
+                    </InfoTip>
+                  </div>
+                  <div className="timeline-summary">
+                    <span>
+                      Inicio <strong>{formatTime(profile.start)}</strong>
+                    </span>
+                    <span>
+                      Fragmento seleccionado: <strong>{formatTime(profile.end - profile.start)}</strong>
+                    </span>
+                    <span>
+                      Final <strong>{formatTime(profile.end)}</strong>
+                    </span>
+                  </div>
+                  <div
+                    className="dual-timeline"
+                    style={{
+                      "--timeline-start": `${(profile.start / profile.audioDuration) * 100}%`,
+                      "--timeline-end": `${(profile.end / profile.audioDuration) * 100}%`,
+                    }}
+                  >
+                    <div className="timeline-track" />
+                    <input
+                      aria-label="Inicio del fragmento"
+                      type="range"
+                      min="0"
+                      max={Math.max(0, profile.audioDuration - 1)}
+                      value={profile.start}
+                      onInput={(e) => setProfile({ ...profile, start: Math.min(Number(e.currentTarget.value), profile.end - 1) })}
+                    />
+                    <input
+                      aria-label="Final del fragmento"
+                      type="range"
+                      min="1"
+                      max={profile.audioDuration}
+                      value={profile.end}
+                      onInput={(e) => setProfile({ ...profile, end: Math.max(Number(e.currentTarget.value), profile.start + 1) })}
+                    />
+                  </div>
+                  <div className="timeline-scale">
+                    <span>0:00</span>
+                    <span>Audio completo</span>
+                    <Waveform size={20} />
+                    <span>{formatTime(profile.audioDuration)}</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
           {wizardStep === 2 && (
             <div className="wizard-section phrase-section">
               <h3>Frase de verificación</h3>
