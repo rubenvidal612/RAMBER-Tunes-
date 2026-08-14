@@ -80,7 +80,7 @@ function detectPromptLanguage(text) {
   ];
   let esScore = /[áéíóúñ¿¡]/.test(value) ? 2 : 0;
   let enScore = 0;
-  for (const hint of spanishHints) if (` ${value} `.includes(hint)) esScore += 1;
+  for (const hint of spanishHints) if (` ${value} `.includes(hint)) esScore += 2;
   for (const hint of englishHints) if (` ${value} `.includes(hint)) enScore += 1;
   return enScore > esScore ? 'en' : 'es';
 }
@@ -3895,11 +3895,13 @@ function ApprovedCreateContent(props) {
     }
     if (isBoostingStyle) return false;
     const sourceLanguage = detectPromptLanguage(content);
-    const translateText = async (text, targetLanguage) => {
+    const translateText = async (text, fromLanguage, toLanguage) => {
       const rawText = (text || '').toString().trim();
       if (!rawText) return '';
-      const langpair = targetLanguage === 'en' ? 'es|en' : 'en|es';
-      const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(rawText)}&langpair=${langpair}`);
+      const from = (fromLanguage || '').toString().trim().toLowerCase();
+      const to = (toLanguage || '').toString().trim().toLowerCase();
+      if (!from || !to || from === to) return rawText;
+      const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(rawText)}&langpair=${from}|${to}`);
       const result = await response.json().catch(() => ({}));
       return (result?.responseData?.translatedText || '').toString().trim();
     };
@@ -3928,7 +3930,7 @@ function ApprovedCreateContent(props) {
       let finalResult = result;
       const resultLanguage = detectPromptLanguage(result);
       if (resultLanguage !== sourceLanguage) {
-        const translatedBack = await translateText(result, sourceLanguage);
+        const translatedBack = await translateText(result, resultLanguage, sourceLanguage);
         if (translatedBack) finalResult = translatedBack;
       }
       setData((prev) => ({ ...prev, style: finalResult, styleTranslated: false }));

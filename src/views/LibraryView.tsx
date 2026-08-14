@@ -3215,7 +3215,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 <select
                   value={countdownUnit}
                   onChange={(e) => setCountdownUnit(e.target.value === 'days' ? 'days' : e.target.value === 'minutes' ? 'minutes' : 'hours')}
-                  className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none"
+                  className="luciana-dark-select w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white outline-none"
                 >
                   <option value="minutes">Minutos</option>
                   <option value="hours">Horas</option>

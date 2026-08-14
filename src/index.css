@@ -36,6 +36,8 @@ body {
 
 button, input, textarea, select { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
+.luciana-dark-select option { background: #0b0f16; color: #f1f5f9; }
+.luciana-dark-select option:checked { background: #7c3aed; color: #ffffff; }
 
 .luciana-topbar {
   height: 72px;

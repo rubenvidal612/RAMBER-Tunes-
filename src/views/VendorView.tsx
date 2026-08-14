@@ -206,7 +206,7 @@ export function VendorView() {
             <select
               value={defaultUnit}
               onChange={(e) => setDefaultUnit(e.target.value === 'days' ? 'days' : 'hours')}
-              className="w-full glass-card rounded-2xl px-4 py-3 text-white outline-none bg-transparent"
+              className="luciana-dark-select w-full glass-card rounded-2xl px-4 py-3 text-white outline-none bg-transparent"
             >
               <option value="hours">Horas</option>
               <option value="days">Días</option>
