@@ -778,6 +778,16 @@ function audioExtensionFromContentType(rawContentType: any) {
   return "mp3";
 }
 
+function originFromReq(req: any) {
+  const proto = (req?.headers?.["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+  const host = (req?.headers?.["x-forwarded-host"] || req?.headers?.host || "").toString().split(",")[0].trim();
+  return `${proto}://${host}`;
+}
+
+function absoluteUrlFromReq(req: any, pathname: string) {
+  return new URL(pathname, originFromReq(req)).toString();
+}
+
 function normalizeBackendSourceUrl(req: any, rawUrl: any) {
   const value = String(rawUrl || "").trim();
   if (!value) return "";
