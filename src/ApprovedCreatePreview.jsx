@@ -2696,6 +2696,7 @@ function StartStep({ data, setData, setToast, handlers }) {
   const discardRecordedTakeRef = useRef(false);
   const recordedTakeAudioRef = useRef(null);
   const singStudioRef = useRef(null);
+  const uploadInputRef = useRef(null);
 
   useEffect(() => {
     if (singRecording.recording || singCountdown.active) return;
@@ -3227,6 +3228,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               <input
                 type="file"
                 accept="audio/*,.mp3,.wav,.m4a"
+                ref={uploadInputRef}
                 onClick={() => {
                   stopSingingCapture({ discardTake: true, preservePreview: false });
                   setAudioChoiceMode('upload');
@@ -3271,6 +3273,26 @@ function StartStep({ data, setData, setToast, handlers }) {
                 <div className="audio-upload-status error">{uploadError}</div>
               ) : data.audioSource === "upload" && uploadedAudioUrl ? (
                 <div className="audio-upload-status success">Audio subido correctamente. Ya puedes escucharlo aquí y continuar.</div>
+              ) : null}
+              {hasSelectedAudio ? (
+                <button
+                  type="button"
+                  className="record-action-button soft-danger"
+                  onClick={() => {
+                    try {
+                      const input = uploadInputRef.current;
+                      if (input) input.value = '';
+                    } catch {}
+                    handlers?.removeSelectedAudio?.({ nextAudioSource: "upload", nextAudioInputMode: "upload" });
+                    setAudioChoiceMode('upload');
+                    setData((current) => ({ ...current, audioInputMode: 'upload' }));
+                  }}
+                  disabled={uploading}
+                  style={{ width: "100%" }}
+                >
+                  <Trash size={18} />
+                  Eliminar audio
+                </button>
               ) : null}
             </>
           ) : null}
