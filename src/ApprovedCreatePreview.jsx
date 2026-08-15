@@ -532,7 +532,8 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
         const rightStart = centerX + centerGap / 2;
         for (let index = 0; index < half; index += 1) {
           const dataIndex = Math.floor((index / half) * data.length);
-          const value = data[Math.max(0, Math.min(dataIndex, data.length - 1))] / 255;
+          const raw = data[Math.max(0, Math.min(dataIndex, data.length - 1))] / 255;
+          const value = Math.min(1, raw * 1.25);
           const barHeight = Math.max(5, value * (height - 8));
           const y = (height - barHeight) / 2;
           const xLeft = leftStart - index * (barWidth + gap);
@@ -3336,6 +3337,14 @@ function StartStep({ data, setData, setToast, handlers }) {
                       Empezar de nuevo
                     </button>
                     <button
+                      className="record-action-button soft-danger"
+                      onClick={() => stopSingingCapture({ discardTake: true, preservePreview: false })}
+                      disabled={uploading}
+                    >
+                      <Trash size={18} />
+                      Eliminar audio
+                    </button>
+                    <button
                       className="record-action-button primary"
                       onClick={async () => {
                         if (!recordedTake) return;
@@ -4244,6 +4253,8 @@ const approvedCss = `
 .record-action-button:disabled{opacity:.6;cursor:not-allowed;transform:none}
 .record-action-button.primary{background:linear-gradient(90deg,rgba(124,58,237,.98),rgba(184,100,240,.96));border-color:rgba(206,170,255,.24);color:#fff}
 .record-action-button.secondary{background:rgba(20,31,49,.88)}
+.record-action-button.soft-danger{background:rgba(255,93,115,.12);border-color:rgba(255,110,147,.18);color:#ffd9e2;font-weight:700}
+.record-action-button.soft-danger:hover{border-color:rgba(255,110,147,.34);background:rgba(255,93,115,.18)}
 .record-action-button.danger{background:rgba(112,31,56,.24);border-color:rgba(255,110,147,.22);color:#ffd9e2}
 .audio-lyrics-notice{margin:16px 0 6px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.08);background:rgba(11,20,31,.76);display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.55;color:#d8e2f0}
 .audio-lyrics-notice.info{border-color:rgba(33,201,167,.18);color:#bfeee5}
