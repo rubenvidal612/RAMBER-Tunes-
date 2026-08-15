@@ -6,7 +6,7 @@ import { CreateView } from './views/CreateView';
 import { ApprovedCreatePreview, ApprovedCloneVoicePreview } from './ApprovedCreatePreview';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
-import { KaraokeView } from './views/KaraokeView';
+import { VideoKaraokeView } from './views/video-karaoke/VideoKaraokeView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { LucianaBotView } from './views/LucianaBotView';
@@ -3041,12 +3041,7 @@ export default function App() {
             <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
            )}
            {currentTab === 'karaoke' && (
-             <div className="flex-1 flex items-center justify-center px-6">
-               <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
-                 <div className="text-white font-extrabold">Video Karaoke</div>
-                 <div className="mt-2 text-sm text-slate-300">Próximamente</div>
-               </div>
-             </div>
+             <VideoKaraokeView credits={displayCredits} />
            )}
            {currentTab === 'luciana' && <LucianaBotView />}
            {currentTab === 'masterizar' && <MasterizarView />}
@@ -3138,12 +3133,7 @@ export default function App() {
                 ) : currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />
               ) : currentTab === 'karaoke' ? (
-                 <div className="flex-1 flex items-center justify-center px-6">
-                   <div className="w-full max-w-[520px] bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 border border-white/10 rounded-3xl p-6 text-center">
-                     <div className="text-white font-extrabold">Video Karaoke</div>
-                     <div className="mt-2 text-sm text-slate-300">Próximamente</div>
-                   </div>
-                 </div>
+                 <VideoKaraokeView credits={displayCredits} />
                 ) : currentTab === 'luciana' ? (
                 <LucianaBotView />
                ) : currentTab === 'masterizar' ? (

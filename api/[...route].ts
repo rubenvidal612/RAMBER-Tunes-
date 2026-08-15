@@ -1,3 +1,5 @@
+import { handleVideoKaraokeApi } from "./_lib/video-karaoke/handler";
+
 const CREDIT_COSTS = {
   generate_music: 12,
   extend_music: 12,
@@ -17358,6 +17360,7 @@ export default async function handler(req: any, res: any) {
     const next = isApi ? parts[2] : parts[1];
     const third = isApi ? parts[3] : parts[2];
 
+    if (head === "video-karaoke") return handleVideoKaraokeApi(req, res);
     if (head === "karaoke") return karaokeHandler(req, res);
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);

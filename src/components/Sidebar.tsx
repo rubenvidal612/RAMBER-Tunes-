@@ -1,6 +1,6 @@
 import {
   Bot, CircleHelp, Clock3, Coins, Home, Library, Mic2, Sparkles,
-  Shield, Volume2, WalletCards,
+  Shield, Volume2, WalletCards, Video,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
@@ -11,13 +11,14 @@ interface SidebarProps {
   isAdmin?: boolean;
 }
 
-const primaryItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
+const primaryItems: Array<{ id: ViewTab; label: string; icon: typeof Home; badge?: string }> = [
   { id: 'landing', label: 'Inicio', icon: Home },
   { id: 'studio', label: 'Crear', icon: Sparkles },
   { id: 'biblioteca', label: 'Mis canciones', icon: Library },
   { id: 'voces', label: 'Clonador de voz', icon: Mic2 },
   { id: 'masterizar', label: 'Masterizar', icon: Volume2 },
   { id: 'planes', label: 'Comprar créditos', icon: Coins },
+  { id: 'karaoke', label: 'Video Karaoke', icon: Video, badge: 'Nuevo' },
 ];
 
 const accountItems: Array<{ id: ViewTab; label: string; icon: typeof Home; adminOnly?: boolean }> = [
@@ -25,11 +26,12 @@ const accountItems: Array<{ id: ViewTab; label: string; icon: typeof Home; admin
   { id: 'vendedor', label: 'Vendedor', icon: Clock3 },
 ];
 
-function NavButton({ id, label, icon: Icon, currentTab, onChange }: {
+function NavButton({ id, label, icon: Icon, badge, currentTab, onChange }: {
   key?: ViewTab;
   id: ViewTab;
   label: string;
   icon: typeof Home;
+  badge?: string;
   currentTab: ViewTab;
   onChange: (tab: ViewTab) => void;
 }) {
@@ -38,6 +40,7 @@ function NavButton({ id, label, icon: Icon, currentTab, onChange }: {
     <button type="button" onClick={() => onChange(id)} className={cn('luciana-sidebar-item', active && 'is-active')}>
       <Icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
       <span>{label}</span>
+      {badge ? <small className="ml-auto rounded-full bg-pink-600 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-white">{badge}</small> : null}
       {id === 'landing' ? <small>Próximamente</small> : null}
     </button>
   );
@@ -50,7 +53,7 @@ export function Sidebar({ currentTab, onChange, isAdmin = false }: SidebarProps)
         <p className="luciana-sidebar-label">MENÚ</p>
         <div className="space-y-1">
           {primaryItems.map((item) => (
-            <NavButton key={item.id} id={item.id} label={item.label} icon={item.icon} currentTab={currentTab} onChange={onChange} />
+            <NavButton key={item.id} id={item.id} label={item.label} icon={item.icon} badge={item.badge} currentTab={currentTab} onChange={onChange} />
           ))}
         </div>
 

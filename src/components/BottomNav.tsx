@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Bot, Coins, Clock3, Home, Library, Menu, Mic2, Shield, Sparkles, User, Volume2, X } from 'lucide-react';
+import { Bot, Coins, Clock3, Home, Library, Menu, Mic2, Shield, Sparkles, User, Video, Volume2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 
@@ -16,6 +16,7 @@ const mainItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
 ];
 
 const menuItems: Array<{ id: ViewTab; label: string; description: string; icon: typeof Home }> = [
+  { id: 'karaoke', label: 'Video Karaoke', description: 'Crea un video para cantar', icon: Video },
   { id: 'voces', label: 'Clonar voz', description: 'Crea tu perfil de voz', icon: Mic2 },
   { id: 'masterizar', label: 'Masterizar', description: 'Sonido listo para publicar', icon: Volume2 },
   { id: 'planes', label: 'Comprar créditos', description: 'Recarga tu saldo', icon: Coins },
