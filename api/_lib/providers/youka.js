@@ -293,6 +293,145 @@ async function getProject(projectId) {
   }
 }
 
+function safeLogUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "";
+  }
+}
+
+async function quoteExport(projectId, request) {
+  const enabled = assertEnabled("quote-export");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!projectId) return providerFailure("KARAOKE_INVALID_REQUEST", "projectId es obligatorio.", "quote-export");
+  if (!request || !request.resolution || !request.quality || request.fps == null || request.transparent == null || !request.renderMode) {
+    return providerFailure("KARAOKE_INVALID_REQUEST", "resolution, quality, fps, transparent y renderMode son obligatorios.", "quote-export");
+  }
+
+  const payloadRequest = { ...request };
+  delete payloadRequest.idempotencyKey;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/projects/${encodeURIComponent(projectId)}/exports/quote`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        ...(request.idempotencyKey ? { "idempotency-key": request.idempotencyKey } : {}),
+      },
+      body: JSON.stringify(payloadRequest),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      try {
+        const clone = payload && typeof payload === "object" ? payload : { message: String(payload || "") };
+        if (clone && clone.downloadUrl) clone.downloadUrl = safeLogUrl(clone.downloadUrl);
+        console.error("[youka] quote-export failed", { status: response.status, projectId, request: { resolution: request.resolution, quality: request.quality, fps: request.fps, transparent: request.transparent, renderMode: request.renderMode }, response: clone });
+      } catch {}
+      const unauthorized = response.status === 401 || response.status === 403;
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible cotizar la exportación.",
+        "quote-export",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "quote-export", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function createExport(projectId, request) {
+  const enabled = assertEnabled("create-export");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!projectId) return providerFailure("KARAOKE_INVALID_REQUEST", "projectId es obligatorio.", "create-export");
+  if (!request || !request.resolution || !request.quality || request.fps == null || request.transparent == null || !request.renderMode) {
+    return providerFailure("KARAOKE_INVALID_REQUEST", "resolution, quality, fps, transparent y renderMode son obligatorios.", "create-export");
+  }
+
+  const payloadRequest = { ...request };
+  delete payloadRequest.idempotencyKey;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/projects/${encodeURIComponent(projectId)}/exports`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        ...(request.idempotencyKey ? { "idempotency-key": request.idempotencyKey } : {}),
+      },
+      body: JSON.stringify(payloadRequest),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      try {
+        const clone = payload && typeof payload === "object" ? payload : { message: String(payload || "") };
+        if (clone && clone.downloadUrl) clone.downloadUrl = safeLogUrl(clone.downloadUrl);
+        console.error("[youka] create-export failed", { status: response.status, projectId, request: { resolution: request.resolution, quality: request.quality, fps: request.fps, transparent: request.transparent, renderMode: request.renderMode }, response: clone });
+      } catch {}
+      const unauthorized = response.status === 401 || response.status === 403;
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible iniciar la exportación.",
+        "create-export",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "create-export", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getExport(exportId) {
+  const enabled = assertEnabled("get-export");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!exportId) return providerFailure("KARAOKE_INVALID_REQUEST", "exportId es obligatorio.", "get-export");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/exports/${encodeURIComponent(exportId)}`, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener el estado de la exportación.",
+        "get-export",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "get-export", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function getStatus(resourceId) {
   const enabled = assertEnabled("get-status");
   if (!enabled.ok) return enabled.error;
@@ -345,15 +484,9 @@ export const youkaProvider = {
   updateSettings() {
     return unavailable("update-settings");
   },
-  quoteExport() {
-    return unavailable("quote-export");
-  },
-  createExport() {
-    return unavailable("create-export");
-  },
-  getExport() {
-    return unavailable("get-export");
-  },
+  quoteExport,
+  createExport,
+  getExport,
   getStatus,
   deleteProject() {
     return unavailable("delete-project");
