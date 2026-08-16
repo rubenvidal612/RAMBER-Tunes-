@@ -407,7 +407,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         const state = String(task.state || task.status || '').toLowerCase();
         const progress = task.progress == null ? null : Number(task.progress);
         setYoukaProgress(Number.isFinite(progress) ? progress : null);
-        if (state === 'succeeded' || state === 'completed' || state === 'success') {
+        if (state === 'succeeded' || state === 'completed' || state === 'success' || state === 'finalized') {
           stopPoll();
           const projectRes = await fetch(`/api/video-karaoke/projects/${encodeURIComponent(projectId)}`);
           const projectJson = await projectRes.json().catch(() => null) as any;
