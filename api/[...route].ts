@@ -1,4 +1,4 @@
-import { handleVideoKaraokeApi } from "./_lib/video-karaoke/handler";
+import { handleVideoKaraokeApi } from "./_lib/video-karaoke/handler.js";
 
 const CREDIT_COSTS = {
   generate_music: 12,
