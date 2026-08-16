@@ -57,7 +57,7 @@ export async function handleVideoKaraokeApi(req: any, res: any) {
     if (method(req) !== "POST") return send(res, 405, { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "Método no permitido" } });
     if (!body.filename || !body.contentType || !Number.isFinite(Number(body.contentLength))) return invalid(res, "filename, contentType y contentLength son obligatorios.");
     const request: KaraokeUploadRequest = { filename: String(body.filename), contentType: String(body.contentType), contentLength: Number(body.contentLength), idempotencyKey: key };
-    return sendProviderResponse(res, youkaProvider.createUpload(request));
+    return sendProviderResponse(res, await youkaProvider.createUpload(request));
   }
 
   if (resource === "quote" && method(req) === "POST") {
@@ -71,11 +71,11 @@ export async function handleVideoKaraokeApi(req: any, res: any) {
   }
 
   if (resource === "projects" && !resourceId && method(req) === "POST") {
-    return sendProviderResponse(res, youkaProvider.createProject({ ...body, idempotencyKey: key } as KaraokeProjectCreateRequest));
+    return sendProviderResponse(res, await youkaProvider.createProject({ ...body, idempotencyKey: key } as KaraokeProjectCreateRequest));
   }
 
   if (resource === "projects" && resourceId && !child && method(req) === "GET") {
-    return sendProviderResponse(res, youkaProvider.getProject(resourceId));
+    return sendProviderResponse(res, await youkaProvider.getProject(resourceId));
   }
 
   if (resource === "projects" && resourceId && child === "settings" && method(req) === "PATCH") {
@@ -83,19 +83,23 @@ export async function handleVideoKaraokeApi(req: any, res: any) {
   }
 
   if (resource === "projects" && resourceId && child === "exports" && parts[offset + 3] === "quote" && method(req) === "POST") {
-    return sendProviderResponse(res, youkaProvider.quoteExport(resourceId, { ...body, idempotencyKey: key } as KaraokeExportRequest));
+    return sendProviderResponse(res, await youkaProvider.quoteExport(resourceId, { ...body, idempotencyKey: key } as KaraokeExportRequest));
   }
 
   if (resource === "projects" && resourceId && child === "exports" && !parts[offset + 3] && method(req) === "POST") {
-    return sendProviderResponse(res, youkaProvider.createExport(resourceId, { ...body, idempotencyKey: key } as KaraokeExportRequest));
+    return sendProviderResponse(res, await youkaProvider.createExport(resourceId, { ...body, idempotencyKey: key } as KaraokeExportRequest));
   }
 
   if (resource === "exports" && resourceId && method(req) === "GET") {
-    return sendProviderResponse(res, youkaProvider.getExport(resourceId));
+    return sendProviderResponse(res, await youkaProvider.getExport(resourceId));
+  }
+
+  if (resource === "tasks" && resourceId && method(req) === "GET") {
+    return sendProviderResponse(res, await youkaProvider.getStatus(resourceId));
   }
 
   if (resource === "projects" && resourceId && !child && method(req) === "DELETE") {
-    return sendProviderResponse(res, youkaProvider.deleteProject(resourceId, key));
+    return sendProviderResponse(res, await youkaProvider.deleteProject(resourceId, key));
   }
 
   return send(res, 404, { ok: false, error: { code: "KARAOKE_ROUTE_NOT_FOUND", message: "Ruta de Video Karaoke no encontrada." } });
