@@ -47,11 +47,16 @@ async function quoteProject(request) {
   const { config, apiKey } = enabled;
   if (!ALLOWED_SPLIT_MODELS.has(String(request.splitModel || ""))) return providerFailure("KARAOKE_INVALID_REQUEST", "El modelo de separación no es válido.", "quote-project");
 
-  const durationSeconds = Number(request.durationSeconds);
-  if (!request.inputFileId && (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 1200)) {
+  const payloadRequest = { ...request };
+  if (payloadRequest.inputFileId) {
+    delete payloadRequest.durationSeconds;
+  }
+
+  const durationSeconds = Number(payloadRequest.durationSeconds);
+  if (!payloadRequest.inputFileId && (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 1200)) {
     return providerFailure("KARAOKE_INVALID_REQUEST", "durationSeconds debe ser mayor que 0 y menor o igual que 1200.", "quote-project");
   }
-  if (!request.inputFileId && !request.durationSeconds) return providerFailure("KARAOKE_INVALID_REQUEST", "Se requiere inputFileId o durationSeconds.", "quote-project");
+  if (!payloadRequest.inputFileId && !payloadRequest.durationSeconds) return providerFailure("KARAOKE_INVALID_REQUEST", "Se requiere inputFileId o durationSeconds.", "quote-project");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
@@ -63,11 +68,26 @@ async function quoteProject(request) {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify(payloadRequest),
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
+      try {
+        const lyrics = payloadRequest?.lyricsSource?.type === "align" ? String(payloadRequest?.lyricsSource?.lyrics || "") : "";
+        console.error("[youka] quote-project failed", {
+          status: response.status,
+          request: {
+            inputFileId: payloadRequest?.inputFileId ? String(payloadRequest.inputFileId) : null,
+            hasDurationSeconds: payloadRequest?.durationSeconds != null,
+            splitModel: payloadRequest?.splitModel ? String(payloadRequest.splitModel) : null,
+            lyricsType: payloadRequest?.lyricsSource?.type ? String(payloadRequest.lyricsSource.type) : null,
+            language: payloadRequest?.lyricsSource?.language ? String(payloadRequest.lyricsSource.language) : null,
+            lyricsChars: lyrics ? lyrics.length : 0,
+          },
+          response: payload,
+        });
+      } catch {}
       const unauthorized = response.status === 401 || response.status === 403;
       return providerFailure(
         unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
@@ -339,4 +359,3 @@ export const youkaProvider = {
     return unavailable("delete-project");
   },
 };
-

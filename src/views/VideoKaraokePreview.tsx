@@ -356,7 +356,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           inputFileId: uploadId,
-          durationSeconds: audioDurationSec,
+          durationSeconds: uploadId ? undefined : audioDurationSec,
           splitModel: 'mdx23c',
           lyricsSource,
         }),
