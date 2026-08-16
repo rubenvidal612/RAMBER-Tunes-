@@ -29,17 +29,39 @@ function idempotencyKey(req, body) {
   return String(value || body.idempotencyKey || "").trim() || undefined;
 }
 
+function sanitizeProviderError(error) {
+  const safe = error && typeof error === "object" ? { ...error } : {};
+  const code = String(safe.code || "");
+
+  if (code === "KARAOKE_PROVIDER_UNAUTHORIZED") {
+    safe.message = "Servicio temporalmente no disponible.";
+  }
+  if (code === "KARAOKE_PROVIDER_DISABLED" || code === "KARAOKE_PROVIDER_NOT_IMPLEMENTED") {
+    safe.message = "Servicio temporalmente no disponible.";
+  }
+  if (code === "KARAOKE_PROVIDER_ERROR" && !safe.message) {
+    safe.message = "No fue posible completar la operación. Intenta de nuevo.";
+  }
+
+  if (typeof safe.message === "string") {
+    safe.message = safe.message.replace(/youka/gi, "el servicio");
+  }
+
+  safe.provider = "karaoke";
+  return safe;
+}
+
 function sendProviderResponse(res, result) {
   if (result?.ok) return send(res, 200, { ok: true, data: result.data });
   const status = result?.error?.code === "KARAOKE_INVALID_REQUEST" ? 400 : 503;
   return send(res, status, {
     ok: false,
     error:
-      result?.error || {
+      sanitizeProviderError(result?.error) || {
         code: "KARAOKE_PROVIDER_DISABLED",
         message: "Video Karaoke no está habilitado.",
         retryable: false,
-        provider: "youka",
+        provider: "karaoke",
       },
   });
 }
@@ -47,7 +69,7 @@ function sendProviderResponse(res, result) {
 function invalid(res, message) {
   return send(res, 400, {
     ok: false,
-    error: { code: "KARAOKE_INVALID_REQUEST", message, retryable: false, provider: "youka" },
+    error: sanitizeProviderError({ code: "KARAOKE_INVALID_REQUEST", message, retryable: false, provider: "karaoke" }),
   });
 }
 
@@ -112,4 +134,3 @@ export async function handleVideoKaraokeApi(req, res) {
 
   return send(res, 404, { ok: false, error: { code: "KARAOKE_ROUTE_NOT_FOUND", message: "Ruta de Video Karaoke no encontrada." } });
 }
-
