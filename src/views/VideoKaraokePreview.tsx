@@ -491,6 +491,23 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
     setYoukaError('');
     startLockRef.current = true;
+    let stage: 'uploads' | 'upload-put' | 'quote' | 'projects' | 'polling' = 'uploads';
+    let lastUrl = '';
+    const toSafeErrorMessage = (error: any) => {
+      const raw = String(error?.message || error || '').trim();
+      const lower = raw.toLowerCase();
+      const isNetwork = lower.includes('failed to fetch') || lower.includes('load failed') || lower.includes('networkerror');
+
+      let message = raw || 'No pude procesar el karaoke.';
+      if (isNetwork) {
+        if (stage === 'upload-put') return 'No pude subir el archivo. Verifica tu conexión e intenta de nuevo.';
+        if (String(lastUrl || '').startsWith('/api/')) return 'No pude conectar con el servicio. Verifica tu conexión e intenta de nuevo.';
+        return 'No pude conectar con el servicio. Verifica tu conexión e intenta de nuevo.';
+      }
+
+      if (typeof message === 'string') message = message.replace(/youka/gi, 'el servicio');
+      return message;
+    };
     try {
       setYoukaPhase('uploading');
       setYoukaProgress(null);
@@ -505,6 +522,8 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       const uploadKey = `vk-upload-${baseKey}`;
       const projectKey = `vk-project-${baseKey}`;
 
+      stage = 'uploads';
+      lastUrl = '/api/video-karaoke/uploads';
       const uploadRes = await fetch('/api/video-karaoke/uploads', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': uploadKey },
@@ -523,14 +542,18 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setYoukaUploadId(uploadId);
       const uploadUrl = String(uploadJson.data.uploadUrl);
 
+      stage = 'upload-put';
+      lastUrl = uploadUrl;
       const putRes = await fetch(uploadUrl, {
         method: 'PUT',
         headers: { 'content-type': audioFile.type || 'audio/mpeg' },
         body: audioFile,
       });
-      if (!putRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
+      if (!putRes.ok) throw new Error('No pude subir el archivo. Verifica tu conexión e intenta de nuevo.');
 
       setYoukaPhase('quoting');
+      stage = 'quote';
+      lastUrl = '/api/video-karaoke/quote';
       const quoteRes = await fetch('/api/video-karaoke/quote', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -546,6 +569,8 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setYoukaQuote(quoteJson.data);
 
       setYoukaPhase('creating');
+      stage = 'projects';
+      lastUrl = '/api/video-karaoke/projects';
       const createRes = await fetch('/api/video-karaoke/projects', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': projectKey },
@@ -569,54 +594,66 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       }
 
       setYoukaPhase('processing');
+      stage = 'polling';
       const startedAt = Date.now();
       stopPoll();
       pollTimerRef.current = window.setInterval(async () => {
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > 20 * 60 * 1000) {
-          stopPoll();
-          setYoukaPhase('failed');
-          setYoukaError('Tiempo de espera agotado al procesar el karaoke.');
-          startLockRef.current = false;
-          return;
-        }
-        const statusRes = await fetch(`/api/video-karaoke/tasks/${encodeURIComponent(taskId)}`);
-        const statusJson = await statusRes.json().catch(() => null) as any;
-        if (!statusRes.ok || !statusJson?.ok) return;
-        const task = statusJson.data || {};
-        const state = String(task.state || task.status || '').toLowerCase();
-        const progress = task.progress == null ? null : Number(task.progress);
-        setYoukaProgress(Number.isFinite(progress) ? progress : null);
-        if (state === 'succeeded' || state === 'completed' || state === 'success' || state === 'finalized') {
-          stopPoll();
-          const projectRes = await fetch(`/api/video-karaoke/projects/${encodeURIComponent(projectId)}`);
-          const projectJson = await projectRes.json().catch(() => null) as any;
-          if (!projectRes.ok || !projectJson?.ok) {
+        try {
+          const elapsed = Date.now() - startedAt;
+          if (elapsed > 20 * 60 * 1000) {
+            stopPoll();
             setYoukaPhase('failed');
-            setYoukaError(projectJson?.error?.message || 'No pude obtener el resultado del proyecto.');
+            setYoukaError('Tiempo de espera agotado al procesar el karaoke.');
             startLockRef.current = false;
             return;
           }
-          const provider = projectJson.data?.provider || projectJson.data || {};
-          const stems = Array.isArray(provider.stems) ? provider.stems : [];
-          const alignments = Array.isArray(provider.alignments) ? provider.alignments : [];
-          setYoukaStems(stems);
-          setYoukaAlignments(alignments);
-          setYoukaPhase('ready');
-          startLockRef.current = false;
-          return;
-        }
-        if (state === 'failed' || state === 'error' || state === 'canceled' || state === 'cancelled') {
+
+          stage = 'polling';
+          lastUrl = `/api/video-karaoke/tasks/${encodeURIComponent(taskId)}`;
+          const statusRes = await fetch(lastUrl);
+          const statusJson = await statusRes.json().catch(() => null) as any;
+          if (!statusRes.ok || !statusJson?.ok) return;
+          const task = statusJson.data || {};
+          const state = String(task.state || task.status || '').toLowerCase();
+          const progress = task.progress == null ? null : Number(task.progress);
+          setYoukaProgress(Number.isFinite(progress) ? progress : null);
+          if (state === 'succeeded' || state === 'completed' || state === 'success' || state === 'finalized') {
+            stopPoll();
+            lastUrl = `/api/video-karaoke/projects/${encodeURIComponent(projectId)}`;
+            const projectRes = await fetch(lastUrl);
+            const projectJson = await projectRes.json().catch(() => null) as any;
+            if (!projectRes.ok || !projectJson?.ok) {
+              setYoukaPhase('failed');
+              setYoukaError(String(projectJson?.error?.message || 'No pude obtener el resultado del proyecto.').replace(/youka/gi, 'el servicio'));
+              startLockRef.current = false;
+              return;
+            }
+            const provider = projectJson.data?.provider || projectJson.data || {};
+            const stems = Array.isArray(provider.stems) ? provider.stems : [];
+            const alignments = Array.isArray(provider.alignments) ? provider.alignments : [];
+            setYoukaStems(stems);
+            setYoukaAlignments(alignments);
+            setYoukaPhase('ready');
+            startLockRef.current = false;
+            return;
+          }
+          if (state === 'failed' || state === 'error' || state === 'canceled' || state === 'cancelled') {
+            stopPoll();
+            setYoukaPhase('failed');
+            setYoukaError(String(task?.error?.message || 'El servicio falló al procesar el karaoke.').replace(/youka/gi, 'el servicio'));
+            startLockRef.current = false;
+          }
+        } catch (error: any) {
           stopPoll();
           setYoukaPhase('failed');
-          setYoukaError(task?.error?.message || 'El servicio falló al procesar el karaoke.');
+          setYoukaError(toSafeErrorMessage(error));
           startLockRef.current = false;
         }
       }, 3000);
     } catch (err: any) {
       stopPoll();
       setYoukaPhase('failed');
-      setYoukaError(String(err?.message || 'No pude procesar el karaoke.'));
+      setYoukaError(toSafeErrorMessage(err));
       startLockRef.current = false;
     }
   };
