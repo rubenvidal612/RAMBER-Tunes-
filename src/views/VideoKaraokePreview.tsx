@@ -492,7 +492,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
     setYoukaError('');
     startLockRef.current = true;
-    let stage: 'uploads' | 'upload-put' | 'quote' | 'projects' | 'polling' = 'uploads';
+    let stage: 'uploads' | 'r2-prep' | 'browser-r2-put' | 'r2-provider-bridge' | 'upload-put' | 'quote' | 'projects' | 'polling' = 'uploads';
     let lastUrl = '';
     const toSafeErrorMessage = (error: any) => {
       const raw = String(error?.message || error || '').trim();
@@ -501,7 +501,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
       let message = raw || 'No pude procesar el karaoke.';
       if (isNetwork) {
-        if (stage === 'upload-put') return 'No pude subir el archivo. Verifica tu conexión e intenta de nuevo.';
+        if (stage === 'upload-put' || stage === 'browser-r2-put') return 'No pude subir el archivo. Verifica tu conexión e intenta de nuevo.';
         if (String(lastUrl || '').startsWith('/api/')) return 'No pude conectar con el servicio. Verifica tu conexión e intenta de nuevo.';
         return 'No pude conectar con el servicio. Verifica tu conexión e intenta de nuevo.';
       }
@@ -527,55 +527,96 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       const t = await getAccessToken();
       if (!t.ok) throw new Error(t.error || 'No autorizado');
 
-      lastUrl = '/api/upload-audio';
-      const r2ContentType = String(audioFile.type || 'audio/mpeg').trim() || 'audio/mpeg';
-      const prepRes = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}` },
-        body: JSON.stringify({ title: audioFile.name, contentType: r2ContentType }),
-      });
-      const prepJson = await prepRes.json().catch(() => null) as any;
-      const r2UploadUrl = String(prepJson?.uploadUrl || '').trim();
-      const r2Url = String(prepJson?.url || '').trim();
-      const r2Key = String(prepJson?.key || '').trim();
-      const r2FinalContentType = String(prepJson?.contentType || r2ContentType).trim() || r2ContentType;
-      if (!prepRes.ok || !prepJson?.ok || !r2UploadUrl || !r2Url || !r2Key) {
-        throw new Error(prepJson?.error || prepJson?.message || 'No pude preparar el karaoke. Intenta de nuevo.');
+      const legacyUpload = async () => {
+        stage = 'uploads';
+        lastUrl = '/api/video-karaoke/uploads';
+        const uploadRes = await fetch('/api/video-karaoke/uploads', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': uploadKey },
+          body: JSON.stringify({
+            filename: audioFile.name,
+            contentType: audioFile.type || 'audio/mpeg',
+            contentLength: audioFile.size,
+          }),
+        });
+        const uploadJson = await uploadRes.json().catch(() => null) as any;
+        if (!uploadRes.ok || !uploadJson?.ok || !uploadJson?.data?.uploadUrl || !uploadJson?.data?.uploadId) {
+          throw new Error(uploadJson?.error?.message || 'No pude preparar la subida. Intenta de nuevo.');
+        }
+
+        const uploadId = String(uploadJson.data.uploadId);
+        const uploadUrl = String(uploadJson.data.uploadUrl);
+
+        stage = 'upload-put';
+        lastUrl = uploadUrl;
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'content-type': audioFile.type || 'audio/mpeg' },
+          body: audioFile,
+        });
+        if (!putRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
+
+        setYoukaUploadId(uploadId);
+        return uploadId;
+      };
+
+      let uploadId = '';
+      try {
+        stage = 'r2-prep';
+        lastUrl = '/api/upload-audio';
+        const r2ContentType = String(audioFile.type || 'audio/mpeg').trim() || 'audio/mpeg';
+        const prepRes = await fetch('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}` },
+          body: JSON.stringify({ title: audioFile.name, contentType: r2ContentType }),
+        });
+        const prepJson = await prepRes.json().catch(() => null) as any;
+        const r2UploadUrl = String(prepJson?.uploadUrl || '').trim();
+        const r2Url = String(prepJson?.url || '').trim();
+        const r2Key = String(prepJson?.key || '').trim();
+        const r2FinalContentType = String(prepJson?.contentType || r2ContentType).trim() || r2ContentType;
+        if (!prepRes.ok || !prepJson?.ok || !r2UploadUrl || !r2Url || !r2Key) {
+          throw new Error(prepJson?.error || prepJson?.message || 'No pude preparar el karaoke. Intenta de nuevo.');
+        }
+
+        stage = 'browser-r2-put';
+        lastUrl = r2UploadUrl;
+        const putController = new AbortController();
+        const putTimeout = window.setTimeout(() => putController.abort(), 3 * 60 * 1000);
+        const r2PutRes = await fetch(r2UploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': r2FinalContentType },
+          body: audioFile,
+          signal: putController.signal,
+        }).finally(() => window.clearTimeout(putTimeout));
+        if (!r2PutRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
+
+        stage = 'r2-provider-bridge';
+        lastUrl = '/api/video-karaoke/uploads/from-r2';
+        const bridgeRes = await fetch('/api/video-karaoke/uploads/from-r2', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}`, 'idempotency-key': uploadKey },
+          body: JSON.stringify({
+            r2Key,
+            r2Url,
+            filename: audioFile.name,
+            contentType: r2FinalContentType,
+            contentLength: audioFile.size,
+            idempotencyKey: uploadKey,
+          }),
+        });
+        const bridgeJson = await bridgeRes.json().catch(() => null) as any;
+        if (!bridgeRes.ok || !bridgeJson?.ok || !bridgeJson?.data?.uploadId) {
+          throw new Error(bridgeJson?.error?.message || 'No pude subir el archivo. Intenta de nuevo.');
+        }
+
+        uploadId = String(bridgeJson.data.uploadId);
+        setYoukaUploadId(uploadId);
+      } catch (uploadErr: any) {
+        const shouldFallback = stage === 'r2-prep' || stage === 'browser-r2-put';
+        if (!shouldFallback) throw uploadErr;
+        uploadId = await legacyUpload();
       }
-
-      stage = 'upload-put';
-      lastUrl = r2UploadUrl;
-      const putController = new AbortController();
-      const putTimeout = window.setTimeout(() => putController.abort(), 3 * 60 * 1000);
-      const r2PutRes = await fetch(r2UploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': r2FinalContentType },
-        body: audioFile,
-        signal: putController.signal,
-      }).finally(() => window.clearTimeout(putTimeout));
-      if (!r2PutRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
-
-      stage = 'upload-put';
-      lastUrl = '/api/video-karaoke/uploads/from-r2';
-      const bridgeRes = await fetch('/api/video-karaoke/uploads/from-r2', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}`, 'idempotency-key': uploadKey },
-        body: JSON.stringify({
-          r2Key,
-          r2Url,
-          filename: audioFile.name,
-          contentType: r2FinalContentType,
-          contentLength: audioFile.size,
-          idempotencyKey: uploadKey,
-        }),
-      });
-      const bridgeJson = await bridgeRes.json().catch(() => null) as any;
-      if (!bridgeRes.ok || !bridgeJson?.ok || !bridgeJson?.data?.uploadId) {
-        throw new Error(bridgeJson?.error?.message || 'No pude subir el archivo. Intenta de nuevo.');
-      }
-
-      const uploadId = String(bridgeJson.data.uploadId);
-      setYoukaUploadId(uploadId);
 
       setYoukaPhase('quoting');
       stage = 'quote';
