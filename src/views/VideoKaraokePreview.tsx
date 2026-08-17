@@ -285,13 +285,13 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         }
         if (state === 'failed' || state === 'error' || state === 'cancelled' || state === 'canceled' || state === 'timed-out') {
           stopExportPoll();
-          setExportPhase('failed');
+          setExportPhase('ready');
           setExportError(String(data.error || 'La exportación falló.'));
         }
       }, 3000);
     } catch (err: any) {
       stopExportPoll();
-      setExportPhase('failed');
+      setExportPhase('ready');
       setExportError(String(err?.message || 'No pude iniciar la exportación.'));
     }
   };
@@ -998,7 +998,141 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
 
 function ExportStep({fileName,durationSec,format,preset,instrumentalVolume,chorusVolume,exportResolution,setExportResolution,exportFps,setExportFps,exportQuality,setExportQuality,exportTransparent,setExportTransparent,exportRenderMode,setExportRenderMode,exportQuote,exportQuoteError,exportPhase,exportError,exportConfirm,setExportConfirm,exportId,exportTaskId,exportState,exportDownloadUrl,quoteExport,createExport,previewProps}:any){
   const credits = exportQuote?.creditsRequired ?? exportQuote?.standardCreditsRequired ?? null;
-  return <div><h3 className="font-extrabold">5. Exporta tu Video Karaoke</h3><div className="mt-4 grid gap-4 lg:grid-cols-[240px_1fr]"><div className="space-y-3"><Summary label="Canción" value={fileName}/><Summary label="Duración" value={durationSec>0?formatDuration(durationSec):'--:--'}/><Summary label="Formato" value={format}/><Summary label="Diseño" value={preset}/><Summary label="Audio" value={`Instrumental ${instrumentalVolume}% · Coros ${chorusVolume}%`}/></div><Preview {...(previewProps||{})} /></div><div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]"><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><strong className="block text-sm">Opciones de exportación</strong><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-[11px] text-slate-400">Resolución<select value={exportResolution} onChange={e=>setExportResolution(e.target.value as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white"><option value="720p">720p</option><option value="1080p">1080p</option></select></label><label className="block text-[11px] text-slate-400">FPS<select value={String(exportFps)} onChange={e=>setExportFps(Number(e.target.value) as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white"><option value="30">30</option><option value="60">60</option></select></label></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="block text-[11px] text-slate-400">Calidad<select value={exportQuality} onChange={e=>setExportQuality(e.target.value as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white"><option value="average">Estándar</option><option value="high">Alta</option></select></label><label className="block text-[11px] text-slate-400">Modo<select value={exportRenderMode} onChange={e=>setExportRenderMode(e.target.value as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white"><option value="standard">Standard</option><option value="fast">Fast</option></select></label></div><button type="button" onClick={()=>setExportTransparent(!exportTransparent)} className={`mt-4 flex w-full items-center justify-between rounded-xl border px-4 py-3 text-xs font-bold ${exportTransparent?'border-pink-500 bg-pink-500/10 text-pink-200':'border-white/10 bg-white/[.02] text-slate-300'}`}><span>Fondo transparente</span><span className={`h-5 w-9 rounded-full p-0.5 ${exportTransparent?'bg-pink-500':'bg-white/10'}`}><span className={`block h-4 w-4 rounded-full bg-white transition-transform ${exportTransparent?'translate-x-4':''}`}/></span></button></div><div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><strong className="block text-sm">Cotización y generación</strong><div className="mt-4 grid gap-3"><button type="button" onClick={quoteExport} disabled={exportPhase==='quoting'||exportPhase==='creating'||exportPhase==='polling'} className="h-11 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black disabled:opacity-40">{exportPhase==='quoting'?'Cotizando...':'Solicitar cotización'}</button>{exportQuoteError?<div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200">{exportQuoteError}</div>:null}{exportQuote?<div className="rounded-xl border border-white/10 bg-white/[.02] p-3 text-xs text-slate-300"><div className="flex items-center justify-between"><span>Costo de exportación</span><b>{credits ?? '--'} créditos</b></div><div className="mt-2 flex items-center justify-between text-[11px] text-slate-400"><span>Saldo</span><b>{exportQuote.availableBalance ?? '--'}</b></div><div className="mt-2 flex items-center justify-between text-[11px] text-slate-400"><span>Elegible</span><b>{exportQuote.eligible===false?'No':'Sí'}</b></div></div>:null}{exportQuote?<label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={exportConfirm} onChange={e=>setExportConfirm(e.target.checked)} className="accent-pink-500"/> Confirmo el costo mostrado para generar el video.</label>:null}{exportError?<div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200">{exportError}</div>:null}<button type="button" onClick={createExport} disabled={exportPhase!=='ready'||!exportConfirm} className="h-11 rounded-xl border border-white/10 bg-white/5 text-sm font-black disabled:opacity-35">{exportPhase==='creating'?'Generando...':'Generar Video Karaoke'}</button>{exportPhase==='polling'?<div className="rounded-xl border border-white/10 bg-white/[.02] p-3 text-xs text-slate-300"><div className="flex items-center justify-between"><span>Estado</span><b>{exportState||'...'}</b></div><div className="mt-2 flex items-center justify-between text-[11px] text-slate-400"><span>exportId</span><b className="truncate">{exportId||'--'}</b></div><div className="mt-2 flex items-center justify-between text-[11px] text-slate-400"><span>taskId</span><b className="truncate">{exportTaskId||'--'}</b></div></div>:null}{exportPhase==='completed'&&exportDownloadUrl?<div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200"><b>Video listo.</b></div>:null}{exportPhase==='completed'&&exportDownloadUrl?<div className="overflow-hidden rounded-2xl border border-white/10 bg-black"><video src={exportDownloadUrl} controls className="h-auto w-full" /></div>:null}{exportPhase==='completed'&&exportDownloadUrl?<a href={exportDownloadUrl} target="_blank" rel="noreferrer" className="grid h-11 place-items-center rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">Descargar MP4</a>:null}</div></div></div></div>;
+  return (
+    <div className="mt-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-extrabold">5. Exporta tu Video Karaoke</h3>
+          <p className="mt-1 text-xs text-slate-400">Cotiza y genera el MP4 final con el diseño del Paso 4.</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,.95fr)]">
+        <div className="lg:sticky lg:top-24">
+          <Preview {...(previewProps || {})} size="editor" />
+        </div>
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+            <strong className="block text-sm">Resumen</strong>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Summary label="Canción" value={fileName} />
+              <Summary label="Duración" value={durationSec > 0 ? formatDuration(durationSec) : '--:--'} />
+              <Summary label="Formato" value={format} />
+              <Summary label="Diseño" value={preset} />
+              <Summary label="Audio" value={`Instrumental ${instrumentalVolume}% · Coros ${chorusVolume}%`} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+            <strong className="block text-sm">Opciones de exportación</strong>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="block text-[11px] text-slate-400">
+                Resolución
+                <select value={exportResolution} onChange={e => setExportResolution(e.target.value as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white">
+                  <option value="720p">720p</option>
+                  <option value="1080p">1080p</option>
+                </select>
+              </label>
+              <label className="block text-[11px] text-slate-400">
+                FPS
+                <select value={String(exportFps)} onChange={e => setExportFps(Number(e.target.value) as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white">
+                  <option value="30">30</option>
+                  <option value="60">60</option>
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-[11px] text-slate-400">
+                Calidad
+                <select value={exportQuality} onChange={e => setExportQuality(e.target.value as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white">
+                  <option value="average">Estándar</option>
+                  <option value="high">Alta</option>
+                </select>
+              </label>
+              <label className="block text-[11px] text-slate-400">
+                Modo
+                <select value={exportRenderMode} onChange={e => setExportRenderMode(e.target.value as any)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white">
+                  <option value="standard">Standard</option>
+                  <option value="fast">Fast</option>
+                </select>
+              </label>
+            </div>
+            <button type="button" onClick={() => setExportTransparent(!exportTransparent)} className={`mt-4 flex w-full items-center justify-between rounded-xl border px-4 py-3 text-xs font-bold ${exportTransparent ? 'border-pink-500 bg-pink-500/10 text-pink-200' : 'border-white/10 bg-white/[.02] text-slate-300'}`}>
+              <span>Fondo transparente</span>
+              <span className={`h-5 w-9 rounded-full p-0.5 ${exportTransparent ? 'bg-pink-500' : 'bg-white/10'}`}>
+                <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${exportTransparent ? 'translate-x-4' : ''}`} />
+              </span>
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+            <strong className="block text-sm">Cotización y generación</strong>
+            <div className="mt-4 grid gap-3">
+              <button type="button" onClick={quoteExport} disabled={exportPhase === 'quoting' || exportPhase === 'creating' || exportPhase === 'polling'} className="h-11 w-full rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black disabled:opacity-40">
+                {exportPhase === 'quoting' ? 'Cotizando...' : 'Solicitar cotización'}
+              </button>
+              {exportQuoteError ? <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200">{exportQuoteError}</div> : null}
+              {exportQuote ? (
+                <div className="rounded-xl border border-white/10 bg-white/[.02] p-3 text-xs text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span>Costo de exportación</span>
+                    <b>{credits ?? '--'} créditos</b>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Saldo</span>
+                    <b>{exportQuote.availableBalance ?? '--'}</b>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Elegible</span>
+                    <b>{exportQuote.eligible === false ? 'No' : 'Sí'}</b>
+                  </div>
+                </div>
+              ) : null}
+              {exportQuote ? (
+                <label className="flex items-center gap-2 text-xs text-slate-300">
+                  <input type="checkbox" checked={exportConfirm} onChange={e => setExportConfirm(e.target.checked)} className="accent-pink-500" /> Confirmo el costo mostrado para generar el video.
+                </label>
+              ) : null}
+              {exportError ? <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200">{exportError}</div> : null}
+              <button type="button" onClick={createExport} disabled={exportPhase !== 'ready' || !exportConfirm} className="h-12 w-full rounded-xl border border-white/10 bg-white/5 text-sm font-black disabled:opacity-35">
+                {exportPhase === 'creating' ? 'Generando...' : 'Generar Video Karaoke'}
+              </button>
+              {exportPhase === 'polling' ? (
+                <div className="rounded-xl border border-white/10 bg-white/[.02] p-3 text-xs text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span>Estado</span>
+                    <b>{exportState || '...'}</b>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>exportId</span>
+                    <b className="truncate">{exportId || '--'}</b>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>taskId</span>
+                    <b className="truncate">{exportTaskId || '--'}</b>
+                  </div>
+                </div>
+              ) : null}
+              {exportPhase === 'completed' && exportDownloadUrl ? (
+                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+                  <b>Video listo.</b>
+                </div>
+              ) : null}
+              {exportPhase === 'completed' && exportDownloadUrl ? (
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
+                  <video src={exportDownloadUrl} controls className="h-auto w-full" />
+                </div>
+              ) : null}
+              {exportPhase === 'completed' && exportDownloadUrl ? (
+                <a href={exportDownloadUrl} target="_blank" rel="noreferrer" className="grid h-11 w-full place-items-center rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">
+                  Descargar MP4
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 function Preview({formatClass='aspect-video',fontSize=18,textColor='#ffffff',activeColor='#ff2f92',preset='Neon',fontFamily='Montserrat',position='Centro inferior',alignment='Centrada',bgImageUrl='',bgVideoUrl='',bgColor='#070914',bgColorEnabled=false,bgDarken=35,bgBlur=0,bgBrightness=105,bgLoop=true,onBgError,size='default'}:any){const presetStyle=getPresetStyle(preset);const vertical=position==='Superior'?'top-10':position==='Centro'?'top-1/2 -translate-y-1/2':'bottom-8';const horizontal=alignment==='Izquierda'?'text-left':alignment==='Derecha'?'text-right':'text-center';const hasVideo=Boolean(bgVideoUrl);const hasImage=!hasVideo&&Boolean(bgImageUrl);const hasColor=!hasVideo&&!hasImage&&Boolean(bgColorEnabled);const filter=`blur(${Math.max(0,Number(bgBlur)||0)}px) brightness(${Math.max(.3,(Number(bgBrightness)||100)/100)})`;const scale=Math.max(1,1+(Math.max(0,Number(bgBlur)||0)/40));const darkenAlpha=Math.max(0,Math.min(0.85,(Number(bgDarken)||0)/100));const titleGlow=presetStyle.glow?`0 0 18px ${activeColor}55,0 0 42px ${activeColor}25`:'0 10px 32px rgba(0,0,0,.55)';const activeGlow=presetStyle.glow?`0 0 16px ${activeColor}66`:'none';const activeBg=presetStyle.activeBg||'transparent';const activeBorder=presetStyle.activeBorder||'transparent';const baseClass=size==='editor'?'mt-0 w-full max-w-none':'mx-auto mt-5 w-full max-w-lg';return <div className={`${baseClass} overflow-hidden rounded-2xl border border-white/10 bg-black ${formatClass}`}><div className="relative h-full min-h-48"><div className="absolute inset-0 overflow-hidden"><div className="absolute inset-0" style={{background:presetStyle.background}}/>{hasColor?<div className="absolute inset-0" style={{background:bgColor}}/>:null}{hasImage?<img src={bgImageUrl} alt="Fondo" className="absolute inset-0 h-full w-full object-cover" style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{hasVideo?<video src={bgVideoUrl} className="absolute inset-0 h-full w-full object-cover" autoPlay muted playsInline loop={Boolean(bgLoop)} style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{!hasVideo&&!hasImage&&!hasColor?<div className="absolute inset-0" style={{background:presetStyle.overlay,opacity:.9}}/>:null}<div className="absolute inset-0" style={{background:'radial-gradient(circle at 50% 0%,rgba(255,255,255,.12) 0%,transparent 50%)',opacity:.35}}/><div className="absolute inset-0" style={{background:`rgba(0,0,0,${darkenAlpha})`}}/></div><span className="absolute left-3 top-3 rounded-full px-2 py-1 text-[9px] font-black text-white" style={{background:presetStyle.badge}}>{preset}</span><div className={`absolute inset-x-4 ${vertical} ${horizontal} font-black leading-tight`} style={{fontSize,color:textColor,fontFamily,letterSpacing:presetStyle.letterSpacing,textShadow:titleGlow}}><span style={{color:activeColor,textShadow:activeGlow,background:activeBg,border:`1px solid ${activeBorder}`,padding:'0.14em 0.28em',borderRadius:'0.55em',boxDecorationBreak:'clone',WebkitBoxDecorationBreak:'clone'}}>Si te vuelves</span> a enamorar<br/>No te enamores de mí</div><div className="absolute inset-x-0 bottom-0 h-1 bg-white/10"><div className="h-full w-2/5 bg-pink-500"/></div></div></div>}
 function KaraokeResult({onAgain}:any){return <div className="h-full overflow-y-auto bg-[#050611] p-5 text-white md:p-10"><div className="mx-auto max-w-4xl rounded-[28px] border border-white/10 bg-[#080a15] p-5 text-center md:p-8"><span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-400"><Check className="h-8 w-8"/></span><h1 className="mt-5 text-3xl font-black">Tu Video Karaoke está listo</h1><p className="mt-2 text-sm text-slate-400">Vista previa del resultado que recibirás cuando activemos la generación.</p><div className="mx-auto mt-7 max-w-2xl"><Preview/></div><p className="mt-6 rounded-xl border border-white/10 bg-white/[.025] p-4 text-xs text-slate-400">Cuando activemos la generación, tu video estará disponible temporalmente para descargar.</p><div className="mt-5 grid gap-3 sm:grid-cols-3"><button disabled className="h-12 rounded-xl bg-white/5 text-sm font-bold text-slate-500">Descargar MP4</button><button onClick={onAgain} className="h-12 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">Crear otro karaoke</button><button className="h-12 rounded-xl border border-white/10 text-sm font-bold">Volver a Biblioteca</button></div></div></div>}

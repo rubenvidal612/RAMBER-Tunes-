@@ -335,10 +335,18 @@ async function quoteExport(projectId, request) {
         if (clone && clone.downloadUrl) clone.downloadUrl = safeLogUrl(clone.downloadUrl);
         console.error("[youka] quote-export failed", { status: response.status, projectId, request: { resolution: request.resolution, quality: request.quality, fps: request.fps, transparent: request.transparent, renderMode: request.renderMode }, response: clone });
       } catch {}
-      const unauthorized = response.status === 401 || response.status === 403;
+      const unauthorized = response.status === 401;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible cotizar la exportación.";
+      if (!unauthorized) {
+        const maybe =
+          payload && typeof payload === "object"
+            ? String(payload.message || payload?.error?.message || payload?.error || "")
+            : "";
+        if (maybe) message = maybe;
+      }
       return providerFailure(
         unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
-        unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible cotizar la exportación.",
+        message,
         "quote-export",
         response.status === 429 || response.status >= 500,
       );
@@ -384,10 +392,18 @@ async function createExport(projectId, request) {
         if (clone && clone.downloadUrl) clone.downloadUrl = safeLogUrl(clone.downloadUrl);
         console.error("[youka] create-export failed", { status: response.status, projectId, request: { resolution: request.resolution, quality: request.quality, fps: request.fps, transparent: request.transparent, renderMode: request.renderMode }, response: clone });
       } catch {}
-      const unauthorized = response.status === 401 || response.status === 403;
+      const unauthorized = response.status === 401;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible iniciar la exportación.";
+      if (!unauthorized) {
+        const maybe =
+          payload && typeof payload === "object"
+            ? String(payload.message || payload?.error?.message || payload?.error || "")
+            : "";
+        if (maybe) message = maybe;
+      }
       return providerFailure(
         unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
-        unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible iniciar la exportación.",
+        message,
         "create-export",
         response.status === 429 || response.status >= 500,
       );
@@ -416,10 +432,18 @@ async function getExport(exportId) {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      const unauthorized = response.status === 401 || response.status === 403;
+      const unauthorized = response.status === 401;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener el estado de la exportación.";
+      if (!unauthorized) {
+        const maybe =
+          payload && typeof payload === "object"
+            ? String(payload.message || payload?.error?.message || payload?.error || "")
+            : "";
+        if (maybe) message = maybe;
+      }
       return providerFailure(
         unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
-        unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener el estado de la exportación.",
+        message,
         "get-export",
         response.status === 429 || response.status >= 500,
       );
