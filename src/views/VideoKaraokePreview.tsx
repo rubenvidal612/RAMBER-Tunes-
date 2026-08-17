@@ -494,6 +494,63 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     startLockRef.current = true;
     let stage: 'uploads' | 'r2-prep' | 'browser-r2-put' | 'r2-provider-bridge' | 'upload-put' | 'quote' | 'projects' | 'polling' = 'uploads';
     let lastUrl = '';
+    const debugEnabled = (() => {
+      try {
+        const params = new URLSearchParams(window.location.search || '');
+        return params.get('vkDebug') === '1' || window.localStorage.getItem('vkDebug') === '1';
+      } catch {
+        return false;
+      }
+    })();
+    const redactUrl = (input: string) => {
+      const raw = String(input || '').trim();
+      if (!raw) return '';
+      try {
+        const base = window.location.origin;
+        const u = new URL(raw, base);
+        u.search = '';
+        u.hash = '';
+        return u.toString();
+      } catch {
+        return raw;
+      }
+    };
+    const redactPayload = (value: any) => {
+      if (!value || typeof value !== 'object') return value;
+      if (Array.isArray(value)) return value.map(redactPayload);
+      const out: any = {};
+      for (const [k, v] of Object.entries(value)) {
+        const lower = k.toLowerCase();
+        if (lower === 'uploadurl' || lower === 'url') {
+          out[k] = typeof v === 'string' ? redactUrl(v) : v;
+          continue;
+        }
+        out[k] = redactPayload(v);
+      }
+      return out;
+    };
+    const logDiag = (label: string, data: any) => {
+      if (!debugEnabled) return;
+      try {
+        console.log('[VIDEO_KARAOKE_DIAG]', label, redactPayload(data));
+      } catch {
+      }
+    };
+    const readJsonSafe = async (res: Response) => {
+      const text = await res.text().catch((e) => String(e?.message || e || ''));
+      let json: any = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
+      return { text, json };
+    };
+    const withStage = (message: string) => {
+      const safeUrl = lastUrl ? redactUrl(lastUrl) : '';
+      const prefix = safeUrl ? `[${stage}] ${safeUrl}` : `[${stage}]`;
+      return `${prefix} — ${message}`;
+    };
     const toSafeErrorMessage = (error: any) => {
       const raw = String(error?.message || error || '').trim();
       const lower = raw.toLowerCase();
@@ -530,6 +587,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       const legacyUpload = async () => {
         stage = 'uploads';
         lastUrl = '/api/video-karaoke/uploads';
+        logDiag('POST /api/video-karaoke/uploads (fallback) [start]', { stage, url: lastUrl });
         const uploadRes = await fetch('/api/video-karaoke/uploads', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': uploadKey },
@@ -539,7 +597,9 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
             contentLength: audioFile.size,
           }),
         });
-        const uploadJson = await uploadRes.json().catch(() => null) as any;
+        const uploadOut = await readJsonSafe(uploadRes);
+        const uploadJson = uploadOut.json as any;
+        logDiag('POST /api/video-karaoke/uploads (fallback) [response]', { stage, url: lastUrl, status: uploadRes.status, ok: uploadRes.ok, responseText: uploadOut.text, responseJson: uploadOut.json });
         if (!uploadRes.ok || !uploadJson?.ok || !uploadJson?.data?.uploadUrl || !uploadJson?.data?.uploadId) {
           throw new Error(uploadJson?.error?.message || 'No pude preparar la subida. Intenta de nuevo.');
         }
@@ -549,11 +609,14 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
         stage = 'upload-put';
         lastUrl = uploadUrl;
+        logDiag('PUT uploadUrl (fallback) [start]', { stage, url: redactUrl(lastUrl) });
         const putRes = await fetch(uploadUrl, {
           method: 'PUT',
           headers: { 'content-type': audioFile.type || 'audio/mpeg' },
           body: audioFile,
         });
+        const putText = await putRes.text().catch((e) => String(e?.message || e || ''));
+        logDiag('PUT uploadUrl (fallback) [response]', { stage, url: redactUrl(lastUrl), status: putRes.status, ok: putRes.ok, responseText: putText });
         if (!putRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
 
         setYoukaUploadId(uploadId);
@@ -564,13 +627,16 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       try {
         stage = 'r2-prep';
         lastUrl = '/api/upload-audio';
+        logDiag('POST /api/upload-audio [start]', { stage, url: lastUrl });
         const r2ContentType = String(audioFile.type || 'audio/mpeg').trim() || 'audio/mpeg';
         const prepRes = await fetch('/api/upload-audio', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}` },
           body: JSON.stringify({ title: audioFile.name, contentType: r2ContentType }),
         });
-        const prepJson = await prepRes.json().catch(() => null) as any;
+        const prepOut = await readJsonSafe(prepRes);
+        const prepJson = prepOut.json as any;
+        logDiag('POST /api/upload-audio [response]', { stage, url: lastUrl, status: prepRes.status, ok: prepRes.ok, responseText: prepOut.text, responseJson: prepOut.json });
         const r2UploadUrl = String(prepJson?.uploadUrl || '').trim();
         const r2Url = String(prepJson?.url || '').trim();
         const r2Key = String(prepJson?.key || '').trim();
@@ -581,6 +647,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
         stage = 'browser-r2-put';
         lastUrl = r2UploadUrl;
+        logDiag('PUT R2 uploadUrl [start]', { stage, url: redactUrl(lastUrl), contentType: r2FinalContentType, contentLength: Number(audioFile.size || 0) });
         const putController = new AbortController();
         const putTimeout = window.setTimeout(() => putController.abort(), 3 * 60 * 1000);
         const r2PutRes = await fetch(r2UploadUrl, {
@@ -589,10 +656,13 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
           body: audioFile,
           signal: putController.signal,
         }).finally(() => window.clearTimeout(putTimeout));
+        const r2PutText = await r2PutRes.text().catch((e) => String(e?.message || e || ''));
+        logDiag('PUT R2 uploadUrl [response]', { stage, url: redactUrl(lastUrl), status: r2PutRes.status, ok: r2PutRes.ok, responseText: r2PutText });
         if (!r2PutRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
 
         stage = 'r2-provider-bridge';
         lastUrl = '/api/video-karaoke/uploads/from-r2';
+        logDiag('POST /api/video-karaoke/uploads/from-r2 [start]', { stage, url: lastUrl, r2Key });
         const bridgeRes = await fetch('/api/video-karaoke/uploads/from-r2', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}`, 'idempotency-key': uploadKey },
@@ -605,7 +675,9 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
             idempotencyKey: uploadKey,
           }),
         });
-        const bridgeJson = await bridgeRes.json().catch(() => null) as any;
+        const bridgeOut = await readJsonSafe(bridgeRes);
+        const bridgeJson = bridgeOut.json as any;
+        logDiag('POST /api/video-karaoke/uploads/from-r2 [response]', { stage, url: lastUrl, status: bridgeRes.status, ok: bridgeRes.ok, responseText: bridgeOut.text, responseJson: bridgeOut.json });
         if (!bridgeRes.ok || !bridgeJson?.ok || !bridgeJson?.data?.uploadId) {
           throw new Error(bridgeJson?.error?.message || 'No pude subir el archivo. Intenta de nuevo.');
         }
@@ -613,6 +685,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         uploadId = String(bridgeJson.data.uploadId);
         setYoukaUploadId(uploadId);
       } catch (uploadErr: any) {
+        logDiag('UPLOAD flow [error]', { stage, url: redactUrl(lastUrl), errorMessage: String(uploadErr?.message || uploadErr || '') });
         const shouldFallback = stage === 'r2-prep' || stage === 'browser-r2-put';
         if (!shouldFallback) throw uploadErr;
         uploadId = await legacyUpload();
@@ -621,6 +694,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setYoukaPhase('quoting');
       stage = 'quote';
       lastUrl = '/api/video-karaoke/quote';
+      logDiag('POST /api/video-karaoke/quote [start]', { stage, url: lastUrl });
       const quoteRes = await fetch('/api/video-karaoke/quote', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -631,13 +705,16 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
           lyricsSource,
         }),
       });
-      const quoteJson = await quoteRes.json().catch(() => null) as any;
+      const quoteOut = await readJsonSafe(quoteRes);
+      const quoteJson = quoteOut.json as any;
+      logDiag('POST /api/video-karaoke/quote [response]', { stage, url: lastUrl, status: quoteRes.status, ok: quoteRes.ok, responseText: quoteOut.text, responseJson: quoteOut.json });
       if (!quoteRes.ok || !quoteJson?.ok) throw new Error(quoteJson?.error?.message || 'No pude obtener la cotización.');
       setYoukaQuote(quoteJson.data);
 
       setYoukaPhase('creating');
       stage = 'projects';
       lastUrl = '/api/video-karaoke/projects';
+      logDiag('POST /api/video-karaoke/projects [start]', { stage, url: lastUrl });
       const createRes = await fetch('/api/video-karaoke/projects', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': projectKey },
@@ -648,7 +725,9 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
           lyricsSource,
         }),
       });
-      const createJson = await createRes.json().catch(() => null) as any;
+      const createOut = await readJsonSafe(createRes);
+      const createJson = createOut.json as any;
+      logDiag('POST /api/video-karaoke/projects [response]', { stage, url: lastUrl, status: createRes.status, ok: createRes.ok, responseText: createOut.text, responseJson: createOut.json });
       if (!createRes.ok || !createJson?.ok || !createJson?.data?.id) throw new Error(createJson?.error?.message || 'No pude iniciar el procesamiento.');
 
       const projectId = String(createJson.data.id);
@@ -720,7 +799,8 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     } catch (err: any) {
       stopPoll();
       setYoukaPhase('failed');
-      setYoukaError(toSafeErrorMessage(err));
+      logDiag('FLOW [failed]', { stage, url: redactUrl(lastUrl), errorMessage: String(err?.message || err || '') });
+      setYoukaError(withStage(toSafeErrorMessage(err)));
       startLockRef.current = false;
     }
   };
