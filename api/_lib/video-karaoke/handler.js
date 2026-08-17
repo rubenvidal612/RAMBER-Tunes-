@@ -1,4 +1,100 @@
 import { youkaProvider } from "../providers/youka.js";
+import { createClient } from "@supabase/supabase-js";
+
+let cachedR2Env = null;
+let cachedR2Client = null;
+let cachedR2Aws = null;
+let cachedR2Presigner = null;
+
+function getR2Env() {
+  if (cachedR2Env) return cachedR2Env;
+  const accountId = String(process.env.R2_ACCOUNT_ID || "").trim();
+  const accessKeyId = String(process.env.R2_ACCESS_KEY_ID || "").trim();
+  const secretAccessKey = String(process.env.R2_SECRET_ACCESS_KEY || "").trim();
+  const bucketName = String(process.env.R2_BUCKET_NAME || "").trim();
+  const endpoint = String(process.env.R2_ENDPOINT || "").trim() || `https://${accountId}.r2.cloudflarestorage.com`;
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    throw new Error("Missing required R2 environment variables");
+  }
+  cachedR2Env = { accountId, accessKeyId, secretAccessKey, bucketName, endpoint };
+  return cachedR2Env;
+}
+
+async function getR2AwsSdk() {
+  if (cachedR2Aws) return cachedR2Aws;
+  cachedR2Aws = await import("@aws-sdk/client-s3");
+  return cachedR2Aws;
+}
+
+async function getR2Presigner() {
+  if (cachedR2Presigner) return cachedR2Presigner;
+  cachedR2Presigner = await import("@aws-sdk/s3-request-presigner");
+  return cachedR2Presigner;
+}
+
+async function getR2Client() {
+  if (cachedR2Client) return cachedR2Client;
+  const env = getR2Env();
+  const { S3Client } = await getR2AwsSdk();
+  const hostname = (() => {
+    try {
+      return new URL(env.endpoint).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  const shouldForcePathStyle = hostname ? !hostname.startsWith(`${env.bucketName.toLowerCase()}.`) : true;
+  cachedR2Client = new S3Client({
+    region: "auto",
+    endpoint: env.endpoint,
+    forcePathStyle: shouldForcePathStyle,
+    credentials: {
+      accessKeyId: env.accessKeyId,
+      secretAccessKey: env.secretAccessKey,
+    },
+  });
+  return cachedR2Client;
+}
+
+async function getSignedR2GetUrl(key, expiresIn = 60 * 15) {
+  const env = getR2Env();
+  const client = await getR2Client();
+  const { GetObjectCommand } = await getR2AwsSdk();
+  const { getSignedUrl } = await getR2Presigner();
+  const command = new GetObjectCommand({ Bucket: env.bucketName, Key: key });
+  return await getSignedUrl(client, command, { expiresIn });
+}
+
+function normalizeR2Key(raw) {
+  const key = String(raw || "")
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+/, "");
+  if (!key || key.length > 500) return "";
+  if (key.includes("..")) return "";
+  return key;
+}
+
+async function requireUser(req) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
+  const supabaseAnon = String(process.env.SUPABASE_ANON_KEY || "").trim();
+  if (!supabaseUrl || !supabaseAnon) {
+    return { ok: false, status: 500, error: "Falta configurar Supabase." };
+  }
+  const tokenRaw = String(req?.headers?.authorization || "");
+  const bearerToken = tokenRaw.toLowerCase().startsWith("bearer ") ? tokenRaw.slice(7).trim() : "";
+  if (!bearerToken) return { ok: false, status: 401, error: "No autorizado" };
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearerToken);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false, status: 401, error: "No autorizado" };
+    return { ok: true, userId: String(user.id || "") };
+  } catch {
+    return { ok: false, status: 401, error: "No autorizado" };
+  }
+}
 
 function send(res, status, body) {
   res.statusCode = status;
@@ -82,6 +178,84 @@ export async function handleVideoKaraokeApi(req, res) {
   const child = parts[offset + 2];
   const body = parseBody(req);
   const key = idempotencyKey(req, body);
+
+  if (resource === "uploads" && resourceId === "from-r2") {
+    if (method(req) !== "POST") return send(res, 405, { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "Método no permitido" } });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }) });
+
+    const r2Key = normalizeR2Key(body.r2Key);
+    const filename = String(body.filename || "").trim();
+    const contentType = String(body.contentType || "").trim() || "audio/mpeg";
+    const contentLength = Number(body.contentLength);
+    const userPrefix = `uploads/audio/${auth.userId}/`;
+
+    if (!r2Key || !r2Key.startsWith(userPrefix)) return invalid(res, "r2Key no es válido.");
+    if (!filename) return invalid(res, "filename es obligatorio.");
+    if (!Number.isFinite(contentLength) || contentLength <= 0) return invalid(res, "contentLength no es válido.");
+
+    let signedGetUrl = "";
+    try {
+      signedGetUrl = await getSignedR2GetUrl(r2Key, 60 * 15);
+    } catch {
+      return send(res, 500, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: false, provider: "karaoke" }) });
+    }
+
+    const uploadReq = {
+      filename,
+      contentType,
+      contentLength,
+      idempotencyKey: key,
+    };
+    const uploadPrep = await youkaProvider.createUpload(uploadReq);
+    if (!uploadPrep?.ok || !uploadPrep?.data?.uploadUrl || !uploadPrep?.data?.uploadId) {
+      return sendProviderResponse(res, uploadPrep);
+    }
+
+    const uploadUrl = String(uploadPrep.data.uploadUrl || "");
+    const uploadId = String(uploadPrep.data.uploadId || "");
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4 * 60 * 1000);
+    try {
+      const getRes = await fetch(signedGetUrl, { method: "GET", signal: ctrl.signal });
+      if (!getRes.ok) {
+        return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
+      }
+      if (!getRes.body) {
+        return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
+      }
+
+      const headers = { "content-type": contentType };
+      if (Number.isFinite(contentLength) && contentLength > 0) headers["content-length"] = String(contentLength);
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers,
+        body: getRes.body,
+        duplex: "half",
+        signal: ctrl.signal,
+      });
+
+      if (!putRes.ok) {
+        return send(res, 503, {
+          ok: false,
+          error: sanitizeProviderError({
+            code: "KARAOKE_PROVIDER_ERROR",
+            message: "No pude subir el archivo. Intenta de nuevo.",
+            retryable: putRes.status === 429 || putRes.status >= 500,
+            provider: "karaoke",
+          }),
+        });
+      }
+
+      return send(res, 200, { ok: true, data: { uploadId } });
+    } catch {
+      return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude subir el archivo. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   if (resource === "uploads") {
     if (method(req) !== "POST") return send(res, 405, { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "Método no permitido" } });

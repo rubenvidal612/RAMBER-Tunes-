@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileAudio, HelpCircle, Image, Mic2, Music2, Pause, Play, Sparkles, Upload, Video, Volume2, X } from 'lucide-react';
 import { useVideoKaraokeProject } from './video-karaoke/useVideoKaraokeProject';
+import { getAccessToken } from '../lib/supabaseBrowser';
 
 const steps = ['Canción', 'Letra', 'Karaoke', 'Diseño', 'Exportar'];
 
@@ -523,33 +524,58 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       const projectKey = `vk-project-${baseKey}`;
 
       stage = 'uploads';
-      lastUrl = '/api/video-karaoke/uploads';
-      const uploadRes = await fetch('/api/video-karaoke/uploads', {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error(t.error || 'No autorizado');
+
+      lastUrl = '/api/upload-audio';
+      const r2ContentType = String(audioFile.type || 'audio/mpeg').trim() || 'audio/mpeg';
+      const prepRes = await fetch('/api/upload-audio', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'idempotency-key': uploadKey },
-        body: JSON.stringify({
-          filename: audioFile.name,
-          contentType: audioFile.type || 'audio/mpeg',
-          contentLength: audioFile.size,
-        }),
+        headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}` },
+        body: JSON.stringify({ title: audioFile.name, contentType: r2ContentType }),
       });
-      const uploadJson = await uploadRes.json().catch(() => null) as any;
-      if (!uploadRes.ok || !uploadJson?.ok || !uploadJson?.data?.uploadUrl || !uploadJson?.data?.uploadId) {
-        throw new Error(uploadJson?.error?.message || 'No pude preparar el archivo.');
+      const prepJson = await prepRes.json().catch(() => null) as any;
+      const r2UploadUrl = String(prepJson?.uploadUrl || '').trim();
+      const r2Url = String(prepJson?.url || '').trim();
+      const r2Key = String(prepJson?.key || '').trim();
+      const r2FinalContentType = String(prepJson?.contentType || r2ContentType).trim() || r2ContentType;
+      if (!prepRes.ok || !prepJson?.ok || !r2UploadUrl || !r2Url || !r2Key) {
+        throw new Error(prepJson?.error || prepJson?.message || 'No pude preparar el karaoke. Intenta de nuevo.');
       }
 
-      const uploadId = String(uploadJson.data.uploadId);
-      setYoukaUploadId(uploadId);
-      const uploadUrl = String(uploadJson.data.uploadUrl);
+      stage = 'upload-put';
+      lastUrl = r2UploadUrl;
+      const putController = new AbortController();
+      const putTimeout = window.setTimeout(() => putController.abort(), 3 * 60 * 1000);
+      const r2PutRes = await fetch(r2UploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': r2FinalContentType },
+        body: audioFile,
+        signal: putController.signal,
+      }).finally(() => window.clearTimeout(putTimeout));
+      if (!r2PutRes.ok) throw new Error('No pude subir el archivo. Intenta de nuevo.');
 
       stage = 'upload-put';
-      lastUrl = uploadUrl;
-      const putRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'content-type': audioFile.type || 'audio/mpeg' },
-        body: audioFile,
+      lastUrl = '/api/video-karaoke/uploads/from-r2';
+      const bridgeRes = await fetch('/api/video-karaoke/uploads/from-r2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}`, 'idempotency-key': uploadKey },
+        body: JSON.stringify({
+          r2Key,
+          r2Url,
+          filename: audioFile.name,
+          contentType: r2FinalContentType,
+          contentLength: audioFile.size,
+          idempotencyKey: uploadKey,
+        }),
       });
-      if (!putRes.ok) throw new Error('No pude subir el archivo. Verifica tu conexión e intenta de nuevo.');
+      const bridgeJson = await bridgeRes.json().catch(() => null) as any;
+      if (!bridgeRes.ok || !bridgeJson?.ok || !bridgeJson?.data?.uploadId) {
+        throw new Error(bridgeJson?.error?.message || 'No pude subir el archivo. Intenta de nuevo.');
+      }
+
+      const uploadId = String(bridgeJson.data.uploadId);
+      setYoukaUploadId(uploadId);
 
       setYoukaPhase('quoting');
       stage = 'quote';
