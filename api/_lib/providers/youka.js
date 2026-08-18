@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 const ALLOWED_SPLIT_MODELS = new Set([
   "mdx23c",
   "audioshakeai",
@@ -31,6 +33,31 @@ export function getYoukaServerConfig() {
 
 function providerFailure(code, message, operation, retryable = false) {
   return { ok: false, error: { code, message, operation, retryable, provider: "youka" } };
+}
+
+function reportVkCreateProjectDebug(hypothesisId, location, msg, data = {}) {
+  try {
+    let debugServerUrl = "http://127.0.0.1:7777/event";
+    let sessionId = "vk-create-project";
+    try {
+      const env = readFileSync(".dbg/vk-create-project.env", "utf8");
+      debugServerUrl = env.match(/^DEBUG_SERVER_URL=(.+)$/m)?.[1]?.trim() || debugServerUrl;
+      sessionId = env.match(/^DEBUG_SESSION_ID=(.+)$/m)?.[1]?.trim() || sessionId;
+    } catch {}
+    fetch(debugServerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        runId: "pre-fix",
+        hypothesisId,
+        location,
+        msg,
+        data,
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+  } catch {}
 }
 
 function assertEnabled(operation) {
@@ -193,23 +220,55 @@ async function createProject(request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch(`${config.apiBaseUrl}/projects`, {
-      method: "POST",
+    const providerUrl = `${config.apiBaseUrl}/projects`;
+    const providerPayload = {
+      title: request.title,
+      inputFileId: request.inputFileId,
+      splitModel: request.splitModel || "mdx23c",
+      lyricsSource: request.lyricsSource,
+    };
+    const providerHeaders = {
+      accept: "application/json",
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      ...(request.idempotencyKey ? { "idempotency-key": request.idempotencyKey } : {}),
+    };
+    // #region debug-point A:create-project-request
+    reportVkCreateProjectDebug("A", "api/_lib/providers/youka.js:createProject:request", "[DEBUG] create-project request", {
+      providerUrl,
+      payload: providerPayload,
       headers: {
-        accept: "application/json",
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        ...(request.idempotencyKey ? { "idempotency-key": request.idempotencyKey } : {}),
+        ...providerHeaders,
+        authorization: providerHeaders.authorization ? "Bearer [REDACTED]" : "",
       },
-      body: JSON.stringify({
-        title: request.title,
-        inputFileId: request.inputFileId,
-        splitModel: request.splitModel || "mdx23c",
-        lyricsSource: request.lyricsSource,
-      }),
+    });
+    // #endregion
+    const response = await fetch(providerUrl, {
+      method: "POST",
+      headers: providerHeaders,
+      body: JSON.stringify(providerPayload),
       signal: controller.signal,
     });
-    const payload = await response.json().catch(() => null);
+    const responseText = await response.text().catch(() => "");
+    let payload = null;
+    try {
+      payload = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      payload = null;
+    }
+    // #region debug-point B:create-project-response
+    reportVkCreateProjectDebug("B", "api/_lib/providers/youka.js:createProject:response", "[DEBUG] create-project response", {
+      providerUrl,
+      status: response.status,
+      ok: response.ok,
+      responseText,
+      responseJson: payload,
+      message: payload?.message ?? null,
+      error: payload?.error ?? null,
+      detail: payload?.detail ?? null,
+      errors: payload?.errors ?? null,
+    });
+    // #endregion
     if (!response.ok) {
       const unauthorized = response.status === 401 || response.status === 403;
       return providerFailure(
@@ -237,7 +296,14 @@ async function createProject(request) {
         provider: payload,
       },
     };
-  } catch {
+  } catch (error) {
+    // #region debug-point E:create-project-exception
+    reportVkCreateProjectDebug("E", "api/_lib/providers/youka.js:createProject:exception", "[DEBUG] create-project exception", {
+      providerUrl: `${config.apiBaseUrl}/projects`,
+      errorText: String(error?.message || error || ""),
+      stack: String(error?.stack || ""),
+    });
+    // #endregion
     return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "create-project", true);
   } finally {
     clearTimeout(timeout);

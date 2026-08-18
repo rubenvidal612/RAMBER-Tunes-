@@ -1,10 +1,36 @@
 import { youkaProvider } from "../providers/youka.js";
 import { createClient } from "@supabase/supabase-js";
+import { readFileSync } from "node:fs";
 
 let cachedR2Env = null;
 let cachedR2Client = null;
 let cachedR2Aws = null;
 let cachedR2Presigner = null;
+
+function reportVkCreateProjectDebug(hypothesisId, location, msg, data = {}) {
+  try {
+    let debugServerUrl = "http://127.0.0.1:7777/event";
+    let sessionId = "vk-create-project";
+    try {
+      const env = readFileSync(".dbg/vk-create-project.env", "utf8");
+      debugServerUrl = env.match(/^DEBUG_SERVER_URL=(.+)$/m)?.[1]?.trim() || debugServerUrl;
+      sessionId = env.match(/^DEBUG_SESSION_ID=(.+)$/m)?.[1]?.trim() || sessionId;
+    } catch {}
+    fetch(debugServerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        runId: "pre-fix",
+        hypothesisId,
+        location,
+        msg,
+        data,
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+  } catch {}
+}
 
 function getR2Env() {
   if (cachedR2Env) return cachedR2Env;
@@ -367,7 +393,22 @@ export async function handleVideoKaraokeApi(req, res) {
   }
 
   if (resource === "projects" && !resourceId && method(req) === "POST") {
-    return sendProviderResponse(res, await youkaProvider.createProject({ ...body, idempotencyKey: key }));
+    const request = { ...body, idempotencyKey: key };
+    // #region debug-point C:handler-create-project-request
+    reportVkCreateProjectDebug("C", "api/_lib/video-karaoke/handler.js:projects:request", "[DEBUG] handler create-project request", {
+      route: "/api/video-karaoke/projects",
+      method: method(req),
+      body: request,
+    });
+    // #endregion
+    const providerResult = await youkaProvider.createProject(request);
+    // #region debug-point D:handler-create-project-response
+    reportVkCreateProjectDebug("D", "api/_lib/video-karaoke/handler.js:projects:response", "[DEBUG] handler create-project response", {
+      route: "/api/video-karaoke/projects",
+      result: providerResult,
+    });
+    // #endregion
+    return sendProviderResponse(res, providerResult);
   }
 
   if (resource === "projects" && resourceId && !child && method(req) === "GET") {
