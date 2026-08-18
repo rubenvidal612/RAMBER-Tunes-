@@ -176,7 +176,7 @@ function sanitizeProviderError(error) {
 function sendProviderResponse(res, result) {
   if (result?.ok) return send(res, 200, { ok: true, data: result.data });
   const status = result?.error?.code === "KARAOKE_INVALID_REQUEST" ? 400 : 503;
-  return send(res, status, {
+  const payload = {
     ok: false,
     error:
       sanitizeProviderError(result?.error) || {
@@ -185,7 +185,9 @@ function sendProviderResponse(res, result) {
         retryable: false,
         provider: "karaoke",
       },
-  });
+  };
+  if (result?.debug && typeof result.debug === "object") payload.debug = result.debug;
+  return send(res, status, payload);
 }
 
 function invalid(res, message) {

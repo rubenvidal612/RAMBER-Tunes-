@@ -116,12 +116,21 @@ async function quoteProject(request) {
         });
       } catch {}
       const unauthorized = response.status === 401 || response.status === 403;
-      return providerFailure(
+      const failure = providerFailure(
         unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
         unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener la cotización de Youka.",
         "quote-project",
         response.status === 429 || response.status >= 500,
       );
+      failure.debug = {
+        providerStatus: response.status,
+        providerResponseText: responseText,
+        providerResponseJson: payload,
+        providerMessage: payload?.message ?? null,
+        providerDetail: payload?.detail ?? null,
+        providerErrors: payload?.errors ?? null,
+      };
+      return failure;
     }
     if (!payload || !Number.isInteger(payload.creditsRequired) || !payload.breakdown) {
       return providerFailure("KARAOKE_PROVIDER_ERROR", "Youka devolvió una cotización incompleta.", "quote-project");
