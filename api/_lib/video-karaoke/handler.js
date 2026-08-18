@@ -181,8 +181,37 @@ export async function handleVideoKaraokeApi(req, res) {
 
   if (resource === "uploads" && resourceId === "from-r2") {
     if (method(req) !== "POST") return send(res, 405, { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "Método no permitido" } });
+    const debugHeader = req.headers?.["x-vk-debug"];
+    const debugEnabled = String(Array.isArray(debugHeader) ? debugHeader[0] : debugHeader || "").trim() === "1";
+    const debug = debugEnabled ? { stage: "init", steps: [] } : null;
+    const safeUrl = (value) => {
+      try {
+        const u = new URL(String(value || ""));
+        return `${u.origin}${u.pathname}`;
+      } catch {
+        return "";
+      }
+    };
+    const pushStep = (label, data) => {
+      if (!debug) return;
+      try {
+        debug.steps.push({ label, ...data });
+      } catch {}
+    };
+    const sendDebug = (status, payload) => {
+      if (debug) {
+        try {
+          payload.debug = debug;
+        } catch {}
+      }
+      return send(res, status, payload);
+    };
     const auth = await requireUser(req);
-    if (!auth.ok) return send(res, auth.status, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }) });
+    if (!auth.ok) {
+      if (debug) debug.stage = "auth";
+      pushStep("auth", { ok: false, status: auth.status, error: String(auth.error || "") });
+      return sendDebug(auth.status, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }) });
+    }
 
     const r2Key = normalizeR2Key(body.r2Key);
     const filename = String(body.filename || "").trim();
@@ -190,15 +219,30 @@ export async function handleVideoKaraokeApi(req, res) {
     const contentLength = Number(body.contentLength);
     const userPrefix = `uploads/audio/${auth.userId}/`;
 
-    if (!r2Key || !r2Key.startsWith(userPrefix)) return invalid(res, "r2Key no es válido.");
-    if (!filename) return invalid(res, "filename es obligatorio.");
-    if (!Number.isFinite(contentLength) || contentLength <= 0) return invalid(res, "contentLength no es válido.");
+    if (!r2Key || !r2Key.startsWith(userPrefix)) {
+      if (debug) debug.stage = "validate";
+      pushStep("validate", { ok: false, reason: "r2Key", r2Key: String(r2Key || ""), userPrefix });
+      return sendDebug(400, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_INVALID_REQUEST", message: "r2Key no es válido.", retryable: false, provider: "karaoke" }) });
+    }
+    if (!filename) {
+      if (debug) debug.stage = "validate";
+      pushStep("validate", { ok: false, reason: "filename" });
+      return sendDebug(400, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_INVALID_REQUEST", message: "filename es obligatorio.", retryable: false, provider: "karaoke" }) });
+    }
+    if (!Number.isFinite(contentLength) || contentLength <= 0) {
+      if (debug) debug.stage = "validate";
+      pushStep("validate", { ok: false, reason: "contentLength", contentLength });
+      return sendDebug(400, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_INVALID_REQUEST", message: "contentLength no es válido.", retryable: false, provider: "karaoke" }) });
+    }
 
     let signedGetUrl = "";
     try {
+      if (debug) debug.stage = "r2-sign";
       signedGetUrl = await getSignedR2GetUrl(r2Key, 60 * 15);
+      pushStep("r2-sign", { ok: true, r2Key, signedGetUrl: safeUrl(signedGetUrl) });
     } catch {
-      return send(res, 500, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: false, provider: "karaoke" }) });
+      pushStep("r2-sign", { ok: false, r2Key });
+      return sendDebug(500, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: false, provider: "karaoke" }) });
     }
 
     const uploadReq = {
@@ -207,28 +251,70 @@ export async function handleVideoKaraokeApi(req, res) {
       contentLength,
       idempotencyKey: key,
     };
+    if (debug) debug.stage = "provider-create-upload";
     const uploadPrep = await youkaProvider.createUpload(uploadReq);
     if (!uploadPrep?.ok || !uploadPrep?.data?.uploadUrl || !uploadPrep?.data?.uploadId) {
-      return sendProviderResponse(res, uploadPrep);
+      pushStep("provider-create-upload", {
+        ok: false,
+        result: uploadPrep && typeof uploadPrep === "object" ? { ok: Boolean(uploadPrep.ok), error: uploadPrep.error || null, data: null } : null,
+      });
+      const status = uploadPrep?.error?.code === "KARAOKE_INVALID_REQUEST" ? 400 : 503;
+      return sendDebug(status, {
+        ok: false,
+        error:
+          sanitizeProviderError(uploadPrep?.error) || {
+            code: "KARAOKE_PROVIDER_DISABLED",
+            message: "Video Karaoke no está habilitado.",
+            retryable: false,
+            provider: "karaoke",
+          },
+      });
     }
 
     const uploadUrl = String(uploadPrep.data.uploadUrl || "");
     const uploadId = String(uploadPrep.data.uploadId || "");
+    pushStep("provider-create-upload", { ok: true, uploadId, uploadUrl: safeUrl(uploadUrl) });
 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4 * 60 * 1000);
     try {
+      if (debug) debug.stage = "r2-fetch";
       const getRes = await fetch(signedGetUrl, { method: "GET", signal: ctrl.signal });
       if (!getRes.ok) {
-        return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
+        const responseText = await getRes.text().catch(() => "");
+        pushStep("r2-fetch", {
+          ok: false,
+          status: getRes.status,
+          url: safeUrl(signedGetUrl),
+          responseText,
+          contentType: String(getRes.headers?.get?.("content-type") || ""),
+          contentLength: String(getRes.headers?.get?.("content-length") || ""),
+        });
+        return sendDebug(503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
       }
       if (!getRes.body) {
-        return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
+        pushStep("r2-fetch", {
+          ok: false,
+          status: getRes.status,
+          url: safeUrl(signedGetUrl),
+          reason: "missing-body",
+          contentType: String(getRes.headers?.get?.("content-type") || ""),
+          contentLength: String(getRes.headers?.get?.("content-length") || ""),
+        });
+        return sendDebug(503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el karaoke. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
       }
+      pushStep("r2-fetch", {
+        ok: true,
+        status: getRes.status,
+        url: safeUrl(signedGetUrl),
+        contentType: String(getRes.headers?.get?.("content-type") || ""),
+        contentLength: String(getRes.headers?.get?.("content-length") || ""),
+      });
 
       const headers = { "content-type": contentType };
       if (Number.isFinite(contentLength) && contentLength > 0) headers["content-length"] = String(contentLength);
 
+      if (debug) debug.stage = "provider-put";
       const putRes = await fetch(uploadUrl, {
         method: "PUT",
         headers,
@@ -238,7 +324,9 @@ export async function handleVideoKaraokeApi(req, res) {
       });
 
       if (!putRes.ok) {
-        return send(res, 503, {
+        const putText = await putRes.text().catch(() => "");
+        pushStep("provider-put", { ok: false, status: putRes.status, url: safeUrl(uploadUrl), responseText: putText });
+        return sendDebug(503, {
           ok: false,
           error: sanitizeProviderError({
             code: "KARAOKE_PROVIDER_ERROR",
@@ -248,10 +336,14 @@ export async function handleVideoKaraokeApi(req, res) {
           }),
         });
       }
+      pushStep("provider-put", { ok: true, status: putRes.status, url: safeUrl(uploadUrl) });
 
-      return send(res, 200, { ok: true, data: { uploadId } });
-    } catch {
-      return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude subir el archivo. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
+      if (debug) debug.stage = "done";
+      return sendDebug(200, { ok: true, data: { uploadId } });
+    } catch (error) {
+      if (debug) debug.stage = "exception";
+      pushStep("exception", { message: String(error?.message || error || ""), stack: String(error?.stack || "") });
+      return sendDebug(503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude subir el archivo. Intenta de nuevo.", retryable: true, provider: "karaoke" }) });
     } finally {
       clearTimeout(timer);
     }
