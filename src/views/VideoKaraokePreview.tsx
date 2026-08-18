@@ -577,7 +577,14 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         : { type: 'align', lyrics: String(lyricsText || ''), language: 'es' };
 
       const baseKey = `f${audioFile.size}-m${audioFile.lastModified}-n${audioFile.name}-l${lyricsMode}-${simpleHash(String(lyricsText || ''))}`;
-      const uploadKey = `vk-upload-${baseKey}`;
+      const attemptId = (() => {
+        try {
+          const c: any = globalThis as any;
+          if (c?.crypto?.randomUUID) return String(c.crypto.randomUUID());
+        } catch {}
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      })();
+      const uploadKey = `vk-upload-${baseKey}-${attemptId}`;
       const projectKey = `vk-project-${baseKey}`;
 
       stage = 'uploads';
