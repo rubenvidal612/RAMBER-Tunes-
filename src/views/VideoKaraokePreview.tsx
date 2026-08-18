@@ -665,7 +665,12 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         logDiag('POST /api/video-karaoke/uploads/from-r2 [start]', { stage, url: lastUrl, r2Key });
         const bridgeRes = await fetch('/api/video-karaoke/uploads/from-r2', {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}`, 'idempotency-key': uploadKey },
+          headers: {
+            'content-type': 'application/json',
+            'authorization': `Bearer ${t.token}`,
+            'idempotency-key': uploadKey,
+            ...(debugEnabled ? { 'x-vk-debug': '1' } : {}),
+          },
           body: JSON.stringify({
             r2Key,
             r2Url,
