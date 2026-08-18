@@ -19,6 +19,86 @@ const EXPORT_FPS_OPTIONS = [
   { value: 60, label: '60 FPS', description: 'Movimiento más fluido si tu configuración lo permite.' },
 ] as const;
 
+function mapPositionToProjectAlignment(position: string) {
+  if (position === 'Superior') return 'top';
+  if (position === 'Centro') return 'center';
+  return 'bottom';
+}
+
+function mapProjectAlignmentToPosition(value: any) {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'top') return 'Superior';
+  if (normalized === 'center') return 'Centro';
+  if (normalized === 'bottom') return 'Centro inferior';
+  return '';
+}
+
+function getEffectiveProjectStyle(payload: any) {
+  const preset = payload?.preset && typeof payload.preset === 'object' ? payload.preset : {};
+  const style = payload?.settings?.style && typeof payload.settings.style === 'object' ? payload.settings.style : {};
+  const presetSinger = preset?.singerTextStyles?.['0'] && typeof preset.singerTextStyles['0'] === 'object' ? preset.singerTextStyles['0'] : {};
+  const styleSinger = style?.singerTextStyles?.['0'] && typeof style.singerTextStyles['0'] === 'object' ? style.singerTextStyles['0'] : {};
+  const presetLayout = preset?.layout && typeof preset.layout === 'object' ? preset.layout : {};
+  const styleLayout = style?.layout && typeof style.layout === 'object' ? style.layout : {};
+  return {
+    aspectRatio: style?.aspectRatio || preset?.aspectRatio || '',
+    background: style?.background || preset?.background || null,
+    singer: { ...presetSinger, ...styleSinger },
+    layout: { ...presetLayout, ...styleLayout },
+    overlays: style?.overlays || preset?.overlays || null,
+  };
+}
+
+function normalizeProjectFontFamily(value: any) {
+  const raw = String(value || '').trim();
+  const normalized = raw.toLowerCase();
+  if (normalized.includes('poppins')) return 'Poppins';
+  if (normalized.includes('montserrat')) return 'Montserrat';
+  if (normalized.includes('inter') || normalized.includes('ui-sans-serif') || normalized.includes('system-ui') || normalized.includes('roboto')) return 'Inter';
+  return raw || 'Montserrat';
+}
+
+function buildProjectDesignSettings(values: {
+  format: string;
+  bgColorEnabled: boolean;
+  bgColor: string;
+  bgImageUrl: string;
+  bgVideoUrl: string;
+  fontFamily: string;
+  fontSize: number;
+  textColor: string;
+  activeColor: string;
+  outlineColor: string;
+  outlineWidth: number;
+  position: string;
+}) {
+  const hasUnsupportedMedia = Boolean(values.bgImageUrl || values.bgVideoUrl);
+  return {
+    settings: {
+      style: {
+        aspectRatio: values.format,
+        background: values.bgColorEnabled && !hasUnsupportedMedia
+          ? { type: 'color', color: values.bgColor }
+          : { type: 'auto' },
+        layout: {
+          alignment: mapPositionToProjectAlignment(values.position),
+        },
+        singerTextStyles: {
+          '0': {
+            fontFamily: normalizeProjectFontFamily(values.fontFamily),
+            fontSize: Number(values.fontSize) || 30,
+            textColor: values.textColor,
+            activeLineColor: values.activeColor,
+            effectColor: values.activeColor,
+            outlineColor: values.outlineColor,
+            outlineWidth: Number(values.outlineWidth) || 0,
+          },
+        },
+      },
+    },
+  };
+}
+
 function getPresetStyle(preset: string) {
   const name = (preset || 'Neon').trim();
   if (name === 'Clásico') return { background: 'linear-gradient(180deg,#0a0c13 0%,#04060b 100%)', overlay: 'radial-gradient(circle at 50% 18%,rgba(255,255,255,.08) 0%,transparent 50%)', textColor: '#ffffff', activeColor: '#cbd5f5', fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif', glow: false, badge: 'rgba(255,255,255,.08)', activeBg: 'rgba(255,255,255,.06)', activeBorder: 'rgba(255,255,255,.12)', letterSpacing: '-0.01em' };
@@ -89,6 +169,8 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const [fontSize, setFontSize] = useState(30);
   const [textColor, setTextColor] = useState('#ffffff');
   const [activeColor, setActiveColor] = useState('#ff2f92');
+  const [outlineColor, setOutlineColor] = useState('#101828');
+  const [outlineWidth, setOutlineWidth] = useState(3);
   const [instrumentalVolume, setInstrumentalVolume] = useState(100);
   const [chorusVolume, setChorusVolume] = useState(60);
   const [pitch, setPitch] = useState(0);
@@ -106,8 +188,17 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const [youkaStems, setYoukaStems] = useState<any[]>([]);
   const [youkaAlignments, setYoukaAlignments] = useState<any[]>([]);
   const [youkaError, setYoukaError] = useState('');
+  const [designSyncState, setDesignSyncState] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
+  const [designSyncError, setDesignSyncError] = useState('');
+  const [designBrandingInfo, setDesignBrandingInfo] = useState<any>(null);
+  const [exportStartModalOpen, setExportStartModalOpen] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
   const startLockRef = useRef(false);
+  const designSyncTimerRef = useRef<number | null>(null);
+  const designLoadedProjectRef = useRef('');
+  const designHydratingRef = useRef(false);
+  const designSaveSequenceRef = useRef(0);
+  const designLastSavedPayloadRef = useRef('');
 
   const stopPoll = () => {
     const t = pollTimerRef.current;
@@ -120,6 +211,174 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     if (t) window.clearInterval(t);
     exportPollTimerRef.current = null;
   };
+
+  const stopDesignSyncTimer = () => {
+    const t = designSyncTimerRef.current;
+    if (t) window.clearTimeout(t);
+    designSyncTimerRef.current = null;
+  };
+
+  const currentProjectDesignPayload = buildProjectDesignSettings({
+    format,
+    bgColorEnabled,
+    bgColor,
+    bgImageUrl,
+    bgVideoUrl,
+    fontFamily,
+    fontSize,
+    textColor,
+    activeColor,
+    outlineColor,
+    outlineWidth,
+    position,
+  });
+  const currentProjectDesignPayloadKey = JSON.stringify(currentProjectDesignPayload);
+  const hasUnsyncedBackgroundMedia = Boolean(bgImageUrl || bgVideoUrl);
+
+  const applyProjectDesignSettings = (payload: any) => {
+    const effective = getEffectiveProjectStyle(payload);
+    const singer = effective.singer || {};
+    const nextPosition = mapProjectAlignmentToPosition(effective?.layout?.alignment);
+    const nextAspectRatio = String(effective?.aspectRatio || '').trim();
+    const nextBackground = effective?.background && typeof effective.background === 'object' ? effective.background : null;
+    const nextBranding = effective?.overlays?.branding?.logo && typeof effective.overlays.branding.logo === 'object'
+      ? {
+          overlays: Boolean(effective.overlays),
+          branding: Boolean(effective.overlays?.branding),
+          logo: true,
+          enabled: effective.overlays.branding.logo.enabled,
+        }
+      : {
+          overlays: Boolean(effective?.overlays),
+          branding: Boolean(effective?.overlays?.branding),
+          logo: false,
+          enabled: null,
+        };
+
+    if (nextAspectRatio === '16:9' || nextAspectRatio === '9:16' || nextAspectRatio === '1:1') setFormat(nextAspectRatio);
+    if (typeof singer.fontFamily === 'string' && singer.fontFamily.trim()) setFontFamily(normalizeProjectFontFamily(singer.fontFamily));
+    if (Number.isFinite(Number(singer.fontSize)) && Number(singer.fontSize) > 0) setFontSize(Number(singer.fontSize));
+    if (typeof singer.textColor === 'string' && singer.textColor.trim()) setTextColor(String(singer.textColor));
+    if (typeof singer.activeLineColor === 'string' && singer.activeLineColor.trim()) setActiveColor(String(singer.activeLineColor));
+    else if (typeof singer.effectColor === 'string' && singer.effectColor.trim()) setActiveColor(String(singer.effectColor));
+    if (typeof singer.outlineColor === 'string' && singer.outlineColor.trim()) setOutlineColor(String(singer.outlineColor));
+    if (Number.isFinite(Number(singer.outlineWidth)) && Number(singer.outlineWidth) >= 0) setOutlineWidth(Number(singer.outlineWidth));
+    if (nextPosition) setPosition(nextPosition);
+    if (nextBackground?.type === 'color' && typeof nextBackground.color === 'string' && nextBackground.color.trim()) {
+      setBgColor(String(nextBackground.color));
+      setBgColorEnabled(true);
+    } else {
+      setBgColorEnabled(false);
+    }
+    setDesignBrandingInfo(nextBranding);
+  };
+
+  const persistProjectDesign = async (payload: any, payloadKey: string) => {
+    if (youkaPhase !== 'ready' || !youkaProjectId) return false;
+    const requestId = ++designSaveSequenceRef.current;
+    setDesignSyncState('saving');
+    setDesignSyncError('');
+    try {
+      const res = await fetch(`/api/video-karaoke/projects/${encodeURIComponent(youkaProjectId)}/settings`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => null) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error?.message || 'No se pudo guardar el diseño.');
+      if (requestId !== designSaveSequenceRef.current) return false;
+      designLastSavedPayloadRef.current = payloadKey;
+      setDesignBrandingInfo((current: any) => {
+        const effective = getEffectiveProjectStyle(json?.data);
+        const nextLogo = effective?.overlays?.branding?.logo;
+        if (!nextLogo || typeof nextLogo !== 'object') return current;
+        return {
+          overlays: Boolean(effective?.overlays),
+          branding: Boolean(effective?.overlays?.branding),
+          logo: true,
+          enabled: nextLogo.enabled,
+        };
+      });
+      setDesignSyncState('saved');
+      return true;
+    } catch (err: any) {
+      if (requestId !== designSaveSequenceRef.current) return false;
+      setDesignSyncState('error');
+      setDesignSyncError(String(err?.message || 'No se pudo guardar el diseño.'));
+      return false;
+    }
+  };
+
+  const flushProjectDesignSync = async () => {
+    if (youkaPhase !== 'ready' || !youkaProjectId) return true;
+    if (designLoadedProjectRef.current !== youkaProjectId) {
+      setDesignSyncState((current) => current === 'loading' ? current : 'error');
+      setDesignSyncError('Aún no pude cargar el diseño real del proyecto. Espera un momento e inténtalo de nuevo.');
+      return false;
+    }
+    stopDesignSyncTimer();
+    if (currentProjectDesignPayloadKey === designLastSavedPayloadRef.current) return true;
+    return persistProjectDesign(currentProjectDesignPayload, currentProjectDesignPayloadKey);
+  };
+
+  useEffect(() => {
+    if (youkaPhase !== 'ready' || !youkaProjectId || designLoadedProjectRef.current === youkaProjectId) return;
+    let cancelled = false;
+    designHydratingRef.current = true;
+    setDesignSyncState('loading');
+    setDesignSyncError('');
+    void (async () => {
+      try {
+        const res = await fetch(`/api/video-karaoke/projects/${encodeURIComponent(youkaProjectId)}/settings`);
+        const json = await res.json().catch(() => null) as any;
+        if (!res.ok || !json?.ok) throw new Error(json?.error?.message || 'No se pudo cargar el diseño del proyecto.');
+        if (cancelled) return;
+        applyProjectDesignSettings(json.data);
+        designLoadedProjectRef.current = youkaProjectId;
+        const hydratedPayload = buildProjectDesignSettings({
+          format: String(getEffectiveProjectStyle(json.data)?.aspectRatio || format || '16:9'),
+          bgColorEnabled: getEffectiveProjectStyle(json.data)?.background?.type === 'color',
+          bgColor: String(getEffectiveProjectStyle(json.data)?.background?.color || bgColor || '#070914'),
+          bgImageUrl: '',
+          bgVideoUrl: '',
+          fontFamily: normalizeProjectFontFamily(getEffectiveProjectStyle(json.data)?.singer?.fontFamily || fontFamily),
+          fontSize: Number(getEffectiveProjectStyle(json.data)?.singer?.fontSize || fontSize || 30),
+          textColor: String(getEffectiveProjectStyle(json.data)?.singer?.textColor || textColor),
+          activeColor: String(getEffectiveProjectStyle(json.data)?.singer?.activeLineColor || getEffectiveProjectStyle(json.data)?.singer?.effectColor || activeColor),
+          outlineColor: String(getEffectiveProjectStyle(json.data)?.singer?.outlineColor || outlineColor),
+          outlineWidth: Number(getEffectiveProjectStyle(json.data)?.singer?.outlineWidth || outlineWidth || 0),
+          position: mapProjectAlignmentToPosition(getEffectiveProjectStyle(json.data)?.layout?.alignment) || position,
+        });
+        designLastSavedPayloadRef.current = JSON.stringify(hydratedPayload);
+        setDesignSyncState('idle');
+      } catch (err: any) {
+        if (cancelled) return;
+        setDesignSyncState('error');
+        setDesignSyncError(String(err?.message || 'No se pudo cargar el diseño del proyecto.'));
+      } finally {
+        window.setTimeout(() => {
+          if (!cancelled) designHydratingRef.current = false;
+        }, 0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [youkaPhase, youkaProjectId]);
+
+  useEffect(() => {
+    if (youkaPhase !== 'ready' || !youkaProjectId) return;
+    if (designLoadedProjectRef.current !== youkaProjectId) return;
+    if (designHydratingRef.current) return;
+    if (currentProjectDesignPayloadKey === designLastSavedPayloadRef.current) return;
+    stopDesignSyncTimer();
+    setDesignSyncState('saving');
+    setDesignSyncError('');
+    designSyncTimerRef.current = window.setTimeout(() => {
+      void persistProjectDesign(currentProjectDesignPayload, currentProjectDesignPayloadKey);
+    }, 700);
+    return stopDesignSyncTimer;
+  }, [youkaPhase, youkaProjectId, currentProjectDesignPayloadKey]);
 
   useEffect(() => {
     const previous = lastStepRef.current;
@@ -162,6 +421,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const resetYouka = () => {
     stopPoll();
     stopExportPoll();
+    stopDesignSyncTimer();
     setYoukaPhase('idle');
     setYoukaQuote(null);
     setYoukaUploadId('');
@@ -184,6 +444,13 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     setExportTaskId('');
     setExportState('');
     setExportDownloadUrl('');
+    setExportStartModalOpen(false);
+    setDesignSyncState('idle');
+    setDesignSyncError('');
+    setDesignBrandingInfo(null);
+    designLoadedProjectRef.current = '';
+    designLastSavedPayloadRef.current = '';
+    designHydratingRef.current = false;
     const el = karaokeAudioRef.current;
     if (el) {
       el.pause();
@@ -225,6 +492,12 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       return;
     }
 
+    const designSynced = await flushProjectDesignSync();
+    if (!designSynced) {
+      setExportQuoteError('No se pudo guardar el diseño. Revisa el Paso 4 e inténtalo de nuevo.');
+      return;
+    }
+
     setExportPhase('quoting');
     try {
       const toneFrequency = Math.pow(2, (Number(pitch) || 0) / 12);
@@ -237,12 +510,6 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         stemVolumes: getExportStemVolumes(),
         playbackRate: Number(speed) || 1,
         toneFrequency,
-        settingsOverride: {
-          style: {
-            aspectRatio: format,
-            ...(bgColorEnabled ? { background: { type: 'color', color: bgColor } } : {}),
-          },
-        },
       };
 
       const res = await fetch(`/api/video-karaoke/projects/${encodeURIComponent(youkaProjectId)}/exports/quote`, {
@@ -286,6 +553,12 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       return;
     }
 
+    const designSynced = await flushProjectDesignSync();
+    if (!designSynced) {
+      setExportError('No se pudo guardar el diseño. Revisa el Paso 4 e inténtalo de nuevo.');
+      return;
+    }
+
     setExportPhase('creating');
     try {
       const toneFrequency = Math.pow(2, (Number(pitch) || 0) / 12);
@@ -298,12 +571,6 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         stemVolumes: getExportStemVolumes(),
         playbackRate: Number(speed) || 1,
         toneFrequency,
-        settingsOverride: {
-          style: {
-            aspectRatio: format,
-            ...(bgColorEnabled ? { background: { type: 'color', color: bgColor } } : {}),
-          },
-        },
       };
 
       const key = `vk-export-${youkaProjectId}-${exportResolution}-${exportFps}-${exportQuality}-${exportRenderMode}-${format}-${pitch}-${speed}-${instrumentalVolume}-${chorusVolume}-${removeVoice ? 'rv' : 'bv'}`;
@@ -322,6 +589,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setExportId(nextExportId);
       setExportTaskId(nextTaskId);
       setExportPhase('polling');
+      setExportStartModalOpen(true);
 
       const startedAt = Date.now();
       exportPollTimerRef.current = window.setInterval(async () => {
@@ -344,17 +612,20 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         if (state === 'completed' || state === 'finalized') {
           stopExportPoll();
           setExportPhase('completed');
+          setExportStartModalOpen(false);
         }
         if (state === 'failed' || state === 'error' || state === 'cancelled' || state === 'canceled' || state === 'timed-out') {
           stopExportPoll();
           setExportPhase('ready');
           setExportError(String(data.error || 'La exportación falló.'));
+          setExportStartModalOpen(false);
         }
       }, 3000);
     } catch (err: any) {
       stopExportPoll();
       setExportPhase('ready');
       setExportError(String(err?.message || 'No pude iniciar la exportación.'));
+      setExportStartModalOpen(false);
     }
   };
 
@@ -974,7 +1245,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
             {step===1&&<AudioStep fileName={fileName} hasAudio={hasAudio} playing={playing} durationSec={audioDurationSec} currentSec={audioCurrentSec} sizeBytes={audioSizeBytes} canPlay={Boolean(audioSrc)} onPlay={togglePlayback} onSeek={seekTo} onUpload={()=>fileRef.current?.click()} onLibrary={()=>{setFileName('Luz de madrugada.mp3');setHasAudio(true);setAudioSrc('');cleanupAudioSrc();setAudioDurationSec(0);setAudioCurrentSec(0);setAudioSizeBytes(0);setPlaying(false)}} onClear={clearSelectedAudio}/>} 
             {step===2&&<LyricsStep mode={lyricsMode} setMode={setLyricsMode} lyricsText={lyricsText} setLyricsText={setLyricsText} lyricsFileName={lyricsFileName} setLyricsFileName={setLyricsFileName} showValidation={attemptedContinue} />} 
             {step===3&&<AudioSettings removeVoice={removeVoice} setRemoveVoice={setRemoveVoice} instrumentalVolume={instrumentalVolume} setInstrumentalVolume={setInstrumentalVolume} chorusVolume={chorusVolume} setChorusVolume={setChorusVolume} pitch={pitch} setPitch={setPitch} speed={speed} setSpeed={setSpeed} canPlay={Boolean(effectiveKaraokeSrc)} playing={karaokePlaying} durationSec={karaokeDurationSec} currentSec={karaokeCurrentSec} onPlay={toggleKaraokePlayback} onSeek={seekKaraokeTo} fileName={fileName} youkaPhase={youkaPhase} youkaProgress={youkaProgress} youkaError={youkaError} youkaQuote={youkaQuote} removeVoiceReady={youkaPhase==='ready'&&removeVoice&&Boolean(instrumentalStemUrl)} chorusAvailable={chorusAvailable} />} 
-            {step===4&&<DesignStep format={format} setFormat={setFormat} preset={preset} setPreset={(next:string)=>{const presetStyle=getPresetStyle(next);setPreset(next);setFontFamily(presetStyle.fontFamily);setTextColor(presetStyle.textColor);setActiveColor(presetStyle.activeColor);}} fontSize={fontSize} setFontSize={setFontSize} textColor={textColor} setTextColor={setTextColor} activeColor={activeColor} setActiveColor={setActiveColor} fontFamily={fontFamily} setFontFamily={setFontFamily} position={position} setPosition={setPosition} alignment={alignment} setAlignment={setAlignment} bgImageUrl={bgImageUrl} bgVideoUrl={bgVideoUrl} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} setBgDarken={setBgDarken} bgBlur={bgBlur} setBgBlur={setBgBlur} bgBrightness={bgBrightness} setBgBrightness={setBgBrightness} bgLoop={bgLoop} setBgLoop={setBgLoop} bgError={bgError} setBgError={setBgError} onSelectBgImage={selectBgImage} onSelectBgVideo={selectBgVideo} onEnableBgColor={enableBgColor} onClearBackground={clearBackground} bgImageInputRef={bgImageInputRef} bgVideoInputRef={bgVideoInputRef} fullScreen={designFullScreen} setFullScreen={setDesignFullScreen} />} {step===5&&<ExportStep fileName={fileName} durationSec={audioDurationSec} format={format} preset={preset} removeVoice={removeVoice} instrumentalVolume={instrumentalVolume} chorusVolume={chorusVolume} exportResolution={exportResolution} setExportResolution={setExportResolution} exportFps={exportFps} setExportFps={setExportFps} exportQuality={exportQuality} setExportQuality={setExportQuality} exportTransparent={exportTransparent} setExportTransparent={setExportTransparent} exportRenderMode={exportRenderMode} setExportRenderMode={setExportRenderMode} exportQuote={exportQuote} exportQuoteError={exportQuoteError} exportPhase={exportPhase} exportError={exportError} exportConfirm={exportConfirm} setExportConfirm={setExportConfirm} exportId={exportId} exportTaskId={exportTaskId} exportState={exportState} exportDownloadUrl={exportDownloadUrl} quoteExport={quoteExport} createExport={createExport} previewProps={{formatClass:{'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'}[format],fontSize,textColor,activeColor,preset,fontFamily,position,alignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,bgBlur,bgBrightness,bgLoop}} />}
+            {step===4&&<DesignStep format={format} setFormat={setFormat} preset={preset} setPreset={(next:string)=>{const presetStyle=getPresetStyle(next);setPreset(next);setFontFamily(presetStyle.fontFamily);setTextColor(presetStyle.textColor);setActiveColor(presetStyle.activeColor);}} fontSize={fontSize} setFontSize={setFontSize} textColor={textColor} setTextColor={setTextColor} activeColor={activeColor} setActiveColor={setActiveColor} outlineColor={outlineColor} setOutlineColor={setOutlineColor} outlineWidth={outlineWidth} setOutlineWidth={setOutlineWidth} fontFamily={fontFamily} setFontFamily={setFontFamily} position={position} setPosition={setPosition} alignment={alignment} setAlignment={setAlignment} bgImageUrl={bgImageUrl} bgVideoUrl={bgVideoUrl} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} setBgDarken={setBgDarken} bgBlur={bgBlur} setBgBlur={setBgBlur} bgBrightness={bgBrightness} setBgBrightness={setBgBrightness} bgLoop={bgLoop} setBgLoop={setBgLoop} bgError={bgError} setBgError={setBgError} onSelectBgImage={selectBgImage} onSelectBgVideo={selectBgVideo} onEnableBgColor={enableBgColor} onClearBackground={clearBackground} bgImageInputRef={bgImageInputRef} bgVideoInputRef={bgVideoInputRef} fullScreen={designFullScreen} setFullScreen={setDesignFullScreen} designSyncState={designSyncState} designSyncError={designSyncError} hasUnsyncedBackgroundMedia={hasUnsyncedBackgroundMedia} designBrandingInfo={designBrandingInfo} />} {step===5&&<ExportStep fileName={fileName} durationSec={audioDurationSec} format={format} preset={preset} removeVoice={removeVoice} instrumentalVolume={instrumentalVolume} chorusVolume={chorusVolume} exportResolution={exportResolution} setExportResolution={setExportResolution} exportFps={exportFps} setExportFps={setExportFps} exportQuality={exportQuality} setExportQuality={setExportQuality} exportTransparent={exportTransparent} setExportTransparent={setExportTransparent} exportRenderMode={exportRenderMode} setExportRenderMode={setExportRenderMode} exportQuote={exportQuote} exportQuoteError={exportQuoteError} exportPhase={exportPhase} exportError={exportError} exportConfirm={exportConfirm} setExportConfirm={setExportConfirm} exportId={exportId} exportTaskId={exportTaskId} exportState={exportState} exportDownloadUrl={exportDownloadUrl} quoteExport={quoteExport} createExport={createExport} exportStartModalOpen={exportStartModalOpen} setExportStartModalOpen={setExportStartModalOpen} previewProps={{formatClass:{'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'}[format],fontSize,textColor,activeColor,outlineColor,outlineWidth,preset,fontFamily,position,alignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,bgBlur,bgBrightness,bgLoop}} />}
           </div>
           <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080a15]/95 p-4 backdrop-blur md:px-6"><button disabled={step===1} onClick={()=>setStep(step-1)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 disabled:opacity-30"><ArrowLeft className="h-4 w-4"/> Atrás</button>{step<5?<button onClick={async ()=>{if(step===1){if(!hasAudio){return;}setStep(2);return;}if(step===2){setAttemptedContinue(true);if(lyricsMode!=='auto'&&!String(lyricsText||'').trim()){setYoukaError('Pegaste/subiste letra, pero está vacía.');return;}setStep(3);await startYoukaProcessing();return;}setStep(step+1);}} className="inline-flex h-11 min-w-[165px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 px-5 text-sm font-black">Continuar <ArrowRight className="h-4 w-4"/></button>:<span className="text-xs text-slate-500">Cotiza y genera desde el panel de exportación.</span>}</footer>
         </section>
@@ -1130,7 +1401,7 @@ function AudioSettings({removeVoice,setRemoveVoice,instrumentalVolume,setInstrum
       </div>
     </div>
   </div>}
-function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,textColor,setTextColor,activeColor,setActiveColor,fontFamily,setFontFamily,position,setPosition,alignment,setAlignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,setBgDarken,bgBlur,setBgBlur,bgBrightness,setBgBrightness,bgLoop,setBgLoop,bgError,setBgError,onSelectBgImage,onSelectBgVideo,onEnableBgColor,onClearBackground,bgImageInputRef,bgVideoInputRef,fullScreen,setFullScreen}:any){
+function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,textColor,setTextColor,activeColor,setActiveColor,outlineColor,setOutlineColor,outlineWidth,setOutlineWidth,fontFamily,setFontFamily,position,setPosition,alignment,setAlignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,setBgDarken,bgBlur,setBgBlur,bgBrightness,setBgBrightness,bgLoop,setBgLoop,bgError,setBgError,onSelectBgImage,onSelectBgVideo,onEnableBgColor,onClearBackground,bgImageInputRef,bgVideoInputRef,fullScreen,setFullScreen,designSyncState,designSyncError,hasUnsyncedBackgroundMedia,designBrandingInfo}:any){
   const ratios:any={'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'};
   const presets=['Clásico','Neon','Romántico','Noche','Rock','Elegante','Urbano'];
   const hasCustomVideo=Boolean(bgVideoUrl);
@@ -1146,9 +1417,17 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
         </div>
         {!fullScreen?<button type="button" onClick={()=>setFullScreen(true)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-extrabold">Pantalla completa</button>:null}
       </div>
+      <div className="mt-4 space-y-3">
+        {designSyncState === 'loading' ? <div className="rounded-2xl border border-white/10 bg-white/[.02] px-4 py-3 text-sm text-slate-300">Cargando diseño guardado del proyecto…</div> : null}
+        {designSyncState === 'saving' ? <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">Guardando diseño…</div> : null}
+        {designSyncState === 'saved' ? <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">Diseño guardado.</div> : null}
+        {designSyncState === 'error' ? <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{translateProviderMessage(designSyncError || 'No se pudo guardar el diseño.')}</div> : null}
+        {hasUnsyncedBackgroundMedia ? <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">Los fondos de imagen y video siguen siendo solo de vista previa por ahora. Para sincronizarlos falta integrar la subida de media del servicio de exportación.</div> : null}
+        {designBrandingInfo?.logo ? <div className="rounded-2xl border border-white/10 bg-white/[.02] px-4 py-3 text-sm text-slate-300">El proyecto admite branding/logo en sus settings reales. Esta primera integración no lo activa ni lo modifica automáticamente.</div> : null}
+      </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,.95fr)]">
         <div className="lg:sticky lg:top-24">
-          <Preview size="editor" formatClass={ratios[format]} fontSize={fontSize} textColor={textColor} activeColor={activeColor} preset={preset} fontFamily={fontFamily} position={position} alignment={alignment} bgImageUrl={bgImageUrl} bgVideoUrl={bgVideoUrl} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} bgBlur={bgBlur} bgBrightness={bgBrightness} bgLoop={bgLoop} onBgError={()=>setBgError('Tu navegador no pudo reproducir ese archivo como fondo. Prueba otro formato.')} />
+          <Preview size="editor" formatClass={ratios[format]} fontSize={fontSize} textColor={textColor} activeColor={activeColor} outlineColor={outlineColor} outlineWidth={outlineWidth} preset={preset} fontFamily={fontFamily} position={position} alignment={alignment} bgImageUrl={bgImageUrl} bgVideoUrl={bgVideoUrl} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} bgBlur={bgBlur} bgBrightness={bgBrightness} bgLoop={bgLoop} onBgError={()=>setBgError('Tu navegador no pudo reproducir ese archivo como fondo. Prueba otro formato.')} />
         </div>
         <div className="space-y-6">
           <div>
@@ -1158,6 +1437,14 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <Color label="Color de letra" value={textColor} onChange={setTextColor}/>
               <Color label="Palabra activa" value={activeColor} onChange={setActiveColor}/>
+            </div>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <Color label="Borde de letra" value={outlineColor} onChange={setOutlineColor}/>
+              <div className="rounded-xl border border-white/10 bg-white/[.02] p-3">
+                <span className="text-[11px] text-slate-400">Grosor del borde</span>
+                <input type="range" min={0} max={8} value={outlineWidth} onChange={(e)=>setOutlineWidth(Number(e.target.value))} className="mt-3 w-full accent-pink-500"/>
+                <div className="mt-2 text-right text-xs font-bold text-slate-300">{outlineWidth}px</div>
+              </div>
             </div>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <SelectField label="Posición" value={position} options={['Superior','Centro','Centro inferior']} onChange={setPosition}/>
@@ -1201,16 +1488,26 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
   );
 }
 
-function ExportStep({fileName,durationSec,format,preset,removeVoice,instrumentalVolume,chorusVolume,exportResolution,setExportResolution,exportFps,setExportFps,exportQuality,setExportQuality,exportTransparent,setExportTransparent,exportRenderMode,setExportRenderMode,exportQuote,exportQuoteError,exportPhase,exportError,exportConfirm,setExportConfirm,exportId,exportTaskId,exportState,exportDownloadUrl,quoteExport,createExport,previewProps}:any){
+function ExportStep({fileName,durationSec,format,preset,removeVoice,instrumentalVolume,chorusVolume,exportResolution,setExportResolution,exportFps,setExportFps,exportQuality,setExportQuality,exportTransparent,setExportTransparent,exportRenderMode,setExportRenderMode,exportQuote,exportQuoteError,exportPhase,exportError,exportConfirm,setExportConfirm,exportId,exportTaskId,exportState,exportDownloadUrl,quoteExport,createExport,exportStartModalOpen,setExportStartModalOpen,previewProps}:any){
   const credits = exportQuote?.creditsRequired ?? exportQuote?.standardCreditsRequired ?? exportQuote?.providerCredits ?? null;
   const eligibilityMessage = getExportEligibilityMessage(exportQuote);
   const canGenerate = exportPhase === 'ready' && Boolean(exportConfirm) && exportQuote?.eligible !== false && exportQuote?.sufficientBalance !== false;
+  const exportStateLabel = exportState ? translateProviderMessage(exportState) : 'Preparando render';
   return (
     <div className="mt-4">
+      {exportStartModalOpen ? (
+        <div className="fixed inset-0 z-[520] grid place-items-center bg-[#050611]/80 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#080a15] p-6 shadow-2xl shadow-black/50">
+            <h4 className="text-xl font-black">Tu video se está generando</h4>
+            <p className="mt-3 text-sm leading-6 text-slate-300">Este proceso puede tardar algunos minutos dependiendo de la duración y calidad seleccionada. Puedes cerrar este aviso; el video continuará procesándose.</p>
+            <button type="button" onClick={() => setExportStartModalOpen(false)} className="mt-6 h-12 w-full rounded-2xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">Entendido</button>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <h3 className="font-extrabold">5. Exporta tu Video Karaoke</h3>
-          <p className="mt-1 text-sm text-slate-400">Genera el video final en MP4 con el diseño del Paso 4 y la mezcla elegida en el Paso 3.</p>
+          <p className="mt-1 text-sm text-slate-400">Genera el video final en MP4 usando el diseño sincronizado del Paso 4 y la mezcla elegida en el Paso 3.</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[.02] px-4 py-3 text-sm text-slate-300">
           <b className="text-pink-300">Salida:</b> MP4 recomendado para compartir, reproducir y descargar.
@@ -1311,24 +1608,32 @@ function ExportStep({fileName,durationSec,format,preset,removeVoice,instrumental
               </button>
               {(exportQuote?.eligible === false || exportQuote?.sufficientBalance === false) && !exportError ? <div className="rounded-2xl border border-white/10 bg-white/[.02] p-4 text-sm text-slate-300">{eligibilityMessage || 'La cotización actual no permite continuar con esta configuración.'}</div> : null}
               {exportPhase === 'polling' ? (
-                <div className="rounded-2xl border border-white/10 bg-white/[.02] p-4 text-sm text-slate-300">
-                  <div className="flex items-center justify-between">
-                    <span>Estado</span>
-                    <b>{exportState || '...'}</b>
+                <div className="rounded-[24px] border border-sky-500/20 bg-sky-500/10 p-5 text-sky-100">
+                  <div className="flex items-center gap-4">
+                    <span className="block h-10 w-10 animate-spin rounded-full border-2 border-sky-100/40 border-t-sky-100" />
+                    <div>
+                      <strong className="block text-base">Generando video…</strong>
+                      <span className="mt-1 block text-sm text-sky-100/80">Puedes seguir en esta pantalla o cerrar el aviso; el render continuará en segundo plano.</span>
+                    </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <Summary label="Estado actual" value={exportStateLabel} />
+                    <Summary label="Exportación" value={exportId || '--'} />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-[11px] text-sky-100/80">
                     <span>exportId</span>
                     <b className="truncate">{exportId || '--'}</b>
                   </div>
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-sky-100/80">
                     <span>taskId</span>
                     <b className="truncate">{exportTaskId || '--'}</b>
                   </div>
                 </div>
               ) : null}
               {exportPhase === 'completed' && exportDownloadUrl ? (
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-                  <b>Video listo.</b> La exportación final terminó correctamente y el enlace de descarga sigue disponible mientras la URL firmada sea válida.
+                <div className="rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-5 text-emerald-100">
+                  <b className="block text-base">¡Video listo!</b>
+                  <span className="mt-2 block text-sm text-emerald-100/85">La exportación final terminó correctamente y el enlace de descarga seguirá disponible mientras la URL firmada continúe vigente.</span>
                 </div>
               ) : null}
               {exportPhase === 'completed' && exportDownloadUrl ? (
@@ -1348,7 +1653,7 @@ function ExportStep({fileName,durationSec,format,preset,removeVoice,instrumental
     </div>
   );
 }
-function Preview({formatClass='aspect-video',fontSize=18,textColor='#ffffff',activeColor='#ff2f92',preset='Neon',fontFamily='Montserrat',position='Centro inferior',alignment='Centrada',bgImageUrl='',bgVideoUrl='',bgColor='#070914',bgColorEnabled=false,bgDarken=35,bgBlur=0,bgBrightness=105,bgLoop=true,onBgError,size='default'}:any){const presetStyle=getPresetStyle(preset);const vertical=position==='Superior'?'top-10':position==='Centro'?'top-1/2 -translate-y-1/2':'bottom-8';const horizontal=alignment==='Izquierda'?'text-left':alignment==='Derecha'?'text-right':'text-center';const hasVideo=Boolean(bgVideoUrl);const hasImage=!hasVideo&&Boolean(bgImageUrl);const hasColor=!hasVideo&&!hasImage&&Boolean(bgColorEnabled);const filter=`blur(${Math.max(0,Number(bgBlur)||0)}px) brightness(${Math.max(.3,(Number(bgBrightness)||100)/100)})`;const scale=Math.max(1,1+(Math.max(0,Number(bgBlur)||0)/40));const darkenAlpha=Math.max(0,Math.min(0.85,(Number(bgDarken)||0)/100));const titleGlow=presetStyle.glow?`0 0 18px ${activeColor}55,0 0 42px ${activeColor}25`:'0 10px 32px rgba(0,0,0,.55)';const activeGlow=presetStyle.glow?`0 0 16px ${activeColor}66`:'none';const activeBg=presetStyle.activeBg||'transparent';const activeBorder=presetStyle.activeBorder||'transparent';const baseClass=size==='editor'?'mt-0 w-full max-w-none':'mx-auto mt-5 w-full max-w-lg';return <div className={`${baseClass} overflow-hidden rounded-2xl border border-white/10 bg-black ${formatClass}`}><div className="relative h-full min-h-48"><div className="absolute inset-0 overflow-hidden"><div className="absolute inset-0" style={{background:presetStyle.background}}/>{hasColor?<div className="absolute inset-0" style={{background:bgColor}}/>:null}{hasImage?<img src={bgImageUrl} alt="Fondo" className="absolute inset-0 h-full w-full object-cover" style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{hasVideo?<video src={bgVideoUrl} className="absolute inset-0 h-full w-full object-cover" autoPlay muted playsInline loop={Boolean(bgLoop)} style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{!hasVideo&&!hasImage&&!hasColor?<div className="absolute inset-0" style={{background:presetStyle.overlay,opacity:.9}}/>:null}<div className="absolute inset-0" style={{background:'radial-gradient(circle at 50% 0%,rgba(255,255,255,.12) 0%,transparent 50%)',opacity:.35}}/><div className="absolute inset-0" style={{background:`rgba(0,0,0,${darkenAlpha})`}}/></div><span className="absolute left-3 top-3 rounded-full px-2 py-1 text-[9px] font-black text-white" style={{background:presetStyle.badge}}>{preset}</span><div className={`absolute inset-x-4 ${vertical} ${horizontal} font-black leading-tight`} style={{fontSize,color:textColor,fontFamily,letterSpacing:presetStyle.letterSpacing,textShadow:titleGlow}}><span style={{color:activeColor,textShadow:activeGlow,background:activeBg,border:`1px solid ${activeBorder}`,padding:'0.14em 0.28em',borderRadius:'0.55em',boxDecorationBreak:'clone',WebkitBoxDecorationBreak:'clone'}}>Si te vuelves</span> a enamorar<br/>No te enamores de mí</div><div className="absolute inset-x-0 bottom-0 h-1 bg-white/10"><div className="h-full w-2/5 bg-pink-500"/></div></div></div>}
+function Preview({formatClass='aspect-video',fontSize=18,textColor='#ffffff',activeColor='#ff2f92',outlineColor='#101828',outlineWidth=3,preset='Neon',fontFamily='Montserrat',position='Centro inferior',alignment='Centrada',bgImageUrl='',bgVideoUrl='',bgColor='#070914',bgColorEnabled=false,bgDarken=35,bgBlur=0,bgBrightness=105,bgLoop=true,onBgError,size='default'}:any){const presetStyle=getPresetStyle(preset);const vertical=position==='Superior'?'top-10':position==='Centro'?'top-1/2 -translate-y-1/2':'bottom-8';const horizontal=alignment==='Izquierda'?'text-left':alignment==='Derecha'?'text-right':'text-center';const hasVideo=Boolean(bgVideoUrl);const hasImage=!hasVideo&&Boolean(bgImageUrl);const hasColor=!hasVideo&&!hasImage&&Boolean(bgColorEnabled);const filter=`blur(${Math.max(0,Number(bgBlur)||0)}px) brightness(${Math.max(.3,(Number(bgBrightness)||100)/100)})`;const scale=Math.max(1,1+(Math.max(0,Number(bgBlur)||0)/40));const darkenAlpha=Math.max(0,Math.min(0.85,(Number(bgDarken)||0)/100));const titleGlow=presetStyle.glow?`0 0 18px ${activeColor}55,0 0 42px ${activeColor}25`:'0 10px 32px rgba(0,0,0,.55)';const activeGlow=presetStyle.glow?`0 0 16px ${activeColor}66`:'none';const activeBg=presetStyle.activeBg||'transparent';const activeBorder=presetStyle.activeBorder||'transparent';const textStroke=`${Math.max(0,Number(outlineWidth)||0)}px ${outlineColor||'#101828'}`;const baseClass=size==='editor'?'mt-0 w-full max-w-none':'mx-auto mt-5 w-full max-w-lg';return <div className={`${baseClass} overflow-hidden rounded-2xl border border-white/10 bg-black ${formatClass}`}><div className="relative h-full min-h-48"><div className="absolute inset-0 overflow-hidden"><div className="absolute inset-0" style={{background:presetStyle.background}}/>{hasColor?<div className="absolute inset-0" style={{background:bgColor}}/>:null}{hasImage?<img src={bgImageUrl} alt="Fondo" className="absolute inset-0 h-full w-full object-cover" style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{hasVideo?<video src={bgVideoUrl} className="absolute inset-0 h-full w-full object-cover" autoPlay muted playsInline loop={Boolean(bgLoop)} style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{!hasVideo&&!hasImage&&!hasColor?<div className="absolute inset-0" style={{background:presetStyle.overlay,opacity:.9}}/>:null}<div className="absolute inset-0" style={{background:'radial-gradient(circle at 50% 0%,rgba(255,255,255,.12) 0%,transparent 50%)',opacity:.35}}/><div className="absolute inset-0" style={{background:`rgba(0,0,0,${darkenAlpha})`}}/></div><span className="absolute left-3 top-3 rounded-full px-2 py-1 text-[9px] font-black text-white" style={{background:presetStyle.badge}}>{preset}</span><div className={`absolute inset-x-4 ${vertical} ${horizontal} font-black leading-tight`} style={{fontSize,color:textColor,fontFamily,letterSpacing:presetStyle.letterSpacing,textShadow:titleGlow,WebkitTextStroke:textStroke}}><span style={{color:activeColor,textShadow:activeGlow,background:activeBg,border:`1px solid ${activeBorder}`,padding:'0.14em 0.28em',borderRadius:'0.55em',boxDecorationBreak:'clone',WebkitBoxDecorationBreak:'clone',WebkitTextStroke:textStroke}}>Si te vuelves</span> a enamorar<br/>No te enamores de mí</div><div className="absolute inset-x-0 bottom-0 h-1 bg-white/10"><div className="h-full w-2/5 bg-pink-500"/></div></div></div>}
 function KaraokeResult({onAgain}:any){return <div className="h-full overflow-y-auto bg-[#050611] p-5 text-white md:p-10"><div className="mx-auto max-w-4xl rounded-[28px] border border-white/10 bg-[#080a15] p-5 text-center md:p-8"><span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-400"><Check className="h-8 w-8"/></span><h1 className="mt-5 text-3xl font-black">Tu Video Karaoke está listo</h1><p className="mt-2 text-sm text-slate-400">Vista previa del resultado que recibirás cuando activemos la generación.</p><div className="mx-auto mt-7 max-w-2xl"><Preview/></div><p className="mt-6 rounded-xl border border-white/10 bg-white/[.025] p-4 text-xs text-slate-400">Cuando activemos la generación, tu video estará disponible temporalmente para descargar.</p><div className="mt-5 grid gap-3 sm:grid-cols-3"><button disabled className="h-12 rounded-xl bg-white/5 text-sm font-bold text-slate-500">Descargar MP4</button><button onClick={onAgain} className="h-12 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">Crear otro karaoke</button><button className="h-12 rounded-xl border border-white/10 text-sm font-bold">Volver a Biblioteca</button></div></div></div>}
 function translateProviderMessage(raw:any){const message=String(raw||'').trim();if(!message)return'';if(message.toLowerCase()==='1080p and 4k cloud exports are available after your first purchase.')return'Las exportaciones en la nube a 1080p y 4K están disponibles después de tu primera compra.';return message.replace(/youka/gi,'el servicio');}
 function getExportEligibilityMessage(quote:any){if(!quote||typeof quote!=='object')return'';const rejection=String(quote.rejectionReason||'').trim();if(rejection==='fast_requires_paid_user')return'El modo de render rápido requiere una cuenta con compra previa.';if(rejection==='transparent_requires_paid_user')return'El fondo transparente requiere una cuenta con compra previa.';if(rejection==='insufficient_credits')return'No tienes créditos suficientes para esta exportación.';const candidates=[quote.message,quote.detail,quote.reason,quote.error?.message,quote.error,quote.fallbackReason];for(const candidate of candidates){const translated=translateProviderMessage(candidate);if(translated)return translated;}if(quote.eligible===false)return'Esta configuración no está disponible para exportación en este momento.';if(quote.sufficientBalance===false)return'No tienes créditos suficientes para esta exportación.';return'';}

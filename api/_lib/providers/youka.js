@@ -378,6 +378,98 @@ async function getProject(projectId) {
   }
 }
 
+async function getProjectSettings(projectId) {
+  const enabled = assertEnabled("get-project");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!projectId) return providerFailure("KARAOKE_INVALID_REQUEST", "projectId es obligatorio.", "get-project");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/projects/${encodeURIComponent(projectId)}/settings`, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener la configuración visual del proyecto.";
+      if (!unauthorized) {
+        const maybe =
+          payload && typeof payload === "object"
+            ? String(payload.message || payload?.error?.message || payload?.error || "")
+            : "";
+        if (maybe) message = maybe;
+      }
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        message,
+        "get-project",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "get-project", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function updateSettings(projectId, request) {
+  const enabled = assertEnabled("update-settings");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!projectId) return providerFailure("KARAOKE_INVALID_REQUEST", "projectId es obligatorio.", "update-settings");
+  if (!request || typeof request !== "object") {
+    return providerFailure("KARAOKE_INVALID_REQUEST", "settings es obligatorio.", "update-settings");
+  }
+
+  const payloadRequest = { ...request };
+  delete payloadRequest.idempotencyKey;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/projects/${encodeURIComponent(projectId)}/settings`, {
+      method: "PATCH",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        ...(request.idempotencyKey ? { "idempotency-key": request.idempotencyKey } : {}),
+      },
+      body: JSON.stringify(payloadRequest),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible guardar la configuración visual del proyecto.";
+      if (!unauthorized) {
+        const maybe =
+          payload && typeof payload === "object"
+            ? String(payload.message || payload?.error?.message || payload?.error || "")
+            : "";
+        if (maybe) message = maybe;
+      }
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        message,
+        "update-settings",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "update-settings", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function safeLogUrl(value) {
   try {
     const url = new URL(String(value));
@@ -657,6 +749,7 @@ export const youkaProvider = {
   quoteProject,
   createProject,
   getProject,
+  getProjectSettings,
   transcribeLyrics() {
     return unavailable("transcribe-lyrics");
   },
@@ -666,9 +759,7 @@ export const youkaProvider = {
   separateStems() {
     return unavailable("separate-stems");
   },
-  updateSettings() {
-    return unavailable("update-settings");
-  },
+  updateSettings,
   quoteExport,
   createExport,
   getExport,

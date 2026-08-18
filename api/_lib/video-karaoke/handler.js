@@ -422,8 +422,12 @@ export async function handleVideoKaraokeApi(req, res) {
     return sendProviderResponse(res, await youkaProvider.getProject(resourceId));
   }
 
+  if (resource === "projects" && resourceId && child === "settings" && method(req) === "GET") {
+    return sendProviderResponse(res, await youkaProvider.getProjectSettings(resourceId));
+  }
+
   if (resource === "projects" && resourceId && child === "settings" && method(req) === "PATCH") {
-    return sendProviderResponse(res, youkaProvider.updateSettings(resourceId, body));
+    return sendProviderResponse(res, await youkaProvider.updateSettings(resourceId, { ...body, idempotencyKey: key }));
   }
 
   if (resource === "projects" && resourceId && child === "exports" && parts[offset + 3] === "quote" && method(req) === "POST") {
