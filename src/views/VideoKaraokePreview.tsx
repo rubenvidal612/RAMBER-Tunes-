@@ -585,7 +585,6 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       })();
       const uploadKey = `vk-upload-${baseKey}-${attemptId}`;
-      const projectKey = `vk-project-${baseKey}`;
 
       stage = 'uploads';
       const t = await getAccessToken();
@@ -726,6 +725,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setYoukaPhase('creating');
       stage = 'projects';
       lastUrl = '/api/video-karaoke/projects';
+      const projectKey = `vk-project-${baseKey}-${uploadId}`;
       logDiag('POST /api/video-karaoke/projects [start]', { stage, url: lastUrl });
       const createRes = await fetch('/api/video-karaoke/projects', {
         method: 'POST',
