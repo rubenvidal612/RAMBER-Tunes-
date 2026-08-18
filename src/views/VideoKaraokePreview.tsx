@@ -1121,7 +1121,7 @@ function AudioSettings({removeVoice,setRemoveVoice,instrumentalVolume,setInstrum
         <div className="rounded-[22px] border border-white/10 bg-white/[.02] p-5">
           <strong className="text-sm">Estado del karaoke</strong>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Summary label="Proyecto" value={ready?'Listo':'En preparación'} />
+            <Summary label="Proyecto" value={ready?'Listo':youkaPhase==='failed'?'Falló':'En preparación'} />
             <Summary label="Voz principal" value={removeVoice?'Removida':'Conservada'} />
             <Summary label="Coros" value={chorusAvailable?'Disponibles':'No disponibles'} />
             <Summary label="Reproductor" value={canPlay?'Listo':'Esperando audio'} />

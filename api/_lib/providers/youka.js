@@ -541,11 +541,44 @@ async function getExport(exportId) {
   }
 }
 
-async function getStatus(resourceId) {
+function redactDebugUrlsInText(text) {
+  const raw = String(text || "");
+  if (!raw) return "";
+  return raw.replace(/https?:\/\/[^\s"'<>]+/gi, (match) => {
+    try {
+      const u = new URL(match);
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return match;
+    }
+  });
+}
+
+function redactDebugUrlsDeep(value) {
+  if (value == null) return value;
+  if (typeof value === "string") {
+    try {
+      const u = new URL(value);
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return value;
+    }
+  }
+  if (Array.isArray(value)) return value.map((item) => redactDebugUrlsDeep(item));
+  if (typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactDebugUrlsDeep(v);
+    return out;
+  }
+  return value;
+}
+
+async function getStatus(resourceId, options = {}) {
   const enabled = assertEnabled("get-status");
   if (!enabled.ok) return enabled.error;
   const { config, apiKey } = enabled;
   if (!resourceId) return providerFailure("KARAOKE_INVALID_REQUEST", "resourceId es obligatorio.", "get-status");
+  const debugEnabled = Boolean(options && typeof options === "object" && options.debug === true);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
@@ -555,19 +588,62 @@ async function getStatus(resourceId) {
       headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });
-    const payload = await response.json().catch(() => null);
+    const responseText = await response.text().catch(() => "");
+    const payloadRaw = (() => {
+      try {
+        return responseText ? JSON.parse(responseText) : null;
+      } catch {
+        return null;
+      }
+    })();
+    const payload = payloadRaw;
+    const provider = payload && typeof payload === "object" ? payload : {};
+    const providerState = String(provider?.state || provider?.status || "").trim();
+    const providerError = provider?.error ?? provider?.errors ?? null;
+    const providerMessage = String(provider?.message || provider?.error?.message || "").trim();
+    const providerDetail = provider?.detail ?? provider?.error?.detail ?? null;
+    const providerErrors = provider?.errors ?? provider?.error?.errors ?? null;
+    const debug = debugEnabled
+      ? {
+          providerStatus: response.status,
+          providerResponseText: redactDebugUrlsInText(responseText),
+          providerResponseJson: redactDebugUrlsDeep(payload),
+          providerState,
+          providerError: redactDebugUrlsDeep(providerError),
+          providerMessage,
+          providerDetail: redactDebugUrlsDeep(providerDetail),
+          providerErrors: redactDebugUrlsDeep(providerErrors),
+        }
+      : null;
     if (!response.ok) {
       const unauthorized = response.status === 401 || response.status === 403;
-      return providerFailure(
+      const failure = providerFailure(
         unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
         unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener el estado de Youka.",
         "get-status",
         response.status === 429 || response.status >= 500,
       );
+      if (debug) failure.debug = debug;
+      return failure;
     }
-    return { ok: true, data: payload };
+    const okResult = { ok: true, data: payload };
+    if (debug) okResult.debug = debug;
+    return okResult;
   } catch {
-    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "get-status", true);
+    const failure = providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "get-status", true);
+    if (debugEnabled) {
+      failure.debug = {
+        providerStatus: null,
+        providerResponseText: "",
+        providerResponseJson: null,
+        providerState: "",
+        providerError: null,
+        providerMessage: "",
+        providerDetail: null,
+        providerErrors: null,
+      };
+    }
+    return failure;
   } finally {
     clearTimeout(timeout);
   }

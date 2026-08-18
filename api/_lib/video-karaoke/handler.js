@@ -439,7 +439,9 @@ export async function handleVideoKaraokeApi(req, res) {
   }
 
   if (resource === "tasks" && resourceId && method(req) === "GET") {
-    return sendProviderResponse(res, await youkaProvider.getStatus(resourceId));
+    const debugHeader = req.headers?.["x-vk-debug"];
+    const debugEnabled = String(Array.isArray(debugHeader) ? debugHeader[0] : debugHeader || "").trim() === "1";
+    return sendProviderResponse(res, await youkaProvider.getStatus(resourceId, debugEnabled ? { debug: true } : undefined));
   }
 
   if (resource === "projects" && resourceId && !child && method(req) === "DELETE") {
