@@ -404,6 +404,11 @@ export async function handleVideoKaraokeApi(req, res) {
     });
     // #endregion
     const providerResult = await youkaProvider.createProject(request);
+    try {
+      if (!providerResult?.ok && !providerResult?.debug && globalThis.__vk_last_create_project_debug) {
+        providerResult.debug = globalThis.__vk_last_create_project_debug;
+      }
+    } catch {}
     // #region debug-point D:handler-create-project-response
     reportVkCreateProjectDebug("D", "api/_lib/video-karaoke/handler.js:projects:response", "[DEBUG] handler create-project response", {
       route: "/api/video-karaoke/projects",

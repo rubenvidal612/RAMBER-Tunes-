@@ -265,6 +265,16 @@ async function createProject(request) {
     } catch {
       payload = null;
     }
+    try {
+      globalThis.__vk_last_create_project_debug = {
+        providerStatus: response.status,
+        providerResponseText: responseText,
+        providerResponseJson: payload,
+        providerMessage: payload?.message ?? null,
+        providerDetail: payload?.detail ?? null,
+        providerErrors: payload?.errors ?? null,
+      };
+    } catch {}
     // #region debug-point B:create-project-response
     reportVkCreateProjectDebug("B", "api/_lib/providers/youka.js:createProject:response", "[DEBUG] create-project response", {
       providerUrl,
