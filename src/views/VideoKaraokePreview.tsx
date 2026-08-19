@@ -293,7 +293,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const [logoError, setLogoError] = useState('');
   const [logoUploadState, setLogoUploadState] = useState<'idle' | 'uploading' | 'error'>('idle');
   const logoInputRef = useRef<HTMLInputElement>(null);
-  const [lyricsMode, setLyricsMode] = useState('auto');
+  const [lyricsMode, setLyricsMode] = useState('paste');
   const [lyricsText, setLyricsText] = useState('');
   const [lyricsFileName, setLyricsFileName] = useState('');
   const [attemptedContinue, setAttemptedContinue] = useState(false);
@@ -340,6 +340,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const [designSyncState, setDesignSyncState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [designSyncError, setDesignSyncError] = useState('');
   const [designBrandingInfo, setDesignBrandingInfo] = useState<any>(null);
+  const [designDirty, setDesignDirty] = useState(false);
   const [exportStartModalOpen, setExportStartModalOpen] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
   const startLockRef = useRef(false);
@@ -381,6 +382,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     logoOpacity,
   });
   const currentProjectDesignPayloadKey = JSON.stringify(currentProjectDesignPayload);
+  const usesPresetOnlyBackground = !bgColorEnabled && !bgImageUrl && !bgVideoUrl;
 
   const persistProjectDesign = async (payload: any) => {
     if (youkaPhase !== 'ready' || !youkaProjectId) return false;
@@ -413,6 +415,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         };
       });
       designLastAppliedPayloadRef.current = JSON.stringify(payload);
+      setDesignDirty(false);
       setDesignSyncState('saved');
       return true;
     } catch (err: any) {
@@ -459,9 +462,19 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     setLogoOpacity(0.85);
     setLogoPosition('bottom-right');
     setLogoError('');
+    setDesignDirty(false);
     setDesignSyncState('idle');
     setDesignSyncError('');
   };
+
+  useEffect(() => {
+    const applied = designLastAppliedPayloadRef.current;
+    if (!applied) {
+      setDesignDirty(false);
+      return;
+    }
+    setDesignDirty(currentProjectDesignPayloadKey !== applied);
+  }, [currentProjectDesignPayloadKey, youkaProjectId]);
 
   useEffect(() => {
     if (!designLastAppliedPayloadRef.current) return;
@@ -558,7 +571,18 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const canAdvanceFromStep3 = youkaPhase === 'ready' && Boolean(youkaProjectId) && Boolean(instrumentalStemUrl) && !youkaError;
   const step3Blocked = step === 3 && !canAdvanceFromStep3;
   const step3BlockedMessage = 'Espera a que termine el procesamiento para continuar.';
-  const canOpenStep = (targetStep: number) => targetStep <= 3 || canAdvanceFromStep3;
+  const canAdvanceFromStep4 = canAdvanceFromStep3 && Boolean(youkaProjectId) && !designDirty && designSyncState !== 'saving' && designSyncState !== 'error';
+  const step4Blocked = step === 4 && !canAdvanceFromStep4;
+  const step4BlockedMessage = designSyncState === 'saving'
+    ? 'Espera a que termine la aplicación del diseño.'
+    : designSyncState === 'error'
+      ? (translateProviderMessage(designSyncError) || 'No se pudo aplicar el diseño.')
+      : 'Aplica el diseño antes de continuar al Paso 5.';
+  const canOpenStep = (targetStep: number) => {
+    if (targetStep <= 3) return true;
+    if (targetStep === 4) return canAdvanceFromStep3;
+    return canAdvanceFromStep4;
+  };
 
   const getExportStemVolumes = () => {
     const instrumental = Math.max(0, Math.min(1, (Number(instrumentalVolume) || 0) / 100));
@@ -1090,6 +1114,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
           logoScale: Math.max(0, Number(brandingLogo?.scale) || 0.2),
           logoOpacity: Math.max(0, Math.min(1, Number(brandingLogo?.opacity) || 0.85)),
         }));
+        setDesignDirty(false);
       } catch (err: any) {
         if (!cancelled) {
           setDesignSyncState('error');
@@ -1582,9 +1607,9 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
             {step===1&&<AudioStep fileName={fileName} hasAudio={hasAudio} playing={playing} durationSec={audioDurationSec} currentSec={audioCurrentSec} sizeBytes={audioSizeBytes} canPlay={Boolean(audioSrc)} onPlay={togglePlayback} onSeek={seekTo} onUpload={()=>fileRef.current?.click()} onLibrary={()=>{setFileName('Luz de madrugada.mp3');setSongTitle('Luz de madrugada');setHasAudio(true);setAudioSrc('');cleanupAudioSrc();setAudioDurationSec(0);setAudioCurrentSec(0);setAudioSizeBytes(0);setPlaying(false)}} onClear={clearSelectedAudio} songTitle={songTitle}/>}
             {step===2&&<LyricsStep mode={lyricsMode} setMode={setLyricsMode} lyricsText={lyricsText} setLyricsText={setLyricsText} lyricsFileName={lyricsFileName} setLyricsFileName={setLyricsFileName} showValidation={attemptedContinue} songTitle={songTitle} setSongTitle={setSongTitle} />}
             {step===3&&<AudioSettings removeVoice={removeVoice} setRemoveVoice={setRemoveVoice} instrumentalVolume={instrumentalVolume} setInstrumentalVolume={setInstrumentalVolume} chorusVolume={chorusVolume} setChorusVolume={setChorusVolume} pitch={pitch} setPitch={setPitch} speed={speed} setSpeed={setSpeed} canPlay={Boolean(effectiveKaraokeSrc)} playing={karaokePlaying} durationSec={karaokeDurationSec} currentSec={karaokeCurrentSec} onPlay={toggleKaraokePlayback} onSeek={seekKaraokeTo} fileName={fileName} youkaPhase={youkaPhase} youkaProgress={youkaProgress} youkaError={youkaError} youkaQuote={youkaQuote} removeVoiceReady={youkaPhase==='ready'&&removeVoice&&Boolean(instrumentalStemUrl)} chorusAvailable={chorusAvailable} canAdvance={canAdvanceFromStep3} blockedMessage={step3BlockedMessage} />}
-            {step===4&&<DesignStep format={format} setFormat={setFormat} preset={preset} setPreset={(next:string)=>{const presetStyle=getPresetStyle(next);setPreset(next);setFontFamily(presetStyle.fontFamily);setTextColor(presetStyle.textColor);setActiveColor(presetStyle.activeColor);}} fontSize={fontSize} setFontSize={setFontSize} textColor={textColor} setTextColor={setTextColor} activeColor={activeColor} setActiveColor={setActiveColor} outlineColor={outlineColor} setOutlineColor={setOutlineColor} outlineWidth={outlineWidth} setOutlineWidth={setOutlineWidth} fontFamily={fontFamily} setFontFamily={setFontFamily} position={position} setPosition={setPosition} alignment={alignment} setAlignment={setAlignment} bgImageUrl={bgImageUrl} bgImageMediaId={bgImageMediaId} bgVideoUrl={bgVideoUrl} bgVideoMediaId={bgVideoMediaId} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} setBgDarken={setBgDarken} bgBlur={bgBlur} setBgBlur={setBgBlur} bgBrightness={bgBrightness} setBgBrightness={setBgBrightness} bgLoop={bgLoop} setBgLoop={setBgLoop} bgError={bgError} setBgError={setBgError} mediaLibrary={mediaLibrary} mediaLibraryState={mediaLibraryState} mediaLibraryError={mediaLibraryError} mediaUploadState={mediaUploadState} mediaUploadError={mediaUploadError} deletingMediaId={deletingMediaId} logoUrl={logoUrl} logoMediaId={logoMediaId} logoEnabled={logoEnabled} setLogoEnabled={setLogoEnabled} logoScale={logoScale} setLogoScale={setLogoScale} logoOpacity={logoOpacity} setLogoOpacity={setLogoOpacity} logoPosition={logoPosition} setLogoPosition={setLogoPosition} logoError={logoError} logoUploadState={logoUploadState} onSelectBgImage={selectBgImage} onSelectBgVideo={selectBgVideo} onSelectLogo={selectLogo} onEnableBgColor={enableBgColor} onClearBackground={clearBackground} onClearLogo={clearLogo} onApplyLibraryBackground={applyBackgroundMedia} onDeleteLibraryMedia={deleteLibraryMedia} bgImageInputRef={bgImageInputRef} bgVideoInputRef={bgVideoInputRef} logoInputRef={logoInputRef} fullScreen={designFullScreen} setFullScreen={setDesignFullScreen} designSyncState={designSyncState} designSyncError={designSyncError} designBrandingInfo={designBrandingInfo} onApplyDesign={applyCurrentDesign} onResetDesign={resetLocalDesign} />} {step===5&&<ExportStep fileName={fileName} songTitle={songTitle} durationSec={audioDurationSec} format={format} preset={preset} removeVoice={removeVoice} instrumentalVolume={instrumentalVolume} chorusVolume={chorusVolume} exportResolution={exportResolution} setExportResolution={setExportResolution} exportFps={exportFps} setExportFps={setExportFps} exportQuality={exportQuality} setExportQuality={setExportQuality} exportTransparent={exportTransparent} setExportTransparent={setExportTransparent} exportRenderMode={exportRenderMode} setExportRenderMode={setExportRenderMode} exportQuote={exportQuote} exportQuoteError={exportQuoteError} exportPhase={exportPhase} exportError={exportError} exportConfirm={exportConfirm} setExportConfirm={setExportConfirm} exportId={exportId} exportTaskId={exportTaskId} exportState={exportState} exportDownloadUrl={exportDownloadUrl} quoteExport={quoteExport} createExport={createExport} exportStartModalOpen={exportStartModalOpen} setExportStartModalOpen={setExportStartModalOpen} previewProps={{formatClass:{'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'}[format],fontSize,textColor,activeColor,preset,fontFamily,position,alignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,bgBlur,bgBrightness,bgLoop,logoEnabled,logoUrl,logoScale,logoOpacity,logoPosition}} />}
+            {step===4&&<DesignStep format={format} setFormat={setFormat} preset={preset} setPreset={(next:string)=>{const presetStyle=getPresetStyle(next);setPreset(next);setFontFamily(presetStyle.fontFamily);setTextColor(presetStyle.textColor);setActiveColor(presetStyle.activeColor);}} fontSize={fontSize} setFontSize={setFontSize} textColor={textColor} setTextColor={setTextColor} activeColor={activeColor} setActiveColor={setActiveColor} outlineColor={outlineColor} setOutlineColor={setOutlineColor} outlineWidth={outlineWidth} setOutlineWidth={setOutlineWidth} fontFamily={fontFamily} setFontFamily={setFontFamily} position={position} setPosition={setPosition} alignment={alignment} setAlignment={setAlignment} bgImageUrl={bgImageUrl} bgImageMediaId={bgImageMediaId} bgVideoUrl={bgVideoUrl} bgVideoMediaId={bgVideoMediaId} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} setBgDarken={setBgDarken} bgBlur={bgBlur} setBgBlur={setBgBlur} bgBrightness={bgBrightness} setBgBrightness={setBgBrightness} bgLoop={bgLoop} setBgLoop={setBgLoop} bgError={bgError} setBgError={setBgError} mediaLibrary={mediaLibrary} mediaLibraryState={mediaLibraryState} mediaLibraryError={mediaLibraryError} mediaUploadState={mediaUploadState} mediaUploadError={mediaUploadError} deletingMediaId={deletingMediaId} logoUrl={logoUrl} logoMediaId={logoMediaId} logoEnabled={logoEnabled} setLogoEnabled={setLogoEnabled} logoScale={logoScale} setLogoScale={setLogoScale} logoOpacity={logoOpacity} setLogoOpacity={setLogoOpacity} logoPosition={logoPosition} setLogoPosition={setLogoPosition} logoError={logoError} logoUploadState={logoUploadState} onSelectBgImage={selectBgImage} onSelectBgVideo={selectBgVideo} onSelectLogo={selectLogo} onEnableBgColor={enableBgColor} onClearBackground={clearBackground} onClearLogo={clearLogo} onApplyLibraryBackground={applyBackgroundMedia} onDeleteLibraryMedia={deleteLibraryMedia} bgImageInputRef={bgImageInputRef} bgVideoInputRef={bgVideoInputRef} logoInputRef={logoInputRef} fullScreen={designFullScreen} setFullScreen={setDesignFullScreen} designSyncState={designSyncState} designSyncError={designSyncError} designBrandingInfo={designBrandingInfo} designDirty={designDirty} usesPresetOnlyBackground={usesPresetOnlyBackground} onApplyDesign={applyCurrentDesign} onResetDesign={resetLocalDesign} />} {step===5&&<ExportStep fileName={fileName} songTitle={songTitle} durationSec={audioDurationSec} format={format} preset={preset} removeVoice={removeVoice} instrumentalVolume={instrumentalVolume} chorusVolume={chorusVolume} exportResolution={exportResolution} setExportResolution={setExportResolution} exportFps={exportFps} setExportFps={setExportFps} exportQuality={exportQuality} setExportQuality={setExportQuality} exportTransparent={exportTransparent} setExportTransparent={setExportTransparent} exportRenderMode={exportRenderMode} setExportRenderMode={setExportRenderMode} exportQuote={exportQuote} exportQuoteError={exportQuoteError} exportPhase={exportPhase} exportError={exportError} exportConfirm={exportConfirm} setExportConfirm={setExportConfirm} exportId={exportId} exportTaskId={exportTaskId} exportState={exportState} exportDownloadUrl={exportDownloadUrl} quoteExport={quoteExport} createExport={createExport} exportStartModalOpen={exportStartModalOpen} setExportStartModalOpen={setExportStartModalOpen} previewProps={{formatClass:{'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'}[format],fontSize,textColor,activeColor,preset,fontFamily,position,alignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,bgBlur,bgBrightness,bgLoop,logoEnabled,logoUrl,logoScale,logoOpacity,logoPosition}} />}
           </div>
-          <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080a15]/95 p-4 backdrop-blur md:px-6"><button disabled={step===1} onClick={()=>setStep(step-1)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 disabled:opacity-30"><ArrowLeft className="h-4 w-4"/> Atrás</button>{step<5?<div className="flex flex-col items-end gap-2"><button disabled={step3Blocked} onClick={async ()=>{if(step===1){if(!hasAudio){return;}setStep(2);return;}if(step===2){setAttemptedContinue(true);if(lyricsMode!=='auto'&&!String(lyricsText||'').trim()){setYoukaError('Pegaste/subiste letra, pero está vacía.');return;}setStep(3);await startYoukaProcessing();return;}if(step===3&&!canAdvanceFromStep3){return;}setStep(step+1);}} className="inline-flex h-11 min-w-[165px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40">Continuar <ArrowRight className="h-4 w-4"/></button>{step3Blocked?<span className="text-right text-xs text-amber-300">{step3BlockedMessage}</span>:null}</div>:<span className="text-xs text-slate-500">Cotiza y genera desde el panel de exportación.</span>}</footer>
+          <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080a15]/95 p-4 backdrop-blur md:px-6"><button disabled={step===1} onClick={()=>setStep(step-1)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 disabled:opacity-30"><ArrowLeft className="h-4 w-4"/> Atrás</button>{step<5?<div className="flex flex-col items-end gap-2"><button disabled={step3Blocked || step4Blocked} onClick={async ()=>{if(step===1){if(!hasAudio){return;}setStep(2);return;}if(step===2){setAttemptedContinue(true);if(lyricsMode!=='auto'&&!String(lyricsText||'').trim()){setYoukaError('Pegaste/subiste letra, pero está vacía.');return;}setStep(3);await startYoukaProcessing();return;}if(step===3&&!canAdvanceFromStep3){return;}if(step===4&&!canAdvanceFromStep4){return;}setStep(step+1);}} className="inline-flex h-11 min-w-[165px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40">Continuar <ArrowRight className="h-4 w-4"/></button>{step3Blocked?<span className="text-right text-xs text-amber-300">{step3BlockedMessage}</span>:null}{step4Blocked?<span className="text-right text-xs text-amber-300">{step4BlockedMessage}</span>:null}</div>:<span className="text-xs text-slate-500">Cotiza y genera desde el panel de exportación.</span>}</footer>
         </section>
       </div>
     </div>
@@ -1628,8 +1653,8 @@ function LyricsStep({mode,setMode,lyricsText,setLyricsText,lyricsFileName,setLyr
     setMode('file');
   };
   const options = [
-    ['auto','Detectar automáticamente','Analizamos la canción cuando avances al Paso 3.'],
     ['paste','Pegar letra','Ideal si ya tienes la letra completa en texto.'],
+    ['auto','Detectar automáticamente','Analizamos la canción cuando avances al Paso 3.'],
     ['file','Subir archivo','Compatible con .lrc y .txt para respetar tu material.'],
   ];
   return <div>
@@ -1748,7 +1773,7 @@ function AudioSettings({removeVoice,setRemoveVoice,instrumentalVolume,setInstrum
       </div>
     </div>
   </div>}
-function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,textColor,setTextColor,activeColor,setActiveColor,outlineColor,setOutlineColor,outlineWidth,setOutlineWidth,fontFamily,setFontFamily,position,setPosition,alignment,setAlignment,bgImageUrl,bgImageMediaId,bgVideoUrl,bgVideoMediaId,bgColor,bgColorEnabled,bgDarken,setBgDarken,bgBlur,setBgBlur,bgBrightness,setBgBrightness,bgLoop,setBgLoop,bgError,setBgError,mediaLibrary,mediaLibraryState,mediaLibraryError,mediaUploadState,mediaUploadError,deletingMediaId,logoUrl,logoMediaId,logoEnabled,setLogoEnabled,logoScale,setLogoScale,logoOpacity,setLogoOpacity,logoPosition,setLogoPosition,logoError,logoUploadState,onSelectBgImage,onSelectBgVideo,onSelectLogo,onEnableBgColor,onClearBackground,onClearLogo,onApplyLibraryBackground,onDeleteLibraryMedia,bgImageInputRef,bgVideoInputRef,logoInputRef,fullScreen,setFullScreen,designSyncState,designSyncError,designBrandingInfo,onApplyDesign,onResetDesign}:any){
+function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,textColor,setTextColor,activeColor,setActiveColor,outlineColor,setOutlineColor,outlineWidth,setOutlineWidth,fontFamily,setFontFamily,position,setPosition,alignment,setAlignment,bgImageUrl,bgImageMediaId,bgVideoUrl,bgVideoMediaId,bgColor,bgColorEnabled,bgDarken,setBgDarken,bgBlur,setBgBlur,bgBrightness,setBgBrightness,bgLoop,setBgLoop,bgError,setBgError,mediaLibrary,mediaLibraryState,mediaLibraryError,mediaUploadState,mediaUploadError,deletingMediaId,logoUrl,logoMediaId,logoEnabled,setLogoEnabled,logoScale,setLogoScale,logoOpacity,setLogoOpacity,logoPosition,setLogoPosition,logoError,logoUploadState,onSelectBgImage,onSelectBgVideo,onSelectLogo,onEnableBgColor,onClearBackground,onClearLogo,onApplyLibraryBackground,onDeleteLibraryMedia,bgImageInputRef,bgVideoInputRef,logoInputRef,fullScreen,setFullScreen,designSyncState,designSyncError,designBrandingInfo,designDirty,usesPresetOnlyBackground,onApplyDesign,onResetDesign}:any){
   const ratios:any={'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'};
   const presets=['Clásico','Neon','Romántico','Noche','Rock','Elegante','Urbano'];
   const backgroundItems = Array.isArray(mediaLibrary) ? mediaLibrary.filter((item:any)=>item?.type==='image'||item?.type==='video') : [];
@@ -1756,6 +1781,8 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
   const hasCustomImage=Boolean(bgImageUrl);
   const hasCustomColor=Boolean(bgColorEnabled);
   const usingLucianaBackground = !hasCustomVideo && !hasCustomImage && bgColorEnabled && bgColor === getYoukaPresetFallbackBackgroundColor(preset);
+  const applyDisabled = !designDirty || designSyncState === 'saving';
+  const applyLabel = designSyncState === 'saving' ? 'Aplicando...' : designDirty ? 'Aplicar diseño' : 'Diseño aplicado';
   const shell = (inner:any) => fullScreen ? <div className="fixed inset-0 z-[500] overflow-y-auto bg-[#050611] p-4 md:p-7"><div className="mx-auto w-full max-w-[1500px]"><div className="flex items-center justify-between"><strong className="text-sm">Editor en pantalla completa</strong><button type="button" onClick={()=>setFullScreen(false)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-extrabold">Salir</button></div>{inner}</div></div> : inner;
   return shell(
     <div className="mt-4">
@@ -1767,9 +1794,11 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
         {!fullScreen?<button type="button" onClick={()=>setFullScreen(true)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-extrabold">Pantalla completa</button>:null}
       </div>
       <div className="mt-4 space-y-3">
+        {designDirty && designSyncState !== 'saving' ? <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">Cambios sin aplicar.</div> : null}
         {designSyncState === 'saving' ? <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">Guardando diseño…</div> : null}
-        {designSyncState === 'saved' ? <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">Diseño guardado.</div> : null}
+        {designSyncState === 'saved' ? <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">Diseño aplicado correctamente.</div> : null}
         {designSyncState === 'error' ? <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{translateProviderMessage(designSyncError || 'No se pudo guardar el diseño.')}</div> : null}
+        {usesPresetOnlyBackground ? <div className="rounded-2xl border border-white/10 bg-white/[.02] px-4 py-3 text-sm text-slate-300">El preset <strong>{preset}</strong> sigue siendo una vista previa local mientras no elijas un fondo real. Para que el render final no vuelva al micrófono de Youka, usa <strong>Fondos Luciana</strong>, color sólido, imagen o video.</div> : null}
         {mediaUploadState === 'uploading' ? <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">Subiendo fondo a Youka Media…</div> : null}
         {mediaUploadError ? <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{translateProviderMessage(mediaUploadError)}</div> : null}
         {logoUploadState === 'uploading' ? <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">Subiendo logotipo a Youka Media…</div> : null}
@@ -1856,7 +1885,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <button type="button" onClick={onApplyDesign} className="h-12 rounded-2xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">Aplicar diseño</button>
+            <button type="button" onClick={onApplyDesign} disabled={applyDisabled} className="h-12 rounded-2xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40">{applyLabel}</button>
             <button type="button" onClick={onResetDesign} className="h-12 rounded-2xl border border-white/10 bg-white/[.03] text-sm font-black text-slate-200">Restablecer diseño</button>
           </div>
         </div>
