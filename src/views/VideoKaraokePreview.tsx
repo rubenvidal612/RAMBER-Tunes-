@@ -21,7 +21,7 @@ const EXPORT_FPS_OPTIONS = [
 const DEFAULT_DESIGN = {
   format: '16:9',
   fontFamily: 'Montserrat',
-  fontSize: 54,
+  fontSize: 58,
   textColor: '#ffffff',
   activeColor: '#facc15',
   outlineColor: '#000000',
@@ -623,7 +623,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     if (exportStartLockRef.current) return;
     exportStartLockRef.current = true;
 
-    if (exportPhase !== 'ready' || !exportQuote) {
+    if (!exportQuote || exportPhase === 'quoting') {
       setExportError('Primero solicita la cotización.');
       exportStartLockRef.current = false;
       return;
@@ -1024,7 +1024,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
         setFormat(String(effective?.aspectRatio || DEFAULT_DESIGN.format));
         setFontFamily(normalizeProjectFontFamily(singer?.fontFamily || DEFAULT_DESIGN.fontFamily));
-        setFontSize(Number(singer?.fontSize) || DEFAULT_DESIGN.fontSize);
+        setFontSize(DEFAULT_DESIGN.fontSize);
         setTextColor(String(singer?.textColor || DEFAULT_DESIGN.textColor));
         setActiveColor(String(singer?.activeLineColor || singer?.effectColor || DEFAULT_DESIGN.activeColor));
         setOutlineColor(String(singer?.outlineColor || DEFAULT_DESIGN.outlineColor));
@@ -1078,7 +1078,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
           bgDarken: Math.round(Math.max(0, Math.min(1, Number(background?.dim) || 0)) * 100),
           bgBlur: Number(background?.blur) || 0,
           fontFamily: normalizeProjectFontFamily(singer?.fontFamily || DEFAULT_DESIGN.fontFamily),
-          fontSize: Number(singer?.fontSize) || DEFAULT_DESIGN.fontSize,
+          fontSize: DEFAULT_DESIGN.fontSize,
           textColor: String(singer?.textColor || DEFAULT_DESIGN.textColor),
           activeColor: String(singer?.activeLineColor || singer?.effectColor || DEFAULT_DESIGN.activeColor),
           outlineColor: String(singer?.outlineColor || DEFAULT_DESIGN.outlineColor),
@@ -1868,7 +1868,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
 function ExportStep({fileName,songTitle,durationSec,format,preset,removeVoice,instrumentalVolume,chorusVolume,exportResolution,setExportResolution,exportFps,setExportFps,exportQuality,setExportQuality,exportTransparent,setExportTransparent,exportRenderMode,setExportRenderMode,exportQuote,exportQuoteError,exportPhase,exportError,exportConfirm,setExportConfirm,exportId,exportTaskId,exportState,exportDownloadUrl,quoteExport,createExport,exportStartModalOpen,setExportStartModalOpen,previewProps}:any){
   const credits = exportQuote?.creditsRequired ?? exportQuote?.standardCreditsRequired ?? exportQuote?.providerCredits ?? null;
   const eligibilityMessage = getExportEligibilityMessage(exportQuote);
-  const canGenerate = exportPhase === 'ready' && Boolean(exportConfirm) && exportQuote?.eligible !== false && exportQuote?.sufficientBalance !== false;
+  const canGenerate = Boolean(exportQuote) && exportPhase !== 'quoting' && exportPhase !== 'creating' && exportPhase !== 'polling' && Boolean(exportConfirm) && exportQuote?.eligible !== false && exportQuote?.sufficientBalance !== false;
   const exportStateLabel = exportState ? translateProviderMessage(exportState) : 'Preparando render';
   const generatingPanelRef = useRef<HTMLDivElement>(null);
 
