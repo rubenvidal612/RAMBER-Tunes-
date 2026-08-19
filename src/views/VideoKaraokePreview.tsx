@@ -21,7 +21,7 @@ const EXPORT_FPS_OPTIONS = [
 const DEFAULT_DESIGN = {
   format: '16:9',
   fontFamily: 'Montserrat',
-  fontSize: 26,
+  fontSize: 54,
   textColor: '#ffffff',
   activeColor: '#facc15',
   outlineColor: '#000000',
@@ -231,6 +231,18 @@ function getPresetStyle(preset: string) {
   if (name === 'Elegante') return { background: 'linear-gradient(180deg,#07060b 0%,#020206 100%),radial-gradient(circle at 35% 20%,rgba(245,193,76,.22) 0%,transparent 55%)', overlay: 'linear-gradient(90deg,rgba(245,193,76,.12),transparent 60%)', textColor: '#fff6dd', activeColor: '#f5c14c', fontFamily: 'ui-serif, Georgia, Times New Roman, serif', glow: false, badge: 'rgba(245,193,76,.16)', activeBg: 'rgba(245,193,76,.12)', activeBorder: 'rgba(245,193,76,.26)', letterSpacing: '0.02em' };
   if (name === 'Urbano') return { background: 'linear-gradient(135deg,rgba(47,124,255,.22) 0%,rgba(255,47,146,.12) 42%,rgba(7,7,16,1) 90%),repeating-linear-gradient(90deg,rgba(255,255,255,.03) 0 3px,transparent 3px 9px)', overlay: 'radial-gradient(circle at 20% 75%,rgba(39,214,166,.14) 0%,transparent 52%)', textColor: '#f0f7ff', activeColor: '#27d6a6', fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Poppins, sans-serif', glow: true, badge: 'rgba(39,214,166,.18)', activeBg: 'rgba(39,214,166,.16)', activeBorder: 'rgba(39,214,166,.32)', letterSpacing: '-0.015em' };
   return { background: 'linear-gradient(180deg,#0a0c13 0%,#04060b 100%)', overlay: 'radial-gradient(circle at 50% 18%,rgba(255,255,255,.08) 0%,transparent 50%)', textColor: '#ffffff', activeColor: '#cbd5f5', fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif', glow: false, badge: 'rgba(255,255,255,.08)', activeBg: 'rgba(255,255,255,.06)', activeBorder: 'rgba(255,255,255,.12)', letterSpacing: '-0.01em' };
+}
+
+function getYoukaPresetFallbackBackgroundColor(preset: string) {
+  const name = String(preset || '').trim();
+  if (name === 'Neon') return '#050611';
+  if (name === 'Clásico') return '#0a0c13';
+  if (name === 'Romántico') return '#06060c';
+  if (name === 'Noche') return '#020312';
+  if (name === 'Rock') return '#060607';
+  if (name === 'Elegante') return '#020206';
+  if (name === 'Urbano') return '#070710';
+  return '#070914';
 }
 
 export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
@@ -1731,6 +1743,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
   const hasCustomVideo=Boolean(bgVideoUrl);
   const hasCustomImage=Boolean(bgImageUrl);
   const hasCustomColor=Boolean(bgColorEnabled);
+  const usingLucianaBackground = !hasCustomVideo && !hasCustomImage && bgColorEnabled && bgColor === getYoukaPresetFallbackBackgroundColor(preset);
   const shell = (inner:any) => fullScreen ? <div className="fixed inset-0 z-[500] overflow-y-auto bg-[#050611] p-4 md:p-7"><div className="mx-auto w-full max-w-[1500px]"><div className="flex items-center justify-between"><strong className="text-sm">Editor en pantalla completa</strong><button type="button" onClick={()=>setFullScreen(false)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-extrabold">Salir</button></div>{inner}</div></div> : inner;
   return shell(
     <div className="mt-4">
@@ -1785,7 +1798,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
             <h4 className="mt-5 text-[11px] font-bold uppercase tracking-wider text-slate-500">Estilos Luciana</h4>
             <div className="mt-2 flex flex-wrap gap-2">{presets.map(item=><button key={item} onClick={()=>setPreset(item)} className={`rounded-full border px-3 py-2 text-xs font-bold ${preset===item?'border-pink-500 bg-pink-500/10 text-pink-300':'border-white/10 text-slate-400'}`}>{item}</button>)}</div>
             <div className="mt-5 grid gap-3">
-              <button type="button" onClick={()=>{onClearBackground();setBgError('')}} className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left text-xs font-bold ${!hasCustomVideo&&!hasCustomImage&&!hasCustomColor?'border-pink-500 bg-pink-500/10 text-pink-200':'border-white/10 text-slate-300'}`}><span>Fondos Luciana</span><span className="text-[10px] text-slate-500">{preset}</span></button>
+              <button type="button" onClick={()=>{onClearBackground();onEnableBgColor(getYoukaPresetFallbackBackgroundColor(preset));setBgError('')}} className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left text-xs font-bold ${usingLucianaBackground?'border-pink-500 bg-pink-500/10 text-pink-200':'border-white/10 text-slate-300'}`}><span>Fondos Luciana</span><span className="text-[10px] text-slate-500">{preset}</span></button>
               <div className="rounded-xl border border-white/10 bg-white/[.02] p-3">
                 <div className="flex items-center justify-between"><strong className="text-xs">Subir imagen / video</strong><button type="button" onClick={()=>{onClearBackground();setBgError('')}} className="text-[10px] font-bold text-slate-400">Limpiar</button></div>
                 <div className="mt-2 grid gap-2">
