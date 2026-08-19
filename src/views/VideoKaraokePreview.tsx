@@ -361,10 +361,6 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     logoOpacity,
   });
   const currentProjectDesignPayloadKey = JSON.stringify(currentProjectDesignPayload);
-  const canAdvanceFromStep3 = youkaPhase === 'ready' && Boolean(youkaProjectId) && Boolean(instrumentalStemUrl) && !youkaError;
-  const step3Blocked = step === 3 && !canAdvanceFromStep3;
-  const step3BlockedMessage = 'Espera a que termine el procesamiento para continuar.';
-  const canOpenStep = (targetStep: number) => targetStep <= 3 || canAdvanceFromStep3;
 
   const persistProjectDesign = async (payload: any) => {
     if (youkaPhase !== 'ready' || !youkaProjectId) return false;
@@ -538,6 +534,11 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const chorusAvailable = Boolean(backingVocalsStemUrl);
 
   const effectiveKaraokeSrc = youkaPhase === 'ready' && removeVoice && instrumentalStemUrl ? instrumentalStemUrl : audioSrc;
+
+  const canAdvanceFromStep3 = youkaPhase === 'ready' && Boolean(youkaProjectId) && Boolean(instrumentalStemUrl) && !youkaError;
+  const step3Blocked = step === 3 && !canAdvanceFromStep3;
+  const step3BlockedMessage = 'Espera a que termine el procesamiento para continuar.';
+  const canOpenStep = (targetStep: number) => targetStep <= 3 || canAdvanceFromStep3;
 
   const getExportStemVolumes = () => {
     const instrumental = Math.max(0, Math.min(1, (Number(instrumentalVolume) || 0) / 100));
