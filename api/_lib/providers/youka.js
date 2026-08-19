@@ -15,6 +15,8 @@ const ALLOWED_SPLIT_MODELS = new Set([
   "demucs",
 ]);
 
+const ALLOWED_MEDIA_TYPES = new Set(["video", "image", "logo", "intro-video", "outro-video"]);
+
 function finiteEnvNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -470,6 +472,170 @@ async function updateSettings(projectId, request) {
   }
 }
 
+async function listMedia() {
+  const enabled = assertEnabled("get-project");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/media`, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener la biblioteca de fondos.";
+      if (!unauthorized) {
+        const maybe = payload && typeof payload === "object" ? String(payload.message || payload?.error?.message || payload?.error || "") : "";
+        if (maybe) message = maybe;
+      }
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        message,
+        "get-project",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: Array.isArray(payload) ? payload : [] };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "get-project", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getMedia(mediaId) {
+  const enabled = assertEnabled("get-project");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!mediaId) return providerFailure("KARAOKE_INVALID_REQUEST", "mediaId es obligatorio.", "get-project");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/media/${encodeURIComponent(mediaId)}`, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible obtener el medio solicitado.";
+      if (!unauthorized) {
+        const maybe = payload && typeof payload === "object" ? String(payload.message || payload?.error?.message || payload?.error || "") : "";
+        if (maybe) message = maybe;
+      }
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        message,
+        "get-project",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "get-project", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function createMedia(request) {
+  const enabled = assertEnabled("create-upload");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  const mediaType = String(request?.type || "").trim();
+  const inputFileId = String(request?.inputFileId || "").trim();
+  if (!inputFileId || !ALLOWED_MEDIA_TYPES.has(mediaType)) {
+    return providerFailure("KARAOKE_INVALID_REQUEST", "inputFileId y type son obligatorios.", "create-upload");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/media`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        ...(request.idempotencyKey ? { "idempotency-key": request.idempotencyKey } : {}),
+      },
+      body: JSON.stringify({
+        inputFileId,
+        type: mediaType,
+      }),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible registrar el fondo en la biblioteca.";
+      if (!unauthorized) {
+        const maybe = payload && typeof payload === "object" ? String(payload.message || payload?.error?.message || payload?.error || "") : "";
+        if (maybe) message = maybe;
+      }
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        message,
+        "create-upload",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "create-upload", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function deleteMedia(mediaId, idempotencyKey) {
+  const enabled = assertEnabled("delete-project");
+  if (!enabled.ok) return enabled.error;
+  const { config, apiKey } = enabled;
+  if (!mediaId) return providerFailure("KARAOKE_INVALID_REQUEST", "mediaId es obligatorio.", "delete-project");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/media/${encodeURIComponent(mediaId)}`, {
+      method: "DELETE",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`,
+        ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
+      },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const unauthorized = response.status === 401 || response.status === 403;
+      let message = unauthorized ? "Youka rechazó la credencial configurada." : "No fue posible eliminar el medio.";
+      if (!unauthorized) {
+        const maybe = payload && typeof payload === "object" ? String(payload.message || payload?.error?.message || payload?.error || "") : "";
+        if (maybe) message = maybe;
+      }
+      return providerFailure(
+        unauthorized ? "KARAOKE_PROVIDER_UNAUTHORIZED" : "KARAOKE_PROVIDER_ERROR",
+        message,
+        "delete-project",
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return { ok: true, data: payload && typeof payload === "object" ? payload : { success: true } };
+  } catch {
+    return providerFailure("KARAOKE_PROVIDER_ERROR", "No fue posible comunicarse con Youka.", "delete-project", true);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function safeLogUrl(value) {
   try {
     const url = new URL(String(value));
@@ -743,6 +909,7 @@ async function getStatus(resourceId, options = {}) {
 
 export const youkaProvider = {
   createUpload,
+  createMedia,
   importSource() {
     return unavailable("import-source");
   },
@@ -750,6 +917,8 @@ export const youkaProvider = {
   createProject,
   getProject,
   getProjectSettings,
+  getMedia,
+  listMedia,
   transcribeLyrics() {
     return unavailable("transcribe-lyrics");
   },
@@ -764,6 +933,7 @@ export const youkaProvider = {
   createExport,
   getExport,
   getStatus,
+  deleteMedia,
   deleteProject() {
     return unavailable("delete-project");
   },

@@ -197,6 +197,8 @@ function invalid(res, message) {
   });
 }
 
+const ALLOWED_YOUKA_MEDIA_TYPES = new Set(["image", "video", "logo"]);
+
 export async function handleVideoKaraokeApi(req, res) {
   const url = new URL(req.url, "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -375,6 +377,100 @@ export async function handleVideoKaraokeApi(req, res) {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  if (resource === "media" && resourceId === "from-r2") {
+    if (method(req) !== "POST") return send(res, 405, { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "Método no permitido" } });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) {
+      return send(res, auth.status, {
+        ok: false,
+        error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }),
+      });
+    }
+
+    const r2Key = normalizeR2Key(body.r2Key);
+    const filename = String(body.filename || "").trim();
+    const contentType = String(body.contentType || "").trim();
+    const mediaType = String(body.mediaType || "").trim();
+    const contentLength = Number(body.contentLength);
+    const userPrefix = `uploads/audio/${auth.userId}/`;
+
+    if (!r2Key || !r2Key.startsWith(userPrefix)) return invalid(res, "r2Key no es válido.");
+    if (!filename) return invalid(res, "filename es obligatorio.");
+    if (!contentType) return invalid(res, "contentType es obligatorio.");
+    if (!Number.isFinite(contentLength) || contentLength <= 0) return invalid(res, "contentLength no es válido.");
+    if (!ALLOWED_YOUKA_MEDIA_TYPES.has(mediaType)) return invalid(res, "mediaType no es válido.");
+
+    let signedGetUrl = "";
+    try {
+      signedGetUrl = await getSignedR2GetUrl(r2Key, 60 * 15);
+    } catch {
+      return send(res, 500, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el archivo multimedia.", retryable: false, provider: "karaoke" }) });
+    }
+
+    const uploadPrep = await youkaProvider.createUpload({
+      filename,
+      contentType,
+      contentLength,
+      idempotencyKey: key,
+    });
+    if (!uploadPrep?.ok || !uploadPrep?.data?.uploadUrl || !uploadPrep?.data?.uploadId) {
+      return sendProviderResponse(res, uploadPrep);
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4 * 60 * 1000);
+    try {
+      const getRes = await fetch(signedGetUrl, { method: "GET", signal: ctrl.signal });
+      if (!getRes.ok || !getRes.body) {
+        return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude preparar el archivo multimedia.", retryable: true, provider: "karaoke" }) });
+      }
+
+      const headers = { "content-type": contentType };
+      if (Number.isFinite(contentLength) && contentLength > 0) headers["content-length"] = String(contentLength);
+
+      const putRes = await fetch(String(uploadPrep.data.uploadUrl || ""), {
+        method: "PUT",
+        headers,
+        body: getRes.body,
+        duplex: "half",
+        signal: ctrl.signal,
+      });
+      if (!putRes.ok) {
+        return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude subir el archivo multimedia.", retryable: putRes.status === 429 || putRes.status >= 500, provider: "karaoke" }) });
+      }
+
+      const mediaResult = await youkaProvider.createMedia({
+        inputFileId: String(uploadPrep.data.uploadId || ""),
+        type: mediaType,
+        idempotencyKey: key,
+      });
+      return sendProviderResponse(res, mediaResult);
+    } catch {
+      return send(res, 503, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_ERROR", message: "No pude subir el archivo multimedia.", retryable: true, provider: "karaoke" }) });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  if (resource === "media" && !resourceId && method(req) === "GET") {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }) });
+    return sendProviderResponse(res, await youkaProvider.listMedia());
+  }
+
+  if (resource === "media" && resourceId && !child && method(req) === "GET") {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }) });
+    return sendProviderResponse(res, await youkaProvider.getMedia(resourceId));
+  }
+
+  if (resource === "media" && resourceId && !child && method(req) === "DELETE") {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { ok: false, error: sanitizeProviderError({ code: "KARAOKE_PROVIDER_UNAUTHORIZED", message: auth.error, retryable: false, provider: "karaoke" }) });
+    return sendProviderResponse(res, await youkaProvider.deleteMedia(resourceId, key));
   }
 
   if (resource === "uploads") {
