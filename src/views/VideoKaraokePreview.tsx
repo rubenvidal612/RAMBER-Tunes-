@@ -21,7 +21,7 @@ const EXPORT_FPS_OPTIONS = [
 const DEFAULT_DESIGN = {
   format: '16:9',
   fontFamily: 'Montserrat',
-  fontSize: 20,
+  fontSize: 26,
   textColor: '#ffffff',
   activeColor: '#facc15',
   outlineColor: '#000000',
@@ -133,6 +133,13 @@ function normalizeProjectFontFamily(value: any) {
   if (normalized.includes('montserrat')) return 'Montserrat';
   if (normalized.includes('inter') || normalized.includes('ui-sans-serif') || normalized.includes('system-ui') || normalized.includes('roboto')) return 'Inter';
   return raw || 'Montserrat';
+}
+
+function getPreviewBaseHeightFromClass(formatClass: string) {
+  const normalized = String(formatClass || '').toLowerCase();
+  if (normalized.includes('9/16')) return 960;
+  if (normalized.includes('square')) return 540;
+  return 540;
 }
 
 function buildProjectDesignSettings(values: {
@@ -1753,7 +1760,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
           <div>
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Texto</h4>
             <label className="mt-3 block text-[11px] text-slate-400">Fuente<select value={fontFamily} onChange={e=>setFontFamily(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white"><option>Montserrat</option><option>Poppins</option><option>Inter</option></select></label>
-            <Slider label="Tamaño" value={`${fontSize}px`} valueNumber={fontSize} onChange={(e:any)=>setFontSize(Number(e.target.value))}/>
+            <Slider label="Tamaño" value={`${fontSize}px`} min={16} max={60} valueNumber={fontSize} onChange={(e:any)=>setFontSize(Number(e.target.value))}/>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <Color label="Color de letra" value={textColor} onChange={setTextColor}/>
               <Color label="Palabra activa" value={activeColor} onChange={setActiveColor}/>
@@ -1782,7 +1789,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
               <div className="rounded-xl border border-white/10 bg-white/[.02] p-3">
                 <div className="flex items-center justify-between"><strong className="text-xs">Subir imagen / video</strong><button type="button" onClick={()=>{onClearBackground();setBgError('')}} className="text-[10px] font-bold text-slate-400">Limpiar</button></div>
                 <div className="mt-2 grid gap-2">
-                  <input ref={bgImageInputRef} type="file" accept="image/*" className="hidden" onChange={e=>void onSelectBgImage(e.target.files?.[0])} />
+                  <input ref={bgImageInputRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={e=>void onSelectBgImage(e.target.files?.[0])} />
                   <input ref={bgVideoInputRef} type="file" accept="video/*" className="hidden" onChange={e=>void onSelectBgVideo(e.target.files?.[0])} />
                   <div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={()=>bgImageInputRef.current?.click()} className="h-10 rounded-xl border border-white/10 bg-white/5 text-xs font-extrabold">Subir imagen</button><button type="button" onClick={()=>bgVideoInputRef.current?.click()} className="h-10 rounded-xl border border-white/10 bg-white/5 text-xs font-extrabold">Subir video</button></div>
                   <small className="text-[11px] text-slate-500">{hasCustomVideo?'Video de Youka seleccionado':hasCustomImage?'Imagen de Youka seleccionada':'Sin archivo seleccionado'}</small>
@@ -1838,6 +1845,24 @@ function ExportStep({fileName,songTitle,durationSec,format,preset,removeVoice,in
   const eligibilityMessage = getExportEligibilityMessage(exportQuote);
   const canGenerate = exportPhase === 'ready' && Boolean(exportConfirm) && exportQuote?.eligible !== false && exportQuote?.sufficientBalance !== false;
   const exportStateLabel = exportState ? translateProviderMessage(exportState) : 'Preparando render';
+  const generatingPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (exportStartModalOpen) return;
+    if (exportPhase !== 'creating' && exportPhase !== 'polling') return;
+    const node = generatingPanelRef.current;
+    if (!node) return;
+    const run = () => {
+      try {
+        node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch {}
+    };
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(run);
+      return;
+    }
+    run();
+  }, [exportPhase, exportStartModalOpen]);
   return (
     <div className="mt-4">
       {exportStartModalOpen ? (
@@ -1953,7 +1978,7 @@ function ExportStep({fileName,songTitle,durationSec,format,preset,removeVoice,in
               </button>
               {(exportQuote?.eligible === false || exportQuote?.sufficientBalance === false) && !exportError ? <div className="rounded-2xl border border-white/10 bg-white/[.02] p-4 text-sm text-slate-300">{eligibilityMessage || 'La cotización actual no permite continuar con esta configuración.'}</div> : null}
               {exportPhase === 'polling' ? (
-                <div className="rounded-[24px] border border-sky-500/20 bg-sky-500/10 p-5 text-sky-100">
+                <div ref={generatingPanelRef} className="rounded-[24px] border border-sky-500/20 bg-sky-500/10 p-5 text-sky-100">
                   <div className="flex items-center gap-4">
                     <span className="block h-10 w-10 animate-spin rounded-full border-2 border-sky-100/40 border-t-sky-100" />
                     <div>
@@ -1998,7 +2023,43 @@ function ExportStep({fileName,songTitle,durationSec,format,preset,removeVoice,in
     </div>
   );
 }
-function Preview({formatClass='aspect-video',fontSize=18,textColor='#ffffff',activeColor='#ff2f92',preset='Neon',fontFamily='Montserrat',position='Centro inferior',alignment='Centrada',bgImageUrl='',bgVideoUrl='',bgColor='#070914',bgColorEnabled=false,bgDarken=35,bgBlur=0,bgBrightness=105,bgLoop=true,logoEnabled=false,logoUrl='',logoScale=0.2,logoOpacity=0.85,logoPosition='bottom-right',onBgError,size='default'}:any){const presetStyle=getPresetStyle(preset);const vertical=position==='Superior'?'top-10':position==='Centro'?'top-1/2 -translate-y-1/2':'bottom-8';const horizontal=alignment==='Izquierda'?'text-left':alignment==='Derecha'?'text-right':'text-center';const hasVideo=Boolean(bgVideoUrl);const hasImage=!hasVideo&&Boolean(bgImageUrl);const hasColor=!hasVideo&&!hasImage&&Boolean(bgColorEnabled);const filter=`blur(${Math.max(0,Number(bgBlur)||0)}px) brightness(${Math.max(.3,(Number(bgBrightness)||100)/100)})`;const scale=Math.max(1,1+(Math.max(0,Number(bgBlur)||0)/40));const darkenAlpha=Math.max(0,Math.min(0.85,(Number(bgDarken)||0)/100));const titleGlow=presetStyle.glow?`0 0 18px ${activeColor}55,0 0 42px ${activeColor}25`:'0 10px 32px rgba(0,0,0,.55)';const activeGlow=presetStyle.glow?`0 0 16px ${activeColor}66`:'none';const activeBg=presetStyle.activeBg||'transparent';const activeBorder=presetStyle.activeBorder||'transparent';const baseClass=size==='editor'?'mt-0 w-full max-w-none':'mx-auto mt-5 w-full max-w-lg';const logoPositionClass=logoPosition==='top-left'?'left-4 top-4':logoPosition==='top-right'?'right-4 top-4':logoPosition==='bottom-left'?'left-4 bottom-4':'right-4 bottom-4';return <div className={`${baseClass} overflow-hidden rounded-2xl border border-white/10 bg-black ${formatClass}`}><div className="relative h-full min-h-48"><div className="absolute inset-0 overflow-hidden"><div className="absolute inset-0" style={{background:presetStyle.background}}/>{hasColor?<div className="absolute inset-0" style={{background:bgColor}}/>:null}{hasImage?<img src={bgImageUrl} alt="Fondo" className="absolute inset-0 h-full w-full object-cover" style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{hasVideo?<video src={bgVideoUrl} className="absolute inset-0 h-full w-full object-cover" autoPlay muted playsInline loop={Boolean(bgLoop)} style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{!hasVideo&&!hasImage&&!hasColor?<div className="absolute inset-0" style={{background:presetStyle.overlay,opacity:.9}}/>:null}<div className="absolute inset-0" style={{background:'radial-gradient(circle at 50% 0%,rgba(255,255,255,.12) 0%,transparent 50%)',opacity:.35}}/><div className="absolute inset-0" style={{background:`rgba(0,0,0,${darkenAlpha})`}}/></div>{logoEnabled&&logoUrl?<img src={logoUrl} alt="Logo" className={`absolute z-[2] ${logoPositionClass}`} style={{width:`${Math.max(5,Math.round(Number(logoScale||0.2)*100))}%`,maxWidth:'120px',opacity:Math.max(0,Math.min(1,Number(logoOpacity)||0.85))}}/>:null}<span className="absolute left-3 top-3 rounded-full px-2 py-1 text-[9px] font-black text-white" style={{background:presetStyle.badge}}>{preset}</span><div className={`absolute inset-x-4 ${vertical} ${horizontal} font-black leading-tight`} style={{fontSize,color:textColor,fontFamily,letterSpacing:presetStyle.letterSpacing,textShadow:titleGlow}}><span style={{color:activeColor,textShadow:activeGlow,background:activeBg,border:`1px solid ${activeBorder}`,padding:'0.14em 0.28em',borderRadius:'0.55em',boxDecorationBreak:'clone',WebkitBoxDecorationBreak:'clone'}}>Si te vuelves</span> a enamorar<br/>No te enamores de mí</div><div className="absolute inset-x-0 bottom-0 h-1 bg-white/10"><div className="h-full w-2/5 bg-pink-500"/></div></div></div>}
+function Preview({formatClass='aspect-video',fontSize=18,textColor='#ffffff',activeColor='#ff2f92',preset='Neon',fontFamily='Montserrat',position='Centro inferior',alignment='Centrada',bgImageUrl='',bgVideoUrl='',bgColor='#070914',bgColorEnabled=false,bgDarken=35,bgBlur=0,bgBrightness=105,bgLoop=true,logoEnabled=false,logoUrl='',logoScale=0.2,logoOpacity=0.85,logoPosition='bottom-right',onBgError,size='default'}:any){
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [hostHeight, setHostHeight] = useState(0);
+  const presetStyle=getPresetStyle(preset);
+  const vertical=position==='Superior'?'top-10':position==='Centro'?'top-1/2 -translate-y-1/2':'bottom-8';
+  const horizontal=alignment==='Izquierda'?'text-left':alignment==='Derecha'?'text-right':'text-center';
+  const hasVideo=Boolean(bgVideoUrl);
+  const hasImage=!hasVideo&&Boolean(bgImageUrl);
+  const hasColor=!hasVideo&&!hasImage&&Boolean(bgColorEnabled);
+  const filter=`blur(${Math.max(0,Number(bgBlur)||0)}px) brightness(${Math.max(.3,(Number(bgBrightness)||100)/100)})`;
+  const scale=Math.max(1,1+(Math.max(0,Number(bgBlur)||0)/40));
+  const darkenAlpha=Math.max(0,Math.min(0.85,(Number(bgDarken)||0)/100));
+  const titleGlow=presetStyle.glow?`0 0 18px ${activeColor}55,0 0 42px ${activeColor}25`:'0 10px 32px rgba(0,0,0,.55)';
+  const activeGlow=presetStyle.glow?`0 0 16px ${activeColor}66`:'none';
+  const activeBg=presetStyle.activeBg||'transparent';
+  const activeBorder=presetStyle.activeBorder||'transparent';
+  const baseClass=size==='editor'?'mt-0 w-full max-w-none':'mx-auto mt-5 w-full max-w-lg';
+  const logoPositionClass=logoPosition==='top-left'?'left-4 top-4':logoPosition==='top-right'?'right-4 top-4':logoPosition==='bottom-left'?'left-4 bottom-4':'right-4 bottom-4';
+  const baseHeight = getPreviewBaseHeightFromClass(formatClass);
+  const scaledFontSize = Math.max(10, Number(fontSize) * (hostHeight > 0 ? (hostHeight / baseHeight) : 1));
+
+  useEffect(() => {
+    const node = hostRef.current;
+    if (!node) return;
+    const read = () => {
+      const next = Math.round(node.getBoundingClientRect().height || 0);
+      if (next > 0) setHostHeight(next);
+    };
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => read());
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [formatClass, size]);
+
+  return <div ref={hostRef} className={`${baseClass} overflow-hidden rounded-2xl border border-white/10 bg-black ${formatClass}`}><div className="relative h-full min-h-48"><div className="absolute inset-0 overflow-hidden"><div className="absolute inset-0" style={{background:presetStyle.background}}/>{hasColor?<div className="absolute inset-0" style={{background:bgColor}}/>:null}{hasImage?<img src={bgImageUrl} alt="Fondo" className="absolute inset-0 h-full w-full object-cover" style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{hasVideo?<video src={bgVideoUrl} className="absolute inset-0 h-full w-full object-cover" autoPlay muted playsInline loop={Boolean(bgLoop)} style={{filter,transform:`scale(${scale})`}} onError={()=>{if(typeof onBgError==='function')onBgError()}}/>:null}{!hasVideo&&!hasImage&&!hasColor?<div className="absolute inset-0" style={{background:presetStyle.overlay,opacity:.9}}/>:null}<div className="absolute inset-0" style={{background:'radial-gradient(circle at 50% 0%,rgba(255,255,255,.12) 0%,transparent 50%)',opacity:.35}}/><div className="absolute inset-0" style={{background:`rgba(0,0,0,${darkenAlpha})`}}/></div>{logoEnabled&&logoUrl?<img src={logoUrl} alt="Logo" className={`absolute z-[2] ${logoPositionClass}`} style={{width:`${Math.max(5,Math.round(Number(logoScale||0.2)*100))}%`,maxWidth:'120px',opacity:Math.max(0,Math.min(1,Number(logoOpacity)||0.85))}}/>:null}<span className="absolute left-3 top-3 rounded-full px-2 py-1 text-[9px] font-black text-white" style={{background:presetStyle.badge}}>{preset}</span><div className={`absolute inset-x-4 ${vertical} ${horizontal} font-black leading-tight`} style={{fontSize:scaledFontSize,color:textColor,fontFamily,letterSpacing:presetStyle.letterSpacing,textShadow:titleGlow}}><span style={{color:activeColor,textShadow:activeGlow,background:activeBg,border:`1px solid ${activeBorder}`,padding:'0.14em 0.28em',borderRadius:'0.55em',boxDecorationBreak:'clone',WebkitBoxDecorationBreak:'clone'}}>Si te vuelves</span> a enamorar<br/>No te enamores de mí</div><div className="absolute inset-x-0 bottom-0 h-1 bg-white/10"><div className="h-full w-2/5 bg-pink-500"/></div></div></div>;
+}
 function KaraokeResult({onAgain}:any){return <div className="h-full overflow-y-auto bg-[#050611] p-5 text-white md:p-10"><div className="mx-auto max-w-4xl rounded-[28px] border border-white/10 bg-[#080a15] p-5 text-center md:p-8"><span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-400"><Check className="h-8 w-8"/></span><h1 className="mt-5 text-3xl font-black">Tu Video Karaoke está listo</h1><p className="mt-2 text-sm text-slate-400">Vista previa del resultado que recibirás cuando activemos la generación.</p><div className="mx-auto mt-7 max-w-2xl"><Preview/></div><p className="mt-6 rounded-xl border border-white/10 bg-white/[.025] p-4 text-xs text-slate-400">Cuando activemos la generación, tu video estará disponible temporalmente para descargar.</p><div className="mt-5 grid gap-3 sm:grid-cols-3"><button disabled className="h-12 rounded-xl bg-white/5 text-sm font-bold text-slate-500">Descargar MP4</button><button onClick={onAgain} className="h-12 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-sm font-black">Crear otro karaoke</button><button className="h-12 rounded-xl border border-white/10 text-sm font-bold">Volver a Biblioteca</button></div></div></div>}
 function translateProviderMessage(raw:any){const message=String(raw||'').trim();if(!message)return'';if(message.toLowerCase()==='1080p and 4k cloud exports are available after your first purchase.')return'Las exportaciones en la nube a 1080p y 4K están disponibles después de tu primera compra.';return message.replace(/youka/gi,'el servicio');}
 function getExportEligibilityMessage(quote:any){if(!quote||typeof quote!=='object')return'';const rejection=String(quote.rejectionReason||'').trim();if(rejection==='fast_requires_paid_user')return'El modo de render rápido requiere una cuenta con compra previa.';if(rejection==='transparent_requires_paid_user')return'El fondo transparente requiere una cuenta con compra previa.';if(rejection==='insufficient_credits')return'No tienes créditos suficientes para esta exportación.';const candidates=[quote.message,quote.detail,quote.reason,quote.error?.message,quote.error,quote.fallbackReason];for(const candidate of candidates){const translated=translateProviderMessage(candidate);if(translated)return translated;}if(quote.eligible===false)return'Esta configuración no está disponible para exportación en este momento.';if(quote.sufficientBalance===false)return'No tienes créditos suficientes para esta exportación.';return'';}
