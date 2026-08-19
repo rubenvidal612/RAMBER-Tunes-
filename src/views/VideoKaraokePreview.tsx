@@ -31,6 +31,12 @@ const DEFAULT_DESIGN = {
   bgColor: '#070914',
 } as const;
 
+function deriveSongTitle(value: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.replace(/\.[^/.]+$/, '').trim();
+}
+
 function mapPositionToProjectAlignment(position: string) {
   if (position === 'Superior') return 'top';
   if (position === 'Centro') return 'center';
@@ -128,6 +134,9 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const wizardTopRef = useRef<HTMLDivElement>(null);
   const lastStepRef = useRef<number | null>(null);
   const [fileName, setFileName] = useState('Si te vuelves a enamorar.mp3');
+  const [songTitle, setSongTitle] = useState(deriveSongTitle('Si te vuelves a enamorar.mp3'));
+  const [songAuthor, setSongAuthor] = useState('');
+  const [songSinger, setSongSinger] = useState('');
   const [hasAudio, setHasAudio] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -163,9 +172,9 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const [attemptedContinue, setAttemptedContinue] = useState(false);
   const [removeVoice, setRemoveVoice] = useState(true);
   const [designFullScreen, setDesignFullScreen] = useState(false);
-  const [exportResolution, setExportResolution] = useState<'540p' | '720p' | '1080p'>('1080p');
+  const [exportResolution, setExportResolution] = useState<'540p' | '720p' | '1080p'>('540p');
   const [exportFps, setExportFps] = useState<30 | 60>(30);
-  const [exportQuality, setExportQuality] = useState<'low' | 'average' | 'high'>('average');
+  const [exportQuality, setExportQuality] = useState<'low' | 'average' | 'high'>('low');
   const [exportTransparent, setExportTransparent] = useState(false);
   const [exportRenderMode, setExportRenderMode] = useState<'standard' | 'fast'>('standard');
   const [exportQuote, setExportQuote] = useState<any>(null);
@@ -207,6 +216,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const pollTimerRef = useRef<number | null>(null);
   const startLockRef = useRef(false);
   const designLastAppliedPayloadRef = useRef('');
+  const projectTitle = String(songTitle || deriveSongTitle(fileName) || fileName || 'Video Karaoke').trim();
 
   const stopPoll = () => {
     const t = pollTimerRef.current;
@@ -236,6 +246,23 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   });
   const currentProjectDesignPayloadKey = JSON.stringify(currentProjectDesignPayload);
   const hasUnsyncedBackgroundMedia = Boolean(bgImageUrl || bgVideoUrl);
+  const canAdvanceFromStep3 = youkaPhase === 'ready' && Boolean(youkaProjectId) && Boolean(instrumentalStemUrl) && !youkaError;
+  const step3Blocked = step === 3 && !canAdvanceFromStep3;
+  const step3BlockedMessage = 'Espera a que termine el procesamiento para continuar.';
+  const canOpenStep = (targetStep: number) => targetStep <= 3 || canAdvanceFromStep3;
+
+  const getExportSettingsOverride = () => {
+    if (!bgColorEnabled || bgImageUrl || bgVideoUrl) return undefined;
+    return {
+      style: {
+        aspectRatio: format,
+        background: {
+          type: 'color',
+          color: bgColor,
+        },
+      },
+    };
+  };
 
   const persistProjectDesign = async (payload: any) => {
     if (youkaPhase !== 'ready' || !youkaProjectId) return false;
@@ -435,6 +462,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     setExportPhase('quoting');
     try {
       const toneFrequency = Math.pow(2, (Number(pitch) || 0) / 12);
+      const settingsOverride = getExportSettingsOverride();
       const payload = {
         resolution: exportResolution,
         quality: exportQuality,
@@ -444,6 +472,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         stemVolumes: getExportStemVolumes(),
         playbackRate: Number(speed) || 1,
         toneFrequency,
+        ...(settingsOverride ? { settingsOverride } : {}),
       };
 
       const res = await fetch(`/api/video-karaoke/projects/${encodeURIComponent(youkaProjectId)}/exports/quote`, {
@@ -490,6 +519,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     setExportPhase('creating');
     try {
       const toneFrequency = Math.pow(2, (Number(pitch) || 0) / 12);
+      const settingsOverride = getExportSettingsOverride();
       const payload = {
         resolution: exportResolution,
         quality: exportQuality,
@@ -499,6 +529,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         stemVolumes: getExportStemVolumes(),
         playbackRate: Number(speed) || 1,
         toneFrequency,
+        ...(settingsOverride ? { settingsOverride } : {}),
       };
 
       const key = `vk-export-${youkaProjectId}-${exportResolution}-${exportFps}-${exportQuality}-${exportRenderMode}-${format}-${pitch}-${speed}-${instrumentalVolume}-${chorusVolume}-${removeVoice ? 'rv' : 'bv'}`;
@@ -684,6 +715,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     audioSrcRef.current = nextSrc;
     setAudioSrc(nextSrc);
     setFileName(file.name);
+    setSongTitle(deriveSongTitle(file.name));
     setAudioSizeBytes(file.size || 0);
     setAudioDurationSec(0);
     setAudioCurrentSec(0);
@@ -899,7 +931,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         const prepRes = await fetch('/api/upload-audio', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'authorization': `Bearer ${t.token}` },
-          body: JSON.stringify({ title: audioFile.name, contentType: r2ContentType }),
+          body: JSON.stringify({ title: projectTitle || audioFile.name, contentType: r2ContentType }),
         });
         const prepOut = await readJsonSafe(prepRes);
         const prepJson = prepOut.json as any;
@@ -992,7 +1024,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': projectKey },
         body: JSON.stringify({
-          title: audioFile.name,
+          title: projectTitle || audioFile.name,
           inputFileId: uploadId,
           splitModel: 'mdx23c',
           lyricsSource,
@@ -1168,14 +1200,14 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
 
         <section className="flex min-h-[650px] flex-col overflow-hidden rounded-[24px] border border-white/10 bg-[#080a15] shadow-2xl shadow-black/40">
           <header className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div className="flex items-center gap-3"><ArrowLeft className="h-4 w-4 text-slate-400"/><strong>Nuevo Karaoke</strong></div><div className="flex items-center gap-2"><span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold">Créditos: {credits.toLocaleString('es-MX')}</span><HelpCircle className="h-5 w-5 text-slate-400"/></div></header>
-          <div className="px-4 pt-5 md:px-6"><div className="relative grid grid-cols-5"><div className="absolute left-[10%] right-[10%] top-4 h-px bg-white/15"><div className="h-full bg-pink-500 transition-all" style={{width:`${Math.max(0,(step-1)*25)}%`}}/></div>{steps.map((label,i)=>{const n=i+1;return <button key={label} onClick={()=>setStep(n)} className="relative z-10 flex min-w-0 flex-col items-center gap-2"><span className={`grid h-8 w-8 place-items-center rounded-full border text-xs font-black ${n<=step?'border-pink-500 bg-pink-600':'border-white/20 bg-[#0b0d18] text-slate-400'}`}>{n<step?<Check className="h-4 w-4"/>:n}</span><small className={`w-full truncate text-center text-[9px] md:text-[10px] ${n===step?'text-pink-300':'text-slate-400'}`}>{label}</small></button>})}</div></div>
+          <div className="px-4 pt-5 md:px-6"><div className="relative grid grid-cols-5"><div className="absolute left-[10%] right-[10%] top-4 h-px bg-white/15"><div className="h-full bg-pink-500 transition-all" style={{width:`${Math.max(0,(step-1)*25)}%`}}/></div>{steps.map((label,i)=>{const n=i+1;const blocked=!canOpenStep(n);return <button key={label} type="button" disabled={blocked} onClick={()=>{if(blocked)return;setStep(n);}} className="relative z-10 flex min-w-0 flex-col items-center gap-2 disabled:cursor-not-allowed disabled:opacity-45"><span className={`grid h-8 w-8 place-items-center rounded-full border text-xs font-black ${n<=step?'border-pink-500 bg-pink-600':'border-white/20 bg-[#0b0d18] text-slate-400'}`}>{n<step?<Check className="h-4 w-4"/>:n}</span><small className={`w-full truncate text-center text-[9px] md:text-[10px] ${n===step?'text-pink-300':'text-slate-400'}`}>{label}</small></button>})}</div></div>
           <div className="flex-1 p-5 md:p-6">
-            {step===1&&<AudioStep fileName={fileName} hasAudio={hasAudio} playing={playing} durationSec={audioDurationSec} currentSec={audioCurrentSec} sizeBytes={audioSizeBytes} canPlay={Boolean(audioSrc)} onPlay={togglePlayback} onSeek={seekTo} onUpload={()=>fileRef.current?.click()} onLibrary={()=>{setFileName('Luz de madrugada.mp3');setHasAudio(true);setAudioSrc('');cleanupAudioSrc();setAudioDurationSec(0);setAudioCurrentSec(0);setAudioSizeBytes(0);setPlaying(false)}} onClear={clearSelectedAudio}/>} 
-            {step===2&&<LyricsStep mode={lyricsMode} setMode={setLyricsMode} lyricsText={lyricsText} setLyricsText={setLyricsText} lyricsFileName={lyricsFileName} setLyricsFileName={setLyricsFileName} showValidation={attemptedContinue} />} 
-            {step===3&&<AudioSettings removeVoice={removeVoice} setRemoveVoice={setRemoveVoice} instrumentalVolume={instrumentalVolume} setInstrumentalVolume={setInstrumentalVolume} chorusVolume={chorusVolume} setChorusVolume={setChorusVolume} pitch={pitch} setPitch={setPitch} speed={speed} setSpeed={setSpeed} canPlay={Boolean(effectiveKaraokeSrc)} playing={karaokePlaying} durationSec={karaokeDurationSec} currentSec={karaokeCurrentSec} onPlay={toggleKaraokePlayback} onSeek={seekKaraokeTo} fileName={fileName} youkaPhase={youkaPhase} youkaProgress={youkaProgress} youkaError={youkaError} youkaQuote={youkaQuote} removeVoiceReady={youkaPhase==='ready'&&removeVoice&&Boolean(instrumentalStemUrl)} chorusAvailable={chorusAvailable} />} 
-            {step===4&&<DesignStep format={format} setFormat={setFormat} preset={preset} setPreset={(next:string)=>{const presetStyle=getPresetStyle(next);setPreset(next);setFontFamily(presetStyle.fontFamily);setTextColor(presetStyle.textColor);setActiveColor(presetStyle.activeColor);}} fontSize={fontSize} setFontSize={setFontSize} textColor={textColor} setTextColor={setTextColor} activeColor={activeColor} setActiveColor={setActiveColor} outlineColor={outlineColor} setOutlineColor={setOutlineColor} outlineWidth={outlineWidth} setOutlineWidth={setOutlineWidth} fontFamily={fontFamily} setFontFamily={setFontFamily} position={position} setPosition={setPosition} alignment={alignment} setAlignment={setAlignment} bgImageUrl={bgImageUrl} bgVideoUrl={bgVideoUrl} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} setBgDarken={setBgDarken} bgBlur={bgBlur} setBgBlur={setBgBlur} bgBrightness={bgBrightness} setBgBrightness={setBgBrightness} bgLoop={bgLoop} setBgLoop={setBgLoop} bgError={bgError} setBgError={setBgError} onSelectBgImage={selectBgImage} onSelectBgVideo={selectBgVideo} onEnableBgColor={enableBgColor} onClearBackground={clearBackground} bgImageInputRef={bgImageInputRef} bgVideoInputRef={bgVideoInputRef} fullScreen={designFullScreen} setFullScreen={setDesignFullScreen} designSyncState={designSyncState} designSyncError={designSyncError} hasUnsyncedBackgroundMedia={hasUnsyncedBackgroundMedia} designBrandingInfo={designBrandingInfo} onApplyDesign={applyCurrentDesign} onResetDesign={resetLocalDesign} />} {step===5&&<ExportStep fileName={fileName} durationSec={audioDurationSec} format={format} preset={preset} removeVoice={removeVoice} instrumentalVolume={instrumentalVolume} chorusVolume={chorusVolume} exportResolution={exportResolution} setExportResolution={setExportResolution} exportFps={exportFps} setExportFps={setExportFps} exportQuality={exportQuality} setExportQuality={setExportQuality} exportTransparent={exportTransparent} setExportTransparent={setExportTransparent} exportRenderMode={exportRenderMode} setExportRenderMode={setExportRenderMode} exportQuote={exportQuote} exportQuoteError={exportQuoteError} exportPhase={exportPhase} exportError={exportError} exportConfirm={exportConfirm} setExportConfirm={setExportConfirm} exportId={exportId} exportTaskId={exportTaskId} exportState={exportState} exportDownloadUrl={exportDownloadUrl} quoteExport={quoteExport} createExport={createExport} exportStartModalOpen={exportStartModalOpen} setExportStartModalOpen={setExportStartModalOpen} previewProps={{formatClass:{'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'}[format],fontSize,textColor,activeColor,preset,fontFamily,position,alignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,bgBlur,bgBrightness,bgLoop}} />}
+            {step===1&&<AudioStep fileName={fileName} hasAudio={hasAudio} playing={playing} durationSec={audioDurationSec} currentSec={audioCurrentSec} sizeBytes={audioSizeBytes} canPlay={Boolean(audioSrc)} onPlay={togglePlayback} onSeek={seekTo} onUpload={()=>fileRef.current?.click()} onLibrary={()=>{setFileName('Luz de madrugada.mp3');setSongTitle('Luz de madrugada');setHasAudio(true);setAudioSrc('');cleanupAudioSrc();setAudioDurationSec(0);setAudioCurrentSec(0);setAudioSizeBytes(0);setPlaying(false)}} onClear={clearSelectedAudio} songTitle={songTitle} songAuthor={songAuthor} songSinger={songSinger}/>}
+            {step===2&&<LyricsStep mode={lyricsMode} setMode={setLyricsMode} lyricsText={lyricsText} setLyricsText={setLyricsText} lyricsFileName={lyricsFileName} setLyricsFileName={setLyricsFileName} showValidation={attemptedContinue} songTitle={songTitle} setSongTitle={setSongTitle} songAuthor={songAuthor} setSongAuthor={setSongAuthor} songSinger={songSinger} setSongSinger={setSongSinger} />}
+            {step===3&&<AudioSettings removeVoice={removeVoice} setRemoveVoice={setRemoveVoice} instrumentalVolume={instrumentalVolume} setInstrumentalVolume={setInstrumentalVolume} chorusVolume={chorusVolume} setChorusVolume={setChorusVolume} pitch={pitch} setPitch={setPitch} speed={speed} setSpeed={setSpeed} canPlay={Boolean(effectiveKaraokeSrc)} playing={karaokePlaying} durationSec={karaokeDurationSec} currentSec={karaokeCurrentSec} onPlay={toggleKaraokePlayback} onSeek={seekKaraokeTo} fileName={fileName} youkaPhase={youkaPhase} youkaProgress={youkaProgress} youkaError={youkaError} youkaQuote={youkaQuote} removeVoiceReady={youkaPhase==='ready'&&removeVoice&&Boolean(instrumentalStemUrl)} chorusAvailable={chorusAvailable} canAdvance={canAdvanceFromStep3} blockedMessage={step3BlockedMessage} />}
+            {step===4&&<DesignStep format={format} setFormat={setFormat} preset={preset} setPreset={(next:string)=>{const presetStyle=getPresetStyle(next);setPreset(next);setFontFamily(presetStyle.fontFamily);setTextColor(presetStyle.textColor);setActiveColor(presetStyle.activeColor);}} fontSize={fontSize} setFontSize={setFontSize} textColor={textColor} setTextColor={setTextColor} activeColor={activeColor} setActiveColor={setActiveColor} outlineColor={outlineColor} setOutlineColor={setOutlineColor} outlineWidth={outlineWidth} setOutlineWidth={setOutlineWidth} fontFamily={fontFamily} setFontFamily={setFontFamily} position={position} setPosition={setPosition} alignment={alignment} setAlignment={setAlignment} bgImageUrl={bgImageUrl} bgVideoUrl={bgVideoUrl} bgColor={bgColor} bgColorEnabled={bgColorEnabled} bgDarken={bgDarken} setBgDarken={setBgDarken} bgBlur={bgBlur} setBgBlur={setBgBlur} bgBrightness={bgBrightness} setBgBrightness={setBgBrightness} bgLoop={bgLoop} setBgLoop={setBgLoop} bgError={bgError} setBgError={setBgError} onSelectBgImage={selectBgImage} onSelectBgVideo={selectBgVideo} onEnableBgColor={enableBgColor} onClearBackground={clearBackground} bgImageInputRef={bgImageInputRef} bgVideoInputRef={bgVideoInputRef} fullScreen={designFullScreen} setFullScreen={setDesignFullScreen} designSyncState={designSyncState} designSyncError={designSyncError} hasUnsyncedBackgroundMedia={hasUnsyncedBackgroundMedia} designBrandingInfo={designBrandingInfo} onApplyDesign={applyCurrentDesign} onResetDesign={resetLocalDesign} />} {step===5&&<ExportStep fileName={fileName} songTitle={songTitle} songAuthor={songAuthor} songSinger={songSinger} durationSec={audioDurationSec} format={format} preset={preset} removeVoice={removeVoice} instrumentalVolume={instrumentalVolume} chorusVolume={chorusVolume} exportResolution={exportResolution} setExportResolution={setExportResolution} exportFps={exportFps} setExportFps={setExportFps} exportQuality={exportQuality} setExportQuality={setExportQuality} exportTransparent={exportTransparent} setExportTransparent={setExportTransparent} exportRenderMode={exportRenderMode} setExportRenderMode={setExportRenderMode} exportQuote={exportQuote} exportQuoteError={exportQuoteError} exportPhase={exportPhase} exportError={exportError} exportConfirm={exportConfirm} setExportConfirm={setExportConfirm} exportId={exportId} exportTaskId={exportTaskId} exportState={exportState} exportDownloadUrl={exportDownloadUrl} quoteExport={quoteExport} createExport={createExport} exportStartModalOpen={exportStartModalOpen} setExportStartModalOpen={setExportStartModalOpen} previewProps={{formatClass:{'16:9':'aspect-video','9:16':'aspect-[9/16]','1:1':'aspect-square'}[format],fontSize,textColor,activeColor,preset,fontFamily,position,alignment,bgImageUrl,bgVideoUrl,bgColor,bgColorEnabled,bgDarken,bgBlur,bgBrightness,bgLoop}} />}
           </div>
-          <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080a15]/95 p-4 backdrop-blur md:px-6"><button disabled={step===1} onClick={()=>setStep(step-1)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 disabled:opacity-30"><ArrowLeft className="h-4 w-4"/> Atrás</button>{step<5?<button onClick={async ()=>{if(step===1){if(!hasAudio){return;}setStep(2);return;}if(step===2){setAttemptedContinue(true);if(lyricsMode!=='auto'&&!String(lyricsText||'').trim()){setYoukaError('Pegaste/subiste letra, pero está vacía.');return;}setStep(3);await startYoukaProcessing();return;}setStep(step+1);}} className="inline-flex h-11 min-w-[165px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 px-5 text-sm font-black">Continuar <ArrowRight className="h-4 w-4"/></button>:<span className="text-xs text-slate-500">Cotiza y genera desde el panel de exportación.</span>}</footer>
+          <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080a15]/95 p-4 backdrop-blur md:px-6"><button disabled={step===1} onClick={()=>setStep(step-1)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 disabled:opacity-30"><ArrowLeft className="h-4 w-4"/> Atrás</button>{step<5?<div className="flex flex-col items-end gap-2"><button disabled={step3Blocked} onClick={async ()=>{if(step===1){if(!hasAudio){return;}setStep(2);return;}if(step===2){setAttemptedContinue(true);if(lyricsMode!=='auto'&&!String(lyricsText||'').trim()){setYoukaError('Pegaste/subiste letra, pero está vacía.');return;}setStep(3);await startYoukaProcessing();return;}if(step===3&&!canAdvanceFromStep3){return;}setStep(step+1);}} className="inline-flex h-11 min-w-[165px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40">Continuar <ArrowRight className="h-4 w-4"/></button>{step3Blocked?<span className="text-right text-xs text-amber-300">{step3BlockedMessage}</span>:null}</div>:<span className="text-xs text-slate-500">Cotiza y genera desde el panel de exportación.</span>}</footer>
         </section>
       </div>
     </div>
@@ -1195,8 +1227,8 @@ function formatSize(bytes: number) {
   if (n <= 0) return '0 MB';
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
-function AudioStep({fileName,hasAudio,playing,durationSec,currentSec,sizeBytes,canPlay,onPlay,onSeek,onUpload,onLibrary,onClear}:any){return <div><h3 className="font-extrabold">1. Selecciona tu canción</h3><div className="mt-4 grid grid-cols-2 rounded-xl bg-white/[.04] p-1"><button onClick={onUpload} className="rounded-lg border border-pink-500 py-2.5 text-xs font-bold text-pink-200">Subir canción</button><button onClick={onLibrary} className="rounded-lg py-2.5 text-xs font-bold text-slate-300">Mi Biblioteca</button></div>{hasAudio?<div className="mt-4 rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-xl bg-pink-500/15 text-pink-400"><FileAudio/></span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{fileName}</strong><small className="text-slate-400">{durationSec>0?formatDuration(durationSec):'--:--'} · {formatSize(sizeBytes)}</small></div><button onClick={onClear}><X className="h-4 w-4 text-slate-400"/></button></div><div className="mt-4 flex items-center gap-3"><button onClick={onPlay} disabled={!canPlay} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 disabled:opacity-35">{playing?<Pause className="h-4 w-4"/>:<Play className="h-4 w-4"/>}</button><div className="flex-1"><input type="range" min={0} max={Math.max(0,durationSec||0)} value={Math.min(currentSec||0,durationSec||0)} onChange={(e)=>onSeek(Number(e.target.value))} disabled={!canPlay||!(durationSec>0)} className="w-full accent-pink-500 disabled:opacity-40"/></div><small className="w-[52px] text-right text-slate-400">{formatDuration(currentSec||0)}</small></div></div>:<button onClick={onUpload} className="mt-4 grid min-h-36 w-full place-items-center rounded-2xl border border-dashed border-pink-500/40 bg-pink-500/[.03]"><span><Upload className="mx-auto h-7 w-7 text-pink-400"/><strong className="mt-2 block text-sm">Seleccionar archivo</strong><small className="text-slate-500">MP3, WAV, M4A o MP4</small></span></button>}<h3 className="mt-6 font-extrabold">2. Información de la canción <span className="text-xs font-normal text-slate-500">(opcional)</span></h3><div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Título" value="Si te vuelves a enamorar"/><Field label="Artista" value="Ruben Vidal"/></div><div className="mt-3 max-w-[210px]"><Field label="Género" value="Balada"/></div></div>}
-function LyricsStep({mode,setMode,lyricsText,setLyricsText,lyricsFileName,setLyricsFileName,showValidation}:any){
+function AudioStep({fileName,hasAudio,playing,durationSec,currentSec,sizeBytes,canPlay,onPlay,onSeek,onUpload,onLibrary,onClear,songTitle,songAuthor,songSinger}:any){return <div><h3 className="font-extrabold">1. Selecciona tu canción</h3><div className="mt-4 grid grid-cols-2 rounded-xl bg-white/[.04] p-1"><button onClick={onUpload} className="rounded-lg border border-pink-500 py-2.5 text-xs font-bold text-pink-200">Subir canción</button><button onClick={onLibrary} className="rounded-lg py-2.5 text-xs font-bold text-slate-300">Mi Biblioteca</button></div>{hasAudio?<div className="mt-4 rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-xl bg-pink-500/15 text-pink-400"><FileAudio/></span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{fileName}</strong><small className="text-slate-400">{durationSec>0?formatDuration(durationSec):'--:--'} · {formatSize(sizeBytes)}</small></div><button onClick={onClear}><X className="h-4 w-4 text-slate-400"/></button></div><div className="mt-4 flex items-center gap-3"><button onClick={onPlay} disabled={!canPlay} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 disabled:opacity-35">{playing?<Pause className="h-4 w-4"/>:<Play className="h-4 w-4"/>}</button><div className="flex-1"><input type="range" min={0} max={Math.max(0,durationSec||0)} value={Math.min(currentSec||0,durationSec||0)} onChange={(e)=>onSeek(Number(e.target.value))} disabled={!canPlay||!(durationSec>0)} className="w-full accent-pink-500 disabled:opacity-40"/></div><small className="w-[52px] text-right text-slate-400">{formatDuration(currentSec||0)}</small></div></div>:<button onClick={onUpload} className="mt-4 grid min-h-36 w-full place-items-center rounded-2xl border border-dashed border-pink-500/40 bg-pink-500/[.03]"><span><Upload className="mx-auto h-7 w-7 text-pink-400"/><strong className="mt-2 block text-sm">Seleccionar archivo</strong><small className="text-slate-500">MP3, WAV, M4A o MP4</small></span></button>}<h3 className="mt-6 font-extrabold">Información de la canción <span className="text-xs font-normal text-slate-500">(editable en el Paso 2)</span></h3><div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Nombre de la canción" value={songTitle||'Sin definir'} readOnly/><Field label="Autor" value={songAuthor||'Sin definir'} readOnly/></div><div className="mt-3 max-w-[260px]"><Field label="Cantante" value={songSinger||'Sin definir'} readOnly/></div></div>}
+function LyricsStep({mode,setMode,lyricsText,setLyricsText,lyricsFileName,setLyricsFileName,showValidation,songTitle,setSongTitle,songAuthor,setSongAuthor,songSinger,setSongSinger}:any){
   const [analyzing,setAnalyzing]=useState(false);
   const file=useRef<HTMLInputElement>(null);
   const requiresLyrics=mode!=='auto';
@@ -1236,6 +1268,19 @@ function LyricsStep({mode,setMode,lyricsText,setLyricsText,lyricsFileName,setLyr
     </div>
     <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.18fr)_minmax(320px,.82fr)]">
       <div className="space-y-4">
+        <div className="rounded-[22px] border border-white/10 bg-white/[.02] p-4 md:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <strong className="text-sm">Metadatos opcionales</strong>
+            <span className="text-[11px] text-slate-500">Solo el nombre se envía hoy como título real del proyecto.</span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Field label="Nombre de la canción" value={songTitle} onChange={setSongTitle} placeholder="Ej. Si te vuelves a enamorar"/>
+            <Field label="Autor" value={songAuthor} onChange={setSongAuthor} placeholder="Ej. Rubén Vidal"/>
+          </div>
+          <div className="mt-3 max-w-md">
+            <Field label="Cantante" value={songSinger} onChange={setSongSinger} placeholder="Ej. LucIAna"/>
+          </div>
+        </div>
         <div className="grid gap-3 md:grid-cols-3">
           {options.map(([id,label,description])=><button key={id} onClick={()=>{select(String(id));if(id==='file')file.current?.click()}} className={`rounded-2xl border p-4 text-left transition ${mode===id?'border-pink-500 bg-pink-500/10 text-pink-100':'border-white/10 bg-white/[.025] text-slate-300'}`}>
             <strong className="block text-sm">{label}</strong>
@@ -1268,7 +1313,7 @@ function LyricsStep({mode,setMode,lyricsText,setLyricsText,lyricsFileName,setLyr
       </div>
     </div>
   </div>}
-function AudioSettings({removeVoice,setRemoveVoice,instrumentalVolume,setInstrumentalVolume,chorusVolume,setChorusVolume,pitch,setPitch,speed,setSpeed,canPlay,playing,durationSec,currentSec,onPlay,onSeek,fileName,youkaPhase,youkaProgress,youkaError,youkaQuote,removeVoiceReady,chorusAvailable}:any){
+function AudioSettings({removeVoice,setRemoveVoice,instrumentalVolume,setInstrumentalVolume,chorusVolume,setChorusVolume,pitch,setPitch,speed,setSpeed,canPlay,playing,durationSec,currentSec,onPlay,onSeek,fileName,youkaPhase,youkaProgress,youkaError,youkaQuote,removeVoiceReady,chorusAvailable,canAdvance,blockedMessage}:any){
   const preparing=youkaPhase==='uploading'||youkaPhase==='quoting'||youkaPhase==='creating'||youkaPhase==='processing';
   const ready=youkaPhase==='ready';
   const failed=youkaPhase==='failed';
@@ -1284,6 +1329,7 @@ function AudioSettings({removeVoice,setRemoveVoice,instrumentalVolume,setInstrum
     <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,.95fr)]">
       <div className="space-y-4">
         <div className="rounded-[22px] border border-white/10 bg-white/[.02] p-5">
+          {!canAdvance?<div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-100"><strong className="block">Espera a que termine el procesamiento para continuar.</strong><span className="mt-1 block text-amber-100/80">{blockedMessage || 'El siguiente paso se habilita cuando el proyecto esté listo y sin errores.'}</span></div>:null}
           {preparing?<div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4 text-sm text-sky-100"><strong className="block">Este proceso puede tardar aproximadamente 3 minutos.</strong><span className="mt-1 block text-sky-100/80">El tiempo puede variar según la duración de la canción y la carga del servidor.</span></div>:null}
           {failed&&youkaError?<div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-200">{youkaError}</div>:null}
           {preparing?<div className={`${failed?'mt-4':'mt-0'} rounded-2xl border border-white/10 bg-[#0b0d18] p-4`}><div className="flex items-center justify-between text-sm text-slate-300"><span>Progreso del procesamiento</span><b>{youkaProgress==null?'...':`${Math.round(Math.max(0,Math.min(1,youkaProgress))*100)}%`}</b></div><div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white/10"><div className="h-full bg-pink-500 transition-all" style={{width:youkaProgress==null?'18%':`${Math.round(Math.max(0,Math.min(1,youkaProgress))*100)}%`}}/></div></div>:null}
@@ -1419,7 +1465,7 @@ function DesignStep({format,setFormat,preset,setPreset,fontSize,setFontSize,text
   );
 }
 
-function ExportStep({fileName,durationSec,format,preset,removeVoice,instrumentalVolume,chorusVolume,exportResolution,setExportResolution,exportFps,setExportFps,exportQuality,setExportQuality,exportTransparent,setExportTransparent,exportRenderMode,setExportRenderMode,exportQuote,exportQuoteError,exportPhase,exportError,exportConfirm,setExportConfirm,exportId,exportTaskId,exportState,exportDownloadUrl,quoteExport,createExport,exportStartModalOpen,setExportStartModalOpen,previewProps}:any){
+function ExportStep({fileName,songTitle,songAuthor,songSinger,durationSec,format,preset,removeVoice,instrumentalVolume,chorusVolume,exportResolution,setExportResolution,exportFps,setExportFps,exportQuality,setExportQuality,exportTransparent,setExportTransparent,exportRenderMode,setExportRenderMode,exportQuote,exportQuoteError,exportPhase,exportError,exportConfirm,setExportConfirm,exportId,exportTaskId,exportState,exportDownloadUrl,quoteExport,createExport,exportStartModalOpen,setExportStartModalOpen,previewProps}:any){
   const credits = exportQuote?.creditsRequired ?? exportQuote?.standardCreditsRequired ?? exportQuote?.providerCredits ?? null;
   const eligibilityMessage = getExportEligibilityMessage(exportQuote);
   const canGenerate = exportPhase === 'ready' && Boolean(exportConfirm) && exportQuote?.eligible !== false && exportQuote?.sufficientBalance !== false;
@@ -1452,7 +1498,9 @@ function ExportStep({fileName,durationSec,format,preset,removeVoice,instrumental
           <div className="rounded-[24px] border border-white/10 bg-white/[.02] p-5">
             <strong className="block text-base">Resumen</strong>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <Summary label="Canción" value={fileName} />
+              <Summary label="Canción" value={songTitle || deriveSongTitle(fileName) || fileName} />
+              <Summary label="Autor" value={songAuthor || 'No indicado'} />
+              <Summary label="Cantante" value={songSinger || 'No indicado'} />
               <Summary label="Duración" value={durationSec > 0 ? formatDuration(durationSec) : '--:--'} />
               <Summary label="Aspecto" value={format} />
               <Summary label="Diseño" value={preset} />
@@ -1591,7 +1639,7 @@ function getExportEligibilityMessage(quote:any){if(!quote||typeof quote!=='objec
 function Summary({label,value}:any){return <div className="rounded-lg border border-white/10 bg-white/[.025] p-3"><small className="block text-slate-500">{label}</small><strong className="mt-1 block truncate text-xs">{value}</strong></div>}
 function Color({label,value,onChange}:any){return <label className="flex items-center justify-between text-[11px] text-slate-400"><span>{label}</span><input type="color" value={value} onChange={e=>onChange(e.target.value)} className="h-9 w-12 rounded border border-white/10 bg-transparent"/></label>}
 function SelectField({label,value,options,onChange}:any){return <label className="block text-[11px] text-slate-400">{label}<select value={value} onChange={e=>onChange(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-[#0b0d18] px-3 text-xs text-white">{options.map((option:string)=><option key={option}>{option}</option>)}</select></label>}
-function Field({label,value}:any){return <label className="block text-[11px] text-slate-400">{label}<input defaultValue={value} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-xs font-semibold text-white outline-none focus:border-pink-500"/></label>}
+function Field({label,value,onChange,placeholder='',readOnly=false}:any){return <label className="block text-[11px] text-slate-400">{label}<input value={value} readOnly={readOnly} onChange={onChange?e=>onChange(e.target.value):undefined} placeholder={placeholder} className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-xs font-semibold text-white outline-none placeholder:text-slate-500 focus:border-pink-500 read-only:cursor-default read-only:opacity-80"/></label>}
 function Choice({active=false,disabled=false,onClick,icon:Icon,title,text}:any){return <button disabled={disabled} onClick={()=>{if(disabled)return;onClick?.()}} className={`flex gap-3 rounded-xl border p-4 text-left disabled:opacity-50 ${active?'border-pink-500 bg-pink-500/[.06]':'border-white/10 bg-white/[.025]'}`}><span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${active?'bg-pink-500':'bg-white/5 text-slate-400'}`}>{active?<Check className="h-4 w-4"/>:<Icon className="h-4 w-4"/>}</span><span><strong className="block text-sm">{title}</strong><small className="text-slate-400">{text}</small></span></button>}
 function ExportChoiceCard({active=false,title,subtitle='',description,onClick}:any){return <button type="button" onClick={onClick} className={`rounded-2xl border p-4 text-left transition ${active?'border-pink-500 bg-pink-500/10 text-pink-100':'border-white/10 bg-white/[.02] text-slate-200'}`}><strong className="block text-sm">{title}</strong>{subtitle?<span className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${active?'bg-pink-500/20 text-pink-100':'bg-white/5 text-slate-400'}`}>{subtitle}</span>:null}<small className={`mt-2 block leading-5 ${active?'text-pink-100/80':'text-slate-400'}`}>{description}</small></button>}
 function Slider({label,value,defaultValue,valueNumber,onChange,min=0,max=100,step=1}:any){return <label className="mt-6 block"><span className="flex justify-between text-xs"><span>{label}</span><b>{value}</b></span><input type="range" min={min} max={max} step={step} {...(valueNumber===undefined?{defaultValue}:{value:valueNumber})} onChange={onChange} className="mt-3 w-full accent-pink-500"/></label>}
