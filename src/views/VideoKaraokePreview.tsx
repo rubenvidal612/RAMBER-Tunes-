@@ -314,6 +314,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
   const [exportState, setExportState] = useState('');
   const [exportDownloadUrl, setExportDownloadUrl] = useState('');
   const exportPollTimerRef = useRef<number | null>(null);
+  const exportStartLockRef = useRef(false);
   const [fontSize, setFontSize] = useState(DEFAULT_DESIGN.fontSize);
   const [textColor, setTextColor] = useState(DEFAULT_DESIGN.textColor);
   const [activeColor, setActiveColor] = useState(DEFAULT_DESIGN.activeColor);
@@ -507,7 +508,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     setExportDownloadUrl('');
     setExportPhase('idle');
     stopExportPoll();
-  }, [exportResolution, exportQuality, exportFps, exportTransparent, exportRenderMode, format, preset, instrumentalVolume, chorusVolume, pitch, speed, removeVoice]);
+  }, [exportResolution, exportQuality, exportFps, exportTransparent, exportRenderMode, instrumentalVolume, chorusVolume, pitch, speed, removeVoice]);
 
   const resetYouka = () => {
     stopPoll();
@@ -618,24 +619,33 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
     setExportDownloadUrl('');
     stopExportPoll();
 
+    if (exportPhase === 'creating' || exportPhase === 'polling') return;
+    if (exportStartLockRef.current) return;
+    exportStartLockRef.current = true;
+
     if (exportPhase !== 'ready' || !exportQuote) {
       setExportError('Primero solicita la cotización.');
+      exportStartLockRef.current = false;
       return;
     }
     if (!exportConfirm) {
       setExportError('Confirma el costo antes de generar.');
+      exportStartLockRef.current = false;
       return;
     }
     if (exportQuote?.sufficientBalance === false) {
       setExportError('No tienes créditos suficientes para esta exportación.');
+      exportStartLockRef.current = false;
       return;
     }
     if (exportQuote?.eligible === false) {
       setExportError(getExportEligibilityMessage(exportQuote) || 'Esta configuración no está disponible para exportación en este momento.');
+      exportStartLockRef.current = false;
       return;
     }
     if (youkaPhase !== 'ready' || !youkaProjectId) {
       setExportError('El proyecto no está listo para exportar.');
+      exportStartLockRef.current = false;
       return;
     }
 
@@ -670,6 +680,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setExportTaskId(nextTaskId);
       setExportPhase('polling');
       setExportStartModalOpen(true);
+      exportStartLockRef.current = false;
 
       const startedAt = Date.now();
       exportPollTimerRef.current = window.setInterval(async () => {
@@ -706,6 +717,7 @@ export function VideoKaraokePreview({ credits = 1248 }: { credits?: number }) {
       setExportPhase('ready');
       setExportError(String(err?.message || 'No pude iniciar la exportación.'));
       setExportStartModalOpen(false);
+      exportStartLockRef.current = false;
     }
   };
 
