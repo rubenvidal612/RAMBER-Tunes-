@@ -74,7 +74,7 @@ async function execFileJson(command, args) {
 }
 
 async function runFfmpeg(inputPath, outputPath, ffmpegArgs) {
-  const args = Array.isArray(ffmpegArgs) && ffmpegArgs.length > 0 ? ffmpegArgs : ["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"];
+  const args = Array.isArray(ffmpegArgs) && ffmpegArgs.length > 0 ? ffmpegArgs : ["-af", "highpass=f=28:p=2,lowpass=f=18500:p=2,equalizer=f=110:t=q:w=1.0:g=1.0,equalizer=f=3000:t=q:w=1.1:g=1.2,equalizer=f=8500:t=q:w=1.0:g=-0.8,acompressor=threshold=0.125:ratio=2.2:attack=20:release=250:makeup=1.4:knee=2.5,loudnorm=I=-14:TP=-1.0:LRA=11,alimiter=limit=0.98:level=false", "-c:a", "libmp3lame", "-q:a", "2"];
   await new Promise((resolve, reject) => {
     try {
       ffmpeg(inputPath)
@@ -86,6 +86,38 @@ async function runFfmpeg(inputPath, outputPath, ffmpegArgs) {
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));
     }
+  });
+}
+
+async function measureLoudnessJson(filePath) {
+  const args = [
+    "-hide_banner",
+    "-nostats",
+    "-i",
+    filePath,
+    "-af",
+    "loudnorm=I=-14:TP=-1.0:LRA=11:print_format=json",
+    "-f",
+    "null",
+    "-",
+  ];
+  return await new Promise((resolve) => {
+    execFile(FFMPEG_PATH, args, { maxBuffer: 1024 * 1024 * 10 }, (_error, _stdout, stderr) => {
+      const text = String(stderr || "");
+      const match = text.match(/\{[\s\S]*\}/m);
+      if (!match) return resolve(null);
+      try {
+        const parsed = JSON.parse(match[0]);
+        const i = Number(parsed?.output_i ?? parsed?.input_i);
+        const tp = Number(parsed?.output_tp ?? parsed?.input_tp);
+        resolve({
+          integratedLufs: Number.isFinite(i) ? i : null,
+          truePeakDb: Number.isFinite(tp) ? tp : null,
+        });
+      } catch {
+        resolve(null);
+      }
+    });
   });
 }
 
@@ -169,10 +201,34 @@ app.post("/masterize", async (req, res) => {
     const ffmpegArgs = Array.isArray(req.body?.ffmpegArgs) ? req.body.ffmpegArgs.map((x) => String(x)) : undefined;
 
     await downloadToFile(inputUrl, inputPath);
+    const inputDurationSec = await probeDurationSeconds(inputPath).catch(() => null);
+    const inputLoudness = await measureLoudnessJson(inputPath).catch(() => null);
     await runFfmpeg(inputPath, outputPath, ffmpegArgs);
+    const outputDurationSec = await probeDurationSeconds(outputPath).catch(() => null);
+    const outputLoudness = await measureLoudnessJson(outputPath).catch(() => null);
     await uploadFromFile(outputPath, outputUploadUrl);
 
-    res.json({ ok: true });
+    const inStat = await fs.stat(inputPath).catch(() => null);
+    const outStat = await fs.stat(outputPath).catch(() => null);
+    res.json({
+      ok: true,
+      analysis: {
+        pipeline: {
+          filter: "highpass=f=28:p=2,lowpass=f=18500:p=2,equalizer=f=110:t=q:w=1.0:g=1.0,equalizer=f=3000:t=q:w=1.1:g=1.2,equalizer=f=8500:t=q:w=1.0:g=-0.8,acompressor=threshold=0.125:ratio=2.2:attack=20:release=250:makeup=1.4:knee=2.5,loudnorm=I=-14:TP=-1.0:LRA=11,alimiter=limit=0.98:level=false",
+          target: { lufs: -14, truePeakDb: -1 },
+        },
+        input: {
+          bytes: inStat?.size ?? null,
+          durationSec: inputDurationSec,
+          loudness: inputLoudness,
+        },
+        output: {
+          bytes: outStat?.size ?? null,
+          durationSec: outputDurationSec,
+          loudness: outputLoudness,
+        },
+      },
+    });
   } catch (error) {
     res.status(500).json({
       ok: false,

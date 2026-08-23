@@ -7889,6 +7889,7 @@ const masteringHandler = (() => {
 })();
 
 const masterizarUnlimitedHandler = (() => {
+  const inFlightDownloads = new Map<string, Promise<any>>();
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
     res.setHeader("content-type", "application/json");
@@ -7980,16 +7981,136 @@ const masterizarUnlimitedHandler = (() => {
     return { contentLength, contentType };
   }
 
+  async function readR2Json(key: string) {
+    const env = getR2Env();
+    const client = await getR2Client();
+    const { GetObjectCommand } = await getR2AwsSdk();
+    const out = await client.send(new GetObjectCommand({ Bucket: env.bucketName, Key: key }));
+    const body = (out as any)?.Body;
+    if (!body) return null;
+    if (typeof body?.transformToString === "function") {
+      const text = await body.transformToString();
+      return text ? JSON.parse(text) : null;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of body as any) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
+    return text ? JSON.parse(text) : null;
+  }
+
+  async function writeR2Json(key: string, value: any) {
+    await uploadToR2(key, Buffer.from(JSON.stringify(value, null, 2), "utf8"), "application/json");
+  }
+
+  async function getMasteringDownloadReceiptKey(userId: string, idemKey: string) {
+    const { createHash } = await import("node:crypto");
+    const digest = createHash("sha1").update(String(idemKey || "").trim()).digest("hex");
+    return `system/mastering-downloads/${userId}/${digest}.json`;
+  }
+
+  function getMasteringPipeline() {
+    const filter = [
+      "highpass=f=28:p=2",
+      "lowpass=f=18500:p=2",
+      "equalizer=f=110:t=q:w=1.0:g=1.0",
+      "equalizer=f=3000:t=q:w=1.1:g=1.2",
+      "equalizer=f=8500:t=q:w=1.0:g=-0.8",
+      "acompressor=threshold=0.125:ratio=2.2:attack=20:release=250:makeup=1.4:knee=2.5",
+      "loudnorm=I=-14:TP=-1.0:LRA=11",
+      "alimiter=limit=0.98:level=false",
+    ].join(",");
+    return {
+      filter,
+      args: ["-af", filter, "-c:a", "libmp3lame", "-q:a", "2"],
+      target: { lufs: -14, truePeakDb: -1 },
+    };
+  }
+
+  function guessFfprobePath(ffmpegPath: string) {
+    const raw = String(ffmpegPath || "").trim();
+    if (!raw) return "";
+    const lower = raw.toLowerCase();
+    if (lower.endsWith("ffmpeg.exe")) {
+      const candidate = raw.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+      const fs = require("node:fs");
+      if (fs.existsSync(candidate)) return candidate;
+      return "ffprobe";
+    }
+    if (lower.endsWith("/ffmpeg")) return raw.replace(/\/ffmpeg$/i, "/ffprobe");
+    if (lower.endsWith("\\ffmpeg")) return raw.replace(/\\ffmpeg$/i, "\\ffprobe");
+    return "";
+  }
+
+  async function probeAudioStats(filePath: string, ffprobePath: string) {
+    const { execFile } = await import("node:child_process");
+    const raw = await new Promise<string>((resolve, reject) => {
+      execFile(
+        ffprobePath,
+        ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", filePath],
+        { maxBuffer: 1024 * 1024 * 5 },
+        (error, stdout) => {
+          if (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+            return;
+          }
+          resolve(String(stdout || "").trim());
+        }
+      );
+    });
+    const json = raw ? JSON.parse(raw) : {};
+    const fmt = json?.format && typeof json.format === "object" ? json.format : {};
+    const streams = Array.isArray(json?.streams) ? json.streams : [];
+    const audioStream = streams.find((s: any) => String(s?.codec_type || "") === "audio") || {};
+    const durationSec = Number(fmt?.duration || audioStream?.duration || NaN);
+    const bitRate = Number(audioStream?.bit_rate || fmt?.bit_rate || NaN);
+    return {
+      durationSec: Number.isFinite(durationSec) ? durationSec : null,
+      bitRate: Number.isFinite(bitRate) ? bitRate : null,
+    };
+  }
+
+  async function measureLoudness(filePath: string, ffmpegPath: string) {
+    const { execFile } = await import("node:child_process");
+    const pipeline = getMasteringPipeline();
+    const args = [
+      "-hide_banner",
+      "-nostats",
+      "-i",
+      filePath,
+      "-af",
+      `loudnorm=I=${pipeline.target.lufs}:TP=${pipeline.target.truePeakDb}:LRA=11:print_format=json`,
+      "-f",
+      "null",
+      "-",
+    ];
+    const stderr = await new Promise<string>((resolve) => {
+      execFile(ffmpegPath, args, { maxBuffer: 1024 * 1024 * 10 }, (_err, _stdout, errText) => {
+        resolve(String(errText || ""));
+      });
+    });
+    const match = stderr.match(/\{[\s\S]*\}/m);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[0]);
+      const i = Number(parsed?.output_i ?? parsed?.input_i);
+      const tp = Number(parsed?.output_tp ?? parsed?.input_tp);
+      return {
+        integratedLufs: Number.isFinite(i) ? i : null,
+        truePeakDb: Number.isFinite(tp) ? tp : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async function runMasteringLocal(inputSignedUrl: string, outKey: string) {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
     const path = await import("node:path");
     const ffmpegInstaller: any = await import("@ffmpeg-installer/ffmpeg");
-    const ffmpegMod: any = await import("fluent-ffmpeg");
-    const ffmpeg = ffmpegMod?.default || ffmpegMod;
-    if (typeof ffmpeg?.setFfmpegPath === "function" && ffmpegInstaller?.path) {
-      ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-    }
+    const { execFile } = await import("node:child_process");
 
     const tmpDir = os.tmpdir();
     const base = Math.random().toString(36).slice(2, 10);
@@ -7999,21 +8120,32 @@ const masterizarUnlimitedHandler = (() => {
     const downloaded = await fetchUrlToBuffer(inputSignedUrl);
     await fs.writeFile(inPath, downloaded.buf);
 
+    const ffmpegPath = String(ffmpegInstaller?.path || "").trim();
+    const ffprobePath = guessFfprobePath(ffmpegPath) || "ffprobe";
+    const pipeline = getMasteringPipeline();
+
+    const inputStats = await probeAudioStats(inPath, ffprobePath).catch(() => ({ durationSec: null, bitRate: null }));
+    const inputLoudness = await measureLoudness(inPath, ffmpegPath).catch(() => null);
+
     await new Promise<void>((resolve, reject) => {
-      try {
-        ffmpeg(inPath)
-          .outputOptions(["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"])
-          .format("mp3")
-          .on("end", () => resolve())
-          .on("error", (err: any) => reject(err instanceof Error ? err : new Error(String(err))))
-          .save(outPath);
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      }
+      execFile(
+        ffmpegPath,
+        ["-y", "-i", inPath, ...pipeline.args, outPath],
+        { maxBuffer: 1024 * 1024 * 10 },
+        (error) => {
+          if (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+            return;
+          }
+          resolve();
+        }
+      );
     });
 
     const outBuf = await fs.readFile(outPath);
     await uploadToR2(outKey, outBuf, "audio/mpeg");
+    const outputStats = await probeAudioStats(outPath, ffprobePath).catch(() => ({ durationSec: null, bitRate: null }));
+    const outputLoudness = await measureLoudness(outPath, ffmpegPath).catch(() => null);
     try {
       await fs.unlink(inPath);
     } catch {
@@ -8022,6 +8154,24 @@ const masterizarUnlimitedHandler = (() => {
       await fs.unlink(outPath);
     } catch {
     }
+    return {
+      pipeline: {
+        filter: pipeline.filter,
+        target: pipeline.target,
+      },
+      input: {
+        bytes: Number.isFinite(downloaded?.buf?.length) ? downloaded.buf.length : null,
+        durationSec: inputStats.durationSec,
+        bitRate: inputStats.bitRate,
+        loudness: inputLoudness,
+      },
+      output: {
+        bytes: Number.isFinite(outBuf?.length) ? outBuf.length : null,
+        durationSec: outputStats.durationSec,
+        bitRate: outputStats.bitRate,
+        loudness: outputLoudness,
+      },
+    };
   }
 
 
@@ -8039,7 +8189,7 @@ const masterizarUnlimitedHandler = (() => {
       body: JSON.stringify({
         inputUrl: params.inputUrl,
         outputUploadUrl: params.outputPutUrl,
-        ffmpegArgs: ["-af", "loudnorm=I=-14:TP=-1.0:LRA=11"],
+        ffmpegArgs: getMasteringPipeline().args,
       }),
       signal: ctrl.signal as any,
     }).finally(() => clearTimeout(timer));
@@ -8048,7 +8198,7 @@ const masterizarUnlimitedHandler = (() => {
       const msg = String(out?.error || out?.detail || `HTTP ${r.status}`);
       throw new Error(msg || "No pude masterizar en el worker");
     }
-    return true;
+    return out?.analysis || null;
   }
 
   return async function handler(req: any, res: any) {
@@ -8065,7 +8215,8 @@ const masterizarUnlimitedHandler = (() => {
     const body = parseJsonBody(req);
     if (!body) return send(res, 400, { error: "Body inválido" });
 
-    const { action, filePath, isPreview = false, fileName, fileType } = body;
+    const { action, filePath, isPreview = false, fileName, fileType, existingOutputKey } = body;
+    const requestIdempotencyKey = String(req.headers?.["x-idempotency-key"] || "").trim();
     
     if (!action) {
       return send(res, 400, { error: 'Falta el parámetro "action"' });
@@ -8120,29 +8271,18 @@ const masterizarUnlimitedHandler = (() => {
       const cost = CREDIT_COSTS.mastering;
       let creditsConsumed = false;
 
-      if (!isPreview) {
-        if (!auth.ok) {
-          return send(res, 401, { error: 'Inicia sesión para descargar el archivo completo.' });
-        }
-        
-        if (!isAdmin) {
-          const consumed = await consumeUserCredits(auth.admin, userId, cost);
-          if (!consumed.ok) {
-            return send(res, 402, { error: consumed.error || "Créditos insuficientes para descargar." });
-          }
-          creditsConsumed = true;
-        }
-      }
-
       // Validar que el archivo sea MP3
       const lowerKey = filePath.toLowerCase();
       const looksMp3 = lowerKey.endsWith(".mp3");
       if (!looksMp3) {
-        if (creditsConsumed) await adjustUserCredits(auth.admin, userId, cost);
         return send(res, 400, {
           error: "El archivo debe ser MP3.",
           converterUrl: "https://online-audio-converter.com/sp/",
         });
+      }
+
+      if (!isPreview && !auth.ok) {
+        return send(res, 401, { error: 'Inicia sesión para descargar el archivo completo.' });
       }
 
       // Obtener URLs firmadas
@@ -8153,64 +8293,207 @@ const masterizarUnlimitedHandler = (() => {
         headInfo = null;
       }
       const inputUrl = await getSignedR2Url(filePath, 3600);
-      const outputKey = `masterized-unlimited/${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.mp3`;
-      const outputPutUrl = await getSignedR2PutUrl(outputKey, 'audio/mpeg', 600);
-      const allowLocalFallback = isPreview || ["1", "true", "yes", "on"].includes((process.env.MASTERING_ALLOW_LOCAL_FALLBACK || "").toString().trim().toLowerCase());
+      const safeExistingKey = String(existingOutputKey || "").trim();
+      const canReuseExisting =
+        !isPreview &&
+        safeExistingKey &&
+        safeExistingKey.startsWith(`masterized-unlimited/${userId}/`) &&
+        safeExistingKey.toLowerCase().endsWith(".mp3");
+      const receiptKey =
+        !isPreview && requestIdempotencyKey
+          ? await getMasteringDownloadReceiptKey(userId, requestIdempotencyKey)
+          : "";
+      const receiptLockKey = receiptKey || (!isPreview ? `${userId}:${safeExistingKey || filePath}` : "");
 
-      // Ejecutar masterización
-      try {
-        if (workerUrl) {
-          try {
-            await runMasteringWithWorker({
-              workerUrl,
-              inputUrl,
-              outputPutUrl,
+      if (receiptKey) {
+        try {
+          const prior = await readR2Json(receiptKey);
+          if (prior?.status === "processing") {
+            return send(res, 409, {
+              error: "Ya hay una descarga en proceso para este audio.",
+              message: "Espera a que termine la descarga actual antes de intentarlo otra vez.",
             });
-          } catch (workerError: any) {
+          }
+          if (prior?.status === "completed" && String(prior?.outputKey || "").trim()) {
+            const priorOutputKey = String(prior.outputKey).trim();
+            try {
+              const downloadUrl = await getSignedR2Url(priorOutputKey, 3600);
+              return send(res, 200, {
+                previewUrl: downloadUrl,
+                downloadUrl,
+                creditsConsumed: false,
+                outputKey: priorOutputKey,
+                analysis: prior?.analysis || null,
+                idempotentReuse: true,
+              });
+            } catch (signError: any) {
+              return send(res, 500, {
+                error: "No pude preparar la descarga existente.",
+                message: signError?.message || "Error firmando la URL de descarga.",
+              });
+            }
+          }
+        } catch {
+        }
+      }
+
+      if (receiptLockKey && inFlightDownloads.has(receiptLockKey)) {
+        try {
+          const repeated = await inFlightDownloads.get(receiptLockKey);
+          return send(res, 200, repeated);
+        } catch (error: any) {
+          return send(res, 409, {
+            error: "Ya hay una descarga en proceso para este audio.",
+            message: error?.message || "Intenta de nuevo en unos segundos.",
+          });
+        }
+      }
+
+      let outputKey = `masterized-unlimited/${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.mp3`;
+      const allowLocalFallback = isPreview || ["1", "true", "yes", "on"].includes((process.env.MASTERING_ALLOW_LOCAL_FALLBACK || "").toString().trim().toLowerCase());
+      if (receiptKey) {
+        await writeR2Json(receiptKey, {
+          status: "processing",
+          userId,
+          filePath,
+          existingOutputKey: safeExistingKey || null,
+          createdAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      const workPromise = (async () => {
+        let outputPutUrl = await getSignedR2PutUrl(outputKey, 'audio/mpeg', 600);
+        let analysis: any = null;
+        let refunded = false;
+
+        const refundOnce = async () => {
+          if (refunded || !creditsConsumed || isAdmin || isPreview) return;
+          refunded = true;
+          await adjustUserCredits(auth.admin, userId, cost).catch(() => {});
+          if (receiptKey) {
+            await writeR2Json(receiptKey, {
+              status: "refunded",
+              refunded: true,
+              userId,
+              filePath,
+              outputKey,
+              existingOutputKey: safeExistingKey || null,
+              refundedAt: new Date().toISOString(),
+              reason: "mastering-download-failed-after-charge",
+            }).catch(() => {});
+          }
+        };
+
+        if (canReuseExisting) {
+          try {
+            await headR2Object(safeExistingKey);
+            outputKey = safeExistingKey;
+            outputPutUrl = "";
+          } catch {
+          }
+        }
+
+        try {
+          if (!outputPutUrl) {
+            analysis = null;
+          } else if (workerUrl) {
+            try {
+              analysis = await runMasteringWithWorker({
+                workerUrl,
+                inputUrl,
+                outputPutUrl,
+              });
+            } catch (workerError: any) {
+              if (!allowLocalFallback) {
+                throw new Error(`Falló el worker de masterización del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
+              }
+              const contentLength = Number(headInfo?.contentLength ?? NaN);
+              const maxInline = 15 * 1024 * 1024;
+              if (Number.isFinite(contentLength) && contentLength > maxInline) {
+                throw new Error("Falló el worker del VPS y el respaldo local en Vercel está limitado para archivos grandes.");
+              }
+              analysis = await runMasteringLocal(inputUrl, outputKey);
+            }
+          } else {
             if (!allowLocalFallback) {
-              throw new Error(`Falló el worker de masterización del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
+              const noWorker = new Error("Masterizar requiere tu worker del VPS.");
+              (noWorker as any).statusCode = 503;
+              throw noWorker;
             }
             const contentLength = Number(headInfo?.contentLength ?? NaN);
             const maxInline = 15 * 1024 * 1024;
             if (Number.isFinite(contentLength) && contentLength > maxInline) {
-              throw new Error("Falló el worker del VPS y el respaldo local en Vercel está limitado para archivos grandes.");
+              const tooLarge = new Error("Ese MP3 está muy pesado para masterizar en Vercel.");
+              (tooLarge as any).statusCode = 413;
+              throw tooLarge;
             }
-            await runMasteringLocal(inputUrl, outputKey);
+            analysis = await runMasteringLocal(inputUrl, outputKey);
           }
-        } else {
-          if (!allowLocalFallback) {
-            return send(res, 503, {
-              error: "Masterizar requiere tu worker del VPS.",
-              detail: "Configura MASTERING_WORKER_URL en Vercel para usar el procesamiento en Hostinger. El modo local en Vercel está desactivado.",
+
+          const finalUrl = await getSignedR2Url(outputKey, 3600);
+
+          if (!isPreview && !isAdmin) {
+            const consumed = await consumeUserCredits(auth.admin, userId, cost);
+            if (!consumed.ok) {
+              const creditError = new Error(consumed.error || "Créditos insuficientes para descargar.");
+              (creditError as any).statusCode = 402;
+              throw creditError;
+            }
+            creditsConsumed = true;
+          }
+
+          if (receiptKey) {
+            await writeR2Json(receiptKey, {
+              status: "completed",
+              charged: creditsConsumed,
+              refunded: false,
+              userId,
+              filePath,
+              outputKey,
+              existingOutputKey: safeExistingKey || null,
+              completedAt: new Date().toISOString(),
+              analysis: analysis || null,
             });
           }
-          const contentLength = Number(headInfo?.contentLength ?? NaN);
-          const maxInline = 15 * 1024 * 1024;
-          if (Number.isFinite(contentLength) && contentLength > maxInline) {
-            return send(res, 413, {
-              error: "Ese MP3 está muy pesado para masterizar en Vercel.",
-              detail: "Configura MASTERING_WORKER_URL en tu VPS (Hostinger) o deja activo el worker principal.",
-              bytes: contentLength,
-            });
+
+          return {
+            previewUrl: finalUrl,
+            downloadUrl: (!isPreview || isAdmin) ? finalUrl : null,
+            creditsConsumed,
+            outputKey,
+            analysis: analysis || null,
+          };
+        } catch (error: any) {
+          if (creditsConsumed) await refundOnce();
+          if (receiptKey && !creditsConsumed) {
+            await writeR2Json(receiptKey, {
+              status: "failed",
+              refunded: false,
+              userId,
+              filePath,
+              outputKey,
+              existingOutputKey: safeExistingKey || null,
+              failedAt: new Date().toISOString(),
+              error: error?.message || "Error desconocido",
+            }).catch(() => {});
           }
-          await runMasteringLocal(inputUrl, outputKey);
+          throw error;
         }
+      })();
+
+      if (receiptLockKey) inFlightDownloads.set(receiptLockKey, workPromise);
+      try {
+        const payload = await workPromise;
+        return send(res, 200, payload);
       } catch (error: any) {
-        if (creditsConsumed) await adjustUserCredits(auth.admin, userId, cost);
-        return send(res, 500, {
-          error: "Error al masterizar",
-          message: error.message || "Error desconocido",
+        const statusCode = Number((error as any)?.statusCode || 500);
+        const baseMessage = error?.message || "Error desconocido";
+        return send(res, statusCode, {
+          error: statusCode === 402 || statusCode === 413 || statusCode === 503 ? baseMessage : "Error al masterizar",
+          message: baseMessage,
         });
+      } finally {
+        if (receiptLockKey) inFlightDownloads.delete(receiptLockKey);
       }
-
-      // Obtener URL para reproducir el resultado
-      const finalUrl = await getSignedR2Url(outputKey, 3600);
-
-      return send(res, 200, {
-        previewUrl: finalUrl,
-        downloadUrl: (!isPreview || isAdmin) ? finalUrl : null,
-        creditsConsumed: creditsConsumed,
-      });
 
     } else {
       return send(res, 400, { error: 'Acción no válida' });

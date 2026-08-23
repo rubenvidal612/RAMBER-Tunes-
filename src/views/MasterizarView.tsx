@@ -38,6 +38,8 @@ export function MasterizarView() {
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [outputKey, setOutputKey] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<any>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
@@ -48,6 +50,8 @@ export function MasterizarView() {
   const [mode, setMode] = useState<'credits' | 'unlimited'>('credits');
   const uploadSectionRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const downloadLockRef = useRef(false);
+  const downloadIdempotencyKeyRef = useRef<string | null>(null);
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -186,6 +190,10 @@ export function MasterizarView() {
     setProcessingError(null);
     setDownloadUrl(null);
     setPreviewUrl(null);
+    setOutputKey(null);
+    setAnalysis(null);
+    downloadLockRef.current = false;
+    downloadIdempotencyKeyRef.current = null;
   };
 
   const handleUpload = async () => {
@@ -195,6 +203,10 @@ export function MasterizarView() {
     setProcessingError(null);
     setPreviewUrl(null);
     setDownloadUrl(null);
+    setOutputKey(null);
+    setAnalysis(null);
+    downloadLockRef.current = false;
+    downloadIdempotencyKeyRef.current = null;
 
     try {
       const response = await fetch('/api/masterizar-unlimited', {
@@ -243,6 +255,8 @@ export function MasterizarView() {
       }
       if (processResult?.previewUrl) setPreviewUrl(processResult.previewUrl);
       if (processResult?.downloadUrl) setDownloadUrl(processResult.downloadUrl);
+      if (processResult?.outputKey) setOutputKey(String(processResult.outputKey || '').trim() || null);
+      if (processResult?.analysis) setAnalysis(processResult.analysis);
       
       // We don't need subscription check for credit mode
       /*
@@ -268,18 +282,32 @@ export function MasterizarView() {
       setProcessingError('Para descargar necesitas iniciar sesión primero.');
       return;
     }
+    if (downloadLockRef.current) return;
+
+    downloadLockRef.current = true;
+    if (!downloadIdempotencyKeyRef.current) {
+      downloadIdempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `master-download-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
     
     setIsProcessing(true);
     setProcessingError(null);
 
     try {
+      const headers = await apiHeaders(true);
       const response = await fetch('/api/masterizar-unlimited', {
         method: 'POST',
-        headers: await apiHeaders(true),
+        headers: {
+          ...headers,
+          'x-idempotency-key': downloadIdempotencyKeyRef.current,
+        },
         body: JSON.stringify({
           action: 'process',
           filePath: currentFilePath,
           isPreview: false,
+          existingOutputKey: outputKey,
         }),
       });
 
@@ -300,6 +328,7 @@ export function MasterizarView() {
       }
     } catch (error: any) {
       setProcessingError(error.message || 'Error al descargar el archivo');
+      downloadLockRef.current = false;
     } finally {
       setIsProcessing(false);
     }
@@ -528,6 +557,42 @@ export function MasterizarView() {
 
               {previewUrl ? (
                 <div className="space-y-6">
+                  <div className="rounded-xl border border-white/10 bg-white/[.02] p-4 text-sm text-slate-300">
+                    <b className="text-white">Mejoras aplicadas</b>
+                    <div className="mt-2 grid gap-2 text-[13px] text-slate-300">
+                      <div>• Pasa-altos suave (~28 Hz) para limpiar subgraves.</div>
+                      <div>• EQ sutil para claridad y balance.</div>
+                      <div>• Compresión moderada para cohesión.</div>
+                      <div>• Limitador para evitar clipping.</div>
+                      <div>• Normalización objetivo para plataformas (≈ -14 LUFS, -1 dBTP).</div>
+                    </div>
+                    <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-[12px] text-slate-400">
+                      Si tu canción ya venía masterizada, el cambio puede ser más sutil.
+                    </div>
+                  </div>
+                  {analysis ? (
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
+                      <b className="text-white">Comparación técnica</b>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border border-white/10 bg-white/[.02] p-3">
+                          <div className="text-xs font-bold text-slate-400">Original</div>
+                          <div className="mt-2 text-[12px] text-slate-300">Tamaño: {analysis?.input?.bytes ? `${(analysis.input.bytes / (1024 * 1024)).toFixed(2)} MB` : '—'}</div>
+                          <div className="text-[12px] text-slate-300">Duración: {analysis?.input?.durationSec ? `${Number(analysis.input.durationSec).toFixed(2)} s` : '—'}</div>
+                          <div className="text-[12px] text-slate-300">Bitrate: {analysis?.input?.bitRate ? `${Math.round(Number(analysis.input.bitRate) / 1000)} kbps` : '—'}</div>
+                          <div className="text-[12px] text-slate-300">LUFS: {analysis?.input?.loudness?.integratedLufs ?? '—'}</div>
+                          <div className="text-[12px] text-slate-300">True Peak: {analysis?.input?.loudness?.truePeakDb ?? '—'}</div>
+                        </div>
+                        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                          <div className="text-xs font-bold text-emerald-200">Masterizado</div>
+                          <div className="mt-2 text-[12px] text-slate-200">Tamaño: {analysis?.output?.bytes ? `${(analysis.output.bytes / (1024 * 1024)).toFixed(2)} MB` : '—'}</div>
+                          <div className="text-[12px] text-slate-200">Duración: {analysis?.output?.durationSec ? `${Number(analysis.output.durationSec).toFixed(2)} s` : '—'}</div>
+                          <div className="text-[12px] text-slate-200">Bitrate: {analysis?.output?.bitRate ? `${Math.round(Number(analysis.output.bitRate) / 1000)} kbps` : '—'}</div>
+                          <div className="text-[12px] text-slate-200">LUFS: {analysis?.output?.loudness?.integratedLufs ?? '—'}</div>
+                          <div className="text-[12px] text-slate-200">True Peak: {analysis?.output?.loudness?.truePeakDb ?? '—'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-4">
                       <span className="font-semibold">Compara los 2 audios</span>
