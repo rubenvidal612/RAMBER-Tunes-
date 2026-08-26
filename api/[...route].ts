@@ -1126,8 +1126,18 @@ function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
 
   const downloads_allowed = plan_active && (plan_key === "inicio" || plan_key === "productor");
   const hasProductor = list.some((t: any) => String(t?.pack_key || "").trim().toLowerCase() === "productor");
+  const has_paid_ever = list.some((t: any) => {
+    const pk = String(t?.pack_key || "").trim().toLowerCase();
+    if (!(pk === "inicio" || pk === "productor")) return false;
+    const paymentId = String(t?.payment_id || "").trim();
+    if (paymentId.startsWith("claim:")) return false;
+    const amt = Number(t?.amount_mxn);
+    if (Number.isFinite(amt) && amt > 0) return true;
+    if (paymentId && !paymentId.startsWith("free:")) return true;
+    return false;
+  });
 
-  return { plan_key, downloads_allowed, plan_active, plan_expires_at, hasProductor };
+  return { plan_key, downloads_allowed, plan_active, plan_expires_at, hasProductor, has_paid_ever };
 }
 
 async function getUserPlan(admin: any, userId: string) {
@@ -8511,7 +8521,7 @@ const balanceHandler = (() => {
     const plan_key = String((plan as any)?.plan_key || "ninguno");
     const plan_expires_at = (plan as any)?.plan_expires_at ?? null;
     const plan_active = is_admin ? true : Boolean((plan as any)?.plan_active);
-    const downloads_allowed = is_admin ? true : Boolean((plan as any)?.downloads_allowed);
+    const downloads_allowed = is_admin ? true : Boolean((plan as any)?.downloads_allowed || (plan as any)?.has_paid_ever);
     const free_claimed = false;
     const show_free_claim_popup = false;
 
