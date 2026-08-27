@@ -910,9 +910,23 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
   };
 
+  let lameFactoryPromise: Promise<any> | null = null;
+  const getLameFactory = async () => {
+    if (!lameFactoryPromise) {
+      lameFactoryPromise = import('lamejs/lame.all.js?raw').then((mod: any) => {
+        const source = String(mod?.default || '').trim();
+        if (!source) throw new Error('No pude cargar el convertidor MP3.');
+        const factory = new Function(`${source}; return lamejs;`)();
+        if (!factory?.Mp3Encoder) throw new Error('El convertidor MP3 no quedó disponible.');
+        return factory;
+      });
+    }
+    return lameFactoryPromise;
+  };
+
   const encodeAudioBufferToMp3 = async (buffer: AudioBuffer, kbps: number) => {
-    const mod: any = await import('lamejs');
-    const Mp3Encoder = mod?.Mp3Encoder || mod?.default?.Mp3Encoder || mod?.default || mod?.Mp3Encoder;
+    const mod: any = await getLameFactory();
+    const Mp3Encoder = mod?.Mp3Encoder;
     if (!Mp3Encoder) throw new Error('No pude cargar el convertidor MP3.');
 
     const sr = Number(buffer.sampleRate || 44100) || 44100;
