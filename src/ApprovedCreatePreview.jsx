@@ -5513,12 +5513,13 @@ const approvedCloneCss = approvedCss + `
 `;
 
 export function ApprovedCloneVoicePreview({ onClose }) {
-  const hostRef = useRef(null);
-  const [shadowRoot, setShadowRoot] = useState(null);
-  useEffect(() => {
-    if (!hostRef.current) return;
-    const root = hostRef.current.shadowRoot || hostRef.current.attachShadow({ mode: "open" });
-    setShadowRoot(root);
-  }, []);
-  return <div ref={hostRef} style={{height:"100%",minHeight:0,width:"100%"}}>{shadowRoot ? createPortal(<><style>{approvedCloneCss}</style><ApprovedCloneVoiceContent onClose={onClose}/></>, shadowRoot) : null}</div>;
+  // In Android file pickers, this flow could crash during React cleanup when the
+  // file input lived inside a portal mounted in a shadow root. Render it in the
+  // regular tree to keep the DOM ownership stable while the picker opens/closes.
+  return (
+    <div style={{ height: "100%", minHeight: 0, width: "100%" }}>
+      <style>{approvedCloneCss}</style>
+      <ApprovedCloneVoiceContent onClose={onClose} />
+    </div>
+  );
 }
