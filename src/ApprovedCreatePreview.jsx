@@ -10,7 +10,6 @@ import {
   Languages as Translate, Upload as UploadSimple, User, Users, Bell,
   AudioWaveform as Waveform, Image as ImageIcon, Trash2 as Trash, X, Loader2,
 } from "lucide-react";
-import { createPortal } from "react-dom";
 import approvedBaseCss from "./approved-create/styles.css?raw";
 import approvedMenuCss from "./approved-create/menu-fix.css?raw";
 import approvedCreditCss from "./approved-create/credit-fix.css?raw";
@@ -5478,19 +5477,14 @@ function ApprovedCreateContent(props) {
 }
 
 export function ApprovedCreatePreview(props) {
-  const hostRef = useRef(null);
-  const [shadowRoot, setShadowRoot] = useState(null);
-  useEffect(() => {
-    if (!hostRef.current) return;
-    const root = hostRef.current.shadowRoot || hostRef.current.attachShadow({ mode: "open" });
-    setShadowRoot(root);
-  }, []);
+  // On some Android devices the file picker / media flow can destabilize React
+  // cleanup when this screen lives inside a portal mounted in a shadow root.
+  // Render in the normal tree so the validation phrase step keeps stable DOM
+  // ownership while upload, polling and step transitions happen.
   return (
-    <div ref={hostRef} style={{ height: "100%", minHeight: 0, width: "100%" }}>
-      {shadowRoot ? createPortal(
-        <><style>{approvedCss}</style><ApprovedCreateContent {...(props || {})} /></>,
-        shadowRoot
-      ) : null}
+    <div style={{ height: "100%", minHeight: 0, width: "100%" }}>
+      <style>{approvedCss}</style>
+      <ApprovedCreateContent {...(props || {})} />
     </div>
   );
 }
