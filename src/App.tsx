@@ -2963,9 +2963,13 @@ export default function App() {
                   }, 5000);
                   hardRefreshNow(updateVersion || latestVersionRef.current || null).catch(() => {});
                 }}
-                className="flex-1 bg-white text-black h-[44px] rounded-full font-extrabold text-sm"
+                className="flex-1 h-[44px] rounded-full font-extrabold text-sm bg-gradient-to-r from-cyan-500 to-indigo-500 shadow-[0_10px_30px_rgba(56,189,248,0.35)]"
+                style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
+                aria-label="Actualizar aplicación"
               >
-                ACTUALIZAR
+                <span className="inline-block text-white" style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}>
+                  ACTUALIZAR
+                </span>
               </button>
               <button
                 type="button"
