@@ -6718,12 +6718,6 @@ const libraryHandler = (() => {
       const r = await listSongs(auth.admin, auth.user.id, deleted);
       if (!r.ok) throw new Error(r.error || "No pude listar canciones");
 
-      if (!deleted) {
-        try {
-          await migrateSunoSongsToSunoLinks(auth.admin, r.songs);
-        } catch {
-        }
-      }
       let publishedBySongId: Record<string, { genre?: string; published_at?: string }> = {};
       try {
         const ids = (Array.isArray(r.songs) ? r.songs : []).map((s: any) => String(s?.id || "").trim()).filter(Boolean);
