@@ -105,6 +105,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [brokenCovers, setBrokenCovers] = useState<Record<string, boolean>>({});
   const [likedSongIds, setLikedSongIds] = useState<Record<string, boolean>>({});
   const [songActionBusy, setSongActionBusy] = useState<Record<string, boolean>>({});
+  const didAutoResetDateFiltersRef = useRef(false);
   const [sharePickerSong, setSharePickerSong] = useState<SongItem | null>(null);
   const [countdownShareSong, setCountdownShareSong] = useState<SongItem | null>(null);
   const [countdownClientLabel, setCountdownClientLabel] = useState('');
@@ -549,8 +550,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       const raw = window.localStorage.getItem('ramber.libraryFilters_v1');
       const parsed = raw ? JSON.parse(raw) : null;
       if (parsed && typeof parsed === 'object') {
-        const from = typeof parsed.from === 'string' ? parsed.from : '';
-        const to = typeof parsed.to === 'string' ? parsed.to : '';
+        const sanitizeFilterDate = (value: unknown) => {
+          const rawValue = typeof value === 'string' ? value.trim() : '';
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return '';
+          const ms = new Date(`${rawValue}T00:00:00`).getTime();
+          return Number.isFinite(ms) ? rawValue : '';
+        };
+        const from = sanitizeFilterDate(parsed.from);
+        const to = sanitizeFilterDate(parsed.to);
         const s = typeof parsed.sort === 'string' ? parsed.sort : '';
         setFilterFrom(from);
         setFilterTo(to);
@@ -1587,6 +1594,27 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       });
   }, [showTrash, cancionesEliminadas, canciones, filterFrom, filterTo, searchQuery, sortOrder]);
 
+  const baseSongs = useMemo(
+    () => (showTrash ? (Array.isArray(cancionesEliminadas) ? cancionesEliminadas : []) : (Array.isArray(canciones) ? canciones : [])),
+    [showTrash, cancionesEliminadas, canciones]
+  );
+  const hasSearchFilter = Boolean(String(searchQuery || '').trim());
+  const hasDateFilter = Boolean(String(filterFrom || '').trim() || String(filterTo || '').trim());
+  const hasAnyListFilter = hasSearchFilter || hasDateFilter;
+  const filtersHideSongs = baseSongs.length > 0 && visibleSongs.length === 0 && hasAnyListFilter;
+
+  useEffect(() => {
+    if (didAutoResetDateFiltersRef.current) return;
+    if (showTrash) return;
+    if (baseSongs.length === 0 || visibleSongs.length > 0) return;
+    if (hasSearchFilter) return;
+    if (!hasDateFilter) return;
+    didAutoResetDateFiltersRef.current = true;
+    setFilterFrom('');
+    setFilterTo('');
+    onToast?.('Quité un filtro de fecha guardado porque estaba ocultando tus canciones.');
+  }, [showTrash, baseSongs.length, visibleSongs.length, hasSearchFilter, hasDateFilter, onToast]);
+
   useEffect(() => {
     if (activeTab !== 'canciones') return;
     if (visibleSongs.length === 0) {
@@ -2170,6 +2198,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 className="hidden md:flex h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 hover:bg-white/[0.08] transition-colors items-center justify-center gap-2"
               >
                 <Settings2 className="w-4 h-4" /> Filtros
+                {activeFilterCount > 0 ? (
+                  <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-[20px] rounded-full bg-fuchsia-500/20 text-fuchsia-100 text-[11px] font-extrabold px-1.5">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
               </button>
               <label className="hidden md:flex h-[50px] rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-slate-300 items-center gap-3">
                 <span className="shrink-0 text-slate-400">Ordenar por:</span>
@@ -2675,8 +2708,33 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
             {visibleSongs.length === 0 ? (
               <div className="p-6 text-center text-slate-500 text-sm mt-10">
-                <div>{showTrash ? 'No hay canciones eliminadas' : 'No hay canciones'}</div>
-                {!showTrash && (
+                <div>{filtersHideSongs ? 'No hay resultados con los filtros actuales' : showTrash ? 'No hay canciones eliminadas' : 'No hay canciones'}</div>
+                {filtersHideSongs ? (
+                  <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                    {hasSearchFilter ? (
+                      <button
+                        onClick={() => {
+                          setSearchDraft('');
+                          setSearchQuery('');
+                        }}
+                        className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-xs text-slate-200 transition-colors"
+                      >
+                        Quitar búsqueda
+                      </button>
+                    ) : null}
+                    {hasDateFilter ? (
+                      <button
+                        onClick={() => {
+                          setFilterFrom('');
+                          setFilterTo('');
+                        }}
+                        className="bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-xs text-slate-200 transition-colors"
+                      >
+                        Quitar filtros
+                      </button>
+                    ) : null}
+                  </div>
+                ) : !showTrash && (
                   <button
                     onClick={() => onRefreshSongs?.()}
                     className="mt-4 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full text-xs text-slate-200 transition-colors"
