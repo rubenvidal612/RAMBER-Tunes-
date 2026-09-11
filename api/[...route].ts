@@ -1721,13 +1721,19 @@ const sunoHandler = (() => {
 
   function normalizeModel(mvOrModel: string) {
     const v = (mvOrModel || "").trim().toUpperCase();
-    if (v === "V5_5" || v === "V5" || v === "V4_5PLUS" || v === "V4_5ALL" || v === "V4_5" || v === "V4") return v;
-    if (v === "V5.5" || v === "V5_5" || v === "V55") return "V5_5";
-    if (v === "V4.5" || v === "V45") return "V4_5PLUS";
-    if (v === "MFV2.0") return "V5_5";
-    if (v === "MFV1.5X") return "V5";
-    if (v === "MFV1.5") return "V4_5PLUS";
-    return "V4_5PLUS";
+    const isV6Mini =
+      v === "V4_5ALL" ||
+      v === "V4.5ALL" ||
+      v === "V45ALL" ||
+      v === "V3_5" ||
+      v === "V3.5" ||
+      v === "V35" ||
+      v === "V6_MINI" ||
+      v === "V6MINI" ||
+      v === "V6-MINI";
+    if (isV6Mini) return "V6_MINI";
+    if (v === "V6" || v === "V6_WILD" || v === "V6WILD" || v === "V6-WILD") return v === "V6_WILD" || v === "V6WILD" || v === "V6-WILD" ? "V6_WILD" : "V6";
+    return "V6";
   }
 
   function clamp01(n: number) {
@@ -1791,7 +1797,6 @@ const sunoHandler = (() => {
 
       const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
       if (personaId) {
-        if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
         body.personaId = personaId.slice(0, 200);
       }
 
@@ -1910,7 +1915,6 @@ const sunoHandler = (() => {
 
       const personaId = typeof payload?.personaId === "string" ? payload.personaId.trim() : "";
       if (personaId) {
-        if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
         body.personaId = personaId.slice(0, 200);
       }
 
@@ -2044,7 +2048,6 @@ const sunoHandler = (() => {
 
       const personaId = firstString(payload, ["personaId", "persona_id"]);
       if (personaId) {
-        if (!(model === "V5" || model === "V5_5")) return send(res, 400, { error: "personaId solo se permite con modelos V5/V5.5." });
         body.personaId = personaId.slice(0, 200);
       }
       const personaModel = personaModelHint;
@@ -2116,8 +2119,7 @@ const sunoHandler = (() => {
     const negativeTags = firstString(payload, ["negativeTags", "negative_tags"]) || "None";
 
     const modelRaw = firstString(payload, ["model", "mv"]);
-    const normalized = normalizeModel(modelRaw);
-    const model = normalized === "V5" || normalized === "V5_5" ? normalized : "V4_5PLUS";
+    const model = normalizeModel(modelRaw);
 
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
@@ -2220,8 +2222,7 @@ const sunoHandler = (() => {
     const negativeTags = firstString(payload, ["negativeTags", "negative_tags"]) || "None";
 
     const modelRaw = firstString(payload, ["model", "mv"]);
-    const normalized = normalizeModel(modelRaw);
-    const model = normalized === "V5" || normalized === "V5_5" ? normalized : "V4_5PLUS";
+    const model = normalizeModel(modelRaw);
 
     if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
     if (!prompt.trim()) return send(res, 400, { error: "Falta prompt" });

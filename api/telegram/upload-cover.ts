@@ -133,13 +133,19 @@ function absoluteUrlFromReq(req: any, pathname: string) {
 
 function normalizeModel(mvOrModel: string) {
   const v = (mvOrModel || "").trim().toUpperCase();
-  if (v === "V5_5" || v === "V5" || v === "V4_5PLUS" || v === "V4_5ALL" || v === "V4_5" || v === "V4") return v;
-  if (v === "V5.5" || v === "V5_5" || v === "V55") return "V5_5";
-  if (v === "V4.5" || v === "V45") return "V4_5PLUS";
-  if (v === "MFV2.0") return "V5_5";
-  if (v === "MFV1.5X") return "V5";
-  if (v === "MFV1.5") return "V4_5PLUS";
-  return "V4_5PLUS";
+  const isV6Mini =
+    v === "V4_5ALL" ||
+    v === "V4.5ALL" ||
+    v === "V45ALL" ||
+    v === "V3_5" ||
+    v === "V3.5" ||
+    v === "V35" ||
+    v === "V6_MINI" ||
+    v === "V6MINI" ||
+    v === "V6-MINI";
+  if (isV6Mini) return "V6_MINI";
+  if (v === "V6" || v === "V6_WILD" || v === "V6WILD" || v === "V6-WILD") return v === "V6_WILD" || v === "V6WILD" || v === "V6-WILD" ? "V6_WILD" : "V6";
+  return "V6";
 }
 
 function sunoErrorMessage(data: any, fallback: string) {
@@ -297,7 +303,7 @@ export default async function handler(req: any, res: any) {
   const title = typeof payload?.title === "string" ? payload.title.trim() : "";
   const instrumental = typeof payload?.instrumental === "boolean" ? payload.instrumental : false;
   const modelRaw = typeof payload?.model === "string" ? payload.model.trim() : "";
-  const model = normalizeModel(modelRaw || "V5");
+  const model = normalizeModel(modelRaw || "V6");
 
   if (!uploadUrl) return send(res, 400, { error: "Falta uploadUrl" });
   if (!style) return send(res, 400, { error: "Falta style" });
