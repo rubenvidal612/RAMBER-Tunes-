@@ -249,6 +249,8 @@ const models = [
   ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
   ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
 ];
+const VALID_MODEL_NAMES = new Set(models.map(([name]) => name));
+const normalizeModelName = (m) => VALID_MODEL_NAMES.has(m) ? m : "Suno V6";
 
 const navItems = [
   [House, "Inicio"],
@@ -3653,7 +3655,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
         <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Define el estilo de tu canción</h1><p>Elige el motor y describe cómo quieres que suene.</p></div>
         <label className="field-label">Motor y versión <InfoTip title="Motor y versión">Cada versión ofrece una forma distinta de interpretar tu canción.</InfoTip></label>
         <div className="select-wrap">
-          <button className="select-button" onClick={() => setModelOpen(!modelOpen)}><span>{data.model}</span><SlidersHorizontal size={20} /></button>
+          <button className="select-button" onClick={() => setModelOpen(!modelOpen)}><span>{normalizeModelName(data.model)}</span><SlidersHorizontal size={20} /></button>
           {modelOpen && <div className="model-menu">{models.map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}<p><Info size={16} /> Más motores próximamente</p></div>}
         </div>
         <label className="field-label top-gap">Nombre de la canción <InfoTip title="Nombre de la canción">Este nombre es obligatorio y se usará al generar la canción.</InfoTip></label>
@@ -3758,7 +3760,7 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
         <RangeSummary label="Nivel de creatividad" value={creativity} help="Qué tan diferente puede ser el resultado" />
         <RangeSummary label="Peso de la instrucción" value={instruction} help="Cuánto seguirá tus indicaciones" />
         <RangeSummary label="Peso del audio original" value={audioWeight} help="Cuánto respetará el audio que subiste" />
-        <div className="engine-summary"><span>Motor seleccionado</span><strong>{data.voice === "clone" ? "Suno V6 · Clonar voz" : data.model}</strong></div>
+        <div className="engine-summary"><span>Motor seleccionado</span><strong>{data.voice === "clone" ? "Suno V6 · Clonar voz" : normalizeModelName(data.model)}</strong></div>
       </div>
     </section>
   );
@@ -3787,7 +3789,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
       <div className="review-grid">
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
         <div className="review-card"><span>Letra</span><strong>{data.lyrics ? "Letra lista" : "Sin letra todavía"}</strong><small>{data.lyrics ? `${data.lyrics.length} caracteres` : "Vuelve al paso 1 para escribirla"}</small></div>
-        <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : data.model}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
+        <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : normalizeModelName(data.model)}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
         <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || "Sin archivo cargado"}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
@@ -4611,6 +4613,9 @@ function ApprovedCreateContent(props) {
       if (typeof parsed.audioWeight === 'number') setAudioWeight(Math.max(0, Math.min(100, parsed.audioWeight)));
       if (parsed.data && typeof parsed.data === 'object') {
         const nextData = { ...parsed.data };
+        if (!VALID_MODEL_NAMES.has(nextData?.model)) {
+          nextData.model = "Suno V6";
+        }
         const hadAudioRef = Boolean(parsed?.hadAudioReference);
         setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef));
         setData((prev) => ({ ...prev, ...nextData, file: null }));
