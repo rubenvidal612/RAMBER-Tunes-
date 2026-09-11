@@ -3563,12 +3563,40 @@ function LyricsStep({ data, setData, setToast, handlers }) {
     const ok = await handlers.generateLyricsWithAI();
     if (ok) setToast("Letra generada correctamente. Puedes editarla antes de continuar.");
   };
+  const switchToManual = () => {
+    if (data.aiLyricsGenerated || data.lyrics.trim()) {
+      setData({
+        ...data,
+        lyricsMode: "manual",
+        aiLyricsGenerated: false,
+        lyrics: "",
+      });
+      setToast("Letra anterior descartada. Escribe tu letra manual.");
+    } else {
+      setData({ ...data, lyricsMode: "manual" });
+    }
+  };
+  const switchToAI = () => {
+    setData({
+      ...data,
+      lyricsMode: "ai",
+      lyricInstruction: data.lyricInstruction || aiExample,
+    });
+  };
+  const discardGeneratedLyrics = () => {
+    setData({
+      ...data,
+      aiLyricsGenerated: false,
+      lyrics: "",
+    });
+    setToast("Letra descartada. Puedes volver a generarla o cambiar a 'Tengo mi letra'.");
+  };
   return (
     <section className="single-column">
       <div className="section-title"><span className="eyebrow">PASO 2 DE 4</span><h1>{data.audioSource === "upload" ? "Revisa la letra de tu audio" : "Escribe o crea tu letra"}</h1><p>{data.audioSource === "upload" ? "La letra detectada aparece aquí para que puedas corregirla antes de continuar." : "Pega tu letra completa. La usaremos tal como está para crear la canción."}</p></div>
       <div className="segmented">
-        <button className={!usingAI ? "selected" : ""} onClick={() => setData({ ...data, lyricsMode: "manual" })}>Tengo mi letra</button>
-        <button className={usingAI ? "selected" : ""} onClick={() => setData({ ...data, lyricsMode: "ai", lyricInstruction: data.lyricInstruction || aiExample })}><MagicWand size={18} /> Crear con IA</button>
+        <button className={!usingAI ? "selected" : ""} onClick={switchToManual}>Tengo mi letra</button>
+        <button className={usingAI ? "selected" : ""} onClick={switchToAI}><MagicWand size={18} /> Crear con IA</button>
       </div>
       {data.audioSource === "upload" && !usingAI ? (
         <div className={`audio-lyrics-notice ${data.lyrics.trim() ? 'success' : audioLyricsStatus ? 'warning' : isTranscribingAudioLyrics ? 'info' : ''}`}>
@@ -3587,15 +3615,23 @@ function LyricsStep({ data, setData, setToast, handlers }) {
         <textarea className="lyrics-box ai-instruction-box" value={data.lyricInstruction} onChange={(e) => setData({ ...data, lyricInstruction: e.target.value })} placeholder="Ejemplo: Escribe una canción para una persona especial y cuenta la historia que quiero transmitir..." disabled={aiLoading} />
         <div className="field-footer"><span>Describe todos los detalles que quieras incluir</span><span>{data.lyricInstruction.length}/1,000</span></div>
         <div className="ai-explanation"><Info size={19} /><span>Con esta instrucción, la IA escribirá una letra completa que después podrás revisar y editar.</span></div>
-        <button className="generate-lyrics-button" disabled={!data.lyricInstruction.trim() || aiLoading} onClick={doGenerateAI}>
-          {aiLoading ? <Loader2 size={20} className="animate-spin" /> : <MagicWand size={20} weight="fill" />}
-          <span style={{ marginLeft: 8 }}>
-            {aiLoading ? "Escribiendo la letra…" : data.aiLyricsGenerated ? "Volver a generar la letra" : "Generar letra con IA"}
-          </span>
-        </button>
-        {data.aiLyricsGenerated && <div className="generated-lyrics"><div className="generated-heading"><span><Check size={18} weight="bold" /> Letra generada</span><small>Resultado editable</small></div><textarea className="lyrics-box" value={data.lyrics} onChange={(e) => setData({ ...data, lyrics: e.target.value })} /><div className="field-footer"><span>Puedes cambiar cualquier parte de la letra</span><span>{data.lyrics.length}/5,000</span></div></div>}
+        <div className="ai-actions-row">
+          <button className="generate-lyrics-button" disabled={!data.lyricInstruction.trim() || aiLoading} onClick={doGenerateAI}>
+            {aiLoading ? <Loader2 size={20} className="animate-spin" /> : <MagicWand size={20} weight="fill" />}
+            <span style={{ marginLeft: 8 }}>
+              {aiLoading ? "Escribiendo la letra…" : data.aiLyricsGenerated ? "Volver a generar la letra" : "Generar letra con IA"}
+            </span>
+          </button>
+          {data.aiLyricsGenerated && (
+            <button className="discard-lyrics-button" onClick={discardGeneratedLyrics} disabled={aiLoading}>
+              <X size={18} />
+              <span style={{ marginLeft: 8 }}>Cancelar y descartar letra</span>
+            </button>
+          )}
+        </div>
+        {data.aiLyricsGenerated && <div className="generated-lyrics"><div className="generated-heading"><span><Check size={18} weight="bold" /> Letra generada</span><small>Resultado editable · Si no te gusta, pulsa Cancelar arriba</small></div><textarea className="lyrics-box" value={data.lyrics} onChange={(e) => setData({ ...data, lyrics: e.target.value })} /><div className="field-footer"><span>Puedes cambiar cualquier parte de la letra</span><span>{data.lyrics.length}/5,000</span></div></div>}
       </> : <>
-        <label className="field-label">Letra de la canción <InfoTip title="Cómo escribir la letra">Puedes usar secciones como [Verso], [Coro] y [Puente].</InfoTip></label>
+        <label className="field-label">Letra de la canción <InfoTip title="Cómo escribir la letra">Puedes usar secciones como [Verso], [Coro] y [Puente]. Si antes generaste una letra con IA, ya fue descartada para que escribas la tuya limpia.</InfoTip></label>
         <textarea className="lyrics-box" value={data.lyrics} onChange={(e) => setData({ ...data, lyrics: e.target.value })} placeholder="Escribe o pega aquí la letra de tu canción..." />
         <div className="field-footer"><span>Admite hasta 5,000 caracteres</span><span>{data.lyrics.length}/5,000</span></div>
       </>}
