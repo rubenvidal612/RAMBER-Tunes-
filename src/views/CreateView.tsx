@@ -2312,26 +2312,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
   const getAudioDurationSeconds = (file: File) =>
     new Promise<number>((resolve) => {
+      let url = '';
+      let safetyTimer: any = 0;
+      let settled = false;
+      const finish = (v: number) => {
+        if (settled) return;
+        settled = true;
+        try { if (safetyTimer) window.clearTimeout(safetyTimer); } catch {}
+        try { if (url) URL.revokeObjectURL(url); } catch {}
+        resolve(Number.isFinite(v) ? v : 0);
+      };
       try {
-        const url = URL.createObjectURL(file);
+        url = URL.createObjectURL(file);
         const a = document.createElement('audio');
         a.preload = 'metadata';
-        a.onloadedmetadata = () => {
-          const d = Number(a.duration || 0);
-          try {
-            URL.revokeObjectURL(url);
-          } catch {}
-          resolve(Number.isFinite(d) ? d : 0);
-        };
-        a.onerror = () => {
-          try {
-            URL.revokeObjectURL(url);
-          } catch {}
-          resolve(0);
-        };
+        a.addEventListener('loadedmetadata', () => finish(Number(a.duration || 0)), { once: true });
+        a.addEventListener('error', () => finish(0), { once: true });
+        safetyTimer = window.setTimeout(() => finish(0), 8000);
         a.src = url;
       } catch {
-        resolve(0);
+        finish(0);
       }
     });
 

@@ -62,6 +62,34 @@ export function CloneVoiceView() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isManageVoices, setIsManageVoices] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const profileImgUrlRef = useRef<string>('');
+  const profileEditImgUrlRef = useRef<string>('');
+
+  const safeSetProfileImageUrl = (next: string) => {
+    try {
+      const prev = profileImgUrlRef.current;
+      if (prev && prev.startsWith('blob:')) {
+        try { URL.revokeObjectURL(prev); } catch {}
+      }
+    } catch {}
+    try {
+      if (!next || next.startsWith('blob:')) profileImgUrlRef.current = next;
+    } catch {}
+    setProfileImageUrl(next);
+  };
+
+  const safeSetEditProfileImagePreview = (next: string) => {
+    try {
+      const prev = profileEditImgUrlRef.current;
+      if (prev && prev.startsWith('blob:')) {
+        try { URL.revokeObjectURL(prev); } catch {}
+      }
+    } catch {}
+    try {
+      if (!next || next.startsWith('blob:')) profileEditImgUrlRef.current = next;
+    } catch {}
+    setEditProfileImagePreview(next);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
@@ -220,7 +248,11 @@ export function CloneVoiceView() {
         const d: any = JSON.parse(raw);
         if (typeof d?.voiceName === 'string') setVoiceName(d.voiceName);
         if (typeof d?.description === 'string') setDescription(d.description);
-        if (typeof d?.profileImageUrl === 'string') setProfileImageUrl(d.profileImageUrl);
+        if (typeof d?.profileImageUrl === 'string' && d.profileImageUrl) {
+          const saved = d.profileImageUrl;
+          if (!saved.startsWith('blob:')) profileImgUrlRef.current = saved;
+          setProfileImageUrl(saved);
+        }
         if (typeof d?.voiceProfileName === 'string') setVoiceProfileName(d.voiceProfileName);
         if (typeof d?.category === 'string') setCategory(d.category);
         if (typeof d?.language === 'string') setLanguage(d.language);
@@ -332,20 +364,31 @@ export function CloneVoiceView() {
   // Función para obtener la duración de un archivo de audio
   const getAudioDuration = (file: File): Promise<number> => {
     return new Promise((resolve, reject) => {
+      let objectUrl = '';
+      try {
+        objectUrl = URL.createObjectURL(file);
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('no_object_url'));
+        return;
+      }
+      let settled = false;
+      let safetyTimer: any = 0;
+      const finish = (value: number, isError: boolean) => {
+        if (settled) return;
+        settled = true;
+        try { if (safetyTimer) window.clearTimeout(safetyTimer); } catch {}
+        try { if (objectUrl) URL.revokeObjectURL(objectUrl); } catch {}
+        if (isError) reject(new Error('No se pudo cargar el audio'));
+        else resolve(value);
+      };
       const audio = new Audio();
       audio.preload = 'metadata';
-      
-      audio.onloadedmetadata = () => {
-        window.URL.revokeObjectURL(audio.src);
-        resolve(audio.duration);
-      };
-      
-      audio.onerror = () => {
-        window.URL.revokeObjectURL(audio.src);
-        reject(new Error('No se pudo cargar el audio'));
-      };
-      
-      audio.src = URL.createObjectURL(file);
+      audio.addEventListener('loadedmetadata', () => finish(Number(audio.duration || 0), false), { once: true });
+      audio.addEventListener('error', () => finish(0, true), { once: true });
+      safetyTimer = window.setTimeout(() => finish(0, true), 8000);
+      try { audio.src = objectUrl; } catch (e) {
+        finish(0, true);
+      }
     });
   };
 
@@ -628,14 +671,16 @@ export function CloneVoiceView() {
     setEditingVoice(voice);
     setEditVoiceName(voice.voice_name || '');
     setEditProfileImage(null);
-    setEditProfileImagePreview((voice.profile_image_url || '').toString());
+    const piu = (voice.profile_image_url || '').toString();
+    if (piu && !piu.startsWith('blob:')) profileEditImgUrlRef.current = piu;
+    setEditProfileImagePreview(piu);
   };
 
   const closeEditVoice = () => {
     setEditingVoice(null);
     setEditVoiceName('');
     setEditProfileImage(null);
-    setEditProfileImagePreview('');
+    safeSetEditProfileImagePreview('');
     setIsSavingEdit(false);
     try {
       if (editImageInputRef.current) editImageInputRef.current.value = '';
@@ -788,7 +833,7 @@ export function CloneVoiceView() {
       // Resetear formulario
       setSelectedFile(null);
       setProfileImage(null);
-      setProfileImageUrl('');
+      safeSetProfileImageUrl('');
       setVoiceProfileName('');
       setDescription('');
       setCategory('personal');
@@ -2320,7 +2365,7 @@ export function CloneVoiceView() {
                         type="button"
                         onClick={() => {
                           setProfileImage(null);
-                          setProfileImageUrl('');
+                          safeSetProfileImageUrl('');
                         }}
                         className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
                       >
@@ -2340,7 +2385,11 @@ export function CloneVoiceView() {
                         const file = e.target.files?.[0];
                         if (file) {
                           setProfileImage(file);
-                          setProfileImageUrl(URL.createObjectURL(file));
+                          try {
+                            safeSetProfileImageUrl(URL.createObjectURL(file));
+                          } catch {
+                            safeSetProfileImageUrl('');
+                          }
                         }
                       }}
                       className="hidden"
@@ -2704,8 +2753,12 @@ export function CloneVoiceView() {
                     if (f) {
                       try {
                         const u = URL.createObjectURL(f);
-                        setEditProfileImagePreview(u);
-                      } catch {}
+                        safeSetEditProfileImagePreview(u);
+                      } catch {
+                        safeSetEditProfileImagePreview('');
+                      }
+                    } else {
+                      safeSetEditProfileImagePreview('');
                     }
                   }}
                 />

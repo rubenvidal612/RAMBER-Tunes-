@@ -97,29 +97,42 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
   const handlePlaySample = async (voice: VoiceItem) => {
     if (!voice.sampleUrl) return;
 
-    // Detener audio actual si está reproduciendo
-    if (audioElement) {
-      audioElement.pause();
-      audioElement.currentTime = 0;
-      setPlayingVoiceId(null);
-    }
-
-    // Crear nuevo elemento de audio
-    const audio = new Audio(voice.sampleUrl);
-    setAudioElement(audio);
-    setPlayingVoiceId(voice.id);
-
-    audio.addEventListener('ended', () => {
-      setPlayingVoiceId(null);
-    });
-
-    audio.addEventListener('error', () => {
-      setPlayingVoiceId(null);
-      alert('Error al reproducir la muestra de voz');
-    });
+    try {
+      if (audioElement) {
+        try { audioElement.pause(); } catch {}
+        try { audioElement.currentTime = 0; } catch {}
+        setPlayingVoiceId(null);
+      }
+    } catch {}
 
     try {
-      await audio.play();
+      const audio = new Audio();
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        try { audio.pause(); } catch {}
+        try { audio.onended = null; } catch {}
+        try { audio.onerror = null; } catch {}
+        setPlayingVoiceId((prev) => (prev === voice.id ? null : prev));
+        if (audioElement === audio) setAudioElement(null);
+      };
+      audio.addEventListener('ended', done, { once: true });
+      audio.addEventListener('error', done, { once: true });
+      try {
+        audio.src = voice.sampleUrl;
+      } catch {
+        setPlayingVoiceId(null);
+        return;
+      }
+      setAudioElement(audio);
+      setPlayingVoiceId(voice.id);
+      try {
+        await audio.play();
+      } catch (err) {
+        console.error('Error al reproducir audio:', err);
+        done();
+      }
     } catch (err) {
       console.error('Error al reproducir audio:', err);
       setPlayingVoiceId(null);
@@ -127,9 +140,16 @@ export function VoiceSelector({ onSelectVoice, selectedVoiceId, songId, classNam
   };
 
   const handleStopPlayback = () => {
-    if (audioElement) {
-      audioElement.pause();
-      audioElement.currentTime = 0;
+    try {
+      if (audioElement) {
+        try { audioElement.pause(); } catch {}
+        try { audioElement.currentTime = 0; } catch {}
+        try { audioElement.onended = null; } catch {}
+        try { audioElement.onerror = null; } catch {}
+        setAudioElement(null);
+        setPlayingVoiceId(null);
+      }
+    } catch {
       setPlayingVoiceId(null);
     }
   };

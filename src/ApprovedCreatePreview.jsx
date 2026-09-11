@@ -977,7 +977,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
   const applySourceAudioFile = (file) => {
     if (!file) return;
-    const audio = new Audio(URL.createObjectURL(file));
+    let objectUrl = "";
+    try {
+      objectUrl = URL.createObjectURL(file);
+    } catch {
+      uploadWizardAudio(file, "source").catch(() => {});
+      return;
+    }
+    const audio = new Audio(objectUrl);
     audio.addEventListener(
       "loadedmetadata",
       () => {
@@ -989,7 +996,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           start: 0,
           end: Math.min(10, duration),
         }));
-        URL.revokeObjectURL(audio.src);
+        try { URL.revokeObjectURL(objectUrl); } catch {}
         uploadWizardAudio(file, "source").catch(() => {});
       },
       { once: true },
@@ -997,8 +1004,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     audio.addEventListener(
       "error",
       () => {
+        try { URL.revokeObjectURL(objectUrl); } catch {}
         setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
-        URL.revokeObjectURL(audio.src);
         uploadWizardAudio(file, "source").catch(() => {});
       },
       { once: true },
@@ -1078,7 +1085,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
   const validateRecordedBlob = async (blob) => {
     if (!blob || !blob.size) return { ok: false, duration: 0 };
-    const url = URL.createObjectURL(blob);
+    let url = "";
+    try {
+      url = URL.createObjectURL(blob);
+    } catch {
+      return { ok: false, duration: 0 };
+    }
     try {
       const duration = await new Promise((resolve, reject) => {
         const audio = new Audio();
@@ -1115,7 +1127,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       return { ok: false, duration: 0 };
     } finally {
       try {
-        URL.revokeObjectURL(url);
+        if (url) URL.revokeObjectURL(url);
       } catch {}
     }
   };
@@ -1325,7 +1337,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       uploadWizardAudio(file, "verify").catch(() => {});
       return;
     }
-    const audio = new Audio(URL.createObjectURL(file));
+    let objectUrl = "";
+    try {
+      objectUrl = URL.createObjectURL(file);
+    } catch {
+      uploadWizardAudio(file, "source").catch(() => {});
+      return;
+    }
+    const audio = new Audio(objectUrl);
     audio.addEventListener(
       "loadedmetadata",
       () => {
@@ -1337,7 +1356,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           start: 0,
           end: Math.min(10, duration),
         }));
-        URL.revokeObjectURL(audio.src);
+        try { URL.revokeObjectURL(objectUrl); } catch {}
         uploadWizardAudio(file, "source").catch(() => {});
       },
       { once: true },
@@ -1345,8 +1364,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     audio.addEventListener(
       "error",
       () => {
+        try { URL.revokeObjectURL(objectUrl); } catch {}
         setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
-        URL.revokeObjectURL(audio.src);
         uploadWizardAudio(file, "source").catch(() => {});
       },
       { once: true },

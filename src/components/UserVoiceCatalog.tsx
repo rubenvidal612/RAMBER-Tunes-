@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { VoiceItem } from '@/types';
 import { Search, Filter, Star, Play, User, Globe, Music, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -61,6 +61,7 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
   const [pageSize] = useState(12);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const playingAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const loadCatalog = async () => {
     try {
@@ -120,15 +121,49 @@ export function UserVoiceCatalog({ className, onSelectVoice, selectedVoiceId }: 
   const playVoice = (voice: VoiceItem) => {
     if (playingVoiceId === voice.id) {
       setPlayingVoiceId(null);
+      try {
+        if (playingAudioRef.current) {
+          try { playingAudioRef.current.pause(); } catch {}
+          try { playingAudioRef.current.onended = null; } catch {}
+        }
+      } catch {}
+      playingAudioRef.current = null;
       return;
     }
-    
+
     if (voice.sampleUrl) {
-      setPlayingVoiceId(voice.id);
-      // Aquí iría la lógica para reproducir el audio
-      const audio = new Audio(voice.sampleUrl);
-      audio.play();
-      audio.onended = () => setPlayingVoiceId(null);
+      try {
+        if (playingAudioRef.current) {
+          try { playingAudioRef.current.pause(); } catch {}
+          try { playingAudioRef.current.onended = null; } catch {}
+          playingAudioRef.current = null;
+        }
+        const audio = new Audio();
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          try { audio.onended = null; } catch {}
+          try { audio.onerror = null; } catch {}
+          if (playingAudioRef.current === audio) {
+            playingAudioRef.current = null;
+            setPlayingVoiceId(null);
+          }
+        };
+        audio.addEventListener('ended', done, { once: true });
+        audio.addEventListener('error', done, { once: true });
+        try {
+          audio.src = voice.sampleUrl;
+        } catch {
+          setPlayingVoiceId(null);
+          return;
+        }
+        playingAudioRef.current = audio;
+        setPlayingVoiceId(voice.id);
+        audio.play().catch(() => done());
+      } catch {
+        setPlayingVoiceId(null);
+      }
     }
   };
 
