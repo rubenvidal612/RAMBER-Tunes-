@@ -3576,20 +3576,23 @@ function LyricsStep({ data, setData, setToast, handlers }) {
       setData({ ...data, lyricsMode: "manual" });
     }
   };
-  const switchToAI = () => {
-    setData({
-      ...data,
-      lyricsMode: "ai",
-      lyricInstruction: data.lyricInstruction || aiExample,
-    });
-  };
   const discardGeneratedLyrics = () => {
     setData({
       ...data,
+      lyricsMode: "manual",
       aiLyricsGenerated: false,
       lyrics: "",
     });
-    setToast("Letra descartada. Puedes volver a generarla o cambiar a 'Tengo mi letra'.");
+    setToast("Letra de IA descartada. Ahora escribe la tuya en el cajón de arriba (Tengo mi letra).");
+  };
+  const switchToAI = () => {
+    let next = { ...data, lyricsMode: "ai" };
+    if (!data.aiLyricsGenerated && data.lyrics.trim()) {
+      next.lyrics = "";
+      setToast("Letra manual descartada. Ahora describe la instrucción para que la IA la escriba.");
+    }
+    if (!next.lyricInstruction) next.lyricInstruction = aiExample;
+    setData(next);
   };
   return (
     <section className="single-column">
@@ -3808,9 +3811,12 @@ function RangeSummary({ label, value, help }) {
 }
 
 function ReviewStep({ data, setData, creativity, instruction, audioWeight, setToast, handlers }) {
+  const lyricsOk = data.lyricsMode === "ai"
+    ? Boolean(data.aiLyricsGenerated && data.lyrics.trim())
+    : Boolean(data.lyrics.trim());
   const requirements = [
     ["Título de la canción", Boolean(data.title.trim())],
-    ["Letra completa", Boolean(data.lyrics.trim())],
+    ["Letra completa", lyricsOk],
     ["Instrucción o estilo musical", Boolean(data.style.trim())],
     ["Voz seleccionada", Boolean(data.voice)],
     ["Voz de hombre o de mujer", Boolean(data.vocalGender)],
@@ -3819,12 +3825,19 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
   ];
   const isReady = requirements.every(([, complete]) => complete);
   const submitting = Boolean(handlers?.isSubmitting);
+  const usingAI = data.lyricsMode === "ai";
+  const lyricsLabel = usingAI
+    ? (lyricsOk ? "Letra generada por IA" : "Sin letra generada todavía")
+    : (lyricsOk ? "Letra lista" : "Sin letra todavía");
+  const lyricsSub = usingAI
+    ? (lyricsOk ? `${data.lyrics.length} caracteres · Puedes editarla en el Paso 2` : "Vuelve al Paso 2 y pulsa 'Generar letra con IA'")
+    : (lyricsOk ? `${data.lyrics.length} caracteres` : "Vuelve al Paso 2 para escribirla");
   return (
     <section className="review-wrap">
       <div className="section-title"><span className="eyebrow">PASO 4 DE 4</span><h1>Revisa tu canción</h1><p>Comprueba toda la información antes de enviarla a generar.</p></div>
       <div className="review-grid">
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
-        <div className="review-card"><span>Letra</span><strong>{data.lyrics ? "Letra lista" : "Sin letra todavía"}</strong><small>{data.lyrics ? `${data.lyrics.length} caracteres` : "Vuelve al paso 1 para escribirla"}</small></div>
+        <div className="review-card"><span>Letra · {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
         <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : normalizeModelName(data.model)}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
         <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || "Sin archivo cargado"}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
