@@ -195,7 +195,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const studioRecorderAudioCtxRef = useRef<AudioContext | null>(null);
   const studioRecorderAnalyserRef = useRef<AnalyserNode | null>(null);
 
-  const [model, setModel] = useState<'V5' | 'V5_5' | 'V4_5PLUS' | 'V4_5ALL' | 'V4_5' | 'V4'>('V5');
+  const [model, setModel] = useState<'V6' | 'V6_WILD' | 'V6_MINI'>('V6');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
@@ -3122,12 +3122,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         alert(msgDur);
         return;
       }
-      if (model === 'V4_5ALL' && dur > 60) {
-        const msgV45 = `Con el modelo V4.5 ALL el audio debe durar máximo 1 minuto. Tu audio dura ${Math.floor(dur)} segundos. Cambia a modelo V5 o V5.5, o usa un audio más corto (≤ 60s).`;
-        setAudioUploadError(msgV45);
-        alert(msgV45);
-        return;
-      }
     }
     setAudioUploadError(null);
     setIsSubmitting(true);
@@ -3142,10 +3136,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const promptRaw = (baseLyrics || description || '').trim();
       const prompt = promptRaw || ' ';
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
-      if (hasSelectedVoice && !(model === 'V5' || model === 'V5_5')) {
-        alert('La voz clonada solo es compatible con V5 o V5_5. Cambia el modelo a V5 o V5_5 para continuar.');
-        return;
-      }
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
         : undefined;
@@ -3399,10 +3389,6 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
-      if (hasSelectedVoice && !(model === 'V5' || model === 'V5_5')) {
-        alert('La voz clonada solo es compatible con V5 o V5_5. Cambia el modelo a V5 o V5_5 para continuar.');
-        return false;
-      }
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
         : undefined;
@@ -3728,12 +3714,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 style={{ colorScheme: 'dark' }}
                 className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
               >
-                <option value="V5_5" className="bg-[#0b0f16] text-slate-200">SUNO V5.5 · Clonación de voz</option>
-                <option value="V5" className="bg-[#0b0f16] text-slate-200">SUNO V5</option>
-                <option value="V4_5PLUS" className="bg-[#0b0f16] text-slate-200">SUNO V4.5+</option>
-                <option value="V4_5ALL" className="bg-[#0b0f16] text-slate-200">SUNO V4.5 All</option>
-                <option value="V4_5" className="bg-[#0b0f16] text-slate-200">SUNO V4.5</option>
-                <option value="V4" className="bg-[#0b0f16] text-slate-200">SUNO V4</option>
+                <option value="V6" className="bg-[#0b0f16] text-slate-200">Suno V6 · Calidad total y clonar voz</option>
+                <option value="V6_WILD" className="bg-[#0b0f16] text-slate-200">Suno V6 Wild · Más creativo</option>
+                <option value="V6_MINI" className="bg-[#0b0f16] text-slate-200">Suno V6 Mini · Rápido y ligero</option>
               </select>
               <ChevronDown className="w-4 h-4 text-slate-200 -ml-3 pointer-events-none" />
             </div>
@@ -3745,7 +3728,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClick={() => setIsModelMenuOpen((v) => !v)}
             className="hidden md:flex items-center gap-2 border border-white/20 hover:border-white/40 rounded-full px-3 py-1.5 hover:bg-white/5 transition-colors"
           >
-            <span className="text-xs font-semibold text-slate-200">{model === 'V5_5' ? 'SUNO V5.5 · Clonación de voz' : model === 'V4_5PLUS' ? 'SUNO V4.5+' : model === 'V4_5ALL' ? 'SUNO V4.5 All' : model === 'V4_5' ? 'SUNO V4.5' : `SUNO ${model}`}</span>
+            <span className="text-xs font-semibold text-slate-200">{model === 'V6_WILD' ? 'Suno V6 Wild · Más creativo' : model === 'V6_MINI' ? 'Suno V6 Mini · Rápido y ligero' : 'Suno V6 · Calidad total y clonar voz'}</span>
             <ChevronDown className={cn("w-4 h-4 text-slate-200 transition-transform", isModelMenuOpen ? "rotate-180" : "rotate-0")} />
           </button>
 
@@ -3755,12 +3738,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
               className="hidden md:block absolute right-0 mt-2 w-[160px] bg-[#0b0f16] border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.55)] z-[90]"
             >
               {[
-                { value: 'V5_5', label: 'SUNO V5.5 · Clonación de voz' },
-                { value: 'V5', label: 'SUNO V5' },
-                { value: 'V4_5PLUS', label: 'SUNO V4.5+' },
-                { value: 'V4_5ALL', label: 'SUNO V4.5 All' },
-                { value: 'V4_5', label: 'SUNO V4.5' },
-                { value: 'V4', label: 'SUNO V4' },
+                { value: 'V6', label: 'Suno V6 · Calidad total y clonar voz' },
+                { value: 'V6_WILD', label: 'Suno V6 Wild · Más creativo' },
+                { value: 'V6_MINI', label: 'Suno V6 Mini · Rápido y ligero' },
               ].map((m) => (
                 <button
                   key={m.value}

@@ -245,12 +245,9 @@ const formatTime = (seconds) => {
   return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
 };
 const models = [
-  ["SUNO V4", "Voces mejoradas"],
-  ["SUNO V4.5", "Prompts inteligentes"],
-  ["SUNO V4.5 Plus", "Tonos más ricos"],
-  ["SUNO V4.5 All", "Mejor estructura"],
-  ["SUNO V5", "Última generación"],
-  ["SUNO V5.5", "Clonación de Voz"],
+  ["Suno V6", "Calidad total · Ideal para clonar voz"],
+  ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
+  ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
 ];
 
 const navItems = [
@@ -2779,7 +2776,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     setData((current) => ({
       ...current,
       voice: 'clone',
-      model: 'SUNO V5.5',
+      model: 'Suno V6',
       voiceProfile: persona,
     }));
   };
@@ -2802,7 +2799,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     setData((current) => ({
       ...current,
       voice: 'standard',
-      model: current.model === 'SUNO V5.5' ? 'SUNO V5' : current.model,
+      model: current.model === 'Suno V6' || current.model === 'Suno V6 Wild' || current.model === 'Suno V6 Mini' ? current.model : 'Suno V6',
       voiceProfile: null,
     }));
     setClonePickerOpen(false);
@@ -2827,7 +2824,7 @@ function StartStep({ data, setData, setToast, handlers }) {
 
   const openClonePicker = () => {
     previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
-    setData((current) => ({ ...current, voice: 'clone', model: 'SUNO V5.5', voiceProfile: null }));
+    setData((current) => ({ ...current, voice: 'clone', model: 'Suno V6', voiceProfile: null }));
     setClonePickerOpen(true);
   };
 
@@ -3188,8 +3185,8 @@ function StartStep({ data, setData, setToast, handlers }) {
           </button>
           <button className={data.voice === "clone" ? "decision-card selected" : "decision-card"} onClick={openClonePicker}>
             <span className="choice-icon"><Users size={28} /></span>
-            <span><strong>Clonar voz <em>SUNO V5.5</em></strong><small>Usa una voz clonada para tu canción</small></span>
-            <InfoTip title="Clonación de Voz">Disponible con SUNO V5.5 para usar una voz previamente clonada.</InfoTip>
+            <span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canción</small></span>
+            <InfoTip title="Clonación de Voz">Compatible con Suno V6, V6 Wild y V6 Mini. Elige una voz que ya hayas clonado antes.</InfoTip>
             <span className="radio" />
           </button>
           <div className="selection-summary"><Check size={18} weight="bold" /><span>{audioChoiceMode === "record" ? "Quiero cantarlo" : data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
@@ -3746,8 +3743,8 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
       <div>
         <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Elige la voz y el audio</h1><p>Selecciona cómo quieres que suene tu canción.</p></div>
         <div className="choice-list">
-          <button className={data.voice === "standard" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "standard", model: data.model === "SUNO V5.5" ? "SUNO V5" : data.model })}><span className="choice-icon"><Microphone size={28} /></span><span><strong>Voz estándar</strong><small>Elige una voz de alta calidad generada por IA.</small></span><span className="radio" /></button>
-          <button className={data.voice === "clone" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "clone", model: "SUNO V5.5" })}><span className="choice-icon"><Users size={28} /></span><span><strong>Clonar voz <em>SUNO V5.5</em></strong><small>Usa una voz clonada para tu canción.</small></span><span className="radio" /></button>
+          <button className={data.voice === "standard" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "standard", model: (data.model === "Suno V6" || data.model === "Suno V6 Wild" || data.model === "Suno V6 Mini") ? data.model : "Suno V6" })}><span className="choice-icon"><Microphone size={28} /></span><span><strong>Voz estándar</strong><small>Elige una voz de alta calidad generada por IA.</small></span><span className="radio" /></button>
+          <button className={data.voice === "clone" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "clone", model: "Suno V6" })}><span className="choice-icon"><Users size={28} /></span><span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canción.</small></span><span className="radio" /></button>
           <div className={data.voice === "upload" ? "upload-card selected" : "upload-card"}>
             <button className="upload-choice" onClick={() => setData({ ...data, voice: "upload" })}><span className="choice-icon teal"><UploadSimple size={29} /></span><span><strong>Subir mi audio</strong><small>Usa un audio de referencia para guiar el resultado.</small></span><InfoTip title="¿Qué audio debo subir?">Usa un archivo MP3 claro. Puede ser tu voz o un audio de referencia.</InfoTip><span className="radio" /></button>
             <label className="drop-zone"><UploadSimple size={30} /><span><strong>{fileName || "Sube tu audio en formato MP3"}</strong><small>{fileName ? "Archivo listo para esta vista previa" : "Solo se aceptan archivos .MP3"}</small></span><input type="file" accept="audio/mpeg,.mp3" onChange={(e) => { const file = e.target.files[0]; if (!file) return; if (!file.name.toLowerCase().endsWith(".mp3")) { setToast("Ese archivo no es MP3. Usa el convertidor gratuito."); return; } setData({ ...data, voice: "upload", file }); setToast("Audio MP3 agregado a la vista previa."); }} /></label>
@@ -3761,7 +3758,7 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
         <RangeSummary label="Nivel de creatividad" value={creativity} help="Qué tan diferente puede ser el resultado" />
         <RangeSummary label="Peso de la instrucción" value={instruction} help="Cuánto seguirá tus indicaciones" />
         <RangeSummary label="Peso del audio original" value={audioWeight} help="Cuánto respetará el audio que subiste" />
-        <div className="engine-summary"><span>Motor seleccionado</span><strong>{data.voice === "clone" ? "SUNO V5.5 — Clonación de Voz" : data.model}</strong></div>
+        <div className="engine-summary"><span>Motor seleccionado</span><strong>{data.voice === "clone" ? "Suno V6 · Clonar voz" : data.model}</strong></div>
       </div>
     </section>
   );
@@ -3790,7 +3787,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
       <div className="review-grid">
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
         <div className="review-card"><span>Letra</span><strong>{data.lyrics ? "Letra lista" : "Sin letra todavía"}</strong><small>{data.lyrics ? `${data.lyrics.length} caracteres` : "Vuelve al paso 1 para escribirla"}</small></div>
-        <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "SUNO V5.5" : data.model}</strong><small>{data.voice === "clone" ? "Clonación de Voz" : "Modelo seleccionado"}</small></div>
+        <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : data.model}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
         <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || "Sin archivo cargado"}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
@@ -4537,7 +4534,7 @@ function ApprovedCreateContent(props) {
     styleOriginal: "",
     styleTranslated: false,
     negative: "",
-    model: "SUNO V5",
+    model: "Suno V6",
     voice: "standard",
     vocalGender: "",
     voiceProfile: null,
@@ -5096,19 +5093,12 @@ function ApprovedCreateContent(props) {
       }
 
       const modelMap = {
-        'SUNO V4': 'V4',
-        'SUNO V4.5': 'V4_5',
-        'SUNO V4.5 Plus': 'V4_5PLUS',
-        'SUNO V4.5 All': 'V4_5ALL',
-        'SUNO V5': 'V5',
-        'SUNO V5.5': 'V5_5',
+        'Suno V6': 'V6',
+        'Suno V6 Wild': 'V6_WILD',
+        'Suno V6 Mini': 'V6_MINI',
       };
-      const modelCode = modelMap[data.model] || 'V5';
+      const modelCode = modelMap[data.model] || 'V6';
       const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId);
-      if (hasSelectedVoice && !(modelCode === 'V5' || modelCode === 'V5_5')) {
-        setToast('La voz clonada solo es compatible con V5 o V5.5. Cambia el modelo para continuar.');
-        return false;
-      }
       const requestedVocalGender = !hasSelectedVoice
         ? (data.vocalGender === 'f' ? 'f' : data.vocalGender === 'm' ? 'm' : undefined)
         : undefined;
