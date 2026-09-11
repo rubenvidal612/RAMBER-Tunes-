@@ -957,11 +957,11 @@ export default function App() {
       ta.style.top = '0';
       ta.style.left = '0';
       ta.style.opacity = '0';
-      document.body.appendChild(ta);
+      try { document.body.appendChild(ta); } catch {}
       ta.focus();
       ta.select();
       const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
+      try { if (ta.parentNode) ta.parentNode.removeChild(ta); } catch {}
       return ok;
     } catch {
       return false;
@@ -3976,11 +3976,11 @@ function SharedSongPage({ shareId }: { shareId: string }) {
       ta.style.top = '0';
       ta.style.left = '0';
       ta.style.opacity = '0';
-      document.body.appendChild(ta);
+      try { document.body.appendChild(ta); } catch {}
       ta.focus();
       ta.select();
       const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
+      try { if (ta.parentNode) ta.parentNode.removeChild(ta); } catch {}
       return ok;
     } catch {
       return false;
@@ -4375,11 +4375,11 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
       ta.style.top = '0';
       ta.style.left = '0';
       ta.style.opacity = '0';
-      document.body.appendChild(ta);
+      try { document.body.appendChild(ta); } catch {}
       ta.focus();
       ta.select();
       const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
+      try { if (ta.parentNode) ta.parentNode.removeChild(ta); } catch {}
       return ok;
     } catch {
       return false;
@@ -4865,11 +4865,11 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
       ta.style.top = '0';
       ta.style.left = '0';
       ta.style.opacity = '0';
-      document.body.appendChild(ta);
+      try { document.body.appendChild(ta); } catch {}
       ta.focus();
       ta.select();
       const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
+      try { if (ta.parentNode) ta.parentNode.removeChild(ta); } catch {}
       return ok;
     } catch {
       return false;

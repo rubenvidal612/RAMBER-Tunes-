@@ -292,9 +292,9 @@ export function MasterizarView() {
         const link = document.createElement('a');
         link.href = result.downloadUrl;
         link.download = `masterizado_${Date.now()}.mp3`;
-        document.body.appendChild(link);
+        try { document.body.appendChild(link); } catch {}
         link.click();
-        document.body.removeChild(link);
+        try { if (link.parentNode) link.parentNode.removeChild(link); } catch {}
       } else {
         throw new Error('No se recibió el archivo para descargar.');
       }

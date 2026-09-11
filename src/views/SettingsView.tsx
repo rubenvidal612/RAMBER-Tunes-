@@ -102,9 +102,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       a.href = safe;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      a.remove();
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       return;
     } catch {}
     try {
@@ -121,9 +121,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         a.href = safe;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
-        document.body.appendChild(a);
+        try { document.body.appendChild(a); } catch {}
         a.click();
-        a.remove();
+        try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
         return true;
       } catch {
         return false;

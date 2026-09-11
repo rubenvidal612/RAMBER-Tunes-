@@ -644,9 +644,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       const a = document.createElement('a');
       a.href = obj;
       a.download = sanitizeFileName(filename) || 'audio.mp3';
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      a.remove();
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       window.setTimeout(() => {
         try {
           URL.revokeObjectURL(obj);
@@ -675,9 +675,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         a.target = '_blank';
         a.rel = 'noreferrer';
         a.download = sanitizeFileName(filename) || 'audio.mp3';
-        document.body.appendChild(a);
+        try { document.body.appendChild(a); } catch {}
         a.click();
-        a.remove();
+        try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
         return true;
       } catch {
         return false;
@@ -716,12 +716,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       ta.style.position = 'fixed';
       ta.style.left = '-9999px';
       ta.style.top = '0';
-      document.body.appendChild(ta);
+      try { document.body.appendChild(ta); } catch {}
       ta.focus();
       ta.select();
       ta.setSelectionRange(0, ta.value.length);
       const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
+      try { if (ta.parentNode) ta.parentNode.removeChild(ta); } catch {}
       return ok;
     } catch {
     }
@@ -1374,9 +1374,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const link = document.createElement('a');
     link.href = videoUrl;
     link.download = `video-${taskId.slice(0, 8)}.mp4`;
-    document.body.appendChild(link);
+    try { document.body.appendChild(link); } catch {}
     link.click();
-    document.body.removeChild(link);
+    try { if (link.parentNode) link.parentNode.removeChild(link); } catch {}
   };
 
   const shareVideoByTaskId = async (taskId: string) => {
@@ -4699,9 +4699,9 @@ function SongOptionsSheet({
       const a = document.createElement('a');
       a.href = obj;
       a.download = sanitizeDownloadName(filename) || 'audio';
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      a.remove();
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       URL.revokeObjectURL(obj);
       return true;
     } catch {
@@ -4759,9 +4759,9 @@ function SongOptionsSheet({
       const a = document.createElement('a');
       a.href = obj;
       a.download = sanitizeDownloadName(filename) || 'audio';
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      a.remove();
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       URL.revokeObjectURL(obj);
       return true;
     } catch (error) {
@@ -4771,9 +4771,9 @@ function SongOptionsSheet({
         a.target = '_self';
         a.rel = 'noreferrer';
         a.download = sanitizeDownloadName(filename) || 'audio';
-        document.body.appendChild(a);
+        try { document.body.appendChild(a); } catch {}
         a.click();
-        a.remove();
+        try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
         return true;
       } catch {
         return false;
@@ -5392,9 +5392,9 @@ function SongOptionsSheet({
           const safe = (label || 'track').toString().replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
           a.href = url;
           a.download = `midi_${midiTaskId}_${safe}.json`;
-          document.body.appendChild(a);
+          try { document.body.appendChild(a); } catch {}
           a.click();
-          a.remove();
+          try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
           URL.revokeObjectURL(url);
         } catch {
         }

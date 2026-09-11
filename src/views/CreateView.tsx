@@ -2788,9 +2788,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       a.href = url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      a.remove();
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       return;
     } catch {}
     try {
@@ -2814,9 +2814,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       a.href = url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      a.remove();
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       return;
     } catch {}
     try {

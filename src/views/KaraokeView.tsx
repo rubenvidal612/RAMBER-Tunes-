@@ -133,9 +133,9 @@ export function KaraokeView() {
       const cleanTitle = (title || 'karaoke').toLowerCase().replace(/[^a-z0-9]/gi, '_');
       const ext = targetUrl.split('.').pop()?.split('?')[0] || 'mp3';
       a.download = `${cleanTitle}_${nameSuffix}.${ext}`;
-      document.body.appendChild(a);
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      document.body.removeChild(a);
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
       URL.revokeObjectURL(blobUrl);
     } catch (e) {
       console.error(e);
@@ -143,12 +143,12 @@ export function KaraokeView() {
       const a = document.createElement('a');
       a.href = targetUrl;
       a.target = '_blank';
-      const cleanTitle = (title || 'karaoke').toLowerCase().replace(/[^a-z0-9]/gi, '_');
-      const ext = targetUrl.split('.').pop()?.split('?')[0] || 'mp3';
-      a.download = `${cleanTitle}_${nameSuffix}.${ext}`;
-      document.body.appendChild(a);
+      const cleanTitle2 = (title || 'karaoke').toLowerCase().replace(/[^a-z0-9]/gi, '_');
+      const ext2 = targetUrl.split('.').pop()?.split('?')[0] || 'mp3';
+      a.download = `${cleanTitle2}_${nameSuffix}.${ext2}`;
+      try { document.body.appendChild(a); } catch {}
       a.click();
-      document.body.removeChild(a);
+      try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
     } finally {
       setTimeout(() => {
         setIsDownloading(false);
@@ -168,9 +168,9 @@ export function KaraokeView() {
     const a = document.createElement('a');
     a.href = readyVideo.url;
     a.download = readyVideo.name || 'karaoke.webm';
-    document.body.appendChild(a);
+    try { document.body.appendChild(a); } catch {}
     a.click();
-    document.body.removeChild(a);
+    try { if (a.parentNode) a.parentNode.removeChild(a); } catch {}
     setTimeout(() => {
       try {
         URL.revokeObjectURL(readyVideo.url);

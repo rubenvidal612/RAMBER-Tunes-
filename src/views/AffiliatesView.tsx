@@ -157,11 +157,11 @@ export function AffiliatesView() {
       ta.value = t;
       ta.style.position = 'fixed';
       ta.style.left = '-9999px';
-      document.body.appendChild(ta);
+      try { document.body.appendChild(ta); } catch {}
       ta.focus();
       ta.select();
       document.execCommand('copy');
-      ta.remove();
+      try { if (ta.parentNode) ta.parentNode.removeChild(ta); } catch {}
       alert('Copiado.');
     } catch {
       alert('No pude copiar. Copia manualmente.');
