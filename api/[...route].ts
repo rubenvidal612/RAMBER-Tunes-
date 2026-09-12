@@ -17512,6 +17512,250 @@ const rvcHandler = (() => {
   };
 })();
 
+const CHATGPT_OAUTH_CONFIG = {
+  clientId: "chatgpt-luciana-client",
+  clientSecret: "luciana-secret-key-2026",
+  callbackUrl: "https://chatgpt.com/aip/g-6aa4fc4b16488191a04ca12e6f58d876/oauth/callback",
+  accessTokenExpiresIn: 2592000,
+};
+
+function oauthGptSendJson(res: any, status: number, body: any) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(body));
+}
+
+function parseAnyBody(req: any): any {
+  const raw = typeof req.body === "string" ? req.body : req.body;
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  const s = String(raw);
+  try {
+    const j = JSON.parse(s);
+    if (j && typeof j === "object") return j;
+  } catch {}
+  const out: any = {};
+  try {
+    const usp = new URLSearchParams(s);
+    usp.forEach((v, k) => {
+      out[k] = v;
+    });
+  } catch {}
+  return out;
+}
+
+function extractBearerToken(req: any): string {
+  const h = (req.headers?.authorization || req.headers?.Authorization || "").toString();
+  return h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : "";
+}
+
+async function requireAnyUserFromToken(token: string) {
+  const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+  const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+  const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+  if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+    return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+  }
+  const t = (token || "").trim();
+  if (!t) return { ok: false as const, status: 401, error: "No autorizado" };
+  const createClient = await getSupabaseCreateClient();
+  const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+  const { data: userData, error: userErr } = await supabase.auth.getUser(t);
+  const user = userData?.user;
+  if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+  const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+  return { ok: true as const, user, admin, supabaseUrl, supabaseAnon, supabaseService };
+}
+
+async function loadUserProfile(admin: any, userId: string) {
+  try {
+    const r = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (r?.error && !String(r?.error?.message || "").toLowerCase().includes("no rows")) throw r.error;
+    return r?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const oauthHandler = (() => {
+  async function handleToken(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if (method !== "POST") return oauthGptSendJson(res, 405, { error: "invalid_request", error_description: "Método no permitido" });
+
+    const body = parseAnyBody(req);
+    const clientId = String(body?.client_id || "").trim();
+    const clientSecret = String(body?.client_secret || "").trim();
+    const code = String(body?.code || "").trim();
+    const grantType = String(body?.grant_type || "").trim();
+
+    if (!clientId || !clientSecret) {
+      return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Falta client_id o client_secret" });
+    }
+    if (clientId !== CHATGPT_OAUTH_CONFIG.clientId || clientSecret !== CHATGPT_OAUTH_CONFIG.clientSecret) {
+      return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Credenciales OAuth inválidas" });
+    }
+    if (grantType && grantType !== "authorization_code") {
+      return oauthGptSendJson(res, 400, { error: "unsupported_grant_type", error_description: "Solo se admite authorization_code" });
+    }
+    if (!code) {
+      return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "Falta code" });
+    }
+
+    const auth = await requireAnyUserFromToken(code);
+    if (!auth.ok) {
+      return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "El code no corresponde a una sesión válida" });
+    }
+
+    return oauthGptSendJson(res, 200, {
+      access_token: code,
+      token_type: "Bearer",
+      expires_in: CHATGPT_OAUTH_CONFIG.accessTokenExpiresIn,
+    });
+  }
+
+  return async function handler(req: any, res: any) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      const parts = u.pathname.split("/").filter(Boolean);
+      const isApi = parts[0] === "api";
+      const next = isApi ? parts[2] : parts[1];
+      if (next === "token") return handleToken(req, res);
+      return oauthGptSendJson(res, 404, { error: "ruta_no_encontrada" });
+    } catch (e) {
+      return oauthGptSendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const gptHandler = (() => {
+  async function handleGenerate(req: any, res: any) {
+    if ((req.method || "").toUpperCase() === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if ((req.method || "").toUpperCase() !== "POST") return oauthGptSendJson(res, 405, { error: "method_not_allowed", message: "Solo POST" });
+
+    const token = extractBearerToken(req);
+    const auth = await requireAnyUserFromToken(token);
+    if (!auth.ok) return oauthGptSendJson(res, auth.status, { error: "unauthorized", message: auth.error });
+
+    const body = parseAnyBody(req) || {};
+    const cost = Number(CREDIT_COSTS.generate_music) || 12;
+    const isAdmin = isAdminEmail(auth.user.email);
+
+    if (!isAdmin) {
+      const profile = await loadUserProfile(auth.admin, auth.user.id);
+      const available = creditsFromProfile(profile);
+      if (!Number.isFinite(available) || available < cost) {
+        return oauthGptSendJson(res, 402, {
+          error: "insufficient_credits",
+          message: "No tienes suficientes créditos en LucIAna Music para generar esta canción. Recarga en tu panel.",
+          credits_required: cost,
+          credits_available: Number.isFinite(available) ? available : 0,
+        });
+      }
+    }
+
+    const origin = (() => {
+      try {
+        const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+        const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+        return `${proto}://${host}`;
+      } catch {
+        return "";
+      }
+    })();
+
+    const callGenerateUrl = origin ? new URL("/api/suno/generate", origin).toString() : "/api/suno/generate";
+    const headersInternal: Record<string, string> = { "content-type": "application/json" };
+    if (token) headersInternal.authorization = `Bearer ${token}`;
+
+    const payload: any = {
+      prompt: typeof body?.prompt === "string" ? body.prompt : "",
+      style: typeof body?.style === "string" ? body.style : "",
+      title: typeof body?.title === "string" ? body.title : "",
+      instrumental: Boolean(body?.instrumental),
+      model: typeof body?.model === "string" ? body.model : "V6",
+      mv: typeof body?.mv === "string" ? body.mv : "",
+      customMode: typeof body?.customMode === "boolean" ? body.customMode : (Boolean(body?.style) || Boolean(body?.title)),
+      negativeTags: typeof body?.negativeTags === "string" ? body.negativeTags : "",
+      personaId: typeof body?.personaId === "string" ? body.personaId : "",
+      personaModel: typeof body?.personaModel === "string" ? body.personaModel : "",
+      vocalGender: typeof body?.vocalGender === "string" ? body.vocalGender : "",
+      styleWeight: typeof body?.styleWeight === "number" ? body.styleWeight : undefined,
+      weirdnessConstraint: typeof body?.weirdnessConstraint === "number" ? body.weirdnessConstraint : undefined,
+      audioWeight: typeof body?.audioWeight === "number" ? body.audioWeight : undefined,
+    };
+
+    let started: any = null;
+    try {
+      const r = await fetch(callGenerateUrl, {
+        method: "POST",
+        headers: headersInternal,
+        body: JSON.stringify(payload),
+      });
+      const out = await r.json().catch(() => ({}));
+      started = { ok: r.ok, status: r.status, out };
+    } catch (e) {
+      return oauthGptSendJson(res, 502, {
+        error: "generate_error",
+        message: e instanceof Error ? e.message : "No pude conectar con el generador.",
+      });
+    }
+
+    if (!started.ok) {
+      const errCode = Number(started?.status || 0);
+      const msg =
+        (typeof started?.out?.error === "string" && started.out.error) ||
+        (typeof started?.out?.message === "string" && started.out.message) ||
+        (typeof started?.out?.detail === "string" && started.out.detail) ||
+        `Error HTTP ${errCode || 502}`;
+      return oauthGptSendJson(res, errCode >= 400 ? errCode : 502, {
+        error: errCode === 402 ? "insufficient_credits" : "generate_error",
+        message: msg,
+      });
+    }
+
+    const taskId = String(started?.out?.taskId || started?.out?.task_id || "").trim();
+    const title =
+      (typeof payload.title === "string" && payload.title.trim()) ||
+      (typeof payload.prompt === "string" ? payload.prompt.slice(0, 80).trim() : "Canción LucIAna");
+    return oauthGptSendJson(res, 200, {
+      taskId: taskId || undefined,
+      task_id: taskId || undefined,
+      title,
+      status: taskId ? "queued" : "unknown",
+      provider: "suno_v6",
+      credits_cost: cost,
+    });
+  }
+
+  return async function handler(req: any, res: any) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      const parts = u.pathname.split("/").filter(Boolean);
+      const isApi = parts[0] === "api";
+      const next = isApi ? parts[2] : parts[1];
+      if (next === "generate") return handleGenerate(req, res);
+      return sendJson(res, 404, { error: "ruta_no_encontrada" });
+    } catch (e) {
+      return sendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
 function sendNotFound(res: any) {
   res.statusCode = 404;
   res.setHeader("content-type", "application/json");
@@ -17577,6 +17821,8 @@ export default async function handler(req: any, res: any) {
     if (head === "kits" && next === "voice-conversions") return kitsVoicesHandler(req, res);
     if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
+    if (head === "oauth") return oauthHandler(req, res);
+    if (head === "gpt") return gptHandler(req, res);
     if (head === "rvc") return rvcHandler(req, res);
     if (head === "replicate" && next === "predictions" && third && parts[isApi ? 4 : 3] === "cancel") {
       const sendJson = (status: number, body: any) => {

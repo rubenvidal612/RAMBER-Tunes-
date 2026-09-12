@@ -698,6 +698,156 @@ function InicioSocial({
   );
 }
 
+const CHATGPT_OAUTH_CALLBACK_URL = "https://chatgpt.com/aip/g-6aa4fc4b16488191a04ca12e6f58d876/oauth/callback";
+const CHATGPT_OAUTH_STATE_KEY = "ramber.chatgpt_oauth_state_v1";
+
+function ChatgptAuthScreen() {
+  const [state, setState] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const u = new URL(window.location.href);
+      return (u.searchParams.get('state') || '').toString();
+    } catch {
+      return '';
+    }
+  });
+  const [localState, setLocalState] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return (window.localStorage.getItem(CHATGPT_OAUTH_STATE_KEY) || '').toString();
+    } catch {
+      return '';
+    }
+  });
+  const [sessionToken, setSessionToken] = useState<string>('');
+  const [ready, setReady] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [startingLogin, setStartingLogin] = useState<boolean>(false);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      if (!supabaseBrowser) {
+        if (alive) {
+          setError('Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY.');
+          setReady(true);
+        }
+        return;
+      }
+      try {
+        const s = new URL(window.location.href);
+        const qState = (s.searchParams.get('state') || '').toString();
+        if (qState) {
+          setState(qState);
+          try { window.localStorage.setItem(CHATGPT_OAUTH_STATE_KEY, qState); } catch {}
+          setLocalState(qState);
+        }
+        const ses = await supabaseBrowser.auth.getSession();
+        const token = String((ses?.data?.session?.access_token) as any || '').trim();
+        const email = String((ses?.data?.session?.user?.email) as any || '').trim().toLowerCase();
+        const validEmail = email && (email.endsWith('@gmail.com') || email.endsWith('@googlemail.com'));
+        if (!alive) return;
+        if (token && validEmail) {
+          setSessionToken(token);
+          const finalState = qState || localState;
+          if (finalState) {
+            try {
+              const redir = new URL(CHATGPT_OAUTH_CALLBACK_URL);
+              redir.searchParams.set('code', token);
+              redir.searchParams.set('state', finalState);
+              try { window.localStorage.removeItem(CHATGPT_OAUTH_STATE_KEY); } catch {}
+              setReady(true);
+              window.location.replace(redir.toString());
+              return;
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'No pude redirigir a ChatGPT.');
+            }
+          } else {
+            setError('Falta el parámetro state en el enlace. Abre este link desde ChatGPT.');
+          }
+        }
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : 'Error de sesión.');
+      } finally {
+        if (alive) setReady(true);
+      }
+    };
+    tick();
+    let sub: any = null;
+    try {
+      const subData = supabaseBrowser?.auth?.onAuthStateChange?.(() => { tick().catch(() => {}); });
+      sub = subData?.data?.subscription || null;
+    } catch {}
+    return () => {
+      alive = false;
+      try { sub?.unsubscribe?.(); } catch {}
+    };
+  }, [localState]);
+
+  const baseRaw = (typeof window !== 'undefined' ? window.location.origin.toString().trim() : '');
+  const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : `https://${baseRaw.replace(/^\/+/, '')}`;
+  const redirectTo = `${base.replace(/\/+$/, '')}/auth/chatgpt`;
+
+  const startGoogleLogin = async () => {
+    if (!supabaseBrowser) return;
+    setStartingLogin(true);
+    setError('');
+    try {
+      const r = await supabaseBrowser.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (r?.error) throw new Error(r.error.message || 'No pude iniciar sesión con Google.');
+      const url = (r as any)?.data?.url ? String((r as any).data.url).trim() : '';
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      const r2 = await supabaseBrowser.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+      if (r2?.error) throw new Error(r2.error.message || 'No pude iniciar sesión con Google.');
+    } catch (e) {
+      setStartingLogin(false);
+      setError(e instanceof Error ? e.message : 'No pude iniciar sesión con Google.');
+    }
+  };
+
+  return (
+    <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-center px-6 text-center bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
+      <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
+        L
+      </div>
+      <div className="mt-4 text-xl font-extrabold">Conectar ChatGPT con LucIAna</div>
+      {!ready ? (
+        <div className="mt-2 text-sm text-slate-300">Cargando…</div>
+      ) : sessionToken ? (
+        <>
+          <div className="mt-2 text-sm text-slate-300">Sesión lista. Redirigiendo a ChatGPT…</div>
+          {error ? <div className="mt-3 text-xs text-red-200 max-w-md break-words">{error}</div> : null}
+        </>
+      ) : (
+        <>
+          <div className="mt-2 text-sm text-slate-300 max-w-md">
+            Autoriza con tu cuenta Gmail de LucIAna Music para que ChatGPT use tus créditos y genere canciones.
+          </div>
+          <button
+            type="button"
+            onClick={startGoogleLogin}
+            disabled={startingLogin || !supabaseBrowser}
+            className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
+          >
+            {startingLogin ? 'Abriendo Google…' : 'Continuar con Google'}
+          </button>
+          {error ? <div className="mt-3 text-xs text-red-200 max-w-md break-words">{error}</div> : null}
+          {!supabaseBrowser ? (
+            <div className="mt-3 text-xs text-red-200">Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY en Vercel (y redeploy).</div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+
 export default function App() {
   // #region debug-point app-mount
   console.log('[DEBUG] App component mounting...');
@@ -2887,6 +3037,13 @@ export default function App() {
   console.log('[DEBUG] profileRouteId:', profileRouteId);
   console.log('[DEBUG] currentTab:', currentTab);
   // #endregion
+
+  if (typeof window !== 'undefined') {
+    const p = window.location.pathname.toLowerCase();
+    if (p === '/auth/chatgpt' || p.startsWith('/auth/chatgpt/')) {
+      return <ChatgptAuthScreen />;
+    }
+  }
 
   if (shareRouteId) {
     return <SharedSongPage shareId={shareRouteId} />;
