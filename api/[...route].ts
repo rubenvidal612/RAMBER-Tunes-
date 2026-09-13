@@ -17742,6 +17742,249 @@ const gptHandler = (() => {
     });
   }
 
+  async function handleStatus(req: any, res: any) {
+    if ((req.method || "").toUpperCase() === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if ((req.method || "").toUpperCase() !== "GET") return oauthGptSendJson(res, 405, { error: "method_not_allowed", message: "Solo GET" });
+
+    const token = extractBearerToken(req);
+    const auth = await requireAnyUserFromToken(token);
+    if (!auth.ok) return oauthGptSendJson(res, auth.status, { error: "unauthorized", message: auth.error });
+
+    let taskId = "";
+    try {
+      const u = new URL(req.url, "http://localhost");
+      taskId = String(u.searchParams.get("taskId") || u.searchParams.get("task_id") || "").trim();
+    } catch {}
+    if (!taskId) return oauthGptSendJson(res, 400, { error: "invalid_request", message: "Falta el parámetro taskId en la query." });
+
+    const isAdmin = isAdminEmail(auth.user.email);
+    try {
+      const rowsRaw = await auth.admin.from("suno_tasks").select("user_id, kind, cost, consumed, created_at").eq("task_id", taskId).limit(1);
+      const row = Array.isArray(rowsRaw?.data) ? rowsRaw.data[0] : null;
+      if (!isAdmin) {
+        if (!row || String((row as any)?.user_id || "") !== String(auth.user.id || "")) {
+          return oauthGptSendJson(res, 403, {
+            error: "forbidden",
+            message: "Este taskId no pertenece a tu cuenta de LucIAna Music.",
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      const libRows = await auth.admin
+        .from("library_items")
+        .select("id, title, audio_url, cover_url, created_at, type, suno_task_id, suno_audio_id, deleted_at")
+        .eq("suno_task_id", taskId)
+        .limit(5);
+      const libItems = (Array.isArray(libRows?.data) ? (libRows.data as any[]) : []).filter((x: any) => !x?.deleted_at);
+      if (libItems.length && (libItems[0].audio_url || libItems[0].cover_url)) {
+        const first = libItems[0];
+        const extras = libItems.length > 1 ? libItems.slice(1).map((x: any) => ({
+          id: String(x.id || ""),
+          title: String(x.title || "").trim(),
+          audio_url: String(x.audio_url || "").trim() || null,
+          cover_url: String(x.cover_url || "").trim() || null,
+        })).filter((x: any) => x.audio_url) : [];
+        return oauthGptSendJson(res, 200, {
+          taskId,
+          task_id: taskId,
+          status: "complete",
+          title: String(first.title || "").trim() || null,
+          audio_url: String(first.audio_url || "").trim() || null,
+          cover_url: String(first.cover_url || "").trim() || null,
+          extra_songs: extras.length ? extras : undefined,
+          provider: "suno_v6",
+          source: "supabase_library",
+        });
+      }
+    } catch {}
+
+    const origin = (() => {
+      try {
+        const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+        const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+        return `${proto}://${host}`;
+      } catch {
+        return "";
+      }
+    })();
+
+    const taskStatusUrl = origin ? new URL(`/api/suno/task?taskId=${encodeURIComponent(taskId)}&kind=generate`, origin).toString() : `/api/suno/task?taskId=${encodeURIComponent(taskId)}&kind=generate`;
+    const headersInternal: Record<string, string> = { "content-type": "application/json" };
+    if (token) headersInternal.authorization = `Bearer ${token}`;
+
+    let providerResult: any = null;
+    try {
+      const r = await fetch(taskStatusUrl, { method: "GET", headers: headersInternal });
+      const out = await r.json().catch(() => ({}));
+      providerResult = { ok: r.ok, status: r.status, out };
+    } catch (e) {
+      return oauthGptSendJson(res, 502, {
+        taskId,
+        task_id: taskId,
+        status: "processing",
+        audio_url: null,
+        cover_url: null,
+        title: null,
+        provider: "suno_v6",
+        error: "status_fetch_error",
+        message: e instanceof Error ? e.message : "No pude consultar el estado con el proveedor. Vuelve a intentarlo en unos segundos.",
+      });
+    }
+
+    if (!providerResult.ok) {
+      const errCode = Number(providerResult?.status || 0);
+      const msg =
+        (typeof providerResult?.out?.error === "string" && providerResult.out.error) ||
+        (typeof providerResult?.out?.detail === "string" && providerResult.out.detail) ||
+        `Error HTTP ${errCode || 502}`;
+      return oauthGptSendJson(res, errCode >= 400 ? errCode : 502, {
+        taskId,
+        task_id: taskId,
+        status: "processing",
+        audio_url: null,
+        cover_url: null,
+        title: null,
+        provider: "suno_v6",
+        error: "status_provider_error",
+        message: msg,
+      });
+    }
+
+    const kind = String(providerResult?.out?.kind || "generate").toLowerCase().trim();
+    const raw = providerResult?.out?.data ?? null;
+    const statusRaw =
+      raw?.status ??
+      raw?.successFlag ??
+      raw?.data?.status ??
+      raw?.data?.successFlag ??
+      raw?.data?.data?.status ??
+      raw?.data?.data?.successFlag ??
+      "";
+    const normalized = String(statusRaw || "").toUpperCase();
+
+    let status: "complete" | "processing" | "failed" = "processing";
+    if (normalized === "SUCCESS") status = "complete";
+    else if (
+      normalized === "FAILED" ||
+      normalized === "CREATE_TASK_FAILED" ||
+      normalized === "GENERATE_AUDIO_FAILED" ||
+      normalized === "GENERATE_LYRICS_FAILED" ||
+      normalized === "CALLBACK_EXCEPTION" ||
+      normalized === "SENSITIVE_WORD_ERROR" ||
+      normalized.startsWith("GENERATE_") && normalized.endsWith("_FAILED")
+    ) {
+      status = "failed";
+    }
+
+    const pickFirstUrl = (...candidates: any[]): string | null => {
+      for (const c of candidates) {
+        if (typeof c === "string") {
+          const s = c.trim();
+          if (/^https?:\/\//i.test(s)) return s;
+        }
+      }
+      return null;
+    };
+
+    const audiosBucket: any[] = [];
+    try {
+      const c1 = Array.isArray(raw?.audios) ? raw.audios : [];
+      const c2 = Array.isArray(raw?.data?.audios) ? raw.data.audios : [];
+      const c3 = Array.isArray(raw?.data?.data?.audios) ? raw.data.data.audios : [];
+      for (const arr of [c1, c2, c3]) {
+        for (const it of arr) {
+          if (it && typeof it === "object") audiosBucket.push(it);
+        }
+      }
+    } catch {}
+
+    const audio_url = pickFirstUrl(
+      raw?.audio_url,
+      raw?.audioUrl,
+      raw?.stream_audio_url,
+      raw?.streamAudioUrl,
+      raw?.data?.audio_url,
+      raw?.data?.audioUrl,
+      raw?.data?.stream_audio_url,
+      raw?.data?.streamAudioUrl,
+      raw?.data?.data?.audio_url,
+      raw?.data?.data?.audioUrl,
+      raw?.data?.data?.stream_audio_url,
+      raw?.data?.data?.streamAudioUrl,
+      audiosBucket[0]?.audio_url,
+      audiosBucket[0]?.audioUrl,
+      audiosBucket[0]?.stream_audio_url,
+      audiosBucket[0]?.streamAudioUrl
+    );
+    const cover_url = pickFirstUrl(
+      raw?.cover_url,
+      raw?.coverUrl,
+      raw?.image_url,
+      raw?.imageUrl,
+      raw?.data?.cover_url,
+      raw?.data?.coverUrl,
+      raw?.data?.image_url,
+      raw?.data?.imageUrl,
+      raw?.data?.data?.cover_url,
+      raw?.data?.data?.coverUrl,
+      raw?.data?.data?.image_url,
+      raw?.data?.data?.imageUrl,
+      audiosBucket[0]?.cover_url,
+      audiosBucket[0]?.coverUrl,
+      audiosBucket[0]?.image_url,
+      audiosBucket[0]?.imageUrl
+    );
+    const title =
+      (typeof raw?.title === "string" && raw.title.trim()) ||
+      (typeof raw?.data?.title === "string" && raw.data.title.trim()) ||
+      (typeof raw?.data?.data?.title === "string" && raw.data.data.title.trim()) ||
+      (typeof audiosBucket[0]?.title === "string" && audiosBucket[0].title.trim()) ||
+      null;
+
+    const extras =
+      audiosBucket.length > 1
+        ? audiosBucket.slice(0, 10).map((x: any, i: number) => ({
+            index: i,
+            title: typeof x?.title === "string" ? x.title.trim() : null,
+            audio_url: pickFirstUrl(x?.audio_url, x?.audioUrl, x?.stream_audio_url, x?.streamAudioUrl),
+            cover_url: pickFirstUrl(x?.cover_url, x?.coverUrl, x?.image_url, x?.imageUrl),
+          })).filter((x: any) => x.audio_url)
+        : [];
+
+    const failedMessage =
+      status === "failed"
+        ? (typeof raw?.errorMessage === "string" && raw.errorMessage) ||
+          (typeof raw?.msg === "string" && raw.msg) ||
+          (typeof raw?.message === "string" && raw.message) ||
+          (typeof raw?.data?.message === "string" && raw.data.message) ||
+          "El proveedor no pudo generar la canción (tema restringido, parámetros inválidos o error interno). Intenta con otro prompt."
+        : null;
+
+    return oauthGptSendJson(res, 200, {
+      taskId,
+      task_id: taskId,
+      status,
+      title,
+      audio_url,
+      cover_url,
+      extra_songs: extras.length ? extras : undefined,
+      provider: "suno_v6",
+      source: "suno_provider",
+      provider_kind: kind || "generate",
+      provider_status_raw: normalized || undefined,
+      message: failedMessage || undefined,
+    });
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const u = new URL(req.url, "http://localhost");
@@ -17749,9 +17992,10 @@ const gptHandler = (() => {
       const isApi = parts[0] === "api";
       const next = isApi ? parts[2] : parts[1];
       if (next === "generate") return handleGenerate(req, res);
-      return sendJson(res, 404, { error: "ruta_no_encontrada" });
+      if (next === "status") return handleStatus(req, res);
+      return oauthGptSendJson(res, 404, { error: "ruta_no_encontrada" });
     } catch (e) {
-      return sendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });
+      return oauthGptSendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });
     }
   };
 })();

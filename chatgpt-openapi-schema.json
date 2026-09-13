@@ -1,0 +1,302 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "LucIAna Music Custom GPT API",
+    "description": "API de LucIAna Music para que ChatGPT genere canciones con IA usando Suno V6, consumiendo los créditos del usuario autenticado mediante OAuth 2.0.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://lucianamusic.app",
+      "description": "Producción (Vercel)"
+    },
+    {
+      "url": "https://ramber-tunes.vercel.app",
+      "description": "Producción alterna (Vercel)"
+    }
+  ],
+  "security": [
+    {
+      "LucianaBearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "LucianaBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access token JWT de Supabase obtenido tras el flujo OAuth 2.0 Authorization Code con LucIAna Music (pantalla /auth/chatgpt)."
+      }
+    },
+    "schemas": {
+      "InsufficientCreditsError": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "const": "insufficient_credits" },
+          "message": { "type": "string", "description": "Mensaje en español explicando que no hay créditos suficientes y hay que recargar en el panel de LucIAna." },
+          "credits_required": { "type": "integer", "description": "Créditos necesarios para ejecutar la operación." },
+          "credits_available": { "type": "integer", "description": "Créditos que el usuario dispone actualmente en su cuenta." }
+        }
+      },
+      "UnauthorizedError": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "const": "unauthorized" },
+          "message": { "type": "string", "description": "El token Bearer falta, expiró o es inválido." }
+        }
+      },
+      "ForbiddenTaskError": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "const": "forbidden" },
+          "message": { "type": "string", "description": "Este taskId no pertenece a la cuenta autenticada." }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/gpt/generate": {
+      "post": {
+        "operationId": "generate_music",
+        "summary": "Generar una canción nueva en LucIAna Music",
+        "description": "Dispara una generación de música IA en LucIAna Music usando el proveedor Suno V6. Descuenta los créditos (12 créditos por generación, 2 variaciones de canción) del saldo del usuario autenticado. Retorna un taskId para consultar el estado con getSongStatus.",
+        "tags": ["Canciones"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["prompt"],
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "description": "Descripción de la canción: género musical, letra, estado de ánimo, instrumentos, voces, tempo, idioma. Ejemplo: 'Balada pop romántica en español, voz femenina suave, piano y cuerdas, letra sobre volver a encontrarse después de años'. Máximo ~2000 caracteres.",
+                    "minLength": 3,
+                    "maxLength": 2000
+                  },
+                  "style": {
+                    "type": "string",
+                    "description": "Estilo musical o tags de estilo en formato Suno (si se envía, se usa custom mode con style + title). Ejemplo: 'Pop, Voz Femenina, Balada, 90 BPM, Emocional'.",
+                    "maxLength": 400
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Título propuesto de la canción (modo custom requiere style + title). Si se omite, ChatGPT debe dejarlo vacío y LucIAna generará un título a partir del prompt.",
+                    "maxLength": 120
+                  },
+                  "instrumental": {
+                    "type": "boolean",
+                    "description": "Si es true, genera una pista instrumental sin letras/voces. Por defecto false (cantada).",
+                    "default": false
+                  },
+                  "model": {
+                    "type": "string",
+                    "enum": ["V6", "V5.5", "V5", "V4"],
+                    "description": "Modelo Suno a utilizar. Usa siempre V6 por defecto (recomendado) salvo que el usuario pida explícitamente uno anterior.",
+                    "default": "V6"
+                  },
+                  "mv": { "type": "string", "description": "Parámetro Suno MV (usualmente se deja vacío).", "maxLength": 40 },
+                  "negativeTags": {
+                    "type": "string",
+                    "description": "Tags a excluir de la canción. Ejemplo: 'ruido, batería fuerte, autotune excesivo'.",
+                    "maxLength": 200
+                  },
+                  "personaId": {
+                    "type": "string",
+                    "description": "ID de una voz clonada (personaje vocal) de la biblioteca LucIAna del usuario. Si no se envía, usa voz por defecto.",
+                    "maxLength": 120
+                  },
+                  "personaModel": {
+                    "type": "string",
+                    "description": "Modelo asociado a la voz clonada (si aplica).",
+                    "maxLength": 40
+                  },
+                  "vocalGender": {
+                    "type": "string",
+                    "enum": ["male", "female", "unisex", ""],
+                    "description": "Preferencia de género vocal si no hay personaId: male (masculina), female (femenina), unisex o vacío.",
+                    "default": ""
+                  },
+                  "styleWeight": { "type": "number", "description": "Peso del estilo (0 a 100)." },
+                  "weirdnessConstraint": { "type": "number", "description": "Restricción de rareza." },
+                  "audioWeight": { "type": "number", "description": "Peso del audio referencia." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tarea de generación encolada correctamente. Usa getSongStatus con el taskId devuelto para hacer polling hasta que aparezca audio_url.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": { "type": "string", "description": "ID de la tarea Suno. Usa este valor como taskId en getSongStatus." },
+                    "task_id": { "type": "string", "description": "Alias de taskId (snake_case) para compatibilidad." },
+                    "title": { "type": "string", "description": "Título inicial de la canción." },
+                    "status": { "type": "string", "const": "queued", "description": "Siempre 'queued' cuando acaba de encolarse." },
+                    "provider": { "type": "string", "const": "suno_v6", "description": "Proveedor usado." },
+                    "credits_cost": { "type": "integer", "description": "Créditos descontados (normalmente 12)." }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Falta el prompt o parámetros inválidos."
+          },
+          "401": {
+            "description": "No autorizado: falta token Bearer o es inválido.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnauthorizedError" } } }
+          },
+          "402": {
+            "description": "Saldo de créditos insuficiente en la cuenta LucIAna del usuario.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InsufficientCreditsError" } } }
+          },
+          "502": {
+            "description": "Error del proveedor Suno al intentar encolar la generación."
+          }
+        }
+      }
+    },
+    "/api/gpt/status": {
+      "get": {
+        "operationId": "getSongStatus",
+        "summary": "Consultar estado de una generación de canción y obtener el MP3",
+        "description": "Hace polling del taskId devuelto por generate_music. Retorna status=processing mientras se genera, status=failed si hubo error, o status=complete cuando el MP3 esté listo junto con audio_url (enlace directo al MP3 reproducible/descargable) y cover_url (portada). Consulta primero la biblioteca propia Supabase (por si el webhook ya lo guardó y está listo más rápido) y luego el proveedor Suno.",
+        "tags": ["Canciones"],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": true,
+            "description": "ID de la tarea devuelto por generate_music. También acepta task_id por compatibilidad.",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado de la tarea. Si status=complete, ChatGPT debe presentar al usuario audio_url como enlace 'Descargar MP3' o botón de reproducción directa; si hay extra_songs son las variaciones adicionales generadas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": { "type": "string", "description": "ID de la tarea consultada." },
+                    "task_id": { "type": "string", "description": "Alias taskId snake_case." },
+                    "status": {
+                      "type": "string",
+                      "enum": ["processing", "complete", "failed"],
+                      "description": "processing = aún generando, haz polling cada 8-12s; complete = audio_url listo; failed = error del proveedor, lee el campo message."
+                    },
+                    "title": { "type": ["string", "null"], "description": "Título final de la canción (una vez terminada)." },
+                    "audio_url": {
+                      "type": ["string", "null"],
+                      "description": "Enlace HTTPS directo al archivo MP3 de la canción. ESTE es el link que ChatGPT debe compartir al usuario para escuchar o descargar la canción. Null mientras status sea processing."
+                    },
+                    "cover_url": {
+                      "type": ["string", "null"],
+                      "description": "Enlace HTTPS a la imagen de portada de la canción (si está disponible)."
+                    },
+                    "extra_songs": {
+                      "type": "array",
+                      "description": "Variaciones adicionales generadas para la misma tarea (Suno suele generar 2 canciones por taskId). Cada una tiene su propio audio_url/cover_url.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "index": { "type": "integer", "description": "Índice 0..n de la variación." },
+                          "title": { "type": ["string", "null"], "description": "Título de esta variación." },
+                          "audio_url": { "type": ["string", "null"], "description": "Link MP3 directo de esta variación." },
+                          "cover_url": { "type": ["string", "null"], "description": "Link portada de esta variación." }
+                        }
+                      }
+                    },
+                    "provider": { "type": "string", "const": "suno_v6" },
+                    "source": {
+                      "type": "string",
+                      "enum": ["supabase_library", "suno_provider"],
+                      "description": "Origen de los datos: supabase_library = recuperado rápido desde la DB LucIAna; suno_provider = devuelto por Suno en tiempo real."
+                    },
+                    "message": {
+                      "type": ["string", "null"],
+                      "description": "Solo se rellena cuando status=failed: explica por qué falló la generación (palabras restringidas, parámetros erróneos, etc.) y recomienda reintentar con otro prompt."
+                    },
+                    "provider_status_raw": {
+                      "type": ["string", "null"],
+                      "description": "Estado crudo devuelto por Suno internamente (SUCCESS / PROCESSING / FAILED, etc.). Útil solo para depurar."
+                    }
+                  }
+                },
+                "examples": {
+                  "processing": {
+                    "value": {
+                      "taskId": "suno_task_abc123",
+                      "task_id": "suno_task_abc123",
+                      "status": "processing",
+                      "title": null,
+                      "audio_url": null,
+                      "cover_url": null,
+                      "provider": "suno_v6",
+                      "source": "suno_provider"
+                    }
+                  },
+                  "complete": {
+                    "value": {
+                      "taskId": "suno_task_abc123",
+                      "task_id": "suno_task_abc123",
+                      "status": "complete",
+                      "title": "Volver a Encontrarnos - Balada Pop",
+                      "audio_url": "https://r2.lucianamusic.app/songs/abc123/song-1.mp3",
+                      "cover_url": "https://r2.lucianamusic.app/songs/abc123/cover-1.jpg",
+                      "extra_songs": [
+                        {
+                          "index": 1,
+                          "title": "Volver a Encontrarnos (Versión Alterna)",
+                          "audio_url": "https://r2.lucianamusic.app/songs/abc123/song-2.mp3",
+                          "cover_url": "https://r2.lucianamusic.app/songs/abc123/cover-2.jpg"
+                        }
+                      ],
+                      "provider": "suno_v6",
+                      "source": "supabase_library"
+                    }
+                  },
+                  "failed": {
+                    "value": {
+                      "taskId": "suno_task_abc123",
+                      "task_id": "suno_task_abc123",
+                      "status": "failed",
+                      "title": null,
+                      "audio_url": null,
+                      "cover_url": null,
+                      "provider": "suno_v6",
+                      "source": "suno_provider",
+                      "message": "El proveedor no pudo generar la canción: contenido sensible detectado. Por favor prueba con un prompt diferente (evita menciones a marcas, nombres de artistas famosos o letras protegidas)."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Falta el parámetro taskId en la query."
+          },
+          "401": {
+            "description": "No autorizado: token Bearer faltante o inválido.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnauthorizedError" } } }
+          },
+          "403": {
+            "description": "El taskId consultado no pertenece a la cuenta del usuario autenticado (seguridad).",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ForbiddenTaskError" } } }
+          },
+          "502": {
+            "description": "No se pudo conectar con el proveedor Suno en este momento. Reintenta pasados unos segundos; sigue devolviendo status=processing para que ChatGPT continúe el polling."
+          }
+        }
+      }
+    }
+  }
+}
