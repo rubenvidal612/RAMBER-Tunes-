@@ -17515,7 +17515,7 @@ const rvcHandler = (() => {
 const CHATGPT_OAUTH_CONFIG = {
   clientId: "chatgpt-luciana-client",
   clientSecret: "luciana-secret-key-2026",
-  callbackUrl: "https://chatgpt.com/aip/g-6aa4fc4b16488191a04ca12e6f58d876/oauth/callback",
+  callbackUrl: "https://chat.openai.com/aip/g-c7b276b0ba502038b6931c2d53d7b967e3c88873/oauth/callback",
   accessTokenExpiresIn: 2592000,
 };
 
