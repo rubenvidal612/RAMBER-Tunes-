@@ -698,7 +698,7 @@ function InicioSocial({
   );
 }
 
-const CHATGPT_OAUTH_CALLBACK_URL = "https://chat.openai.com/aip/g-c7b276b0ba502038b6931c2d53d7b967e3c88873/oauth/callback";
+const CHATGPT_OAUTH_CALLBACK_URL = "https://chat.openai.com/aip/g-6aa75d9e076081918b49ba962297c64c/oauth/callback";
 const CHATGPT_OAUTH_STATE_KEY = "ramber.chatgpt_oauth_state_v1";
 
 function ChatgptAuthScreen() {
