@@ -5036,10 +5036,18 @@ notify pgrst, 'reload schema';`;
   }
 
   async function syncLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string, lyrics: string) {
-    const apiKey =
-      (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
-        .toString()
-        .trim();
+    const apiKey = String(
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+      process.env.GEMINI_KEY ||
+      process.env.GOOGLE_AI_STUDIO_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      ""
+    ).trim();
     if (!apiKey) {
       return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
     }
@@ -5060,6 +5068,10 @@ notify pgrst, 'reload schema';`;
         `Output ONLY valid JSON without markdown wrapping.`;
 
       const baseModels = [
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite-preview",
+        "gemini-3-flash",
+        "gemini-2.5-pro",
         "gemini-3-flash-preview",
         "gemini-1.5-flash",
         "gemini-3.1-flash-lite-preview",
@@ -13859,10 +13871,18 @@ const aiHandler = (() => {
   };
 
   async function transcribeLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string) {
-    const apiKey =
-      (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
-        .toString()
-        .trim();
+    const apiKey = String(
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+      process.env.GEMINI_KEY ||
+      process.env.GOOGLE_AI_STUDIO_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      ""
+    ).trim();
     if (!apiKey) {
       return {
         ok: false as const,
@@ -13890,6 +13910,10 @@ const aiHandler = (() => {
 
     const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
     const baseModels = [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite-preview",
+      "gemini-3-flash",
+      "gemini-2.5-pro",
       "gemini-3.1-flash-lite-preview",
       "gemini-flash-lite-latest",
       "gemini-3-flash-preview",
@@ -13978,10 +14002,18 @@ const aiHandler = (() => {
   }
 
   async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
-    const apiKey =
-      (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
-        .toString()
-        .trim();
+    const apiKey = String(
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+      process.env.GEMINI_KEY ||
+      process.env.GOOGLE_AI_STUDIO_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      ""
+    ).trim();
     if (!apiKey) {
       return {
         ok: false as const,
@@ -14012,6 +14044,10 @@ const aiHandler = (() => {
       "\nEntrega solo la letra. No uses comillas ni markdown.";
 
     const baseModels = [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite-preview",
+      "gemini-3-flash",
+      "gemini-2.5-pro",
       "gemini-3.1-flash-lite-preview",
       "gemini-flash-lite-latest",
       "gemini-3-flash-preview",
@@ -18544,32 +18580,43 @@ const gptHandler = (() => {
       }
     }
 
-    const GEMINI_RESOLVED_KEY = String(
-      process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || ""
+    const RESOLVE_GEMINI_KEY = () => String(
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+      process.env.GEMINI_KEY ||
+      process.env.GOOGLE_AI_STUDIO_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      ""
     ).trim();
-    const GEMINI_API_KEY_OK = GEMINI_RESOLVED_KEY.length >= 8;
-    if (!GEMINI_API_KEY_OK) {
-      console.error("[handleTranscribe Error] transcriber_unavailable: GEMINI_API_KEY missing/too_short in Vercel env", {
-        hostname: req.headers?.host,
-        audioHost: audioUrl.hostname,
-        geminiKeyLen: GEMINI_RESOLVED_KEY.length,
-        env_candidates_present: {
-          GEMINI_API_KEY: !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length),
-          GOOGLE_GEMINI_API_KEY: !!(process.env.GOOGLE_GEMINI_API_KEY && String(process.env.GOOGLE_GEMINI_API_KEY).trim().length),
-          GOOGLE_API_KEY: !!(process.env.GOOGLE_API_KEY && String(process.env.GOOGLE_API_KEY).trim().length),
-        },
+    const GEMINI_RESOLVED_KEY = RESOLVE_GEMINI_KEY();
+    const ENV_DETAILED_PRESENT = {
+      GEMINI_API_KEY: !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length >= 8),
+      GOOGLE_GEMINI_API_KEY: !!(process.env.GOOGLE_GEMINI_API_KEY && String(process.env.GOOGLE_GEMINI_API_KEY).trim().length >= 8),
+      GOOGLE_API_KEY: !!(process.env.GOOGLE_API_KEY && String(process.env.GOOGLE_API_KEY).trim().length >= 8),
+      VITE_GEMINI_API_KEY: !!(process.env.VITE_GEMINI_API_KEY && String(process.env.VITE_GEMINI_API_KEY).trim().length >= 8),
+      NEXT_PUBLIC_GEMINI_API_KEY: !!(process.env.NEXT_PUBLIC_GEMINI_API_KEY && String(process.env.NEXT_PUBLIC_GEMINI_API_KEY).trim().length >= 8),
+      GEMINI_KEY: !!(process.env.GEMINI_KEY && String(process.env.GEMINI_KEY).trim().length >= 8),
+      GOOGLE_AI_STUDIO_KEY: !!(process.env.GOOGLE_AI_STUDIO_KEY && String(process.env.GOOGLE_AI_STUDIO_KEY).trim().length >= 8),
+      AI_API_KEY: !!(process.env.AI_API_KEY && String(process.env.AI_API_KEY).trim().length >= 8),
+      GOOGLE_AI_API_KEY: !!(process.env.GOOGLE_AI_API_KEY && String(process.env.GOOGLE_AI_API_KEY).trim().length >= 8),
+    };
+    const resolvedLen = GEMINI_RESOLVED_KEY.length;
+    if (typeof transcribeLyricsWithGemini !== "function") {
+      console.error("[handleTranscribe Error] transcriber_unavailable: transcribeLyricsWithGemini is not a function (scope issue?)", {
+        geminiKeyLen: resolvedLen,
+        env_detailed_present: ENV_DETAILED_PRESENT,
       });
       return oauthGptSendJson(res, 501, {
         success: false,
         error: "transcriber_unavailable",
-        message: "La transcripción no está disponible en este despliegue. Falta GEMINI_API_KEY configurada en Vercel.",
+        message: "El transcriptor no está disponible en este despliegue.",
+        env_detailed_present: ENV_DETAILED_PRESENT,
+        resolved_key_len: resolvedLen,
       });
-    }
-    if (typeof transcribeLyricsWithGemini !== "function") {
-      console.error("[handleTranscribe Error] transcriber_unavailable: transcribeLyricsWithGemini is not a function (scope issue?)", {
-        geminiKeyLen: GEMINI_RESOLVED_KEY.length,
-      });
-      return oauthGptSendJson(res, 501, { success: false, error: "transcriber_unavailable", message: "El transcriptor no está disponible en este despliegue." });
     }
 
     let titleHint =
@@ -18680,17 +18727,15 @@ const gptHandler = (() => {
     if (isGeminiKeyMissing) {
       console.error("[handleTranscribe Error] transcriber_unavailable: inner function returned missing GEMINI_API_KEY", {
         innerError: String((transcription as any)?.error || "").slice(0, 300),
-        geminiKeyLen: GEMINI_RESOLVED_KEY.length,
-        env_candidates_present: {
-          GEMINI_API_KEY: !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length),
-          GOOGLE_GEMINI_API_KEY: !!(process.env.GOOGLE_GEMINI_API_KEY && String(process.env.GOOGLE_GEMINI_API_KEY).trim().length),
-          GOOGLE_API_KEY: !!(process.env.GOOGLE_API_KEY && String(process.env.GOOGLE_API_KEY).trim().length),
-        },
+        geminiKeyLen: resolvedLen,
+        env_detailed_present: ENV_DETAILED_PRESENT,
       });
       return oauthGptSendJson(res, 501, {
         success: false,
         error: "transcriber_unavailable",
         message: "La transcripción no está disponible. Falta GEMINI_API_KEY configurada en Vercel.",
+        env_detailed_present: ENV_DETAILED_PRESENT,
+        resolved_key_len: resolvedLen,
       });
     }
     if (!transOk) {
