@@ -1319,17 +1319,32 @@ function SubirGptScreen() {
         ]);
         const session = sessionRes?.data?.session ?? sessionRes?.session ?? null;
         const access = session?.access_token;
-        if (access && typeof access === 'string' && access.trim().length > 20) token = String(access).trim();
+        if (access && typeof access === 'string' && access.trim().length > 40) token = String(access).trim();
       }
     } catch (e) {
       token = '';
       console.error('[SubirGptScreen startTranscribe] Excepcion extrayendo token para transcripcion:', e instanceof Error ? e.message : String(e));
     }
+    const formatErrorReal = (data: any, httpStatus: number) => {
+      if (!data) return `Error HTTP ${httpStatus}. El servidor no devolvió JSON.`;
+      if (typeof data.detail === 'string' && data.detail.trim()) return String(data.detail);
+      if (typeof data.error_details === 'string' && data.error_details.trim()) return String(data.error_details);
+      if (typeof data.message === 'string' && data.message.trim()) return String(data.message);
+      if (typeof data.error === 'string' && data.error.trim()) {
+        const extra = (typeof data.detail === 'string' && data.detail) ? ` (${data.detail})` : '';
+        return `${data.error}${extra}`;
+      }
+      try {
+        return `Error HTTP ${httpStatus}. Respuesta servidor: ${JSON.stringify(data).slice(0, 400)}`;
+      } catch {
+        return `Error HTTP ${httpStatus}.`;
+      }
+    };
     try {
       const controller = new (window as any).AbortController?.();
       const t = (window as any).setTimeout?.(() => { try { controller?.abort?.(); } catch {} }, 180_000);
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (token && token.length > 40) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/gpt/transcribe', {
         method: 'POST',
         headers,
@@ -1347,9 +1362,9 @@ function SubirGptScreen() {
         }
         return;
       }
-      const msg = (body?.message && typeof body.message === 'string') ? body.message : `Error HTTP ${res.status}. No pude extraer la letra de este audio.`;
+      const msg = formatErrorReal(body, res.status);
       if (res.status === 401) {
-        console.error('[SubirGptScreen startTranscribe] 401 transcribe. Reintento sin Bearer token (bypass trusted host)...');
+        console.error('[SubirGptScreen startTranscribe] 401 transcribe. Reintento sin Bearer token (bypass trusted host)...', { body });
         try {
           const controller2 = new (window as any).AbortController?.();
           const t2 = (window as any).setTimeout?.(() => { try { controller2?.abort?.(); } catch {} }, 180_000);
@@ -1367,25 +1382,25 @@ function SubirGptScreen() {
             setTranscribeStep('done');
             return;
           }
-          const msg2 = (body2?.message && typeof body2.message === 'string') ? body2.message : `Error HTTP ${res2.status}. No pude extraer la letra de este audio.`;
-          console.error('[SubirGptScreen startTranscribe] Fallo segunda llamada sin auth:', { status: res2.status, error: body2?.error, message: msg2 });
+          const msg2 = formatErrorReal(body2, res2.status);
+          console.error('[SubirGptScreen startTranscribe] Fallo segunda llamada sin auth:', { status: res2.status, body: body2 });
           setTranscribeStep('error');
           setTranscribeError(msg2);
           return;
         } catch (e2) {
           console.error('[SubirGptScreen startTranscribe] Excepcion segunda llamada transcripcion (sin auth):', e2 instanceof Error ? { name: e2.name, message: e2.message } : String(e2));
           setTranscribeStep('error');
-          setTranscribeError('No pude extraer la letra de este audio. Puedes seguir sin ella o reintentar.');
+          setTranscribeError(`Excepción procesando la transcripción: ${e2 instanceof Error ? e2.message : String(e2).slice(0, 200)}`);
           return;
         }
       }
-      console.error('[SubirGptScreen startTranscribe] HTTP not ok:', { status: res.status, error: body?.error, message: msg });
+      console.error('[SubirGptScreen startTranscribe] HTTP not ok:', { status: res.status, body });
       setTranscribeStep('error');
       setTranscribeError(msg);
     } catch (e) {
       console.error('[SubirGptScreen startTranscribe] Excepcion fetch transcribe:', e instanceof Error ? { name: e.name, message: e.message, stack: String(e.stack || '').slice(0, 500) } : String(e));
       setTranscribeStep('error');
-      setTranscribeError('No pude extraer la letra de este audio. Puedes seguir sin ella o reintentar.');
+      setTranscribeError(`Excepción procesando la transcripción: ${e instanceof Error ? e.message : String(e).slice(0, 200)}`);
     }
   };
 

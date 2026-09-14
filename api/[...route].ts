@@ -18606,14 +18606,19 @@ const gptHandler = (() => {
     };
     const resolvedLen = GEMINI_RESOLVED_KEY.length;
     if (typeof transcribeLyricsWithGemini !== "function") {
-      console.error("[handleTranscribe Error] transcriber_unavailable: transcribeLyricsWithGemini is not a function (scope issue?)", {
+      const detail = [
+        "Error interno: pipeline de transcripción (transcribeLyricsWithGemini) no está disponible en este despliegue.",
+        `GEMINI_RESOLVED_KEY.length=${resolvedLen}; env_detailed_present=${JSON.stringify(ENV_DETAILED_PRESENT)}`,
+      ].join(" | ");
+      console.error("[handleTranscribe Error] 422 transcribe_failed: transcribeLyricsWithGemini is not a function (scope issue?)", {
         geminiKeyLen: resolvedLen,
         env_detailed_present: ENV_DETAILED_PRESENT,
       });
-      return oauthGptSendJson(res, 501, {
+      return oauthGptSendJson(res, 422, {
         success: false,
-        error: "transcriber_unavailable",
-        message: "El transcriptor no está disponible en este despliegue.",
+        error: "transcribe_failed",
+        detail,
+        message: "El motor de transcripción no está disponible en este despliegue. Revisa que GEMINI_API_KEY esté configurada en Vercel.",
         env_detailed_present: ENV_DETAILED_PRESENT,
         resolved_key_len: resolvedLen,
       });
@@ -18709,15 +18714,17 @@ const gptHandler = (() => {
     try {
       transcription = await transcribeLyricsWithGemini(ab, mime);
     } catch (e) {
-      console.error("[handleTranscribe Error] transcribe_error: transcribeLyricsWithGemini threw exception", {
+      const detail = String(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+      console.error("[handleTranscribe Error] 422 transcribe_failed: transcribeLyricsWithGemini threw exception", {
         err: e instanceof Error ? { name: e.name, message: e.message.slice(0, 500), stack: (e.stack || "").slice(0, 400) } : String(e).slice(0, 500),
         mime,
         size_bytes: size,
       });
-      return oauthGptSendJson(res, 502, {
+      return oauthGptSendJson(res, 422, {
         success: false,
         error: "transcribe_failed",
-        message: `Error interno transcribiendo: ${(e instanceof Error ? e.message : String(e)).slice(0, 400)}`,
+        detail,
+        message: "No pude procesar la transcripción de este audio. Revisa la calidad del MP3 o prueba con un fragmento más corto.",
       });
     }
     const transOk = !!(transcription && transcription.ok);
@@ -18725,20 +18732,32 @@ const gptHandler = (() => {
     const transErrRaw = String((transcription as any)?.error || "").toLowerCase();
     const isGeminiKeyMissing = transErrRaw.includes("falta gemini_api_key") || transErrRaw.includes("gemini_api_key");
     if (isGeminiKeyMissing) {
-      console.error("[handleTranscribe Error] transcriber_unavailable: inner function returned missing GEMINI_API_KEY", {
+      const detail = [
+        "Falta configurar la clave GEMINI_API_KEY (o equivalente) en Vercel Environment Variables, sección Serverless Functions.",
+        `Resolved key length: ${resolvedLen}.`,
+        `Env detailed present: ${JSON.stringify(ENV_DETAILED_PRESENT)}`,
+        String((transcription as any)?.error || "").slice(0, 400),
+      ].join(" | ");
+      console.error("[handleTranscribe Error] 422 transcribe_failed: inner function returned missing GEMINI_API_KEY", {
         innerError: String((transcription as any)?.error || "").slice(0, 300),
         geminiKeyLen: resolvedLen,
         env_detailed_present: ENV_DETAILED_PRESENT,
       });
-      return oauthGptSendJson(res, 501, {
+      return oauthGptSendJson(res, 422, {
         success: false,
-        error: "transcriber_unavailable",
-        message: "La transcripción no está disponible. Falta GEMINI_API_KEY configurada en Vercel.",
+        error: "transcribe_failed",
+        detail,
+        message: "La transcripción no está disponible. Añade GEMINI_API_KEY en Vercel Settings → Environment Variables (marca Serverless Functions) y haz Redeploy.",
         env_detailed_present: ENV_DETAILED_PRESENT,
         resolved_key_len: resolvedLen,
       });
     }
     if (!transOk) {
+      const detail = [
+        `status=${transStatus || "unknown"}`,
+        String((transcription as any)?.error || "").slice(0, 400),
+        String((transcription as any)?.userMessage || "").slice(0, 400),
+      ].filter(Boolean).join(" | ");
       console.error("[handleTranscribe Error] 422 transcribe_failed: inner !ok", {
         transStatus,
         innerError: String((transcription as any)?.error || "").slice(0, 400),
@@ -18749,31 +18768,25 @@ const gptHandler = (() => {
       return oauthGptSendJson(res, 422, {
         success: false,
         error: "transcribe_failed",
+        detail,
         message: String((transcription as any)?.userMessage || (transcription as any)?.error || "No pude transcribir la letra de este audio."),
       });
     }
-    if (transStatus === "SIN_LETRA") {
-      console.error("[handleTranscribe Info] SIN_LETRA instrumental (no error, 200 lyrics empty)", {
-        mime,
-        size_bytes: size,
-        title: titleHint.slice(0, 120),
-      });
-      return oauthGptSendJson(res, 200, {
-        success: true,
-        lyrics: "",
-        title: titleHint,
-        note: "No detecté voz/canto en este audio. La letra está vacía.",
-      });
-    }
     if (transStatus === "ILEGIBLE") {
-      console.error("[handleTranscribe Error] 422 unintelligible", {
+      const detail = [
+        "status=ILEGIBLE",
+        String((transcription as any)?.userMessage || "").slice(0, 400),
+        String((transcription as any)?.error || "").slice(0, 400),
+      ].filter(Boolean).join(" | ");
+      console.error("[handleTranscribe Error] 422 transcribe_failed: ILEGIBLE", {
         mime,
         size_bytes: size,
         title: titleHint.slice(0, 120),
       });
       return oauthGptSendJson(res, 422, {
         success: false,
-        error: "unintelligible",
+        error: "transcribe_failed",
+        detail,
         message: "No pude entender la letra con este audio. Prueba con un fragmento más corto o con menos ruido.",
       });
     }
