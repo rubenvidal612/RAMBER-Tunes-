@@ -18160,7 +18160,25 @@ const gptHandler = (() => {
 
     const token = extractBearerToken(req);
     const auth = await requireAnyUserFromToken(token);
-    if (!auth.ok) return oauthGptSendJson(res, auth.status, { success: false, error: "unauthorized", message: auth.error });
+    if (!auth.ok) {
+      const authHeaderRaw = (req.headers?.authorization || req.headers?.Authorization || "").toString();
+      console.error("[handleUploadAudio] 401 Unauthorized en /api/gpt/upload-audio. Detalle completo depuracion token:", {
+        authStatus: auth.status,
+        authError: auth.error,
+        tokenLlegadaPresent: !!token,
+        tokenLlegadaLength: (token || "").length,
+        tokenLlegadaStart: (token || "").slice(0, 12) + "...",
+        authHeaderPresent: !!authHeaderRaw,
+        authHeaderStartsBearer: /^bearer\s/i.test(authHeaderRaw),
+        authHeaderLength: authHeaderRaw.length,
+        contentType: (req.headers?.["content-type"] || req.headers?.["Content-Type"] || "").toString().slice(0, 200),
+        pathname: req.url,
+        method,
+        ua: (req.headers?.["user-agent"] || req.headers?.["User-Agent"] || "").toString().slice(0, 180),
+        timestamp: new Date().toISOString()
+      });
+      return oauthGptSendJson(res, auth.status, { success: false, error: "unauthorized", message: auth.error });
+    }
 
     const contentType = (req.headers["content-type"] || req.headers["Content-Type"] || "").toString().trim().toLowerCase();
     const isMultipart = contentType.startsWith("multipart/form-data");

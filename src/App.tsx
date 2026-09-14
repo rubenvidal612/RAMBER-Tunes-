@@ -1163,12 +1163,66 @@ function SubirGptScreen() {
     setStep('uploading');
     setProgress(0);
     setErrorMsg('');
-    const token = typeof window !== 'undefined' ? (await getAccessToken().catch(() => '') || '') : '';
+    let token = '';
+    try {
+      if (typeof window !== 'undefined' && supabaseBrowser && typeof (supabaseBrowser as any)?.auth?.getSession === 'function') {
+        const sessionRes = await Promise.race([
+          (supabaseBrowser as any).auth.getSession(),
+          new Promise<any>((resolve) => { try { (window as any).setTimeout(() => resolve({ data: { session: null }, error: null }), 4500); } catch { resolve({ data: { session: null }, error: null }); } })
+        ]);
+        const session = sessionRes?.data?.session ?? sessionRes?.session ?? null;
+        const access = session?.access_token;
+        if (access && typeof access === 'string' && access.trim().length > 20) {
+          token = String(access).trim();
+        }
+        if (sessionRes?.error) {
+          console.error('[SubirGptScreen] supabase.auth.getSession devolvio error:', {
+            message: sessionRes.error?.message,
+            code: sessionRes.error?.code,
+            status: sessionRes.error?.status,
+            fileName: file.name,
+            fileSize: file.size
+          });
+        }
+      } else {
+        console.error('[SubirGptScreen] supabaseBrowser no disponible. No se puede extraer access_token de Supabase session. { supabaseBrowserAvailable: %s, windowOk: %s, file: %s, size: %s }',
+          !!(supabaseBrowser as any),
+          typeof window !== 'undefined',
+          file.name,
+          file.size
+        );
+      }
+    } catch (e) {
+      token = '';
+      console.error('[SubirGptScreen] Excepcion extrayendo access_token via supabase.auth.getSession(). Detalle:', {
+        error: e instanceof Error ? { name: e.name, message: e.message, stack: String(e.stack || '').slice(0, 600) } : String(e),
+        fileName: file.name,
+        fileSize: file.size
+      });
+    }
+
+    const uploadedAuthHeader = token ? `Bearer ${token}` : '';
+
+    if (!token) {
+      console.error('[SubirGptScreen] ABORTANDO SUBIDA: NO HAY ACCESS TOKEN VALIDO de session.access_token. Antes de 401 loop. Detalle antes XMLHttpRequest:', {
+        tokenLength: 0,
+        tokenPresent: !!token,
+        supabaseBrowserOK: !!(supabaseBrowser as any),
+        authHeader: uploadedAuthHeader || '(VACIO)',
+        fileName: file.name,
+        fileSizeBytes: file.size,
+        timestamp: new Date().toISOString()
+      });
+      setHasValidSession(false);
+      setForceAuthPrompt(true);
+      return;
+    }
+
     const url = '/api/gpt/upload-audio';
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
     xhr.open('POST', url, true);
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.upload.onprogress = (evt) => {
       if (evt.lengthComputable) {
         const p = Math.round((evt.loaded / evt.total) * 100);
@@ -1188,16 +1242,44 @@ function SubirGptScreen() {
       let msg = (body?.error && typeof body?.message === 'string') ? body.message : '';
       if (!msg) msg = (typeof body?.message === 'string' ? body.message : `Error HTTP ${xhr.status}. Inténtalo de nuevo.`);
       if (xhr.status === 401) {
+        console.error('[SubirGptScreen] 401 recibido de /api/gpt/upload-audio. Detalle depuracion COMPLETO para rootcause bucle auth:', {
+          status: xhr.status,
+          responseText: String(xhr.responseText || '').slice(0, 2000),
+          responseBodyError: body?.error ?? null,
+          responseBodyMessage: body?.message ?? null,
+          authHeaderENVIADO: uploadedAuthHeader ? (uploadedAuthHeader.slice(0, 20) + '...[trunc ' + (uploadedAuthHeader.length - 20) + ' chars]') : '(NO ENVIADO)',
+          tokenEnvioLength: token.length,
+          tokenEnvioPresent: !!token,
+          tokenStart: token.slice(0, 12) + '...',
+          fileName: file.name,
+          fileSize: file.size,
+          timestamp: new Date().toISOString()
+        });
         setHasValidSession(false);
         setForceAuthPrompt(true);
         return;
       }
       if (xhr.status === 413) msg = 'El archivo excede el límite de 25 MB.';
       if (xhr.status === 415) msg = 'Formato no permitido. Solo se aceptan archivos MP3.';
+      console.error('[SubirGptScreen] Error subida HTTP no 401:', {
+        status: xhr.status,
+        message: msg,
+        rawBody: String(xhr.responseText || '').slice(0, 2000),
+        fileName: file.name,
+        fileSize: file.size
+      });
       setStep('error');
       setErrorMsg(msg);
     };
     xhr.onerror = () => {
+      console.error('[SubirGptScreen] XHR.onerror. Fallo red/conexion o CORS bloqueado:', {
+        url,
+        authHeader: uploadedAuthHeader ? 'SI' : 'NO',
+        fileName: file.name,
+        fileSize: file.size,
+        readyState: xhr.readyState,
+        status: xhr.status
+      });
       setStep('error');
       setErrorMsg('No se pudo subir el archivo. Revisa tu conexión e inténtalo de nuevo.');
     };
