@@ -14346,6 +14346,14 @@ const aiHandler = (() => {
     }
   }
 
+  try {
+    const gt = globalThis as any;
+    if (typeof gt.__LUCIANA_SHARED_FNS !== "object" || gt.__LUCIANA_SHARED_FNS === null) gt.__LUCIANA_SHARED_FNS = {};
+    gt.__LUCIANA_SHARED_FNS.transcribeLyricsWithGemini = transcribeLyricsWithGemini;
+    gt.__LUCIANA_SHARED_FNS.generateLyricsWithGemini = generateLyricsWithGemini;
+    gt.__LUCIANA_SHARED_FNS.syncLyricsWithGemini = syncLyricsWithGemini;
+  } catch {}
+
   return async function handler(req: any, res: any) {
     const pathname = new URL(req.url, "http://localhost").pathname;
     const parts = pathname.split("/").filter(Boolean);
@@ -17783,6 +17791,27 @@ function gptParseMultipart(raw: Buffer, boundary: string): { fields: Record<stri
 }
 
 
+try {
+  const gt = globalThis as any;
+  if (typeof gt.__LUCIANA_SHARED_FNS !== "object" || gt.__LUCIANA_SHARED_FNS === null) gt.__LUCIANA_SHARED_FNS = {};
+  if (typeof gt.__LUCIANA_SHARED_FNS.__INIT_SUNO_FNS__ !== "function") {
+    gt.__LUCIANA_SHARED_FNS.__INIT_SUNO_FNS__ = async function __initSunoSharedFns() {
+      try {
+        await sunoHandler(
+          { url: "http://localhost/api/suno/health", method: "GET", headers: {} } as any,
+          { statusCode: 200, setHeader: () => {}, end: () => {}, write: () => {} } as any
+        );
+      } catch {}
+      try {
+        const inner = sunoHandler as any;
+        if (typeof inner?.transcribeLyricsWithGemini === "function") {
+          gt.__LUCIANA_SHARED_FNS.transcribeLyricsWithGemini = inner.transcribeLyricsWithGemini;
+        }
+      } catch {}
+    };
+  }
+} catch {}
+
 const oauthHandler = (() => {
   async function handleToken(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
@@ -18605,14 +18634,29 @@ const gptHandler = (() => {
       GOOGLE_AI_API_KEY: !!(process.env.GOOGLE_AI_API_KEY && String(process.env.GOOGLE_AI_API_KEY).trim().length >= 8),
     };
     const resolvedLen = GEMINI_RESOLVED_KEY.length;
-    if (typeof transcribeLyricsWithGemini !== "function") {
+    const resolveTranscribeFn = (): ((audioBuf: ArrayBuffer, mimeType: string) => Promise<any>) => {
+      try {
+        if (typeof (transcribeLyricsWithGemini as any) === "function") return (transcribeLyricsWithGemini as any);
+      } catch {}
+      try {
+        const gt = globalThis as any;
+        const shared = (gt && typeof gt.__LUCIANA_SHARED_FNS === "object" && gt.__LUCIANA_SHARED_FNS !== null) ? gt.__LUCIANA_SHARED_FNS : null;
+        if (shared && typeof shared.transcribeLyricsWithGemini === "function") return shared.transcribeLyricsWithGemini;
+      } catch {}
+      return undefined as any;
+    };
+    const transcribeGemini: any = resolveTranscribeFn();
+    if (typeof transcribeGemini !== "function") {
       const detail = [
         "Error interno: pipeline de transcripción (transcribeLyricsWithGemini) no está disponible en este despliegue.",
         `GEMINI_RESOLVED_KEY.length=${resolvedLen}; env_detailed_present=${JSON.stringify(ENV_DETAILED_PRESENT)}`,
+        `Lexical scope typeof=${typeof (transcribeLyricsWithGemini as any)}; shared typeof=${typeof (globalThis as any)?.__LUCIANA_SHARED_FNS?.transcribeLyricsWithGemini}`,
       ].join(" | ");
-      console.error("[handleTranscribe Error] 422 transcribe_failed: transcribeLyricsWithGemini is not a function (scope issue?)", {
+      console.error("[handleTranscribe Error] 422 transcribe_failed: transcribeLyricsWithGemini not available (separate closures)", {
         geminiKeyLen: resolvedLen,
         env_detailed_present: ENV_DETAILED_PRESENT,
+        lexical_typeof: typeof (transcribeLyricsWithGemini as any),
+        shared_typeof: typeof (globalThis as any)?.__LUCIANA_SHARED_FNS?.transcribeLyricsWithGemini,
       });
       return oauthGptSendJson(res, 422, {
         success: false,
@@ -18712,7 +18756,7 @@ const gptHandler = (() => {
 
     let transcription: any = null;
     try {
-      transcription = await transcribeLyricsWithGemini(ab, mime);
+      transcription = await transcribeGemini(ab, mime);
     } catch (e) {
       const detail = String(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
       console.error("[handleTranscribe Error] 422 transcribe_failed: transcribeLyricsWithGemini threw exception", {
