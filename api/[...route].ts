@@ -5036,7 +5036,10 @@ notify pgrst, 'reload schema';`;
   }
 
   async function syncLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string, lyrics: string) {
-    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    const apiKey =
+      (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
+        .toString()
+        .trim();
     if (!apiKey) {
       return { ok: false as const, error: "Falta GEMINI_API_KEY en Vercel" };
     }
@@ -13856,7 +13859,10 @@ const aiHandler = (() => {
   };
 
   async function transcribeLyricsWithGemini(audioBuf: ArrayBuffer, mimeType: string) {
-    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    const apiKey =
+      (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
+        .toString()
+        .trim();
     if (!apiKey) {
       return {
         ok: false as const,
@@ -13972,7 +13978,10 @@ const aiHandler = (() => {
   }
 
   async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
-    const apiKey = (process.env.GEMINI_API_KEY || "").toString().trim();
+    const apiKey =
+      (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
+        .toString()
+        .trim();
     if (!apiKey) {
       return {
         ok: false as const,
@@ -18535,12 +18544,20 @@ const gptHandler = (() => {
       }
     }
 
-    const GEMINI_API_KEY_OK = !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length >= 8);
+    const GEMINI_RESOLVED_KEY = String(
+      process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY || ""
+    ).trim();
+    const GEMINI_API_KEY_OK = GEMINI_RESOLVED_KEY.length >= 8;
     if (!GEMINI_API_KEY_OK) {
       console.error("[handleTranscribe Error] transcriber_unavailable: GEMINI_API_KEY missing/too_short in Vercel env", {
         hostname: req.headers?.host,
         audioHost: audioUrl.hostname,
-        geminiKeyLen: String(process.env.GEMINI_API_KEY || "").length,
+        geminiKeyLen: GEMINI_RESOLVED_KEY.length,
+        env_candidates_present: {
+          GEMINI_API_KEY: !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length),
+          GOOGLE_GEMINI_API_KEY: !!(process.env.GOOGLE_GEMINI_API_KEY && String(process.env.GOOGLE_GEMINI_API_KEY).trim().length),
+          GOOGLE_API_KEY: !!(process.env.GOOGLE_API_KEY && String(process.env.GOOGLE_API_KEY).trim().length),
+        },
       });
       return oauthGptSendJson(res, 501, {
         success: false,
@@ -18550,7 +18567,7 @@ const gptHandler = (() => {
     }
     if (typeof transcribeLyricsWithGemini !== "function") {
       console.error("[handleTranscribe Error] transcriber_unavailable: transcribeLyricsWithGemini is not a function (scope issue?)", {
-        geminiKeyLen: String(process.env.GEMINI_API_KEY || "").length,
+        geminiKeyLen: GEMINI_RESOLVED_KEY.length,
       });
       return oauthGptSendJson(res, 501, { success: false, error: "transcriber_unavailable", message: "El transcriptor no está disponible en este despliegue." });
     }
@@ -18663,7 +18680,12 @@ const gptHandler = (() => {
     if (isGeminiKeyMissing) {
       console.error("[handleTranscribe Error] transcriber_unavailable: inner function returned missing GEMINI_API_KEY", {
         innerError: String((transcription as any)?.error || "").slice(0, 300),
-        geminiKeyLen: String(process.env.GEMINI_API_KEY || "").length,
+        geminiKeyLen: GEMINI_RESOLVED_KEY.length,
+        env_candidates_present: {
+          GEMINI_API_KEY: !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length),
+          GOOGLE_GEMINI_API_KEY: !!(process.env.GOOGLE_GEMINI_API_KEY && String(process.env.GOOGLE_GEMINI_API_KEY).trim().length),
+          GOOGLE_API_KEY: !!(process.env.GOOGLE_API_KEY && String(process.env.GOOGLE_API_KEY).trim().length),
+        },
       });
       return oauthGptSendJson(res, 501, {
         success: false,
