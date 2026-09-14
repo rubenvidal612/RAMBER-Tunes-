@@ -700,13 +700,33 @@ function InicioSocial({
 
 const CHATGPT_OAUTH_CALLBACK_URL = "https://chat.openai.com/aip/g-6aa75d9e076081918b49ba962297c64c/oauth/callback";
 const CHATGPT_OAUTH_STATE_KEY = "ramber.chatgpt_oauth_state_v1";
+const CHATGPT_OAUTH_REDIRECT_URI_KEY = "ramber.chatgpt_oauth_redirect_uri_v1";
+const CHATGPT_OAUTH_REDIRECT_URI_ALLOWED_RE = /^https:\/\/chat\.openai\.com\/aip\/g-[A-Za-z0-9_-]+\/oauth\/callback\/?$/i;
+const CHATGPT_OAUTH_REDIRECT_URI_ALLOWED_RE_ALT = /^https:\/\/chatgpt\.com\/aip\/g-[A-Za-z0-9_-]+\/oauth\/callback\/?$/i;
+
+function isValidChatgptRedirectUri(s: string): boolean {
+  if (typeof s !== "string" || !s) return false;
+  const t = s.trim();
+  if (!t) return false;
+  try {
+    const u = new URL(t);
+    const hp = `${u.protocol}//${u.host}${u.pathname}`;
+    return CHATGPT_OAUTH_REDIRECT_URI_ALLOWED_RE.test(hp) || CHATGPT_OAUTH_REDIRECT_URI_ALLOWED_RE_ALT.test(hp);
+  } catch {
+    return false;
+  }
+}
 
 function ChatgptAuthScreen() {
   const [state, setState] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     try {
       const u = new URL(window.location.href);
-      return (u.searchParams.get('state') || '').toString();
+      let v = u.searchParams.get('state') || '';
+      if (v) {
+        try { v = decodeURIComponent(v); } catch {}
+      }
+      return v.toString();
     } catch {
       return '';
     }
@@ -715,6 +735,35 @@ function ChatgptAuthScreen() {
     if (typeof window === 'undefined') return '';
     try {
       return (window.localStorage.getItem(CHATGPT_OAUTH_STATE_KEY) || '').toString();
+    } catch {
+      return '';
+    }
+  });
+  const [redirectUri, setRedirectUri] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const u = new URL(window.location.href);
+      let raw =
+        u.searchParams.get('redirect_uri') ||
+        u.searchParams.get('redirectUri') ||
+        u.searchParams.get('redirect_url') ||
+        u.searchParams.get('callback_url') ||
+        '';
+      if (raw) {
+        try { raw = decodeURIComponent(raw); } catch {}
+        raw = raw.trim();
+        if (isValidChatgptRedirectUri(raw)) return raw;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  });
+  const [localRedirectUri, setLocalRedirectUri] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const v = (window.localStorage.getItem(CHATGPT_OAUTH_REDIRECT_URI_KEY) || '').toString().trim();
+      return isValidChatgptRedirectUri(v) ? v : '';
     } catch {
       return '';
     }
@@ -736,11 +785,28 @@ function ChatgptAuthScreen() {
       }
       try {
         const s = new URL(window.location.href);
-        const qState = (s.searchParams.get('state') || '').toString();
+        let qState = (s.searchParams.get('state') || '').toString();
         if (qState) {
+          try { qState = decodeURIComponent(qState); } catch {}
+          qState = qState.trim();
           setState(qState);
           try { window.localStorage.setItem(CHATGPT_OAUTH_STATE_KEY, qState); } catch {}
           setLocalState(qState);
+        }
+        let qRedirectUri =
+          s.searchParams.get('redirect_uri') ||
+          s.searchParams.get('redirectUri') ||
+          s.searchParams.get('redirect_url') ||
+          s.searchParams.get('callback_url') ||
+          '';
+        if (qRedirectUri) {
+          try { qRedirectUri = decodeURIComponent(qRedirectUri); } catch {}
+          qRedirectUri = qRedirectUri.trim();
+          if (isValidChatgptRedirectUri(qRedirectUri)) {
+            setRedirectUri(qRedirectUri);
+            try { window.localStorage.setItem(CHATGPT_OAUTH_REDIRECT_URI_KEY, qRedirectUri); } catch {}
+            setLocalRedirectUri(qRedirectUri);
+          }
         }
         const ses = await supabaseBrowser.auth.getSession();
         const token = String((ses?.data?.session?.access_token) as any || '').trim();
@@ -749,13 +815,19 @@ function ChatgptAuthScreen() {
         if (!alive) return;
         if (token && validEmail) {
           setSessionToken(token);
-          const finalState = qState || localState;
+          const finalState = (qState || state || localState || '').toString().trim();
+          const finalRedirectUri =
+            (isValidChatgptRedirectUri(qRedirectUri) && qRedirectUri) ||
+            (isValidChatgptRedirectUri(redirectUri) && redirectUri) ||
+            (isValidChatgptRedirectUri(localRedirectUri) && localRedirectUri) ||
+            CHATGPT_OAUTH_CALLBACK_URL;
           if (finalState) {
             try {
-              const redir = new URL(CHATGPT_OAUTH_CALLBACK_URL);
+              const redir = new URL(finalRedirectUri);
               redir.searchParams.set('code', token);
               redir.searchParams.set('state', finalState);
               try { window.localStorage.removeItem(CHATGPT_OAUTH_STATE_KEY); } catch {}
+              try { window.localStorage.removeItem(CHATGPT_OAUTH_REDIRECT_URI_KEY); } catch {}
               setReady(true);
               window.location.replace(redir.toString());
               return;
@@ -782,7 +854,7 @@ function ChatgptAuthScreen() {
       alive = false;
       try { sub?.unsubscribe?.(); } catch {}
     };
-  }, [localState]);
+  }, [localState, localRedirectUri, state, redirectUri]);
 
   const baseRaw = (typeof window !== 'undefined' ? window.location.origin.toString().trim() : '');
   const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : `https://${baseRaw.replace(/^\/+/, '')}`;
