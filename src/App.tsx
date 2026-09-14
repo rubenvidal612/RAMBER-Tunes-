@@ -920,6 +920,10 @@ function ChatgptAuthScreen() {
 }
 
 function SubirGptScreen() {
+  const [sessionReady, setSessionReady] = useState<boolean>(false);
+  const [hasValidSession, setHasValidSession] = useState<boolean>(false);
+  const [startingLogin, setStartingLogin] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState<string>('');
   const [step, setStep] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const [fileName, setFileName] = useState('');
@@ -930,6 +934,78 @@ function SubirGptScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let unsubscribe: (() => void) | null = null;
+    (async () => {
+      try {
+        const t = await getAccessToken();
+        if (!alive) return;
+        if (t.ok && typeof t.token === 'string' && t.token.trim()) setHasValidSession(true);
+        else setHasValidSession(false);
+      } catch {
+        if (alive) setHasValidSession(false);
+      } finally {
+        if (alive) setSessionReady(true);
+      }
+    })();
+    try {
+      if (supabaseBrowser && typeof (supabaseBrowser as any).auth?.onAuthStateChange === 'function') {
+        const res = (supabaseBrowser as any).auth.onAuthStateChange(async (_evt: string, s: any) => {
+          if (!alive) return;
+          try {
+            const tokenRes = await getAccessToken();
+            const ok = tokenRes.ok && typeof (tokenRes as any)?.token === 'string' && String((tokenRes as any).token).trim() !== '';
+            setHasValidSession(!!ok);
+            setSessionReady(true);
+            if (ok) {
+              setStep(curr => (curr === 'error' && /sesi|login|gmail|google|autoriza/i.test(loginError || errorMsg) ? 'idle' : curr));
+            }
+            void s;
+          } catch {
+            if (alive) setSessionReady(true);
+          }
+        });
+        unsubscribe = (typeof res?.data?.subscription?.unsubscribe === 'function') ? () => res.data.subscription.unsubscribe() :
+          (typeof res?.subscription?.unsubscribe === 'function') ? () => res.subscription.unsubscribe() :
+          (typeof res?.unsubscribe === 'function') ? () => res.unsubscribe() : null;
+      }
+    } catch {}
+    return () => {
+      alive = false;
+      if (typeof unsubscribe === 'function') { try { unsubscribe(); } catch {} }
+    };
+  }, []);
+
+  const startGoogleLogin = async () => {
+    if (!supabaseBrowser) {
+      setLoginError('Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY en Vercel.');
+      return;
+    }
+    setStartingLogin(true);
+    setLoginError('');
+    try {
+      const baseRaw = typeof window !== 'undefined' ? window.location.origin.toString().trim() : '';
+      const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : (baseRaw ? `https://${baseRaw.replace(/^\/+/, '')}` : '');
+      const path = (typeof window !== 'undefined' ? (window.location.pathname.toString() || '/subir') : '/subir').replace(/\/+$/, '') + '/';
+      const redirectTo = `${base.replace(/\/+$/, '')}${path}`;
+      const { data, error } = await (supabaseBrowser as any).auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error) throw new Error(error.message || 'No pude iniciar sesión con Google.');
+      const url = (data as any)?.url ? String((data as any).url).trim() : '';
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      await (supabaseBrowser as any).auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    } catch (e) {
+      setStartingLogin(false);
+      setLoginError(e instanceof Error ? e.message : 'No pude iniciar sesión con Google.');
+    }
+  };
 
   const reset = () => {
     try { xhrRef.current?.abort?.(); } catch {}
@@ -1055,136 +1131,173 @@ function SubirGptScreen() {
         <div className="mt-5 text-2xl font-extrabold tracking-tight text-center leading-snug">
           Sube tu audio MP3<br />para LucIAna Music
         </div>
-        <div className="mt-2 text-sm text-slate-300 text-center max-w-xs">
-          Selecciona tu canción MP3 y al terminar de subirla, toca el botón para copiar el enlace y pégalo en el chat con LucIAna Music.
-        </div>
 
-        {step === 'idle' ? (
+        {!sessionReady ? (
+          <div className="mt-10 text-sm text-slate-300">Cargando…</div>
+        ) : !hasValidSession ? (
           <div className="mt-8 w-full">
-            <label
-              className="block w-full cursor-pointer rounded-3xl border-2 border-dashed border-white/20 hover:border-yellow-400/60 transition-colors bg-white/[0.04] hover:bg-white/[0.07] px-6 py-12 text-center">
-              <div className="text-5xl mb-3">🎵</div>
-              <div className="text-lg font-extrabold">Toca para elegir tu MP3</div>
-              <div className="mt-1 text-xs text-slate-400">Solo archivos .mp3 · Máximo 25 MB</div>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="audio/mpeg, .mp3"
-                className="hidden"
-                onChange={onPickFile}
-              />
-            </label>
-            <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-400">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Subida a almacenamiento privado · No se comparte con nadie más que tú
-            </div>
-          </div>
-        ) : null}
-
-        {step === 'uploading' ? (
-          <div className="mt-8 w-full">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-4 w-full">
-              <div className="flex items-start gap-3">
-                <div className="w-11 h-11 shrink-0 rounded-xl bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 flex items-center justify-center text-xl">
-                  ⬆️
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm truncate">{fileName || 'Subiendo audio…'}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">{sizeText()} · Subiendo a LucIAna Music…</div>
-                </div>
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-8 text-center">
+              <div className="text-4xl mb-3">🔐</div>
+              <div className="text-lg font-extrabold">
+                Inicia sesión con Google<br />para recibir tus créditos de bienvenida y continuar
               </div>
-              <div className="mt-4 h-3 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
-                <div
-                  className="h-full bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 transition-[width] duration-150 ease-out"
-                  style={{ width: `${Math.max(1, Math.min(100, progress))}%` }}
-                />
-              </div>
-              <div className="mt-2 flex justify-between text-[11px] text-slate-400">
-                <span>Progreso</span>
-                <span className="font-bold text-slate-200">{progress}%</span>
+              <div className="mt-3 text-sm text-slate-300 max-w-xs mx-auto leading-relaxed">
+                Te regalamos créditos para probar LucIAna Music. Usa tu misma cuenta Gmail y en 2 segundos ya puedes subir tu canción y hacer covers con IA.
               </div>
               <button
                 type="button"
-                onClick={reset}
-                className="mt-4 w-full text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
-              >
-                Cancelar y subir otro archivo
+                onClick={startGoogleLogin}
+                disabled={startingLogin || !supabaseBrowser}
+                className="mt-7 w-full bg-white text-black rounded-2xl font-extrabold text-base px-6 py-4 disabled:opacity-70 shadow-[0_6px_24px_rgba(255,255,255,0.08)] active:scale-[0.985] transition-all">
+                {startingLogin ? 'Abriendo Google…' : 'Continuar con Google'}
               </button>
+              {loginError ? (
+                <div className="mt-4 text-xs text-red-200 break-words">{loginError}</div>
+              ) : null}
+              {!supabaseBrowser ? (
+                <div className="mt-4 text-xs text-red-200">
+                  Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY en Vercel (o redeploy).
+                </div>
+              ) : null}
+              <div className="mt-5 text-[11px] text-slate-400">
+                Al iniciar sesión aceptas la política de privacidad de LucIAna Music.
+              </div>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <div className="mt-2 text-sm text-slate-300 text-center max-w-xs">
+              Selecciona tu canción MP3 y al terminar de subirla, toca el botón para copiar el enlace y pégalo en el chat con LucIAna Music.
+            </div>
 
-        {step === 'done' ? (
-          <div className="mt-8 w-full">
-            <div className="rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.05] px-5 py-5 w-full">
-              <div className="flex items-start gap-3">
-                <div className="w-11 h-11 shrink-0 rounded-xl bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center text-xl">
-                  ✅
+            {step === 'idle' ? (
+              <div className="mt-8 w-full">
+                <label
+                  className="block w-full cursor-pointer rounded-3xl border-2 border-dashed border-white/20 hover:border-yellow-400/60 transition-colors bg-white/[0.04] hover:bg-white/[0.07] px-6 py-12 text-center">
+                  <div className="text-5xl mb-3">🎵</div>
+                  <div className="text-lg font-extrabold">Toca para elegir tu MP3</div>
+                  <div className="mt-1 text-xs text-slate-400">Solo archivos .mp3 · Máximo 25 MB</div>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="audio/mpeg, .mp3"
+                    className="hidden"
+                    onChange={onPickFile}
+                  />
+                </label>
+                <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Subida a almacenamiento privado · No se comparte con nadie más que tú
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-extrabold">¡Subida completada!</div>
-                  <div className="mt-1 text-sm text-emerald-200/90 leading-snug">
-                    Tu MP3 está listo. Ahora cópialo al chat de LucIAna Music para hacer el cover.
+              </div>
+            ) : null}
+
+            {step === 'uploading' ? (
+              <div className="mt-8 w-full">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-4 w-full">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 shrink-0 rounded-xl bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 flex items-center justify-center text-xl">
+                      ⬆️
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm truncate">{fileName || 'Subiendo audio…'}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{sizeText()} · Subiendo a LucIAna Music…</div>
+                    </div>
                   </div>
-                  <div className="mt-3 text-[11px] break-all text-slate-300 bg-black/30 rounded-xl px-3 py-2 border border-white/5">
-                    {fileName ? <span className="font-semibold text-slate-100">{fileName}</span> : null}
-                    {sizeText() ? <span className="text-slate-400"> · {sizeText()}</span> : null}
+                  <div className="mt-4 h-3 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
+                    <div
+                      className="h-full bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 transition-[width] duration-150 ease-out"
+                      style={{ width: `${Math.max(1, Math.min(100, progress))}%` }}
+                    />
                   </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={copyUrl}
-                className={`mt-5 w-full rounded-2xl font-extrabold text-lg px-6 py-4 shadow-[0_8px_30px_rgba(250,204,21,0.22)] transition-all active:scale-[0.985] ${
-                  copied
-                    ? 'bg-emerald-400 text-black border border-emerald-500/40'
-                    : 'bg-yellow-400 hover:bg-yellow-300 text-black border border-yellow-300/50'
-                }`}
-              >
-                {copied ? '✅ ¡Enlace copiado! Pégalo en tu chat con LucIAna Music' : '📋 Copiar enlace para el chat'}
-              </button>
-
-              <div className="mt-4 rounded-2xl bg-black/40 border border-white/5 px-4 py-3">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Enlace público</div>
-                <div className="text-[11px] break-all text-slate-200 select-all">{audioUrl}</div>
-              </div>
-
-              <button
-                type="button"
-                onClick={reset}
-                className="mt-4 w-full text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
-              >
-                Subir otro audio
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {step === 'error' ? (
-          <div className="mt-8 w-full">
-            <div className="rounded-3xl border border-red-400/30 bg-red-400/[0.05] px-5 py-5 w-full">
-              <div className="flex items-start gap-3">
-                <div className="w-11 h-11 shrink-0 rounded-xl bg-red-400/15 border border-red-400/40 text-red-300 flex items-center justify-center text-xl">
-                  ⚠️
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-extrabold">No se pudo completar la subida</div>
-                  <div className="mt-1 text-sm text-red-200/90 leading-snug break-words">
-                    {errorMsg || 'Inténtalo de nuevo.'}
+                  <div className="mt-2 flex justify-between text-[11px] text-slate-400">
+                    <span>Progreso</span>
+                    <span className="font-bold text-slate-200">{progress}%</span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="mt-4 w-full text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+                  >
+                    Cancelar y subir otro archivo
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={reset}
-                className="mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-3 bg-white text-black hover:bg-slate-100 active:scale-[0.985] transition-all border border-white/10"
-              >
-                Intentar de nuevo
-              </button>
-            </div>
-          </div>
-        ) : null}
+            ) : null}
+
+            {step === 'done' ? (
+              <div className="mt-8 w-full">
+                <div className="rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.05] px-5 py-5 w-full">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 shrink-0 rounded-xl bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center text-xl">
+                      ✅
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-extrabold">¡Subida completada!</div>
+                      <div className="mt-1 text-sm text-emerald-200/90 leading-snug">
+                        Tu MP3 está listo. Ahora cópialo al chat de LucIAna Music para hacer el cover.
+                      </div>
+                      <div className="mt-3 text-[11px] break-all text-slate-300 bg-black/30 rounded-xl px-3 py-2 border border-white/5">
+                        {fileName ? <span className="font-semibold text-slate-100">{fileName}</span> : null}
+                        {sizeText() ? <span className="text-slate-400"> · {sizeText()}</span> : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={copyUrl}
+                    className={`mt-5 w-full rounded-2xl font-extrabold text-lg px-6 py-4 shadow-[0_8px_30px_rgba(250,204,21,0.22)] transition-all active:scale-[0.985] ${
+                      copied
+                        ? 'bg-emerald-400 text-black border border-emerald-500/40'
+                        : 'bg-yellow-400 hover:bg-yellow-300 text-black border border-yellow-300/50'
+                    }`}
+                  >
+                    {copied ? '✅ ¡Enlace copiado! Pégalo en tu chat con LucIAna Music' : '📋 Copiar enlace para el chat'}
+                  </button>
+
+                  <div className="mt-4 rounded-2xl bg-black/40 border border-white/5 px-4 py-3">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Enlace público</div>
+                    <div className="text-[11px] break-all text-slate-200 select-all">{audioUrl}</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="mt-4 w-full text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+                  >
+                    Subir otro audio
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {step === 'error' ? (
+              <div className="mt-8 w-full">
+                <div className="rounded-3xl border border-red-400/30 bg-red-400/[0.05] px-5 py-5 w-full">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 shrink-0 rounded-xl bg-red-400/15 border border-red-400/40 text-red-300 flex items-center justify-center text-xl">
+                      ⚠️
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-extrabold">No se pudo completar la subida</div>
+                      <div className="mt-1 text-sm text-red-200/90 leading-snug break-words">
+                        {errorMsg || 'Inténtalo de nuevo.'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-3 bg-white text-black hover:bg-slate-100 active:scale-[0.985] transition-all border border-white/10"
+                  >
+                    Intentar de nuevo
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
 
         <div className="mt-10 mb-10 text-[11px] text-slate-500 text-center">
           {r2Key ? `Identificador de archivo: ${r2Key}` : 'Tu archivo se guarda en tu carpeta personal de LucIAna Music.'}
