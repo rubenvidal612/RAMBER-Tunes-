@@ -939,16 +939,122 @@ function SubirGptScreen() {
   useEffect(() => {
     let alive = true;
     let unsubscribe: (() => void) | null = null;
+    let fallbackTimer: number | null = null;
+    let resolvedPrimary = false;
+
+    const AUTH_CHECK_TIMEOUT_MS = 1500;
+
+    const fastSyncCheckSession = (): { tokenFound: boolean } => {
+      try {
+        if (typeof window === 'undefined' || !window?.localStorage) return { tokenFound: false };
+        const ls = window.localStorage;
+        const keys = [
+          'sb-' + (typeof (supabaseBrowser as any)?.supabaseUrl === 'string' ? ((supabaseBrowser as any).supabaseUrl.replace(/^https?:\/\//, '').replace(/[./:]/g, '-')) : '') + '-auth-token',
+          'supabase.auth.token',
+          'sb-auth-token'
+        ];
+        for (let i = 0; i < keys.length; i++) {
+          try {
+            const raw = ls.getItem(keys[i]);
+            if (raw && typeof raw === 'string' && raw.length > 30) return { tokenFound: true };
+          } catch {}
+        }
+        try {
+          for (let i = 0; i < ls.length; i++) {
+            const k = ls.key(i);
+            if (!k) continue;
+            if (/\bsb-.+auth-token\b/i.test(k) || /supabase/i.test(k) && /auth|session|token/i.test(k)) {
+              const raw = ls.getItem(k);
+              if (raw && typeof raw === 'string' && raw.length > 30) return { tokenFound: true };
+            }
+          }
+        } catch {}
+      } catch {}
+      return { tokenFound: false };
+    };
+
+    try {
+      const pre = fastSyncCheckSession();
+      if (pre.tokenFound) {
+        setHasValidSession(true);
+      }
+    } catch {}
+
+    fallbackTimer = (typeof window !== 'undefined' && typeof (window as any).setTimeout === 'function')
+      ? (window as any).setTimeout(() => {
+          if (!alive) return;
+          if (resolvedPrimary) return;
+          resolvedPrimary = true;
+          setHasValidSession(prev => {
+            if (prev === true) return true;
+            try {
+              const preSync = fastSyncCheckSession();
+              if (preSync.tokenFound) return true;
+            } catch {}
+            return false;
+          });
+          setSessionReady(true);
+          setStep(curr => {
+            if (curr === 'done' || curr === 'uploading') return curr;
+            if (curr === 'error' && /sesi|login|gmail|google|autoriza/i.test(loginError || errorMsg)) return 'idle';
+            return curr;
+          });
+        }, AUTH_CHECK_TIMEOUT_MS) as any as number
+      : null;
+
     (async () => {
       try {
-        const t = await getAccessToken();
+        const timeoutPromise = new Promise<null>((_resolve, reject) => {
+          try {
+            const id = (window as any).setTimeout(() => reject(new Error('auth_check_timeout')), AUTH_CHECK_TIMEOUT_MS + 250);
+            try { id; } catch {}
+          } catch {
+            reject(new Error('auth_check_timeout'));
+          }
+        });
+        let t: any = null;
+        try {
+          t = await Promise.race([
+            (async () => { try { return await getAccessToken(); } catch (e) { return { ok: false, token: '', error: e }; } })(),
+            timeoutPromise
+          ]);
+        } catch {
+          t = { ok: false, token: '' };
+        }
         if (!alive) return;
-        if (t.ok && typeof t.token === 'string' && t.token.trim()) setHasValidSession(true);
-        else setHasValidSession(false);
+        resolvedPrimary = true;
+        if (fallbackTimer !== null && typeof (window as any)?.clearTimeout === 'function') {
+          try { (window as any).clearTimeout(fallbackTimer); } catch {}
+          fallbackTimer = null;
+        }
+        const ok = t && t.ok && typeof t?.token === 'string' && String(t.token).trim() !== '';
+        setHasValidSession(!!ok);
+        if (ok) {
+          setForceAuthPrompt(false);
+          setErrorMsg(curr => (/sesi|login|gmail|google|autoriza/i.test(curr || '') ? '' : curr));
+        }
       } catch {
-        if (alive) setHasValidSession(false);
+        if (!alive) return;
+        resolvedPrimary = true;
+        if (fallbackTimer !== null && typeof (window as any)?.clearTimeout === 'function') {
+          try { (window as any).clearTimeout(fallbackTimer); } catch {}
+          fallbackTimer = null;
+        }
+        try {
+          const preSync = fastSyncCheckSession();
+          if (preSync.tokenFound) setHasValidSession(true); else setHasValidSession(false);
+        } catch {
+          setHasValidSession(false);
+        }
       } finally {
-        if (alive) setSessionReady(true);
+        if (!alive) return;
+        resolvedPrimary = true;
+        setSessionReady(true);
+        setStep(curr => {
+          if (curr === 'done' || curr === 'uploading') return curr;
+          if (curr === 'error' && /sesi|login|gmail|google|autoriza/i.test(loginError || errorMsg)) return 'idle';
+          return curr;
+        });
       }
     })();
     try {
@@ -956,8 +1062,13 @@ function SubirGptScreen() {
         const res = (supabaseBrowser as any).auth.onAuthStateChange(async (_evt: string, s: any) => {
           if (!alive) return;
           try {
-            const tokenRes = await getAccessToken();
-            const ok = tokenRes.ok && typeof (tokenRes as any)?.token === 'string' && String((tokenRes as any).token).trim() !== '';
+            const tokenRes = await Promise.race([
+              (async () => { try { return await getAccessToken(); } catch (e) { return { ok: false, token: '', error: e }; } })(),
+              new Promise<any>((resolve) => {
+                try { (window as any).setTimeout(() => resolve({ ok: false, token: '' }), 2200); } catch { resolve({ ok: false, token: '' }); }
+              })
+            ]);
+            const ok = tokenRes && tokenRes.ok && typeof (tokenRes as any)?.token === 'string' && String((tokenRes as any).token).trim() !== '';
             setHasValidSession(!!ok);
             setSessionReady(true);
             if (ok) {
@@ -982,6 +1093,10 @@ function SubirGptScreen() {
     } catch {}
     return () => {
       alive = false;
+      if (fallbackTimer !== null && typeof (window as any)?.clearTimeout === 'function') {
+        try { (window as any).clearTimeout(fallbackTimer); } catch {}
+        fallbackTimer = null;
+      }
       if (typeof unsubscribe === 'function') { try { unsubscribe(); } catch {} }
     };
   }, []);
