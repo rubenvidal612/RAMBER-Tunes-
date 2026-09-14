@@ -919,6 +919,280 @@ function ChatgptAuthScreen() {
   );
 }
 
+function SubirGptScreen() {
+  const [step, setStep] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+  const [progress, setProgress] = useState(0);
+  const [fileName, setFileName] = useState('');
+  const [fileSize, setFileSize] = useState<number>(0);
+  const [audioUrl, setAudioUrl] = useState('');
+  const [r2Key, setR2Key] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+
+  const reset = () => {
+    try { xhrRef.current?.abort?.(); } catch {}
+    xhrRef.current = null;
+    setStep('idle');
+    setProgress(0);
+    setFileName('');
+    setFileSize(0);
+    setAudioUrl('');
+    setR2Key('');
+    setCopied(false);
+    setErrorMsg('');
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const fsize = Number(f.size || 0);
+    if (fsize > 25 * 1024 * 1024) {
+      setStep('error');
+      setErrorMsg('El MP3 es demasiado pesado. Máximo 25 MB.');
+      return;
+    }
+    setFileName(f.name || 'audio.mp3');
+    setFileSize(fsize);
+    uploadFile(f);
+  };
+
+  const uploadFile = async (file: File) => {
+    setStep('uploading');
+    setProgress(0);
+    setErrorMsg('');
+    const token = typeof window !== 'undefined' ? (await getAccessToken().catch(() => '') || '') : '';
+    const url = '/api/gpt/upload-audio';
+    const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
+    xhr.open('POST', url, true);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const p = Math.round((evt.loaded / evt.total) * 100);
+        setProgress(p);
+      }
+    };
+    xhr.onload = () => {
+      let body: any = null;
+      try { body = JSON.parse(xhr.responseText || '{}'); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300 && body?.success && typeof body?.url === 'string' && body.url) {
+        setAudioUrl(String(body.url));
+        setR2Key(String(body.r2_key || ''));
+        setProgress(100);
+        setStep('done');
+        return;
+      }
+      let msg = (body?.error && typeof body?.message === 'string') ? body.message : '';
+      if (!msg) msg = (typeof body?.message === 'string' ? body.message : `Error HTTP ${xhr.status}. Inténtalo de nuevo.`);
+      if (xhr.status === 401) msg = 'Necesitas iniciar sesión con Google primero en LucIAna Music.';
+      if (xhr.status === 413) msg = 'El archivo excede el límite de 25 MB.';
+      if (xhr.status === 415) msg = 'Formato no permitido. Solo se aceptan archivos MP3.';
+      setStep('error');
+      setErrorMsg(msg);
+    };
+    xhr.onerror = () => {
+      setStep('error');
+      setErrorMsg('No se pudo subir el archivo. Revisa tu conexión e inténtalo de nuevo.');
+    };
+    xhr.onabort = () => {
+      if (step !== 'done') {
+        setStep('error');
+        setErrorMsg('Subida cancelada.');
+      }
+    };
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'audio.mp3');
+    xhr.send(fd);
+  };
+
+  const copyUrl = async () => {
+    const u = audioUrl.trim();
+    if (!u) return;
+    try {
+      await navigator.clipboard.writeText(u);
+      setCopied(true);
+      try {
+        if (typeof navigator !== 'undefined' && (navigator as any)?.vibrate) (navigator as any).vibrate(22);
+      } catch {}
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = u;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2200);
+      } catch {
+        setStep('error');
+        setErrorMsg('No se pudo copiar al portapapeles. Copia manualmente: ' + u);
+      }
+    }
+  };
+
+  const sizeText = () => {
+    const sz = Number(fileSize || 0);
+    if (!sz) return '';
+    if (sz < 1024) return `${sz} B`;
+    if (sz < 1024 * 1024) return `${(sz / 1024).toFixed(1)} KB`;
+    return `${(sz / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  return (
+    <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-start pt-14 px-5 bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/85 overflow-y-auto">
+      <div className="w-full max-w-md flex flex-col items-center">
+        <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_22px_rgba(250,204,21,0.35)] shrink-0">
+          L
+        </div>
+        <div className="mt-5 text-2xl font-extrabold tracking-tight text-center leading-snug">
+          Sube tu audio MP3<br />para LucIAna Music
+        </div>
+        <div className="mt-2 text-sm text-slate-300 text-center max-w-xs">
+          Selecciona tu canción MP3 y al terminar de subirla, toca el botón para copiar el enlace y pégalo en el chat con LucIAna Music.
+        </div>
+
+        {step === 'idle' ? (
+          <div className="mt-8 w-full">
+            <label
+              className="block w-full cursor-pointer rounded-3xl border-2 border-dashed border-white/20 hover:border-yellow-400/60 transition-colors bg-white/[0.04] hover:bg-white/[0.07] px-6 py-12 text-center">
+              <div className="text-5xl mb-3">🎵</div>
+              <div className="text-lg font-extrabold">Toca para elegir tu MP3</div>
+              <div className="mt-1 text-xs text-slate-400">Solo archivos .mp3 · Máximo 25 MB</div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="audio/mpeg, .mp3"
+                className="hidden"
+                onChange={onPickFile}
+              />
+            </label>
+            <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Subida a almacenamiento privado · No se comparte con nadie más que tú
+            </div>
+          </div>
+        ) : null}
+
+        {step === 'uploading' ? (
+          <div className="mt-8 w-full">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-4 w-full">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 shrink-0 rounded-xl bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 flex items-center justify-center text-xl">
+                  ⬆️
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-sm truncate">{fileName || 'Subiendo audio…'}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{sizeText()} · Subiendo a LucIAna Music…</div>
+                </div>
+              </div>
+              <div className="mt-4 h-3 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
+                <div
+                  className="h-full bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 transition-[width] duration-150 ease-out"
+                  style={{ width: `${Math.max(1, Math.min(100, progress))}%` }}
+                />
+              </div>
+              <div className="mt-2 flex justify-between text-[11px] text-slate-400">
+                <span>Progreso</span>
+                <span className="font-bold text-slate-200">{progress}%</span>
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                className="mt-4 w-full text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+              >
+                Cancelar y subir otro archivo
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {step === 'done' ? (
+          <div className="mt-8 w-full">
+            <div className="rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.05] px-5 py-5 w-full">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 shrink-0 rounded-xl bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center text-xl">
+                  ✅
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-extrabold">¡Subida completada!</div>
+                  <div className="mt-1 text-sm text-emerald-200/90 leading-snug">
+                    Tu MP3 está listo. Ahora cópialo al chat de LucIAna Music para hacer el cover.
+                  </div>
+                  <div className="mt-3 text-[11px] break-all text-slate-300 bg-black/30 rounded-xl px-3 py-2 border border-white/5">
+                    {fileName ? <span className="font-semibold text-slate-100">{fileName}</span> : null}
+                    {sizeText() ? <span className="text-slate-400"> · {sizeText()}</span> : null}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={copyUrl}
+                className={`mt-5 w-full rounded-2xl font-extrabold text-lg px-6 py-4 shadow-[0_8px_30px_rgba(250,204,21,0.22)] transition-all active:scale-[0.985] ${
+                  copied
+                    ? 'bg-emerald-400 text-black border border-emerald-500/40'
+                    : 'bg-yellow-400 hover:bg-yellow-300 text-black border border-yellow-300/50'
+                }`}
+              >
+                {copied ? '✅ ¡Enlace copiado! Pégalo en tu chat con LucIAna Music' : '📋 Copiar enlace para el chat'}
+              </button>
+
+              <div className="mt-4 rounded-2xl bg-black/40 border border-white/5 px-4 py-3">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Enlace público</div>
+                <div className="text-[11px] break-all text-slate-200 select-all">{audioUrl}</div>
+              </div>
+
+              <button
+                type="button"
+                onClick={reset}
+                className="mt-4 w-full text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+              >
+                Subir otro audio
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {step === 'error' ? (
+          <div className="mt-8 w-full">
+            <div className="rounded-3xl border border-red-400/30 bg-red-400/[0.05] px-5 py-5 w-full">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 shrink-0 rounded-xl bg-red-400/15 border border-red-400/40 text-red-300 flex items-center justify-center text-xl">
+                  ⚠️
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-extrabold">No se pudo completar la subida</div>
+                  <div className="mt-1 text-sm text-red-200/90 leading-snug break-words">
+                    {errorMsg || 'Inténtalo de nuevo.'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                className="mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-3 bg-white text-black hover:bg-slate-100 active:scale-[0.985] transition-all border border-white/10"
+              >
+                Intentar de nuevo
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-10 mb-10 text-[11px] text-slate-500 text-center">
+          {r2Key ? `Identificador de archivo: ${r2Key}` : 'Tu archivo se guarda en tu carpeta personal de LucIAna Music.'}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   // #region debug-point app-mount
@@ -3114,6 +3388,14 @@ export default function App() {
     const p = window.location.pathname.toLowerCase();
     if (p === '/auth/chatgpt' || p.startsWith('/auth/chatgpt/')) {
       return <ChatgptAuthScreen />;
+    }
+    if (
+      p === '/subir' ||
+      p.startsWith('/subir/') ||
+      p === '/upload' ||
+      p.startsWith('/upload/')
+    ) {
+      return <SubirGptScreen />;
     }
   }
 
