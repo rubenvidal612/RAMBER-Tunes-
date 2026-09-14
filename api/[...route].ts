@@ -17577,6 +17577,167 @@ async function loadUserProfile(admin: any, userId: string) {
   }
 }
 
+const GPT_UPLOAD_AUDIO_ALLOWED_EXTS: Record<string, string> = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+};
+const GPT_UPLOAD_AUDIO_MIME_TO_EXT: Record<string, string> = {
+  "audio/mpeg": ".mp3",
+  "audio/mp3": ".mp3",
+  "audio/x-mpeg-3": ".mp3",
+  "audio/mpeg3": ".mp3",
+  "audio/wav": ".wav",
+  "audio/wave": ".wav",
+  "audio/x-wav": ".wav",
+  "audio/mp4": ".m4a",
+  "audio/aac": ".m4a",
+  "audio/ogg": ".ogg",
+  "application/ogg": ".ogg",
+  "audio/flac": ".flac",
+  "audio/x-flac": ".flac",
+  "audio/x-m4a": ".m4a",
+};
+const GPT_UPLOAD_AUDIO_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+const GPT_UPLOAD_AUDIO_R2_PREFIX = "gpt-uploads";
+
+function gptCryptoRandom(): Uint8Array {
+  try {
+    const webCrypto = (globalThis as any)?.crypto as any;
+    if (webCrypto && typeof webCrypto.getRandomValues === "function") {
+      const buf = new Uint8Array(16);
+      webCrypto.getRandomValues(buf);
+      return buf;
+    }
+  } catch {}
+  const buf = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) buf[i] = Math.floor(Math.random() * 256);
+  return buf;
+}
+function gptUuidV4(): string {
+  const b = gptCryptoRandom();
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+function gptAudioSafeExt(raw: string): string {
+  const s = (raw || "").toString().trim().toLowerCase();
+  if (!s) return "";
+  if (GPT_UPLOAD_AUDIO_ALLOWED_EXTS[s]) return s;
+  if (s.startsWith(".")) return s in GPT_UPLOAD_AUDIO_ALLOWED_EXTS ? s : "";
+  return `.${s}` in GPT_UPLOAD_AUDIO_ALLOWED_EXTS ? `.${s}` : "";
+}
+function gptAudioMimeToExt(mime: string): string {
+  const s = (mime || "").toString().trim().toLowerCase().split(";")[0].trim();
+  return GPT_UPLOAD_AUDIO_MIME_TO_EXT[s] || "";
+}
+function gptAudioGuessExt(maybeName: string, mime: string): string {
+  let ext = "";
+  try {
+    const name = (maybeName || "").toString().trim();
+    if (name) {
+      const base = name.split("?")[0].replace(/\\/g, "/").split("/").pop() || "";
+      const idx = base.lastIndexOf(".");
+      if (idx >= 0) ext = gptAudioSafeExt(base.slice(idx));
+    }
+  } catch {}
+  if (ext) return ext;
+  return gptAudioMimeToExt(mime);
+}
+function gptAudioCleanFileName(fname: string): string {
+  const safe = (fname || "").toString().trim().replace(/\\/g, "/").split("/").pop() || "audio";
+  const cleaned = safe.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120);
+  return cleaned || "audio";
+}
+
+async function gptReadRawBody(req: any): Promise<Buffer> {
+  if (Buffer.isBuffer(req.body)) return req.body;
+  if (typeof req.body === "string") return Buffer.from(req.body, "utf-8");
+  if (req.body instanceof Uint8Array) return Buffer.from(req.body);
+  return await new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let done = false;
+    const cleanup = () => {
+      try { req.removeListener?.("data", onData); } catch {}
+      try { req.removeListener?.("end", onEnd); } catch {}
+      try { req.removeListener?.("error", onErr); } catch {}
+    };
+    const onData = (c: any) => {
+      if (c) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+    };
+    const onEnd = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(Buffer.concat(chunks));
+    };
+    const onErr = (e: any) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(e);
+    };
+    try {
+      req.on("data", onData);
+      req.on("end", onEnd);
+      req.on("error", onErr);
+      if (typeof req.resume === "function") req.resume();
+    } catch (e) {
+      cleanup();
+      reject(e);
+    }
+  });
+}
+
+function gptParseMultipart(raw: Buffer, boundary: string): { fields: Record<string, string>; files: Array<{ name: string; filename: string; contentType: string; content: Buffer }> } {
+  const fields: Record<string, string> = {};
+  const files: Array<{ name: string; filename: string; contentType: string; content: Buffer }> = [];
+  const b = Buffer.concat([Buffer.from("--"), Buffer.from(boundary)]);
+  const endB = Buffer.concat([b, Buffer.from("--")]);
+  let i = raw.indexOf(b);
+  if (i < 0) return { fields, files };
+  i += b.length;
+  while (i < raw.length) {
+    const r = raw.indexOf(Buffer.from("\r\n\r\n"), i);
+    if (r < 0) break;
+    const headerStr = raw.slice(i, r).toString("utf-8");
+    const headers: Record<string, string> = {};
+    for (const h of headerStr.split(/\r\n/)) {
+      const colon = h.indexOf(":");
+      if (colon < 0) continue;
+      const k = h.slice(0, colon).trim().toLowerCase();
+      const v = h.slice(colon + 1).trim();
+      if (k) headers[k] = v;
+    }
+    const disp = headers["content-disposition"] || "";
+    const nameMatch = /name="([^"]+)"/i.exec(disp);
+    const fnameMatch = /filename="([^"]+)"/i.exec(disp);
+    const contentType = headers["content-type"] || "";
+    const start = r + 4;
+    const nextB = raw.indexOf(b, start);
+    const endB2 = raw.indexOf(endB, start);
+    const endOff = nextB >= 0 && (endB2 < 0 || nextB <= endB2) ? nextB : endB2;
+    if (endOff < 0) break;
+    const end = (endOff > 2 && raw[endOff - 2] === 0x0d && raw[endOff - 1] === 0x0a) ? endOff - 2 : endOff;
+    const content = raw.slice(start, end);
+    if (fnameMatch) {
+      files.push({ name: nameMatch?.[1] || "file", filename: fnameMatch[1], contentType, content: Buffer.from(content) });
+    } else if (nameMatch) {
+      fields[nameMatch[1]] = content.toString("utf-8");
+    }
+    if (endB2 >= 0 && endOff === endB2) break;
+    i = endOff + b.length;
+    if (raw.slice(i, i + 2).toString() === "\r\n") i += 2;
+  }
+  return { fields, files };
+}
+
+
 const oauthHandler = (() => {
   async function handleToken(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
@@ -17985,6 +18146,301 @@ const gptHandler = (() => {
     });
   }
 
+  async function handleUploadAudio(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if (method !== "POST") return oauthGptSendJson(res, 405, { success: false, error: "method_not_allowed", message: "Solo POST" });
+
+    const token = extractBearerToken(req);
+    const auth = await requireAnyUserFromToken(token);
+    if (!auth.ok) return oauthGptSendJson(res, auth.status, { success: false, error: "unauthorized", message: auth.error });
+
+    const contentType = (req.headers["content-type"] || req.headers["Content-Type"] || "").toString().trim().toLowerCase();
+    const isMultipart = contentType.startsWith("multipart/form-data");
+    const isJson = contentType.startsWith("application/json");
+    const isOctet = contentType.startsWith("application/octet-stream") || contentType.startsWith("audio/");
+
+    let bytes: Buffer | Uint8Array | null = null;
+    let fileName = "";
+    let mime = "";
+    let params: any = {};
+
+    try {
+      if (isMultipart) {
+        const boundaryMatch = /boundary=([^;]+)/i.exec(String(req.headers["content-type"] || req.headers["Content-Type"] || ""));
+        const boundary = boundaryMatch ? boundaryMatch[1].trim().replace(/^"|"$/g, "") : "";
+        if (!boundary) throw new Error("Missing multipart boundary");
+        const raw = await gptReadRawBody(req);
+        const parsed = gptParseMultipart(raw, boundary);
+        const f = parsed.files.find(x => x) || null;
+        if (!f || !f.content?.byteLength) throw new Error("No se recibió ningún archivo de audio (multipart). Sube un archivo .mp3/.wav/.m4a/.ogg en el campo 'file'.");
+        bytes = f.content;
+        fileName = f.filename || "";
+        mime = f.contentType || "";
+        params = parsed.fields || {};
+      } else if (isJson) {
+        const body = parseAnyBody(req) || {};
+        let raw64 = "";
+        if (typeof body?.file === "string") raw64 = body.file;
+        else if (typeof body?.audio === "string") raw64 = body.audio;
+        else if (typeof body?.data === "string") raw64 = body.data;
+        if (raw64) {
+          const clean = raw64.includes(",") ? raw64.slice(raw64.indexOf(",") + 1) : raw64;
+          bytes = Buffer.from(clean, "base64");
+        }
+        if (!bytes || !bytes.byteLength) {
+          if (typeof body?.fileBytes?.length === "number") bytes = Buffer.from(new Uint8Array(body.fileBytes));
+          else if (Array.isArray(body?.bytes)) bytes = Buffer.from(new Uint8Array(body.bytes.filter(v => typeof v === "number").map(v => Number(v) & 0xff)));
+        }
+        fileName = typeof body?.filename === "string" ? body.filename : (typeof body?.name === "string" ? body.name : "");
+        mime = typeof body?.contentType === "string" ? body.contentType : (typeof body?.mimeType === "string" ? body.mimeType : "");
+        params = body || {};
+      } else if (isOctet) {
+        bytes = await gptReadRawBody(req);
+        fileName = "";
+        mime = contentType;
+        params = {};
+      } else {
+        const raw = await gptReadRawBody(req);
+        if (raw && raw.length > 0) {
+          const s = raw.toString("utf-8");
+          try {
+            const j = JSON.parse(s);
+            const clean = (typeof j?.file === "string") ? (j.file.includes(",") ? j.file.slice(j.file.indexOf(",") + 1) : j.file) : "";
+            bytes = clean ? Buffer.from(clean, "base64") : null;
+            fileName = typeof j?.filename === "string" ? j.filename : "";
+            mime = typeof j?.contentType === "string" ? j.contentType : "";
+            params = j || {};
+          } catch {
+            bytes = raw;
+            mime = contentType;
+          }
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return oauthGptSendJson(res, 400, { success: false, error: "invalid_body", message: `No pude leer el audio subido: ${msg.slice(0, 400)}` });
+    }
+
+    if (!bytes || !bytes.byteLength) {
+      return oauthGptSendJson(res, 400, { success: false, error: "missing_audio", message: "No se recibió ningún archivo de audio válido. Sube un archivo .mp3, .wav, .m4a o .ogg." });
+    }
+
+    const sizeBytes = Number(bytes.byteLength) || 0;
+    if (!sizeBytes) return oauthGptSendJson(res, 400, { success: false, error: "empty_audio", message: "El audio está vacío." });
+    if (sizeBytes > GPT_UPLOAD_AUDIO_MAX_BYTES) {
+      return oauthGptSendJson(res, 413, {
+        success: false,
+        error: "audio_too_large",
+        message: `Audio muy pesado. Máximo permitido: ${Math.round(GPT_UPLOAD_AUDIO_MAX_BYTES / 1024 / 1024)} MB. Tu archivo: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB.`,
+        max_bytes: GPT_UPLOAD_AUDIO_MAX_BYTES,
+        size_bytes: sizeBytes,
+      });
+    }
+
+    const explicitExt = gptAudioSafeExt(typeof params?.ext === "string" ? params.ext : (typeof params?.extension === "string" ? params.extension : ""));
+    let ext = explicitExt || gptAudioGuessExt(fileName, mime);
+    if (!ext) ext = ".bin";
+
+    if (!gptAudioSafeExt(ext)) {
+      return oauthGptSendJson(res, 415, {
+        success: false,
+        error: "unsupported_format",
+        message: `Formato de audio no permitido. Usa .mp3, .wav, .m4a, .ogg (detectado ext=${ext || "ninguna"} mime=${mime || "ninguno"}).`,
+      });
+    }
+
+    try {
+      const r2Env = getR2Env();
+      if (!r2Env?.bucketName) throw new Error("R2 no configurado");
+    } catch (e) {
+      return oauthGptSendJson(res, 500, {
+        success: false,
+        error: "storage_not_configured",
+        message: "Almacenamiento R2 no está configurado en el servidor.",
+      });
+    }
+
+    const uuid = gptUuidV4();
+    const cleanBase = fileName ? gptAudioCleanFileName(fileName.split(/[.]/).slice(0, -1).join(".") || "audio") : "audio";
+    const datePrefix = `${new Date().getUTCFullYear()}${String(new Date().getUTCMonth() + 1).padStart(2, "0")}${String(new Date().getUTCDate()).padStart(2, "0")}`;
+    const userIdShort = String(auth.user.id || "anon").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 16) || "anon";
+    const key = `${GPT_UPLOAD_AUDIO_R2_PREFIX}/${datePrefix}/${userIdShort}/${uuid}-${cleanBase}${ext}`;
+    const finalMime = GPT_UPLOAD_AUDIO_ALLOWED_EXTS[gptAudioSafeExt(ext)] || (mime && /^audio\//i.test(mime) ? mime : "application/octet-stream");
+
+    let publicUrl = "";
+    try {
+      publicUrl = await uploadToR2(key, bytes, finalMime);
+    } catch (r2Err) {
+      const msg = r2Err instanceof Error ? r2Err.message : String(r2Err || "");
+      try {
+        const sbUrl = (process.env.SUPABASE_URL || "").toString().trim();
+        const sbSvc = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+        if (sbUrl && sbSvc) {
+          const createClient = await getSupabaseCreateClient();
+          const sb = createClient(sbUrl, sbSvc, { auth: { persistSession: false } });
+          const up = await sb.storage.from("ramber-tunes").upload(key, Buffer.from(bytes as any), { contentType: finalMime, upsert: true });
+          if (up?.error) throw up.error;
+          const signed = await sb.storage.from("ramber-tunes").createSignedUrl(key, 60 * 60 * 24 * 7);
+          if (signed?.error) throw signed.error;
+          const raw = (signed?.data as any)?.signedUrl || "";
+          if (!raw) throw new Error("No signed url from supabase");
+          publicUrl = /^https?:\/\//i.test(String(raw)) ? String(raw) : new URL(String(raw), sbUrl).toString();
+        } else {
+          throw r2Err;
+        }
+      } catch (supErr) {
+        const sm = supErr instanceof Error ? supErr.message : String(supErr || "");
+        try { console.error(JSON.stringify({ kind: "GPT_UPLOAD_AUDIO", userId: auth.user.id, key, sizeBytes, ext, mime, r2: msg.slice(0, 300), supabase: sm.slice(0, 300) })); } catch {}
+        return oauthGptSendJson(res, 502, { success: false, error: "storage_upload_failed", message: `No pude guardar el audio: ${sm.slice(0, 400)}` });
+      }
+    }
+
+    return oauthGptSendJson(res, 200, {
+      success: true,
+      url: publicUrl,
+      r2_key: key,
+      filename: `${cleanBase}${ext}`,
+      content_type: finalMime,
+      size_bytes: sizeBytes,
+      ext: ext.replace(/^\./, ""),
+      user_id: auth.user.id,
+      expires_in_seconds: 30 * 24 * 60 * 60,
+    });
+  }
+
+  async function handleCover(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if (method !== "POST") return oauthGptSendJson(res, 405, { error: "method_not_allowed", message: "Solo POST" });
+
+    const token = extractBearerToken(req);
+    const auth = await requireAnyUserFromToken(token);
+    if (!auth.ok) return oauthGptSendJson(res, auth.status, { error: "unauthorized", message: auth.error });
+
+    const body = parseAnyBody(req) || {};
+    const cost = Number(CREDIT_COSTS.upload_and_cover) || 12;
+    const isAdmin = isAdminEmail(auth.user.email);
+
+    if (!isAdmin) {
+      const profile = await loadUserProfile(auth.admin, auth.user.id);
+      const available = creditsFromProfile(profile);
+      if (!Number.isFinite(available) || available < cost) {
+        return oauthGptSendJson(res, 402, {
+          error: "insufficient_credits",
+          message: "No tienes suficientes créditos en LucIAna Music para hacer este cover. Recarga en tu panel.",
+          credits_required: cost,
+          credits_available: Number.isFinite(available) ? available : 0,
+        });
+      }
+    }
+
+    const uploadUrl =
+      (typeof body?.upload_url === "string" ? body.upload_url.trim() : "") ||
+      (typeof body?.uploadUrl === "string" ? body.uploadUrl.trim() : "") ||
+      (typeof body?.url === "string" ? body.url.trim() : "") ||
+      (typeof body?.audio_url === "string" ? body.audio_url.trim() : "") ||
+      "";
+    const uploadPath =
+      (typeof body?.upload_path === "string" ? body.upload_path.trim() : "") ||
+      (typeof body?.uploadPath === "string" ? body.uploadPath.trim() : "") ||
+      (typeof body?.r2_key === "string" ? body.r2_key.trim() : "") ||
+      (typeof body?.key === "string" ? body.key.trim() : "") ||
+      "";
+
+    if (!uploadUrl && !uploadPath) {
+      return oauthGptSendJson(res, 400, {
+        error: "invalid_request",
+        message: "Falta upload_url (URL pública HTTPS del audio) o upload_path (key del archivo en R2). Primero sube el audio a /api/gpt/upload-audio.",
+      });
+    }
+
+    const origin = (() => {
+      try {
+        const proto = (req.headers["x-forwarded-proto"] || "https").toString().split(",")[0].trim();
+        const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
+        return `${proto}://${host}`;
+      } catch {
+        return "";
+      }
+    })();
+
+    const callCoverUrl = origin ? new URL("/api/suno/upload-cover", origin).toString() : "/api/suno/upload-cover";
+    const headersInternal: Record<string, string> = { "content-type": "application/json" };
+    if (token) headersInternal.authorization = `Bearer ${token}`;
+
+    const payload: any = {};
+    payload.uploadUrl = uploadUrl || undefined;
+    payload.uploadPath = uploadPath || undefined;
+    if (typeof body?.prompt === "string") payload.prompt = body.prompt;
+    if (typeof body?.lyrics === "string" && !payload.prompt) payload.prompt = body.lyrics;
+    if (typeof body?.style === "string") payload.style = body.style;
+    if (typeof body?.genre === "string" && !payload.style) payload.style = body.genre;
+    if (typeof body?.title === "string") payload.title = body.title;
+    if (typeof body?.instrumental === "boolean") payload.instrumental = body.instrumental;
+    if (typeof body?.model === "string") payload.model = body.model; else payload.model = "V6";
+    if (typeof body?.negativeTags === "string") payload.negativeTags = body.negativeTags;
+    if (typeof body?.negative_tags === "string" && !payload.negativeTags) payload.negativeTags = body.negative_tags;
+    if (typeof body?.personaId === "string") payload.personaId = body.personaId;
+    if (typeof body?.persona_id === "string" && !payload.personaId) payload.personaId = body.persona_id;
+    if (typeof body?.personaModel === "string") payload.personaModel = body.personaModel;
+    if (typeof body?.vocalGender === "string") payload.vocalGender = body.vocalGender;
+    if (typeof body?.vocal_gender === "string" && !payload.vocalGender) payload.vocalGender = body.vocal_gender;
+    if (typeof body?.styleWeight === "number") payload.styleWeight = body.styleWeight;
+    if (typeof body?.weirdnessConstraint === "number") payload.weirdnessConstraint = body.weirdnessConstraint;
+    if (typeof body?.audioWeight === "number") payload.audioWeight = body.audioWeight;
+
+    let started: any = null;
+    try {
+      const r = await fetch(callCoverUrl, { method: "POST", headers: headersInternal, body: JSON.stringify(payload) });
+      const out = await r.json().catch(() => ({}));
+      started = { ok: r.ok, status: r.status, out };
+    } catch (e) {
+      return oauthGptSendJson(res, 502, { error: "cover_error", message: e instanceof Error ? e.message : "No pude conectar con el generador de covers." });
+    }
+
+    if (!started.ok) {
+      const errCode = Number(started?.status || 0);
+      const msg =
+        (typeof started?.out?.error === "string" && started.out.error) ||
+        (typeof started?.out?.message === "string" && started.out.message) ||
+        (typeof started?.out?.detail === "string" && started.out.detail) ||
+        `Error HTTP ${errCode || 502}`;
+      return oauthGptSendJson(res, errCode >= 400 ? errCode : 502, {
+        error: errCode === 402 ? "insufficient_credits" : "cover_error",
+        message: msg,
+      });
+    }
+
+    const taskId = String(started?.out?.taskId || started?.out?.task_id || "").trim();
+    const title =
+      (typeof payload.title === "string" && payload.title.trim()) ||
+      (typeof uploadPath === "string" ? uploadPath.split("/").pop() : "") ||
+      "Cover LucIAna";
+    return oauthGptSendJson(res, 200, {
+      taskId: taskId || undefined,
+      task_id: taskId || undefined,
+      title,
+      status: taskId ? "queued" : "unknown",
+      provider: "suno_v6",
+      credits_cost: cost,
+    });
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const u = new URL(req.url, "http://localhost");
@@ -17993,6 +18449,8 @@ const gptHandler = (() => {
       const next = isApi ? parts[2] : parts[1];
       if (next === "generate") return handleGenerate(req, res);
       if (next === "status") return handleStatus(req, res);
+      if (next === "upload-audio") return handleUploadAudio(req, res);
+      if (next === "cover") return handleCover(req, res);
       return oauthGptSendJson(res, 404, { error: "ruta_no_encontrada" });
     } catch (e) {
       return oauthGptSendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });
