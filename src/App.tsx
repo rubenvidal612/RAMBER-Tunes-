@@ -933,6 +933,10 @@ function SubirGptScreen() {
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [forceAuthPrompt, setForceAuthPrompt] = useState<boolean>(false);
+  const [transcribeStep, setTranscribeStep] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [lyrics, setLyrics] = useState<string>('');
+  const [transcribeError, setTranscribeError] = useState<string>('');
+  const [copiedChatFormat, setCopiedChatFormat] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
 
@@ -1142,6 +1146,10 @@ function SubirGptScreen() {
     setCopied(false);
     setErrorMsg('');
     setForceAuthPrompt(false);
+    setTranscribeStep('idle');
+    setLyrics('');
+    setTranscribeError('');
+    setCopiedChatFormat(false);
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -1233,10 +1241,12 @@ function SubirGptScreen() {
       let body: any = null;
       try { body = JSON.parse(xhr.responseText || '{}'); } catch {}
       if (xhr.status >= 200 && xhr.status < 300 && body?.success && typeof body?.url === 'string' && body.url) {
-        setAudioUrl(String(body.url));
+        const finalUrl = String(body.url);
+        setAudioUrl(finalUrl);
         setR2Key(String(body.r2_key || ''));
         setProgress(100);
         setStep('done');
+        setTimeout(() => startTranscribe(finalUrl), 250);
         return;
       }
       let msg = (body?.error && typeof body?.message === 'string') ? body.message : '';
@@ -1292,6 +1302,128 @@ function SubirGptScreen() {
     const fd = new FormData();
     fd.append('file', file, file.name || 'audio.mp3');
     xhr.send(fd);
+  };
+
+  const startTranscribe = async (targetAudioUrl?: string) => {
+    const url = (targetAudioUrl || audioUrl || '').trim();
+    if (!url) return;
+    setTranscribeStep('loading');
+    setTranscribeError('');
+    setLyrics('');
+    let token = '';
+    try {
+      if (typeof window !== 'undefined' && supabaseBrowser && typeof (supabaseBrowser as any)?.auth?.getSession === 'function') {
+        const sessionRes = await Promise.race([
+          (supabaseBrowser as any).auth.getSession(),
+          new Promise<any>((resolve) => { try { (window as any).setTimeout(() => resolve({ data: { session: null }, error: null }), 4500); } catch { resolve({ data: { session: null }, error: null }); } })
+        ]);
+        const session = sessionRes?.data?.session ?? sessionRes?.session ?? null;
+        const access = session?.access_token;
+        if (access && typeof access === 'string' && access.trim().length > 20) token = String(access).trim();
+      }
+    } catch (e) {
+      token = '';
+      console.error('[SubirGptScreen startTranscribe] Excepcion extrayendo token para transcripcion:', e instanceof Error ? e.message : String(e));
+    }
+    try {
+      const controller = new (window as any).AbortController?.();
+      const t = (window as any).setTimeout?.(() => { try { controller?.abort?.(); } catch {} }, 180_000);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/gpt/transcribe', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ audio_url: url }),
+        signal: controller?.signal,
+      });
+      try { if (typeof (window as any)?.clearTimeout === 'function') (window as any).clearTimeout(t); } catch {}
+      let body: any = null;
+      try { body = await res.json(); } catch {}
+      if (res.status >= 200 && res.status < 300 && body?.success && typeof body?.lyrics === 'string') {
+        setLyrics(String(body.lyrics || '').trim());
+        setTranscribeStep('done');
+        if (body?.note && typeof body?.note === 'string') {
+          console.error('[SubirGptScreen startTranscribe] Info nota transcripcion:', body.note);
+        }
+        return;
+      }
+      const msg = (body?.message && typeof body.message === 'string') ? body.message : `Error HTTP ${res.status}. No pude extraer la letra de este audio.`;
+      if (res.status === 401) {
+        console.error('[SubirGptScreen startTranscribe] 401 transcribe. Reintento sin Bearer token (bypass trusted host)...');
+        try {
+          const controller2 = new (window as any).AbortController?.();
+          const t2 = (window as any).setTimeout?.(() => { try { controller2?.abort?.(); } catch {} }, 180_000);
+          const res2 = await fetch('/api/gpt/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio_url: url }),
+            signal: controller2?.signal,
+          });
+          try { if (typeof (window as any)?.clearTimeout === 'function') (window as any).clearTimeout(t2); } catch {}
+          let body2: any = null;
+          try { body2 = await res2.json(); } catch {}
+          if (res2.status >= 200 && res2.status < 300 && body2?.success && typeof body2?.lyrics === 'string') {
+            setLyrics(String(body2.lyrics || '').trim());
+            setTranscribeStep('done');
+            return;
+          }
+          const msg2 = (body2?.message && typeof body2.message === 'string') ? body2.message : `Error HTTP ${res2.status}. No pude extraer la letra de este audio.`;
+          console.error('[SubirGptScreen startTranscribe] Fallo segunda llamada sin auth:', { status: res2.status, error: body2?.error, message: msg2 });
+          setTranscribeStep('error');
+          setTranscribeError(msg2);
+          return;
+        } catch (e2) {
+          console.error('[SubirGptScreen startTranscribe] Excepcion segunda llamada transcripcion (sin auth):', e2 instanceof Error ? { name: e2.name, message: e2.message } : String(e2));
+          setTranscribeStep('error');
+          setTranscribeError('No pude extraer la letra de este audio. Puedes seguir sin ella o reintentar.');
+          return;
+        }
+      }
+      console.error('[SubirGptScreen startTranscribe] HTTP not ok:', { status: res.status, error: body?.error, message: msg });
+      setTranscribeStep('error');
+      setTranscribeError(msg);
+    } catch (e) {
+      console.error('[SubirGptScreen startTranscribe] Excepcion fetch transcribe:', e instanceof Error ? { name: e.name, message: e.message, stack: String(e.stack || '').slice(0, 500) } : String(e));
+      setTranscribeStep('error');
+      setTranscribeError('No pude extraer la letra de este audio. Puedes seguir sin ella o reintentar.');
+    }
+  };
+
+  const copyChatFormat = async () => {
+    const u = audioUrl.trim();
+    if (!u) return;
+    const letter = (lyrics || '').trim();
+    const block =
+`AUDIO_URL: ${u}
+
+--- LETRA OFICIAL ---
+${letter}
+---------------------`;
+    try {
+      await navigator.clipboard.writeText(block);
+      setCopiedChatFormat(true);
+      try {
+        if (typeof navigator !== 'undefined' && (navigator as any)?.vibrate) (navigator as any).vibrate([15, 40, 15]);
+      } catch {}
+      setTimeout(() => setCopiedChatFormat(false), 2500);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = block;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopiedChatFormat(true);
+        setTimeout(() => setCopiedChatFormat(false), 2500);
+      } catch {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2200);
+      }
+    }
   };
 
   const copyUrl = async () => {
@@ -1453,7 +1585,7 @@ function SubirGptScreen() {
                     <div className="min-w-0 flex-1">
                       <div className="font-extrabold">¡Subida completada!</div>
                       <div className="mt-1 text-sm text-emerald-200/90 leading-snug">
-                        Tu MP3 está listo. Ahora cópialo al chat de LucIAna Music para hacer el cover.
+                        Tu MP3 está listo. Ahora extraemos la letra automáticamente para que la pegues en LucIAna Music.
                       </div>
                       <div className="mt-3 text-[11px] break-all text-slate-300 bg-black/30 rounded-xl px-3 py-2 border border-white/5">
                         {fileName ? <span className="font-semibold text-slate-100">{fileName}</span> : null}
@@ -1462,22 +1594,123 @@ function SubirGptScreen() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={copyUrl}
-                    className={`mt-5 w-full rounded-2xl font-extrabold text-lg px-6 py-4 shadow-[0_8px_30px_rgba(250,204,21,0.22)] transition-all active:scale-[0.985] ${
-                      copied
-                        ? 'bg-emerald-400 text-black border border-emerald-500/40'
-                        : 'bg-yellow-400 hover:bg-yellow-300 text-black border border-yellow-300/50'
-                    }`}
-                  >
-                    {copied ? '✅ ¡Enlace copiado! Pégalo en tu chat con LucIAna Music' : '📋 Copiar enlace para el chat'}
-                  </button>
+                  {transcribeStep === 'loading' ? (
+                    <div className="mt-5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-blue-500/10 to-indigo-500/10 border border-purple-400/20 px-4 py-5 w-full">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 shrink-0 rounded-full border-4 border-purple-300/30 border-t-purple-400 animate-spin" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-extrabold text-base text-purple-100">Extrayendo letra de la canción con IA... ⏳</div>
+                          <div className="mt-1 text-xs text-purple-200/80 leading-snug">
+                            Analizando la voz y el canto para organizar la letra en versos, coros y puentes. No cierres esta página.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 h-2 w-full rounded-full bg-white/10 overflow-hidden border border-white/5">
+                        <div className="h-full w-1/3 bg-gradient-to-r from-purple-400 via-pink-300 to-indigo-400 animate-[shimmer_1.6s_infinite]" />
+                      </div>
+                    </div>
+                  ) : null}
 
-                  <div className="mt-4 rounded-2xl bg-black/40 border border-white/5 px-4 py-3">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Enlace público</div>
-                    <div className="text-[11px] break-all text-slate-200 select-all">{audioUrl}</div>
-                  </div>
+                  {transcribeStep === 'error' ? (
+                    <div className="mt-5 rounded-2xl bg-amber-400/[0.07] border border-amber-400/30 px-4 py-4 w-full">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-400/15 border border-amber-400/40 text-amber-300 flex items-center justify-center text-lg">
+                          ⚡
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-extrabold text-sm text-amber-100">La IA no pudo extraer la letra de este audio</div>
+                          <div className="mt-1 text-xs text-amber-200/85 break-words leading-snug">
+                            {transcribeError ? transcribeError : 'Puede ser instrumental o tener demasiado ruido. Puedes escribir la letra manualmente abajo o reintentar.'}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startTranscribe()}
+                              className="rounded-xl font-bold text-xs px-4 py-2.5 bg-amber-400 text-black active:scale-[0.98] transition-all shadow-[0_4px_16px_rgba(251,191,36,0.25)]">
+                              🔄 Reintentar extracción
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setTranscribeStep('done'); setLyrics(''); }}
+                              className="rounded-xl font-bold text-xs px-4 py-2.5 bg-white/10 text-white border border-white/10 active:scale-[0.98] transition-all">
+                              ✍️ Escribir la letra manualmente
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(transcribeStep === 'done' || transcribeStep === 'error') ? (
+                    <div className="mt-5 w-full">
+                      <div className="rounded-2xl bg-black/40 border border-white/8 px-4 py-4 w-full">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                            {transcribeStep === 'done' && lyrics ? '✅ Letra extraída (revisa y corrige si hace falta)' : '✍️ Escribe aquí la letra de la canción'}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-medium">
+                            {(lyrics || '').length} caracteres
+                          </div>
+                        </div>
+                        <textarea
+                          value={lyrics}
+                          onChange={(e) => setLyrics(String(e.target.value || ''))}
+                          placeholder={
+                            '[Intro]\n(puedes poner aquí la letra si la IA no la detectó)\n\n[Verso 1]\nAquí empieza la primera estrofa...\n\n[Coro]\nY aquí la parte más pegadiza de la canción...'
+                          }
+                          spellCheck={false}
+                          className="w-full min-h-[280px] max-h-[60vh] resize-y rounded-xl bg-black/40 border border-white/8 px-4 py-3 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-yellow-400/50 focus:border-yellow-400/40 transition-all"
+                        />
+                        <div className="mt-2 text-[11px] text-slate-500 leading-snug">
+                          Usa etiquetas entre corchetes como: <span className="text-slate-300 font-medium">[Intro]</span>, <span className="text-slate-300 font-medium">[Verso]</span>, <span className="text-slate-300 font-medium">[Coro]</span>, <span className="text-slate-300 font-medium">[Puente]</span>, <span className="text-slate-300 font-medium">[Outro]</span>. LucIAna Music respetará esta estructura al generar tu cover.
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={copyChatFormat}
+                        className={`mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-4.5 shadow-[0_8px_30px_rgba(79,70,229,0.25)] transition-all active:scale-[0.985] ${
+                          copiedChatFormat
+                            ? 'bg-emerald-400 text-black border border-emerald-500/40 py-5'
+                            : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white border border-white/10 py-5'
+                        }`}
+                      >
+                        {copiedChatFormat ? '✅ ¡Listo! Ve al chat de LucIAna Music y pégalo directamente' : '📋 Copiar audio y letra para ChatGPT'}
+                      </button>
+
+                      <div className="mt-3 rounded-2xl bg-indigo-500/[0.06] border border-indigo-400/15 px-4 py-3">
+                        <div className="text-[10px] uppercase tracking-wider text-indigo-300/80 font-bold mb-1">📝 Texto que se copiará</div>
+                        <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-all text-slate-200/95 select-all font-mono">
+{`AUDIO_URL: ${audioUrl}
+
+--- LETRA OFICIAL ---
+${(lyrics || '').length ? (lyrics.length > 300 ? lyrics.slice(0, 300) + '...' : lyrics) : '(escribe aquí tu letra)' }
+---------------------`}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {transcribeStep === 'loading' ? null : (
+                    <button
+                      type="button"
+                      onClick={copyUrl}
+                      className={`mt-5 w-full rounded-2xl font-bold text-sm px-6 py-3.5 transition-all active:scale-[0.985] border ${
+                        copied
+                          ? 'bg-emerald-400/20 text-emerald-100 border-emerald-400/30'
+                          : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/[0.08] hover:text-white'
+                      }`}
+                    >
+                      {copied ? '✅ Enlace solo del audio copiado' : '📎 Copiar solo el enlace (sin letra)'}
+                    </button>
+                  )}
+
+                  {transcribeStep === 'loading' ? null : (
+                    <div className="mt-4 rounded-2xl bg-black/40 border border-white/5 px-4 py-3">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Enlace público del MP3</div>
+                      <div className="text-[11px] break-all text-slate-200 select-all">{audioUrl}</div>
+                    </div>
+                  )}
 
                   <button
                     type="button"
