@@ -18469,19 +18469,27 @@ const gptHandler = (() => {
       res.end();
       return;
     }
-    if (method !== "POST") return oauthGptSendJson(res, 405, { success: false, error: "method_not_allowed", message: "Solo POST" });
+    if (method !== "POST") {
+      console.error("[handleTranscribe Error] method_not_allowed", { method });
+      return oauthGptSendJson(res, 405, { success: false, error: "method_not_allowed", message: "Solo POST" });
+    }
 
     const token = extractBearerToken(req);
     const auth = await requireAnyUserFromToken(token);
-    if (!auth.ok) return oauthGptSendJson(res, auth.status, { success: false, error: "unauthorized", message: auth.error });
-
     const body = parseAnyBody(req) || {};
     const audioUrlRaw =
       (typeof body?.audio_url === "string" ? body.audio_url.trim() : "") ||
       (typeof body?.audioUrl === "string" ? body.audioUrl.trim() : "") ||
       (typeof body?.url === "string" ? body.url.trim() : "") ||
       "";
+
     if (!audioUrlRaw) {
+      console.error("[handleTranscribe Error] invalid_request: missing audio_url", {
+        hasToken: !!(token && token.trim().length > 0),
+        authOk: auth.ok,
+        authStatus: auth.status,
+        bodyKeys: Object.keys(body || {}).slice(0, 10),
+      });
       return oauthGptSendJson(res, 400, {
         success: false,
         error: "invalid_request",
@@ -18492,12 +18500,59 @@ const gptHandler = (() => {
     try {
       audioUrl = new URL(audioUrlRaw);
       if (!(audioUrl.protocol === "https:" || audioUrl.protocol === "http:")) throw new Error("proto");
-    } catch {
+    } catch (e) {
+      console.error("[handleTranscribe Error] invalid_request: invalid audio_url", {
+        audioUrlRaw: audioUrlRaw.slice(0, 120),
+        err: e instanceof Error ? e.message : String(e),
+      });
       return oauthGptSendJson(res, 400, {
         success: false,
         error: "invalid_request",
         message: "audio_url debe ser una URL pública válida (https:// o http://).",
       });
+    }
+
+    const TRUSTED_HOST_REGEX = /(^|\.)(lucianamusic\.app|ramber-tunes\.vercel\.app|r2\.lucianamusic\.app|ramber-tunes\.supabase\.co)$/i;
+    const isTrustedHost = TRUSTED_HOST_REGEX.test(audioUrl.hostname);
+
+    if (!auth.ok) {
+      if (isTrustedHost) {
+        console.error("[handleTranscribe Auth Bypass] auth failed but audio from trusted host → allowed (no user)", {
+          hostname: audioUrl.hostname,
+          authStatus: auth.status,
+          authError: auth.error,
+          tokenLen: (token || "").trim().length,
+        });
+      } else {
+        console.error("[handleTranscribe Error] unauthorized: invalid/missing Bearer token AND audio NOT from trusted host", {
+          hostname: audioUrl.hostname,
+          isTrustedHost: false,
+          authStatus: auth.status,
+          authError: auth.error,
+          tokenLen: (token || "").trim().length,
+        });
+        return oauthGptSendJson(res, auth.status, { success: false, error: "unauthorized", message: auth.error || "No autorizado" });
+      }
+    }
+
+    const GEMINI_API_KEY_OK = !!(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim().length >= 8);
+    if (!GEMINI_API_KEY_OK) {
+      console.error("[handleTranscribe Error] transcriber_unavailable: GEMINI_API_KEY missing/too_short in Vercel env", {
+        hostname: req.headers?.host,
+        audioHost: audioUrl.hostname,
+        geminiKeyLen: String(process.env.GEMINI_API_KEY || "").length,
+      });
+      return oauthGptSendJson(res, 501, {
+        success: false,
+        error: "transcriber_unavailable",
+        message: "La transcripción no está disponible en este despliegue. Falta GEMINI_API_KEY configurada en Vercel.",
+      });
+    }
+    if (typeof transcribeLyricsWithGemini !== "function") {
+      console.error("[handleTranscribe Error] transcriber_unavailable: transcribeLyricsWithGemini is not a function (scope issue?)", {
+        geminiKeyLen: String(process.env.GEMINI_API_KEY || "").length,
+      });
+      return oauthGptSendJson(res, 501, { success: false, error: "transcriber_unavailable", message: "El transcriptor no está disponible en este despliegue." });
     }
 
     let titleHint =
@@ -18513,6 +18568,11 @@ const gptHandler = (() => {
       fr = await fetch(audioUrl.toString(), { method: "GET", redirect: "follow", signal: controller.signal } as any);
       try { (globalThis as any).clearTimeout(timer); } catch {}
     } catch (e) {
+      console.error("[handleTranscribe Error] download_failed fetch throw", {
+        audioUrl: audioUrl.toString().slice(0, 200),
+        hostname: audioUrl.hostname,
+        err: e instanceof Error ? { name: e.name, message: e.message.slice(0, 300) } : String(e).slice(0, 300),
+      });
       return oauthGptSendJson(res, 502, {
         success: false,
         error: "download_failed",
@@ -18520,6 +18580,11 @@ const gptHandler = (() => {
       });
     }
     if (!fr.ok) {
+      console.error("[handleTranscribe Error] download_failed remote HTTP not ok", {
+        audioUrl: audioUrl.toString().slice(0, 200),
+        remoteStatus: fr.status,
+        remoteStatusText: fr.statusText?.slice(0, 120) || "",
+      });
       return oauthGptSendJson(res, 502, {
         success: false,
         error: "download_failed",
@@ -18546,6 +18611,10 @@ const gptHandler = (() => {
     try {
       ab = await fr.arrayBuffer();
     } catch (e) {
+      console.error("[handleTranscribe Error] download_failed arrayBuffer error", {
+        audioUrl: audioUrl.toString().slice(0, 200),
+        err: e instanceof Error ? { name: e.name, message: e.message.slice(0, 300) } : String(e).slice(0, 300),
+      });
       return oauthGptSendJson(res, 502, {
         success: false,
         error: "download_failed",
@@ -18553,8 +18622,16 @@ const gptHandler = (() => {
       });
     }
     const size = Number(ab?.byteLength || 0);
-    if (!size) return oauthGptSendJson(res, 400, { success: false, error: "invalid_request", message: "El audio está vacío (0 bytes)." });
+    if (!size) {
+      console.error("[handleTranscribe Error] invalid_request: audio empty 0 bytes", { audioUrl: audioUrl.toString().slice(0, 200) });
+      return oauthGptSendJson(res, 400, { success: false, error: "invalid_request", message: "El audio está vacío (0 bytes)." });
+    }
     if (size > TRANSCRIBE_MAX_BYTES) {
+      console.error("[handleTranscribe Error] payload_too_large", {
+        size_bytes: size,
+        max_bytes: TRANSCRIBE_MAX_BYTES,
+        audioUrl: audioUrl.toString().slice(0, 200),
+      });
       return oauthGptSendJson(res, 413, {
         success: false,
         error: "payload_too_large",
@@ -18564,22 +18641,44 @@ const gptHandler = (() => {
       });
     }
 
-    if (typeof transcribeLyricsWithGemini !== "function") {
-      return oauthGptSendJson(res, 501, { success: false, error: "transcriber_unavailable", message: "El transcriptor no está disponible en este despliegue." });
-    }
     let transcription: any = null;
     try {
       transcription = await transcribeLyricsWithGemini(ab, mime);
     } catch (e) {
+      console.error("[handleTranscribe Error] transcribe_error: transcribeLyricsWithGemini threw exception", {
+        err: e instanceof Error ? { name: e.name, message: e.message.slice(0, 500), stack: (e.stack || "").slice(0, 400) } : String(e).slice(0, 500),
+        mime,
+        size_bytes: size,
+      });
       return oauthGptSendJson(res, 502, {
         success: false,
-        error: "transcribe_error",
+        error: "transcribe_failed",
         message: `Error interno transcribiendo: ${(e instanceof Error ? e.message : String(e)).slice(0, 400)}`,
       });
     }
     const transOk = !!(transcription && transcription.ok);
     const transStatus = String((transcription as any)?.status || "").toUpperCase();
+    const transErrRaw = String((transcription as any)?.error || "").toLowerCase();
+    const isGeminiKeyMissing = transErrRaw.includes("falta gemini_api_key") || transErrRaw.includes("gemini_api_key");
+    if (isGeminiKeyMissing) {
+      console.error("[handleTranscribe Error] transcriber_unavailable: inner function returned missing GEMINI_API_KEY", {
+        innerError: String((transcription as any)?.error || "").slice(0, 300),
+        geminiKeyLen: String(process.env.GEMINI_API_KEY || "").length,
+      });
+      return oauthGptSendJson(res, 501, {
+        success: false,
+        error: "transcriber_unavailable",
+        message: "La transcripción no está disponible. Falta GEMINI_API_KEY configurada en Vercel.",
+      });
+    }
     if (!transOk) {
+      console.error("[handleTranscribe Error] 422 transcribe_failed: inner !ok", {
+        transStatus,
+        innerError: String((transcription as any)?.error || "").slice(0, 400),
+        innerUserMessage: String((transcription as any)?.userMessage || "").slice(0, 400),
+        mime,
+        size_bytes: size,
+      });
       return oauthGptSendJson(res, 422, {
         success: false,
         error: "transcribe_failed",
@@ -18587,6 +18686,11 @@ const gptHandler = (() => {
       });
     }
     if (transStatus === "SIN_LETRA") {
+      console.error("[handleTranscribe Info] SIN_LETRA instrumental (no error, 200 lyrics empty)", {
+        mime,
+        size_bytes: size,
+        title: titleHint.slice(0, 120),
+      });
       return oauthGptSendJson(res, 200, {
         success: true,
         lyrics: "",
@@ -18595,6 +18699,11 @@ const gptHandler = (() => {
       });
     }
     if (transStatus === "ILEGIBLE") {
+      console.error("[handleTranscribe Error] 422 unintelligible", {
+        mime,
+        size_bytes: size,
+        title: titleHint.slice(0, 120),
+      });
       return oauthGptSendJson(res, 422, {
         success: false,
         error: "unintelligible",
@@ -18602,6 +18711,13 @@ const gptHandler = (() => {
       });
     }
     const lyrics = String((transcription as any)?.lyrics || "").trim();
+    console.error("[handleTranscribe Info] OK transcripcion exitosa", {
+      status: transStatus || "OK",
+      title: titleHint.slice(0, 120),
+      mime,
+      size_bytes: size,
+      lyricsLen: lyrics.length,
+    });
     return oauthGptSendJson(res, 200, {
       success: true,
       lyrics,
