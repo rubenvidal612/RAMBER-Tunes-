@@ -932,6 +932,7 @@ function SubirGptScreen() {
   const [r2Key, setR2Key] = useState('');
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [forceAuthPrompt, setForceAuthPrompt] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
 
@@ -960,7 +961,14 @@ function SubirGptScreen() {
             setHasValidSession(!!ok);
             setSessionReady(true);
             if (ok) {
-              setStep(curr => (curr === 'error' && /sesi|login|gmail|google|autoriza/i.test(loginError || errorMsg) ? 'idle' : curr));
+              setForceAuthPrompt(false);
+              setErrorMsg(curr => (/sesi|login|gmail|google|autoriza/i.test(curr || '') ? '' : curr));
+              setStep(curr => {
+                if (curr === 'done' || curr === 'uploading') return curr;
+                if (curr === 'error' && /sesi|login|gmail|google|autoriza/i.test(loginError || errorMsg)) return 'idle';
+                if (curr === 'error') return 'idle';
+                return curr === 'idle' ? curr : curr;
+              });
             }
             void s;
           } catch {
@@ -1018,6 +1026,7 @@ function SubirGptScreen() {
     setR2Key('');
     setCopied(false);
     setErrorMsg('');
+    setForceAuthPrompt(false);
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -1063,7 +1072,11 @@ function SubirGptScreen() {
       }
       let msg = (body?.error && typeof body?.message === 'string') ? body.message : '';
       if (!msg) msg = (typeof body?.message === 'string' ? body.message : `Error HTTP ${xhr.status}. Inténtalo de nuevo.`);
-      if (xhr.status === 401) msg = 'Necesitas iniciar sesión con Google primero en LucIAna Music.';
+      if (xhr.status === 401) {
+        setHasValidSession(false);
+        setForceAuthPrompt(true);
+        return;
+      }
       if (xhr.status === 413) msg = 'El archivo excede el límite de 25 MB.';
       if (xhr.status === 415) msg = 'Formato no permitido. Solo se aceptan archivos MP3.';
       setStep('error');
@@ -1137,12 +1150,20 @@ function SubirGptScreen() {
         ) : !hasValidSession ? (
           <div className="mt-8 w-full">
             <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-8 text-center">
-              <div className="text-4xl mb-3">🔐</div>
+              <div className="text-4xl mb-3">{forceAuthPrompt ? '🎵' : '🔐'}</div>
               <div className="text-lg font-extrabold">
-                Inicia sesión con Google<br />para recibir tus créditos de bienvenida y continuar
+                {forceAuthPrompt ? (
+                  'Inicia sesión para subir tu MP3'
+                ) : (
+                  <>
+                    Inicia sesión con Google<br />para recibir tus créditos de bienvenida y continuar
+                  </>
+                )}
               </div>
               <div className="mt-3 text-sm text-slate-300 max-w-xs mx-auto leading-relaxed">
-                Te regalamos créditos para probar LucIAna Music. Usa tu misma cuenta Gmail y en 2 segundos ya puedes subir tu canción y hacer covers con IA.
+                {forceAuthPrompt
+                  ? 'Tu sesión expiró o no está activa. Inicia con Google y tu archivo subirá directamente sin perder nada.'
+                  : 'Te regalamos créditos para probar LucIAna Music. Usa tu misma cuenta Gmail y en 2 segundos ya puedes subir tu canción y hacer covers con IA.'}
               </div>
               <button
                 type="button"
