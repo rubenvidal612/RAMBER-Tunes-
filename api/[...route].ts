@@ -18459,6 +18459,156 @@ const gptHandler = (() => {
     });
   }
 
+  async function handleTranscribe(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if (method !== "POST") return oauthGptSendJson(res, 405, { success: false, error: "method_not_allowed", message: "Solo POST" });
+
+    const token = extractBearerToken(req);
+    const auth = await requireAnyUserFromToken(token);
+    if (!auth.ok) return oauthGptSendJson(res, auth.status, { success: false, error: "unauthorized", message: auth.error });
+
+    const body = parseAnyBody(req) || {};
+    const audioUrlRaw =
+      (typeof body?.audio_url === "string" ? body.audio_url.trim() : "") ||
+      (typeof body?.audioUrl === "string" ? body.audioUrl.trim() : "") ||
+      (typeof body?.url === "string" ? body.url.trim() : "") ||
+      "";
+    if (!audioUrlRaw) {
+      return oauthGptSendJson(res, 400, {
+        success: false,
+        error: "invalid_request",
+        message: "Falta audio_url (URL pública HTTPS o HTTP del archivo MP3).",
+      });
+    }
+    let audioUrl: URL;
+    try {
+      audioUrl = new URL(audioUrlRaw);
+      if (!(audioUrl.protocol === "https:" || audioUrl.protocol === "http:")) throw new Error("proto");
+    } catch {
+      return oauthGptSendJson(res, 400, {
+        success: false,
+        error: "invalid_request",
+        message: "audio_url debe ser una URL pública válida (https:// o http://).",
+      });
+    }
+
+    let titleHint =
+      (typeof body?.title === "string" ? body.title.trim() : "") ||
+      decodeURIComponent(audioUrl.pathname.split("/").filter(Boolean).pop() || "").replace(/\.[^.]+$/, "").trim() ||
+      "Audio LucIAna";
+
+    const TRANSCRIBE_MAX_BYTES = 15 * 1024 * 1024;
+    let fr: Response;
+    try {
+      const controller = new (globalThis as any).AbortController();
+      const timer = (globalThis as any).setTimeout(() => { try { controller.abort(); } catch {} }, 120_000);
+      fr = await fetch(audioUrl.toString(), { method: "GET", redirect: "follow", signal: controller.signal } as any);
+      try { (globalThis as any).clearTimeout(timer); } catch {}
+    } catch (e) {
+      return oauthGptSendJson(res, 502, {
+        success: false,
+        error: "download_failed",
+        message: `No pude descargar el audio desde la URL proporcionada: ${(e instanceof Error ? e.message : String(e)).slice(0, 280)}`,
+      });
+    }
+    if (!fr.ok) {
+      return oauthGptSendJson(res, 502, {
+        success: false,
+        error: "download_failed",
+        message: `No pude descargar el audio. El servidor remoto devolvió HTTP ${fr.status}.`,
+        http_status: fr.status,
+      });
+    }
+
+    const contentType = (fr.headers && typeof fr.headers.get === "function") ? String(fr.headers.get("content-type") || "") : "";
+    const ext = (() => {
+      try {
+        const name = audioUrl.pathname.toLowerCase().split("/").pop() || "";
+        const dot = name.lastIndexOf(".");
+        return dot >= 0 ? name.slice(dot) : "";
+      } catch { return ""; }
+    })();
+    const mime =
+      (ext && GPT_UPLOAD_AUDIO_MIME_TO_EXT && (GPT_UPLOAD_AUDIO_MIME_TO_EXT as any)[contentType.toLowerCase()] ? contentType : "") ||
+      (ext && GPT_UPLOAD_AUDIO_ALLOWED_EXTS && (GPT_UPLOAD_AUDIO_ALLOWED_EXTS as any)[ext] ? (GPT_UPLOAD_AUDIO_ALLOWED_EXTS as any)[ext] : "") ||
+      contentType ||
+      "audio/mpeg";
+
+    let ab: ArrayBuffer;
+    try {
+      ab = await fr.arrayBuffer();
+    } catch (e) {
+      return oauthGptSendJson(res, 502, {
+        success: false,
+        error: "download_failed",
+        message: `No pude leer el contenido del audio: ${(e instanceof Error ? e.message : String(e)).slice(0, 280)}`,
+      });
+    }
+    const size = Number(ab?.byteLength || 0);
+    if (!size) return oauthGptSendJson(res, 400, { success: false, error: "invalid_request", message: "El audio está vacío (0 bytes)." });
+    if (size > TRANSCRIBE_MAX_BYTES) {
+      return oauthGptSendJson(res, 413, {
+        success: false,
+        error: "payload_too_large",
+        message: `Audio demasiado pesado para transcribir. Máximo ${Math.round(TRANSCRIBE_MAX_BYTES / 1024 / 1024)} MB. Sube un fragmento más corto o comprímelo.`,
+        size_bytes: size,
+        max_bytes: TRANSCRIBE_MAX_BYTES,
+      });
+    }
+
+    if (typeof transcribeLyricsWithGemini !== "function") {
+      return oauthGptSendJson(res, 501, { success: false, error: "transcriber_unavailable", message: "El transcriptor no está disponible en este despliegue." });
+    }
+    let transcription: any = null;
+    try {
+      transcription = await transcribeLyricsWithGemini(ab, mime);
+    } catch (e) {
+      return oauthGptSendJson(res, 502, {
+        success: false,
+        error: "transcribe_error",
+        message: `Error interno transcribiendo: ${(e instanceof Error ? e.message : String(e)).slice(0, 400)}`,
+      });
+    }
+    const transOk = !!(transcription && transcription.ok);
+    const transStatus = String((transcription as any)?.status || "").toUpperCase();
+    if (!transOk) {
+      return oauthGptSendJson(res, 422, {
+        success: false,
+        error: "transcribe_failed",
+        message: String((transcription as any)?.userMessage || (transcription as any)?.error || "No pude transcribir la letra de este audio."),
+      });
+    }
+    if (transStatus === "SIN_LETRA") {
+      return oauthGptSendJson(res, 200, {
+        success: true,
+        lyrics: "",
+        title: titleHint,
+        note: "No detecté voz/canto en este audio. La letra está vacía.",
+      });
+    }
+    if (transStatus === "ILEGIBLE") {
+      return oauthGptSendJson(res, 422, {
+        success: false,
+        error: "unintelligible",
+        message: "No pude entender la letra con este audio. Prueba con un fragmento más corto o con menos ruido.",
+      });
+    }
+    const lyrics = String((transcription as any)?.lyrics || "").trim();
+    return oauthGptSendJson(res, 200, {
+      success: true,
+      lyrics,
+      title: titleHint,
+    });
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const u = new URL(req.url, "http://localhost");
@@ -18469,6 +18619,7 @@ const gptHandler = (() => {
       if (next === "status") return handleStatus(req, res);
       if (next === "upload-audio") return handleUploadAudio(req, res);
       if (next === "cover") return handleCover(req, res);
+      if (next === "transcribe") return handleTranscribe(req, res);
       return oauthGptSendJson(res, 404, { error: "ruta_no_encontrada" });
     } catch (e) {
       return oauthGptSendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });

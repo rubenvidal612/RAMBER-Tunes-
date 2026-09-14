@@ -297,6 +297,165 @@
           }
         }
       }
+    },
+    "/api/gpt/transcribe": {
+      "post": {
+        "operationId": "transcribeAudio",
+        "summary": "Transcribir la letra de un audio MP3 subido",
+        "description": "Obtiene automáticamente la letra transcrita de un audio MP3/WAV/M4A/OGG/FLAC/AAC usando el mismo pipeline de transcripción Gemini que utiliza LucIAna Music internamente. Acepta una URL pública del audio (normalmente la devuelta por upload-audio en el campo 'url'). No consume créditos. Si el audio es instrumental (sin voz), retorna lyrics vacía con success=true y una note explicativa. Si el audio es ilegible (mucho ruido o muy corto), retorna error 422.",
+        "tags": ["Canciones", "Transcripciones"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["audio_url"],
+                "properties": {
+                  "audio_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL pública HTTPS o HTTP del audio a transcribir. Se obtiene normalmente llamando primero a /api/gpt/upload-audio y usando el campo 'url' devuelto en la respuesta. Formatos aceptados: MP3, WAV, M4A, OGG, FLAC, AAC. Tamaño máximo: 15 MB.",
+                    "minLength": 8,
+                    "maxLength": 2000,
+                    "example": "https://r2.lucianamusic.app/gpt-uploads/20260914/u123abc/9f8e7d6c-5b4a-3c2d-1e0f-mi-cancion.mp3"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "(Opcional) Título sugerido para identificar el audio. Si no se envía, LucIAna extrae el nombre del archivo de la URL.",
+                    "maxLength": 180
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transcripción completada con éxito. Si el audio es instrumental, 'lyrics' vendrá vacía y se incluirá una 'note' explicativa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "const": true },
+                    "lyrics": {
+                      "type": "string",
+                      "description": "Letra transcrita del audio, con saltos de línea y etiquetas opcionales como [Verso], [Coro], [Puente] si la IA detectó estructura. Si el audio es instrumental, este campo es una cadena vacía \"\"."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Título del audio: el que enviaste en la petición, o el nombre del archivo extraído de la URL, o 'Audio LucIAna' por defecto."
+                    },
+                    "note": {
+                      "type": "string",
+                      "description": "(Solo audio instrumental) Explicación breve indicando que no se detectó voz/canto en el audio."
+                    }
+                  }
+                },
+                "examples": {
+                  "transcripcion_ok": {
+                    "value": {
+                      "success": true,
+                      "lyrics": "[Verso 1]\nCaminaba por la ciudad sin rumbo fijo\nPensando en aquel día que nos conocimos\n\n[Coro]\nY ahora vuelvo a encontrarte\nNo sé cómo ni por qué\nPero el destino nos volvió a juntar\n\n[Puente]\nNo dejes que se acabe esta vez\nAbrázame fuerte y no me sueltes más",
+                      "title": "Volver a Encontrarnos - Demo.mp3"
+                    }
+                  },
+                  "instrumental_sin_letra": {
+                    "value": {
+                      "success": true,
+                      "lyrics": "",
+                      "title": "Base de piano instrumental.mp3",
+                      "note": "No detecté voz/canto en este audio. La letra está vacía."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Petición inválida: falta el campo audio_url, la URL no es válida (no empieza por http/https), el audio llegó con 0 bytes o el formato no está soportado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "const": "invalid_request" },
+                    "message": { "type": "string", "description": "Detalle del error en español (ej: 'Falta audio_url (URL pública HTTPS o HTTP del archivo MP3).', 'URL no válida: debe empezar por https:// o http://')." }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autorizado: falta token Bearer en el header Authorization, el token expiró o es inválido.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnauthorizedError" } } }
+          },
+          "413": {
+            "description": "El audio es demasiado grande. Tamaño máximo permitido: 15 MB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "const": "payload_too_large" },
+                    "message": { "type": "string", "description": "Mensaje en español con el tamaño recibido y el máximo permitido." },
+                    "size_bytes": { "type": "integer", "description": "Tamaño real del archivo descargado en bytes." },
+                    "max_bytes": { "type": "integer", "const": 15728640, "description": "Tamaño máximo permitido: 15 MB = 15728640 bytes." }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No se pudo procesar la transcripción: el audio es ilegible (mucho ruido, muy corto) o falló la API de Gemini durante la transcripción.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": ["unintelligible", "transcribe_failed"],
+                      "description": "'unintelligible' = audio ilegible (prueba con uno más limpio o más largo). 'transcribe_failed' = fallo interno durante la transcripción."
+                    },
+                    "message": { "type": "string", "description": "Detalle del error en español." }
+                  }
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Servicio de transcripción no disponible: GEMINI_API_KEY no está configurada en el servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "const": "transcriber_unavailable" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Fallo externo: no se pudo descargar el audio desde la URL proporcionada (URL inaccesible, 404 remoto, timeout) o falló la API de Gemini momentáneamente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "enum": ["download_failed", "transcribe_failed"] },
+                    "message": { "type": "string", "description": "Detalle en español." },
+                    "http_status": { "type": "integer", "description": "(Solo download_failed) Código HTTP devuelto por el servidor remoto al intentar descargar el audio." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
