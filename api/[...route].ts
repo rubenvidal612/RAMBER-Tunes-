@@ -5068,13 +5068,14 @@ notify pgrst, 'reload schema';`;
         `Output ONLY valid JSON without markdown wrapping.`;
 
       const baseModels = [
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite-preview",
+        "gemini-3.6-flash",
         "gemini-3-flash",
+        "gemini-2.5-flash",
         "gemini-2.5-pro",
+        "gemini-3.6-flash-preview",
         "gemini-3-flash-preview",
+        "gemini-2.0-flash-lite-preview",
         "gemini-1.5-flash",
-        "gemini-3.1-flash-lite-preview",
       ];
 
       let lastErr: any = null;
@@ -13910,13 +13911,14 @@ const aiHandler = (() => {
 
     const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
     const baseModels = [
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite-preview",
+      "gemini-3.6-flash",
       "gemini-3-flash",
+      "gemini-2.5-flash",
       "gemini-2.5-pro",
-      "gemini-3.1-flash-lite-preview",
-      "gemini-flash-lite-latest",
+      "gemini-3.6-flash-preview",
       "gemini-3-flash-preview",
+      "gemini-2.0-flash-lite-preview",
+      "gemini-flash-lite-latest",
       "gemini-1.5-flash",
     ];
 
@@ -14044,13 +14046,14 @@ const aiHandler = (() => {
       "\nEntrega solo la letra. No uses comillas ni markdown.";
 
     const baseModels = [
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite-preview",
+      "gemini-3.6-flash",
       "gemini-3-flash",
+      "gemini-2.5-flash",
       "gemini-2.5-pro",
-      "gemini-3.1-flash-lite-preview",
-      "gemini-flash-lite-latest",
+      "gemini-3.6-flash-preview",
       "gemini-3-flash-preview",
+      "gemini-2.0-flash-lite-preview",
+      "gemini-flash-lite-latest",
       "gemini-1.5-flash",
     ];
 
