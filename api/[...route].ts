@@ -18512,7 +18512,7 @@ const gptHandler = (() => {
       });
     }
 
-    const TRUSTED_HOST_REGEX = /(^|\.)(lucianamusic\.app|ramber-tunes\.vercel\.app|r2\.lucianamusic\.app|ramber-tunes\.supabase\.co)$/i;
+    const TRUSTED_HOST_REGEX = /(^|\.)(lucianamusic\.app|ramber-tunes\.vercel\.app|r2\.lucianamusic\.app|ramber-tunes\.supabase\.co|r2\.dev)$/i;
     const isTrustedHost = TRUSTED_HOST_REGEX.test(audioUrl.hostname);
 
     if (!auth.ok) {
