@@ -93,7 +93,6 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
   const drawerItems: Array<{ id: ViewTab; label: string; description?: string; icon: typeof Home }> = [
     ...mainItems,
     ...menuItems,
-    ...adminItems.filter((item) => item.id !== 'oficina' || isAdmin),
   ];
 
   return (
