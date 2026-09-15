@@ -2527,10 +2527,10 @@ export function CloneVoiceView() {
               onClick={cloneVoice}
               disabled={isLoading || !selectedFile}
               className={cn(
-                "w-full py-3.5 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors",
+                "w-full py-3.5 rounded-full font-extrabold text-sm flex items-center justify-center gap-2 transition-colors shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10",
                 isLoading || !selectedFile
                   ? "bg-white/10 text-slate-400 cursor-not-allowed"
-                  : "bg-emerald-500 hover:bg-emerald-400 text-black"
+                  : "bg-emerald-500 hover:bg-emerald-400 text-gray-900"
               )}
             >
               {isLoading ? (
@@ -2793,7 +2793,7 @@ export function CloneVoiceView() {
                 onClick={saveEditVoice}
                 className={cn(
                   "flex-1 py-3 rounded-2xl font-extrabold transition-colors",
-                  isSavingEdit ? "bg-white/10 text-slate-400 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-black"
+                  isSavingEdit ? "bg-white/10 text-slate-400 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
                 )}
                 disabled={isSavingEdit}
               >

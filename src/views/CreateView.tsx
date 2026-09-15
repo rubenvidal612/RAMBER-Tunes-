@@ -3643,7 +3643,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     } catch {
                     }
                   }}
-                  className="rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-black shadow-[0_10px_30px_rgba(251,191,36,0.35)]"
+                  className="rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 shadow-[0_10px_30px_rgba(251,191,36,0.35)]"
                 >
                   Obtener créditos
                 </button>
@@ -4028,7 +4028,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 disabled={studioRecorderState !== 'recording'}
                 className={cn(
                   'flex-1 h-[44px] rounded-full font-extrabold text-sm',
-                  studioRecorderState === 'recording' ? 'bg-emerald-500 hover:bg-emerald-400 text-black' : 'bg-white/5 border border-white/10 text-slate-400'
+                  studioRecorderState === 'recording' ? 'bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 border border-white/10 text-slate-400'
                 )}
               >
                 Detener
@@ -4543,7 +4543,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         type="button"
                         onClick={repeatVoiceValidation}
                         disabled={voiceBusy}
-                        className="bg-white hover:bg-white/90 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                        className="bg-white hover:bg-white/90 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
                       >
                         Repetir
                       </button>
@@ -4927,7 +4927,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                   <div className="absolute inset-y-0 right-0 w-[8px] bg-fuchsia-400 rounded-r-xl" />
                                 </div>
                                 <div className="absolute -top-4" style={{ left: `${center}%`, transform: 'translateX(-50%)' }}>
-                                  <div className="px-3 py-1 rounded-full bg-fuchsia-500 border border-fuchsia-300/40 text-black text-[11px] font-extrabold">
+                                  <div className="px-3 py-1 rounded-full bg-fuchsia-500 border border-fuchsia-300/40 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 text-[11px] font-extrabold">
                                     {formatMmSs(voiceTrimMaxSec)}
                                   </div>
                                 </div>
@@ -5028,7 +5028,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               setVoiceCreateStep('segment');
                             }}
                             disabled={voiceBusy}
-                            className="flex-1 bg-white hover:bg-white/90 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                            className="flex-1 bg-white hover:bg-white/90 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
                           >
                             Usar voz
                           </button>
@@ -5098,7 +5098,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           type="button"
                           onClick={() => generateValidationPhrase().catch(() => {})}
                           disabled={voiceBusy}
-                          className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                          className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
                         >
                           Generar frase de validación
                         </button>
@@ -5196,7 +5196,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                   disabled={!canStop}
                                   className={cn(
                                     'w-[78px] h-[78px] rounded-full flex items-center justify-center border font-extrabold',
-                                    canStop ? 'bg-emerald-500 hover:bg-emerald-400 text-black border-emerald-300/30' : 'bg-white/5 text-slate-400 border-white/10'
+                                    canStop ? 'bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-emerald-300/30' : 'bg-white/5 text-slate-400 border-white/10'
                                   )}
                                 >
                                   <BadgeCheck className="w-7 h-7" />
@@ -5240,7 +5240,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                             className={cn(
                               "flex-1 h-[44px] rounded-full font-extrabold text-sm",
                               voiceRecorderState === 'recording'
-                                ? "bg-emerald-500 hover:bg-emerald-400 text-black"
+                                ? "bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
                                 : "bg-white/5 border border-white/10 text-slate-400"
                             )}
                           >
@@ -5355,7 +5355,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                             setVoiceCreateError(e instanceof Error ? e.message : String(e));
                           });
                         }}
-                        className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm"
+                        className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[44px] rounded-full font-extrabold text-sm"
                       >
                         Empezar grabación
                       </button>
@@ -5386,7 +5386,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         type="button"
                         onClick={() => generateCustomVoice(voiceVerifyFile || undefined).catch(() => {})}
                         disabled={voiceBusy || !voiceVerifyFile}
-                        className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
+                        className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[44px] rounded-full font-extrabold text-sm disabled:opacity-60"
                       >
                         Continuar
                       </button>
@@ -5660,7 +5660,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       <button
                         type="button"
                         onClick={openMp3ConverterAlt}
-                        className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-black h-[44px] rounded-full font-extrabold text-sm"
+                        className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[44px] rounded-full font-extrabold text-sm"
                       >
                         Abrir Convertidor a MP3
                       </button>
@@ -6203,7 +6203,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   <textarea
                     value={finalLyrics}
                     onChange={(e) => setFinalLyrics(e.target.value)}
-                    className="min-h-[300px] w-full resize-none rounded-[22px] border border-black/10 bg-white px-4 py-4 text-base text-black outline-none"
+                    className="min-h-[300px] w-full resize-none rounded-[22px] border border-black/10 bg-white px-4 py-4 text-base text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 outline-none"
                   />
                 ) : (
                   <pre className="whitespace-pre-wrap break-words font-sans text-lg leading-8">
@@ -6288,10 +6288,10 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   )}
                 >
                   <div className={cn(
-                    "w-28 h-28 mx-auto rounded-full flex items-center justify-center text-5xl font-extrabold mb-5",
+                    "w-28 h-28 mx-auto rounded-full flex items-center justify-center text-5xl font-extrabold mb-5 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10",
                     selectedVoice === voice.id && voice.id === 'masculina'
-                      ? "bg-yellow-400 text-black"
-                      : "bg-white/90 text-black"
+                      ? "bg-yellow-400 text-gray-900"
+                      : "bg-white/90 text-gray-900"
                   )}>
                     {voice.short}
                   </div>

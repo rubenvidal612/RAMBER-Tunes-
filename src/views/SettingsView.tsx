@@ -888,7 +888,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
               onClick={() => setOfficeTab('colaboradores')}
               className={cn(
                 'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
-                officeTab === 'colaboradores' ? 'bg-emerald-500 text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                officeTab === 'colaboradores' ? 'bg-emerald-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'
               )}
             >
               Colaboradores
@@ -1004,7 +1004,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   Activos: {activeUsers.length} • Inactivos: {inactiveUsers.length}
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officeUsersActivityOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1016,7 +1016,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                     onClick={() => setOfficeUsersActivityTab('active')}
                     className={cn(
                       'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
-                      officeUsersActivityTab === 'active' ? 'bg-emerald-500 text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                      officeUsersActivityTab === 'active' ? 'bg-emerald-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'
                     )}
                   >
                     Activos
@@ -1025,7 +1025,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                     onClick={() => setOfficeUsersActivityTab('inactive')}
                     className={cn(
                       'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
-                      officeUsersActivityTab === 'inactive' ? 'bg-violet-500 text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                      officeUsersActivityTab === 'inactive' ? 'bg-violet-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'
                     )}
                   >
                     Inactivos
@@ -1110,7 +1110,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   Registros (reales, sin pruebas): {usersTotal != null ? usersTotal : totalUsersReal}
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {isUsersOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1141,7 +1141,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   <button
                     onClick={() => loadUsers(usersSearch).catch(() => {})}
                     disabled={usersLoading}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
                   >
                     {usersLoading ? 'Buscando…' : 'Buscar'}
                   </button>
@@ -1205,7 +1205,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   Hoy: ${Number(payments?.today?.mxn ?? 0).toFixed(0)} • Mes: ${Number(payments?.month?.mxn ?? 0).toFixed(0)}
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officeReporteOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1246,7 +1246,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 <div className="text-white font-extrabold">Ventas por día</div>
                 <div className="text-[11px] text-slate-400 mt-1">Últimos 7 días</div>
               </div>
-              <div className="bg-gradient-to-r from-cyan-400 to-indigo-400 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-cyan-400 to-indigo-400 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officeVentasOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1290,7 +1290,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   Proveedor (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officeSaldoOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1362,7 +1362,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   {Number(feedback?.unread_count ?? 0) ? `${Number(feedback?.unread_count ?? 0)} sin leer` : '—'}
                 </div>
               </div>
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officeMensajesOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1402,7 +1402,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                         {!isRead && id ? (
                           <button
                             onClick={() => markFeedbackRead(id)}
-                            className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold transition-colors"
+                            className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-full px-4 py-2 text-xs font-extrabold transition-colors"
                           >
                             Marcar como leído
                           </button>
@@ -1421,7 +1421,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 <div className="text-white font-extrabold">Créditos de usuarios</div>
                 <div className="text-[11px] text-slate-400 mt-1">Enviar / quitar créditos a usuarios</div>
               </div>
-              <div className="bg-gradient-to-r from-rose-400 to-fuchsia-400 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-rose-400 to-fuchsia-400 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officeCreditosOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1466,7 +1466,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   <button
                     onClick={() => grant().catch(() => {})}
                     disabled={grantBusy}
-                    className="bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-6 py-3 font-extrabold text-sm disabled:opacity-60"
+                    className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-6 py-3 font-extrabold text-sm disabled:opacity-60"
                   >
                     {grantBusy ? 'Enviando…' : 'Enviar créditos'}
                   </button>
@@ -1491,7 +1491,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   <button
                     onClick={() => takeBack().catch(() => {})}
                     disabled={takeBusy}
-                    className="bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    className="bg-red-500 hover:bg-red-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
                   >
                     {takeBusy ? 'Quitando…' : 'Quitar'}
                   </button>
@@ -1507,7 +1507,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 <div className="text-white font-extrabold">Planes</div>
                 <div className="text-[11px] text-slate-400 mt-1">Cambiar plan y créditos del plan</div>
               </div>
-              <div className="bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full px-4 py-2 text-xs font-extrabold text-black hover:opacity-90 transition-opacity border border-white/10">
+              <div className="bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officePlanesOpen ? 'Ocultar' : 'Ver'}
               </div>
             </button>
@@ -1552,7 +1552,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                     <button
                       onClick={() => setPlan().catch(() => {})}
                       disabled={planBusy}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 md:col-span-2"
+                      className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 md:col-span-2"
                     >
                       {planBusy ? 'Guardando…' : 'Guardar'}
                     </button>
@@ -1561,7 +1561,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   <button
                     onClick={() => setPlan().catch(() => {})}
                     disabled={planBusy}
-                    className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
                   >
                     {planBusy ? 'Guardando…' : 'Guardar'}
                   </button>
@@ -1601,7 +1601,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                     <button
                       onClick={() => grantMiniPack().catch(() => {})}
                       disabled={officeMiniPackBusy || !officeMiniPackKey}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                      className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
                     >
                       {officeMiniPackBusy ? 'Recargando…' : 'Recargar'}
                     </button>
@@ -1627,7 +1627,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                   <button
                     onClick={() => searchCollaboratorByEmail().catch(() => {})}
                     disabled={collaboratorSearchLoading}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
                   >
                     {collaboratorSearchLoading ? 'Buscando…' : 'Buscar'}
                   </button>
@@ -1691,7 +1691,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 <button
                   onClick={() => saveCollaborator().catch(() => {})}
                   disabled={collaboratorAssignBusy || !selectedCollaborator}
-                  className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
                 >
                   {collaboratorAssignBusy ? 'Guardando…' : 'Guardar'}
                 </button>
@@ -1868,7 +1868,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                                 if (!email) return;
                                 focusCreditos('grant', email);
                               }}
-                              className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-black rounded-2xl px-4 py-3 font-extrabold text-sm"
+                              className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm"
                             >
                               Preparar: Enviar créditos
                             </button>
@@ -1877,7 +1877,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                                 if (!email) return;
                                 focusCreditos('take', email);
                               }}
-                              className="flex-1 bg-red-500 hover:bg-red-400 text-black rounded-2xl px-4 py-3 font-extrabold text-sm"
+                              className="flex-1 bg-red-500 hover:bg-red-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm"
                             >
                               Preparar: Quitar créditos
                             </button>
@@ -1921,7 +1921,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         <div className="bg-gradient-to-r from-yellow-500/20 to-transparent border border-yellow-400/20 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-black font-bold text-xs">♪</div>
+              <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-bold text-xs">♪</div>
               <span className="font-semibold text-slate-200">{credits} Créditos</span>
               <HelpCircle className="w-4 h-4 text-slate-500" />
             </div>
@@ -1930,7 +1930,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 onOpenPricing?.();
                 onClose();
               }}
-              className="bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs px-4 py-2 rounded-full transition-colors"
+              className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-xs px-4 py-2 rounded-full transition-colors"
             >
               Obtener más canciones
             </button>
@@ -2096,7 +2096,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 </button>
                 <button
                   onClick={() => submitFeedback().catch(() => {})}
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
                   disabled={feedbackBusy}
                 >
                   {feedbackBusy ? 'Enviando…' : 'Enviar'}

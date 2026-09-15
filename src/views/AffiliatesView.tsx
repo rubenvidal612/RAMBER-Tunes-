@@ -264,7 +264,7 @@ export function AffiliatesView() {
             <button
               onClick={() => savePayoutEmail().catch(() => {})}
               disabled={isSaving}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl px-5 py-3 font-extrabold text-sm disabled:opacity-60"
+              className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-5 py-3 font-extrabold text-sm disabled:opacity-60"
             >
               {isSaving ? 'Guardando…' : 'Guardar'}
             </button>
@@ -372,10 +372,10 @@ export function AffiliatesView() {
                 
                 <button
                   onClick={() => setCurrentPage('earn')}
-                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-black text-xs font-extrabold rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-teal-500/10 flex items-center gap-2 whitespace-nowrap self-start md:self-center"
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 text-xs font-extrabold rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-teal-500/10 flex items-center gap-2 whitespace-nowrap self-start md:self-center"
                 >
                   <span>Ver Plan Completo</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-black" />
+                  <ArrowRight className="w-3.5 h-3.5 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10" />
                 </button>
               </div>
               
@@ -565,7 +565,7 @@ export function AffiliatesView() {
                   className={cn(
                     "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
                     filter === 'active' 
-                      ? 'bg-emerald-500 text-black border-emerald-600 shadow-lg shadow-emerald-500/20' 
+                      ? 'bg-emerald-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-emerald-600 shadow-lg shadow-emerald-500/20' 
                       : 'bg-white/5 text-slate-200 hover:bg-white/10 border-white/10 hover:border-white/20'
                   )}
                 >
@@ -577,7 +577,7 @@ export function AffiliatesView() {
                   className={cn(
                     "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
                     filter === 'inactive' 
-                      ? 'bg-yellow-500 text-black border-yellow-600 shadow-lg shadow-yellow-500/20' 
+                      ? 'bg-yellow-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-yellow-600 shadow-lg shadow-yellow-500/20' 
                       : 'bg-white/5 text-slate-200 hover:bg-white/10 border-white/10 hover:border-white/20'
                   )}
                 >
@@ -589,7 +589,7 @@ export function AffiliatesView() {
                   className={cn(
                     "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 border",
                     filter === 'all' 
-                      ? 'bg-blue-500 text-black border-blue-600 shadow-lg shadow-blue-500/20' 
+                      ? 'bg-blue-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-blue-600 shadow-lg shadow-blue-500/20' 
                       : 'bg-white/5 text-slate-200 hover:bg-white/10 border-white/10 hover:border-white/20'
                   )}
                 >

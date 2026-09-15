@@ -66,7 +66,7 @@ class ViewErrorBoundary extends Component<
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-4 h-10 rounded-full bg-white px-4 text-sm font-extrabold text-black"
+          className="mt-4 h-10 rounded-full bg-white px-4 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
         >
           Recargar app
         </button>
@@ -553,7 +553,7 @@ function InicioSocial({
       <div className="px-4 pt-4">
         <div className="flex items-center justify-between">
           <div className="text-white font-extrabold text-lg">Canciones</div>
-          <button onClick={onGoStudio} className="bg-emerald-500 hover:bg-emerald-400 text-black rounded-full px-4 py-2 text-xs font-extrabold">
+          <button onClick={onGoStudio} className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-full px-4 py-2 text-xs font-extrabold">
             Crear
           </button>
         </div>
@@ -886,7 +886,7 @@ function ChatgptAuthScreen() {
 
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-center px-6 text-center bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
-      <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
+      <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
         L
       </div>
       <div className="mt-4 text-xl font-extrabold">Conectar ChatGPT con LucIAna</div>
@@ -1483,7 +1483,7 @@ ${letter}
   return (
     <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-start pt-14 px-5 bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/85 overflow-y-auto">
       <div className="w-full max-w-md flex flex-col items-center">
-        <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_22px_rgba(250,204,21,0.35)] shrink-0">
+        <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center font-light text-4xl shadow-[0_0_22px_rgba(250,204,21,0.35)] shrink-0">
           L
         </div>
         <div className="mt-5 text-2xl font-extrabold tracking-tight text-center leading-snug">
@@ -1642,7 +1642,7 @@ ${letter}
                             <button
                               type="button"
                               onClick={() => startTranscribe()}
-                              className="rounded-xl font-bold text-xs px-4 py-2.5 bg-amber-400 text-black active:scale-[0.98] transition-all shadow-[0_4px_16px_rgba(251,191,36,0.25)]">
+                              className="rounded-xl font-bold text-xs px-4 py-2.5 bg-amber-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 active:scale-[0.98] transition-all shadow-[0_4px_16px_rgba(251,191,36,0.25)]">
                               🔄 Reintentar extracción
                             </button>
                             <button
@@ -1687,7 +1687,7 @@ ${letter}
                         onClick={copyChatFormat}
                         className={`mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-4.5 shadow-[0_8px_30px_rgba(79,70,229,0.25)] transition-all active:scale-[0.985] ${
                           copiedChatFormat
-                            ? 'bg-emerald-400 text-black border border-emerald-500/40 py-5'
+                            ? 'bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border border-emerald-500/40 py-5'
                             : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white border border-white/10 py-5'
                         }`}
                       >
@@ -2008,7 +2008,7 @@ export default function App() {
             Icon: AlertTriangle,
             ring: 'shadow-[0_0_35px_rgba(250,204,21,0.2)]',
             iconBg: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/20',
-            button: 'bg-gradient-to-r from-yellow-400 to-amber-500 text-black',
+            button: 'bg-gradient-to-r from-yellow-400 to-amber-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10',
           }
         : {
             title: 'LucIAna Music',
@@ -3999,7 +3999,7 @@ export default function App() {
     const showLoading = isAuthBooting || isStartingLogin;
     return (
       <div className="h-[100dvh] w-full text-white flex flex-col items-center justify-center px-6 text-center bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
-        <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-black flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
+        <div className="w-16 h-16 rounded-2xl bg-yellow-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center font-light text-4xl shadow-[0_0_18px_rgba(250,204,21,0.35)]">
           L
         </div>
         <div className="mt-4 text-xl font-extrabold">LucIAna</div>
@@ -4198,7 +4198,7 @@ export default function App() {
             >
               ✕
             </button>
-            <div className="shrink-0 w-11 h-11 rounded-xl bg-yellow-400 border border-yellow-300/40 flex items-center justify-center font-light text-3xl text-black shadow-[0_0_18px_rgba(250,204,21,0.35)]">
+            <div className="shrink-0 w-11 h-11 rounded-xl bg-yellow-400 border border-yellow-300/40 flex items-center justify-center font-light text-3xl text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 shadow-[0_0_18px_rgba(250,204,21,0.35)]">
               L
             </div>
             <div className="flex-1 min-w-0">
@@ -4742,7 +4742,7 @@ export default function App() {
                       setIsLyricsSaving(false);
                     }
                   }}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold"
                   disabled={isLyricsSaving}
                 >
                   {isLyricsSaving ? 'Guardando…' : 'Guardar'}
@@ -4890,7 +4890,7 @@ export default function App() {
                       setIsBalanceOpen(false);
                       openPricingModal();
                     }}
-                    className="shrink-0 rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-black shadow-[0_10px_30px_rgba(251,191,36,0.35)] transition-transform hover:scale-[1.03]"
+                    className="shrink-0 rounded-full bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-300 px-5 py-3 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 shadow-[0_10px_30px_rgba(251,191,36,0.35)] transition-transform hover:scale-[1.03]"
                   >
                     Obtener créditos
                   </button>
@@ -5211,7 +5211,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
             <button onClick={() => shareThis().catch(() => {})} className="flex h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 hover:bg-white/10">
               <Share2 className="h-4 w-4" /> Compartir
             </button>
-            <a href="/" className="hidden h-11 items-center justify-center rounded-full bg-white px-4 text-sm font-extrabold text-black md:flex">Abrir app</a>
+            <a href="/" className="hidden h-11 items-center justify-center rounded-full bg-white px-4 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 md:flex">Abrir app</a>
           </div>
         </div>
       </div>
@@ -5311,7 +5311,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
                   {whatsappHref ? (
                     <div className="mt-5 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4">
                       <div className="text-sm font-bold text-emerald-100">¿Te gustó esta canción?</div>
-                      <a href={whatsappHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 text-sm font-extrabold text-black">
+                      <a href={whatsappHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10">
                         <MessageCircle className="h-4 w-4" />
                         Contactar por WhatsApp
                       </a>
@@ -5396,7 +5396,7 @@ function SharedSongPage({ shareId }: { shareId: string }) {
               <div className="text-sm text-slate-300">Copia este link:</div>
               <div className="break-words rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-100">{shareSheetUrl}</div>
               <button
-                className="flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-white text-sm font-extrabold text-black"
+                className="flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-white text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
                 onClick={async () => {
                   const ok = await copyToClipboard(shareSheetUrl);
                   if (ok) {
@@ -5669,7 +5669,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
             <button onClick={() => shareThis().catch(() => {})} className="flex h-11 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 hover:bg-white/10">
               <Share2 className="h-4 w-4" /> Compartir
             </button>
-            <a href="/" className="hidden h-11 items-center justify-center rounded-full bg-white px-4 text-sm font-extrabold text-black md:flex">Abrir app</a>
+            <a href="/" className="hidden h-11 items-center justify-center rounded-full bg-white px-4 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 md:flex">Abrir app</a>
           </div>
         </div>
       </div>
@@ -5817,7 +5817,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
                     {whatsappHref ? (
                       <div className="mt-5 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4">
                         <div className="text-sm font-bold text-emerald-100">¿Te gustó esta canción?</div>
-                        <a href={whatsappHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 text-sm font-extrabold text-black">
+                        <a href={whatsappHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 px-5 text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10">
                           <MessageCircle className="h-4 w-4" />
                           Contactar por WhatsApp
                         </a>
@@ -5903,7 +5903,7 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
               <div className="text-sm text-slate-300">Copia este link:</div>
               <div className="break-words rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-100">{shareSheetUrl}</div>
               <button
-                className="flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-white text-sm font-extrabold text-black"
+                className="flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-white text-sm font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
                 onClick={async () => {
                   const ok = await copyToClipboard(shareSheetUrl);
                   if (ok) {
@@ -6162,7 +6162,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
     <div className="min-h-[100dvh] w-full text-white flex flex-col bg-gradient-to-b from-[#0b1224] via-[#070a12] to-black/80">
       <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between gap-3">
         <a href="/" className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-black flex items-center justify-center font-light text-2xl">L</div>
+          <div className="w-10 h-10 rounded-xl bg-yellow-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center font-light text-2xl">L</div>
           <div className="min-w-0">
             <div className="font-extrabold leading-tight truncate">LucIAna</div>
             <div className="text-[11px] text-slate-400 leading-tight truncate">Perfil público</div>

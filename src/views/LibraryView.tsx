@@ -5778,7 +5778,7 @@ function SongOptionsSheet({
                         <span className="text-slate-100 font-semibold">Licencia Comercial</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold">CERTIFICADO</span>
                         <ChevronRight className="w-5 h-5 text-slate-500" />
                       </div>
                     </button>
@@ -6010,7 +6010,7 @@ function SongOptionsSheet({
                           <ChevronRight className="w-5 h-5 text-slate-600" />
                         </div>
                         <div className="mt-3">
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold">CERTIFICADO</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold">CERTIFICADO</span>
                         </div>
                       </button>
                     </div>
@@ -6645,7 +6645,7 @@ function SongOptionsSheet({
                   setSongPublic(true, g).catch(() => {});
                 }}
                 disabled={isBusy}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
                 Publicar
               </button>
@@ -6689,7 +6689,7 @@ function SongOptionsSheet({
                 <button
                   type="button"
                   onClick={() => saveTitle().catch(() => {})}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold"
                   disabled={titleBusy}
                 >
                   {titleBusy ? 'Guardando…' : 'Guardar'}
@@ -6733,7 +6733,7 @@ function SongOptionsSheet({
                 <button
                   type="button"
                   onClick={() => saveLyrics().catch(() => {})}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold"
                   disabled={lyricsBusy}
                 >
                   {lyricsBusy ? 'Guardando…' : 'Guardar letra'}
@@ -7001,14 +7001,14 @@ function SongOptionsSheet({
                 <button
                   onClick={() => downloadTrim().catch(() => {})}
                   disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                  className="w-full bg-gradient-to-r from-yellow-300 to-amber-300 hover:opacity-95 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  className="w-full bg-gradient-to-r from-yellow-300 to-amber-300 hover:opacity-95 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
                 >
                   {trimBusy ? 'Preparando…' : 'Descargar'}
                 </button>
                 <button
                   onClick={() => shareTrim().catch(() => {})}
                   disabled={trimBusy || !(Number(trimDurationSec || 0) > 0)}
-                  className="w-full bg-gradient-to-r from-indigo-400 to-fuchsia-400 hover:opacity-95 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                  className="w-full bg-gradient-to-r from-indigo-400 to-fuchsia-400 hover:opacity-95 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
                 >
                   {trimBusy ? 'Preparando…' : 'Compartir'}
                 </button>
@@ -7057,7 +7057,7 @@ function SongOptionsSheet({
                     onClose();
                     window.dispatchEvent(new Event('ramber:openPricing'));
                   }}
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors"
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[46px] rounded-full font-extrabold text-sm transition-colors"
                 >
                   Ver planes
                 </button>
@@ -7162,7 +7162,7 @@ function SongOptionsSheet({
                 <button
                   onClick={() => generateCommercialLicensePdf()}
                   disabled={isLicenseBusy}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {isLicenseBusy ? 'Generando…' : 'Confirmar y Generar'}
                 </button>
@@ -7179,7 +7179,7 @@ function SongOptionsSheet({
                   <a
                     href={licensePdfUrl}
                     download={licensePdfName || undefined}
-                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors flex items-center justify-center"
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors flex items-center justify-center"
                   >
                     Descargar PDF
                   </a>
@@ -7581,7 +7581,7 @@ function FiltersModal({
           </button>
           <button
             onClick={() => onApply({ from: localFrom, to: localTo, sort: localSort })}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors"
+            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors"
           >
             Aplicar
           </button>
@@ -7659,7 +7659,7 @@ function FolderPickerModal({
             <button
               onClick={() => onCreateAndPick(name)}
               disabled={!name.trim()}
-              className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-black h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[46px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
             >
               <FolderPlus className="w-4 h-4" /> Crear y mover
             </button>
@@ -7702,7 +7702,7 @@ function CreateListModal({ onClose, onCreate }: { onClose: () => void; onCreate:
           <button
             onClick={() => onCreate(name)}
             disabled={!name.trim()}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
           >
             Crear
           </button>

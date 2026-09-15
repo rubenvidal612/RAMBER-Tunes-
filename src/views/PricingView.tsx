@@ -32,7 +32,7 @@ const miniPackIcon = (idx: number) => {
   const icons = [Gift, Zap, Package, Crown];
   const colors = [
     { bg: 'from-rose-500/20 to-pink-500/20', border: 'border-rose-500/30', text: 'text-rose-300', btn: 'bg-rose-500 hover:bg-rose-400', tag: 'bg-rose-500 text-white', ring: 'ring-rose-400/30' },
-    { bg: 'from-amber-500/20 to-yellow-500/20', border: 'border-amber-500/30', text: 'text-amber-300', btn: 'bg-amber-500 hover:bg-amber-400', tag: 'bg-amber-500 text-black', ring: 'ring-amber-400/30' },
+    { bg: 'from-amber-500/20 to-yellow-500/20', border: 'border-amber-500/30', text: 'text-amber-300', btn: 'bg-amber-500 hover:bg-amber-400', tag: 'bg-amber-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10', ring: 'ring-amber-400/30' },
     { bg: 'from-orange-500/20 to-red-500/20', border: 'border-orange-500/30', text: 'text-orange-300', btn: 'bg-orange-500 hover:bg-orange-400', tag: 'bg-orange-500 text-white', ring: 'ring-orange-400/30' },
     { bg: 'from-fuchsia-500/20 to-purple-500/20', border: 'border-fuchsia-500/30', text: 'text-fuchsia-300', btn: 'bg-fuchsia-500 hover:bg-fuchsia-400', tag: 'bg-fuchsia-500 text-white', ring: 'ring-fuchsia-400/30' },
   ];
@@ -646,7 +646,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             <button
               onClick={() => refreshCredits()}
               disabled={isBusy}
-              className="border border-slate-300 hover:bg-slate-100 text-black px-4 py-2 rounded-full font-bold text-sm transition-colors disabled:opacity-60"
+              className="border border-slate-300 hover:bg-slate-100 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 px-4 py-2 rounded-full font-bold text-sm transition-colors disabled:opacity-60"
             >
               Actualizar
             </button>

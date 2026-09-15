@@ -35,7 +35,7 @@ class ViewErrorBoundary extends Component<{ onBack: () => void; title: string; c
               } catch {
               }
             }}
-            className="flex-1 h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold"
+            className="flex-1 h-[46px] rounded-full bg-yellow-400 hover:bg-yellow-300 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold"
           >
             Recargar
           </button>
@@ -752,7 +752,7 @@ export function ProfileView({
                 <button
                   type="button"
                   onClick={() => saveSongTitle().catch(() => {})}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-black font-extrabold"
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 rounded-full h-[46px] text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold"
                   disabled={editTitleBusy}
                 >
                   {editTitleBusy ? 'Guardando…' : 'Guardar'}

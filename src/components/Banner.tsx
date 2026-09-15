@@ -28,7 +28,7 @@ export function Banner() {
             
             <div className="flex items-center gap-4">
               <span className="font-bold text-xl drop-shadow-md">Crea Maquetas con IA</span>
-              <div className="bg-yellow-400 text-black text-xs font-black px-2 py-1 rotate-[-10deg] shadow-lg border border-yellow-500 whitespace-nowrap text-center leading-tight">
+              <div className="bg-yellow-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 text-xs font-black px-2 py-1 rotate-[-10deg] shadow-lg border border-yellow-500 whitespace-nowrap text-center leading-tight">
                 2 Canciones<br/>GRATIS
               </div>
             </div>
