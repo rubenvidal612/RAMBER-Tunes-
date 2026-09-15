@@ -4207,7 +4207,7 @@ export default function App() {
             </div>
             <button
               onClick={onInstallClick}
-              className="shrink-0 bg-white text-gray-900 px-4 py-2 rounded-full text-xs font-extrabold shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
+              className="shrink-0 bg-gradient-to-r from-fuchsia-600 to-pink-500 hover:from-fuchsia-500 hover:to-pink-400 text-white px-5 py-2.5 rounded-full text-xs font-extrabold shadow-lg shadow-fuchsia-600/30 ring-2 ring-white/10 active:scale-95 transition-all"
             >
               {installPromptEvent ? 'INSTALAR' : 'CÓMO INSTALAR'}
             </button>
