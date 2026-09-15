@@ -14,6 +14,7 @@ import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
 import { VendorView } from './views/VendorView';
 import { HomeLandingView } from './views/HomeLandingView';
+import { PrivacyPolicyView } from './views/PrivacyPolicyView';
 import { useUserCredits } from './hooks/useUserCredits';
 import { type ViewTab, type SongItem, type VibeItem } from './types';
 import { store } from './lib/store';
@@ -3975,6 +3976,9 @@ export default function App() {
       p.startsWith('/upload/')
     ) {
       return <SubirGptScreen />;
+    }
+    if (p === '/privacy' || p.startsWith('/privacy/')) {
+      return <PrivacyPolicyView />;
     }
   }
 
