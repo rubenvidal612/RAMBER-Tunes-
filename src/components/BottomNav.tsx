@@ -1,9 +1,8 @@
 import * as React from 'react';
-import { Bot, Coins, Clock3, Home, Library, Menu, Mic2, Shield, Sparkles, User, Volume2, X } from 'lucide-react';
+import { Bot, CircleHelp, Clock3, Coins, Home, Library, LogOut, Menu, Mic2, Shield, Sparkles, User, Volume2, WalletCards, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
-import { isAdminEmail } from '@/lib/authz';
 
 interface BottomNavProps {
   currentTab: ViewTab;
@@ -30,11 +29,15 @@ const adminItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
   { id: 'oficina', label: 'Oficina', icon: Shield },
 ];
 
+const accountItemsAdmin: Array<{ id: ViewTab; label: string; icon: typeof Home; adminOnly?: boolean }> = [
+  { id: 'oficina', label: 'Oficina', icon: Shield, adminOnly: true },
+  { id: 'vendedor', label: 'Vendedor', icon: Clock3 },
+];
+
 export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavProps) {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const [userName, setUserName] = React.useState('Usuario');
-  const [userInitial, setUserInitial] = React.useState('U');
-  const [userEmail, setUserEmail] = React.useState('');
+  const [authEmail, setAuthEmail] = React.useState('');
+  const [authName, setAuthName] = React.useState('');
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const menuActive = menuItems.some((item) => item.id === currentTab);
   const loadedRef = React.useRef(false);
@@ -43,21 +46,31 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
     if (loadedRef.current) return;
     if (!supabaseBrowser) return;
     loadedRef.current = true;
-    supabaseBrowser.auth
-      .getUser()
-      .then(({ data }) => {
-        const user = data?.user;
-        const email = (user?.email || '').toString().trim();
-        void isAdminEmail;
-        const meta: any = user?.user_metadata || {};
-        const name = (meta?.full_name || meta?.name || '').toString().trim();
-        const display = (name || email || 'Usuario').toString().trim();
-        setUserName(display);
-        setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
-        setUserEmail(email);
-      })
-      .catch(() => {});
+    const setFromSession = (session: any) => {
+      const email = (session?.user?.email || '').toString().trim();
+      const meta = (session?.user?.user_metadata || {}) as any;
+      const nameRaw = (meta?.full_name || meta?.name || meta?.display_name || '').toString().trim();
+      setAuthEmail(email);
+      setAuthName(nameRaw);
+    };
+    supabaseBrowser.auth.getSession().then(({ data }) => setFromSession(data?.session)).catch(() => {});
+    const { data: sub } = supabaseBrowser.auth.onAuthStateChange((_evt, session) => setFromSession(session));
+    return () => {
+      try {
+        sub?.subscription?.unsubscribe?.();
+      } catch {}
+    };
   }, []);
+
+  const displayName = React.useMemo(() => {
+    const fromMeta = (authName || '').toString().trim();
+    if (fromMeta) return fromMeta;
+    const email = (authEmail || '').toString().trim();
+    const base = email.includes('@') ? email.split('@')[0] : '';
+    if (!base) return 'Tu cuenta';
+    const cleaned = base.replace(/[._-]+/g, ' ').trim();
+    return cleaned ? cleaned.split(' ').map((w) => (w ? `${w[0].toUpperCase()}${w.slice(1)}` : '')).join(' ') : 'Tu cuenta';
+  }, [authEmail, authName]);
 
   const go = (tab: ViewTab) => {
     setIsMenuOpen(false);
@@ -72,7 +85,7 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
       setIsSigningOut(false);
       setIsMenuOpen(false);
       try {
-        window.location.reload();
+        window.location.href = '/crear';
       } catch {}
     }
   };
@@ -129,26 +142,62 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
               })}
             </nav>
 
-            <div className="mt-2 mb-2 mx-3 rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-xl">
-              <div className="px-3 pt-3 pb-2 flex items-center gap-3">
-                <div className="shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-500 border border-white/10 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-fuchsia-600/25">
-                  {userInitial}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-white font-bold text-[15px] truncate">{userName}</div>
-                  <div className="text-[11px] text-slate-400 truncate mt-0.5 break-all">{userEmail || 'Sin sesión activa'}</div>
-                </div>
+            <div className="mt-5 mb-2 px-3">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500 mb-2">Cuenta</p>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-3">
+                <div className="text-[15px] font-bold text-white truncate">{displayName}</div>
+                <div className="mt-0.5 text-[11px] text-slate-400 break-all">{authEmail || '—'}</div>
               </div>
-              <div className="px-3 pb-3">
+              <div className="mt-2 space-y-1">
+                {accountItemsAdmin.filter((i) => !i.adminOnly || isAdmin).map((item) => {
+                  const active = currentTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => go(item.id)}
+                      className={cn('luciana-mobile-drawer-item', active && 'is-active')}
+                    >
+                      <item.icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
+                      <span className="luciana-mobile-drawer-text"><strong>{item.label}</strong></span>
+                    </button>
+                  );
+                })}
                 <button
                   type="button"
                   onClick={() => void doSignOut()}
                   disabled={isSigningOut}
-                  className="w-full h-[40px] rounded-full bg-gradient-to-r from-rose-500/90 to-red-500/90 hover:from-rose-400 hover:to-red-400 text-white font-bold text-[13px] shadow-md shadow-rose-600/20 ring-1 ring-white/10 active:scale-[0.98] transition-all disabled:opacity-60"
+                  className="luciana-mobile-drawer-item disabled:opacity-60"
                 >
-                  {isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
+                  <LogOut className="w-[18px] h-[18px]" strokeWidth={1.8} />
+                  <span className="luciana-mobile-drawer-text"><strong>{isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</strong></span>
                 </button>
               </div>
+            </div>
+
+            <div className="mt-3 mb-4 px-3 space-y-2">
+              <button type="button" className="w-full text-left rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/10 via-white/[0.02] to-fuchsia-500/10 px-3 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-indigo-300">
+                    <CircleHelp className="w-[18px] h-[18px]" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <strong className="block text-[14px] text-white">¿Necesitas ayuda?</strong>
+                    <small className="block text-[11px] text-slate-400">Centro de ayuda</small>
+                  </div>
+                </div>
+              </button>
+              <button type="button" onClick={() => go('planes')} className="w-full text-left rounded-2xl border border-yellow-400/15 bg-gradient-to-br from-yellow-400/12 to-yellow-500/5 px-3 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-9 h-9 rounded-xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center text-yellow-300">
+                    <WalletCards className="w-[18px] h-[18px]" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <small className="block text-[10px] text-yellow-300/80 uppercase tracking-wide">Créditos disponibles</small>
+                    <strong className="block text-[14px] text-yellow-100">Obtener créditos</strong>
+                  </div>
+                </div>
+              </button>
             </div>
           </section>
         </div>
