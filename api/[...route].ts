@@ -17816,6 +17816,124 @@ try {
 } catch {}
 
 const oauthHandler = (() => {
+  function isValidChatgptRedirectUri(s: string): boolean {
+    if (typeof s !== "string" || !s) return false;
+    const t = s.trim();
+    if (!t) return false;
+    try {
+      const u = new URL(t);
+      const hp = `${u.protocol}//${u.host}${u.pathname}`;
+      const reChatOpenai = /^https:\/\/chat\.openai\.com\/aip\/g-[A-Za-z0-9_-]+\/oauth\/callback\/?$/i;
+      const reChatgptCom = /^https:\/\/chatgpt\.com\/aip\/g-[A-Za-z0-9_-]+\/oauth\/callback\/?$/i;
+      return reChatOpenai.test(hp) || reChatgptCom.test(hp);
+    } catch {
+      return false;
+    }
+  }
+
+  function parseBasicAuth(req: any): { clientId: string; clientSecret: string } {
+    const h = (req.headers?.authorization || req.headers?.Authorization || "").toString().trim();
+    const out = { clientId: "", clientSecret: "" };
+    if (!h || !h.toLowerCase().startsWith("basic ")) return out;
+    const raw = h.slice(6).trim();
+    if (!raw) return out;
+    let decoded = "";
+    try {
+      decoded = Buffer.from(raw, "base64").toString("utf8");
+    } catch {}
+    if (!decoded || !decoded.includes(":")) return out;
+    const idx = decoded.indexOf(":");
+    out.clientId = decoded.slice(0, idx);
+    out.clientSecret = decoded.slice(idx + 1);
+    return out;
+  }
+
+  async function handleAuthorize(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    const u = new URL(req.url, "http://localhost");
+    const qs = u.searchParams;
+
+    const clientId = (qs.get("client_id") || qs.get("clientId") || "").toString().trim();
+    const redirectUri = (qs.get("redirect_uri") || qs.get("redirectUri") || qs.get("redirect_url") || qs.get("callback_url") || "").toString().trim();
+    const responseType = (qs.get("response_type") || "").toString().trim().toLowerCase();
+    const state = (qs.get("state") || "").toString();
+    const scope = (qs.get("scope") || "").toString();
+
+    console.log(`[oauth:authorize][${method}] in >>> url=${req.url} clientId=${clientId} redirectUri=${redirectUri} responseType=${responseType} statePresent=!!${!!state} scope=${scope} headers=${JSON.stringify(req.headers || {})}`);
+
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if (method !== "GET") {
+      res.statusCode = 405;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "invalid_request", error_description: "Método no permitido" }));
+      return;
+    }
+
+    if (clientId !== CHATGPT_OAUTH_CONFIG.clientId) {
+      console.log(`[oauth:authorize] invalid_client: clientId esperado ${CHATGPT_OAUTH_CONFIG.clientId} vs recibido ${clientId}`);
+      res.statusCode = 400;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "invalid_client", error_description: "client_id OAuth no válido" }));
+      return;
+    }
+    if (responseType && responseType !== "code") {
+      console.log(`[oauth:authorize] unsupported_response_type: responseType=${responseType}`);
+      res.statusCode = 400;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "unsupported_response_type", error_description: "Solo response_type=code" }));
+      return;
+    }
+    if (!isValidChatgptRedirectUri(redirectUri) && redirectUri !== CHATGPT_OAUTH_CONFIG.callbackUrl) {
+      console.log(`[oauth:authorize] invalid_redirect_uri: recibido <<<${redirectUri}>>> esperado match o <<<${CHATGPT_OAUTH_CONFIG.callbackUrl}>>>`);
+      res.statusCode = 400;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "invalid_redirect_uri", error_description: "redirect_uri OAuth no permitida" }));
+      return;
+    }
+    if (!state) {
+      console.log(`[oauth:authorize] falta state`);
+      res.statusCode = 400;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "invalid_request", error_description: "Falta el parámetro state" }));
+      return;
+    }
+
+    try {
+      const proto =
+        (req.headers["x-forwarded-proto"] || req.headers["X-Forwarded-Proto"] || "").toString().trim().toLowerCase() ||
+        (req.connection && (req.connection as any).encrypted ? "https" : "http");
+      const host = (req.headers["x-forwarded-host"] || req.headers["host"] || req.headers["Host"] || "lucianamusic.app").toString().trim();
+      const origin = `${proto}://${host}`;
+      const screenUrl = new URL(`${origin.replace(/\/+$/, "")}/auth/chatgpt`);
+      screenUrl.searchParams.set("client_id", clientId);
+      screenUrl.searchParams.set("redirect_uri", redirectUri);
+      screenUrl.searchParams.set("state", state);
+      screenUrl.searchParams.set("response_type", "code");
+      if (scope) screenUrl.searchParams.set("scope", scope);
+
+      console.log(`[oauth:authorize] ok: redirigiendo a pantalla React origin=${origin} redirect_uri_out=${redirectUri} state_len=${state.length} finalRedirect=${screenUrl.toString()}`);
+      res.statusCode = 302;
+      res.setHeader("location", screenUrl.toString());
+      res.setHeader("cache-control", "no-store, private, max-age=0");
+      res.setHeader("pragma", "no-cache");
+      res.end();
+      return;
+    } catch (e) {
+      console.log(`[oauth:authorize] redirect crash: ${e instanceof Error ? e.stack || e.message : String(e)}`);
+      res.statusCode = 500;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ error: "server_error", error_description: e instanceof Error ? e.message : String(e) }));
+      return;
+    }
+  }
+
   async function handleToken(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
     if (method === "OPTIONS") {
@@ -17828,34 +17946,74 @@ const oauthHandler = (() => {
     }
     if (method !== "POST") return oauthGptSendJson(res, 405, { error: "invalid_request", error_description: "Método no permitido" });
 
-    const body = parseAnyBody(req);
-    const clientId = String(body?.client_id || "").trim();
-    const clientSecret = String(body?.client_secret || "").trim();
+    const contentType = (req.headers?.["content-type"] || req.headers?.["Content-Type"] || "").toString().toLowerCase();
+    const bodyRaw = await (async () => {
+      try { return await gptReadRawBody(req); } catch { return Buffer.alloc(0); }
+    })();
+    let body: any = {};
+    try {
+      const s = bodyRaw.toString("utf8");
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        const out: any = {};
+        try {
+          const usp = new URLSearchParams(s);
+          usp.forEach((v, k) => { out[k] = v; });
+        } catch {}
+        body = out;
+      } else if (contentType.includes("application/json")) {
+        try {
+          const j = JSON.parse(s);
+          if (j && typeof j === "object") body = j;
+        } catch {
+          body = {};
+        }
+      } else {
+        body = parseAnyBody({ body: s } as any);
+      }
+    } catch {
+      body = {};
+    }
+
+    const basic = parseBasicAuth(req);
+    const clientId = String(basic.clientId || body?.client_id || "").trim();
+    const clientSecret = String(basic.clientSecret || body?.client_secret || "").trim();
     const code = String(body?.code || "").trim();
     const grantType = String(body?.grant_type || "").trim();
+    const redirectUri = String(body?.redirect_uri || body?.redirectUri || "").trim();
+
+    console.log(`[oauth:token] in >>> method=${method} contentType=${contentType} basicPresent=${!!basic.clientId} clientId=${clientId} grantType=${grantType} codeLen=${code.length} redirectUri=${redirectUri} keys=${Object.keys(body || {}).join(',')}`);
 
     if (!clientId || !clientSecret) {
-      return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Falta client_id o client_secret" });
+      console.log(`[oauth:token] invalid_client: FALTAN credenciales basic=${JSON.stringify(basic)} body.client_id=${body?.client_id} body.client_secret=${body?.client_secret}`);
+      return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Falta client_id o client_secret (Basic Auth o body)" });
     }
     if (clientId !== CHATGPT_OAUTH_CONFIG.clientId || clientSecret !== CHATGPT_OAUTH_CONFIG.clientSecret) {
+      console.log(`[oauth:token] invalid_client: credenciales NO coinciden. ClientID esperado=<<<${CHATGPT_OAUTH_CONFIG.clientId}>>> vs <<<${clientId}>>>. Secret match=${clientSecret === CHATGPT_OAUTH_CONFIG.clientSecret}`);
       return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Credenciales OAuth inválidas" });
     }
     if (grantType && grantType !== "authorization_code") {
+      console.log(`[oauth:token] unsupported_grant_type: ${grantType}`);
       return oauthGptSendJson(res, 400, { error: "unsupported_grant_type", error_description: "Solo se admite authorization_code" });
     }
     if (!code) {
+      console.log(`[oauth:token] invalid_grant: code vacío.`);
       return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "Falta code" });
     }
 
     const auth = await requireAnyUserFromToken(code);
     if (!auth.ok) {
+      console.log(`[oauth:token] invalid_grant: requireAnyUserFromToken falló status=${auth.status} msg=${auth.error}`);
       return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "El code no corresponde a una sesión válida" });
     }
+    const userId = (auth.user?.id || "").toString();
+    const userEmail = (auth.user?.email || "").toString();
 
+    console.log(`[oauth:token] ok: user=${userId} email=${userEmail} expires_in=${CHATGPT_OAUTH_CONFIG.accessTokenExpiresIn}`);
     return oauthGptSendJson(res, 200, {
       access_token: code,
       token_type: "Bearer",
       expires_in: CHATGPT_OAUTH_CONFIG.accessTokenExpiresIn,
+      scope: (body?.scope || "").toString(),
     });
   }
 
@@ -17865,9 +18023,12 @@ const oauthHandler = (() => {
       const parts = u.pathname.split("/").filter(Boolean);
       const isApi = parts[0] === "api";
       const next = isApi ? parts[2] : parts[1];
-      if (next === "token") return handleToken(req, res);
+      if (!next) return oauthGptSendJson(res, 404, { error: "ruta_no_encontrada" });
+      if (next === "authorize") return await handleAuthorize(req, res);
+      if (next === "token") return await handleToken(req, res);
       return oauthGptSendJson(res, 404, { error: "ruta_no_encontrada" });
     } catch (e) {
+      console.log(`[oauth:handler] crash: ${e instanceof Error ? (e.stack || e.message) : String(e)}`);
       return oauthGptSendJson(res, 500, { error: "error_interno", error_description: e instanceof Error ? e.message : String(e) });
     }
   };
@@ -18936,6 +19097,7 @@ export default async function handler(req: any, res: any) {
     if (head === "kits" && next === "voices") return kitsVoicesHandler(req, res);
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "oauth") return oauthHandler(req, res);
+    if (head === "gpt" && next === "token") return oauthHandler(req, res);
     if (head === "gpt") return gptHandler(req, res);
     if (head === "rvc") return rvcHandler(req, res);
     if (head === "replicate" && next === "predictions" && third && parts[isApi ? 4 : 3] === "cancel") {

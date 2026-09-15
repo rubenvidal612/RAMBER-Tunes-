@@ -786,6 +786,7 @@ function ChatgptAuthScreen() {
       }
       try {
         const s = new URL(window.location.href);
+        console.log(`[ChatgptAuthScreen] tick start href=${s.toString()}`);
         let qState = (s.searchParams.get('state') || '').toString();
         if (qState) {
           try { qState = decodeURIComponent(qState); } catch {}
@@ -794,6 +795,7 @@ function ChatgptAuthScreen() {
           try { window.localStorage.setItem(CHATGPT_OAUTH_STATE_KEY, qState); } catch {}
           setLocalState(qState);
         }
+        console.log(`[ChatgptAuthScreen] state from query=<<<${qState}>>> stateHook=<<<${state}>>> local=<<<${localState}>>>`);
         let qRedirectUri =
           s.searchParams.get('redirect_uri') ||
           s.searchParams.get('redirectUri') ||
@@ -809,10 +811,12 @@ function ChatgptAuthScreen() {
             setLocalRedirectUri(qRedirectUri);
           }
         }
+        console.log(`[ChatgptAuthScreen] redirectUri query=<<<${qRedirectUri}>>> hook=<<<${redirectUri}>>> local=<<<${localRedirectUri}>>>`);
         const ses = await supabaseBrowser.auth.getSession();
         const token = String((ses?.data?.session?.access_token) as any || '').trim();
         const email = String((ses?.data?.session?.user?.email) as any || '').trim().toLowerCase();
         const validEmail = email && (email.endsWith('@gmail.com') || email.endsWith('@googlemail.com'));
+        console.log(`[ChatgptAuthScreen] session tokenLen=${token.length} email=${email} validGmail=${validEmail}`);
         if (!alive) return;
         if (token && validEmail) {
           setSessionToken(token);
@@ -830,17 +834,23 @@ function ChatgptAuthScreen() {
               try { window.localStorage.removeItem(CHATGPT_OAUTH_STATE_KEY); } catch {}
               try { window.localStorage.removeItem(CHATGPT_OAUTH_REDIRECT_URI_KEY); } catch {}
               setReady(true);
+              console.log(`[ChatgptAuthScreen] ALL OK: redirecting BACK to OpenAI callback=<<<${redir.toString()}>>> finalState len=${finalState.length} code len=${token.length}`);
               window.location.replace(redir.toString());
               return;
             } catch (e) {
               setError(e instanceof Error ? e.message : 'No pude redirigir a ChatGPT.');
+              console.log(`[ChatgptAuthScreen] crash redirect: ${e instanceof Error ? e.stack || e.message : String(e)}`);
             }
           } else {
             setError('Falta el parámetro state en el enlace. Abre este link desde ChatGPT.');
+            console.log(`[ChatgptAuthScreen] faltante state final. qState=<<<${qState}>>> state=<<<${state}>>> local=<<<${localState}>>>`);
           }
         }
       } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : 'Error de sesión.');
+        if (alive) {
+          setError(e instanceof Error ? e.message : 'Error de sesión.');
+          console.log(`[ChatgptAuthScreen] tick crash: ${e instanceof Error ? (e.stack || e.message) : String(e)}`);
+        }
       } finally {
         if (alive) setReady(true);
       }
