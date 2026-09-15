@@ -339,7 +339,7 @@ function InicioLanding({
             </div>
             <button
               onClick={onOpenPlans}
-              className="mt-5 w-full bg-white text-black px-5 py-3 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2"
+              className="mt-5 w-full bg-white text-gray-900 px-5 py-3 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
             >
               Ver planes <ArrowRight className="w-4 h-4" />
             </button>
@@ -568,7 +568,7 @@ function InicioSocial({
               onClick={() => setTab(t.key as any)}
               className={cn(
                 'px-4 py-2 rounded-full text-sm font-semibold border transition-colors',
-                tab === (t.key as any) ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+                tab === (t.key as any) ? 'bg-white text-gray-900 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
               )}
             >
               {t.label}
@@ -906,7 +906,7 @@ function ChatgptAuthScreen() {
             type="button"
             onClick={startGoogleLogin}
             disabled={startingLogin || !supabaseBrowser}
-            className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
+            className="mt-6 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
           >
             {startingLogin ? 'Abriendo Google…' : 'Continuar con Google'}
           </button>
@@ -1514,7 +1514,7 @@ ${letter}
                 type="button"
                 onClick={startGoogleLogin}
                 disabled={startingLogin || !supabaseBrowser}
-                className="mt-7 w-full bg-white text-black rounded-2xl font-extrabold text-base px-6 py-4 disabled:opacity-70 shadow-[0_6px_24px_rgba(255,255,255,0.08)] active:scale-[0.985] transition-all">
+                className="mt-7 w-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl font-extrabold text-base px-6 py-4 disabled:opacity-70 shadow-[0_6px_24px_rgba(255,255,255,0.08)] active:scale-[0.985] transition-all">
                 {startingLogin ? 'Abriendo Google…' : 'Continuar con Google'}
               </button>
               {loginError ? (
@@ -1756,7 +1756,7 @@ ${(lyrics || '').length ? (lyrics.length > 300 ? lyrics.slice(0, 300) + '...' : 
                   <button
                     type="button"
                     onClick={reset}
-                    className="mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-3 bg-white text-black hover:bg-slate-100 active:scale-[0.985] transition-all border border-white/10"
+                    className="mt-5 w-full rounded-2xl font-extrabold text-base px-6 py-3 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:bg-slate-100 active:scale-[0.985] transition-all border border-white/10"
                   >
                     Intentar de nuevo
                   </button>
@@ -4025,7 +4025,7 @@ export default function App() {
                   });
               }}
               disabled={isStartingLogin || !supabaseBrowser}
-              className="mt-6 bg-white text-black px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
+              className="mt-6 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 px-6 py-3 rounded-full font-extrabold text-sm disabled:opacity-70"
             >
               Entrar con Google
             </button>
@@ -4098,7 +4098,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowIosHelp(false)}
-                className="flex-1 bg-white text-black h-[44px] rounded-full font-extrabold text-sm"
+                className="flex-1 bg-white text-gray-900 h-[44px] rounded-full font-extrabold text-sm shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
               >
                 Entendido
               </button>
@@ -4207,7 +4207,7 @@ export default function App() {
             </div>
             <button
               onClick={onInstallClick}
-              className="shrink-0 bg-white text-black px-4 py-2 rounded-full text-xs font-extrabold"
+              className="shrink-0 bg-white text-gray-900 px-4 py-2 rounded-full text-xs font-extrabold shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
             >
               {installPromptEvent ? 'INSTALAR' : 'CÓMO INSTALAR'}
             </button>
@@ -4531,7 +4531,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={togglePlay}
-                    className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform shrink-0"
+                    className="w-12 h-12 rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center shadow-lg active:scale-95 transition-transform shrink-0"
                     aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
                     title={isPlaying ? 'Pausar' : 'Reproducir'}
                   >
@@ -6406,7 +6406,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
               <div className="text-slate-300 text-sm">Copia este link:</div>
               <div className="bg-white/5 border border-white/10 rounded-2xl p-3 break-words text-slate-100 text-sm">{shareSheetUrl}</div>
               <button
-                className="w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm"
+                className="w-full h-[46px] rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-sm"
                 onClick={async () => {
                   const ok = await copyToClipboard(shareSheetUrl);
                   if (ok) {

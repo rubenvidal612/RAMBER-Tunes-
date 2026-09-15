@@ -3686,7 +3686,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClick={() => setMode('facil')}
             className={cn(
               "px-5 py-1.5 rounded-full text-sm font-semibold transition-colors",
-              mode === 'facil' ? "bg-white text-black" : "text-slate-300 hover:text-white"
+              mode === 'facil' ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10" : "text-slate-300 hover:text-white"
             )}
           >
             Fácil
@@ -3695,7 +3695,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClick={() => setMode('personalizado')}
             className={cn(
               "px-5 py-1.5 rounded-full text-sm font-semibold transition-colors",
-              mode === 'personalizado' ? "bg-white text-black" : "text-slate-300 hover:text-white"
+              mode === 'personalizado' ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10" : "text-slate-300 hover:text-white"
             )}
           >
             Personalizado
@@ -4140,7 +4140,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   onClick={() => setVoicesTab('mine')}
                   className={cn(
                     "flex-1 px-4 py-2 rounded-full text-sm font-semibold transition-colors",
-                    voicesTab === 'mine' ? "bg-white text-black" : "text-slate-300 hover:text-white"
+                    voicesTab === 'mine' ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10" : "text-slate-300 hover:text-white"
                   )}
                 >
                   Mis Clones
@@ -4150,7 +4150,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   onClick={() => setVoicesTab('favorites')}
                   className={cn(
                     "flex-1 px-4 py-2 rounded-full text-sm font-semibold transition-colors flex items-center justify-center gap-2",
-                    voicesTab === 'favorites' ? "bg-white text-black" : "text-slate-300 hover:text-white"
+                    voicesTab === 'favorites' ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10" : "text-slate-300 hover:text-white"
                   )}
                 >
                   <Heart className="w-4 h-4" /> Favoritos
@@ -4466,7 +4466,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                       .finally(() => setVoiceDetailsSaving(false));
                   }}
                   disabled={voiceDetailsSaving || !(sunoVoiceDetailsId || '').toString().trim()}
-                  className="h-[46px] rounded-full bg-white text-black font-extrabold disabled:opacity-60"
+                  className="h-[46px] rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold disabled:opacity-60"
                 >
                   Guardar
                 </button>
@@ -5573,7 +5573,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                 .finally(() => setVoiceDetailsSaving(false));
                             }}
                             disabled={voiceDetailsSaving || !(voiceGeneratedVoiceId || '').toString().trim()}
-                            className="mt-4 w-full bg-white text-black h-[48px] rounded-full font-extrabold disabled:opacity-60"
+                            className="mt-4 w-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold disabled:opacity-60"
                           >
                             Guardar
                           </button>
@@ -6109,7 +6109,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
                     selectedGenre === genre.id
-                      ? "bg-white text-black border-white"
+                      ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-white"
                       : "bg-white/5 text-white border-white/10 hover:border-white/30"
                   )}
                 >
@@ -6276,7 +6276,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
             </div>
             <div className="space-y-4">
               {[
-                { id: 'femenina', name: 'Femenina', short: 'F', inactive: 'bg-white/5 text-white border-white/10', active: 'bg-white text-black border-white' },
+                { id: 'femenina', name: 'Femenina', short: 'F', inactive: 'bg-white/5 text-white border-white/10', active: 'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-white' },
                 { id: 'masculina', name: 'Masculina', short: 'M', inactive: 'bg-white/5 text-white border-white/10', active: 'bg-[#111111] text-white border-[#111111]' },
               ].map((voice) => (
                 <button
@@ -6314,7 +6314,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all duration-200",
                     selectedMood === mood.id
-                      ? "bg-white text-black border-white"
+                      ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-white"
                       : "bg-white/5 text-white border-white/10 hover:border-white/30"
                   )}
                 >
@@ -6417,7 +6417,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
             <div className={cn(
               "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold mb-2",
               currentStep >= step.number
-                ? "bg-white text-black"
+                ? "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10"
                 : "bg-white/10 text-white"
             )}>
               {step.number}
@@ -6483,7 +6483,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
               canGoNext
                 ? currentStep === 2 && easyStage === 'review_lyrics'
                   ? "bg-pink-500 text-white hover:bg-pink-400"
-                  : "bg-white text-black hover:bg-gray-200"
+                  : "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:bg-gray-200"
                 : "bg-white/5 text-slate-500 cursor-not-allowed"
             )}
           >
@@ -7174,7 +7174,7 @@ function CustomForm({
                 type="button"
                 onClick={() => handleCreateUniqueLyrics().catch(() => {})}
                 disabled={isGeneratingLyrics}
-                className="w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm disabled:opacity-60"
+                className="w-full h-[48px] rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-sm disabled:opacity-60"
               >
                 {isGeneratingLyrics ? 'Generando letra…' : 'Generar'}
               </button>
@@ -7322,7 +7322,7 @@ function CustomForm({
             <button
               type="button"
               onClick={() => setShowInstructionsRules(false)}
-              className="mt-5 w-full h-[48px] rounded-full bg-white text-black font-extrabold text-sm"
+              className="mt-5 w-full h-[48px] rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-sm"
             >
               Entendido
             </button>

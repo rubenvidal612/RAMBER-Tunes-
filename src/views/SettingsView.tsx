@@ -879,7 +879,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
               onClick={() => setOfficeTab('resumen')}
               className={cn(
                 'rounded-2xl px-4 py-3 text-sm font-extrabold transition-colors',
-                officeTab === 'resumen' ? 'bg-white text-black' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                officeTab === 'resumen' ? 'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-300 hover:bg-white/10'
               )}
             >
               Resumen
@@ -1125,7 +1125,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                       }}
                       className={cn(
                         'h-[40px] px-4 rounded-full border text-xs font-extrabold transition-colors',
-                        'bg-white text-black border-white'
+                        'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-white'
                       )}
                       disabled={usersLoading}
                     >

@@ -44,7 +44,7 @@ export function MiniPlayer({ song, isPlaying, onPlayPause, onClose, placement = 
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={onPlayPause} className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+          <button onClick={onPlayPause} className="w-10 h-10 rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center shadow-lg active:scale-95 transition-transform">
             {isPlaying ? <Pause className="w-5 h-5 fill-black" strokeWidth={1} /> : <Play className="w-5 h-5 fill-black ml-1" strokeWidth={1} />}
           </button>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white">

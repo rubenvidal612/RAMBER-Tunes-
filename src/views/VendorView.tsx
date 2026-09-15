@@ -220,7 +220,7 @@ export function VendorView() {
           <button
             onClick={() => saveSettings().catch(() => {})}
             disabled={saving}
-            className="mt-4 w-full h-[46px] rounded-full bg-white text-black font-extrabold text-sm disabled:opacity-60"
+            className="mt-4 w-full h-[46px] rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-sm disabled:opacity-60"
           >
             {saving ? 'Guardando…' : 'Guardar duración por default'}
           </button>
@@ -298,7 +298,7 @@ export function VendorView() {
                     ) : (
                       <button
                         onClick={() => markPaid(item.id).catch(() => {})}
-                        className="h-10 px-4 rounded-full bg-white text-black font-extrabold text-xs"
+                        className="h-10 px-4 rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-xs"
                       >
                         Marcar como pagado
                       </button>

@@ -236,7 +236,7 @@ export function ElencoPresentationView() {
               <button
                 type="button"
                 onClick={togglePlay}
-                className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center shadow-2xl hover:scale-105 transition-transform"
+                className="w-16 h-16 rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 flex items-center justify-center shadow-2xl hover:scale-105 transition-transform"
                 aria-label={localIsPlaying ? 'Pausar' : 'Reproducir'}
               >
                 {localIsPlaying ? (

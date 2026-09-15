@@ -1824,7 +1824,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     disabled={!song.audioUrl}
                     className={cn(
                       "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
-                      song.audioUrl ? "border-white/10 bg-white text-black hover:bg-slate-200" : "border-white/10 bg-white/[0.04] text-slate-500"
+                      song.audioUrl ? "border-white/10 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:bg-slate-200" : "border-white/10 bg-white/[0.04] text-slate-500"
                     )}
                     aria-label="Reproducir"
                   >
@@ -3342,7 +3342,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     }
                     setShareResult((prev) => prev ? { ...prev, description: 'No pude copiarlo automático. Mantén presionado el link para copiarlo manualmente.' } : prev);
                   }}
-                  className="w-full h-[52px] rounded-full bg-white text-black font-extrabold text-sm"
+                  className="w-full h-[52px] rounded-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 font-extrabold text-sm"
                 >
                   Copiar enlace
                 </button>
@@ -6875,7 +6875,7 @@ function SongOptionsSheet({
                           />
 
                           <div className="absolute inset-y-0 -translate-x-1/2" style={{ left: `${left}px` }}>
-                            <div className={cn("absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-black px-3 py-1 rounded-full font-extrabold text-sm", trimDrag === 'start' ? "opacity-100" : "opacity-0 md:opacity-100")}>
+                            <div className={cn("absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 px-3 py-1 rounded-full font-extrabold text-sm", trimDrag === 'start' ? "opacity-100" : "opacity-0 md:opacity-100")}>
                               {fmtClockTenths(trimStartSec)}
                             </div>
                             <div
@@ -6916,7 +6916,7 @@ function SongOptionsSheet({
                           </div>
 
                           <div className="absolute inset-y-0 -translate-x-1/2" style={{ left: `${right}px` }}>
-                            <div className={cn("absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-black px-3 py-1 rounded-full font-extrabold text-sm", trimDrag === 'end' ? "opacity-100" : "opacity-0 md:opacity-100")}>
+                            <div className={cn("absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 px-3 py-1 rounded-full font-extrabold text-sm", trimDrag === 'end' ? "opacity-100" : "opacity-0 md:opacity-100")}>
                               {fmtClockTenths(trimEndSec)}
                             </div>
                             <div
@@ -7325,7 +7325,7 @@ function SongOptionsSheet({
                   createMp4(a).catch(() => {});
                 }}
                 disabled={isBusy}
-                className="w-full bg-white text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                className="w-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
                 Crear video
               </button>
@@ -7359,7 +7359,7 @@ function SongOptionsSheet({
               <button
                 onClick={() => uploadCoverFromUrl(coverUrlInput).catch(() => {})}
                 disabled={isBusy}
-                className="w-full bg-white text-black h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
+                className="w-full bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 h-[48px] rounded-full font-extrabold text-sm transition-colors disabled:opacity-60"
               >
                 Guardar portada
               </button>
@@ -7555,7 +7555,7 @@ function FiltersModal({
                 onClick={() => setLocalSort('newest')}
                 className={cn(
                   'flex-1 h-[46px] rounded-2xl border border-white/10 font-extrabold text-sm',
-                  localSort === 'newest' ? 'bg-white text-black' : 'bg-white/5 text-slate-200 hover:bg-white/10'
+                  localSort === 'newest' ? 'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-200 hover:bg-white/10'
                 )}
               >
                 Más nuevo
@@ -7564,7 +7564,7 @@ function FiltersModal({
                 onClick={() => setLocalSort('oldest')}
                 className={cn(
                   'flex-1 h-[46px] rounded-2xl border border-white/10 font-extrabold text-sm',
-                  localSort === 'oldest' ? 'bg-white text-black' : 'bg-white/5 text-slate-200 hover:bg-white/10'
+                  localSort === 'oldest' ? 'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10' : 'bg-white/5 text-slate-200 hover:bg-white/10'
                 )}
               >
                 Más antiguo
@@ -7625,7 +7625,7 @@ function FolderPickerModal({
             onClick={() => onPick('')}
             className={cn(
               'w-full flex items-center justify-between p-4 rounded-2xl border transition-colors',
-              !currentFolderId ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+              !currentFolderId ? 'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
             )}
           >
             <div className="font-extrabold">Sin carpeta</div>
@@ -7640,7 +7640,7 @@ function FolderPickerModal({
               onClick={() => onPick(f.id)}
               className={cn(
                 'w-full flex items-center justify-between p-4 rounded-2xl border transition-colors',
-                currentFolderId === f.id ? 'bg-white text-black border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+                currentFolderId === f.id ? 'bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 border-white' : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
               )}
             >
               <div className="font-extrabold truncate">{f.name}</div>

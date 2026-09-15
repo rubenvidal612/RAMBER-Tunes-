@@ -939,7 +939,7 @@ export function KaraokeView() {
                 
                 {/* Play Button */}
                 <div className="flex justify-center">
-                  <button onClick={togglePlay} className="w-14 h-14 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform">
+                  <button onClick={togglePlay} className="w-14 h-14 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-full flex items-center justify-center hover:scale-105 transition-transform">
                     {isPlaying ? <div className="w-5 h-5 bg-black rounded-sm" /> : <Play className="w-6 h-6 ml-1" fill="currentColor" />}
                   </button>
                 </div>
@@ -986,7 +986,7 @@ export function KaraokeView() {
                 "w-full h-16 font-extrabold text-lg rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl cursor-pointer",
                 isDownloading 
                   ? "bg-emerald-500 text-white animate-pulse scale-[0.98]" 
-                  : "bg-white text-black hover:bg-slate-200 active:scale-[0.98]"
+                  : "bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:bg-slate-200 active:scale-[0.98]"
               )}
             >
               {isDownloading ? (

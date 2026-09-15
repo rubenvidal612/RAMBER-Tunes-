@@ -638,7 +638,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             ))}
           </div>
 
-          <div className="mt-8 bg-white text-black p-5 rounded-2xl flex justify-between items-center shadow-lg">
+          <div className="mt-8 bg-white text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 p-5 rounded-2xl flex justify-between items-center shadow-lg">
             <div>
               <p className="font-bold text-base">Te quedan {songs} canciones</p>
               <p className="text-slate-600 text-sm">≈ {versions} versiones (A y B)</p>
