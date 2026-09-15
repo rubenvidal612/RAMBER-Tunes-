@@ -10,6 +10,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
   const { credits, creditsExpiresAt, planExpiresAt, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
   const [userInitial, setUserInitial] = useState('U');
+  const [userEmail, setUserEmail] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
   const [isOfficeOpen, setIsOfficeOpen] = useState(initialOffice);
@@ -198,6 +199,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         const display = (name || email || 'Usuario').toString().trim();
         setUserName(display);
         setUserInitial(display.slice(0, 1).toUpperCase() || 'U');
+        setUserEmail(email);
       })
       .catch(() => {});
   }, []);
@@ -2117,7 +2119,28 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
           </div>
         </div>
 
-        <div className="py-4 text-center">
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="px-5 pt-5 pb-4 flex items-center gap-4">
+            <div className="shrink-0 w-14 h-14 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-500 border border-white/10 flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-fuchsia-600/30">
+              {userInitial}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-extrabold text-base truncate">{userName}</div>
+              <div className="text-[13px] text-slate-300/90 truncate mt-0.5">{userEmail || 'Sin sesión activa'}</div>
+            </div>
+          </div>
+          <div className="px-5 pb-5">
+            <button
+              onClick={() => signOut().catch(() => {})}
+              disabled={isAuthBusy}
+              className="w-full h-[48px] rounded-full bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-400 hover:to-red-400 text-white font-extrabold text-sm shadow-lg shadow-rose-600/25 ring-2 ring-white/10 active:scale-[0.98] transition-all disabled:opacity-60"
+            >
+              {isAuthBusy ? 'Cerrando sesión…' : 'Cerrar sesión'}
+            </button>
+          </div>
+        </div>
+
+        <div className="py-3 text-center">
            <button
              onClick={() => {
                if (isStartingLogin) return;
@@ -2130,16 +2153,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                  .finally(() => setIsStartingLogin(false));
              }}
              disabled={isStartingLogin}
-             className="mb-5 text-slate-200 text-sm font-semibold hover:text-white transition-colors underline underline-offset-4 disabled:opacity-60"
+             className="text-slate-200 text-sm font-semibold hover:text-white transition-colors underline underline-offset-4 disabled:opacity-60"
            >
              {isStartingLogin ? 'Abriendo Google…' : 'Entrar con Google'}
-           </button>
-           <button
-             onClick={() => signOut().catch(() => {})}
-             disabled={isAuthBusy}
-             className="text-slate-400 text-sm font-medium hover:text-white transition-colors underline underline-offset-4 disabled:opacity-60"
-           >
-             Cerrar sesión
            </button>
         </div>
       </div>
