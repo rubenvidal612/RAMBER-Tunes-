@@ -129,22 +129,22 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
               })}
             </nav>
 
-            <div className="mt-4 mb-4 mx-4 rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-xl">
-              <div className="px-5 pt-5 pb-4 flex items-center gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-500 border border-white/10 flex items-center justify-center text-white font-extrabold text-lg shadow-lg shadow-fuchsia-600/30">
+            <div className="mt-2 mb-2 mx-3 rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-xl">
+              <div className="px-3 pt-3 pb-2 flex items-center gap-3">
+                <div className="shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-500 border border-white/10 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-fuchsia-600/25">
                   {userInitial}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-white font-extrabold text-sm truncate">{userName}</div>
-                  <div className="text-[12px] text-slate-300/90 truncate mt-0.5 break-all">{userEmail || 'Sin sesión activa'}</div>
+                  <div className="text-white font-bold text-[15px] truncate">{userName}</div>
+                  <div className="text-[11px] text-slate-400 truncate mt-0.5 break-all">{userEmail || 'Sin sesión activa'}</div>
                 </div>
               </div>
-              <div className="px-5 pb-5">
+              <div className="px-3 pb-3">
                 <button
                   type="button"
                   onClick={() => void doSignOut()}
                   disabled={isSigningOut}
-                  className="w-full h-[46px] rounded-full bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-400 hover:to-red-400 text-white font-extrabold text-sm shadow-lg shadow-rose-600/25 ring-2 ring-white/10 active:scale-[0.98] transition-all disabled:opacity-60"
+                  className="w-full h-[40px] rounded-full bg-gradient-to-r from-rose-500/90 to-red-500/90 hover:from-rose-400 hover:to-red-400 text-white font-bold text-[13px] shadow-md shadow-rose-600/20 ring-1 ring-white/10 active:scale-[0.98] transition-all disabled:opacity-60"
                 >
                   {isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
                 </button>
