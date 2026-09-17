@@ -89,7 +89,7 @@ export function PrivacyPolicyView({ onBack }: PrivacyPolicyViewProps) {
               <li className="flex gap-3">
                 <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
                 <div>
-                  <strong className="text-white">Cuenta de Google (OAuth 2.0):</strong> cuando inicias sesión con "Continuar con Google", recibimos tu nombre público, foto de perfil y dirección de correo electrónico asociada a tu cuenta Google. No tenemos acceso a tu contraseña de Google en ningún momento. Esta autenticación se realiza a través del proveedor oficial de OAuth de Google (Supabase Auth). <strong>Finalidad:</strong> identificarte de forma segura, asociar tus créditos y canciones a tu cuenta y personalizar la experiencia.
+                  <strong className="text-white">Cuenta de Google (OAuth 2.0):</strong> cuando inicias sesión con "Continuar con Google", recibimos tu nombre público, foto de perfil y dirección de correo electrónico asociada a tu cuenta Google. No tenemos acceso a tu contraseña de Google en ningún momento. Esta autenticación se realiza a través del servicio oficial de OAuth de Google (Supabase Auth). <strong>Finalidad:</strong> identificarte de forma segura, asociar tus créditos y canciones a tu cuenta y personalizar la experiencia.
                 </div>
               </li>
               <li className="flex gap-3">
@@ -128,7 +128,7 @@ export function PrivacyPolicyView({ onBack }: PrivacyPolicyViewProps) {
               LucIAna Music <strong className="text-white">NO vende, alquila, comercializa ni comparte tus datos sensibles</strong> (correo electrónico, audios privados, historial de generaciones, tokens OAuth) con terceros con fines comerciales o publicitarios.
             </p>
             <p className="mb-2">
-              Solo compartimos datos estrictamente necesarios y a través de contratos de procesamiento oficiales con estos subproveedores, quienes actúan como Encargados del Tratamiento según RGPD (UE) y LFPDPPP (México):
+              Solo compartimos datos estrictamente necesarios y a través de contratos de procesamiento oficiales con estas plataformas subcontratadas, quienes actúan como Encargados del Tratamiento según RGPD (UE) y LFPDPPP (México):
             </p>
             <ul className="space-y-2 pl-1 sm:pl-2">
               <li className="flex gap-3">
@@ -145,11 +145,11 @@ export function PrivacyPolicyView({ onBack }: PrivacyPolicyViewProps) {
               </li>
               <li className="flex gap-3">
                 <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-                <div><strong className="text-white">Kie / RedPanda AI (Proveedor Suno V6)</strong> (EEUU): generación musical. Datos: prompts, estilo, audio de referencia para covers y clonación. No envíamos tu correo electrónico real; solo un user ID hash corto.</div>
+                <div><strong className="text-white">Kie / RedPanda AI (Plataforma Suno V6)</strong> (EEUU): generación musical. Datos: prompts, estilo, audio de referencia para covers y clonación. No envíamos tu correo electrónico real; solo un user ID hash corto.</div>
               </li>
               <li className="flex gap-3">
                 <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-                <div><strong className="text-white">Google LLC (GenAI Gemini)</strong> (EEUU): transcripción de audio a letra y escritura de letras con IA. Datos: audio MP3/WAV a transcribir y título de la canción. Almacenamiento temporal según política Google AI Studio.</div>
+                <div><strong className="text-white">Google LLC (GenAI)</strong> (EEUU): transcripción de audio a letra y escritura de letras con IA. Datos: audio MP3/WAV a transcribir y título de la canción. Almacenamiento temporal según política Google AI Studio.</div>
               </li>
               <li className="flex gap-3">
                 <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
@@ -174,7 +174,7 @@ export function PrivacyPolicyView({ onBack }: PrivacyPolicyViewProps) {
               5. Propiedad intelectual y derecho sobre tus creaciones
             </h2>
             <p>
-              Los derechos patrimoniales sobre las canciones que generes usando LucIAna Music permanecen en tu poder conforme a los términos de Suno V6/Kie (proveedor de generación musical). Nosotros solo almacenamos una copia en tu biblioteca personal para que la escuches y descargues; no la republicamos ni monetizamos sin tu consentimiento escrito explícito.
+              Los derechos patrimoniales sobre las canciones que generes usando LucIAna Music permanecen en tu poder conforme a los términos de Suno V6/Kie (plataforma de generación musical). Nosotros solo almacenamos una copia en tu biblioteca personal para que la escuches y descargues; no la republicamos ni monetizamos sin tu consentimiento escrito explícito.
             </p>
           </section>
 

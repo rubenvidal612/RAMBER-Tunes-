@@ -2025,7 +2025,7 @@ export function CloneVoiceView() {
                         )}
                       >
                         <div className="font-extrabold truncate">{s.title || 'Canción'}</div>
-                        <div className="text-xs text-slate-400 truncate">{ok ? 'Lista para separar voz/instrumental' : 'No se puede separar (no tiene info del proveedor)'}</div>
+                        <div className="text-xs text-slate-400 truncate">{ok ? 'Lista para separar voz/instrumental' : 'No se puede separar (no tiene información disponible)'}</div>
                       </button>
                     );
                   })}

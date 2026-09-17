@@ -29,7 +29,7 @@ type HomeLandingViewProps = {
 
 const tools = [
   { icon: Music2, tone: 'pink', title: 'Crear musica\ncon IA', text: 'Genera canciones completas con voz o instrumental en cualquier estilo.', action: 'Crear ahora', image: '/assets/tool-create-music.png', imageAlt: 'Productor creando musica con inteligencia artificial' },
-  { icon: FileText, tone: 'purple', title: 'Escribir letras\ncon IA', text: 'Gemini te ayuda a crear letras increibles para tus canciones en segundos.', action: 'Escribir letra', image: '/assets/tool-write-lyrics.png', imageAlt: 'Composicion de letras en un estudio musical' },
+  { icon: FileText, tone: 'purple', title: 'Escribir letras\ncon IA', text: 'LucIAna te ayuda a crear letras increibles para tus canciones en segundos.', action: 'Escribir letra', image: '/assets/tool-write-lyrics.png', imageAlt: 'Composicion de letras en un estudio musical' },
   { icon: Mic2, tone: 'blue', title: 'Clonar tu voz', text: 'Clona tu voz con IA y usala en tus canciones o proyectos.', action: 'Probar clonacion', image: '/assets/tool-clone-voice.png', imageAlt: 'Microfono y ondas para clonacion de voz' },
   { icon: RefreshCcw, tone: 'pink', title: 'Cover / Nueva\nversion', text: 'Transforma cualquier cancion en una nueva version unica.', action: 'Crear cover', image: '/assets/tool-cover-version.png', imageAlt: 'Produccion de una nueva version musical' },
   { icon: SlidersHorizontal, tone: 'green', title: 'Separar voz e\ninstrumental', text: 'Obten stems de alta calidad: voz, bateria, bajo y mas.', action: 'Separar ahora', image: '/assets/tool-separate-stems.png', imageAlt: 'Pistas de voz e instrumentos separadas' },
@@ -111,7 +111,7 @@ export function HomeLandingView({ onGoStudio }: HomeLandingViewProps) {
         <div className="landing-section-title"><h2>Tecnologia de <em>ultima generacion</em><br />en <span>una sola plataforma</span></h2><p>Trabajamos con los modelos de IA mas avanzados para darte los mejores resultados.</p></div>
         <div className="landing-tech-grid">
           <article className="landing-tech-card is-purple"><header><Sparkles /><strong>Suno</strong></header><h3>Generacion musical con IA</h3><p>Modelos Suno V5.5, V5, V4.5 Plus, V4.5 All, V4.5 y V4 para crear musica de alta calidad.</p><small>Disponible ahora</small></article>
-          <article className="landing-tech-card is-gold"><header><Sparkles /><strong>Gemini</strong></header><h3>Escritura y creatividad con IA</h3><p>Gemini te ayuda a crear letras, ideas, titulos y conceptos increibles para tus canciones.</p><small>Disponible ahora</small></article>
+          <article className="landing-tech-card is-gold"><header><Sparkles /><strong>LucIAna</strong></header><h3>Escritura y creatividad con IA</h3><p>LucIAna te ayuda a crear letras, ideas, títulos y conceptos increíbles para tus canciones.</p><small>Disponible ahora</small></article>
           <article className="landing-tech-card is-pink"><header><AudioLines /><strong>Lyria</strong><b>PROXIMAMENTE</b></header><h3>Nueva generacion musical</h3><p>La nueva tecnologia de Google DeepMind que llevara tu musica al siguiente nivel.</p><small>Proximamente</small></article>
         </div>
         <div className="landing-quality-strip">
@@ -147,7 +147,7 @@ export function HomeLandingView({ onGoStudio }: HomeLandingViewProps) {
       <footer className="landing-shell landing-footer">
         <div className="landing-brand"><strong>Luc<span>IA</span>na <small>| Music</small></strong><p>La plataforma musical mas completa con IA para compositores, productores y creadores.</p><div><Youtube size={15} /><Instagram size={15} /><Music2 size={15} /></div></div>
         <div><strong>Producto</strong><a>Funciones</a><a>Precios</a><a>Planes</a><a>Novedades</a></div>
-        <div><strong>Recursos</strong><a>Blog</a><a>Tutoriales</a><a>Centro de ayuda</a><a>API</a></div>
+        <div><strong>Recursos</strong><a>Blog</a><a>Tutoriales</a><a>Centro de ayuda</a><a>Integraciones</a></div>
         <div><strong>Comunidad</strong><a>Comunidad</a><a>Artistas</a><a>Eventos</a><a>Afiliados</a></div>
         <div><strong>Empresa</strong><a>Acerca de</a><a>Contacto</a><a>Terminos</a><a>Privacidad</a></div>
         <div className="landing-support"><strong><Headphones size={16} />Soporte 24/7</strong><p>Estamos para ayudarte</p><button type="button">Contactar soporte</button><small>contacto@lucianamusic.app</small></div>

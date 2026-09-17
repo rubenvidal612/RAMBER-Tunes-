@@ -130,12 +130,12 @@ export async function POST(req: Request) {
 
     const code = Number(data?.code); 
     if (code && code !== 200) { 
-      const msg = sunoErrorMessage(data, "Error del proveedor"); 
+      const msg = sunoErrorMessage(data, "Error de la plataforma"); 
       return json({ error: "Error creando música", code, detail: String(msg).slice(0, 1200) }, 502); 
     } 
 
     const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : ""; 
-    if (!taskId) return json({ error: "Respuesta inválida del proveedor" }, 502); 
+    if (!taskId) return json({ error: "Respuesta inválida de la plataforma" }, 502); 
 
     await supabase.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true }); 
 

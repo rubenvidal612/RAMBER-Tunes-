@@ -4086,7 +4086,7 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
         : '¡Se están generando tus 2 canciones!';
   const heroSubtitle =
     stage === 'failed'
-      ? 'Ocurrió un error mientras el proveedor generaba tu canción.'
+      ? 'Ocurrió un error mientras LucIAna generaba tu canción.'
       : stage === 'ready'
         ? 'Ya puedes escucharlas en tu Biblioteca.'
         : 'Esto puede tardar unos minutos.';
@@ -4155,7 +4155,7 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
                       ? 'Ocurrió un error. No se hará redirección automática.'
                       : done
                         ? 'Audio real disponible en tu Biblioteca.'
-                        : 'LucIAna sigue consultando el estado real del proveedor.'}
+                        : 'LucIAna sigue consultando el estado real de la generación.'}
                   </div>
                 </div>
               </div>

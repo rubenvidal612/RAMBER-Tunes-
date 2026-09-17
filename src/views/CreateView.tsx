@@ -2878,7 +2878,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const taskId = (out?.taskId || '').toString();
       if (!taskId) {
-        alert('No recibí taskId del proveedor.');
+        alert('No recibí el identificador de la tarea.');
         return;
       }
 
@@ -2993,7 +2993,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
 
       const taskId = (out?.taskId || '').toString();
       if (!taskId) {
-        alert('No recibí taskId del proveedor.');
+        alert('No recibí el identificador de la tarea.');
         return;
       }
 

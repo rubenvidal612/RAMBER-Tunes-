@@ -519,7 +519,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         `Listo.`,
         Number.isFinite(fb) && Number.isFinite(fa) ? `Usuario (${email}): ${fb} → ${fa} créditos` : `Usuario (${email}): actualizado`,
         Number.isFinite(tb) && Number.isFinite(ta) ? `Tu saldo interno (banco): ${tb} → ${ta} créditos` : `Tu saldo interno (banco): actualizado`,
-        `Nota: tu saldo REAL (proveedor/Suno) no cambia con esto.`,
+        `Nota: tu saldo REAL (plataforma/Suno) no cambia con esto.`,
       ];
       alert(lines.join('\n'));
       await refreshCredits().catch(() => {});
@@ -903,7 +903,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
               { label: 'Usuarios', value: totalUsersReal, detail: `Activos: ${active30dReal} · Nuevos: ${new7dReal}`, image: '/assets/tool-clone-voice.png', tone: 'border-emerald-400/25 text-emerald-300', icon: Users },
               { label: 'Ventas hoy', value: `$${Number(payments?.today?.mxn ?? 0).toFixed(0)}`, detail: `${Number(payments?.today?.count ?? 0)} pagos`, image: '/assets/tool-mastering.png', tone: 'border-cyan-400/25 text-cyan-300', icon: CreditCard },
               { label: 'Ventas del mes', value: `$${Number(payments?.month?.mxn ?? 0).toFixed(0)}`, detail: `${Number(payments?.month?.count ?? 0)} pagos`, image: '/assets/tool-create-music.png', tone: 'border-fuchsia-400/25 text-fuchsia-300', icon: BarChart3 },
-              { label: 'Saldo proveedor (Suno)', value: balance?.provider_credits == null ? '—' : Number(balance.provider_credits).toLocaleString('es-MX'), detail: 'Créditos disponibles', image: '/assets/tool-wav-audio.png', tone: 'border-amber-400/25 text-amber-300', icon: Coins },
+              { label: 'Saldo plataforma externa (Suno)', value: balance?.provider_credits == null ? '—' : Number(balance.provider_credits).toLocaleString('es-MX'), detail: 'Créditos disponibles', image: '/assets/tool-wav-audio.png', tone: 'border-amber-400/25 text-amber-300', icon: Coins },
             ].map((card) => {
               const Icon = card.icon;
               return (
@@ -1287,7 +1287,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
               <div className="min-w-0">
                 <div className="text-white font-extrabold">Saldo</div>
                 <div className="text-[11px] text-slate-400 mt-1 truncate">
-                  Proveedor (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}
+                  Plataforma externa (Suno): {balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}
                 </div>
               </div>
               <div className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
@@ -1305,7 +1305,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 ) : (
                   <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                      <div className="text-xs text-slate-300 font-semibold">Proveedor (Suno)</div>
+                      <div className="text-xs text-slate-300 font-semibold">Plataforma externa (Suno)</div>
                       <div className="text-xl text-white font-extrabold mt-1">{balance?.provider_credits == null ? '—' : Number(balance?.provider_credits ?? 0).toString()}</div>
                     </div>
                     <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
@@ -1316,7 +1316,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                 )}
                 {balance?.provider_error ? (
                   <div className="mt-3 text-[11px] text-slate-400">
-                    Proveedor: {(balance?.provider_error || '').toString()}
+                    Estado externo: {(balance?.provider_error || '').toString()}
                   </div>
                 ) : null}
                 {diag?.error ? (
@@ -1331,12 +1331,12 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
                         <div>SUPABASE_URL: {diag?.env?.has_supabase_url ? 'OK' : 'FALTA'}</div>
                         <div>SUPABASE_ANON_KEY: {diag?.env?.has_supabase_anon ? 'OK' : 'FALTA'}</div>
                         <div>SUPABASE_SERVICE_ROLE_KEY: {diag?.env?.has_supabase_service ? 'OK' : 'FALTA'}</div>
-                        <div>SUNO_API_BASE_URL: {diag?.env?.has_suno_base ? 'OK' : 'FALTA'}</div>
-                        <div>SUNO_API_KEY: {diag?.env?.has_suno_key ? 'OK' : 'FALTA'}</div>
+                        <div>Servicio Suno (URL): {diag?.env?.has_suno_base ? 'OK' : 'FALTA'}</div>
+                        <div>Servicio Suno (clave): {diag?.env?.has_suno_key ? 'OK' : 'FALTA'}</div>
                       </div>
                     </div>
                     <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                      <div className="text-xs text-slate-300 font-semibold">Prueba proveedor</div>
+                      <div className="text-xs text-slate-300 font-semibold">Prueba plataforma externa</div>
                       <div className="mt-2 text-[11px] text-slate-300">
                         <div>HTTP: {Number(diag?.provider?.status ?? 0).toString() || '—'}</div>
                         <div>code: {diag?.provider?.code == null ? '—' : Number(diag?.provider?.code ?? 0).toString()}</div>

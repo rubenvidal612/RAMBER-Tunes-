@@ -4497,7 +4497,7 @@ function SongOptionsSheet({
         'LucIAna, en su calidad de Licenciante, otorga al Licenciatario arriba mencionado una licencia comercial mundial, perpetua, no exclusiva e intransferible para utilizar el Contenido Generado (Audio) descrito en este documento. Esta licencia permite la reproducción, distribución, streaming, sincronización y monetización de la obra en todas las plataformas digitales y medios físicos.',
         'II. PROPIEDAD Y DERECHOS DE AUTOR',
         'Letras: El Licenciatario conserva el 100% de la propiedad y los derechos de autor de cualquier letra original proporcionada para la creación de la obra.',
-        'Composición de Audio: La composición musical y el archivo de audio generado se otorgan bajo licencia comercial ilimitada, respaldada por la suscripción profesional de LucIAna ante sus proveedores tecnológicos (Suno AI).',
+        'Composición de Audio: La composición musical y el archivo de audio generado se otorgan bajo licencia comercial ilimitada, respaldada por la suscripción profesional de LucIAna ante sus plataformas tecnológicas (Suno AI).',
         'III. VALIDEZ Y PERMANENCIA',
         'Esta licencia es legalmente vinculante siempre que el Licenciatario haya mantenido una suscripción activa (Plan Creador, Pro o similar) en la plataforma LucIAna al momento de la creación de la obra. Los derechos comerciales aquí otorgados son permanentes y no expiran aunque el usuario decida cancelar su suscripción en el futuro.',
         'IV. LIMITACIONES',
@@ -5025,7 +5025,7 @@ function SongOptionsSheet({
       if (!start.ok) {
         const msg = (startedOut?.detail || startedOut?.error || 'No pude iniciar la conversión a WAV.').toString();
         if (msg.toLowerCase().includes('record does not exist')) {
-          alert('Este audio no se puede convertir a WAV (el proveedor no encontró el registro). Prueba con una canción generada dentro de LucIAna o una canción más reciente.');
+          alert('Este audio no se puede convertir a WAV (no encontramos el registro de la canción). Prueba con una canción generada dentro de LucIAna o una canción más reciente.');
         } else {
           alert(msg);
         }
@@ -5401,7 +5401,7 @@ function SongOptionsSheet({
 
         if (!midiData || instruments.length === 0 || notes === 0) {
           alert(
-            `El proveedor regresó MIDI vacío.\n\nPasa a veces (especialmente con split_stem).\n\nPrueba esto:\n1) En la lista de pistas, toca el botón “MIDI” de una pista específica (Voz, Drums, etc.).\n2) Si sigue vacío, intenta con otra canción o un audio más limpio.\n\nYa se descargó el JSON (y se copió si el navegador lo permitió).`
+            `La generación MIDI regresó vacía.\n\nPasa a veces (especialmente con split_stem).\n\nPrueba esto:\n1) En la lista de pistas, toca el botón “MIDI” de una pista específica (Voz, Drums, etc.).\n2) Si sigue vacío, intenta con otra canción o un audio más limpio.\n\nYa se descargó el JSON (y se copió si el navegador lo permitió).`
           );
           return;
         }
@@ -7329,7 +7329,7 @@ function SongOptionsSheet({
               >
                 Crear video
               </button>
-              <div className="text-[11px] text-slate-500">El video se guarda 15 días en el proveedor.</div>
+              <div className="text-[11px] text-slate-500">El video se guarda 15 días en almacenamiento externo.</div>
             </div>
           </div>
         </div>

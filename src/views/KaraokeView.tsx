@@ -543,7 +543,7 @@ export function KaraokeView() {
         });
         const finalData = await finalRes.json().catch(() => ({}));
         if (!finalRes.ok || !finalData?.ok) {
-          throw new Error(finalData?.error || 'Error sincronizando con Gemini');
+          throw new Error(finalData?.error || 'Error sincronizando la letra');
         }
 
         const newSyncData = Array.isArray(finalData.syncData) ? finalData.syncData : [];
@@ -886,7 +886,7 @@ export function KaraokeView() {
              progress < 27 ? "Iniciando separación de voz con IA..." :
              progress < 65 ? "Separando voces del instrumental (1-2 min)..." :
              progress < 88 ? "Extrayendo segundas voces (coros)..." :
-             "Sincronizando letra con Gemini IA..."}
+             "Sincronizando letra con IA LucIAna..."}
           </p>
         </div>
       </div>

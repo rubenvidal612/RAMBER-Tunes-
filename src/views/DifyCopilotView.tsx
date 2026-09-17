@@ -76,7 +76,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       id: uid(),
       role: 'assistant',
       text:
-        '✨ Hola! Soy tu **Copiloto de canciones** de Dify.\n\nCuentame de qué quieres cantar (estilo, tema, estado de ánimo, público objetivo…) y juntos definimos:\n· **Letra / Prompt**\n· **Título**\n· **Estilo musical**\n· ¿**Instrumental** o con voz?\n\nCuando todo esté OK te mostraré un botón **\"Generar canción\"** y se cobrarán 12 créditos a tu cuenta real de LucIAna. 🎵',
+        '✨ Hola! Soy tu **LucIAna Bot**.\n\nCuentame de qué quieres cantar (estilo, tema, estado de ánimo, público objetivo…) y juntos definimos:\n· **Letra / Prompt**\n· **Título**\n· **Estilo musical**\n· ¿**Instrumental** o con voz?\n\nCuando todo esté OK te mostraré un botón **"Generar canción"** y se cobrarán 12 créditos a tu cuenta real de LucIAna. 🎵',
       createdAt: Date.now(),
     },
   ]);
@@ -186,7 +186,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           ? (json as any).reply_text
           : (json && typeof (json as any).message === 'string')
           ? (json as any).message
-          : 'No pude leer la respuesta del copiloto.'
+          : 'No pude leer la respuesta de LucIAna Bot.'
       ).trim();
       const newCid = String((json && typeof (json as any).conversation_id === 'string') ? (json as any).conversation_id : conversationId || '').trim();
       if (newCid && newCid !== conversationId) setConversationId(newCid);
@@ -209,13 +209,21 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         const errCode = String((json as any).error || '').trim();
         const fallbackText = replyText || (
           errCode === 'dify_copilot_not_configured'
-            ? '⚠️ Falta configurar la clave privada del copiloto Dify en Vercel Environment Variables (`DIFY_COPILOT_API_KEY`). Avisa a tu administrador/a.'
+            ? '⚠️ Falta configurar el asistente en el servidor. Avisa a tu administrador/a.'
             : errCode === 'unauthorized'
             ? '⚠️ Tu sesión de LucIAna no es válida. Cierra y vuelve a iniciar sesión.'
-            : '⚠️ Hubo un problema al contactar con el copiloto Dify. Inténtalo de nuevo en 30 segundos.'
+            : '⚠️ Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.'
         );
         setLoading(false);
-        setToast({ kind: 'err', text: httpStatus ? `Error ${httpStatus} · ${errCode || 'petición rechazada'}` : 'Error de red' });
+        const mappedCode = (() => {
+          const c = String(errCode || '').trim();
+          if (c === 'dify_copilot_not_configured') return 'asistente no configurado';
+          if (c === 'missing_bearer_authorization_header' || c === 'unauthorized') return 'sesión inválida';
+          if (c === 'network_error') return 'error de conexión';
+          if (!c) return '';
+          return 'operación rechazada';
+        })();
+        setToast({ kind: 'err', text: httpStatus ? `Error ${httpStatus} · ${mappedCode || 'petición rechazada'}` : 'Error de red' });
         const errMsg: ChatMessage = {
           id: uid(),
           role: 'assistant',
@@ -370,14 +378,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-lg font-black text-white md:text-xl">
-                  Copiloto de canciones <span className="bg-gradient-to-r from-fuchsia-300 to-amber-200 bg-clip-text text-transparent">Dify</span>
+                  LucIAna <span className="bg-gradient-to-r from-fuchsia-300 to-amber-200 bg-clip-text text-transparent">Bot</span>
                 </h1>
-                <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-fuchsia-200 ring-1 ring-inset ring-fuchsia-400/20">
-                  <Sparkles className="h-3 w-3" /> Beta
-                </span>
               </div>
               <p className="mt-0.5 text-xs text-slate-400 md:text-sm">
-                Dify te ayuda a <strong className="text-slate-200">definir</strong> letra, título y estilo. La <strong className="text-slate-200">generación real</strong> y el cobro de créditos (12 créditos) ocurren desde LucIAna y se asocian a tu cuenta.
+                LucIAna te ayuda a definir tu letra, título y estilo musical. La generación real y el cobro de créditos (12 créditos) ocurren desde LucIAna y se asocian a tu cuenta.
               </p>
             </div>
           </div>
@@ -405,7 +410,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       {conversationId && (
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.02] px-3 py-2 text-[11px] text-slate-400 ring-1 ring-inset ring-white/5">
           <MessageSquare className="h-3.5 w-3.5 text-fuchsia-300" />
-          <span className="truncate">Conversación Dify: <code className="text-fuchsia-200">{conversationId.slice(0, 8)}…{conversationId.slice(-6)}</code> (se guarda en tu perfil de LucIAna)</span>
+          <span className="truncate">Conversación: <code className="text-fuchsia-200">{conversationId.slice(0, 8)}…{conversationId.slice(-6)}</code> (se guarda en tu perfil de LucIAna)</span>
         </div>
       )}
 
@@ -452,7 +457,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                     />
                     {m.structured?.action === 'ready_to_generate' && (
                       <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-[11px] font-bold text-emerald-200 ring-1 ring-inset ring-emerald-400/10">
-                        <CheckCircle2 className="h-4 w-4" /> Copiloto confirma: ¡resumen listo para generar la canción!
+                        <CheckCircle2 className="h-4 w-4" /> LucIAna Bot confirma: ¡resumen listo para generar la canción!
                       </div>
                     )}
                   </div>
@@ -464,7 +469,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             <div className="flex w-full justify-start">
               <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-white/10 bg-white/[.04] px-4 py-3 text-sm text-slate-300 ring-1 ring-inset ring-white/5 backdrop-blur-md">
                 <Loader2 className="h-4 w-4 animate-spin text-fuchsia-300" />
-                <span className="text-xs text-slate-300 md:text-sm">El copiloto Dify está escribiendo…</span>
+                <span className="text-xs text-slate-300 md:text-sm">LucIAna Bot está escribiendo…</span>
               </div>
             </div>
           )}

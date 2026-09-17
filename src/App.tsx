@@ -9,7 +9,6 @@ import { ProfileView } from './views/ProfileView';
 import { KaraokeView } from './views/KaraokeView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
-import { LucianaBotView } from './views/LucianaBotView';
 import { DifyCopilotView } from './views/DifyCopilotView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
@@ -86,7 +85,7 @@ function tabFromPathname(pathname: string): ViewTab {
   if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
   if (/^\/perfil(?:\/|$)/i.test(p) || /^\/profile(?:\/|$)/i.test(p)) return 'perfil';
   if (/^\/oficina(?:\/|$)/i.test(p) || /^\/office(?:\/|$)/i.test(p)) return 'oficina';
-  if (/^\/luciana(?:\/|$)/i.test(p) || /^\/chatbot(?:\/|$)/i.test(p)) return 'luciana';
+  if (/^\/luciana(?:\/|$)/i.test(p) || /^\/chatbot(?:\/|$)/i.test(p)) return 'copiloto';
   if (/^\/copiloto(?:\/|$)/i.test(p) || /^\/dify(?:\/|$)/i.test(p)) return 'copiloto';
   if (/^\/clonador(?:\/|$)/i.test(p) || /^\/voces(?:\/|$)/i.test(p)) return 'voces';
   if (/^\/karaoke(?:\/|$)/i.test(p)) return 'karaoke';
@@ -112,7 +111,7 @@ function pathnameFromTab(tab: ViewTab): string {
     case 'oficina':
       return '/oficina';
     case 'luciana':
-      return '/chatbot';
+      return '/copiloto';
     case 'copiloto':
       return '/copiloto';
     case 'voces':
@@ -3786,7 +3785,7 @@ export default function App() {
       if ('presentation' in navigator) {
         const PresentationRequestCtor = (window as any)?.PresentationRequest;
         if (!PresentationRequestCtor) {
-          showToast('Tu navegador no soporta Presentation API');
+          showToast('Tu navegador no soporta la presentación nativa.');
           return;
         }
         const request = new PresentationRequestCtor('/elenco-presentation');
@@ -3827,7 +3826,7 @@ export default function App() {
         const presentationUrl = `/elenco-presentation?songId=${encodeURIComponent(activeSong.id)}`;
         const PresentationRequestCtor = (window as any)?.PresentationRequest;
         if (!PresentationRequestCtor) {
-          showToast('Tu navegador no soporta Presentation API');
+          showToast('Tu navegador no soporta la presentación nativa.');
           return;
         }
         const request = new PresentationRequestCtor(presentationUrl);
@@ -4274,7 +4273,6 @@ export default function App() {
                </div>
              </div>
            )}
-           {currentTab === 'luciana' && <LucianaBotView />}
            {currentTab === 'copiloto' && <DifyCopilotView onChange={setCurrentTab} />}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
@@ -4373,8 +4371,6 @@ export default function App() {
                      <div className="mt-2 text-sm text-slate-300">Próximamente</div>
                    </div>
                  </div>
-                ) : currentTab === 'luciana' ? (
-                <LucianaBotView />
                ) : currentTab === 'copiloto' ? (
                 <DifyCopilotView onChange={setCurrentTab} />
                ) : currentTab === 'masterizar' ? (
@@ -4915,11 +4911,11 @@ export default function App() {
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
                 Fuente: {(balanceData?.source || '—').toString()}
-                {balanceData?.provider_error ? ` · Proveedor: ${(balanceData?.provider_error || '').toString()}` : ''}
+                {balanceData?.provider_error ? ` · Estado externo: ${(balanceData?.provider_error || '').toString()}` : ''}
               </div>
               {balanceData?.is_admin ? (
                 <div className="mt-2 bg-black/20 border border-white/10 rounded-xl px-3 py-2">
-                  <div className="text-[10px] text-slate-400 font-semibold">Proveedor (Suno)</div>
+                  <div className="text-[10px] text-slate-400 font-semibold">Plataforma externa (Suno)</div>
                   <div className="text-xs text-white font-extrabold">{balanceData?.provider_credits == null ? '—' : Number(balanceData?.provider_credits ?? 0).toString()}</div>
                 </div>
               ) : null}
