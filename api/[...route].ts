@@ -18419,14 +18419,12 @@ const difyHandler = (() => {
 
     const userToken = difyExtractBearerFromHeader(req, "authorization");
     if (!userToken) {
-      return difySendJson(res, 401, {
-        error: "unauthorized",
-        message: "Falta header Authorization: Bearer <JWT de tu sesión LucIAna>. Este endpoint sólo funciona con tu cuenta real.",
-      });
+      return difySendJson(res, 401, { error: "unauthorized", message: "Sesión expirada o faltante. Vuelve a iniciar sesión con Google." });
     }
     const auth = await requireAnyUserFromToken(userToken);
     if (!auth.ok) {
-      return difySendJson(res, auth.status, { error: "unauthorized", message: auth.error || "Token inválido o expirado." });
+      const isMissing = !userToken || (auth.status && auth.status >= 400 && auth.status < 500);
+      return difySendJson(res, isMissing ? (auth.status || 401) : 500, { error: "unauthorized", message: "Tu sesión de LucIAna no es válida. Cierra y vuelve a iniciar sesión con Google." });
     }
 
     const copilotApiKey = String(process.env.DIFY_COPILOT_API_KEY || process.env.DIFY_API_KEY || "").trim();

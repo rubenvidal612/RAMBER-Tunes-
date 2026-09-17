@@ -112,11 +112,55 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     // No-op; el fetch es bloqueante y empujamos al terminar
   }, []);
 
+  const signOutAndReload = useCallback(() => {
+    try {
+      void supabaseBrowser?.auth?.signOut?.().catch(() => {});
+    } catch {}
+    try {
+      const base = window.location.origin.toString().replace(/\/+$/, '');
+      window.location.href = `${base}/crear`;
+    } catch {}
+  }, []);
+
+  const getValidBearerToken = useCallback(async (): Promise<string | null> => {
+    if (!supabaseBrowser) return null;
+    let accessToken = '';
+    let sessionOk = false;
+    try {
+      const result = await getAccessToken();
+      if (result && typeof result === 'object' && result.ok && typeof result.token === 'string' && result.token.trim()) {
+        accessToken = String(result.token).trim();
+        sessionOk = true;
+      }
+    } catch {}
+    if (!sessionOk) {
+      try {
+        const { data } = await supabaseBrowser.auth.getSession();
+        const s = data?.session;
+        if (s && typeof (s as any).access_token === 'string' && String((s as any).access_token).trim()) {
+          accessToken = String((s as any).access_token).trim();
+          sessionOk = true;
+        }
+      } catch {}
+    }
+    if (!sessionOk) {
+      try {
+        const { data } = await supabaseBrowser.auth.refreshSession();
+        const s = data?.session;
+        if (s && typeof (s as any).access_token === 'string' && String((s as any).access_token).trim()) {
+          accessToken = String((s as any).access_token).trim();
+          sessionOk = true;
+        }
+      } catch {}
+    }
+    return sessionOk && accessToken ? accessToken : null;
+  }, [signOutAndReload]);
+
   const sendMessage = useCallback(async () => {
     const text = String(input || '').trim();
     if (!text) return;
     if (!supabaseBrowser) {
-      setToast({ kind: 'err', text: 'Supabase no está disponible en el navegador. No puedo autenticar tu sesión.' });
+      setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
       return;
     }
     setLoading(true);
@@ -131,23 +175,14 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setInput('');
       if (textareaRef.current) textareaRef.current.value = '';
 
-      let accessToken = '';
-      try {
-        accessToken = (await getAccessToken()) || '';
-      } catch {}
-      if (!accessToken) {
-        try {
-          const { data } = await supabaseBrowser.auth.getSession();
-          accessToken = String(data?.session?.access_token || '').trim();
-        } catch {}
-      }
+      const accessToken = await getValidBearerToken();
       if (!accessToken) {
         setLoading(false);
-        setToast({ kind: 'err', text: 'No tienes una sesión activa. Cierra y abre sesión de nuevo.' });
+        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
         const errMsg: ChatMessage = {
           id: uid(),
           role: 'assistant',
-          text: '⚠️ No pude confirmar tu sesión de LucIAna. Por favor, cierra sesión y vuelve a iniciar con Google.',
+          text: '⚠️ Tu sesión de LucIAna expiró. Por favor, vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.',
           createdAt: Date.now(),
         };
         setMessages((m) => [...m, errMsg]);
@@ -207,23 +242,29 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
       if (httpStatus >= 400 || (json && typeof (json as any).error === 'string')) {
         const errCode = String((json as any).error || '').trim();
-        const fallbackText = replyText || (
-          errCode === 'dify_copilot_not_configured'
-            ? '⚠️ Falta configurar el asistente en el servidor. Avisa a tu administrador/a.'
-            : errCode === 'unauthorized'
-            ? '⚠️ Tu sesión de LucIAna no es válida. Cierra y vuelve a iniciar sesión.'
-            : '⚠️ Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.'
+        const isAuth = httpStatus === 401 || errCode === 'unauthorized' || errCode === 'missing_bearer_authorization_header' || errCode === 'sesion_expirada' || errCode === 'session_expired';
+        const fallbackText = (
+          isAuth
+            ? '⚠️ Tu sesión de LucIAna expiró. Cierra y vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.'
+            : replyText || (
+              errCode === 'dify_copilot_not_configured'
+                ? '⚠️ Falta configurar el asistente en el servidor. Avisa a tu administrador/a.'
+                : '⚠️ Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.'
+            )
         );
         setLoading(false);
         const mappedCode = (() => {
+          if (isAuth) return 'sesión expirada, vuelve a iniciar sesión';
           const c = String(errCode || '').trim();
           if (c === 'dify_copilot_not_configured') return 'asistente no configurado';
-          if (c === 'missing_bearer_authorization_header' || c === 'unauthorized') return 'sesión inválida';
           if (c === 'network_error') return 'error de conexión';
           if (!c) return '';
           return 'operación rechazada';
         })();
         setToast({ kind: 'err', text: httpStatus ? `Error ${httpStatus} · ${mappedCode || 'petición rechazada'}` : 'Error de red' });
+        if (isAuth) {
+          setTimeout(() => signOutAndReload(), 1200);
+        }
         const errMsg: ChatMessage = {
           id: uid(),
           role: 'assistant',
@@ -295,15 +336,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     }
     setGenerating(true);
     try {
-      let accessToken = '';
-      try { accessToken = (await getAccessToken()) || ''; } catch {}
-      if (!accessToken) {
-        const { data } = await supabaseBrowser.auth.getSession();
-        accessToken = String(data?.session?.access_token || '').trim();
-      }
+      const accessToken = await getValidBearerToken();
       if (!accessToken) {
         setGenerating(false);
-        setToast({ kind: 'err', text: 'Sin sesión activa. Vuelve a iniciar sesión con Google.' });
+        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
+        setTimeout(() => signOutAndReload(), 1200);
         return;
       }
       const payload = {
