@@ -13,11 +13,11 @@ interface BottomNavProps {
 const mainItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
   { id: 'landing', label: 'Inicio', icon: Home },
   { id: 'studio', label: 'Crear', icon: Sparkles },
-  { id: 'copiloto', label: 'LucIAna Bot', icon: Bot },
   { id: 'biblioteca', label: 'Mis canciones', icon: Library },
 ];
 
 const menuItems: Array<{ id: ViewTab; label: string; description: string; icon: typeof Home }> = [
+  { id: 'copiloto', label: 'LucIAna Bot', description: 'Tu asistente musical', icon: Bot },
   { id: 'voces', label: 'Clonar voz', description: 'Crea tu perfil de voz', icon: Mic2 },
   { id: 'masterizar', label: 'Masterizar', description: 'Sonido listo para publicar', icon: Volume2 },
   { id: 'planes', label: 'Comprar créditos', description: 'Recarga tu saldo', icon: Coins },
