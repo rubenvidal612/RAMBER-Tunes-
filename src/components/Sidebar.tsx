@@ -1,5 +1,5 @@
 import {
-  Bot, CircleHelp, Clock3, Coins, Home, Library, Mic2, Sparkles,
+  Bot, CircleHelp, Clock3, Coins, Home, Library, MessageSquare, Mic2, Sparkles,
   LogOut, Shield, Volume2, WalletCards,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -116,6 +116,7 @@ export function Sidebar({ currentTab, onChange, isAdmin = false }: SidebarProps)
 
         <p className="luciana-sidebar-label mt-7">ASISTENTE</p>
         <NavButton id="luciana" label="LucIAna Bot" icon={Bot} currentTab={currentTab} onChange={onChange} />
+        <NavButton id="copiloto" label="Copiloto Dify" icon={MessageSquare} currentTab={currentTab} onChange={onChange} />
 
         <p className="luciana-sidebar-label mt-7">CUENTA</p>
         <div className="mt-2 rounded-2xl border border-white/10 bg-white/[.02] px-3 py-3">

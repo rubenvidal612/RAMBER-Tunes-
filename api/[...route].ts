@@ -18035,6 +18035,8 @@ const oauthHandler = (() => {
 })();
 
 const difyHandler = (() => {
+  const DIFY_CONV_BY_USER_CACHE = new Map<string, string>();
+
   function difySendJson(res: any, status: number, payload: any) {
     try {
       const body = JSON.stringify(payload);
@@ -18252,6 +18254,284 @@ const difyHandler = (() => {
     else if (typeof b.instrumental === "string") instrumental = /^(1|true|yes|si|on)$/i.test(b.instrumental.trim());
     else instrumental = false;
     return { ok: true, normalized: { prompt, style, title, instrumental } };
+  }
+
+  function difyExtractCopilotConversationFromProfile(profile: any): string {
+    try {
+      if (!profile || typeof profile !== "object") return "";
+      const s = (profile as any).settings;
+      if (s && typeof s === "object" && typeof (s as any).dify_conversation_id === "string") {
+        return String((s as any).dify_conversation_id).trim();
+      }
+      const raw = (profile as any).dify_conversation_id;
+      if (typeof raw === "string") return raw.trim();
+      const rawMeta = (profile as any).metadata || (profile as any).raw_user_meta_data;
+      if (rawMeta && typeof rawMeta === "object" && typeof (rawMeta as any).dify_conversation_id === "string") {
+        return String((rawMeta as any).dify_conversation_id).trim();
+      }
+    } catch {}
+    return "";
+  }
+
+  async function difySaveCopilotConversationToProfile(admin: any, userId: string, conversationId: string): Promise<void> {
+    try {
+      if (!admin || !userId || !String(conversationId || "").trim()) return;
+      const existing = await loadUserProfile(admin, userId);
+      const currentSettings = (existing && typeof (existing as any).settings === "object" && (existing as any).settings !== null) ? { ...(existing as any).settings } : {};
+      (currentSettings as any).dify_conversation_id = String(conversationId).trim();
+      const payload: any = { id: userId, updated_at: new Date().toISOString(), settings: currentSettings };
+      try {
+        await admin.from("profiles").upsert(payload).eq("id", userId);
+      } catch {
+        // si falla upsert (columnas distintas por proyecto) intentamos update
+        try {
+          await admin.from("profiles").update({ settings: currentSettings, updated_at: payload.updated_at }).eq("id", userId);
+        } catch {}
+      }
+    } catch {}
+  }
+
+  function difyParseReadyToGenerateStructured(rawAnswer: string): { action: "ready_to_generate"; prompt: string; style: string; title: string; instrumental: boolean } | null {
+    const text = typeof rawAnswer === "string" ? rawAnswer : String(rawAnswer || "");
+    if (!text) return null;
+
+    const candidates: string[] = [];
+    try {
+      const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+      let m: any;
+      while ((m = fenceRe.exec(text)) !== null) candidates.push(String(m[1] || "").trim());
+    } catch {}
+    try {
+      const braceRe = /(\{\s*"action"\s*:\s*"ready_to_generate"[\s\S]*?\})/gi;
+      let m2: any;
+      while ((m2 = braceRe.exec(text)) !== null) candidates.push(String(m2[1] || "").trim());
+    } catch {}
+    try {
+      const anyObj = /\{[\s\S]{12,4000}\}/g;
+      let m3: any;
+      while ((m3 = anyObj.exec(text)) !== null) candidates.push(String(m3[0] || "").trim());
+    } catch {}
+
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (!c) continue;
+      let obj: any = null;
+      try { obj = JSON.parse(c); } catch {
+        try { obj = JSON.parse(c.replace(/,\s*([}\]])/g, "$1")); } catch { obj = null; }
+      }
+      if (obj && typeof obj === "object" && !Array.isArray(obj) && String((obj as any).action || "").toLowerCase() === "ready_to_generate") {
+        let prompt = String((obj as any).prompt || "").trim();
+        if (!prompt) continue;
+        if (prompt.length > 12000) prompt = prompt.slice(0, 12000);
+        const style = String((obj as any).style || "").trim().slice(0, 600);
+        const title = String((obj as any).title || "").trim().slice(0, 220);
+        let instrumental: boolean;
+        const insRaw = (obj as any).instrumental;
+        if (typeof insRaw === "boolean") instrumental = insRaw;
+        else if (insRaw === 0 || insRaw === 1) instrumental = Boolean(insRaw);
+        else if (typeof insRaw === "string") instrumental = /^(1|true|yes|si|on)$/i.test(insRaw.trim());
+        else instrumental = false;
+        return { action: "ready_to_generate", prompt, style, title, instrumental };
+      }
+    }
+    return null;
+  }
+
+  async function difyFetchCopilotFromDify(params: {
+    apiKey: string; apiUrl: string; user: any; message: string; conversationId: string;
+  }): Promise<{ answer: string; conversationId: string; raw: any }> {
+    const { apiKey, apiUrl, user, message, conversationId } = params;
+    const userIdShort = String(user.id || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 20) || "anon";
+    const difyUser = String(process.env.DIFY_COPILOT_USER_TEMPLATE || "luciana_{user_id}").replace(/\{user_id\}/g, userIdShort).slice(0, 64);
+    const payload: any = {
+      inputs: {},
+      query: String(message || "").slice(0, 20000),
+      response_mode: "blocking",
+      user: difyUser,
+    };
+    const cid = String(conversationId || "").trim();
+    if (cid) payload.conversation_id = cid;
+    if (process.env.DIFY_COPILOT_FILES && String(process.env.DIFY_COPILOT_FILES).trim()) {
+      try {
+        const arr = JSON.parse(process.env.DIFY_COPILOT_FILES);
+        if (Array.isArray(arr) && arr.length) payload.files = arr;
+      } catch {}
+    }
+    const headers: Record<string, string> = {
+      "authorization": `Bearer ${apiKey}`,
+      "content-type": "application/json; charset=utf-8",
+      accept: "application/json",
+      "cache-control": "no-store",
+    };
+    try {
+      console.log(`[dify:chat:upstream] url=${apiUrl} difyUser=${difyUser} conversationId_present=!!${!!cid} msgLen=${String(message || "").length}`);
+    } catch {}
+    let r: Response | any;
+    try {
+      const controller = (globalThis as any).AbortController ? new (globalThis as any).AbortController() : null;
+      const timer = controller ? (globalThis as any).setTimeout(() => { try { controller.abort(); } catch {} }, 120000) : null;
+      r = await fetch(apiUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller?.signal || undefined,
+      } as any);
+      if (timer) try { (globalThis as any).clearTimeout(timer); } catch {}
+    } catch (e) {
+      throw new Error(`Dify upstream fetch error: ${e instanceof Error ? String(e.message) : String(e)}`);
+    }
+    if (!r || typeof r.status !== "number") {
+      throw new Error("Dify upstream no devolvió status.");
+    }
+    const textOut = typeof r.text === "function" ? await r.text() : String((r as any).body || "");
+    let jsonOut: any = null;
+    try { jsonOut = textOut ? JSON.parse(textOut) : null; } catch { jsonOut = null; }
+    if (r.status < 200 || r.status >= 300) {
+      const msg =
+        (jsonOut && typeof (jsonOut as any).message === "string" ? (jsonOut as any).message : "") ||
+        (jsonOut && typeof (jsonOut as any).error === "string" ? (jsonOut as any).error : "") ||
+        `HTTP ${r.status}`;
+      throw new Error(`Dify upstream HTTP ${r.status}: ${String(msg || "").slice(0, 500)}`);
+    }
+    const answer =
+      (jsonOut && typeof (jsonOut as any).answer === "string" ? (jsonOut as any).answer : "") ||
+      (jsonOut && typeof (jsonOut as any).text === "string" ? (jsonOut as any).text : "") ||
+      (jsonOut && typeof (jsonOut as any).output_text === "string" ? (jsonOut as any).output_text : "") ||
+      (typeof textOut === "string" ? textOut.slice(0, 40000) : "");
+    const newConv =
+      String(
+        (jsonOut && typeof (jsonOut as any).conversation_id === "string" ? (jsonOut as any).conversation_id : cid || "") || ""
+      ).trim() || cid;
+    return { answer: String(answer || ""), conversationId: newConv, raw: jsonOut };
+  }
+
+  async function handleDifyChat(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.end();
+      return;
+    }
+    if (method !== "POST") return difySendJson(res, 405, { error: "method_not_allowed", message: "Solo POST en /api/dify/chat." });
+
+    const userToken = difyExtractBearerFromHeader(req, "authorization");
+    if (!userToken) {
+      return difySendJson(res, 401, {
+        error: "unauthorized",
+        message: "Falta header Authorization: Bearer <JWT de tu sesión LucIAna>. Este endpoint sólo funciona con tu cuenta real.",
+      });
+    }
+    const auth = await requireAnyUserFromToken(userToken);
+    if (!auth.ok) {
+      return difySendJson(res, auth.status, { error: "unauthorized", message: auth.error || "Token inválido o expirado." });
+    }
+
+    const copilotApiKey = String(process.env.DIFY_COPILOT_API_KEY || process.env.DIFY_API_KEY || "").trim();
+    if (!copilotApiKey) {
+      return difySendJson(res, 500, {
+        error: "dify_copilot_not_configured",
+        message: "Falta configurar DIFY_COPILOT_API_KEY en Vercel Environment Variables.",
+      });
+    }
+    if (copilotApiKey.length < 16) {
+      return difySendJson(res, 500, {
+        error: "dify_copilot_not_configured",
+        message: "DIFY_COPILOT_API_KEY configurada pero demasiado corta (mínimo 16 chars).",
+      });
+    }
+    const copilotApiUrl = String(process.env.DIFY_COPILOT_API_URL || "").trim() || "https://api.dify.ai/v1/chat-messages";
+    if (!/^https?:\/\//i.test(copilotApiUrl)) {
+      return difySendJson(res, 500, {
+        error: "dify_copilot_not_configured",
+        message: "DIFY_COPILOT_API_URL debe empezar por https:// o http://.",
+      });
+    }
+
+    const rawBody = await (async () => {
+      try { return await gptReadRawBody(req); } catch { return Buffer.alloc(0); }
+    })();
+    const contentType = (req.headers?.["content-type"] || req.headers?.["Content-Type"] || "").toString().toLowerCase();
+    let body: any = {};
+    try {
+      const s = rawBody.toString("utf8");
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        const out: any = {};
+        try {
+          const usp = new URLSearchParams(s);
+          usp.forEach((v, k) => { out[k] = v; });
+        } catch {}
+        body = out;
+      } else if (contentType.includes("application/json") || s) {
+        try { body = s ? JSON.parse(s) : {}; } catch { body = parseAnyBody(req) || {}; }
+      } else {
+        body = parseAnyBody(req) || {};
+      }
+    } catch {
+      body = parseAnyBody(req) || {};
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return difySendJson(res, 400, { error: "invalid_request", message: "Body debe ser un JSON object con el campo 'message'." });
+    }
+    const message = String(body?.message || body?.query || body?.text || "").trim();
+    if (!message) {
+      return difySendJson(res, 400, { error: "field_message_required", message: "Falta el campo 'message' (texto no vacío)." });
+    }
+    if (message.length > 20000) {
+      return difySendJson(res, 413, { error: "field_message_too_long", message: "Mensaje demasiado largo (max 20,000 chars)." });
+    }
+    let conversationId = String(body?.conversation_id || body?.conversationId || "").trim();
+    const userId = String(auth.user.id || "").trim();
+    if (!conversationId) {
+      if (DIFY_CONV_BY_USER_CACHE.has(userId)) {
+        conversationId = DIFY_CONV_BY_USER_CACHE.get(userId) || "";
+      } else {
+        try {
+          const profile = await loadUserProfile(auth.admin, userId);
+          conversationId = difyExtractCopilotConversationFromProfile(profile);
+          if (conversationId) DIFY_CONV_BY_USER_CACHE.set(userId, conversationId);
+        } catch {}
+      }
+    }
+
+    try {
+      const upstream = await difyFetchCopilotFromDify({
+        apiKey: copilotApiKey,
+        apiUrl: copilotApiUrl,
+        user: auth.user,
+        message,
+        conversationId,
+      });
+      if (upstream.conversationId && upstream.conversationId !== conversationId) {
+        DIFY_CONV_BY_USER_CACHE.set(userId, upstream.conversationId);
+        try {
+          await difySaveCopilotConversationToProfile(auth.admin, userId, upstream.conversationId);
+        } catch {}
+      }
+      const structured = difyParseReadyToGenerateStructured(upstream.answer);
+      const justText = structured
+        ? upstream.answer
+            .replace(/```(?:json)?[\s\S]*?```/gi, "")
+            .replace(/\{"action"\s*:\s*"ready_to_generate"[\s\S]*?\}/gi, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim()
+        : upstream.answer;
+      return difySendJson(res, 200, {
+        reply_text: justText || "",
+        conversation_id: upstream.conversationId || "",
+        structured_action: structured || null,
+        debug_provider: process.env.DIFY_COPILOT_DEBUG === "1" ? { answer_len: upstream.answer.length, structured_found: !!structured } : undefined,
+      });
+    } catch (e: any) {
+      const msg = String(e instanceof Error ? e.message : String(e || "")).slice(0, 800);
+      try { console.error(`[dify:chat:upstream_error] ${msg}`); } catch {}
+      return difySendJson(res, 502, {
+        error: "dify_upstream_error",
+        message: `No pude conectar con el copiloto Dify: ${msg || "Error desconocido"}`,
+      });
+    }
   }
 
   async function handleDifyGenerate(req: any, res: any) {
@@ -18548,14 +18828,22 @@ const difyHandler = (() => {
           `[dify:entry] ${method} path=${u.pathname} next=${next} ua=${ua} hasAuth=!!${!!difyExtractBearerFromHeader(req, "authorization")} hasUser=!!${!!difyExtractBearerFromHeader(req, "x-luciana-user-token")} ip=${(req.headers?.["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().slice(0, 80)}`
         );
       } catch {}
+      if (next === "chat") return await handleDifyChat(req, res);
       if (next === "generate") return await handleDifyGenerate(req, res);
       if (next === "status") return await handleDifyStatus(req, res);
-      return difySendJson(res, 404, { error: "ruta_no_encontrada", message: "Endpoints Dify admitidos: POST /api/dify/generate · GET /api/dify/status?task_id=..." });
+      return difySendJson(res, 404, {
+        error: "ruta_no_encontrada",
+        message:
+          "Endpoints Dify admitidos:\n· POST /api/dify/chat (copiloto conversacional por usuario)\n· POST /api/dify/generate · GET /api/dify/status?task_id=... (herramientas server-to-server con DIFY_TOOL_API_KEY)",
+      });
     } catch (e) {
       try {
         console.error(`[dify:entry] crash: ${e instanceof Error ? (e.stack || e.message) : String(e)}`);
       } catch {}
-      return difySendJson(res, 500, { error: "error_interno", message: e instanceof Error ? String(e.message).slice(0, 600) : String(e).slice(0, 600) });
+      return difySendJson(res, 500, {
+        error: "error_interno",
+        message: e instanceof Error ? String(e.message).slice(0, 600) : String(e).slice(0, 600),
+      });
     }
   };
 })();

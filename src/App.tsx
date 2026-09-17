@@ -10,6 +10,7 @@ import { KaraokeView } from './views/KaraokeView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { LucianaBotView } from './views/LucianaBotView';
+import { DifyCopilotView } from './views/DifyCopilotView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
 import { VendorView } from './views/VendorView';
@@ -86,6 +87,7 @@ function tabFromPathname(pathname: string): ViewTab {
   if (/^\/perfil(?:\/|$)/i.test(p) || /^\/profile(?:\/|$)/i.test(p)) return 'perfil';
   if (/^\/oficina(?:\/|$)/i.test(p) || /^\/office(?:\/|$)/i.test(p)) return 'oficina';
   if (/^\/luciana(?:\/|$)/i.test(p) || /^\/chatbot(?:\/|$)/i.test(p)) return 'luciana';
+  if (/^\/copiloto(?:\/|$)/i.test(p) || /^\/dify(?:\/|$)/i.test(p)) return 'copiloto';
   if (/^\/clonador(?:\/|$)/i.test(p) || /^\/voces(?:\/|$)/i.test(p)) return 'voces';
   if (/^\/karaoke(?:\/|$)/i.test(p)) return 'karaoke';
   if (/^\/mv(?:\/|$)/i.test(p) || /^\/videos(?:\/|$)/i.test(p)) return 'mv';
@@ -111,6 +113,8 @@ function pathnameFromTab(tab: ViewTab): string {
       return '/oficina';
     case 'luciana':
       return '/chatbot';
+    case 'copiloto':
+      return '/copiloto';
     case 'voces':
       return '/clonador';
     case 'karaoke':
@@ -4271,6 +4275,7 @@ export default function App() {
              </div>
            )}
            {currentTab === 'luciana' && <LucianaBotView />}
+           {currentTab === 'copiloto' && <DifyCopilotView onChange={setCurrentTab} />}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
           {currentTab === 'oficina' && (isAdmin ? (
@@ -4370,6 +4375,8 @@ export default function App() {
                  </div>
                 ) : currentTab === 'luciana' ? (
                 <LucianaBotView />
+               ) : currentTab === 'copiloto' ? (
+                <DifyCopilotView onChange={setCurrentTab} />
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (

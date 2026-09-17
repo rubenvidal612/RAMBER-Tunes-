@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Bot, CircleHelp, Clock3, Coins, Home, Library, LogOut, Menu, Mic2, Shield, Sparkles, User, Volume2, WalletCards, X } from 'lucide-react';
+import { Bot, CircleHelp, Clock3, Coins, Home, Library, LogOut, Menu, MessageSquare, Mic2, Shield, Sparkles, User, Volume2, WalletCards, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -21,6 +21,7 @@ const menuItems: Array<{ id: ViewTab; label: string; description: string; icon: 
   { id: 'masterizar', label: 'Masterizar', description: 'Sonido listo para publicar', icon: Volume2 },
   { id: 'planes', label: 'Comprar créditos', description: 'Recarga tu saldo', icon: Coins },
   { id: 'luciana', label: 'LucIAna Bot', description: 'Asistente musical', icon: Bot },
+  { id: 'copiloto', label: 'Copiloto Dify', description: 'Define letra y estilo', icon: MessageSquare },
   { id: 'perfil', label: 'Mi perfil', description: 'Cuenta y preferencias', icon: User },
 ];
 
