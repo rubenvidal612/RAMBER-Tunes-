@@ -1,7 +1,7 @@
 {
-  "name": "LucIAna",
+  "name": "LucIAna Music | Canciones, Covers y MP3 con IA",
   "short_name": "LucIAna",
-  "description": "LucIAna - creador de canciones con IA",
+  "description": "Crea canciones completas con IA, covers y pistas personalizadas. Escucha y descarga tu MP3 en alta calidad al instante.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

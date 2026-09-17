@@ -82,8 +82,8 @@ export function HomeLandingView({ onGoStudio }: HomeLandingViewProps) {
         <img className="landing-intro-photo" src="/assets/landing-producer-studio.png" alt="Productor creando musica en un estudio con iluminacion neon" />
         <div className="landing-intro-shade" />
         <div className="landing-shell landing-intro-copy">
-          <h1>Todo lo que puedes hacer<br />en <em>LucIAna Music</em></h1>
-          <p>Una suite completa de herramientas con IA para crear,<br />producir y llevar tu musica al siguiente nivel.</p>
+          <h1>LucIAna Music | Canciones, Covers y MP3 con IA</h1>
+          <p>Crea canciones completas con IA, covers y pistas personalizadas. Escucha y descarga tu MP3 en alta calidad al instante.</p>
         </div>
 
         <div className="landing-shell landing-tools-grid">

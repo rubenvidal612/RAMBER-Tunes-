@@ -19855,6 +19855,312 @@ function sendNotFound(res: any) {
   res.end(JSON.stringify({ error: "Ruta no encontrada" }));
 }
 
+const chatHandler = (() => {
+  function chatSendJson(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+  function chatIsValidUuid(s: any): boolean {
+    if (typeof s !== "string" || !s) return false;
+    const re = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+    return re.test(s.trim());
+  }
+  function chatSafeString(v: any, maxLen = 20000, fallback = ""): string {
+    if (v === null || v === undefined) return fallback;
+    let s: string;
+    if (typeof v === "string") s = v;
+    else {
+      try { s = JSON.stringify(v); } catch { s = String(v); }
+    }
+    s = String(s || "");
+    if (maxLen > 0 && s.length > maxLen) s = s.slice(0, maxLen);
+    return s;
+  }
+  function chatSafeInt(v: any, min = 0, max = 1_000_000_000, fallback = 0): number {
+    if (v === null || v === undefined || v === "") return fallback;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    const i = Math.trunc(n);
+    if (i < min) return min;
+    if (i > max) return max;
+    return i;
+  }
+
+  async function handleListConversations(req: any, res: any, auth: any) {
+    const u = new URL(req.url, "http://localhost");
+    const limit = chatSafeInt(u.searchParams.get("limit") || "50", 1, 200, 50);
+    const offset = chatSafeInt(u.searchParams.get("offset") || "0", 0, 1_000_000, 0);
+    const includeArchivedRaw = (u.searchParams.get("include_archived") || "").toString().trim().toLowerCase();
+    const includeArchived = includeArchivedRaw === "1" || includeArchivedRaw === "true";
+    const { admin, user } = auth;
+    let q = admin
+      .from("chat_conversations")
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at", { count: "exact" })
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (!includeArchived) q = q.is("archived_at", null);
+    const { data, error, count } = await q;
+    if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
+    return chatSendJson(res, 200, {
+      success: true,
+      conversations: (data || []).map((c: any) => ({
+        id: c.id,
+        title: c.title || "Nuevo chat",
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+        archived_at: c.archived_at || null,
+      })),
+      count: typeof count === "number" ? count : (data || []).length,
+      limit,
+      offset,
+    });
+  }
+
+  async function handleCreateConversation(req: any, res: any, auth: any) {
+    const body = parseAnyBody(req);
+    const { admin, user } = auth;
+    const title = chatSafeString(body.title || "Nuevo chat", 200, "Nuevo chat");
+    const summary_snapshot = body && typeof body.summary_snapshot === "object" && body.summary_snapshot !== null ? body.summary_snapshot : {};
+    const internal_dify_conversation_id = chatSafeString(body.internal_dify_conversation_id || null, 200, "");
+    const payload: any = {
+      user_id: user.id,
+      title,
+      summary_snapshot,
+    };
+    if (internal_dify_conversation_id) payload.internal_dify_conversation_id = internal_dify_conversation_id;
+    const { data, error } = await admin
+      .from("chat_conversations")
+      .insert(payload)
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at")
+      .maybeSingle();
+    if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
+    if (!data) return chatSendJson(res, 500, { success: false, error: "create_failed", message: "No se pudo crear la conversación." });
+    return chatSendJson(res, 200, {
+      success: true,
+      conversation: {
+        id: data.id,
+        title: data.title || "Nuevo chat",
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        internal_dify_conversation_id: data.internal_dify_conversation_id || null,
+      },
+    });
+  }
+
+  async function handleGetConversation(req: any, res: any, auth: any, convId: string) {
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    const { admin, user } = auth;
+    const { data: conv, error: convErr } = await admin
+      .from("chat_conversations")
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at")
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
+    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    const { data: msgs, error: msgErr } = await admin
+      .from("chat_messages")
+      .select("id, conversation_id, role, content, structured_action, tokens, created_at")
+      .eq("conversation_id", convId)
+      .order("created_at", { ascending: true });
+    if (msgErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(msgErr?.message || msgErr) });
+    return chatSendJson(res, 200, {
+      success: true,
+      conversation: {
+        id: conv.id,
+        title: conv.title || "Nuevo chat",
+        created_at: conv.created_at,
+        updated_at: conv.updated_at,
+        archived_at: conv.archived_at || null,
+        internal_dify_conversation_id: conv.internal_dify_conversation_id || null,
+        summary_snapshot: conv.summary_snapshot || {},
+      },
+      messages: (msgs || []).map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        structured_action: m.structured_action || null,
+        tokens: typeof m.tokens === "number" ? m.tokens : null,
+        created_at: m.created_at,
+      })),
+    });
+  }
+
+  async function handlePatchConversation(req: any, res: any, auth: any, convId: string) {
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    const body = parseAnyBody(req);
+    const { admin, user } = auth;
+    const patch: any = {};
+    if (body && body.title !== undefined) {
+      const t = chatSafeString(body.title, 200, "");
+      if (t) patch.title = t;
+    }
+    if (body && body.summary_snapshot !== undefined && typeof body.summary_snapshot === "object" && body.summary_snapshot !== null) {
+      patch.summary_snapshot = body.summary_snapshot;
+    }
+    if (body && body.internal_dify_conversation_id !== undefined) {
+      const v = chatSafeString(body.internal_dify_conversation_id, 200, "");
+      if (v) patch.internal_dify_conversation_id = v;
+    }
+    if (body && body.archived === true) patch.archived_at = new Date().toISOString();
+    else if (body && body.archived === false) patch.archived_at = null;
+    if (Object.keys(patch).length === 0) {
+      return chatSendJson(res, 200, { success: true, updated: false });
+    }
+    const { data, error } = await admin
+      .from("chat_conversations")
+      .update(patch)
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at")
+      .maybeSingle();
+    if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
+    if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    return chatSendJson(res, 200, {
+      success: true,
+      updated: true,
+      conversation: {
+        id: data.id,
+        title: data.title || "Nuevo chat",
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        archived_at: data.archived_at || null,
+        internal_dify_conversation_id: data.internal_dify_conversation_id || null,
+      },
+    });
+  }
+
+  async function handleAppendMessage(req: any, res: any, auth: any, convId: string) {
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    const { admin, user } = auth;
+    const { data: conv, error: convErr } = await admin
+      .from("chat_conversations")
+      .select("id")
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
+    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    const body = parseAnyBody(req);
+    const roleRaw = chatSafeString(body?.role || "", 20, "").toLowerCase();
+    if (roleRaw !== "user" && roleRaw !== "assistant" && roleRaw !== "system") {
+      return chatSendJson(res, 400, { success: false, error: "role_invalido", message: "El rol debe ser user, assistant o system." });
+    }
+    const content = chatSafeString(body?.content || "", 50000, "");
+    if (!content) return chatSendJson(res, 400, { success: false, error: "contenido_vacio", message: "El contenido no puede estar vacío." });
+    const structured_action = body?.structured_action !== undefined && body?.structured_action !== null ? body.structured_action : null;
+    const tokensRaw = body?.tokens;
+    const tokens = tokensRaw === null || tokensRaw === undefined || tokensRaw === "" ? null : chatSafeInt(tokensRaw, 0, 1_000_000, 0);
+    const payload: any = {
+      conversation_id: convId,
+      role: roleRaw,
+      content,
+    };
+    if (structured_action !== null) payload.structured_action = structured_action;
+    if (tokens !== null) payload.tokens = tokens;
+    const { data, error } = await admin
+      .from("chat_messages")
+      .insert(payload)
+      .select("id, conversation_id, role, content, structured_action, tokens, created_at")
+      .maybeSingle();
+    if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
+    if (!data) return chatSendJson(res, 500, { success: false, error: "insert_failed", message: "No se pudo guardar el mensaje." });
+    return chatSendJson(res, 200, {
+      success: true,
+      message: {
+        id: data.id,
+        role: data.role,
+        content: data.content,
+        structured_action: data.structured_action || null,
+        tokens: typeof data.tokens === "number" ? data.tokens : null,
+        created_at: data.created_at,
+      },
+    });
+  }
+
+  async function handleBatchAppendMessages(req: any, res: any, auth: any, convId: string) {
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    const { admin, user } = auth;
+    const { data: conv, error: convErr } = await admin
+      .from("chat_conversations")
+      .select("id")
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
+    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    const body = parseAnyBody(req);
+    const rawMsgs = Array.isArray(body?.messages) ? body.messages : [];
+    if (!rawMsgs.length) return chatSendJson(res, 400, { success: false, error: "sin_mensajes", message: "Debe enviar al menos un mensaje." });
+    if (rawMsgs.length > 50) return chatSendJson(res, 413, { success: false, error: "demasiados_mensajes", message: "Máximo 50 mensajes por lote." });
+    const rows: any[] = [];
+    for (const it of rawMsgs) {
+      const roleRaw = chatSafeString(it?.role || "", 20, "").toLowerCase();
+      if (roleRaw !== "user" && roleRaw !== "assistant" && roleRaw !== "system") continue;
+      const content = chatSafeString(it?.content || "", 50000, "");
+      if (!content) continue;
+      const structured_action = it?.structured_action !== undefined && it?.structured_action !== null ? it.structured_action : null;
+      const tokensRaw = it?.tokens;
+      const tokens = tokensRaw === null || tokensRaw === undefined || tokensRaw === "" ? null : chatSafeInt(tokensRaw, 0, 1_000_000, 0);
+      const row: any = { conversation_id: convId, role: roleRaw, content };
+      if (structured_action !== null) row.structured_action = structured_action;
+      if (tokens !== null) row.tokens = tokens;
+      rows.push(row);
+    }
+    if (!rows.length) return chatSendJson(res, 400, { success: false, error: "mensajes_invalidos", message: "Ningún mensaje del lote es válido." });
+    const { data, error } = await admin
+      .from("chat_messages")
+      .insert(rows)
+      .select("id, conversation_id, role, content, structured_action, tokens, created_at")
+      .order("created_at", { ascending: true });
+    if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
+    return chatSendJson(res, 200, {
+      success: true,
+      messages: (data || []).map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        structured_action: m.structured_action || null,
+        tokens: typeof m.tokens === "number" ? m.tokens : null,
+        created_at: m.created_at,
+      })),
+    });
+  }
+
+  return async function handler(req: any, res: any) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      const parts = u.pathname.split("/").filter(Boolean);
+      const head = parts[0] === "api" ? parts[1] : parts[0];
+      if (head !== "chat") return chatSendJson(res, 400, { error: "ruta_invalida" });
+      const method = (req.method || "GET").toUpperCase();
+      const token = extractBearerToken(req);
+      const auth = await requireAnyUserFromToken(token);
+      if (!auth.ok) return chatSendJson(res, auth.status, { success: false, error: "sesion_invalida", message: auth.error || "Sesión inválida." });
+      const next = parts[0] === "api" ? parts[2] : parts[1];
+      const third = parts[0] === "api" ? parts[3] : parts[2];
+      const fourth = parts[0] === "api" ? parts[4] : parts[3];
+
+      if (!next && method === "GET") return handleListConversations(req, res, auth);
+      if (!next && method === "POST") return handleCreateConversation(req, res, auth);
+
+      if (next && !third) {
+        if (method === "GET") return handleGetConversation(req, res, auth, next);
+        if (method === "PATCH") return handlePatchConversation(req, res, auth, next);
+      }
+
+      if (next && third === "messages" && !fourth && method === "POST") return handleAppendMessage(req, res, auth, next);
+      if (next && third === "messages" && fourth === "batch" && method === "POST") return handleBatchAppendMessages(req, res, auth, next);
+
+      return chatSendJson(res, 404, { success: false, error: "ruta_no_encontrada", message: "Ruta chat no encontrada." });
+    } catch (e) {
+      return chatSendJson(res, 500, { success: false, error: "error_interno", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
 export default async function handler(req: any, res: any) {
   try {
     const u = new URL(req.url, "http://localhost");
@@ -19964,6 +20270,7 @@ export default async function handler(req: any, res: any) {
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-voice-sample") return replicateVoiceSampleWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate") return replicateWebhookHandler(req, res);
+    if (head === "chat") return chatHandler(req, res);
 
     return sendNotFound(res);
   } catch (e) {

@@ -1,0 +1,363 @@
+:root {
+  --bg: #ffffff;
+  --bg-elev-1: #f5f5f5;
+  --bg-elev-2: #e5e5e5;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --brand-primary: #7c3aed;
+  --brand-secondary: #2563eb;
+  --brand-accent: #f59e0b;
+
+  --bubble-user-bg: #e9d5ff;
+  --bubble-user-text: #111827;
+  --bubble-assistant-bg: #ffffff;
+  --bubble-assistant-text: #111827;
+  --bubble-assistant-border: #e5e7eb;
+
+  --composer-bg: #ffffff;
+  --composer-border: #e5e7eb;
+}
+
+html[data-theme='dark'] {
+  --bg: #0a0a0a;
+  --bg-elev-1: #0f172a;
+  --bg-elev-2: #111827;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.1);
+  --brand-primary: #7c3aed;
+  --brand-secondary: #2563eb;
+  --brand-accent: #f59e0b;
+
+  --bubble-user-bg: #4f46e5;
+  --bubble-user-text: #ffffff;
+  --bubble-assistant-bg: #1e293b;
+  --bubble-assistant-text: #ffffff;
+  --bubble-assistant-border: #334155;
+
+  --composer-bg: #0f172a;
+  --composer-border: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme='light'] {
+  --bg: #f7f7fb;
+  --bg-elev-1: #ffffff;
+  --bg-elev-2: #f1f5f9;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --border: #e2e8f0;
+  --brand-primary: #7c3aed;
+  --brand-secondary: #2563eb;
+  --brand-accent: #f59e0b;
+
+  --bubble-user-bg: #e9d5ff;
+  --bubble-user-text: #111827;
+  --bubble-assistant-bg: #ffffff;
+  --bubble-assistant-text: #111827;
+  --bubble-assistant-border: #e2e8f0;
+
+  --composer-bg: #ffffff;
+  --composer-border: #e2e8f0;
+}
+
+/* ========= LucIAna Bot · layout sticky chat 100dvh ========= */
+.luciana-chat-shell {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+}
+@supports (height: 100dvh) {
+  .luciana-chat-shell {
+    height: 100dvh;
+  }
+}
+.luciana-chat-header {
+  flex: 0 0 auto;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elev-1) 92%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+@media (max-width: 640px) {
+  .luciana-chat-header {
+    padding: 0.6rem 0.8rem;
+  }
+}
+.luciana-chat-messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  max-height: 100%;
+}
+@media (min-width: 768px) {
+  .luciana-chat-messages {
+    padding: 1.25rem 1.5rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+.luciana-chat-composer {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg-elev-1) 94%, transparent);
+  backdrop-filter: saturate(140%) blur(10px);
+  border-top: 1px solid var(--border);
+  padding: 0.65rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .luciana-chat-composer {
+    padding: 0.9rem 1.25rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.luciana-msg-row {
+  display: flex;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto 0.9rem;
+}
+.luciana-msg-row.is-user { justify-content: flex-end; }
+.luciana-msg-row.is-assistant { justify-content: flex-start; }
+.luciana-msg-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 94%;
+}
+@media (min-width: 768px) {
+  .luciana-msg-wrap { max-width: 86%; }
+}
+.luciana-msg-row.is-user .luciana-msg-wrap { flex-direction: row-reverse; }
+.luciana-msg-avatar {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 60%, #f59e0b 100%);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.18);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.luciana-msg-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.luciana-msg-avatar.user {
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+}
+.luciana-msg-bubble {
+  border-radius: 1.25rem;
+  padding: 0.7rem 0.95rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  position: relative;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+html[data-theme='dark'] .luciana-msg-bubble {
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+.luciana-msg-row.is-user .luciana-msg-bubble {
+  background: var(--bubble-user-bg);
+  color: var(--bubble-user-text);
+  border-bottom-right-radius: 0.35rem;
+  border-color: transparent;
+}
+.luciana-msg-row.is-assistant .luciana-msg-bubble {
+  background: var(--bubble-assistant-bg);
+  color: var(--bubble-assistant-text);
+  border-color: var(--bubble-assistant-border);
+  border-bottom-left-radius: 0.35rem;
+}
+.luciana-msg-bubble .prose-luciana :is(strong, b) { font-weight: 700; }
+.luciana-msg-bubble code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0.12rem 0.42rem;
+  border-radius: 0.35rem;
+  font-size: 0.86em;
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--brand-primary);
+}
+html[data-theme='dark'] .luciana-msg-bubble code {
+  background: rgba(233, 213, 255, 0.12);
+  color: #e9d5ff;
+}
+.luciana-composer-inner {
+  max-width: 48rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+.luciana-composer-textarea-wrap {
+  position: relative;
+  flex: 1 1 auto;
+}
+.luciana-composer-textarea {
+  width: 100%;
+  display: block;
+  resize: none;
+  min-height: 2.65rem;
+  max-height: 11rem;
+  padding: 0.7rem 3.2rem 0.7rem 1rem;
+  border-radius: 1.3rem;
+  border: 1px solid var(--composer-border);
+  background: var(--composer-bg);
+  color: var(--text);
+  line-height: 1.45;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.luciana-composer-textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+.luciana-composer-textarea:focus {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--composer-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 15%, transparent);
+}
+.luciana-composer-counter {
+  position: absolute;
+  right: 0.85rem;
+  top: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+.luciana-composer-send {
+  width: 2.8rem;
+  height: 2.8rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--brand-primary) 32%, transparent);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.luciana-composer-send:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.luciana-composer-send:disabled {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--bg-elev-2) 85%, #000 10%);
+  color: var(--text-muted);
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+.luciana-chat-welcome {
+  max-width: 42rem;
+  margin: 2rem auto 1rem;
+  padding: 1.25rem 1.25rem;
+  border-radius: 1.25rem;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bg-elev-1) 80%, transparent);
+  color: var(--text);
+  text-align: left;
+}
+.luciana-chat-welcome h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.luciana-chat-welcome p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.luciana-newchat-hint {
+  max-width: 48rem;
+  margin: 0.25rem auto 0.9rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--brand-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 35%, transparent);
+  color: var(--text);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.luciana-newchat-hint button {
+  flex: 0 0 auto;
+  border: none;
+  padding: 0.38rem 0.7rem;
+  border-radius: 9999px;
+  background: var(--brand-accent);
+  color: #1b1200;
+  font-weight: 700;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.luciana-newchat-hint button:hover { filter: brightness(1.05); }
+
+.luciana-history-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(22rem, 86vw);
+  background: var(--bg-elev-1);
+  border-left: 1px solid var(--border);
+  z-index: 60;
+  transform: translateX(100%);
+  transition: transform 0.22s ease;
+  display: flex;
+  flex-direction: column;
+}
+.luciana-history-panel.is-open {
+  transform: translateX(0);
+}
+.luciana-history-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  z-index: 55;
+}
+.luciana-history-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}

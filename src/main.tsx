@@ -2,6 +2,8 @@ import {StrictMode, Component} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import './theme/theme.css';
+import {ThemeProvider} from './theme/ThemeProvider';
 
 // #region debug-point error-boundary
 class GlobalErrorBoundary extends Component<{children: any}, {hasError: boolean; error: string}> {
@@ -77,9 +79,11 @@ class GlobalErrorBoundary extends Component<{children: any}, {hasError: boolean;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <GlobalErrorBoundary>
-      <App />
-    </GlobalErrorBoundary>
+    <ThemeProvider>
+      <GlobalErrorBoundary>
+        <App />
+      </GlobalErrorBoundary>
+    </ThemeProvider>
   </StrictMode>,
 );
 

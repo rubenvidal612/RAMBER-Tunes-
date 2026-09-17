@@ -1,5 +1,6 @@
-import { Bell, ChevronDown, Coins, Menu } from 'lucide-react';
+import { Bell, ChevronDown, Coins, Menu, Sun, Moon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTheme } from '../theme/ThemeProvider';
 
 interface TopBarProps {
   className?: string;
@@ -12,10 +13,11 @@ interface TopBarProps {
 }
 
 export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCredits, showBank, hideMenu }: TopBarProps) {
+  const { theme, toggleTheme } = useTheme();
   return (
     <header className={cn('luciana-topbar', className)}>
       <div className="luciana-brand" aria-label="LucIAna Music">
-        <img src="/assets/luciana-music-logo.jpeg" alt="Logo de LucIAna Music" className="luciana-brand-logo" />
+        <img src="/assets/luciana-music-logo.jpeg" alt="Logo de LucIAna Music" className="luciana-brand-logo rounded-full object-cover shadow-sm ring-1 ring-black/10 dark:ring-white/10" />
         <span className="luciana-brand-name">Luc<span>IA</span>na <b>|</b> Music</span>
       </div>
 
@@ -23,6 +25,15 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
         <button type="button" className="luciana-icon-button hidden sm:flex" aria-label="Notificaciones">
           <Bell className="w-[18px] h-[18px]" />
           <span className="luciana-notification-dot" />
+        </button>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="w-9 h-9 rounded-full ring-1 shadow-sm text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10 transition flex items-center justify-center"
+          aria-label="Cambiar tema"
+        >
+          {theme === 'dark' ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
         </button>
 
         <button type="button" onClick={onCreditsClick} className="luciana-credit-pill">

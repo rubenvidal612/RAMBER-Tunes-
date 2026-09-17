@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   AlertTriangle,
-  Bot,
   CheckCircle2,
+  History,
   Library,
   Loader2,
-  MessageSquare,
+  MessageSquarePlus,
   Music2,
+  Plus,
   Send,
   Sparkles,
-  Trash2,
+  Sun,
+  Moon,
+  User,
   WalletCards,
+  X,
 } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { cn } from '@/lib/utils';
 import type { ViewTab } from '@/types';
+import { useTheme } from '../theme/ThemeProvider';
 
 type ChatRole = 'user' | 'assistant';
 
@@ -30,6 +35,7 @@ type ChatMessage = {
     title: string;
     instrumental: boolean;
   };
+  persisted?: boolean;
 };
 
 type ReadyToGenerate = {
@@ -43,6 +49,15 @@ type PendingGeneration = {
   task_id?: string;
   status?: string;
   startedAt: number;
+};
+
+type ConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  internal_dify_conversation_id?: string | null;
 };
 
 function uid() {
@@ -59,24 +74,89 @@ function escapeHTML(s: string) {
     .replace(/>/g, '&gt;');
 }
 
-function simpleMarkdown(text: string): string {
+function simpleMarkdown(text: string, dark: boolean): string {
   const raw = String(text || '');
   if (!raw) return '';
   let out = escapeHTML(raw);
-  out = out.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
-  out = out.replace(/`([^`\n]+)`/g, '<code class="rounded bg-white/10 px-1.5 py-0.5 text-[0.8em] text-fuchsia-200">$1</code>');
+  const strongClass = dark ? 'font-semibold text-white' : 'font-semibold text-slate-900';
+  const codeBg = dark
+    ? 'rounded bg-white/10 px-1.5 py-0.5 text-[0.8em] text-fuchsia-200'
+    : 'rounded bg-violet-100/80 px-1.5 py-0.5 text-[0.8em] text-violet-800';
+  out = out.replace(/\*\*(.+?)\*\*/g, `<strong class="${strongClass}">$1</strong>`);
+  out = out.replace(/`([^`\n]+)`/g, `<code class="${codeBg}">$1</code>`);
   out = out.replace(/\n{2,}/g, '\n\n');
   out = out.replace(/\n/g, '<br/>');
   return out;
 }
 
+function formatDay(iso: string | null | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const isSameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    if (isSameDay) {
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+const CHAT_AVATAR_ASSISTANT = '/logo-luciana-hd.svg?v=20260917-3';
+const STORAGE_KEY = 'luciana_chat_ui_v1';
+
+type UiState = {
+  activeConversationId: string | null;
+  conversations: ConversationSummary[];
+  welcomeShown: boolean;
+  lastDismissedSuggestionKey: string | null;
+};
+
+function loadUiState(): UiState {
+  const fallback: UiState = {
+    activeConversationId: null,
+    conversations: [],
+    welcomeShown: false,
+    lastDismissedSuggestionKey: null,
+  };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return fallback;
+    const j = JSON.parse(raw);
+    if (!j || typeof j !== 'object') return fallback;
+    return { ...fallback, ...j };
+  } catch {
+    return fallback;
+  }
+}
+function saveUiState(s: UiState) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+
 export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }) {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme !== 'light';
+
+  const [uiState, setUiState] = useState<UiState>(() => loadUiState());
+  const setUi = useCallback((updater: (prev: UiState) => UiState) => {
+    setUiState((prev) => {
+      const next = updater(prev);
+      saveUiState(next);
+      return next;
+    });
+  }, []);
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: uid(),
       role: 'assistant',
       text:
-        '✨ Hola! Soy tu **LucIAna Bot**.\n\nCuentame de qué quieres cantar (estilo, tema, estado de ánimo, público objetivo…) y juntos definimos:\n· **Letra / Prompt**\n· **Título**\n· **Estilo musical**\n· ¿**Instrumental** o con voz?\n\nCuando todo esté OK te mostraré un botón **"Generar canción"** y se cobrarán 12 créditos a tu cuenta real de LucIAna. 🎵',
+        'Hola, soy LucIAna Bot. Cuéntame de qué quieres hacer la canción: estilo, tema, título, estado de ánimo, público o cualquier detalle. Juntos definimos letra, estilo, título y si es instrumental. Cuando esté todo listo te mostraré el botón **"Generar canción"** y se cobrarán 12 créditos.',
       createdAt: Date.now(),
     },
   ]);
@@ -87,13 +167,34 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const [generating, setGenerating] = useState(false);
   const [lastPending, setLastPending] = useState<PendingGeneration | null>(null);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [bootFailed, setBootFailed] = useState(false);
+
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const sentScrollRef = useRef(false);
+
+  useEffect(() => { saveUiState(uiState); }, [uiState]);
+
+  const scrollToBottomNow = useCallback(() => {
+    if (!listRef.current) return;
+    try {
+      listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+    } catch {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, []);
 
   useEffect(() => {
-    if (!listRef.current) return;
-    listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages, loading, activeReady, generating]);
+    if (sentScrollRef.current) {
+      sentScrollRef.current = false;
+      scrollToBottomNow();
+      return;
+    }
+    const t = setTimeout(() => scrollToBottomNow(), 60);
+    return () => clearTimeout(t);
+  }, [messages, loading, activeReady, generating, scrollToBottomNow]);
 
   useEffect(() => {
     if (!toast) return;
@@ -107,15 +208,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     return true;
   }, [input, loading, generating]);
 
-  const pushAssistantAck = useCallback(() => {
-    if (!supabaseBrowser) return;
-    // No-op; el fetch es bloqueante y empujamos al terminar
-  }, []);
-
   const signOutAndReload = useCallback(() => {
-    try {
-      void supabaseBrowser?.auth?.signOut?.().catch(() => {});
-    } catch {}
+    try { void supabaseBrowser?.auth?.signOut?.().catch(() => {}); } catch {}
     try {
       const base = window.location.origin.toString().replace(/\/+$/, '');
       window.location.href = `${base}/crear`;
@@ -128,17 +222,23 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     let sessionOk = false;
     try {
       const result = await getAccessToken();
-      if (result && typeof result === 'object' && result.ok && typeof result.token === 'string' && result.token.trim()) {
-        accessToken = String(result.token).trim();
+      if (
+        result &&
+        typeof result === 'object' &&
+        (result as any).ok &&
+        typeof (result as any).token === 'string' &&
+        (result as any).token.trim()
+      ) {
+        accessToken = String((result as any).token).trim();
         sessionOk = true;
       }
     } catch {}
     if (!sessionOk) {
       try {
         const { data } = await supabaseBrowser.auth.getSession();
-        const s = data?.session;
-        if (s && typeof (s as any).access_token === 'string' && String((s as any).access_token).trim()) {
-          accessToken = String((s as any).access_token).trim();
+        const s = data?.session as any;
+        if (s && typeof s?.access_token === 'string' && String(s.access_token).trim()) {
+          accessToken = String(s.access_token).trim();
           sessionOk = true;
         }
       } catch {}
@@ -146,15 +246,273 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     if (!sessionOk) {
       try {
         const { data } = await supabaseBrowser.auth.refreshSession();
-        const s = data?.session;
-        if (s && typeof (s as any).access_token === 'string' && String((s as any).access_token).trim()) {
-          accessToken = String((s as any).access_token).trim();
+        const s = data?.session as any;
+        if (s && typeof s?.access_token === 'string' && String(s.access_token).trim()) {
+          accessToken = String(s.access_token).trim();
           sessionOk = true;
         }
       } catch {}
     }
     return sessionOk && accessToken ? accessToken : null;
   }, [signOutAndReload]);
+
+  async function apiRequest<T = any>(url: string, method: 'GET' | 'POST' | 'PATCH', token: string, body?: any): Promise<{ ok: boolean; status: number; json: T | null; raw: string }> {
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      authorization: `Bearer ${token}`,
+    };
+    let payload: BodyInit | undefined;
+    if (body !== undefined) {
+      headers['content-type'] = 'application/json; charset=utf-8';
+      payload = JSON.stringify(body);
+    }
+    try {
+      const r = await fetch(url, { method, headers, body: payload });
+      const raw = await r.text();
+      let json: any = null;
+      try { json = raw ? JSON.parse(raw) : null; } catch { json = null; }
+      return { ok: r.ok, status: r.status, json, raw };
+    } catch (e: any) {
+      return {
+        ok: false,
+        status: 0,
+        json: null,
+        raw: e instanceof Error ? e.message : String(e || ''),
+      };
+    }
+  }
+
+  const createSupabaseConversation = useCallback(async (
+    token: string,
+    opts?: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any }
+  ): Promise<ConversationSummary | null> => {
+    const body: any = {};
+    if (opts?.title) body.title = opts.title;
+    if (opts?.internal_dify_conversation_id) body.internal_dify_conversation_id = opts.internal_dify_conversation_id;
+    if (opts?.summary_snapshot) body.summary_snapshot = opts.summary_snapshot;
+    const r = await apiRequest<{ success?: boolean; conversation?: any }>('/api/chat', 'POST', token, body);
+    if (r.ok && r.json?.success && r.json.conversation) return r.json.conversation as ConversationSummary;
+    return null;
+  }, []);
+
+  const appendMessageToConversation = useCallback(async (
+    token: string,
+    convId: string,
+    msg: { role: ChatRole; content: string; structured_action?: any; tokens?: number }
+  ): Promise<boolean> => {
+    if (!convId) return false;
+    const body: any = { role: msg.role, content: msg.content };
+    if (msg.structured_action !== undefined && msg.structured_action !== null) body.structured_action = msg.structured_action;
+    if (msg.tokens !== undefined && msg.tokens !== null) body.tokens = msg.tokens;
+    const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}/messages`, 'POST', token, body);
+    return !!(r.ok && r.json?.success);
+  }, []);
+
+  const updateConversation = useCallback(async (
+    token: string,
+    convId: string,
+    patch: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any; archived?: boolean }
+  ): Promise<boolean> => {
+    if (!convId) return false;
+    const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}`, 'PATCH', token, patch);
+    return !!(r.ok && r.json?.success);
+  }, []);
+
+  const loadConversationById = useCallback(async (token: string, convId: string)
+    : Promise<{ conversation: ConversationSummary | null; messages: ChatMessage[]; ok: boolean }> => {
+    const r = await apiRequest<{ success?: boolean; conversation?: any; messages?: any[] }>(
+      `/api/chat/${encodeURIComponent(convId)}`,
+      'GET',
+      token
+    );
+    if (!r.ok || !r.json?.success) return { conversation: null, messages: [], ok: false };
+    const rawMsgs = Array.isArray(r.json.messages) ? r.json.messages : [];
+    const msgs: ChatMessage[] = rawMsgs.map((m: any) => {
+      const role: ChatRole = m.role === 'user' ? 'user' : 'assistant';
+      const structuredRaw =
+        m.structured_action && typeof m.structured_action === 'object' && (m.structured_action as any).action === 'ready_to_generate'
+          ? (m.structured_action as any)
+          : null;
+      const structured: ChatMessage['structured'] = structuredRaw
+        ? {
+            action: 'ready_to_generate',
+            prompt: String(structuredRaw.prompt || '').trim(),
+            style: String(structuredRaw.style || '').trim(),
+            title: String(structuredRaw.title || '').trim(),
+            instrumental: Boolean(structuredRaw.instrumental),
+          }
+        : null;
+      const ts = m.created_at ? new Date(m.created_at).getTime() : Date.now();
+      return {
+        id: String(m.id || uid()),
+        role,
+        text: String(m.content || ''),
+        createdAt: Number.isFinite(ts) ? ts : Date.now(),
+        structured,
+        persisted: true,
+      };
+    });
+    return {
+      conversation: (r.json.conversation as ConversationSummary) || null,
+      messages: msgs,
+      ok: true,
+    };
+  }, []);
+
+  const fetchConversationList = useCallback(async (token: string): Promise<ConversationSummary[]> => {
+    const r = await apiRequest<{ success?: boolean; conversations?: any[] }>('/api/chat?limit=100', 'GET', token);
+    if (!r.ok || !r.json?.success || !Array.isArray(r.json.conversations)) return [];
+    return (r.json.conversations as ConversationSummary[]).map((c: any) => ({
+      id: c.id,
+      title: String(c.title || 'Nuevo chat'),
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      archived_at: c.archived_at || null,
+      internal_dify_conversation_id: c.internal_dify_conversation_id || null,
+    }));
+  }, []);
+
+  const refreshHistoryList = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      const token = await getValidBearerToken();
+      if (!token) return;
+      const list = await fetchConversationList(token);
+      setUi((p) => ({ ...p, conversations: list }));
+    } catch {
+      /* ignore */
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [fetchConversationList, getValidBearerToken, setUi]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const token = await getValidBearerToken();
+        if (!token) { setBootFailed(true); return; }
+        const list = await fetchConversationList(token);
+        if (!alive) return;
+        setUi((p) => {
+          let nextActive = p.activeConversationId;
+          if (!nextActive && list.length > 0) {
+            const firstNotArchived = list.find((c) => !c.archived_at) || list[0];
+            nextActive = firstNotArchived.id;
+          }
+          return { ...p, conversations: list, activeConversationId: nextActive || null };
+        });
+        const activeId = uiState.activeConversationId;
+        if (activeId) {
+          const loaded = await loadConversationById(token, activeId);
+          if (!alive) return;
+          if (loaded.ok && loaded.conversation) {
+            setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
+            if (loaded.messages.length > 0) {
+              setMessages(loaded.messages);
+              const lastReadyMsg = [...loaded.messages].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+              if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
+            }
+          }
+        }
+      } catch (e) {
+        if (alive) setBootFailed(true);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openConversation = useCallback(async (conv: ConversationSummary) => {
+    try {
+      setHistoryOpen(false);
+      setActiveReady(null);
+      setLoading(true);
+      const token = await getValidBearerToken();
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      const loaded = await loadConversationById(token, conv.id);
+      if (!loaded.ok || !loaded.conversation) {
+        setLoading(false);
+        setToast({ kind: 'err', text: 'No pude abrir esa conversación.' });
+        return;
+      }
+      setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
+      if (loaded.messages.length > 0) {
+        setMessages(loaded.messages);
+        const lastReadyMsg = [...loaded.messages].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+        if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
+      } else {
+        setMessages([
+          {
+            id: uid(),
+            role: 'assistant',
+            text:
+              'Hola, soy LucIAna Bot. Cuéntame de qué quieres hacer la canción: estilo, tema, título, estado de ánimo, público o cualquier detalle. Juntos definimos letra, estilo, título y si es instrumental. Cuando esté todo listo te mostraré el botón **"Generar canción"** y se cobrarán 12 créditos.',
+            createdAt: Date.now(),
+          },
+        ]);
+      }
+      setUi((p) => ({ ...p, activeConversationId: conv.id }));
+      sentScrollRef.current = true;
+      setTimeout(() => scrollToBottomNow(), 30);
+    } catch (e) {
+      setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
+    } finally {
+      setLoading(false);
+    }
+  }, [getValidBearerToken, loadConversationById, scrollToBottomNow, setUi]);
+
+  const startNewChat = useCallback(async (opts?: { persistOldAsArchived?: boolean }) => {
+    try {
+      const token = await getValidBearerToken();
+      if (!token) {
+        setToast({ kind: 'err', text: 'Sesión expirada para guardar el historial. Inicia sesión de nuevo.' });
+        return;
+      }
+      // Persistir el chat actual si tiene mensajes reales (> 1 para evitar mensaje bienvenida solo)
+      const currentConvId = uiState.activeConversationId;
+      const hasRealMessages = messages.some((m) => m.role === 'user');
+      if (hasRealMessages && currentConvId && opts?.persistOldAsArchived !== false) {
+        void (async () => {
+          try { await updateConversation(token, currentConvId, { archived: true }); } catch {}
+        })();
+      }
+      const created = await createSupabaseConversation(token, { title: 'Nuevo chat' });
+      setConversationId('');
+      setActiveReady(null);
+      setLastPending(null);
+      setMessages([
+        {
+          id: uid(),
+          role: 'assistant',
+          text:
+            'Empezamos con un chat nuevo ✨. Cuéntame de qué quieres hacer la canción: estilo, tema, título, público, estado de ánimo o cualquier detalle que se te ocurra.',
+          createdAt: Date.now(),
+        },
+      ]);
+      setUi((p) => ({
+        ...p,
+        activeConversationId: created?.id || null,
+        conversations: created ? [created, ...p.conversations] : p.conversations,
+      }));
+      sentScrollRef.current = true;
+      setTimeout(() => scrollToBottomNow(), 30);
+      setToast({ kind: 'ok', text: 'Listo · chat nuevo creado. El anterior se guardó en el historial.' });
+    } catch (e) {
+      setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
+    }
+  }, [createSupabaseConversation, messages, scrollToBottomNow, setUi, uiState.activeConversationId, updateConversation, getValidBearerToken]);
+
+  const onNewChatClick = useCallback(async () => {
+    try {
+      const ok = window.confirm('¿Quieres iniciar un nuevo chat? Tu conversación anterior se conservará en el historial.');
+      if (!ok) return;
+      await startNewChat({ persistOldAsArchived: true });
+    } catch { /* ignore */ }
+  }, [startNewChat]);
 
   const sendMessage = useCallback(async () => {
     const text = String(input || '').trim();
@@ -164,7 +522,22 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       return;
     }
     setLoading(true);
+    sentScrollRef.current = true;
     try {
+      const accessToken = await getValidBearerToken();
+      if (!accessToken) {
+        setLoading(false);
+        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
+        const errMsg: ChatMessage = {
+          id: uid(),
+          role: 'assistant',
+          text: 'Tu sesión de LucIAna expiró. Vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.',
+          createdAt: Date.now(),
+        };
+        setMessages((m) => [...m, errMsg]);
+        return;
+      }
+
       const userMsg: ChatMessage = {
         id: uid(),
         role: 'user',
@@ -175,22 +548,27 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setInput('');
       if (textareaRef.current) textareaRef.current.value = '';
 
-      const accessToken = await getValidBearerToken();
-      if (!accessToken) {
-        setLoading(false);
-        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
-        const errMsg: ChatMessage = {
-          id: uid(),
-          role: 'assistant',
-          text: '⚠️ Tu sesión de LucIAna expiró. Por favor, vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.',
-          createdAt: Date.now(),
-        };
-        setMessages((m) => [...m, errMsg]);
-        return;
+      // Asegurar conversación activa en Supabase
+      let activeConvId = uiState.activeConversationId;
+      let activeDifyId = conversationId;
+      if (!activeConvId) {
+        const created = await createSupabaseConversation(accessToken, { title: text.slice(0, 60) || 'Nuevo chat' });
+        if (created) {
+          activeConvId = created.id;
+          activeDifyId = String(created.internal_dify_conversation_id || '').trim();
+          setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
+        }
+      }
+      // Guardar mensaje usuario en Supabase (async pero no bloqueante)
+      if (activeConvId) {
+        void (async () => {
+          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: text }); }
+          catch (e) { console.warn('[chat] save user msg failed', e instanceof Error ? e.message : e); }
+        })();
       }
 
       const bodyPayload: any = { message: text };
-      if (conversationId) bodyPayload.conversation_id = conversationId;
+      if (activeDifyId) bodyPayload.conversation_id = activeDifyId;
 
       let json: any = null;
       let httpStatus = 0;
@@ -206,11 +584,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         });
         httpStatus = r.status;
         const rawText = await r.text();
-        try {
-          json = rawText ? JSON.parse(rawText) : null;
-        } catch {
-          json = { reply_text: rawText, error: 'invalid_json' };
-        }
+        try { json = rawText ? JSON.parse(rawText) : null; }
+        catch { json = { reply_text: rawText, error: 'invalid_json' }; }
       } catch (e: any) {
         httpStatus = 0;
         json = { error: 'network_error', reply_text: e instanceof Error ? String(e.message) : String(e || '') };
@@ -223,10 +598,25 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           ? (json as any).message
           : 'No pude leer la respuesta de LucIAna Bot.'
       ).trim();
-      const newCid = String((json && typeof (json as any).conversation_id === 'string') ? (json as any).conversation_id : conversationId || '').trim();
-      if (newCid && newCid !== conversationId) setConversationId(newCid);
 
-      const rawStructured = (json && typeof (json as any).structured_action === 'object' && (json as any).structured_action !== null) ? (json as any).structured_action : null;
+      const newCid = String(
+        (json && typeof (json as any).conversation_id === 'string') ? (json as any).conversation_id : activeDifyId || ''
+      ).trim();
+      if (newCid && newCid !== activeDifyId) {
+        setConversationId(newCid);
+        activeDifyId = newCid;
+        if (activeConvId) {
+          void (async () => {
+            try { await updateConversation(accessToken, activeConvId!, { internal_dify_conversation_id: newCid }); }
+            catch {}
+          })();
+        }
+      }
+
+      const rawStructured =
+        (json && typeof (json as any).structured_action === 'object' && (json as any).structured_action !== null)
+          ? (json as any).structured_action
+          : null;
       let structured: ChatMessage['structured'] = null;
       if (rawStructured && String(rawStructured.action || '').toLowerCase() === 'ready_to_generate') {
         const stOk: ReadyToGenerate = {
@@ -235,23 +625,22 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           title: String(rawStructured.title || '').trim(),
           instrumental: Boolean(rawStructured.instrumental),
         };
-        if (stOk.prompt) {
-          structured = { action: 'ready_to_generate', ...stOk };
-        }
+        if (stOk.prompt) structured = { action: 'ready_to_generate', ...stOk };
       }
 
       if (httpStatus >= 400 || (json && typeof (json as any).error === 'string')) {
         const errCode = String((json as any).error || '').trim();
-        const isAuth = httpStatus === 401 || errCode === 'unauthorized' || errCode === 'missing_bearer_authorization_header' || errCode === 'sesion_expirada' || errCode === 'session_expired';
-        const fallbackText = (
-          isAuth
-            ? '⚠️ Tu sesión de LucIAna expiró. Cierra y vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.'
-            : replyText || (
-              errCode === 'dify_copilot_not_configured'
-                ? '⚠️ Falta configurar el asistente en el servidor. Avisa a tu administrador/a.'
-                : '⚠️ Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.'
-            )
-        );
+        const isAuth =
+          httpStatus === 401 ||
+          errCode === 'unauthorized' ||
+          errCode === 'missing_bearer_authorization_header' ||
+          errCode === 'sesion_expirada' ||
+          errCode === 'session_expired';
+        const fallbackText = isAuth
+          ? 'Tu sesión de LucIAna expiró. Cierra y vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.'
+          : replyText || (errCode === 'dify_copilot_not_configured'
+              ? 'Falta configurar el asistente en el servidor. Avisa a tu administrador/a.'
+              : 'Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.');
         setLoading(false);
         const mappedCode = (() => {
           if (isAuth) return 'sesión expirada, vuelve a iniciar sesión';
@@ -262,16 +651,14 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           return 'operación rechazada';
         })();
         setToast({ kind: 'err', text: httpStatus ? `Error ${httpStatus} · ${mappedCode || 'petición rechazada'}` : 'Error de red' });
-        if (isAuth) {
-          setTimeout(() => signOutAndReload(), 1200);
-        }
-        const errMsg: ChatMessage = {
-          id: uid(),
-          role: 'assistant',
-          text: fallbackText,
-          createdAt: Date.now(),
-        };
+        if (isAuth) setTimeout(() => signOutAndReload(), 1200);
+        const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: fallbackText, createdAt: Date.now() };
         setMessages((m) => [...m, errMsg]);
+        if (activeConvId) {
+          void (async () => {
+            try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'assistant', content: fallbackText }); } catch {}
+          })();
+        }
         return;
       }
 
@@ -291,12 +678,53 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           instrumental: structured.instrumental,
         });
       }
+      if (activeConvId) {
+        void (async () => {
+          try {
+            await appendMessageToConversation(accessToken, activeConvId!, {
+              role: 'assistant',
+              content: assistantMsg.text,
+              structured_action: assistantMsg.structured || undefined,
+            });
+          } catch {}
+          // Actualiza título si es el primer mensaje de usuario y el título sigue siendo "Nuevo chat"
+          try {
+            const firstUserText = text;
+            const c0 = uiState.conversations.find((c) => c.id === activeConvId);
+            if (c0 && (c0.title === 'Nuevo chat' || !c0.title)) {
+              const newTitle = firstUserText.slice(0, 60).trim() || 'Nuevo chat';
+              await updateConversation(accessToken, activeConvId!, { title: newTitle });
+              setUi((p) => ({
+                ...p,
+                conversations: p.conversations.map((c) => (c.id === activeConvId ? { ...c, title: newTitle } : c)),
+              }));
+            }
+            if (activeConvId === uiState.activeConversationId) {
+              // Actualizar la lista en memoria para que aparezca actualizada si abres historial
+              await refreshHistoryList();
+            }
+          } catch {}
+        })();
+      }
       setLoading(false);
     } catch (e: any) {
       setLoading(false);
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || '') });
     }
-  }, [input, conversationId]);
+  }, [
+    input,
+    conversationId,
+    supabaseBrowser,
+    signOutAndReload,
+    getValidBearerToken,
+    createSupabaseConversation,
+    appendMessageToConversation,
+    updateConversation,
+    uiState.activeConversationId,
+    uiState.conversations,
+    setUi,
+    refreshHistoryList,
+  ]);
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -305,24 +733,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     }
   };
 
-  const resetChat = () => {
-    setMessages([
-      {
-        id: uid(),
-        role: 'assistant',
-        text: 'Empezamos de nuevo ✨. Cuéntame de qué quieres hacer la canción (estilo, tema, público, título sugerido…).',
-        createdAt: Date.now(),
-      },
-    ]);
-    setConversationId('');
-    setActiveReady(null);
-    setLastPending(null);
-    setToast({ kind: 'ok', text: 'Conversación reiniciada' });
-  };
-
-  const clearReady = () => {
-    setActiveReady(null);
-  };
+  const clearReady = () => setActiveReady(null);
 
   const handleGenerate = async () => {
     if (!activeReady) return;
@@ -367,9 +778,12 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         const msgRaw = String(
           (json as any)?.message || (json as any)?.detail || (json as any)?.error || `HTTP ${r.status}`
         ).trim();
-        const msg = msgRaw
-          || (code === 'insufficient_credits' || /insufficient/i.test(code) ? 'No tienes créditos suficientes. Recarga saldo en Planes.' : '')
-          || (r.status === 401 ? 'Tu sesión expiró. Vuelve a iniciar sesión con Google.' : '');
+        const msg =
+          msgRaw ||
+          (code === 'insufficient_credits' || /insufficient/i.test(code)
+            ? 'No tienes créditos suficientes. Recarga saldo en Planes.'
+            : '') ||
+          (r.status === 401 ? 'Tu sesión expiró. Vuelve a iniciar sesión con Google.' : '');
         setGenerating(false);
         setToast({ kind: 'err', text: msg || 'Error al generar la canción.' });
         return;
@@ -382,20 +796,24 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         id: uid(),
         role: 'assistant',
         text:
-          `🎵 **¡Canción en cola!**\n\n` +
-          `· Título: **${titleOk || '-'}**\n` +
-          `· Créditos cobrados: **12 créditos**\n` +
-          (taskId ? `· Task ID: \`${taskId}\`\n` : '') +
-          `\nLa generación tarda ~30-60s. Ve a tu **Biblioteca** para escucharla cuando esté lista.`,
+          `**Canción en cola.**\n\n` +
+          `· Título: ${titleOk || '-'}\n` +
+          `· Créditos cobrados: 12 créditos\n` +
+          `La generación tarda ~30-60s. Ve a tu **Biblioteca** para escucharla cuando esté lista.`,
         createdAt: Date.now(),
       };
       setMessages((m) => [...m, okMsg]);
+      // Persistir el mensaje OK de confirmación en Supabase
+      if (uiState.activeConversationId) {
+        void (async () => {
+          try { await appendMessageToConversation(accessToken, uiState.activeConversationId!, { role: 'assistant', content: okMsg.text }); }
+          catch {}
+        })();
+      }
       setActiveReady(null);
       setGenerating(false);
-      setToast({ kind: 'ok', text: '🎵 Canción en cola. Ir a Biblioteca.' });
-      setTimeout(() => {
-        try { onChange('biblioteca'); } catch {}
-      }, 1200);
+      setToast({ kind: 'ok', text: 'Canción en cola. Ir a Biblioteca.' });
+      setTimeout(() => { try { onChange('biblioteca'); } catch {} }, 1200);
     } catch (e: any) {
       setGenerating(false);
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error desconocido') });
@@ -404,289 +822,604 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   const readyIsValid = !!(activeReady && String(activeReady.prompt || '').trim());
 
+  // Número total de intervenciones (solo user + assistant, system si lo hubiera no cuenta)
+  const totalTurns = messages.reduce((n, m) => n + (m.role === 'user' || m.role === 'assistant' ? 1 : 0), 0);
+  const showNewChatSuggestion = useMemo(() => {
+    const key1 = totalTurns >= 27 ? `turns_${Math.floor(totalTurns / 6)}` : null;
+    return key1 && uiState.lastDismissedSuggestionKey !== key1 ? key1 : null;
+  }, [totalTurns, uiState.lastDismissedSuggestionKey]);
+
+  // Sugerencia después de generar (no automática)
+  const [showAfterGenerateHint, setShowAfterGenerateHint] = useState(false);
+  useEffect(() => {
+    if (!lastPending || !lastPending.task_id) return;
+    setShowAfterGenerateHint(true);
+    const t = setTimeout(() => setShowAfterGenerateHint(false), 15000);
+    return () => clearTimeout(t);
+  }, [lastPending]);
+
   return (
-    <div className="relative mx-auto w-full max-w-4xl px-3 py-5 md:px-5 md:py-7">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-indigo-500 shadow-[0_0_22px_rgba(168,85,247,0.35)] ring-1 ring-white/10">
-              <Bot className="h-5 w-5 text-white" />
-            </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="truncate text-lg font-black text-white md:text-xl">
-                  LucIAna <span className="bg-gradient-to-r from-fuchsia-300 to-amber-200 bg-clip-text text-transparent">Bot</span>
-                </h1>
-              </div>
-              <p className="mt-0.5 text-xs text-slate-400 md:text-sm">
-                LucIAna te ayuda a definir tu letra, título y estilo musical. La generación real y el cobro de créditos (12 créditos) ocurren desde LucIAna y se asocian a tu cuenta.
-              </p>
-            </div>
+    <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot">
+      <header className="luciana-chat-header">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="luciana-msg-avatar" style={{ width: '2.25rem', height: '2.25rem' }}>
+            <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna Bot" loading="lazy" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-[0.98rem] font-black" style={{ color: 'var(--text)' }}>
+              LucIAna<span style={{ color: 'var(--brand-accent)' }}> Bot</span>
+            </h1>
+            <p className="truncate text-[0.72rem]" style={{ color: 'var(--text-muted)' }}>
+              Asistente musical · letra, estilo y generación
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {lastPending?.task_id && (
             <button
               type="button"
               onClick={() => onChange('biblioteca')}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-3 text-xs font-bold text-emerald-200 ring-1 ring-inset ring-emerald-400/10 transition hover:bg-emerald-400/15"
+              className={cn(
+                'inline-flex h-9 items-center gap-1.5 rounded-2xl px-2.5 text-[0.72rem] font-bold ring-1 transition sm:px-3',
+              )}
+              style={{
+                background: 'color-mix(in srgb, #10b981 18%, transparent)',
+                color: isDark ? '#d1fae5' : '#065f46',
+                borderColor: 'color-mix(in srgb, #10b981 30%, transparent)',
+                borderWidth: 1,
+                borderStyle: 'solid',
+              }}
             >
-              <Library className="h-4 w-4" /> Biblioteca
+              <Library className="h-3.5 w-3.5" /> Biblioteca
             </button>
           )}
           <button
             type="button"
-            onClick={resetChat}
-            className="inline-flex h-10 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[.03] px-3 text-xs font-bold text-slate-300 ring-1 ring-inset ring-white/5 transition hover:bg-white/[.06]"
+            aria-label="Tema claro/oscuro"
+            onClick={toggleTheme}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--bg-elev-1)',
+              color: 'var(--text)',
+            }}
           >
-            <Trash2 className="h-4 w-4" /> Reiniciar
+            {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            aria-label="Historial de chats"
+            onClick={() => { setHistoryOpen(true); void refreshHistoryList(); }}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+          >
+            <History className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void onNewChatClick()}
+            className={cn(
+              'inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-[0.72rem] font-bold transition sm:px-3',
+            )}
+            style={{
+              background: isDark ? 'linear-gradient(135deg, rgba(124,58,237,.25), rgba(37,99,235,.22))' : 'linear-gradient(135deg, rgba(124,58,237,.12), rgba(37,99,235,.10))',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" /> Nuevo chat
           </button>
         </div>
-      </div>
+      </header>
 
-      {conversationId && (
-        <div className="mb-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.02] px-3 py-2 text-[11px] text-slate-400 ring-1 ring-inset ring-white/5">
-          <MessageSquare className="h-3.5 w-3.5 text-fuchsia-300" />
-          <span className="truncate">Conversación: <code className="text-fuchsia-200">{conversationId.slice(0, 8)}…{conversationId.slice(-6)}</code> (se guarda en tu perfil de LucIAna)</span>
+      {bootFailed && (
+        <div style={{
+          padding: '0.6rem 1rem',
+          background: isDark ? 'rgba(244,63,94,.14)' : 'rgba(244,63,94,.1)',
+          color: isDark ? '#fecdd3' : '#881337',
+          borderBottom: '1px solid var(--border)',
+          fontSize: '0.82rem',
+        }}>
+          ⚠️ Tu sesión no se pudo validar. Cierra y vuelve a iniciar sesión para usar el historial.
         </div>
       )}
 
-      <div className="rounded-[28px] border border-white/10 bg-white/[.02] p-4 shadow-[0_10px_40px_rgba(0,0,0,0.25)] ring-1 ring-inset ring-white/5 md:p-5">
-        <div
-          ref={listRef}
-          className="max-h-[62vh] min-h-[42vh] space-y-3 overflow-y-auto pr-1"
-        >
-          {messages.map((m) => {
-            const isUser = m.role === 'user';
-            return (
-              <div key={m.id} className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
-                <div
-                  className={cn(
-                    'flex max-w-[94%] items-start gap-2 md:max-w-[88%]',
-                    isUser ? 'flex-row-reverse' : 'flex-row',
+      <div ref={listRef} className="luciana-chat-messages">
+        {messages.length <= 1 && !loading && !activeReady && (
+          <section className="luciana-chat-welcome">
+            <h2>LucIAna Music | Canciones, Covers y MP3 con IA</h2>
+            <p>
+              Crea canciones completas con IA, covers y pistas personalizadas. Escucha y descarga tu MP3 en alta calidad al instante.
+            </p>
+          </section>
+        )}
+
+        {showNewChatSuggestion && (
+          <div className="luciana-newchat-hint">
+            <span>
+              💡 Ya lleváis unas {totalTurns} intervenciones. Si vas a empezar una idea distinta, te recomiendo crear un chat nuevo.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setUi((p) => ({ ...p, lastDismissedSuggestionKey: showNewChatSuggestion }));
+                void onNewChatClick();
+              }}
+            >
+              Nuevo chat
+            </button>
+          </div>
+        )}
+
+        {showAfterGenerateHint && (
+          <div className="luciana-newchat-hint">
+            <span>✨ Canción generada correctamente. Si tienes otra idea, puedes empezar un chat nuevo.</span>
+            <button
+              type="button"
+              onClick={() => { setShowAfterGenerateHint(false); void onNewChatClick(); }}
+            >
+              Nuevo chat
+            </button>
+          </div>
+        )}
+
+        {messages.map((m) => {
+          const isUser = m.role === 'user';
+          return (
+            <div key={m.id} className={cn('luciana-msg-row', isUser ? 'is-user' : 'is-assistant')}>
+              <div className="luciana-msg-wrap">
+                <div className={cn('luciana-msg-avatar', isUser ? 'user' : '')} aria-hidden>
+                  {isUser ? (
+                    <User className="h-4 w-4 text-white" />
+                  ) : (
+                    <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna" loading="lazy" />
                   )}
-                >
+                </div>
+                <div className="luciana-msg-bubble">
                   <div
-                    className={cn(
-                      'mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset',
-                      isUser
-                        ? 'bg-gradient-to-br from-indigo-500 to-fuchsia-500 ring-white/10'
-                        : 'bg-gradient-to-br from-fuchsia-500/20 to-amber-400/20 ring-fuchsia-400/15',
-                    )}
-                  >
-                    {isUser ? (
-                      <WalletCards className="h-4 w-4 text-white" />
-                    ) : (
-                      <Bot className="h-4 w-4 text-fuchsia-200" />
-                    )}
-                  </div>
-                  <div
-                    className={cn(
-                      'overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed ring-1 ring-inset shadow-[0_4px_18px_rgba(0,0,0,0.18)]',
-                      isUser
-                        ? 'rounded-br-md bg-gradient-to-br from-indigo-600 to-violet-600 text-white ring-white/10 text-gray-50 shadow-[0_6px_18px_rgba(139,92,246,0.25)]'
-                        : 'rounded-bl-md border border-white/10 bg-white/[.04] text-slate-100 ring-white/5 backdrop-blur-md',
-                    )}
-                  >
+                    className="prose-luciana"
+                    dangerouslySetInnerHTML={{ __html: simpleMarkdown(m.text, isDark) }}
+                  />
+                  {m.structured?.action === 'ready_to_generate' && (
                     <div
-                      className={cn('whitespace-pre-wrap break-words', isUser ? '' : 'prose prose-invert max-w-none')}
-                      dangerouslySetInnerHTML={{ __html: simpleMarkdown(m.text) }}
-                    />
-                    {m.structured?.action === 'ready_to_generate' && (
-                      <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-[11px] font-bold text-emerald-200 ring-1 ring-inset ring-emerald-400/10">
-                        <CheckCircle2 className="h-4 w-4" /> LucIAna Bot confirma: ¡resumen listo para generar la canción!
-                      </div>
-                    )}
-                  </div>
+                      style={{
+                        marginTop: '0.7rem',
+                        padding: '0.55rem 0.7rem',
+                        borderRadius: '0.85rem',
+                        border: '1px solid color-mix(in srgb, #10b981 35%, transparent)',
+                        background: 'color-mix(in srgb, #10b981 16%, transparent)',
+                        color: isDark ? '#d1fae5' : '#064e3b',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Resumen listo: revisa y pulsa <b>Generar canción</b>.
+                    </div>
+                  )}
                 </div>
               </div>
-            );
-          })}
-          {loading && (
-            <div className="flex w-full justify-start">
-              <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-white/10 bg-white/[.04] px-4 py-3 text-sm text-slate-300 ring-1 ring-inset ring-white/5 backdrop-blur-md">
-                <Loader2 className="h-4 w-4 animate-spin text-fuchsia-300" />
-                <span className="text-xs text-slate-300 md:text-sm">LucIAna Bot está escribiendo…</span>
+            </div>
+          );
+        })}
+
+        {loading && (
+          <div className="luciana-msg-row is-assistant">
+            <div className="luciana-msg-wrap">
+              <div className="luciana-msg-avatar" aria-hidden>
+                <img src={CHAT_AVATAR_ASSISTANT} alt="" loading="lazy" />
+              </div>
+              <div
+                className="luciana-msg-bubble"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.88rem' }}
+              >
+                <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--brand-primary)' }} />
+                <span>LucIAna Bot está escribiendo…</span>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="mt-4 flex flex-col gap-2 border-t border-white/5 pt-4 md:flex-row md:items-end">
-          <div className="relative flex-1">
+        {activeReady && (
+          <div style={{
+            maxWidth: '48rem',
+            margin: '1.3rem auto 0.5rem',
+            padding: '1rem 1.05rem',
+            borderRadius: '1.25rem',
+            border: '1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border))',
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(124,58,237,.14), rgba(37,99,235,.10))'
+              : 'linear-gradient(135deg, rgba(124,58,237,.08), rgba(37,99,235,.06))',
+            backdropFilter: 'blur(8px)',
+            color: 'var(--text)',
+          }}>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-2xl ring-1"
+                  style={{
+                    background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                    boxShadow: '0 10px 24px color-mix(in srgb, var(--brand-primary) 28%, transparent)',
+                    borderColor: 'transparent',
+                    color: '#fff',
+                  }}
+                >
+                  <Music2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-base font-black" style={{ color: 'var(--text)' }}>
+                    Resumen para generar canción
+                  </h2>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Revisa, edita si quieres y pulsa <b style={{ color: 'var(--brand-primary)' }}>Generar canción</b>.
+                    Se cobran <b style={{ color: 'var(--brand-accent)' }}>12 créditos</b> a tu cuenta real.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={clearReady}
+                disabled={generating}
+                className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
+              >
+                Quitar resumen
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="md:col-span-2 block">
+                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                  Letra / Prompt
+                </span>
+                <textarea
+                  rows={7}
+                  value={activeReady.prompt}
+                  onChange={(e) => setActiveReady({ ...activeReady, prompt: e.target.value })}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    resize: 'vertical',
+                    borderRadius: '1rem',
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-elev-1)',
+                    color: 'var(--text)',
+                    padding: '0.7rem 0.9rem',
+                    fontSize: '0.9rem',
+                    lineHeight: 1.55,
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ marginTop: '0.15rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  {String(activeReady.prompt || '').length} / 12,000 caracteres
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                  Título
+                </span>
+                <input
+                  type="text"
+                  value={activeReady.title}
+                  onChange={(e) => setActiveReady({ ...activeReady, title: e.target.value })}
+                  placeholder="Ej: Noches de verano"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    height: '2.75rem',
+                    borderRadius: '1rem',
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-elev-1)',
+                    color: 'var(--text)',
+                    padding: '0 0.9rem',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                  Estilo musical
+                </span>
+                <input
+                  type="text"
+                  value={activeReady.style}
+                  onChange={(e) => setActiveReady({ ...activeReady, style: e.target.value })}
+                  placeholder="Ej: Pop español, guitarra acústica, voz femenina suave"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    height: '2.75rem',
+                    borderRadius: '1rem',
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-elev-1)',
+                    color: 'var(--text)',
+                    padding: '0 0.9rem',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
+                />
+              </label>
+
+              <label
+                className="md:col-span-2 inline-flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={activeReady.instrumental}
+                  onChange={(e) => setActiveReady({ ...activeReady, instrumental: e.target.checked })}
+                  style={{ height: '1.25rem', width: '1.25rem', accentColor: 'var(--brand-primary)' }}
+                />
+                <div className="min-w-0">
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text)' }}>
+                    ¿Es una canción instrumental?
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Si marcas esta opción se generará sin letra cantada (solo música).
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div className="mt-4 flex flex-col-reverse items-stretch gap-3 md:flex-row md:items-center md:justify-between">
+              <div
+                className="flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--brand-accent) 35%, transparent)',
+                  background: 'color-mix(in srgb, var(--brand-accent) 14%, transparent)',
+                  color: isDark ? '#fde68a' : '#78350f',
+                }}
+              >
+                <WalletCards className="h-4 w-4" />
+                <div>
+                  <div style={{ fontWeight: 900 }}>12 créditos</div>
+                  <div style={{ opacity: 0.88 }}>se descontarán de tu cuenta real de LucIAna cuando pulses el botón.</div>
+                </div>
+              </div>
+              <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
+                <button
+                  type="button"
+                  onClick={clearReady}
+                  disabled={generating}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition disabled:opacity-60"
+                  style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerate()}
+                  disabled={generating || !readyIsValid}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    height: '3rem',
+                    minWidth: '220px',
+                    padding: '0 1.5rem',
+                    borderRadius: '1rem',
+                    border: '1px solid transparent',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    color: '#fff',
+                    background: 'linear-gradient(135deg, var(--brand-primary) 0%, #ec4899 50%, var(--brand-accent) 100%)',
+                    boxShadow: '0 14px 40px color-mix(in srgb, var(--brand-primary) 32%, transparent)',
+                    cursor: generating || !readyIsValid ? 'not-allowed' : 'pointer',
+                    opacity: generating || !readyIsValid ? 0.78 : 1,
+                    transition: 'filter 0.15s ease, transform 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { if (!(generating || !readyIsValid)) (e.currentTarget.style.filter = 'brightness(1.08)'); }}
+                  onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" /> Generando canción…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-5 w-5" /> Generar canción
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="luciana-chat-composer">
+        <div className="luciana-composer-inner">
+          <div className="luciana-composer-textarea-wrap">
             <textarea
               ref={textareaRef}
+              className="luciana-composer-textarea"
               value={input}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
               onKeyDown={onInputKeyDown}
-              rows={2}
+              rows={1}
               placeholder="Cuéntame de qué quieres la canción… (Ctrl/Cmd + Enter para enviar)"
-              className={cn(
-                'block w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-slate-500 ring-1 ring-inset ring-white/5 focus:border-fuchsia-400/40 focus:outline-none focus:ring-fuchsia-400/20',
-                loading || generating ? 'opacity-60' : '',
-              )}
               disabled={loading || generating}
             />
-            <div className="pointer-events-none absolute right-3 top-2 text-[10px] text-slate-500">
+            <div className="luciana-composer-counter">
               {String(input || '').length} / 20,000
             </div>
           </div>
           <button
             type="button"
+            className="luciana-composer-send"
             onClick={() => void sendMessage()}
             disabled={!canSend}
-            className={cn(
-              'inline-flex h-[50px] items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black text-gray-50 shadow-[0_10px_30px_rgba(168,85,247,0.25)] ring-1 ring-inset transition md:w-[160px]',
-              canSend
-                ? 'bg-gradient-to-br from-fuchsia-500 via-violet-500 to-indigo-600 ring-white/10 hover:from-fuchsia-400 hover:to-indigo-500'
-                : 'cursor-not-allowed bg-slate-700/60 ring-white/5 opacity-70',
-            )}
+            aria-label="Enviar mensaje"
           >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Pensando…
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" /> Enviar
-              </>
-            )}
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <span className="sr-only">
+              <Send className="h-4 w-4" />
+            </span>
           </button>
         </div>
       </div>
 
-      {activeReady && (
-        <div className="mt-5 overflow-hidden rounded-[28px] border border-fuchsia-400/30 bg-gradient-to-br from-fuchsia-500/10 via-violet-500/5 to-indigo-500/10 p-5 shadow-[0_18px_60px_rgba(168,85,247,0.18)] ring-1 ring-inset ring-fuchsia-400/10 backdrop-blur-md md:p-6">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 to-amber-400 ring-1 ring-white/10">
-                <Music2 className="h-4 w-4 text-white" />
-              </span>
-              <div>
-                <h2 className="text-base font-black text-white md:text-lg">Resumen para generar canción</h2>
-                <p className="text-xs text-slate-300 md:text-sm">
-                  Revisa, edita si quieres y pulsa <strong className="text-fuchsia-200">Generar canción</strong>. Se cobran <strong className="text-amber-200">12 créditos</strong> a tu cuenta real.
-                </p>
-              </div>
-            </div>
+      <div
+        className={cn('luciana-history-backdrop', historyOpen ? 'is-open' : '')}
+        onClick={() => setHistoryOpen(false)}
+        aria-hidden={!historyOpen}
+      />
+      <aside
+        className={cn('luciana-history-panel', historyOpen ? 'is-open' : '')}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Historial de chats"
+      >
+        <div style={{
+          flex: '0 0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.5rem',
+          padding: '0.85rem 1rem',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-elev-1)',
+          color: 'var(--text)',
+        }}>
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            <span style={{ fontWeight: 800 }}>Historial</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={clearReady}
-              className="inline-flex h-9 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[.03] px-3 text-xs font-bold text-slate-300 ring-1 ring-inset ring-white/5 transition hover:bg-white/[.08]"
+              aria-label="Nuevo chat"
+              onClick={() => { setHistoryOpen(false); void onNewChatClick(); }}
+              className="inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-[0.72rem] font-bold transition"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-2)', color: 'var(--text)' }}
             >
-              <Trash2 className="h-3.5 w-3.5" /> Quitar resumen
+              <Plus className="h-3.5 w-3.5" /> Nuevo
+            </button>
+            <button
+              type="button"
+              aria-label="Cerrar historial"
+              onClick={() => setHistoryOpen(false)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border transition"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-2)', color: 'var(--text)' }}
+            >
+              <X className="h-4 w-4" />
             </button>
           </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="md:col-span-2 block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-fuchsia-200">
-                Letra / Prompt
-              </span>
-              <textarea
-                rows={8}
-                value={activeReady.prompt}
-                onChange={(e) => setActiveReady({ ...activeReady, prompt: e.target.value })}
-                className="block w-full resize-y rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white ring-1 ring-inset ring-white/5 focus:border-fuchsia-400/40 focus:outline-none focus:ring-fuchsia-400/20"
-              />
-              <div className="mt-1 text-[10px] text-slate-500">{String(activeReady.prompt || '').length} / 12,000 caracteres</div>
-            </label>
-
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-fuchsia-200">Título</span>
-              <input
-                type="text"
-                value={activeReady.title}
-                onChange={(e) => setActiveReady({ ...activeReady, title: e.target.value })}
-                placeholder="Ej: Noches de verano"
-                className="block h-11 w-full rounded-2xl border border-white/10 bg-black/30 px-4 text-sm text-white ring-1 ring-inset ring-white/5 placeholder:text-slate-500 focus:border-fuchsia-400/40 focus:outline-none focus:ring-fuchsia-400/20"
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-fuchsia-200">Estilo musical</span>
-              <input
-                type="text"
-                value={activeReady.style}
-                onChange={(e) => setActiveReady({ ...activeReady, style: e.target.value })}
-                placeholder="Ej: Pop español, guitarra acústica, voz femenina suave"
-                className="block h-11 w-full rounded-2xl border border-white/10 bg-black/30 px-4 text-sm text-white ring-1 ring-inset ring-white/5 placeholder:text-slate-500 focus:border-fuchsia-400/40 focus:outline-none focus:ring-fuchsia-400/20"
-              />
-            </label>
-
-            <label className="md:col-span-2 inline-flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-white/[.03] px-4 py-3 ring-1 ring-inset ring-white/5">
-              <input
-                type="checkbox"
-                checked={activeReady.instrumental}
-                onChange={(e) => setActiveReady({ ...activeReady, instrumental: e.target.checked })}
-                className="h-5 w-5 rounded accent-fuchsia-500"
-              />
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-white">¿Es una canción instrumental?</div>
-                <div className="text-xs text-slate-400">Si marcas esta opción se generará sin letra cantada (solo música).</div>
-              </div>
-            </label>
-          </div>
-
-          <div className="mt-5 flex flex-col-reverse items-stretch gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-2 rounded-2xl border border-amber-300/25 bg-amber-400/5 px-4 py-3 text-xs text-amber-100 ring-1 ring-inset ring-amber-300/10">
-              <WalletCards className="h-4 w-4 text-amber-200" />
-              <div>
-                <div className="font-black text-amber-200">12 créditos</div>
-                <div className="text-[11px] text-amber-100/80">se descontarán de tu cuenta real de LucIAna cuando pulses el botón.</div>
-              </div>
-            </div>
-            <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
-              <button
-                type="button"
-                onClick={clearReady}
-                disabled={generating}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[.03] px-5 text-sm font-bold text-slate-200 ring-1 ring-inset ring-white/5 transition hover:bg-white/[.08] disabled:opacity-60"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleGenerate()}
-                disabled={generating || !readyIsValid}
-                className={cn(
-                  'inline-flex h-12 min-w-[240px] items-center justify-center gap-2 rounded-2xl px-6 text-base font-black text-gray-50 shadow-[0_14px_40px_rgba(217,70,239,0.35)] ring-1 ring-inset ring-white/10 transition',
-                  generating || !readyIsValid
-                    ? 'cursor-not-allowed bg-slate-600/70 opacity-80'
-                    : 'bg-gradient-to-br from-fuchsia-500 via-pink-500 to-amber-400 hover:brightness-110',
-                )}
-              >
-                {generating ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" /> Generando canción…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-5 w-5" /> ✨ Generar canción
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
         </div>
-      )}
+        <div
+          style={{
+            flex: '1 1 auto',
+            overflowY: 'auto',
+            padding: '0.5rem',
+            background: 'var(--bg)',
+          }}
+        >
+          {historyLoading ? (
+            <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+              <Loader2 className="h-4 w-4 animate-spin" style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: '-2px' }} />
+              Cargando historial…
+            </div>
+          ) : uiState.conversations.length === 0 ? (
+            <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+              Aún no hay chats guardados. Cuando cierres o recargues la pestaña aparecerán aquí.
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              {uiState.conversations.map((c) => {
+                const isActive = c.id === uiState.activeConversationId;
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => void openConversation(c)}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: '0.85rem',
+                        border: `1px solid ${isActive ? 'color-mix(in srgb, var(--brand-primary) 45%, var(--border))' : 'transparent'}`,
+                        background: isActive
+                          ? 'color-mix(in srgb, var(--brand-primary) 14%, var(--bg-elev-1))'
+                          : 'var(--bg-elev-1)',
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                      }}>
+                        <span style={{
+                          fontWeight: 700,
+                          fontSize: '0.86rem',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '72%',
+                        }}>
+                          {c.title || 'Nuevo chat'}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {formatDay(c.updated_at || c.created_at)}
+                        </span>
+                      </div>
+                      {c.archived_at ? (
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                          Archivado · {formatDay(c.archived_at)}
+                        </div>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </aside>
 
       {toast && (
         <div
-          className={cn(
-            'pointer-events-none fixed bottom-24 left-1/2 z-50 w-[min(92vw,520px)] -translate-x-1/2 rounded-2xl px-4 py-3 text-sm font-bold shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-inset backdrop-blur-md md:bottom-8',
-            toast.kind === 'ok'
-              ? 'bg-emerald-500/15 text-emerald-100 ring-emerald-300/20'
-              : 'bg-rose-500/15 text-rose-100 ring-rose-300/20',
-          )}
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))',
+            width: 'min(92vw, 520px)',
+            zIndex: 80,
+            padding: '0.7rem 1rem',
+            borderRadius: '1rem',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            pointerEvents: 'none',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.35)',
+            backdropFilter: 'blur(10px)',
+            color: toast.kind === 'ok' ? (isDark ? '#d1fae5' : '#064e3b') : (isDark ? '#fecdd3' : '#881337'),
+            background:
+              toast.kind === 'ok'
+                ? (isDark ? 'rgba(16,185,129,.18)' : 'rgba(16,185,129,.13)')
+                : (isDark ? 'rgba(244,63,94,.18)' : 'rgba(244,63,94,.13)'),
+            border:
+              toast.kind === 'ok'
+                ? '1px solid color-mix(in srgb, #10b981 30%, transparent)'
+                : '1px solid color-mix(in srgb, #f43f5e 30%, transparent)',
+          }}
         >
           <div className="flex items-center gap-2">
             {toast.kind === 'ok' ? (
-              <CheckCircle2 className="h-5 w-5 text-emerald-200" />
+              <CheckCircle2 className="h-5 w-5" />
             ) : (
-              <AlertTriangle className="h-5 w-5 text-rose-200" />
+              <AlertTriangle className="h-5 w-5" />
             )}
-            <span className="break-words leading-snug">{toast.text}</span>
+            <span style={{ wordBreak: 'break-word', lineHeight: 1.35 }}>{toast.text}</span>
           </div>
         </div>
       )}
