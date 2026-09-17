@@ -995,14 +995,6 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       )}
 
       <div ref={listRef} className="luciana-chat-messages">
-        {messages.length <= 1 && !loading && !activeReady && (
-          <section className="luciana-chat-welcome">
-            <h2>LucIAna Music | Canciones, Covers y MP3 con IA</h2>
-            <p>
-              Crea canciones completas con IA, covers y pistas personalizadas. Escucha y descarga tu MP3 en alta calidad al instante.
-            </p>
-          </section>
-        )}
 
         {showNewChatSuggestion && (
           <div className="luciana-newchat-hint">

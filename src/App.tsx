@@ -4372,24 +4372,7 @@ export default function App() {
                    </div>
                  </div>
                ) : currentTab === 'copiloto' ? (
-                <div className="flex w-full min-w-0 h-full min-h-0 flex-row">
-                  <div className="flex-1 min-w-0 h-full min-h-0 bg-[#07111d] overflow-hidden">
-                    <ApprovedCreatePreview
-                      credits={displayCredits}
-                      onSongCreated={addCancion}
-                      onGoLibrary={() => setCurrentTab('biblioteca')}
-                      onGoCloneVoice={() => setCurrentTab('voces')}
-                      onOpenBalance={() => handleTabChange('planes')}
-                      onShowAlert={showStyledAlert}
-                      authUserId={authUserId}
-                      prefill={studioPrefill || undefined}
-                      prefillNonce={studioPrefillNonce}
-                    />
-                  </div>
-                  <div className="w-[420px] xl:w-[470px] shrink-0 h-full min-h-0 border-l border-white/10 relative overflow-hidden z-10 bg-gradient-to-b from-indigo-950/20 via-black/10 to-black/30">
-                    <DifyCopilotView onChange={setCurrentTab} />
-                  </div>
-                </div>
+                <DifyCopilotView onChange={setCurrentTab} />
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (
