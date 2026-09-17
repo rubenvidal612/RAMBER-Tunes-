@@ -61,12 +61,12 @@ html[data-theme='light'] {
   --composer-border: #e2e8f0;
 }
 
-/* ========= LucIAna Bot · layout sticky chat 100dvh ========= */
+/* ========= LucIAna Bot · layout sticky chat ========= */
+/* Por defecto (móvil): pantalla completa fixed (100dvh safe area) */
 .luciana-chat-shell {
   position: fixed;
   inset: 0;
   width: 100%;
-  height: 100%;
   height: 100vh;
   height: 100dvh;
   max-width: none;
@@ -77,10 +77,64 @@ html[data-theme='light'] {
   display: flex;
   flex-direction: column;
   z-index: 30;
+  overflow: hidden;
 }
 @supports (height: 100dvh) {
   .luciana-chat-shell {
     height: 100dvh;
+  }
+}
+
+/* Escritorio (>=768px): vivimos dentro de la columna derecha del layout 3-col.
+   Quitamos fixed y ocupamos el 100% del alto/ancho disponible del padre. */
+@media (min-width: 768px) {
+  .luciana-chat-shell {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    z-index: 1;
+  }
+}
+
+/* Bloque brand/logo superior solo visible en móvil (<768px) */
+.luciana-mobile-brand {
+  display: none;
+}
+@media (max-width: 767px) {
+  .luciana-mobile-brand {
+    display: block;
+    text-align: center;
+    padding: 1.05rem 1rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--brand-primary) 10%, var(--bg-elev-1)), var(--bg-elev-1));
+    flex: 0 0 auto;
+  }
+  .luciana-mobile-brand img {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 9999px;
+    object-fit: cover;
+    margin: 0 auto 0.45rem;
+    box-shadow: 0 10px 28px color-mix(in srgb, var(--brand-primary) 32%, transparent);
+    border: 1px solid var(--border);
+    display: block;
+  }
+  .luciana-mobile-brand h1 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .luciana-mobile-brand h1 span {
+    color: var(--brand-accent);
+  }
+  .luciana-mobile-brand p {
+    margin: 0.18rem 0 0;
+    font-size: 0.76rem;
+    color: var(--text-muted);
   }
 }
 .luciana-chat-header {
@@ -360,4 +414,99 @@ html[data-theme='dark'] .luciana-msg-bubble code {
 .luciana-history-backdrop.is-open {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* ----------- Adjuntar imagen letra (clip / +) ----------- */
+.luciana-attach-btn {
+  width: 2.8rem;
+  height: 2.8rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  border: 1px solid var(--composer-border);
+  background: var(--composer-bg);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.luciana-attach-btn:hover:not(:disabled) {
+  color: var(--brand-primary);
+  border-color: color-mix(in srgb, var(--brand-primary) 40%, var(--composer-border));
+  transform: translateY(-1px);
+}
+.luciana-attach-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.luciana-attach-preview {
+  max-width: 48rem;
+  margin: 0 auto 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 1rem;
+  border: 1px dashed color-mix(in srgb, var(--brand-primary) 40%, var(--composer-border));
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--composer-bg));
+}
+.luciana-attach-preview img {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.7rem;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.luciana-attach-preview__info {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+.luciana-attach-preview__name {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.luciana-attach-preview__meta {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+.luciana-attach-preview__info .badge-soon {
+  display: inline-block;
+  margin-top: 0.22rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--brand-accent) 20%, transparent);
+  color: var(--brand-accent);
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.luciana-attach-preview__remove {
+  flex: 0 0 auto;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.luciana-attach-preview__remove:hover:not(:disabled) {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
 }

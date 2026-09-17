@@ -20129,6 +20129,41 @@ const chatHandler = (() => {
     });
   }
 
+  async function handleAttachImage(req: any, res: any, auth: any) {
+    const MAX_BYTES = 10 * 1024 * 1024;
+    try {
+      const rawCl = String(req.headers["content-length"] || "0").trim();
+      const contentLength = Number(rawCl);
+      if (!Number.isFinite(contentLength) || contentLength <= 0) {
+        return chatSendJson(res, 400, { success: false, error: "sin_archivo", message: "No se detectó archivo en la petición." });
+      }
+      if (contentLength > MAX_BYTES) {
+        return chatSendJson(res, 413, { success: false, error: "demasiado_grande", message: "La imagen supera los 10 MB permitidos." });
+      }
+      const ct = String(req.headers["content-type"] || "").toLowerCase();
+      const isMultipart = ct.includes("multipart/form-data");
+      const isJsonImage = ct.includes("application/json");
+      if (!isMultipart && !isJsonImage) {
+        return chatSendJson(res, 400, { success: false, error: "tipo_invalido", message: "Formato de petición no admitido. Usa multipart/form-data o JSON con la imagen." });
+      }
+      const userId = String(auth.user?.id || "").trim();
+      if (!userId) {
+        return chatSendJson(res, 401, { success: false, error: "sesion_invalida", message: "Usuario no autenticado." });
+      }
+      return chatSendJson(res, 200, {
+        success: true,
+        feature_stage: "development",
+        will_process: false,
+        message: "Adjuntar foto de letra: funcionalidad en desarrollo. Tu imagen se validó correctamente pero aún no se procesa. Cuando esté activo, se extraerá el texto de la letra con el modelo de visión configurado.",
+        user_id: userId,
+        received_bytes: contentLength,
+        max_allowed_bytes: MAX_BYTES,
+      });
+    } catch (e) {
+      return chatSendJson(res, 500, { success: false, error: "error_interno", message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   return async function handler(req: any, res: any) {
     try {
       const u = new URL(req.url, "http://localhost");
@@ -20145,6 +20180,7 @@ const chatHandler = (() => {
 
       if (!next && method === "GET") return handleListConversations(req, res, auth);
       if (!next && method === "POST") return handleCreateConversation(req, res, auth);
+      if (next === "attach-image" && !third && method === "POST") return handleAttachImage(req, res, auth);
 
       if (next && !third) {
         if (method === "GET") return handleGetConversation(req, res, auth, next);

@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageSquarePlus,
   Music2,
+  Paperclip,
   Plus,
   Send,
   Sparkles,
@@ -108,7 +109,17 @@ function formatDay(iso: string | null | undefined): string {
 }
 
 const CHAT_AVATAR_ASSISTANT = '/logo-luciana-hd.svg?v=20260917-3';
+const OFFICIAL_BRAND_LOGO = '/assets/luciana-music-logo.jpeg';
 const STORAGE_KEY = 'luciana_chat_ui_v1';
+const MAX_ATTACH_BYTES = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_ATTACH_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+
+type AttachedImage = {
+  file: File;
+  name: string;
+  bytes: number;
+  previewUrl: string;
+};
 
 type UiState = {
   activeConversationId: string | null;
@@ -170,6 +181,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [bootFailed, setBootFailed] = useState(false);
+  const [attachedImg, setAttachedImg] = useState<AttachedImage | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -510,9 +523,52 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     try {
       const ok = window.confirm('¿Quieres iniciar un nuevo chat? Tu conversación anterior se conservará en el historial.');
       if (!ok) return;
+      if (attachedImg) {
+        try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
+        setAttachedImg(null);
+      }
       await startNewChat({ persistOldAsArchived: true });
     } catch { /* ignore */ }
-  }, [startNewChat]);
+  }, [startNewChat, attachedImg]);
+
+  const handleAttachPick = useCallback(() => {
+    if (!fileInputRef.current) return;
+    fileInputRef.current.click();
+  }, []);
+
+  const handleAttachFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const f = files[0];
+    if (!ALLOWED_ATTACH_TYPES.has(String(f.type || '').toLowerCase())) {
+      setToast({ kind: 'err', text: 'Formato no admitido. Usa JPG, PNG o WEBP.' });
+      try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+      return;
+    }
+    if (f.size > MAX_ATTACH_BYTES) {
+      setToast({ kind: 'err', text: 'La imagen supera los 10 MB permitidos.' });
+      try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+      return;
+    }
+    if (attachedImg) {
+      try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
+    }
+    const url = URL.createObjectURL(f);
+    setAttachedImg({ file: f, name: String(f.name || 'imagen').slice(0, 120), bytes: Number(f.size || 0), previewUrl: url });
+    try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+  }, [attachedImg]);
+
+  const handleAttachRemove = useCallback(() => {
+    if (!attachedImg) return;
+    try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
+    setAttachedImg(null);
+  }, [attachedImg]);
+
+  useEffect(() => () => {
+    // cleanup preview URL al desmontar
+    if (attachedImg) { try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {} }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sendMessage = useCallback(async () => {
     const text = String(input || '').trim();
@@ -524,6 +580,13 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     setLoading(true);
     sentScrollRef.current = true;
     try {
+      if (attachedImg) {
+        setToast({
+          kind: 'ok',
+          text: '📸 Adjuntar foto de letra · próxima funcionalidad. Tu texto se enviará pero la imagen aún no se procesa. Cuando esté activo, se extraerá la letra automáticamente.',
+        });
+        handleAttachRemove();
+      }
       const accessToken = await getValidBearerToken();
       if (!accessToken) {
         setLoading(false);
@@ -724,6 +787,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     uiState.conversations,
     setUi,
     refreshHistoryList,
+    attachedImg,
+    handleAttachRemove,
   ]);
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -840,6 +905,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   return (
     <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot">
+      <div className="luciana-mobile-brand">
+        <img src={OFFICIAL_BRAND_LOGO} alt="Logo de LucIAna Music" loading="lazy" />
+        <h1>LucIAna<span> Bot</span></h1>
+        <p>Tu asistente para crear canciones, letra y estilo</p>
+      </div>
       <header className="luciana-chat-header">
         <div className="flex min-w-0 items-center gap-2">
           <div className="luciana-msg-avatar" style={{ width: '2.25rem', height: '2.25rem' }}>
@@ -1234,7 +1304,45 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       </div>
 
       <div className="luciana-chat-composer">
+        {attachedImg && (
+          <div className="luciana-attach-preview" role="group" aria-label="Imagen adjunta">
+            <img src={attachedImg.previewUrl} alt={attachedImg.name} loading="lazy" />
+            <div className="luciana-attach-preview__info">
+              <span className="luciana-attach-preview__name">{attachedImg.name}</span>
+              <span className="luciana-attach-preview__meta">
+                {(attachedImg.bytes / 1024).toFixed(attachedImg.bytes > 1024 * 100 ? 0 : 1)} KB · {attachedImg.file.type || 'imagen'}
+              </span>
+              <span className="badge-soon">📸 Extraer letra de foto · próximamente</span>
+            </div>
+            <button
+              type="button"
+              className="luciana-attach-preview__remove"
+              onClick={handleAttachRemove}
+              aria-label="Quitar imagen adjunta"
+              title="Quitar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         <div className="luciana-composer-inner">
+          <button
+            type="button"
+            className="luciana-attach-btn"
+            onClick={handleAttachPick}
+            disabled={loading || generating}
+            aria-label="Adjuntar foto de letra (JPG, PNG o WEBP)"
+            title="Adjuntar foto de letra · próximamente"
+          >
+            <Paperclip className="h-4.5 w-4.5" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleAttachFileChange}
+            style={{ display: 'none' }}
+          />
           <div className="luciana-composer-textarea-wrap">
             <textarea
               ref={textareaRef}
