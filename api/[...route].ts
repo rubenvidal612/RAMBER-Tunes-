@@ -18034,6 +18034,532 @@ const oauthHandler = (() => {
   };
 })();
 
+const difyHandler = (() => {
+  function difySendJson(res: any, status: number, payload: any) {
+    try {
+      const body = JSON.stringify(payload);
+      res.statusCode = Number.isFinite(status) && status >= 100 && status < 600 ? status : 500;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("cache-control", "no-store, private, max-age=0");
+      res.setHeader("pragma", "no-cache");
+      res.setHeader("x-content-type-options", "nosniff");
+      res.setHeader("access-control-allow-origin", "*");
+      res.end(body);
+    } catch (_e) {
+      try {
+        res.statusCode = 500;
+        res.end(`{"error":"internal_json_error"}`);
+      } catch {}
+    }
+  }
+
+  function difyExtractBearerFromHeader(req: any, headerName: string): string {
+    try {
+      const h = (req.headers?.[headerName] || req.headers?.[headerName.toLowerCase()] || req.headers?.[headerName.toUpperCase()] || "").toString().trim();
+      if (!h) return "";
+      const m = /^Bearer\s+(.+)$/i.exec(h);
+      if (!m || !m[1]) return "";
+      return String(m[1]).trim();
+    } catch {
+      return "";
+    }
+  }
+
+  function difyTimingSafeEqual(expected: string, actual: string): boolean {
+    try {
+      const crypto = require("crypto") as typeof import("crypto");
+      const a = typeof expected === "string" ? expected : "";
+      const b = typeof actual === "string" ? actual : "";
+      const hashA = crypto.createHash("sha256").update(a, "utf8").digest();
+      const hashB = crypto.createHash("sha256").update(b, "utf8").digest();
+      if (hashA.length !== hashB.length) return false;
+      return crypto.timingSafeEqual(hashA, hashB);
+    } catch {
+      let diff = 0;
+      const a = String(typeof expected === "string" ? expected : "");
+      const b = String(typeof actual === "string" ? actual : "");
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+      return diff === 0;
+    }
+  }
+
+  function difyValidateApiKey(req: any): { ok: boolean; status: number; error?: string } {
+    const envKey = String(process.env.DIFY_TOOL_API_KEY || "").trim();
+    const headerToken = difyExtractBearerFromHeader(req, "authorization");
+    if (!envKey) {
+      try {
+        console.error(`[dify:auth] Falta configurar DIFY_TOOL_API_KEY en Vercel (process.env). Solicitud bloqueada. headerTokenLen=${(headerToken || "").length} ua=${(req.headers?.["user-agent"] || "").toString().slice(0, 160)}`);
+      } catch {}
+      return { ok: false, status: 500, error: "dify_api_key_not_configured" };
+    }
+    if (envKey.length < 16) {
+      try {
+        console.error(`[dify:auth] DIFY_TOOL_API_KEY configurado pero demasiado corto (${envKey.length} chars, min 16).`);
+      } catch {}
+      return { ok: false, status: 500, error: "dify_api_key_invalid_config" };
+    }
+    if (!headerToken) {
+      return { ok: false, status: 401, error: "missing_bearer_authorization_header" };
+    }
+    const match = difyTimingSafeEqual(envKey, headerToken);
+    if (!match) {
+      try {
+        console.error(`[dify:auth] DIFY_TOOL_API_KEY NO coincide. headerLen=${headerToken.length} expectedLen=${envKey.length} ua=${(req.headers?.["user-agent"] || "").toString().slice(0, 160)} ip=${String(req.headers?.["x-forwarded-for"] || req.socket?.remoteAddress || "").slice(0, 80)}`);
+      } catch {}
+      return { ok: false, status: 401, error: "invalid_bearer_authorization_header" };
+    }
+    return { ok: true };
+  }
+
+  function difyGetInternalShared(): { generate: any; status: any } | null {
+    try {
+      const gt = globalThis as any;
+      const shared = gt?.__LUCIANA_SHARED_FNS__;
+      if (shared && typeof shared.gptGenerateInternal === "function" && typeof shared.gptStatusInternal === "function") {
+        return { generate: shared.gptGenerateInternal, status: shared.gptStatusInternal };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function difyBuildWrappedRequest(originalReq: any, overrides: { method?: string; url?: string; headers?: any; bodyBuffer?: Buffer | Uint8Array; bodyJson?: any }): any {
+    const newMethod = (overrides.method || originalReq.method || "GET").toString().toUpperCase();
+    const newUrl = (overrides.url || originalReq.url || "/").toString();
+    const baseHeaders: any = {};
+    try {
+      const orig = originalReq.headers || {};
+      Object.keys(orig).forEach((k) => {
+        const lk = String(k).toLowerCase();
+        baseHeaders[lk] = orig[k];
+      });
+    } catch {}
+    const customHeaders = overrides.headers || {};
+    Object.keys(customHeaders).forEach((k) => {
+      baseHeaders[String(k).toLowerCase()] = customHeaders[k];
+    });
+    let bodyBuffer: Buffer | Uint8Array | null = null;
+    if (overrides.bodyBuffer && (overrides.bodyBuffer as any).length) {
+      bodyBuffer = overrides.bodyBuffer;
+    } else if (overrides.bodyJson) {
+      try {
+        const s = JSON.stringify(overrides.bodyJson);
+        bodyBuffer = Buffer.from(s, "utf8");
+        baseHeaders["content-type"] = baseHeaders["content-type"] || "application/json";
+        baseHeaders["content-length"] = String((bodyBuffer as Buffer).byteLength);
+      } catch {}
+    }
+    const fakeSocket = originalReq.socket ? { ...originalReq.socket } : undefined;
+    const fake = {
+      method: newMethod,
+      url: newUrl,
+      headers: baseHeaders,
+      socket: fakeSocket,
+      connection: originalReq.connection,
+      on: originalReq.on ? originalReq.on.bind(originalReq) : (() => fake) as any,
+      once: originalReq.once ? originalReq.once.bind(originalReq) : (() => fake) as any,
+      removeListener: originalReq.removeListener ? originalReq.removeListener.bind(originalReq) : (() => fake) as any,
+      _bodyConsumed: false,
+      _buffer: bodyBuffer,
+    } as any;
+    if (fake._buffer) {
+      let consumed = false;
+      const replayListeners: any[] = [];
+      fake.on = (evt: string, cb: any) => {
+        if (evt === "data" || evt === "end") {
+          replayListeners.push({ evt, cb });
+          if (!consumed) {
+            consumed = true;
+            setImmediate(() => {
+              try {
+                for (const l of replayListeners.filter(x => x.evt === "data")) {
+                  try { l.cb(fake._buffer); } catch {}
+                }
+                for (const l of replayListeners.filter(x => x.evt === "end")) {
+                  try { l.cb(); } catch {}
+                }
+              } catch {}
+            });
+          }
+        } else if (originalReq.on) {
+          try { originalReq.on(evt, cb); } catch {}
+        }
+        return fake;
+      };
+      fake.once = fake.on;
+    }
+    return fake;
+  }
+
+  function difyCaptureResponse(nextHandler: (req: any, res: any) => Promise<any>, req: any): Promise<{ status: number; body: any; rawText: string }> {
+    return new Promise((resolve) => {
+      const outRes: any = {
+        _headers: {} as any,
+        statusCode: 200,
+        _chunks: [] as any[],
+        setHeader(k: string, v: any) { this._headers[String(k).toLowerCase()] = v; return this; },
+        getHeader(k: string) { return this._headers[String(k).toLowerCase()]; },
+        hasHeader(k: string) { return Object.prototype.hasOwnProperty.call(this._headers, String(k).toLowerCase()); },
+        removeHeader(k: string) { delete this._headers[String(k).toLowerCase()]; return this; },
+        writeHead(code: number, headers: any) {
+          this.statusCode = Number(code) || this.statusCode;
+          if (headers && typeof headers === "object") {
+            Object.keys(headers).forEach((k) => { this._headers[String(k).toLowerCase()] = headers[k]; });
+          }
+          return this;
+        },
+        write(chunk: any) { this._chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk || ""), "utf8")); return true; },
+        end(chunk: any) {
+          if (arguments.length && typeof chunk !== "function" && chunk !== undefined) {
+            this.write(chunk);
+          }
+          const buf = Buffer.concat(this._chunks.map((c: any) => Buffer.isBuffer(c) ? c : Buffer.from(String(c || ""), "utf8")));
+          const text = buf.toString("utf8");
+          let parsed: any = null;
+          if (text) {
+            try { parsed = JSON.parse(text); } catch { parsed = text; }
+          }
+          resolve({ status: Number(this.statusCode) || 200, body: parsed, rawText: text });
+        },
+      };
+      Promise.resolve(nextHandler(req, outRes)).catch((e) => {
+        try {
+          outRes.statusCode = 500;
+          outRes.end(JSON.stringify({ error: "internal_pipeline_error", message: e instanceof Error ? String(e.message) : String(e) }));
+        } catch {}
+      });
+    });
+  }
+
+  function difyValidGenerateBody(body: any): { ok: boolean; status: number; error?: string; normalized?: { prompt: string; style: string; title: string; instrumental: boolean } } {
+    const b = body || {};
+    if (b === null || typeof b !== "object" || Array.isArray(b)) {
+      return { ok: false, status: 400, error: "invalid_body_expected_json_object" };
+    }
+    let prompt = typeof b.prompt === "string" ? b.prompt : "";
+    prompt = prompt.trim();
+    if (!prompt) return { ok: false, status: 400, error: "field_prompt_required" };
+    if (prompt.length > 12000) return { ok: false, status: 413, error: "field_prompt_too_long" };
+    let style = typeof b.style === "string" ? b.style : "";
+    style = style.trim().slice(0, 600);
+    let title = typeof b.title === "string" ? b.title : "";
+    title = title.trim().slice(0, 220);
+    let instrumental: boolean;
+    if (typeof b.instrumental === "boolean") instrumental = b.instrumental;
+    else if (b.instrumental === 0 || b.instrumental === 1) instrumental = Boolean(b.instrumental);
+    else if (typeof b.instrumental === "string") instrumental = /^(1|true|yes|si|on)$/i.test(b.instrumental.trim());
+    else instrumental = false;
+    return { ok: true, normalized: { prompt, style, title, instrumental } };
+  }
+
+  async function handleDifyGenerate(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization, x-luciana-user-token");
+      res.end();
+      return;
+    }
+    if (method !== "POST") return difySendJson(res, 405, { error: "method_not_allowed", message: "Solo POST en /api/dify/generate." });
+
+    const apiKeyCheck = difyValidateApiKey(req);
+    if (!apiKeyCheck.ok) {
+      const msg =
+        apiKeyCheck.status === 500
+          ? "DIFY_TOOL_API_KEY no está configurada en Vercel Environment Variables."
+          : apiKeyCheck.status === 401
+          ? "Authorization header inválido. Usa: Authorization: Bearer <DIFY_TOOL_API_KEY>."
+          : "No autorizado.";
+      return difySendJson(res, apiKeyCheck.status, { error: apiKeyCheck.error || "unauthorized", message: msg });
+    }
+
+    const userToken = difyExtractBearerFromHeader(req, "x-luciana-user-token");
+    if (!userToken) {
+      return difySendJson(res, 401, {
+        error: "missing_x_luciana_user_token",
+        message:
+          "Falta el header X-Luciana-User-Token con el Bearer token del usuario final de LucIAna Music (SU sesión, JWT). Dify no se salta la autenticación ni los límites/créditos.",
+      });
+    }
+
+    const rawBody = await (async () => {
+      try { return await gptReadRawBody(req); } catch { return Buffer.alloc(0); }
+    })();
+    const contentType = (req.headers?.["content-type"] || req.headers?.["Content-Type"] || "").toString().toLowerCase();
+    let body: any = {};
+    try {
+      const s = rawBody.toString("utf8");
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        const out: any = {};
+        try {
+          const usp = new URLSearchParams(s);
+          usp.forEach((v, k) => { out[k] = v; });
+        } catch {}
+        body = out;
+      } else if (contentType.includes("application/json") || s) {
+        try { body = s ? JSON.parse(s) : {}; } catch { body = parseAnyBody(req) || {}; }
+      } else {
+        body = parseAnyBody(req) || {};
+      }
+    } catch {
+      body = parseAnyBody(req) || {};
+    }
+    const v = difyValidGenerateBody(body);
+    if (!v.ok || !v.normalized) {
+      const detail =
+        v.error === "field_prompt_required"
+          ? "Falta el campo 'prompt' (texto no vacío)."
+          : v.error === "field_prompt_too_long"
+          ? "Campo 'prompt' muy largo (max 12,000 chars)."
+          : v.error === "invalid_body_expected_json_object"
+          ? "Body debe ser un objeto JSON."
+          : "Body inválido.";
+      return difySendJson(res, v.status, { error: v.error || "invalid_request", message: detail });
+    }
+
+    const shared = difyGetInternalShared();
+    if (!shared) {
+      return difySendJson(res, 500, { error: "shared_pipeline_not_ready", message: "Pipeline interno no inicializado. Vuelve a intentarlo en 2 segundos." });
+    }
+
+    const internalUrl =
+      "/api/gpt/generate" + (req.url && new URL(req.url, "http://localhost").search ? new URL(req.url, "http://localhost").search : "");
+    const wrapped = difyBuildWrappedRequest(req, {
+      method: "POST",
+      url: internalUrl,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        authorization: `Bearer ${userToken}`,
+        accept: "application/json",
+      },
+      bodyJson: {
+        prompt: v.normalized.prompt,
+        style: v.normalized.style,
+        title: v.normalized.title,
+        instrumental: v.normalized.instrumental,
+        model: "V6",
+      },
+    });
+
+    try {
+      const r = await difyCaptureResponse(shared.generate, wrapped);
+      if (!r.body || typeof r.body !== "object") {
+        return difySendJson(res, 502, { error: "internal_generate_bad_response", message: "El generador interno no devolvió un JSON válido.", debug: typeof r.body });
+      }
+      const taskId =
+        String((r.body as any).task_id || (r.body as any).taskId || "").trim() ||
+        String((r.body as any).task?.id || "").trim();
+      if (r.status >= 400) {
+        const mapped = {
+          error: String((r.body as any).error || "generate_failed"),
+          message:
+            String((r.body as any).message || (r.body as any).detail || `Error interno HTTP ${r.status}`).slice(0, 600) || "Error interno.",
+          upstream_http_status: r.status,
+          credits_required: Number.isFinite((r.body as any).credits_required) ? (r.body as any).credits_required : undefined,
+          credits_available: Number.isFinite((r.body as any).credits_available) ? (r.body as any).credits_available : undefined,
+        } as any;
+        if (taskId) mapped.task_id = taskId;
+        return difySendJson(res, r.status >= 400 && r.status < 600 ? r.status : 502, mapped);
+      }
+      const finalStatus = String((r.body as any).status || "").trim() || (taskId ? "queued" : "unknown");
+      return difySendJson(res, 200, {
+        task_id: taskId || undefined,
+        status: finalStatus,
+        credits_cost: Number.isFinite((r.body as any).credits_cost) ? (r.body as any).credits_cost : undefined,
+        title: typeof (r.body as any).title === "string" ? (r.body as any).title.slice(0, 220) : undefined,
+      });
+    } catch (e) {
+      return difySendJson(res, 502, {
+        error: "internal_generate_exception",
+        message: e instanceof Error ? String(e.message).slice(0, 600) : String(e).slice(0, 600),
+      });
+    }
+  }
+
+  async function handleDifyStatus(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+      res.setHeader("access-control-allow-headers", "content-type, authorization, x-luciana-user-token");
+      res.end();
+      return;
+    }
+    if (method !== "GET") return difySendJson(res, 405, { error: "method_not_allowed", message: "Solo GET en /api/dify/status." });
+
+    const apiKeyCheck = difyValidateApiKey(req);
+    if (!apiKeyCheck.ok) {
+      const msg =
+        apiKeyCheck.status === 500
+          ? "DIFY_TOOL_API_KEY no está configurada en Vercel Environment Variables."
+          : apiKeyCheck.status === 401
+          ? "Authorization header inválido. Usa: Authorization: Bearer <DIFY_TOOL_API_KEY>."
+          : "No autorizado.";
+      return difySendJson(res, apiKeyCheck.status, { error: apiKeyCheck.error || "unauthorized", message: msg });
+    }
+
+    const userToken = difyExtractBearerFromHeader(req, "x-luciana-user-token");
+    if (!userToken) {
+      return difySendJson(res, 401, {
+        error: "missing_x_luciana_user_token",
+        message: "Falta el header X-Luciana-User-Token Bearer <JWT usuario final>, igual que /api/dify/generate. No se permite lectura de tareas ajenas.",
+      });
+    }
+
+    let taskId = "";
+    try {
+      const u = new URL(req.url, "http://localhost");
+      taskId = String(u.searchParams.get("task_id") || u.searchParams.get("taskId") || u.searchParams.get("tid") || "").trim();
+    } catch {}
+    if (!taskId) {
+      return difySendJson(res, 400, { error: "field_task_id_required", message: "Falta la query ?task_id=XXX (también admite taskId)." });
+    }
+    if (taskId.length > 200) {
+      return difySendJson(res, 400, { error: "field_task_id_too_long", message: "task_id demasiado largo." });
+    }
+
+    const shared = difyGetInternalShared();
+    if (!shared) {
+      return difySendJson(res, 500, { error: "shared_pipeline_not_ready", message: "Pipeline interno no inicializado. Vuelve a intentarlo en 2 segundos." });
+    }
+
+    const internalUrl = `/api/gpt/status?task_id=${encodeURIComponent(taskId)}`;
+    const wrapped = difyBuildWrappedRequest(req, {
+      method: "GET",
+      url: internalUrl,
+      headers: {
+        authorization: `Bearer ${userToken}`,
+        accept: "application/json",
+      },
+    });
+
+    try {
+      const r = await difyCaptureResponse(shared.status, wrapped);
+      if (!r.body || typeof r.body !== "object") {
+        return difySendJson(res, 502, {
+          task_id: taskId,
+          status: "processing",
+          audio_urls: [],
+          error: "internal_status_bad_response",
+        });
+      }
+      if (r.status >= 400 && r.status !== 500) {
+        return difySendJson(res, r.status, {
+          task_id: taskId,
+          status: "processing",
+          audio_urls: [],
+          error: String((r.body as any).error || "status_failed"),
+          message: String((r.body as any).message || (r.body as any).detail || "").slice(0, 600) || undefined,
+          upstream_http_status: r.status,
+        });
+      }
+      const rawStatus = String((r.body as any).status || "processing").toLowerCase().trim() || "processing";
+      let status: "queued" | "processing" | "complete" | "failed" = "processing";
+      if (["queued", "pending", "waiting", "submitted"].includes(rawStatus)) status = "queued";
+      else if (["complete", "completed", "success", "done"].includes(rawStatus)) status = "complete";
+      else if (["failed", "error", "rejected", "canceled", "cancelled"].includes(rawStatus)) status = "failed";
+
+      const audio_urls: string[] = [];
+      const tryAdd = (c: any) => {
+        if (typeof c !== "string") return;
+        const s = c.trim();
+        if (!/^https?:\/\//i.test(s)) return;
+        if (!audio_urls.includes(s)) audio_urls.push(s);
+      };
+      tryAdd((r.body as any).audio_url);
+      tryAdd((r.body as any).audioUrl);
+      tryAdd((r.body as any).stream_audio_url);
+      tryAdd((r.body as any).streamAudioUrl);
+      const extraRaw = Array.isArray((r.body as any).extra_songs) ? (r.body as any).extra_songs : [];
+      for (const it of extraRaw) {
+        tryAdd(it?.audio_url);
+        tryAdd(it?.audioUrl);
+        tryAdd(it?.stream_audio_url);
+        tryAdd(it?.streamAudioUrl);
+      }
+      const extrasBucket = Array.isArray((r.body as any).audios) ? (r.body as any).audios : extraRaw;
+      for (const it of extrasBucket) {
+        if (it && typeof it === "object") {
+          tryAdd(it.audio_url);
+          tryAdd(it.audioUrl);
+          tryAdd(it.stream_audio_url);
+          tryAdd(it.streamAudioUrl);
+        }
+      }
+
+      const cover_urls: string[] = [];
+      const tryAddCover = (c: any) => {
+        if (typeof c !== "string") return;
+        const s = c.trim();
+        if (!/^https?:\/\//i.test(s)) return;
+        if (!cover_urls.includes(s)) cover_urls.push(s);
+      };
+      tryAddCover((r.body as any).cover_url);
+      tryAddCover((r.body as any).coverUrl);
+      tryAddCover((r.body as any).image_url);
+      tryAddCover((r.body as any).imageUrl);
+      for (const it of extraRaw) {
+        tryAddCover(it?.cover_url);
+        tryAddCover(it?.coverUrl);
+        tryAddCover(it?.image_url);
+        tryAddCover(it?.imageUrl);
+      }
+
+      const out: any = {
+        task_id: taskId,
+        status,
+        audio_urls,
+      };
+      if (cover_urls.length) out.cover_urls = cover_urls;
+      if (typeof (r.body as any).title === "string") out.title = (r.body as any).title.slice(0, 220);
+      if (status === "failed") {
+        out.message =
+          String((r.body as any).message || (r.body as any).error || (r.body as any).provider_error || "").slice(0, 600) ||
+          "La generación falló en el proveedor.";
+      }
+      return difySendJson(res, r.status >= 400 && r.status < 600 ? r.status : 200, out);
+    } catch (e) {
+      return difySendJson(res, 502, {
+        task_id: taskId,
+        status: "processing",
+        audio_urls: [],
+        error: "internal_status_exception",
+        message: e instanceof Error ? String(e.message).slice(0, 600) : String(e).slice(0, 600),
+      });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      const parts = u.pathname.split("/").filter(Boolean);
+      const head = parts[0] || "";
+      const isApi = head === "api";
+      const next = isApi ? parts[2] : parts[1];
+      const ua = (req.headers?.["user-agent"] || req.headers?.["User-Agent"] || "").toString().slice(0, 220);
+      const method = (req.method || "GET").toUpperCase();
+      try {
+        console.log(
+          `[dify:entry] ${method} path=${u.pathname} next=${next} ua=${ua} hasAuth=!!${!!difyExtractBearerFromHeader(req, "authorization")} hasUser=!!${!!difyExtractBearerFromHeader(req, "x-luciana-user-token")} ip=${(req.headers?.["x-forwarded-for"] || req.socket?.remoteAddress || "").toString().slice(0, 80)}`
+        );
+      } catch {}
+      if (next === "generate") return await handleDifyGenerate(req, res);
+      if (next === "status") return await handleDifyStatus(req, res);
+      return difySendJson(res, 404, { error: "ruta_no_encontrada", message: "Endpoints Dify admitidos: POST /api/dify/generate · GET /api/dify/status?task_id=..." });
+    } catch (e) {
+      try {
+        console.error(`[dify:entry] crash: ${e instanceof Error ? (e.stack || e.message) : String(e)}`);
+      } catch {}
+      return difySendJson(res, 500, { error: "error_interno", message: e instanceof Error ? String(e.message).slice(0, 600) : String(e).slice(0, 600) });
+    }
+  };
+})();
+
 const gptHandler = (() => {
   async function handleGenerate(req: any, res: any) {
     if ((req.method || "").toUpperCase() === "OPTIONS") {
@@ -19019,6 +19545,12 @@ const gptHandler = (() => {
       const parts = u.pathname.split("/").filter(Boolean);
       const isApi = parts[0] === "api";
       const next = isApi ? parts[2] : parts[1];
+      try {
+        const gt = globalThis as any;
+        const shared = gt.__LUCIANA_SHARED_FNS__ || (gt.__LUCIANA_SHARED_FNS__ = {});
+        shared.gptGenerateInternal = handleGenerate;
+        shared.gptStatusInternal = handleStatus;
+      } catch {}
       if (next === "generate") return handleGenerate(req, res);
       if (next === "status") return handleStatus(req, res);
       if (next === "upload-audio") return handleUploadAudio(req, res);
@@ -19098,6 +19630,7 @@ export default async function handler(req: any, res: any) {
     if (head === "voices" && next === "list") return kitsVoicesHandler(req, res);
     if (head === "oauth") return oauthHandler(req, res);
     if (head === "gpt" && next === "token") return oauthHandler(req, res);
+    if (head === "dify") return difyHandler(req, res);
     if (head === "gpt") return gptHandler(req, res);
     if (head === "rvc") return rvcHandler(req, res);
     if (head === "replicate" && next === "predictions" && third && parts[isApi ? 4 : 3] === "cancel") {
