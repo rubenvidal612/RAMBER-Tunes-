@@ -1041,13 +1041,6 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   return (
     <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot" data-chat-theme={chatTheme}>
-      <div className="luciana-mobile-brand">
-        <img src={OFFICIAL_BRAND_LOGO} alt="Logo de LucIAna Music" loading="lazy" />
-        <div className="luciana-mobile-brand__text">
-          <h1>LucIAna<span> Bot</span></h1>
-          <p>Asistente musical · letra, estilo y generación</p>
-        </div>
-      </div>
       <header className="luciana-chat-header">
         <div className="flex min-w-0 items-center gap-2">
           <div className="luciana-msg-avatar" style={{ width: '2.25rem', height: '2.25rem' }}>
