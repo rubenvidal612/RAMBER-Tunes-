@@ -1355,7 +1355,8 @@ function SubirGptScreen() {
       }
     };
     try {
-      const controller = new (window as any).AbortController?.();
+      const AbortCtrl: any = (window as any).AbortController;
+      const controller = AbortCtrl ? new AbortCtrl() : null;
       const t = (window as any).setTimeout?.(() => { try { controller?.abort?.(); } catch {} }, 180_000);
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token && token.length > 40) headers['Authorization'] = `Bearer ${token}`;
@@ -1380,7 +1381,8 @@ function SubirGptScreen() {
       if (res.status === 401) {
         console.error('[SubirGptScreen startTranscribe] 401 transcribe. Reintento sin Bearer token (bypass trusted host)...', { body });
         try {
-          const controller2 = new (window as any).AbortController?.();
+          const AbortCtrl2: any = (window as any).AbortController;
+          const controller2 = AbortCtrl2 ? new AbortCtrl2() : null;
           const t2 = (window as any).setTimeout?.(() => { try { controller2?.abort?.(); } catch {} }, 180_000);
           const res2 = await fetch('/api/gpt/transcribe', {
             method: 'POST',

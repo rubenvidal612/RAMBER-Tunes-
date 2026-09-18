@@ -893,32 +893,43 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   }, [startNewChat, attachedImg]);
 
   const handleAttachPick = useCallback(() => {
-    if (loading || generating) return;
-    setAttachMenuOpen((o) => {
-      const next = !o;
-      if (next) {
-        try {
-          const btn = attachBtnRef.current;
-          if (btn) {
-            const r = btn.getBoundingClientRect();
-            setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
-          } else {
-            setAttachMenuRect(null);
-          }
-        } catch { setAttachMenuRect(null); }
-      }
-      return next;
-    });
-  }, [loading, generating]);
+    if (loading || generating) {
+      setToast({
+        kind: 'ok',
+        text: 'Espera tantito: estoy procesando algo. Si se quedó trabado, toca “Reintentar” o recarga la página.',
+      });
+      return;
+    }
+    const nextOpen = !attachMenuOpen;
+    if (nextOpen) {
+      try {
+        const btn = attachBtnRef.current;
+        if (btn) {
+          const r = btn.getBoundingClientRect();
+          setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
+        } else {
+          setAttachMenuRect(null);
+        }
+      } catch { setAttachMenuRect(null); }
+    }
+    setAttachMenuOpen(nextOpen);
+  }, [loading, generating, attachMenuOpen]);
 
   // Cerrar menú adjuntar al hacer scroll o resize (menú fixed depende de coords)
   useEffect(() => {
     if (!attachMenuOpen) return;
-    const onScrollOrResize = () => setAttachMenuOpen(false);
-    window.addEventListener('scroll', onScrollOrResize, true);
+    const onScrollOrResize = (ev?: any) => {
+      const target = ev?.target as any;
+      const rootA = typeof document !== 'undefined' ? document : null;
+      const rootB = typeof document !== 'undefined' ? document.documentElement : null;
+      const rootC = typeof document !== 'undefined' ? document.body : null;
+      if (target && target !== rootA && target !== rootB && target !== rootC && target !== window) return;
+      setAttachMenuOpen(false);
+    };
+    window.addEventListener('scroll', onScrollOrResize as any, true);
     window.addEventListener('resize', onScrollOrResize);
     return () => {
-      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('scroll', onScrollOrResize as any, true);
       window.removeEventListener('resize', onScrollOrResize);
     };
   }, [attachMenuOpen]);
@@ -2728,7 +2739,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               type="button"
               className="luciana-attach-btn"
               onClick={handleAttachPick}
-              disabled={loading || generating}
+              aria-disabled={loading || generating}
+              data-disabled={loading || generating ? 'true' : 'false'}
               aria-label="Adjuntar (foto de letra o audio propio)"
               aria-expanded={attachMenuOpen}
               title="Adjuntar · foto de letra / audio propio"
