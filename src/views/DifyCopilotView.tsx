@@ -1590,6 +1590,279 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           );
         })}
 
+        {activeReady && (
+          <div className="luciana-msg-row is-assistant">
+            <div className="luciana-msg-wrap">
+              <div className="luciana-msg-avatar" aria-hidden>
+                <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna" loading="lazy" />
+              </div>
+              <div
+                className="luciana-msg-bubble"
+                style={{
+                  width: '100%',
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  boxShadow: 'none',
+                }}
+              >
+                <div style={{
+                  padding: '1rem 1.05rem',
+                  borderRadius: '1.25rem',
+                  border: '1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border))',
+                  background: isDark
+                    ? 'linear-gradient(135deg, rgba(124,58,237,.14), rgba(37,99,235,.10))'
+                    : 'linear-gradient(135deg, rgba(124,58,237,.08), rgba(37,99,235,.06))',
+                  backdropFilter: 'blur(8px)',
+                  color: 'var(--text)',
+                }}>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-2xl ring-1"
+                        style={{
+                          background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                          boxShadow: '0 10px 24px color-mix(in srgb, var(--brand-primary) 28%, transparent)',
+                          borderColor: 'transparent',
+                          color: '#fff',
+                        }}
+                      >
+                        <Music2 className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="text-base font-black" style={{ color: 'var(--text)' }}>
+                          Resumen para generar canción
+                        </h2>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Revisa, edita si quieres y pulsa <b style={{ color: 'var(--brand-primary)' }}>Generar canción</b>.
+                          Se cobran <b style={{ color: 'var(--brand-accent)' }}>12 créditos</b> a tu cuenta real.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearReady}
+                      disabled={generating}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
+                    >
+                      Quitar resumen
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="md:col-span-2 block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Letra / Prompt
+                      </span>
+                      <textarea
+                        rows={7}
+                        value={activeReady.prompt}
+                        onChange={(e) => setActiveReady({ ...activeReady, prompt: e.target.value })}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          resize: 'vertical',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0.7rem 0.9rem',
+                          fontSize: '0.9rem',
+                          lineHeight: 1.55,
+                          outline: 'none',
+                        }}
+                      />
+                      <div style={{ marginTop: '0.15rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        {String(activeReady.prompt || '').length} / 12,000 caracteres
+                      </div>
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Título
+                      </span>
+                      <input
+                        type="text"
+                        value={activeReady.title}
+                        onChange={(e) => setActiveReady({ ...activeReady, title: e.target.value })}
+                        placeholder="Ej: Noches de verano"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          height: '2.75rem',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0 0.9rem',
+                          fontSize: '0.9rem',
+                          outline: 'none',
+                        }}
+                      />
+                    </label>
+
+                    <label className="md:col-span-2 block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Estilo musical
+                      </span>
+                      <textarea
+                        rows={3}
+                        value={activeReady.style}
+                        onChange={(e) => setActiveReady({ ...activeReady, style: e.target.value })}
+                        placeholder="Ej: Latino-pop festivo, 108 BPM, guitarra acústica, voz femenina cálida, bajo eléctrico, ambiente feliz de fiesta"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          resize: 'vertical',
+                          minHeight: '5rem',
+                          maxHeight: '11rem',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0.8rem 0.95rem',
+                          fontSize: '0.92rem',
+                          lineHeight: 1.55,
+                          outline: 'none',
+                        }}
+                      />
+                      <div style={{ marginTop: '0.2rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Cuantos más detalles mejor: género, tempo, instrumentos, estado de ánimo, acentos.
+                      </div>
+                    </label>
+
+                    <div className="md:col-span-2 block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Voz deseada
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveReady({ ...activeReady, gender: 'Masculino' })}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            height: '3rem',
+                            borderRadius: '1rem',
+                            border: `1px solid ${activeReady.gender === 'Masculino' ? 'transparent' : 'var(--border)'}`,
+                            background:
+                              activeReady.gender === 'Masculino'
+                                ? 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)'
+                                : 'var(--bg-elev-1)',
+                            color: activeReady.gender === 'Masculino' ? '#fff' : 'var(--text)',
+                            fontWeight: 800,
+                            fontSize: '0.95rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            boxShadow: activeReady.gender === 'Masculino' ? '0 10px 24px color-mix(in srgb, #2563eb 30%, transparent)' : 'none',
+                          }}
+                        >
+                          👨 Hombre
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveReady({ ...activeReady, gender: 'Femenino' })}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            height: '3rem',
+                            borderRadius: '1rem',
+                            border: `1px solid ${activeReady.gender === 'Femenino' ? 'transparent' : 'var(--border)'}`,
+                            background:
+                              activeReady.gender === 'Femenino'
+                                ? 'linear-gradient(135deg, #ec4899 0%, var(--brand-accent) 100%)'
+                                : 'var(--bg-elev-1)',
+                            color: activeReady.gender === 'Femenino' ? '#fff' : 'var(--text)',
+                            fontWeight: 800,
+                            fontSize: '0.95rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            boxShadow: activeReady.gender === 'Femenino' ? '0 10px 24px color-mix(in srgb, #ec4899 30%, transparent)' : 'none',
+                          }}
+                        >
+                          👩 Mujer
+                        </button>
+                      </div>
+                      <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Elige el tipo de voz que quieres para cantar la canción.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col-reverse items-stretch gap-3 md:flex-row md:items-center md:justify-between">
+                    <div
+                      className="flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs"
+                      style={{
+                        borderColor: 'color-mix(in srgb, var(--brand-accent) 35%, transparent)',
+                        background: 'color-mix(in srgb, var(--brand-accent) 14%, transparent)',
+                        color: isDark ? '#fde68a' : '#78350f',
+                      }}
+                    >
+                      <WalletCards className="h-4 w-4" />
+                      <div>
+                        <div style={{ fontWeight: 900 }}>12 créditos</div>
+                        <div style={{ opacity: 0.88 }}>se descontarán de tu cuenta real de LucIAna cuando pulses el botón.</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
+                      <button
+                        type="button"
+                        onClick={clearReady}
+                        disabled={generating}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition disabled:opacity-60"
+                        style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleGenerate()}
+                        disabled={generating || !readyIsValid}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.5rem',
+                          height: '3rem',
+                          minWidth: '220px',
+                          padding: '0 1.5rem',
+                          borderRadius: '1rem',
+                          border: '1px solid transparent',
+                          fontWeight: 900,
+                          fontSize: '1rem',
+                          color: '#fff',
+                          background: 'linear-gradient(135deg, var(--brand-primary) 0%, #ec4899 50%, var(--brand-accent) 100%)',
+                          boxShadow: '0 14px 40px color-mix(in srgb, var(--brand-primary) 32%, transparent)',
+                          cursor: generating || !readyIsValid ? 'not-allowed' : 'pointer',
+                          opacity: generating || !readyIsValid ? 0.78 : 1,
+                          transition: 'filter 0.15s ease, transform 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => { if (!(generating || !readyIsValid)) (e.currentTarget.style.filter = 'brightness(1.08)'); }}
+                        onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
+                      >
+                        {generating ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" /> Generando canción…
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-5 w-5" /> Generar canción
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading && (
           <div className="luciana-msg-row is-assistant">
             <div className="luciana-msg-wrap">
@@ -1602,263 +1875,6 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               >
                 <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--brand-primary)' }} />
                 <span>LucIAna Bot está escribiendo…</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeReady && (
-          <div style={{
-            maxWidth: '48rem',
-            margin: '1.3rem auto 0.5rem',
-            padding: '1rem 1.05rem',
-            borderRadius: '1.25rem',
-            border: '1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border))',
-            background: isDark
-              ? 'linear-gradient(135deg, rgba(124,58,237,.14), rgba(37,99,235,.10))'
-              : 'linear-gradient(135deg, rgba(124,58,237,.08), rgba(37,99,235,.06))',
-            backdropFilter: 'blur(8px)',
-            color: 'var(--text)',
-          }}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-2xl ring-1"
-                  style={{
-                    background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
-                    boxShadow: '0 10px 24px color-mix(in srgb, var(--brand-primary) 28%, transparent)',
-                    borderColor: 'transparent',
-                    color: '#fff',
-                  }}
-                >
-                  <Music2 className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="text-base font-black" style={{ color: 'var(--text)' }}>
-                    Resumen para generar canción
-                  </h2>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Revisa, edita si quieres y pulsa <b style={{ color: 'var(--brand-primary)' }}>Generar canción</b>.
-                    Se cobran <b style={{ color: 'var(--brand-accent)' }}>12 créditos</b> a tu cuenta real.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={clearReady}
-                disabled={generating}
-                className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
-                style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
-              >
-                Quitar resumen
-              </button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="md:col-span-2 block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
-                  Letra / Prompt
-                </span>
-                <textarea
-                  rows={7}
-                  value={activeReady.prompt}
-                  onChange={(e) => setActiveReady({ ...activeReady, prompt: e.target.value })}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    resize: 'vertical',
-                    borderRadius: '1rem',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-elev-1)',
-                    color: 'var(--text)',
-                    padding: '0.7rem 0.9rem',
-                    fontSize: '0.9rem',
-                    lineHeight: 1.55,
-                    outline: 'none',
-                  }}
-                />
-                <div style={{ marginTop: '0.15rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                  {String(activeReady.prompt || '').length} / 12,000 caracteres
-                </div>
-              </label>
-
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
-                  Título
-                </span>
-                <input
-                  type="text"
-                  value={activeReady.title}
-                  onChange={(e) => setActiveReady({ ...activeReady, title: e.target.value })}
-                  placeholder="Ej: Noches de verano"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    height: '2.75rem',
-                    borderRadius: '1rem',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-elev-1)',
-                    color: 'var(--text)',
-                    padding: '0 0.9rem',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                  }}
-                />
-              </label>
-
-              <label className="md:col-span-2 block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
-                  Estilo musical
-                </span>
-                <textarea
-                  rows={3}
-                  value={activeReady.style}
-                  onChange={(e) => setActiveReady({ ...activeReady, style: e.target.value })}
-                  placeholder="Ej: Latino-pop festivo, 108 BPM, guitarra acústica, voz femenina cálida, bajo eléctrico, ambiente feliz de fiesta"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    resize: 'vertical',
-                    minHeight: '5rem',
-                    maxHeight: '11rem',
-                    borderRadius: '1rem',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-elev-1)',
-                    color: 'var(--text)',
-                    padding: '0.8rem 0.95rem',
-                    fontSize: '0.92rem',
-                    lineHeight: 1.55,
-                    outline: 'none',
-                  }}
-                />
-                <div style={{ marginTop: '0.2rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                  Cuantos más detalles mejor: género, tempo, instrumentos, estado de ánimo, acentos.
-                </div>
-              </label>
-
-              <div className="md:col-span-2 block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
-                  Voz deseada
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveReady({ ...activeReady, gender: 'Masculino' })}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.5rem',
-                      height: '3rem',
-                      borderRadius: '1rem',
-                      border: `1px solid ${activeReady.gender === 'Masculino' ? 'transparent' : 'var(--border)'}`,
-                      background:
-                        activeReady.gender === 'Masculino'
-                          ? 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)'
-                          : 'var(--bg-elev-1)',
-                      color: activeReady.gender === 'Masculino' ? '#fff' : 'var(--text)',
-                      fontWeight: 800,
-                      fontSize: '0.95rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      boxShadow: activeReady.gender === 'Masculino' ? '0 10px 24px color-mix(in srgb, #2563eb 30%, transparent)' : 'none',
-                    }}
-                  >
-                    👨 Hombre
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveReady({ ...activeReady, gender: 'Femenino' })}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.5rem',
-                      height: '3rem',
-                      borderRadius: '1rem',
-                      border: `1px solid ${activeReady.gender === 'Femenino' ? 'transparent' : 'var(--border)'}`,
-                      background:
-                        activeReady.gender === 'Femenino'
-                          ? 'linear-gradient(135deg, #ec4899 0%, var(--brand-accent) 100%)'
-                          : 'var(--bg-elev-1)',
-                      color: activeReady.gender === 'Femenino' ? '#fff' : 'var(--text)',
-                      fontWeight: 800,
-                      fontSize: '0.95rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      boxShadow: activeReady.gender === 'Femenino' ? '0 10px 24px color-mix(in srgb, #ec4899 30%, transparent)' : 'none',
-                    }}
-                  >
-                    👩 Mujer
-                  </button>
-                </div>
-                <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                  Elige el tipo de voz que quieres para cantar la canción.
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-col-reverse items-stretch gap-3 md:flex-row md:items-center md:justify-between">
-              <div
-                className="flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs"
-                style={{
-                  borderColor: 'color-mix(in srgb, var(--brand-accent) 35%, transparent)',
-                  background: 'color-mix(in srgb, var(--brand-accent) 14%, transparent)',
-                  color: isDark ? '#fde68a' : '#78350f',
-                }}
-              >
-                <WalletCards className="h-4 w-4" />
-                <div>
-                  <div style={{ fontWeight: 900 }}>12 créditos</div>
-                  <div style={{ opacity: 0.88 }}>se descontarán de tu cuenta real de LucIAna cuando pulses el botón.</div>
-                </div>
-              </div>
-              <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
-                <button
-                  type="button"
-                  onClick={clearReady}
-                  disabled={generating}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition disabled:opacity-60"
-                  style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleGenerate()}
-                  disabled={generating || !readyIsValid}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    height: '3rem',
-                    minWidth: '220px',
-                    padding: '0 1.5rem',
-                    borderRadius: '1rem',
-                    border: '1px solid transparent',
-                    fontWeight: 900,
-                    fontSize: '1rem',
-                    color: '#fff',
-                    background: 'linear-gradient(135deg, var(--brand-primary) 0%, #ec4899 50%, var(--brand-accent) 100%)',
-                    boxShadow: '0 14px 40px color-mix(in srgb, var(--brand-primary) 32%, transparent)',
-                    cursor: generating || !readyIsValid ? 'not-allowed' : 'pointer',
-                    opacity: generating || !readyIsValid ? 0.78 : 1,
-                    transition: 'filter 0.15s ease, transform 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => { if (!(generating || !readyIsValid)) (e.currentTarget.style.filter = 'brightness(1.08)'); }}
-                  onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
-                >
-                  {generating ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin" /> Generando canción…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-5 w-5" /> Generar canción
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           </div>
