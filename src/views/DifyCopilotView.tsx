@@ -146,7 +146,7 @@ const CHAT_AVATAR_ASSISTANT = '/logo-luciana-hd.svg?v=20260917-3';
 const OFFICIAL_BRAND_LOGO = '/assets/luciana-music-logo.jpeg';
 const STORAGE_KEY = 'luciana_chat_ui_v1';
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB (imágenes)
-const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB (audios propios MP3/WAV/etc)
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB (audios propios solo MP3)
 const MAX_GENERIC_BYTES = 20 * 1024 * 1024; // 20 MB (otros archivos)
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const ALLOWED_AUDIO_TYPES = new Set([
@@ -155,20 +155,10 @@ const ALLOWED_AUDIO_TYPES = new Set([
   'audio/x-mp3',
   'audio/mpeg3',
   'audio/x-mpeg3',
-  'audio/wav',
-  'audio/x-wav',
-  'audio/wave',
-  'audio/vnd.wave',
-  'audio/mp4',
-  'audio/m4a',
-  'audio/x-m4a',
-  'audio/aac',
-  'audio/ogg',
-  'audio/webm',
 ]);
-const isFileNameAllowedAudio = (name: string) => /\.(mp3|wav|m4a|ogg|webm)$/i.test(String(name || '').trim());
+const isFileNameAllowedAudio = (name: string) => /\.mp3$/i.test(String(name || '').trim());
 const openMp3ConverterUrl = () => {
-  try { window.open('https://cloudconvert.com/mp3-converter', '_blank', 'noopener,noreferrer'); } catch {}
+  try { window.open('https://online-audio-converter.com/sp/', '_blank', 'noopener,noreferrer'); } catch {}
 };
 
 type AttachedImage = {
@@ -927,7 +917,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     if (!inp) return;
     try { inp.value = ''; } catch {}
     if (kind === 'image') inp.accept = 'image/jpeg,image/png,image/webp';
-    else if (kind === 'audio') inp.accept = 'audio/mpeg,audio/wav,audio/mp4,audio/m4a,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm';
+    else if (kind === 'audio') inp.accept = 'audio/mpeg,.mp3';
     else inp.accept = 'image/*,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,.txt,.md,.rtf';
     setPendingAttachKind(kind);
     setAttachMenuOpen(false);
@@ -960,11 +950,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     } else if (kind === 'audio') {
       maxBytes = MAX_AUDIO_BYTES;
       errSizeText = 'El audio supera los 25 MB permitidos.';
-      errTypeText = 'Formato de audio no admitido. Usa MP3, WAV, M4A u OGG.';
+      errTypeText = 'Por ahora LucIAna acepta audio en formato MP3. Puedes convertir tu archivo gratis aquí: https://online-audio-converter.com/sp/';
       finalKind = 'audio';
-      const mimeOk = ALLOWED_AUDIO_TYPES.has(mime);
-      const nameOk = isFileNameAllowedAudio(f.name);
-      if (!mimeOk && !nameOk) {
+      const isMp3 = /\.mp3$/i.test(String(f.name || ''));
+      const mimeIsMpeg = mime === 'audio/mpeg' || mime === 'audio/mp3';
+      if (!isMp3 && !mimeIsMpeg) {
         setToast({ kind: 'err', text: errTypeText });
         try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
         setPendingAttachKind(null);
@@ -975,7 +965,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       if (!mime.startsWith('audio/') && !mime.startsWith('image/') && !mime.startsWith('text/') &&
           mime !== 'application/pdf' && mime !== 'application/json' &&
           !mime.includes('officedocument') && !f.name.toLowerCase().match(/\.(doc|docx|txt|md|rtf|pdf)$/)) {
-        setToast({ kind: 'err', text: 'Tipo de archivo no admitido. Puedes subir imágenes, audios (MP3/WAV), textos, PDF o Word.' });
+        setToast({ kind: 'err', text: 'Tipo de archivo no admitido. Puedes subir imágenes, audios (solo MP3), textos, PDF o Word.' });
         try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
         setPendingAttachKind(null);
         return;
@@ -2894,7 +2884,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               <span className="luciana-attach-direct__icon"><Music2 className="h-5 w-5" /></span>
               <span className="luciana-attach-direct__label">
                 <strong>Subir audio</strong>
-                <small>MP3/WAV/M4A · máx 25 MB</small>
+                <small>Solo archivos MP3</small>
               </span>
             </button>
             <button
