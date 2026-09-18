@@ -243,8 +243,10 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const micRecorderAudioCtxRef = useRef<any | null>(null);
   const micRecorderAnalyserRef = useRef<any | null>(null);
   const micRecorderElapsedMsRef = useRef<number>(0);
+  const stopMicRecorderRef = useRef<((finalize: boolean) => Promise<void>) | null>(null);
 
-  const stopMicRecorder = useCallback(async (finalize: boolean) => {
+  // 1) stopMicRecorderRef.function (sin useCallback + sin auto-dep)
+  const stopMicRecorder: (finalize: boolean) => Promise<void> = async (finalize: boolean) => {
     try {
       if (micRecorderStopFallbackTimerRef.current) window.clearTimeout(micRecorderStopFallbackTimerRef.current);
     } catch {}
@@ -279,7 +281,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setMicRecorderError('No se pudo guardar la grabación. Intenta de nuevo o sube un MP3.');
           setMicRecorderState('idle');
           micRecorderStateRef.current = 'idle';
-          stopMicRecorder(false).catch(() => {});
+          stopMicRecorderRef.current?.(false).catch(() => {});
           return;
         }
         try {
@@ -292,7 +294,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setMicRecorderOpen(false);
           setMicRecorderState('idle');
           micRecorderStateRef.current = 'idle';
-          stopMicRecorder(false).catch(() => {});
+          stopMicRecorderRef.current?.(false).catch(() => {});
           window.setTimeout(() => {
             const preview = URL.createObjectURL(blob);
             setAttachedImg({ file, name: file.name, bytes: file.size, previewUrl: preview, kind: 'audio' });
@@ -302,7 +304,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setMicRecorderError('No se pudo guardar la grabación. Intenta de nuevo o sube un MP3.');
           setMicRecorderState('idle');
           micRecorderStateRef.current = 'idle';
-          stopMicRecorder(false).catch(() => {});
+          stopMicRecorderRef.current?.(false).catch(() => {});
         }
       }, 3500);
       if (mr && mr.state !== 'inactive') {
@@ -321,13 +323,15 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         try { t.stop(); } catch {}
       });
     } catch {}
-  }, [stopMicRecorder]);
+  };
+  stopMicRecorderRef.current = stopMicRecorder;
 
   useEffect(() => {
-    return () => { stopMicRecorder(false).catch(() => {}); };
-  }, [stopMicRecorder]);
+    return () => { stopMicRecorderRef.current?.(false).catch(() => {}); };
+  }, []);
 
-  const startMicRecorder = useCallback(async () => {
+  // 2) startMicRecorder (no useCallback, llama ref.stopMicRecorderRef → no dep circular)
+  const startMicRecorder = async () => {
     setMicRecorderError('');
     const navAny: any = typeof navigator === 'undefined' ? null : navigator;
     const canMedia =
@@ -340,7 +344,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       return;
     }
     try {
-      await stopMicRecorder(false);
+      await stopMicRecorderRef.current?.(false);
       setMicRecorderElapsedMs(0);
       micRecorderElapsedMsRef.current = 0;
       micRecorderStopRequestedAtRef.current = 0;
@@ -438,7 +442,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             setMicRecorderError('No se grabó audio. Asegúrate de permitir el micrófono e intenta de nuevo.');
             setMicRecorderState('idle');
             micRecorderStateRef.current = 'idle';
-            stopMicRecorder(false).catch(() => {});
+            stopMicRecorderRef.current?.(false).catch(() => {});
             return;
           }
           const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : type.includes('webm') ? 'webm' : 'webm';
@@ -447,7 +451,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setMicRecorderOpen(false);
           setMicRecorderState('idle');
           micRecorderStateRef.current = 'idle';
-          stopMicRecorder(false).catch(() => {});
+          stopMicRecorderRef.current?.(false).catch(() => {});
           window.setTimeout(() => {
             const preview = URL.createObjectURL(blob);
             setAttachedImg({ file, name: file.name, bytes: file.size, previewUrl: preview, kind: 'audio' });
@@ -457,7 +461,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setMicRecorderError('No se pudo guardar la grabación. Intenta de nuevo o sube un MP3.');
           setMicRecorderState('idle');
           micRecorderStateRef.current = 'idle';
-          stopMicRecorder(false).catch(() => {});
+          stopMicRecorderRef.current?.(false).catch(() => {});
         });
       };
       mr.start(250);
@@ -474,11 +478,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setMicRecorderOpen(false);
       setMicRecorderState('idle');
       micRecorderStateRef.current = 'idle';
-      stopMicRecorder(false).catch(() => {});
+      stopMicRecorderRef.current?.(false).catch(() => {});
       const msg = e instanceof Error ? e.message : String(e || 'No se pudo iniciar la grabación');
       setToast({ kind: 'err', text: `🎙️ ${msg}` });
     }
-  }, [stopMicRecorder]);
+  };
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1968,7 +1972,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                   } else {
                     setMicRecorderState('stopping');
                     micRecorderStateRef.current = 'stopping';
-                    stopMicRecorder(false).catch(() => {});
+                    stopMicRecorderRef.current?.(false).catch(() => {});
                     window.setTimeout(() => setMicRecorderOpen(false), 400);
                   }
                 }}
@@ -2034,7 +2038,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                   } else {
                     setMicRecorderState('stopping');
                     micRecorderStateRef.current = 'stopping';
-                    stopMicRecorder(false).catch(() => {});
+                    stopMicRecorderRef.current?.(false).catch(() => {});
                     window.setTimeout(() => setMicRecorderOpen(false), 400);
                   }
                 }}
@@ -2079,7 +2083,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                     if (micRecorderState !== 'recording') return;
                     setMicRecorderState('stopping');
                     micRecorderStateRef.current = 'stopping';
-                    stopMicRecorder(true).catch(() => {});
+                    stopMicRecorderRef.current?.(true).catch(() => {});
                   }}
                   style={{
                     flex: 2,
