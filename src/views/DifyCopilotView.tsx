@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import {
   AlertTriangle,
   CheckCircle2,
+  Cloud,
   History,
+  Image as ImageIcon,
   Library,
   Loader2,
   MessageSquarePlus,
+  Mic,
   Music2,
   Paperclip,
   Plus,
@@ -111,15 +114,23 @@ function formatDay(iso: string | null | undefined): string {
 const CHAT_AVATAR_ASSISTANT = '/logo-luciana-hd.svg?v=20260917-3';
 const OFFICIAL_BRAND_LOGO = '/assets/luciana-music-logo.jpeg';
 const STORAGE_KEY = 'luciana_chat_ui_v1';
-const MAX_ATTACH_BYTES = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_ATTACH_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB (imágenes)
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB (audios propios MP3/WAV/etc)
+const MAX_GENERIC_BYTES = 20 * 1024 * 1024; // 20 MB (otros archivos)
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg',
+  'audio/mp4', 'audio/aac', 'audio/flac', 'audio/webm', 'audio/x-m4a',
+]);
 
 type AttachedImage = {
   file: File;
   name: string;
   bytes: number;
   previewUrl: string;
+  kind: 'image' | 'audio' | 'generic';
 };
+type AttachMenuKind = 'image' | 'audio' | 'generic' | 'mic' | 'drive';
 
 type UiState = {
   activeConversationId: string | null;
@@ -182,7 +193,10 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const [historyLoading, setHistoryLoading] = useState(false);
   const [bootFailed, setBootFailed] = useState(false);
   const [attachedImg, setAttachedImg] = useState<AttachedImage | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [pendingAttachKind, setPendingAttachKind] = useState<AttachMenuKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -532,31 +546,122 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   }, [startNewChat, attachedImg]);
 
   const handleAttachPick = useCallback(() => {
-    if (!fileInputRef.current) return;
-    fileInputRef.current.click();
+    if (loading || generating) return;
+    setAttachMenuOpen((o) => !o);
+  }, [loading, generating]);
+
+  const triggerFilePickForKind = useCallback((kind: AttachMenuKind) => {
+    if (kind === 'mic') {
+      setToast({ kind: 'ok', text: '🎙️ Grabar con micrófono · próxima funcionalidad. Cuando esté activo, podrás cantar o hablar y transcribiré la idea a MP3.' });
+      setAttachMenuOpen(false);
+      return;
+    }
+    if (kind === 'drive') {
+      setToast({ kind: 'ok', text: '☁️ Subir desde Drive · próxima funcionalidad. Se habilitará para importar archivos directamente.' });
+      setAttachMenuOpen(false);
+      return;
+    }
+    const inp = fileInputRef.current;
+    if (!inp) return;
+    try { inp.value = ''; } catch {}
+    if (kind === 'image') inp.accept = 'image/jpeg,image/png,image/webp';
+    else if (kind === 'audio') inp.accept = 'audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/flac,audio/webm,audio/x-m4a';
+    else inp.accept = 'audio/*,image/*,text/*,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,.txt,.md,.rtf';
+    setPendingAttachKind(kind);
+    setAttachMenuOpen(false);
+    setTimeout(() => inp.click(), 50);
   }, []);
+
+  // Cerrar menú de adjuntar al hacer click fuera
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    const onDocClick = (ev: any) => {
+      const t = ev?.target as HTMLElement | null;
+      if (!t) return;
+      if (attachMenuRef.current && attachMenuRef.current.contains(t)) return;
+      // click en el botón de clip lo maneja el propio onClick
+      if (t.closest('.luciana-attach-btn')) return;
+      setAttachMenuOpen(false);
+    };
+    const onEsc = (ev: any) => { if (ev?.key === 'Escape') setAttachMenuOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('touchstart', onDocClick as any);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('touchstart', onDocClick as any);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [attachMenuOpen]);
 
   const handleAttachFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) { setPendingAttachKind(null); return; }
     const f = files[0];
-    if (!ALLOWED_ATTACH_TYPES.has(String(f.type || '').toLowerCase())) {
-      setToast({ kind: 'err', text: 'Formato no admitido. Usa JPG, PNG o WEBP.' });
-      try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
-      return;
+    const kind: AttachMenuKind = pendingAttachKind || 'generic';
+    const mime = String(f.type || '').toLowerCase();
+
+    let maxBytes = MAX_GENERIC_BYTES;
+    let errSizeText = 'El archivo supera los 20 MB permitidos.';
+    let errTypeText = 'Formato no admitido para esta opción.';
+    let finalKind: AttachedImage['kind'] = 'generic';
+
+    if (kind === 'image') {
+      maxBytes = MAX_IMAGE_BYTES;
+      errSizeText = 'La imagen supera los 10 MB permitidos.';
+      errTypeText = 'Formato de imagen no admitido. Usa JPG, PNG o WEBP.';
+      finalKind = 'image';
+      if (!ALLOWED_IMAGE_TYPES.has(mime)) {
+        setToast({ kind: 'err', text: errTypeText });
+        try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+        setPendingAttachKind(null);
+        return;
+      }
+    } else if (kind === 'audio') {
+      maxBytes = MAX_AUDIO_BYTES;
+      errSizeText = 'El audio supera los 25 MB permitidos.';
+      errTypeText = 'Formato de audio no admitido. Usa MP3, WAV, OGG, M4A, FLAC o AAC.';
+      finalKind = 'audio';
+      if (!ALLOWED_AUDIO_TYPES.has(mime)) {
+        setToast({ kind: 'err', text: errTypeText });
+        try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+        setPendingAttachKind(null);
+        return;
+      }
+    } else {
+      // kind generic: imágenes, audios, textos, PDF, Word
+      if (!mime.startsWith('audio/') && !mime.startsWith('image/') && !mime.startsWith('text/') &&
+          mime !== 'application/pdf' && mime !== 'application/json' &&
+          !mime.includes('officedocument') && !f.name.toLowerCase().match(/\.(doc|docx|txt|md|rtf|pdf)$/)) {
+        setToast({ kind: 'err', text: 'Tipo de archivo no admitido. Puedes subir imágenes, audios (MP3/WAV), textos, PDF o Word.' });
+        try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+        setPendingAttachKind(null);
+        return;
+      }
+      if (mime.startsWith('image/')) finalKind = 'image';
+      else if (mime.startsWith('audio/')) finalKind = 'audio';
     }
-    if (f.size > MAX_ATTACH_BYTES) {
-      setToast({ kind: 'err', text: 'La imagen supera los 10 MB permitidos.' });
+
+    if (f.size > maxBytes) {
+      setToast({ kind: 'err', text: errSizeText });
       try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
+      setPendingAttachKind(null);
       return;
     }
     if (attachedImg) {
       try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
     }
-    const url = URL.createObjectURL(f);
-    setAttachedImg({ file: f, name: String(f.name || 'imagen').slice(0, 120), bytes: Number(f.size || 0), previewUrl: url });
+    let previewUrl = '';
+    if (finalKind === 'image') {
+      try { previewUrl = URL.createObjectURL(f); } catch {}
+    } else {
+      // audio/generic: sin preview por ahora; usamos icono visualmente
+      previewUrl = '';
+    }
+    setAttachedImg({ file: f, name: String(f.name || 'archivo').slice(0, 160), bytes: Number(f.size || 0), previewUrl, kind: finalKind });
     try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
-  }, [attachedImg]);
+    setPendingAttachKind(null);
+  }, [attachedImg, pendingAttachKind]);
 
   const handleAttachRemove = useCallback(() => {
     if (!attachedImg) return;
@@ -581,9 +686,15 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     sentScrollRef.current = true;
     try {
       if (attachedImg) {
+        const what =
+          attachedImg.kind === 'image'
+            ? 'la extracción automática de letra de foto'
+            : attachedImg.kind === 'audio'
+            ? 'la transcripción automática de audio'
+            : 'la lectura automática de texto del archivo';
         setToast({
           kind: 'ok',
-          text: '📸 Adjuntar foto de letra · próxima funcionalidad. Tu texto se enviará pero la imagen aún no se procesa. Cuando esté activo, se extraerá la letra automáticamente.',
+          text: `📎 ${what.charAt(0).toUpperCase()}${what.slice(1)} · próxima funcionalidad. Tu texto se enviará pero el archivo aún no se procesa. Cuando esté activo, ${what} para ayudarte.`,
         });
         handleAttachRemove();
       }
@@ -905,11 +1016,6 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   return (
     <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot">
-      <div className="luciana-mobile-brand">
-        <img src={OFFICIAL_BRAND_LOGO} alt="Logo de LucIAna Music" loading="lazy" />
-        <h1>LucIAna<span> Bot</span></h1>
-        <p>Tu asistente para crear canciones, letra y estilo</p>
-      </div>
       <header className="luciana-chat-header">
         <div className="flex min-w-0 items-center gap-2">
           <div className="luciana-msg-avatar" style={{ width: '2.25rem', height: '2.25rem' }}>
@@ -1297,20 +1403,32 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
       <div className="luciana-chat-composer">
         {attachedImg && (
-          <div className="luciana-attach-preview" role="group" aria-label="Imagen adjunta">
-            <img src={attachedImg.previewUrl} alt={attachedImg.name} loading="lazy" />
+          <div className="luciana-attach-preview" role="group" aria-label="Archivo adjunto">
+            {attachedImg.kind === 'image' && attachedImg.previewUrl ? (
+              <img src={attachedImg.previewUrl} alt={attachedImg.name} loading="lazy" />
+            ) : attachedImg.kind === 'audio' ? (
+              <div className="luciana-attach-preview__icon" aria-hidden="true"><Music2 className="h-7 w-7" /></div>
+            ) : (
+              <div className="luciana-attach-preview__icon" aria-hidden="true"><Library className="h-7 w-7" /></div>
+            )}
             <div className="luciana-attach-preview__info">
               <span className="luciana-attach-preview__name">{attachedImg.name}</span>
               <span className="luciana-attach-preview__meta">
-                {(attachedImg.bytes / 1024).toFixed(attachedImg.bytes > 1024 * 100 ? 0 : 1)} KB · {attachedImg.file.type || 'imagen'}
+                {(attachedImg.bytes / 1024).toFixed(attachedImg.bytes > 1024 * 100 ? 0 : 1)} KB · {attachedImg.file.type || (attachedImg.kind === 'image' ? 'imagen' : attachedImg.kind === 'audio' ? 'audio' : 'archivo')}
               </span>
-              <span className="badge-soon">📸 Extraer letra de foto · próximamente</span>
+              {attachedImg.kind === 'image' ? (
+                <span className="badge-soon">📸 Extraer letra de foto · próximamente</span>
+              ) : attachedImg.kind === 'audio' ? (
+                <span className="badge-soon">🎙️ Transcribir audio · próximamente</span>
+              ) : (
+                <span className="badge-soon">📝 Extraer texto · próximamente</span>
+              )}
             </div>
             <button
               type="button"
               className="luciana-attach-preview__remove"
               onClick={handleAttachRemove}
-              aria-label="Quitar imagen adjunta"
+              aria-label="Quitar archivo adjunto"
               title="Quitar"
             >
               <X className="h-4 w-4" />
@@ -1318,20 +1436,55 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           </div>
         )}
         <div className="luciana-composer-inner">
-          <button
-            type="button"
-            className="luciana-attach-btn"
-            onClick={handleAttachPick}
-            disabled={loading || generating}
-            aria-label="Adjuntar foto de letra (JPG, PNG o WEBP)"
-            title="Adjuntar foto de letra · próximamente"
-          >
-            <Paperclip className="h-4.5 w-4.5" />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              className="luciana-attach-btn"
+              onClick={handleAttachPick}
+              disabled={loading || generating}
+              aria-label="Adjuntar archivo (imagen, audio, texto, Drive)"
+              aria-expanded={attachMenuOpen}
+              title="Adjuntar · imagen / audio / micrófono / Drive"
+            >
+              <Paperclip className="h-4.5 w-4.5" />
+            </button>
+            {attachMenuOpen && (
+              <div className="luciana-attach-menu" ref={attachMenuRef} role="menu" aria-label="Opciones de adjuntar">
+                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('image')} role="menuitem">
+                  <span className="luciana-attach-menu__icon"><ImageIcon className="h-5 w-5" /></span>
+                  <span className="luciana-attach-menu__label">
+                    <strong>Subir imagen</strong>
+                    <small>Foto de tu letra · JPG, PNG o WEBP</small>
+                  </span>
+                </button>
+                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('audio')} role="menuitem">
+                  <span className="luciana-attach-menu__icon"><Music2 className="h-5 w-5" /></span>
+                  <span className="luciana-attach-menu__label">
+                    <strong>Subir audio</strong>
+                    <small>MP3, WAV, OGG, M4A o FLAC · hasta 25 MB</small>
+                  </span>
+                </button>
+                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('mic')} role="menuitem">
+                  <span className="luciana-attach-menu__icon"><Mic className="h-5 w-5" /></span>
+                  <span className="luciana-attach-menu__label">
+                    <strong>Grabar con micrófono</strong>
+                    <small className="badge-soon-inline">próximamente</small>
+                  </span>
+                </button>
+                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('drive')} role="menuitem">
+                  <span className="luciana-attach-menu__icon"><Cloud className="h-5 w-5" /></span>
+                  <span className="luciana-attach-menu__label">
+                    <strong>Subir desde Drive</strong>
+                    <small className="badge-soon-inline">próximamente</small>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/*,audio/*,.doc,.docx,.txt,.md,.rtf,.pdf"
             onChange={handleAttachFileChange}
             style={{ display: 'none' }}
           />
@@ -1343,7 +1496,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
               onKeyDown={onInputKeyDown}
               rows={1}
-              placeholder="Cuéntame de qué quieres la canción… (Ctrl/Cmd + Enter para enviar)"
+              placeholder=""
               disabled={loading || generating}
             />
             <div className="luciana-composer-counter">
@@ -1357,10 +1510,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             disabled={!canSend}
             aria-label="Enviar mensaje"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            <span className="sr-only">
-              <Send className="h-4 w-4" />
-            </span>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4.5 w-4.5" />}
           </button>
         </div>
       </div>

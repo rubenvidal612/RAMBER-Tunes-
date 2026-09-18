@@ -517,3 +517,104 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   color: #ef4444;
   border-color: rgba(239, 68, 68, 0.4);
 }
+.luciana-attach-preview__icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--bg-elev-1));
+  color: var(--brand-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* ----------- Menú adjuntar popup (4 opciones) ----------- */
+.luciana-attach-menu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
+  transform: translateX(-50%);
+  min-width: 260px;
+  width: max-content;
+  max-width: 90vw;
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 0.4rem;
+  box-shadow: 0 20px 60px color-mix(in srgb, #000000 40%, transparent);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.luciana-attach-menu__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+  padding: 0.6rem 0.65rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+.luciana-attach-menu__item:hover {
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--bg-elev-2));
+  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--border));
+  transform: translateY(-1px);
+}
+.luciana-attach-menu__icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--brand-primary) 14%, var(--bg-elev-2));
+  color: var(--brand-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.luciana-attach-menu__label {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.luciana-attach-menu__label strong {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.luciana-attach-menu__label small {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.badge-soon-inline {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  margin-top: 0.1rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--brand-accent) 18%, transparent);
+  color: var(--brand-accent);
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+@media (max-width: 640px) {
+  .luciana-attach-menu {
+    min-width: 230px;
+    left: 0;
+    transform: none;
+  }
+}
