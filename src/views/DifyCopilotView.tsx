@@ -274,6 +274,15 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
   const [audioBusy, setAudioBusy] = useState(false);
   const [coverDraft, setCoverDraft] = useState<null | { title: string; style: string; gender: 'Masculino' | 'Femenino' }>(null);
+  const [coverWizard, setCoverWizard] = useState<null | {
+    phase: 'lyrics' | 'style' | 'mood' | 'direction' | 'title' | 'voice' | 'summary';
+    lyrics: string;
+    style: string;
+    mood: string;
+    direction: string;
+    title: string;
+    voice: 'Hombre' | 'Mujer' | '';
+  }>(null);
   const [coverGenerating, setCoverGenerating] = useState(false);
 
   const [micRecorderOpen, setMicRecorderOpen] = useState(false);
@@ -994,12 +1003,17 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     setAttachedImg({ file: f, name: String(f.name || 'archivo').slice(0, 160), bytes: Number(f.size || 0), previewUrl, kind: finalKind });
     try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
     setPendingAttachKind(null);
+    if (finalKind === 'audio') {
+      setTimeout(() => { try { window.dispatchEvent(new (window as any).CustomEvent('luciana:audio-attached')); } catch {} }, 0);
+    }
   }, [attachedImg, pendingAttachKind]);
 
   const handleAttachRemove = useCallback(() => {
     if (!attachedImg) return;
     try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
     setAttachedImg(null);
+    setCoverWizard(null);
+    setCoverDraft(null);
   }, [attachedImg]);
 
   const confirmAudioAuth = useCallback(() => {
@@ -1010,13 +1024,30 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     }
   }, []);
 
-  const openCoverFromAudio = useCallback(() => {
-    if (!attachedImg || attachedImg.kind !== 'audio') return;
-    const base = String(attachedImg.name || 'Cover').replace(/\.[^.]+$/, '').trim().slice(0, 100) || 'Cover';
-    setCoverDraft({ title: base, style: 'General', gender: 'Masculino' });
-  }, [attachedImg]);
+  const wizardPushMessage = useCallback((text: string) => {
+    const m: ChatMessage = { id: uid(), role: 'assistant', text, createdAt: Date.now() };
+    setMessages((list) => [...list, m]);
+    try {
+      (async () => {
+        try {
+          const token = await getValidBearerToken();
+          const convId = (await (0, eval)('(async () => {})')).toString ? '' : '';
+          void token; void convId;
+        } catch {}
+        try {
+          const accessToken = await getValidBearerToken();
+          const activeConvId = (() => { try { return (uiState as any).activeConversationId as string | null; } catch { return null; } })();
+          if (accessToken && activeConvId) {
+            try {
+              await appendMessageToConversation(accessToken, activeConvId, { role: 'assistant', content: stripInternalReasoning(text) });
+            } catch {}
+          }
+        } catch {}
+      })();
+    } catch {}
+  }, [uiState]);
 
-  const handleAudioExtractLyrics = useCallback(async () => {
+  const transcribeAudioForWizard = useCallback(async () => {
     if (!attachedImg || attachedImg.kind !== 'audio') return;
     if (loading || generating || audioBusy || coverGenerating) return;
     if (!confirmAudioAuth()) return;
@@ -1028,6 +1059,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     setAudioBusy(true);
     setLoading(true);
     sentScrollRef.current = true;
+    setCoverDraft(null);
+    setCoverWizard(null);
     const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
     const audioFile = attachedImg.file;
     const msgAudioUrl = (() => {
@@ -1047,31 +1080,28 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       const userMsg: ChatMessage = {
         id: uid(),
         role: 'user',
-        text: 'Extraer letra del audio',
+        text: `Audio adjunto · ${audioName}`,
         createdAt: Date.now(),
         attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes } : null,
       };
       setMessages((m) => [...m, userMsg]);
-      setCoverDraft(null);
-      try { handleAttachRemove(); } catch {}
 
       let activeConvId = uiState.activeConversationId;
-      let activeDifyId = conversationId;
       if (!activeConvId) {
-        const created = await createSupabaseConversation(accessToken, { title: 'Audio' });
+        const created = await createSupabaseConversation(accessToken, { title: 'Cover con audio' });
         if (created) {
           activeConvId = created.id;
-          activeDifyId = String(created.internal_dify_conversation_id || '').trim();
           setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
         }
       }
       if (activeConvId) {
         void (async () => {
-          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: `[Audio adjunto: ${audioName}] Extraer letra` }); } catch {}
+          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: `[Audio adjunto: ${audioName}]` }); } catch {}
         })();
       }
 
       setToast({ kind: 'ok', text: 'Transcribiendo audio…' });
+      wizardPushMessage('🎙️ Transcribiendo tu audio… esto puede tardar entre 10 y 60 segundos.');
 
       let uploadJson: any = null;
       let uploadStatus = 0;
@@ -1149,31 +1179,42 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         return;
       }
 
+      setCoverWizard({
+        phase: 'lyrics',
+        lyrics,
+        style: '',
+        mood: '',
+        direction: '',
+        title: '',
+        voice: '',
+      });
+
       const aMsg: ChatMessage = {
         id: uid(),
         role: 'assistant',
         text:
-          `**Transcripción detectada:**\n\n` +
-          `${lyrics}\n\n` +
-          `Revísala y corrígela si quieres. Luego puedes pulsar **Usar tal cual** para mandarla al chat.`,
+          `🎙️ Detecté esta letra:\n\n` +
+          `\`\`\`\n${lyrics}\n\`\`\`\n\n` +
+          `¿Está correcta o quieres cambiar algo?\n` +
+          `- Si está bien: escríbeme **“sí está bien”** (o cualquier confirmación corta).\n` +
+          `- Si quieres corregirla: pégame la letra corregida (solo la letra).`,
         createdAt: Date.now(),
-        structured: { action: 'transcription_ready', lyrics },
+        structured: { action: 'wizard_lyrics', lyrics },
       };
       setMessages((m) => [...m, aMsg]);
-      try {
-        setInput(lyrics);
-        if (textareaRef.current) textareaRef.current.value = lyrics;
-        try { textareaRef.current?.focus?.(); } catch {}
-      } catch {}
-
-      setLoading(false);
-      setAudioBusy(false);
 
       if (activeConvId) {
         void (async () => {
           try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'assistant', content: stripInternalReasoning(aMsg.text) }); } catch {}
         })();
       }
+
+      setLoading(false);
+      setAudioBusy(false);
+      try {
+        setInput('');
+        if (textareaRef.current) textareaRef.current.value = '';
+      } catch {}
     } catch {
       const friendly = 'No pude transcribir este audio en este momento.';
       setLoading(false);
@@ -1181,7 +1222,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setToast({ kind: 'err', text: friendly });
       setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
     }
-  }, [attachedImg, audioBusy, confirmAudioAuth, conversationId, coverGenerating, generating, handleAttachRemove, loading, supabaseBrowser, uiState.activeConversationId, setUi, setToast]);
+  }, [attachedImg, audioBusy, confirmAudioAuth, coverGenerating, generating, loading, setUi, setToast, supabaseBrowser, uiState.activeConversationId, wizardPushMessage]);
+
+  useEffect(() => {
+    const onAutoTranscribe = () => {
+      try { window.setTimeout(() => void transcribeAudioForWizard(), 0); } catch {}
+    };
+    window.addEventListener('luciana:audio-attached', onAutoTranscribe);
+    return () => { window.removeEventListener('luciana:audio-attached', onAutoTranscribe); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcribeAudioForWizard]);
 
   const handleGenerateCoverFromAudio = useCallback(async () => {
     if (!attachedImg || attachedImg.kind !== 'audio') return;
@@ -1202,7 +1252,10 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
     })();
     const title = String(coverDraft.title || 'Cover').trim().slice(0, 100) || 'Cover';
-    const style = String(coverDraft.style || 'General').trim().slice(0, 1000) || 'General';
+    const styleRaw = String(coverDraft.style || '').trim().slice(0, 1200);
+    const styleParts = [styleRaw].filter(Boolean);
+    if (coverDraft.gender) styleParts.push(`Voz deseada: ${coverDraft.gender}.`);
+    const style = styleParts.filter(Boolean).join('\n') || 'Pop';
     const vocalGender = coverDraft.gender === 'Femenino' ? 'f' : 'm';
     const COST_CREDITS = 12;
 
@@ -1285,12 +1338,13 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       let coverJson: any = null;
       let coverStatus = 0;
       try {
+        const lyrics = String((coverWizard && coverWizard.phase === 'summary' && coverWizard.lyrics) || (coverDraft && (coverDraft as any).lyrics) || '').trim();
         const payload: any = {
           uploadUrl: uploadUrl || undefined,
           uploadBucket: uploadPath ? 'ramber-tunes' : undefined,
           uploadPath: uploadPath || undefined,
           instrumental: false,
-          prompt: ' ',
+          prompt: lyrics || ' ',
           style,
           title,
           model: 'V6',
@@ -1382,8 +1436,116 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
       return;
     }
+
+    // ========== WIZARD CONVERSACIONAL para cover desde audio ==========
+    if (coverWizard && attachedImg && attachedImg.kind === 'audio') {
+      if (!text) {
+        setToast({ kind: 'ok', text: 'Escríbeme tu respuesta para seguir.' });
+        return;
+      }
+      const phase = coverWizard.phase;
+      const affirmRe = /^(si|s[íi]|correcto|ok|okay|esta bien|está bien|va bien|bien|tal cual|usar tal cual|confirmar|si esta|sí está|asi esta|así está|perfecto|listo|ya esta|ya está|continuar|seguir)[\s\.!,¡]*$/i;
+      const textLower = String(text || '').toLowerCase().trim();
+      const normalized = text;
+
+      let next: typeof coverWizard = { ...coverWizard };
+
+      if (phase === 'lyrics') {
+        if (affirmRe.test(textLower)) {
+          next.phase = 'style';
+          wizardPushMessage(
+            '✅ Letra confirmada.\n\nAhora dime: ¿de qué **género o estilo musical** quieres que sea tu cover?\n' +
+            'Ejemplos: pop, reggaetón, balada, rock, bachata, jazz, electrónica, ranchero, urbano…'
+          );
+        } else {
+          next.lyrics = normalized;
+          next.phase = 'style';
+          wizardPushMessage(
+            '✅ Letra actualizada.\n\nAhora dime: ¿de qué **género o estilo musical** quieres que sea tu cover?\n' +
+            'Ejemplos: pop, reggaetón, balada, rock, bachata, jazz, electrónica, ranchero, urbano…'
+          );
+        }
+      } else if (phase === 'style') {
+        next.style = normalized;
+        next.phase = 'mood';
+        wizardPushMessage(
+          '🎼 Entendido el estilo.\n\n¿Qué **mood o energía** quieres? Ejemplos: alegre y bailable, triste y melancólica, épica y cinematográfica, romántica e íntima, agresiva, relajada, misteriosa, motivadora…'
+        );
+      } else if (phase === 'mood') {
+        next.mood = normalized;
+        next.phase = 'direction';
+        wizardPushMessage(
+          '🎚️ Genial.\n\n¿Qué **instrumentos o dirección musical** quieres resaltar?\n' +
+          'Ejemplos: guitarra acústica, piano, bajo grueso, cuerdas sinfónicas, beat 808, sintetizadores vintage, banda, mariachis, 120 BPM, 170 BPM…\n' +
+          'Si no tienes preferencias, escribe **“cualquiera”**.'
+        );
+      } else if (phase === 'direction') {
+        next.direction = /^(cualquiera|ninguno|nada|no|no tengo|lo que sea|libre)[\s\.!,¡]*$/i.test(textLower) ? '' : normalized;
+        next.phase = 'title';
+        wizardPushMessage(
+          '🎯 Casi listo.\n\n¿Qué **título** quieres ponerle a tu cover?\n' +
+          'Si prefieres que te deje una sugerencia, escribe **“sugiere uno”**.'
+        );
+      } else if (phase === 'title') {
+        if (/^(sugiere uno|sugiere|propon|propón|tu eliges|tú eliges|elige|elije|sugerir)[\s\.!,¡]*$/i.test(textLower)) {
+          const base = String(attachedImg.name || 'Cover').replace(/\.[^.]+$/, '').trim();
+          next.title = base ? `${base} · cover` : 'Mi cover';
+        } else {
+          next.title = normalized;
+        }
+        next.phase = 'voice';
+        wizardPushMessage(
+          '🎙️ Perfecto.\n\nPara terminar: ¿quieres voz de **Hombre** o de **Mujer**?\n' +
+          'Escribe solo **“Hombre”** o **“Mujer”**.'
+        );
+      } else if (phase === 'voice') {
+        const v = /mujer|femenino|muj|fem/i.test(textLower) ? 'Mujer' : 'Hombre';
+        next.voice = v;
+        next.phase = 'summary';
+      }
+
+      setCoverWizard(next);
+
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: 'user',
+        text,
+        createdAt: Date.now(),
+      };
+      setMessages((m) => [...m, userMsg]);
+      setInput('');
+      if (textareaRef.current) textareaRef.current.value = '';
+
+      try {
+        const tk = await getValidBearerToken();
+        const activeConvId = (uiState as any).activeConversationId as string | null | undefined;
+        if (tk && activeConvId) {
+          try { await appendMessageToConversation(tk, activeConvId, { role: 'user', content: text }); } catch {}
+          if (next.phase === phase) { /* no new assistant message via wizard */ }
+        }
+      } catch {}
+
+      if (next.phase === 'summary') {
+        const genderFinal: 'Masculino' | 'Femenino' = next.voice === 'Mujer' ? 'Femenino' : 'Masculino';
+        const styleBits = [next.style, next.mood, next.direction].filter(Boolean);
+        const styleFinal = styleBits.join(' · ');
+        setCoverDraft({ title: next.title || 'Cover', style: styleFinal, gender: genderFinal });
+        const summaryText =
+          `✨ Ya tenemos todo para el cover:\n\n` +
+          `**Título:** ${next.title || 'Cover'}\n` +
+          `**Estilo / dirección:** ${styleFinal || 'Pop'}\n` +
+          `**Voz:** ${next.voice || genderFinal}\n\n` +
+          `Revisa los detalles arriba. Cuando esté bien pulsa **Generar cover** (12 créditos).`;
+        wizardPushMessage(summaryText);
+      }
+
+      setLoading(false);
+      return;
+    }
+
     if (attachedImg && attachedImg.kind === 'audio') {
-      setToast({ kind: 'ok', text: 'Para este audio, usa los botones “Extraer letra” o “Crear cover”.' });
+      // Fallback si el wizard aún no se activó (raramente, por race). Bloquear envío normal
+      setToast({ kind: 'ok', text: 'Estoy preparando la transcripción. Espera un momento o vuelve a subir el audio.' });
       return;
     }
 
@@ -1664,6 +1826,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     refreshHistoryList,
     attachedImg,
     handleAttachRemove,
+    coverWizard,
+    wizardPushMessage,
   ]);
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2362,7 +2526,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           </div>
         )}
 
-        {coverDraft && attachedImg && attachedImg.kind === 'audio' && (
+        {coverDraft && attachedImg && attachedImg.kind === 'audio' && coverWizard && coverWizard.phase === 'summary' && (
           <div className="luciana-msg-row is-assistant">
             <div className="luciana-msg-wrap">
               <div className="luciana-msg-avatar" aria-hidden>
@@ -2403,16 +2567,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                       </span>
                       <div className="min-w-0">
                         <h2 className="text-base font-black" style={{ color: 'var(--text)' }}>
-                          Resumen para crear cover
+                          Resumen final · cover
                         </h2>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          Revisa y confirma. Se cobrarán <b style={{ color: 'var(--brand-accent)' }}>12 créditos</b> cuando pulses <b style={{ color: 'var(--brand-primary)' }}>Generar cover</b>.
+                          Revisa los detalles. Se cobrarán <b style={{ color: 'var(--brand-accent)' }}>12 créditos</b> solo cuando pulses <b style={{ color: 'var(--brand-primary)' }}>Generar cover</b>.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setCoverDraft(null)}
+                      onClick={() => { setCoverDraft(null); setCoverWizard(null); }}
                       disabled={coverGenerating || loading}
                       className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
                       style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
@@ -2512,7 +2676,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
                     <label className="md:col-span-2 block">
                       <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
-                        Nuevo estilo musical
+                        Estilo musical
                       </span>
                       <textarea
                         rows={3}
@@ -2535,16 +2699,42 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                           outline: 'none',
                         }}
                       />
-                      <div style={{ marginTop: '0.2rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                        Cuantos más detalles mejor: género, tempo, instrumentos, estado de ánimo.
-                      </div>
+                    </label>
+
+                    <label className="md:col-span-2 block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Letra / prompt
+                      </span>
+                      <textarea
+                        rows={6}
+                        value={coverWizard.lyrics}
+                        onChange={(e) => setCoverWizard((prev) => prev ? { ...prev, lyrics: e.target.value } : prev)}
+                        placeholder="Letra que usará el cover"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          resize: 'vertical',
+                          minHeight: '9rem',
+                          maxHeight: '18rem',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0.8rem 0.95rem',
+                          fontSize: '0.9rem',
+                          lineHeight: 1.55,
+                          outline: 'none',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      />
                     </label>
                   </div>
 
                   <div className="mt-4 flex flex-col-reverse items-stretch gap-2 md:flex-row md:items-center md:justify-between">
                     <button
                       type="button"
-                      onClick={() => setCoverDraft(null)}
+                      onClick={() => { setCoverDraft(null); setCoverWizard(null); }}
                       disabled={coverGenerating || loading}
                       className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition disabled:opacity-60"
                       style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
@@ -2554,7 +2744,13 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                     <button
                       type="button"
                       onClick={() => void handleGenerateCoverFromAudio()}
-                      disabled={coverGenerating || loading}
+                      disabled={
+                        coverGenerating || loading ||
+                        !String(coverDraft.title || '').trim() ||
+                        !String(coverDraft.style || '').trim() ||
+                        !String(coverWizard.lyrics || '').trim() ||
+                        (coverDraft.gender !== 'Masculino' && coverDraft.gender !== 'Femenino')
+                      }
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -2570,8 +2766,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                         color: '#fff',
                         background: 'linear-gradient(135deg, var(--brand-primary) 0%, #ec4899 50%, var(--brand-accent) 100%)',
                         boxShadow: '0 14px 40px color-mix(in srgb, var(--brand-primary) 32%, transparent)',
-                        cursor: coverGenerating || loading ? 'not-allowed' : 'pointer',
-                        opacity: coverGenerating || loading ? 0.78 : 1,
+                        cursor: (coverGenerating || loading ||
+                          !String(coverDraft.title || '').trim() ||
+                          !String(coverDraft.style || '').trim() ||
+                          !String(coverWizard.lyrics || '').trim() ||
+                          (coverDraft.gender !== 'Masculino' && coverDraft.gender !== 'Femenino')) ? 'not-allowed' : 'pointer',
+                        opacity: (coverGenerating || loading ||
+                          !String(coverDraft.title || '').trim() ||
+                          !String(coverDraft.style || '').trim() ||
+                          !String(coverWizard.lyrics || '').trim() ||
+                          (coverDraft.gender !== 'Masculino' && coverDraft.gender !== 'Femenino')) ? 0.72 : 1,
                         transition: 'filter 0.15s ease, transform 0.15s ease',
                       }}
                     >
@@ -2581,7 +2785,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                         </>
                       ) : (
                         <>
-                          <Sparkles className="h-5 w-5" /> Generar cover
+                          <Sparkles className="h-5 w-5" /> Generar cover (12 créditos)
                         </>
                       )}
                     </button>
@@ -2637,33 +2841,19 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               {attachedImg.kind === 'image' ? (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>📸 Foto lista · se enviará junto con tu mensaje</span>
               ) : attachedImg.kind === 'audio' ? (
-                <>
-                  <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio listo · elige una acción</span>
-                  <div style={{ marginTop: '0.45rem', display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => void handleAudioExtractLyrics()}
-                      disabled={loading || generating || audioBusy || coverGenerating}
-                      className="inline-flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-bold disabled:opacity-60"
-                      style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
-                    >
-                      Extraer letra
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openCoverFromAudio}
-                      disabled={loading || generating || audioBusy || coverGenerating}
-                      className="inline-flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-black disabled:opacity-60"
-                      style={{
-                        borderColor: 'transparent',
-                        background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
-                        color: '#fff',
-                      }}
-                    >
-                      Crear cover
-                    </button>
-                  </div>
-                </>
+                <span className="badge-soon" style={{ opacity: 0.9 }}>
+                  {coverWizard
+                    ? (
+                      coverWizard.phase === 'lyrics' ? '🎙️ Transcripción lista · corrige o confirma en el chat'
+                        : coverWizard.phase === 'summary' ? '🎛️ Revisa el resumen y pulsa “Generar cover”'
+                        : `🎙️ Siguiente paso en el chat: ${coverWizard.phase === 'style' ? 'género/estilo'
+                          : coverWizard.phase === 'mood' ? 'mood/energía'
+                          : coverWizard.phase === 'direction' ? 'instrumentos/dirección'
+                          : coverWizard.phase === 'title' ? 'título'
+                          : coverWizard.phase === 'voice' ? 'voz Hombre/Mujer'
+                          : 'preparando…'}`)
+                    : '🎙️ Audio cargado · confirmando autorización y transcribiendo…'}
+                </span>
               ) : (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>📝 Archivo adjunto</span>
               )}
