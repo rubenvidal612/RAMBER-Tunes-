@@ -942,7 +942,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     else inp.accept = 'image/*,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,.txt,.md,.rtf';
     setPendingAttachKind(kind);
     setAttachMenuOpen(false);
-    setTimeout(() => inp.click(), 50);
+    try { inp.click(); } catch {}
   }, []);
 
   // Cerrar menú de adjuntar al hacer click fuera
