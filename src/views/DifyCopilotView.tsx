@@ -188,8 +188,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       const saved = String(window.localStorage.getItem('luciana_chat_theme_v1') || '').toLowerCase().trim();
       if (saved === 'light' || saved === 'dark') return saved;
     } catch { /* ignore */ }
-    // Por defecto: chat en oscuro (colores brand)
-    return 'dark';
+    // Por defecto: chat en modo claro
+    return 'light';
   });
   const toggleChatTheme = useCallback(() => {
     setChatTheme((prev) => {
