@@ -32,14 +32,14 @@ type ChatMessage = {
   role: ChatRole;
   text: string;
   createdAt: number;
-  structured?: null | {
-    action: 'ready_to_generate';
-    prompt: string;
-    style: string;
-    title: string;
-    instrumental: boolean;
-  };
+  structured?: null | (ReadyToGenerate & { action: 'ready_to_generate' });
   persisted?: boolean;
+  attachment?: null | {
+    kind: 'image';
+    previewUrl: string;
+    name: string;
+    bytes: number;
+  };
 };
 
 type ReadyToGenerate = {
@@ -70,6 +70,19 @@ function uid() {
     return (crypto as any).randomUUID();
   }
   return 'm_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('No pude leer el archivo.'));
+      fr.onload = () => resolve(String(fr.result || ''));
+      fr.readAsDataURL(file);
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 function escapeHTML(s: string) {
@@ -1022,26 +1035,54 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   const sendMessage = useCallback(async () => {
     const text = String(input || '').trim();
-    if (!text) return;
     if (!supabaseBrowser) {
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
+      return;
+    }
+    let imgAttachment: null | {
+      kind: 'image';
+      name: string;
+      bytes: number;
+      mime_type: string;
+      bytes_base64: string;
+      previewUrl: string;
+    } = null;
+    let audioHint: null | string = null;
+    if (attachedImg) {
+      if (attachedImg.kind === 'image') {
+        try {
+          const dataUrl = await fileToDataURL(attachedImg.file);
+          imgAttachment = {
+            kind: 'image',
+            name: String(attachedImg.name || 'imagen.jpg'),
+            bytes: Number(attachedImg.bytes || 0),
+            mime_type: String(attachedImg.file.type || 'image/jpeg'),
+            bytes_base64: dataUrl,
+            previewUrl: attachedImg.previewUrl || '',
+          };
+        } catch (e: any) {
+          setToast({ kind: 'err', text: 'No pude leer la imagen. Vuelve a seleccionarla.' });
+          return;
+        }
+      } else if (attachedImg.kind === 'audio') {
+        audioHint =
+          '🎙️ Audio adjunto. Por ahora, el chat de LucIAna Bot aún no procesa el audio directamente. Si quieres transcribirlo, usa la pestaña Crear > Quiero cantarlo o sube el audio ahí para generar la canción.';
+      } else {
+        audioHint =
+          '📝 Archivo adjunto (texto / PDF / Word). La lectura de documentos aún no está activa en esta versión de LucIAna Bot.';
+      }
+    }
+    if (!text && !imgAttachment) {
+      if (audioHint) {
+        setToast({ kind: 'ok', text: audioHint });
+      }
       return;
     }
     setLoading(true);
     sentScrollRef.current = true;
     try {
-      if (attachedImg) {
-        const what =
-          attachedImg.kind === 'image'
-            ? 'la extracción automática de letra de foto'
-            : attachedImg.kind === 'audio'
-            ? 'la transcripción automática de audio'
-            : 'la lectura automática de texto del archivo';
-        setToast({
-          kind: 'ok',
-          text: `📎 ${what.charAt(0).toUpperCase()}${what.slice(1)} · próxima funcionalidad. Tu texto se enviará pero el archivo aún no se procesa. Cuando esté activo, ${what} para ayudarte.`,
-        });
-        handleAttachRemove();
+      if (audioHint) {
+        setToast({ kind: 'ok', text: audioHint });
       }
       const accessToken = await getValidBearerToken();
       if (!accessToken) {
@@ -1062,16 +1103,30 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         role: 'user',
         text,
         createdAt: Date.now(),
+        attachment: imgAttachment
+          ? {
+              kind: 'image',
+              previewUrl: imgAttachment.previewUrl,
+              name: imgAttachment.name,
+              bytes: imgAttachment.bytes,
+            }
+          : null,
       };
       setMessages((m) => [...m, userMsg]);
       setInput('');
       if (textareaRef.current) textareaRef.current.value = '';
+      // Limpiar preview adjunta tras enviarla (solo la que acabamos de enviar)
+      if (attachedImg && attachedImg.kind === 'image' && imgAttachment && imgAttachment.previewUrl === attachedImg.previewUrl) {
+        try { handleAttachRemove(); } catch {}
+      } else if (attachedImg) {
+        try { handleAttachRemove(); } catch {}
+      }
 
       // Asegurar conversación activa en Supabase
       let activeConvId = uiState.activeConversationId;
       let activeDifyId = conversationId;
       if (!activeConvId) {
-        const created = await createSupabaseConversation(accessToken, { title: text.slice(0, 60) || 'Nuevo chat' });
+        const created = await createSupabaseConversation(accessToken, { title: text.slice(0, 60) || 'Foto de letra' });
         if (created) {
           activeConvId = created.id;
           activeDifyId = String(created.internal_dify_conversation_id || '').trim();
@@ -1081,13 +1136,26 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       // Guardar mensaje usuario en Supabase (async pero no bloqueante)
       if (activeConvId) {
         void (async () => {
-          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: text }); }
-          catch (e) { console.warn('[chat] save user msg failed', e instanceof Error ? e.message : e); }
+          try {
+            const prefixImg = imgAttachment ? `[Imagen adjunta: ${imgAttachment.name}] ` : '';
+            await appendMessageToConversation(accessToken, activeConvId!, {
+              role: 'user',
+              content: prefixImg + String(text || ''),
+            });
+          } catch (e) { console.warn('[chat] save user msg failed', e instanceof Error ? e.message : e); }
         })();
       }
 
       const bodyPayload: any = { message: text };
       if (activeDifyId) bodyPayload.conversation_id = activeDifyId;
+      if (imgAttachment) {
+        bodyPayload.attachment = {
+          kind: imgAttachment.kind,
+          name: imgAttachment.name,
+          mime_type: imgAttachment.mime_type,
+          bytes_base64: imgAttachment.bytes_base64,
+        };
+      }
 
       let json: any = null;
       let httpStatus = 0;
@@ -1164,13 +1232,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           ? 'Tu sesión de LucIAna expiró. Cierra y vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.'
           : replyText || (errCode === 'dify_copilot_not_configured'
               ? 'Falta configurar el asistente en el servidor. Avisa a tu administrador/a.'
-              : 'Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.');
+              : /^image_/i.test(errCode) || errCode === 'image_upload_error'
+                ? (replyText || 'No pude procesar la imagen que enviaste. Revisa el formato (JPG/PNG/WEBP) y que no supere 10 MB.')
+                : 'Hubo un problema al contactar con LucIAna Bot. Inténtalo de nuevo en 30 segundos.');
         setLoading(false);
         const mappedCode = (() => {
           if (isAuth) return 'sesión expirada, vuelve a iniciar sesión';
           const c = String(errCode || '').trim();
           if (c === 'dify_copilot_not_configured') return 'asistente no configurado';
           if (c === 'network_error') return 'error de conexión';
+          if (/^image_/i.test(c)) return 'no pude procesar la imagen';
           if (!c) return '';
           return 'operación rechazada';
         })();
@@ -1550,6 +1621,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
         {messages.map((m) => {
           const isUser = m.role === 'user';
+          const img = m.attachment && m.attachment.kind === 'image' ? m.attachment : null;
           return (
             <div key={m.id} className={cn('luciana-msg-row', isUser ? 'is-user' : 'is-assistant')}>
               <div className="luciana-msg-wrap">
@@ -1560,11 +1632,43 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                     <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna" loading="lazy" />
                   )}
                 </div>
-                <div className="luciana-msg-bubble">
-                  <div
-                    className="prose-luciana"
-                    dangerouslySetInnerHTML={{ __html: simpleMarkdown(m.text, isDark) }}
-                  />
+                <div className="luciana-msg-bubble" style={img ? { padding: '0.5rem', overflow: 'hidden' } : undefined}>
+                  {img && (
+                    <div
+                      style={{
+                        marginBottom: m.text ? '0.5rem' : '0',
+                        display: 'flex',
+                        justifyContent: isUser ? 'flex-end' : 'flex-start',
+                      }}
+                    >
+                      <img
+                        src={img.previewUrl}
+                        alt={img.name || 'imagen'}
+                        loading="lazy"
+                        onClick={() => {
+                          try { window.open(img.previewUrl, '_blank', 'noopener,noreferrer'); } catch {}
+                        }}
+                        style={{
+                          maxWidth: '260px',
+                          maxHeight: '260px',
+                          width: 'auto',
+                          height: 'auto',
+                          objectFit: 'contain',
+                          borderRadius: '0.9rem',
+                          cursor: 'zoom-in',
+                          border: isUser
+                            ? '1px solid color-mix(in srgb, var(--brand-primary) 24%, transparent)'
+                            : '1px solid var(--border)',
+                        }}
+                      />
+                    </div>
+                  )}
+                  {m.text ? (
+                    <div
+                      className="prose-luciana"
+                      dangerouslySetInnerHTML={{ __html: simpleMarkdown(m.text, isDark) }}
+                    />
+                  ) : null}
                   {m.structured?.action === 'ready_to_generate' && (
                     <div
                       style={{
@@ -1897,7 +2001,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                 {(attachedImg.bytes / 1024).toFixed(attachedImg.bytes > 1024 * 100 ? 0 : 1)} KB · {attachedImg.file.type || (attachedImg.kind === 'image' ? 'imagen' : attachedImg.kind === 'audio' ? 'audio' : 'archivo')}
               </span>
               {attachedImg.kind === 'image' ? (
-                <span className="badge-soon" style={{ opacity: 0.9 }}>📸 Imagen adjunta · se procesará al enviar</span>
+                <span className="badge-soon" style={{ opacity: 0.9 }}>📸 Foto lista · se enviará junto con tu mensaje</span>
               ) : attachedImg.kind === 'audio' ? (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio adjunto · máximo 25 MB</span>
               ) : (

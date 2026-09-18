@@ -18354,8 +18354,74 @@ const difyHandler = (() => {
     return null;
   }
 
+  async function difyUploadFileToDify(params: {
+    apiKey: string; baseUrl: string; user: any; fileName: string; mimeType: string; bytes: Buffer;
+  }): Promise<{ id: string; name: string; mime_type: string }> {
+    const { apiKey, baseUrl, user, fileName, mimeType, bytes } = params;
+    const userIdShort = String(user.id || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 20) || "anon";
+    const difyUser = String(process.env.DIFY_COPILOT_USER_TEMPLATE || "luciana_{user_id}").replace(/\{user_id\}/g, userIdShort).slice(0, 64);
+    let base = String(baseUrl || "https://api.dify.ai/v1").trim().replace(/\/+$/g, "");
+    if (!/^https?:\/\//i.test(base)) base = "https://api.dify.ai/v1";
+    // Caso 1: baseUrl actual apunta a .../v1/chat-messages, nos quedamos con /v1
+    const m = base.match(/^(https?:\/\/[^/]+\/v\d+)(?:\/.*)?$/i);
+    if (m && m[1]) base = m[1];
+    const url = `${base}/files/upload`;
+    // Construir multipart/form-data manual sin depender de FormData de navegador
+    const boundary = `----LucianaDifyUpload${Date.now().toString(36)}`;
+    const head =
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${encodeURIComponent(String(fileName || "file").slice(0, 200))}"\r\n` +
+      `Content-Type: ${String(mimeType || "application/octet-stream")}\r\n\r\n`;
+    const mid =
+      `\r\n--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="user"\r\n\r\n${String(difyUser)}\r\n` +
+      `--${boundary}--\r\n`;
+    const body = Buffer.concat([Buffer.from(head, "utf8"), Buffer.from(bytes), Buffer.from(mid, "utf8")]);
+    let r: any;
+    try {
+      r = await fetch(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": `multipart/form-data; boundary=${boundary}`,
+          "content-length": String(body.length),
+          "cache-control": "no-store",
+        },
+        body,
+      } as any);
+    } catch (e) {
+      throw new Error(`Dify upload fetch error: ${e instanceof Error ? String(e.message) : String(e)}`);
+    }
+    if (!r || typeof r.status !== "number") {
+      throw new Error("Dify upload: el servidor remoto no devolvió status.");
+    }
+    const t = typeof r.text === "function" ? await r.text() : "";
+    let j: any = null;
+    try { j = t ? JSON.parse(t) : null; } catch { j = null; }
+    if (r.status < 200 || r.status >= 300) {
+      const msg =
+        (j && typeof (j as any).message === "string" ? (j as any).message : "") ||
+        (j && typeof (j as any).error === "string" ? (j as any).error : "") ||
+        (j && typeof (j as any).code === "string" ? (j as any).code : "") ||
+        `HTTP ${r.status}`;
+      throw new Error(`Dify upload HTTP ${r.status}: ${String(msg || "").slice(0, 400)}`);
+    }
+    const id = String(
+      (j && typeof (j as any).id === "string" ? (j as any).id : "") ||
+      (j && j.data && typeof j.data.id === "string" ? j.data.id : "") ||
+      ""
+    ).trim();
+    if (!id) throw new Error("Dify upload no devolvió id de archivo.");
+    return {
+      id,
+      name: String(j && typeof (j as any).name === "string" ? (j as any).name : fileName || "file"),
+      mime_type: String(j && typeof (j as any).mime_type === "string" ? (j as any).mime_type : mimeType || ""),
+    };
+  }
+
   async function difyFetchCopilotFromDify(params: {
     apiKey: string; apiUrl: string; user: any; message: string; conversationId: string;
+    files?: Array<{ type: 'image'; transfer_method: 'local_file'; upload_file_id: string; }>;
   }): Promise<{ answer: string; conversationId: string; raw: any }> {
     const { apiKey, apiUrl, user, message, conversationId } = params;
     const userIdShort = String(user.id || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 20) || "anon";
@@ -18368,7 +18434,9 @@ const difyHandler = (() => {
     };
     const cid = String(conversationId || "").trim();
     if (cid) payload.conversation_id = cid;
-    if (process.env.DIFY_COPILOT_FILES && String(process.env.DIFY_COPILOT_FILES).trim()) {
+    if (params.files && Array.isArray(params.files) && params.files.length) {
+      payload.files = params.files.slice(0, 5);
+    } else if (process.env.DIFY_COPILOT_FILES && String(process.env.DIFY_COPILOT_FILES).trim()) {
       try {
         const arr = JSON.parse(process.env.DIFY_COPILOT_FILES);
         if (Array.isArray(arr) && arr.length) payload.files = arr;
@@ -18491,11 +18559,72 @@ const difyHandler = (() => {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return difySendJson(res, 400, { error: "invalid_request", message: "Body debe ser un JSON object con el campo 'message'." });
     }
-    const message = String(body?.message || body?.query || body?.text || "").trim();
-    if (!message) {
-      return difySendJson(res, 400, { error: "field_message_required", message: "Falta el campo 'message' (texto no vacío)." });
+    const rawAttachment = body?.attachment && typeof body.attachment === "object" && body.attachment !== null ? body.attachment : null;
+    const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+    let difyFileRefs: Array<{ type: 'image'; transfer_method: 'local_file'; upload_file_id: string; }> = [];
+    if (rawAttachment) {
+      const kind = String(rawAttachment.kind || rawAttachment.type || "").trim().toLowerCase();
+      if (kind === "image") {
+        try {
+          const mimeOk = String(rawAttachment.mime_type || rawAttachment.mimeType || "").toLowerCase().trim();
+          const nameRaw = String(rawAttachment.name || rawAttachment.fileName || "imagen").trim() || "imagen";
+          let b64 = String(rawAttachment.bytes_base64 || rawAttachment.data || rawAttachment.base64 || "").trim();
+          if (!b64) {
+            return difySendJson(res, 400, { error: "image_missing_bytes", message: "El adjunto de imagen no contiene bytes." });
+          }
+          if (b64.includes(",")) b64 = b64.split(",")[1];
+          b64 = b64.replace(/\s+/g, "");
+          if (!ALLOWED_IMAGE_MIMES.has(mimeOk)) {
+            return difySendJson(res, 400, {
+              error: "image_type_invalid",
+              message: "Formato de imagen no admitido. Usa JPG, PNG o WEBP.",
+            });
+          }
+          const nameExt =
+            mimeOk === "image/png"
+              ? ".png"
+              : mimeOk === "image/webp"
+                ? ".webp"
+                : ".jpg";
+          const safeName = `${(nameRaw.replace(/\.[^.]+$/, "").slice(0, 60) || "imagen")}${nameExt}`;
+          let bytes: Buffer | null = null;
+          try { bytes = Buffer.from(b64, "base64"); }
+          catch { bytes = null; }
+          if (!bytes || !bytes.length) {
+            return difySendJson(res, 400, { error: "image_bytes_invalid", message: "La imagen no contiene bytes válidos." });
+          }
+          if (bytes.length > MAX_IMAGE_BYTES) {
+            return difySendJson(res, 413, { error: "image_too_large", message: "La imagen supera los 10 MB permitidos." });
+          }
+          const up = await difyUploadFileToDify({
+            apiKey: copilotApiKey,
+            baseUrl: copilotApiUrl,
+            user: auth.user,
+            fileName: safeName,
+            mimeType: mimeOk,
+            bytes,
+          });
+          difyFileRefs = [{ type: "image", transfer_method: "local_file", upload_file_id: up.id }];
+        } catch (e: any) {
+          const upMsg = String(e instanceof Error ? e.message : String(e || "")).slice(0, 600);
+          try { console.error(`[dify:chat:image_upload_error] ${upMsg}`); } catch {}
+          const msg = upMsg
+            ? `No pude subir la foto al copiloto Dify: ${upMsg}`
+            : "No pude procesar la imagen adjunta.";
+          return difySendJson(res, 502, { error: "image_upload_error", message: msg });
+        }
+      }
     }
-    if (message.length > 20000) {
+    const message = String(body?.message || body?.query || body?.text || "").trim();
+    if (!message && !difyFileRefs.length) {
+      return difySendJson(res, 400, { error: "field_message_required", message: "Falta el campo 'message' (texto no vacío) o una imagen adjunta." });
+    }
+    const finalMessage =
+      !message && difyFileRefs.length
+        ? "Analiza con precisión esta foto y extrae todo el texto (letra de canción, párrafos o líneas). Si no se lee nada, indícalo claramente."
+        : message;
+    if (finalMessage.length > 20000) {
       return difySendJson(res, 413, { error: "field_message_too_long", message: "Mensaje demasiado largo (max 20,000 chars)." });
     }
     let conversationId = String(body?.conversation_id || body?.conversationId || "").trim();
@@ -18517,8 +18646,9 @@ const difyHandler = (() => {
         apiKey: copilotApiKey,
         apiUrl: copilotApiUrl,
         user: auth.user,
-        message,
+        message: finalMessage,
         conversationId,
+        files: difyFileRefs.length ? difyFileRefs : undefined,
       });
       if (upstream.conversationId && upstream.conversationId !== conversationId) {
         DIFY_CONV_BY_USER_CACHE.set(userId, upstream.conversationId);
@@ -18540,7 +18670,7 @@ const difyHandler = (() => {
         reply_text: justText || "",
         conversation_id: upstream.conversationId || "",
         structured_action: structured || null,
-        debug_provider: process.env.DIFY_COPILOT_DEBUG === "1" ? { answer_len: upstream.answer.length, structured_found: !!structured } : undefined,
+        debug_provider: process.env.DIFY_COPILOT_DEBUG === "1" ? { answer_len: upstream.answer.length, structured_found: !!structured, has_image: difyFileRefs.length > 0 } : undefined,
       });
     } catch (e: any) {
       const msg = String(e instanceof Error ? e.message : String(e || "")).slice(0, 800);
