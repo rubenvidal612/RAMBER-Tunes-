@@ -119,9 +119,12 @@ const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB (audios propios MP3/WAV/etc)
 const MAX_GENERIC_BYTES = 20 * 1024 * 1024; // 20 MB (otros archivos)
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const ALLOWED_AUDIO_TYPES = new Set([
-  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg',
-  'audio/mp4', 'audio/aac', 'audio/flac', 'audio/webm', 'audio/x-m4a',
+  'audio/mpeg', 'audio/mp3', 'audio/x-mp3', 'audio/mpeg3', 'audio/x-mpeg3',
 ]);
+const isFileNameMp3 = (name: string) => /\.mp3$/i.test(String(name || '').trim());
+const openMp3ConverterUrl = () => {
+  try { window.open('https://cloudconvert.com/mp3-converter', '_blank', 'noopener,noreferrer'); } catch {}
+};
 
 type AttachedImage = {
   file: File;
@@ -222,6 +225,260 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const [pendingAttachKind, setPendingAttachKind] = useState<AttachMenuKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const [micRecorderOpen, setMicRecorderOpen] = useState(false);
+  const [micRecorderState, setMicRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
+  const [micRecorderError, setMicRecorderError] = useState('');
+  const [micRecorderElapsedMs, setMicRecorderElapsedMs] = useState(0);
+  const [micRecorderBars, setMicRecorderBars] = useState<number[]>([]);
+  const micRecorderStateRef = useRef<'idle' | 'recording' | 'stopping'>('idle');
+  const micRecorderRef = useRef<any | null>(null);
+  const micRecorderStreamRef = useRef<MediaStream | null>(null);
+  const micRecorderChunksRef = useRef<Blob[]>([]);
+  const micRecorderStopRequestedAtRef = useRef<number>(0);
+  const micRecorderLastChunkAtRef = useRef<number>(0);
+  const micRecorderStopFallbackTimerRef = useRef<number | null>(null);
+  const micRecorderTimerRef = useRef<number | null>(null);
+  const micRecorderBarsTimerRef = useRef<number | null>(null);
+  const micRecorderAudioCtxRef = useRef<any | null>(null);
+  const micRecorderAnalyserRef = useRef<any | null>(null);
+  const micRecorderElapsedMsRef = useRef<number>(0);
+
+  const stopMicRecorder = useCallback(async (finalize: boolean) => {
+    try {
+      if (micRecorderStopFallbackTimerRef.current) window.clearTimeout(micRecorderStopFallbackTimerRef.current);
+    } catch {}
+    micRecorderStopFallbackTimerRef.current = null;
+    try {
+      if (micRecorderTimerRef.current) window.clearInterval(micRecorderTimerRef.current);
+    } catch {}
+    micRecorderTimerRef.current = null;
+    try {
+      if (micRecorderBarsTimerRef.current) window.clearInterval(micRecorderBarsTimerRef.current);
+    } catch {}
+    micRecorderBarsTimerRef.current = null;
+    try {
+      micRecorderAnalyserRef.current = null;
+      const ctx = micRecorderAudioCtxRef.current;
+      micRecorderAudioCtxRef.current = null;
+      try { await ctx?.close?.(); } catch {}
+    } catch {}
+
+    const mr: any = micRecorderRef.current;
+    const stream = micRecorderStreamRef.current;
+
+    if (finalize) {
+      const finalizeId = Date.now();
+      micRecorderStopRequestedAtRef.current = Date.now();
+      try {
+        if (micRecorderStopFallbackTimerRef.current) window.clearTimeout(micRecorderStopFallbackTimerRef.current);
+      } catch {}
+      micRecorderStopFallbackTimerRef.current = window.setTimeout(() => {
+        const chunksNow = Array.isArray(micRecorderChunksRef.current) ? micRecorderChunksRef.current.slice() : [];
+        if (chunksNow.length === 0) {
+          setMicRecorderError('No se pudo guardar la grabación. Intenta de nuevo o sube un MP3.');
+          setMicRecorderState('idle');
+          micRecorderStateRef.current = 'idle';
+          stopMicRecorder(false).catch(() => {});
+          return;
+        }
+        try {
+          const ct = String((mr?.mimeType || chunksNow[0]?.type || 'audio/webm')).toLowerCase();
+          const blob = new Blob(chunksNow, { type: ct || 'audio/webm' });
+          if (!blob.size || blob.size < 1024) throw new Error('grabacion vacia');
+          const ext = ct.includes('mp4') ? 'm4a' : ct.includes('ogg') ? 'ogg' : ct.includes('webm') ? 'webm' : 'webm';
+          const name = `grabacion_lucianabot_${finalizeId}.${ext}`;
+          const file = new File([blob], name, { type: ct || 'audio/webm' });
+          setMicRecorderOpen(false);
+          setMicRecorderState('idle');
+          micRecorderStateRef.current = 'idle';
+          stopMicRecorder(false).catch(() => {});
+          window.setTimeout(() => {
+            const preview = URL.createObjectURL(blob);
+            setAttachedImg({ file, name: file.name, bytes: file.size, previewUrl: preview, kind: 'audio' });
+            setToast({ kind: 'ok', text: '🎙️ Grabación lista. Puedes enviarla adjunta con tu mensaje.' });
+          }, 180);
+        } catch {
+          setMicRecorderError('No se pudo guardar la grabación. Intenta de nuevo o sube un MP3.');
+          setMicRecorderState('idle');
+          micRecorderStateRef.current = 'idle';
+          stopMicRecorder(false).catch(() => {});
+        }
+      }, 3500);
+      if (mr && mr.state !== 'inactive') {
+        try { mr.requestData?.(); } catch {}
+        try { mr.stop(); } catch {}
+      }
+      micRecorderRef.current = null;
+      micRecorderStreamRef.current = null;
+      return;
+    }
+
+    micRecorderRef.current = null;
+    micRecorderStreamRef.current = null;
+    try {
+      stream?.getTracks?.().forEach((t) => {
+        try { t.stop(); } catch {}
+      });
+    } catch {}
+  }, [stopMicRecorder]);
+
+  useEffect(() => {
+    return () => { stopMicRecorder(false).catch(() => {}); };
+  }, [stopMicRecorder]);
+
+  const startMicRecorder = useCallback(async () => {
+    setMicRecorderError('');
+    const navAny: any = typeof navigator === 'undefined' ? null : navigator;
+    const canMedia =
+      typeof window !== 'undefined' &&
+      typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
+      typeof (window as any).MediaRecorder === 'function';
+    if (!canMedia) {
+      setToast({ kind: 'err', text: 'Tu navegador no permite grabar audio aquí. Usa la opción Subir audio MP3.' });
+      setAttachMenuOpen(false);
+      return;
+    }
+    try {
+      await stopMicRecorder(false);
+      setMicRecorderElapsedMs(0);
+      micRecorderElapsedMsRef.current = 0;
+      micRecorderStopRequestedAtRef.current = 0;
+      micRecorderLastChunkAtRef.current = 0;
+      try {
+        if (micRecorderStopFallbackTimerRef.current) window.clearTimeout(micRecorderStopFallbackTimerRef.current);
+      } catch {}
+      micRecorderStopFallbackTimerRef.current = null;
+      setMicRecorderBars([]);
+      setMicRecorderState('idle');
+      micRecorderStateRef.current = 'idle';
+      setMicRecorderOpen(true);
+      setAttachMenuOpen(false);
+
+      const stream = await navAny.mediaDevices.getUserMedia({ audio: true });
+      micRecorderStreamRef.current = stream;
+      micRecorderChunksRef.current = [];
+
+      try {
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (typeof AC === 'function') {
+          const ctx: any = new AC();
+          micRecorderAudioCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.7;
+          src.connect(analyser);
+          micRecorderAnalyserRef.current = analyser;
+          const freq = new Uint8Array(analyser.frequencyBinCount);
+          const barsCount = 48;
+          micRecorderBarsTimerRef.current = window.setInterval(() => {
+            const a = micRecorderAnalyserRef.current;
+            if (!a) return;
+            a.getByteFrequencyData(freq);
+            const binSize = Math.max(1, Math.floor(freq.length / barsCount));
+            const next: number[] = [];
+            for (let i = 0; i < barsCount; i++) {
+              let sum = 0;
+              const start = i * binSize;
+              const end = Math.min(freq.length, start + binSize);
+              for (let j = start; j < end; j++) sum += freq[j] || 0;
+              const avg = sum / Math.max(1, end - start);
+              const h = Math.max(6, Math.min(100, Math.round((avg / 255) * 100)));
+              next.push(h);
+            }
+            setMicRecorderBars(next);
+          }, 80);
+        }
+      } catch {}
+
+      const MR: typeof MediaRecorder = (window as any).MediaRecorder;
+      const pickMime = () => {
+        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4'];
+        for (const t of types) {
+          try { if ((MR as any).isTypeSupported(t)) return t; } catch {}
+        }
+        return '';
+      };
+      const mimeType = pickMime();
+      const mr = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
+      micRecorderRef.current = mr;
+      mr.ondataavailable = (e: BlobEvent) => {
+        const b = e.data;
+        if (!b) return;
+        if (!b.size) return;
+        micRecorderChunksRef.current.push(b);
+        micRecorderLastChunkAtRef.current = Date.now();
+      };
+      mr.onstop = () => {
+        const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+        (async () => {
+          try {
+            if (micRecorderStopFallbackTimerRef.current) window.clearTimeout(micRecorderStopFallbackTimerRef.current);
+          } catch {}
+          micRecorderStopFallbackTimerRef.current = null;
+          const stopRequestedAt = Number(micRecorderStopRequestedAtRef.current || 0) || Date.now();
+          const deadline = Date.now() + 1500;
+          while (Date.now() < deadline) {
+            const chunksNow = Array.isArray(micRecorderChunksRef.current) ? micRecorderChunksRef.current.length : 0;
+            const lastAt = Number(micRecorderLastChunkAtRef.current || 0) || 0;
+            if (chunksNow > 0 && lastAt && Date.now() - lastAt > 180) break;
+            if (chunksNow === 0) {
+              if (Date.now() - stopRequestedAt > 900) break;
+            } else {
+              if (Date.now() - stopRequestedAt > 1200) break;
+            }
+            await sleep(80);
+          }
+          const chunks = Array.isArray(micRecorderChunksRef.current) ? micRecorderChunksRef.current.slice() : [];
+          micRecorderChunksRef.current = [];
+          const type = String((mr as any).mimeType || 'audio/webm').toLowerCase();
+          const blob = new Blob(chunks, { type: type || 'audio/webm' });
+          if (!blob.size || blob.size < 1024) {
+            setMicRecorderError('No se grabó audio. Asegúrate de permitir el micrófono e intenta de nuevo.');
+            setMicRecorderState('idle');
+            micRecorderStateRef.current = 'idle';
+            stopMicRecorder(false).catch(() => {});
+            return;
+          }
+          const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : type.includes('webm') ? 'webm' : 'webm';
+          const name = `grabacion_lucianabot_${Date.now()}.${ext}`;
+          const file = new File([blob], name, { type: type || 'audio/webm' });
+          setMicRecorderOpen(false);
+          setMicRecorderState('idle');
+          micRecorderStateRef.current = 'idle';
+          stopMicRecorder(false).catch(() => {});
+          window.setTimeout(() => {
+            const preview = URL.createObjectURL(blob);
+            setAttachedImg({ file, name: file.name, bytes: file.size, previewUrl: preview, kind: 'audio' });
+            setToast({ kind: 'ok', text: '🎙️ Grabación lista. Puedes enviarla adjunta con tu mensaje.' });
+          }, 180);
+        })().catch(() => {
+          setMicRecorderError('No se pudo guardar la grabación. Intenta de nuevo o sube un MP3.');
+          setMicRecorderState('idle');
+          micRecorderStateRef.current = 'idle';
+          stopMicRecorder(false).catch(() => {});
+        });
+      };
+      mr.start(250);
+      micRecorderStateRef.current = 'recording';
+      setMicRecorderState('recording');
+      const startedAt = Date.now();
+      micRecorderTimerRef.current = window.setInterval(() => {
+        const now = Date.now();
+        const elapsed = Math.max(0, now - startedAt);
+        micRecorderElapsedMsRef.current = elapsed;
+        setMicRecorderElapsedMs(elapsed);
+      }, 200);
+    } catch (e: any) {
+      setMicRecorderOpen(false);
+      setMicRecorderState('idle');
+      micRecorderStateRef.current = 'idle';
+      stopMicRecorder(false).catch(() => {});
+      const msg = e instanceof Error ? e.message : String(e || 'No se pudo iniciar la grabación');
+      setToast({ kind: 'err', text: `🎙️ ${msg}` });
+    }
+  }, [stopMicRecorder]);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -577,12 +834,12 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   const triggerFilePickForKind = useCallback((kind: AttachMenuKind) => {
     if (kind === 'mic') {
-      setToast({ kind: 'ok', text: '🎙️ Grabar con micrófono · próxima funcionalidad. Cuando esté activo, podrás cantar o hablar y transcribiré la idea a MP3.' });
-      setAttachMenuOpen(false);
+      startMicRecorder().catch(() => {});
       return;
     }
     if (kind === 'drive') {
-      setToast({ kind: 'ok', text: '☁️ Subir desde Drive · próxima funcionalidad. Se habilitará para importar archivos directamente.' });
+      // No hay integración Google Drive configurada aún. Avisa honestamente y orienta a subir archivo MP3.
+      setToast({ kind: 'ok', text: '☁️ Drive: usa la opción Subir audio MP3 y selecciona tu archivo. Si tu audio está en Drive, descárgalo primero a tu teléfono/PC.' });
       setAttachMenuOpen(false);
       return;
     }
@@ -590,8 +847,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     if (!inp) return;
     try { inp.value = ''; } catch {}
     if (kind === 'image') inp.accept = 'image/jpeg,image/png,image/webp';
-    else if (kind === 'audio') inp.accept = 'audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/flac,audio/webm,audio/x-m4a';
-    else inp.accept = 'audio/*,image/*,text/*,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,.txt,.md,.rtf';
+    else if (kind === 'audio') inp.accept = 'audio/mpeg,.mp3';
+    else inp.accept = 'image/*,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,.txt,.md,.rtf';
     setPendingAttachKind(kind);
     setAttachMenuOpen(false);
     setTimeout(() => inp.click(), 50);
@@ -645,10 +902,12 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     } else if (kind === 'audio') {
       maxBytes = MAX_AUDIO_BYTES;
       errSizeText = 'El audio supera los 25 MB permitidos.';
-      errTypeText = 'Formato de audio no admitido. Usa MP3, WAV, OGG, M4A, FLAC o AAC.';
+      errTypeText = 'Sólo se admiten archivos MP3. Convierte tu archivo antes de subirlo.';
       finalKind = 'audio';
-      if (!ALLOWED_AUDIO_TYPES.has(mime)) {
-        setToast({ kind: 'err', text: errTypeText });
+      const mimeOk = ALLOWED_AUDIO_TYPES.has(mime);
+      const nameOk = isFileNameMp3(f.name);
+      if (!mimeOk && !nameOk) {
+        setToast({ kind: 'err', text: errTypeText, actionLabel: 'Convertir a MP3', onAction: openMp3ConverterUrl });
         try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
         setPendingAttachKind(null);
         return;
@@ -1442,11 +1701,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                 {(attachedImg.bytes / 1024).toFixed(attachedImg.bytes > 1024 * 100 ? 0 : 1)} KB · {attachedImg.file.type || (attachedImg.kind === 'image' ? 'imagen' : attachedImg.kind === 'audio' ? 'audio' : 'archivo')}
               </span>
               {attachedImg.kind === 'image' ? (
-                <span className="badge-soon">📸 Extraer letra de foto · próximamente</span>
+                <span className="badge-soon" style={{ opacity: 0.9 }}>📸 Imagen adjunta · se procesará al enviar</span>
               ) : attachedImg.kind === 'audio' ? (
-                <span className="badge-soon">🎙️ Transcribir audio · próximamente</span>
+                <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio adjunto · máximo 25 MB</span>
               ) : (
-                <span className="badge-soon">📝 Extraer texto · próximamente</span>
+                <span className="badge-soon" style={{ opacity: 0.9 }}>📝 Archivo adjunto</span>
               )}
             </div>
             <button
@@ -1467,9 +1726,9 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               className="luciana-attach-btn"
               onClick={handleAttachPick}
               disabled={loading || generating}
-              aria-label="Adjuntar archivo (imagen, audio, texto, Drive)"
+              aria-label="Adjuntar (imagen, audio MP3 o grabar con micrófono)"
               aria-expanded={attachMenuOpen}
-              title="Adjuntar · imagen / audio / micrófono / Drive"
+              title="Adjuntar · imagen / audio MP3 / grabar con micrófono"
             >
               <Paperclip className="h-4.5 w-4.5" />
             </button>
@@ -1486,21 +1745,14 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                   <span className="luciana-attach-menu__icon"><Music2 className="h-5 w-5" /></span>
                   <span className="luciana-attach-menu__label">
                     <strong>Subir audio</strong>
-                    <small>MP3, WAV, OGG, M4A o FLAC · hasta 25 MB</small>
+                    <small>Sólo archivos MP3 · máximo 25 MB</small>
                   </span>
                 </button>
                 <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('mic')} role="menuitem">
                   <span className="luciana-attach-menu__icon"><Mic className="h-5 w-5" /></span>
                   <span className="luciana-attach-menu__label">
-                    <strong>Grabar con micrófono</strong>
-                    <small className="badge-soon-inline">próximamente</small>
-                  </span>
-                </button>
-                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('drive')} role="menuitem">
-                  <span className="luciana-attach-menu__icon"><Cloud className="h-5 w-5" /></span>
-                  <span className="luciana-attach-menu__label">
-                    <strong>Subir desde Drive</strong>
-                    <small className="badge-soon-inline">próximamente</small>
+                    <strong>Quiero cantarlo</strong>
+                    <small>Grabar con micrófono · igual que en Crear</small>
                   </span>
                 </button>
               </div>
@@ -1695,6 +1947,176 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               <AlertTriangle className="h-5 w-5" />
             )}
             <span style={{ wordBreak: 'break-word', lineHeight: 1.35 }}>{toast.text}</span>
+          </div>
+        </div>
+      )}
+      {/* ====== Modal: Grabador de micrófono (Quiero cantarlo) ====== */}
+      {micRecorderOpen && (
+        <div className="luciana-recorder-modal" role="dialog" aria-modal="true" aria-label="Grabar con micrófono">
+          <div className="luciana-recorder-modal__card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+                <Mic className="h-5 w-5" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }} />
+                Quiero cantarlo
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setMicRecorderError('');
+                  if (micRecorderState === 'idle') {
+                    setMicRecorderOpen(false);
+                  } else {
+                    setMicRecorderState('stopping');
+                    micRecorderStateRef.current = 'stopping';
+                    stopMicRecorder(false).catch(() => {});
+                    window.setTimeout(() => setMicRecorderOpen(false), 400);
+                  }
+                }}
+                className="luciana-icon-button"
+                aria-label="Cerrar grabador"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
+
+            <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+              Canta o habla al micrófono. Cuando termines, la grabación se adjuntará automáticamente al chat.
+              Puedes adjuntarla junto con tu mensaje.
+            </p>
+
+            <div className="luciana-recorder-modal__time">
+              <strong style={{ fontSize: 36, fontVariantNumeric: 'tabular-nums' }}>
+                {String(Math.floor(micRecorderElapsedMs / 60000)).padStart(2, '0')}:
+                {String(Math.floor((micRecorderElapsedMs % 60000) / 1000)).padStart(2, '0')}
+              </strong>
+              <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                {micRecorderState === 'recording' ? 'Grabando… habla cerca del micrófono' : micRecorderState === 'stopping' ? 'Guardando…' : 'Listo para empezar'}
+              </small>
+            </div>
+
+            <div className="luciana-recorder-modal__bars" aria-hidden="true">
+              {micRecorderBars.length === 0 ? (
+                Array.from({ length: 48 }).map((_, i) => (
+                  <span key={i} style={{ width: 4, height: 8, borderRadius: 4, background: 'var(--border)' }} />
+                ))
+              ) : (
+                micRecorderBars.map((h, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      width: 4,
+                      height: Math.max(6, h),
+                      borderRadius: 4,
+                      background:
+                        micRecorderState === 'recording'
+                          ? 'linear-gradient(180deg, #22c55e 0%, #16a34a 100%)'
+                          : 'var(--border)',
+                    }}
+                  />
+                ))
+              )}
+            </div>
+
+            {micRecorderError ? (
+              <div style={{ marginTop: 12, padding: 10, borderRadius: 10, border: '1px solid #fb718555', color: '#fecdd3', background: '#7f1d1d33', fontSize: 12 }}>
+                {micRecorderError}
+              </div>
+            ) : null}
+
+            <div className="luciana-recorder-modal__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setMicRecorderError('');
+                  if (micRecorderState === 'idle') {
+                    setMicRecorderOpen(false);
+                  } else {
+                    setMicRecorderState('stopping');
+                    micRecorderStateRef.current = 'stopping';
+                    stopMicRecorder(false).catch(() => {});
+                    window.setTimeout(() => setMicRecorderOpen(false), 400);
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 999,
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-elev-1)',
+                  color: 'var(--text)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+
+              {micRecorderState === 'idle' ? (
+                <button
+                  type="button"
+                  onClick={() => startMicRecorder().catch(() => {})}
+                  style={{
+                    flex: 2,
+                    height: 44,
+                    borderRadius: 999,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    boxShadow: '0 10px 30px rgba(236,72,153,0.45)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🎤 Comenzar a grabar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={micRecorderState === 'stopping'}
+                  onClick={() => {
+                    if (micRecorderState !== 'recording') return;
+                    setMicRecorderState('stopping');
+                    micRecorderStateRef.current = 'stopping';
+                    stopMicRecorder(true).catch(() => {});
+                  }}
+                  style={{
+                    flex: 2,
+                    height: 44,
+                    borderRadius: 999,
+                    border: 'none',
+                    background: micRecorderState === 'stopping' ? '#9ca3af' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    boxShadow: micRecorderState === 'stopping' ? 'none' : '0 10px 30px rgba(34,197,94,0.45)',
+                    cursor: micRecorderState === 'stopping' ? 'progress' : 'pointer',
+                  }}
+                >
+                  {micRecorderState === 'stopping' ? 'Guardando…' : '✔ Detener y adjuntar'}
+                </button>
+              )}
+            </div>
+
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <button
+                type="button"
+                onClick={openMp3ConverterUrl}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  border: '1px dashed var(--border)',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                🎧 Convertir a MP3 después si hace falta
+              </button>
+              <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>El audio adjunto se envía al backend de LucIAna.</small>
+            </div>
           </div>
         </div>
       )}
