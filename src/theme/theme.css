@@ -550,7 +550,7 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   flex: 0 0 auto;
 }
 
-/* ----------- Menú adjuntar popup (4 opciones) ----------- */
+/* ----------- Menú adjuntar popup (3 opciones reales) ----------- */
 .luciana-attach-menu {
   position: absolute;
   left: 50%;
@@ -568,6 +568,22 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+.luciana-attach-menu.luciana-attach-menu--fixed {
+  position: fixed;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: auto;
+  z-index: 9999;
+  box-shadow: 0 24px 80px color-mix(in srgb, #000000 50%, transparent);
+}
+.luciana-attach-menu.luciana-attach-menu--fixed::-webkit-scrollbar {
+  width: 8px;
+}
+.luciana-attach-menu.luciana-attach-menu--fixed::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--brand-primary) 40%, var(--border));
+  border-radius: 9999px;
 }
 .luciana-attach-menu__item {
   width: 100%;

@@ -239,8 +239,10 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const [bootFailed, setBootFailed] = useState(false);
   const [attachedImg, setAttachedImg] = useState<AttachedImage | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [attachMenuRect, setAttachMenuRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [pendingAttachKind, setPendingAttachKind] = useState<AttachMenuKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [micRecorderOpen, setMicRecorderOpen] = useState(false);
@@ -856,8 +858,34 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   const handleAttachPick = useCallback(() => {
     if (loading || generating) return;
-    setAttachMenuOpen((o) => !o);
+    setAttachMenuOpen((o) => {
+      const next = !o;
+      if (next) {
+        try {
+          const btn = attachBtnRef.current;
+          if (btn) {
+            const r = btn.getBoundingClientRect();
+            setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
+          } else {
+            setAttachMenuRect(null);
+          }
+        } catch { setAttachMenuRect(null); }
+      }
+      return next;
+    });
   }, [loading, generating]);
+
+  // Cerrar menú adjuntar al hacer scroll o resize (menú fixed depende de coords)
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    const onScrollOrResize = () => setAttachMenuOpen(false);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [attachMenuOpen]);
 
   const triggerFilePickForKind = useCallback((kind: AttachMenuKind) => {
     if (kind === 'mic') {
@@ -1751,6 +1779,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         <div className="luciana-composer-inner">
           <div className="relative">
             <button
+              ref={attachBtnRef}
               type="button"
               className="luciana-attach-btn"
               onClick={handleAttachPick}
@@ -1761,31 +1790,45 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             >
               <Paperclip className="h-4.5 w-4.5" />
             </button>
-            {attachMenuOpen && (
-              <div className="luciana-attach-menu" ref={attachMenuRef} role="menu" aria-label="Opciones de adjuntar">
-                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('image')} role="menuitem">
-                  <span className="luciana-attach-menu__icon"><ImageIcon className="h-5 w-5" /></span>
-                  <span className="luciana-attach-menu__label">
-                    <strong>Subir imagen</strong>
-                    <small>Foto de tu letra · JPG, PNG o WEBP</small>
-                  </span>
-                </button>
-                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('audio')} role="menuitem">
-                  <span className="luciana-attach-menu__icon"><Music2 className="h-5 w-5" /></span>
-                  <span className="luciana-attach-menu__label">
-                    <strong>Subir audio</strong>
-                    <small>Sólo archivos MP3 · máximo 25 MB</small>
-                  </span>
-                </button>
-                <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('mic')} role="menuitem">
-                  <span className="luciana-attach-menu__icon"><Mic className="h-5 w-5" /></span>
-                  <span className="luciana-attach-menu__label">
-                    <strong>Quiero cantarlo</strong>
-                    <small>Grabar con micrófono · igual que en Crear</small>
-                  </span>
-                </button>
-              </div>
-            )}
+            {attachMenuOpen && (() => {
+              const menuStyle: React.CSSProperties = {};
+              if (attachMenuRect && typeof attachMenuRect.left === 'number' && typeof attachMenuRect.top === 'number' && typeof attachMenuRect.width === 'number') {
+                menuStyle.position = 'fixed';
+                menuStyle.left = Math.max(8, attachMenuRect.left);
+                menuStyle.top = Math.max(8, attachMenuRect.top);
+                menuStyle.transform = 'translateY(calc(-100% - 0.55rem))';
+                menuStyle.minWidth = Math.max(260, attachMenuRect.width);
+                menuStyle.maxWidth = `calc(100vw - 16px)`;
+                menuStyle.maxHeight = `calc(${Math.min(attachMenuRect.top - 16, 65)}vh - 8px)`;
+                menuStyle.overflowY = 'auto';
+                menuStyle.zIndex = 9999;
+              }
+              return (
+                <div className="luciana-attach-menu luciana-attach-menu--fixed" style={menuStyle} ref={attachMenuRef} role="menu" aria-label="Opciones de adjuntar">
+                  <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('image')} role="menuitem">
+                    <span className="luciana-attach-menu__icon"><ImageIcon className="h-5 w-5" /></span>
+                    <span className="luciana-attach-menu__label">
+                      <strong>Subir imagen</strong>
+                      <small>Foto de tu letra · JPG, PNG o WEBP</small>
+                    </span>
+                  </button>
+                  <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('audio')} role="menuitem">
+                    <span className="luciana-attach-menu__icon"><Music2 className="h-5 w-5" /></span>
+                    <span className="luciana-attach-menu__label">
+                      <strong>Subir audio</strong>
+                      <small>Sólo archivos MP3 · máximo 25 MB</small>
+                    </span>
+                  </button>
+                  <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('mic')} role="menuitem">
+                    <span className="luciana-attach-menu__icon"><Mic className="h-5 w-5" /></span>
+                    <span className="luciana-attach-menu__label">
+                      <strong>Quiero cantarlo</strong>
+                      <small>Grabar con micrófono · igual que en Crear</small>
+                    </span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
           <input
             ref={fileInputRef}
