@@ -900,71 +900,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       });
       return;
     }
-    try {
-      const btn = attachBtnRef.current;
-      if (btn && typeof btn.animate === 'function') {
-        try {
-          btn.animate(
-            [
-              { transform: 'scale(1)', boxShadow: 'none' },
-              { transform: 'scale(1.12)', boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-primary) 30%, transparent)' },
-              { transform: 'scale(1)', boxShadow: 'none' },
-            ],
-            { duration: 260, easing: 'ease-out' }
-          );
-        } catch {}
-      }
-    } catch {}
-
-    if (!attachMenuOpen) {
-      try {
-        const btn = attachBtnRef.current;
-        if (btn) {
-          const r = btn.getBoundingClientRect();
-          if (typeof r.top === 'number' && typeof r.left === 'number' && typeof r.width === 'number') {
-            setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
-          } else {
-            setAttachMenuRect(null);
-          }
-        } else {
-          setAttachMenuRect(null);
-        }
-      } catch { setAttachMenuRect(null); }
-      setAttachMenuOpen(true);
-      setTimeout(() => {
-        try {
-          const btn = attachBtnRef.current;
-          if (btn) {
-            const r = btn.getBoundingClientRect();
-            if (typeof r.top === 'number' && typeof r.left === 'number' && typeof r.width === 'number') {
-              setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
-            }
-          }
-        } catch {}
-      }, 0);
-    } else {
-      setAttachMenuOpen(false);
-    }
-  }, [loading, generating, attachMenuOpen]);
-
-  // Cerrar menú adjuntar al hacer scroll o resize (menú fixed depende de coords)
-  useEffect(() => {
-    if (!attachMenuOpen) return;
-    const onScrollOrResize = (ev?: any) => {
-      const target = ev?.target as any;
-      const rootA = typeof document !== 'undefined' ? document : null;
-      const rootB = typeof document !== 'undefined' ? document.documentElement : null;
-      const rootC = typeof document !== 'undefined' ? document.body : null;
-      if (target && target !== rootA && target !== rootB && target !== rootC && target !== window) return;
-      setAttachMenuOpen(false);
-    };
-    window.addEventListener('scroll', onScrollOrResize as any, true);
-    window.addEventListener('resize', onScrollOrResize);
-    return () => {
-      window.removeEventListener('scroll', onScrollOrResize as any, true);
-      window.removeEventListener('resize', onScrollOrResize);
-    };
-  }, [attachMenuOpen]);
+    setAttachMenuOpen((o) => !o);
+  }, [loading, generating]);
 
   const triggerFilePickForKind = useCallback((kind: AttachMenuKind) => {
     if (kind === 'mic') {
@@ -987,38 +924,6 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     setAttachMenuOpen(false);
     try { inp.click(); } catch {}
   }, []);
-
-  // Cerrar menú de adjuntar al hacer click fuera
-  useEffect(() => {
-    if (!attachMenuOpen) return;
-    const onDocClick = (ev: any) => {
-      const t = ev?.target as HTMLElement | null;
-      if (!t) return;
-      if (attachMenuRef.current && attachMenuRef.current.contains(t)) return;
-      if (t.closest('.luciana-attach-btn')) return;
-      if (t.closest('.luciana-attach-menu')) return;
-      setAttachMenuOpen(false);
-    };
-    const onEsc = (ev: any) => { if (ev?.key === 'Escape') setAttachMenuOpen(false); };
-    const onBody = (ev: any) => {
-      const t = ev?.target as HTMLElement | null;
-      if (!t) return;
-      if (attachMenuRef.current && attachMenuRef.current.contains(t)) return;
-      if (t.closest('.luciana-attach-btn')) return;
-      if (t.closest('.luciana-attach-menu')) return;
-      setAttachMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick, true);
-    document.addEventListener('touchstart', onDocClick as any, true);
-    document.addEventListener('click', onBody as any, true);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick, true);
-      document.removeEventListener('touchstart', onDocClick as any, true);
-      document.removeEventListener('click', onBody as any, true);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [attachMenuOpen]);
 
   const handleAttachFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -2774,89 +2679,67 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             </button>
           </div>
         )}
+        {attachMenuOpen && (
+          <div className="luciana-attach-direct">
+            <button
+              type="button"
+              className="luciana-attach-direct__btn"
+              aria-disabled={loading || generating}
+              data-disabled={loading || generating ? 'true' : 'false'}
+              onClick={() => triggerFilePickForKind('image')}
+            >
+              <span className="luciana-attach-direct__icon"><ImageIcon className="h-5 w-5" /></span>
+              <span className="luciana-attach-direct__label">
+                <strong>Subir imagen</strong>
+                <small>Foto de letra · JPG/PNG/WEBP</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="luciana-attach-direct__btn"
+              aria-disabled={loading || generating}
+              data-disabled={loading || generating ? 'true' : 'false'}
+              onClick={() => triggerFilePickForKind('audio')}
+            >
+              <span className="luciana-attach-direct__icon"><Music2 className="h-5 w-5" /></span>
+              <span className="luciana-attach-direct__label">
+                <strong>Subir audio</strong>
+                <small>MP3/WAV/M4A · máx 25 MB</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="luciana-attach-direct__btn"
+              aria-disabled={loading || generating}
+              data-disabled={loading || generating ? 'true' : 'false'}
+              onClick={() => triggerFilePickForKind('mic')}
+            >
+              <span className="luciana-attach-direct__icon"><Mic className="h-5 w-5" /></span>
+              <span className="luciana-attach-direct__label">
+                <strong>Quiero cantarlo</strong>
+                <small>Grabar con micrófono</small>
+              </span>
+            </button>
+          </div>
+        )}
         <div className="luciana-composer-inner">
           <div className="relative">
             <button
-              ref={attachBtnRef}
               type="button"
-              className="luciana-attach-btn"
+              className={cn('luciana-attach-btn', attachMenuOpen ? 'is-open' : '')}
               onClick={handleAttachPick}
               aria-disabled={loading || generating}
               data-disabled={loading || generating ? 'true' : 'false'}
               aria-label="Adjuntar (foto de letra o audio propio)"
               aria-expanded={attachMenuOpen}
-              title="Adjuntar · foto de letra / audio propio"
+              title={attachMenuOpen ? 'Cerrar opciones de adjuntar' : 'Adjuntar · foto de letra / audio propio'}
             >
-              <Paperclip className="h-4.5 w-4.5" />
+              {attachMenuOpen ? (
+                <X className="h-4.5 w-4.5" />
+              ) : (
+                <Paperclip className="h-4.5 w-4.5" />
+              )}
             </button>
-            {attachMenuOpen && (() => {
-              const menuStyle: React.CSSProperties = {};
-              let fixedMode = false;
-              if (attachMenuRect && typeof attachMenuRect.left === 'number' && typeof attachMenuRect.top === 'number' && typeof attachMenuRect.width === 'number') {
-                fixedMode = true;
-                menuStyle.position = 'fixed';
-                menuStyle.left = Math.max(8, attachMenuRect.left);
-                const spaceAbove = Math.max(8, attachMenuRect.top);
-                const roomForAbove = spaceAbove > 220;
-                if (roomForAbove) {
-                  menuStyle.top = Math.max(8, attachMenuRect.top);
-                  menuStyle.transform = 'translateY(calc(-100% - 0.55rem))';
-                } else {
-                  menuStyle.top = Math.min(window.innerHeight - 16, attachMenuRect.top + attachMenuRect.width + 8);
-                  menuStyle.transform = 'none';
-                }
-                menuStyle.minWidth = Math.max(260, attachMenuRect.width);
-                menuStyle.maxWidth = `calc(100vw - 16px)`;
-                const maxH = roomForAbove ? Math.min(spaceAbove - 16, 65 * (window.innerHeight / 100) - 8) : Math.min(window.innerHeight - (attachMenuRect.top + attachMenuRect.width + 24), 65 * (window.innerHeight / 100));
-                menuStyle.maxHeight = `${Math.max(180, maxH)}px`;
-                menuStyle.overflowY = 'auto';
-                menuStyle.zIndex = 99999;
-              } else {
-                menuStyle.position = 'relative';
-                menuStyle.left = 0;
-                menuStyle.bottom = 'calc(100% + 0.55rem)';
-                menuStyle.transform = 'none';
-                menuStyle.minWidth = 260;
-                menuStyle.maxWidth = '90vw';
-                menuStyle.maxHeight = '60vh';
-                menuStyle.overflowY = 'auto';
-                menuStyle.zIndex = 99999;
-              }
-              return (
-                <div
-                  className={fixedMode ? 'luciana-attach-menu luciana-attach-menu--fixed' : 'luciana-attach-menu'}
-                  style={menuStyle}
-                  ref={attachMenuRef}
-                  role="menu"
-                  aria-label="Opciones de adjuntar"
-                  onMouseDown={(e) => { try { e.stopPropagation(); } catch {} }}
-                  onTouchStart={(e) => { try { e.stopPropagation(); } catch {} }}
-                  onClick={(e) => { try { e.stopPropagation(); } catch {} }}
-                >
-                  <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('image')} role="menuitem">
-                    <span className="luciana-attach-menu__icon"><ImageIcon className="h-5 w-5" /></span>
-                    <span className="luciana-attach-menu__label">
-                      <strong>Subir imagen</strong>
-                      <small>Foto de tu letra · JPG, PNG o WEBP</small>
-                    </span>
-                  </button>
-                  <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('audio')} role="menuitem">
-                    <span className="luciana-attach-menu__icon"><Music2 className="h-5 w-5" /></span>
-                    <span className="luciana-attach-menu__label">
-                      <strong>Subir audio</strong>
-                      <small>MP3, WAV o M4A · máximo 25 MB</small>
-                    </span>
-                  </button>
-                  <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('mic')} role="menuitem">
-                    <span className="luciana-attach-menu__icon"><Mic className="h-5 w-5" /></span>
-                    <span className="luciana-attach-menu__label">
-                      <strong>Quiero cantarlo</strong>
-                      <small>Grabar con micrófono · igual que en Crear</small>
-                    </span>
-                  </button>
-                </div>
-              );
-            })()}
           </div>
           <input
             ref={fileInputRef}

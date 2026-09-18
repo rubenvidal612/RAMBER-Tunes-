@@ -667,6 +667,81 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   text-overflow: ellipsis;
   max-width: 100%;
 }
+.luciana-attach-btn.is-open {
+  background: color-mix(in srgb, var(--brand-primary) 18%, var(--composer-bg));
+  border-color: color-mix(in srgb, var(--brand-primary) 70%, var(--composer-border));
+}
+.luciana-attach-direct {
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  pointer-events: auto;
+  animation: lucianaAttachIn 160ms ease-out both;
+}
+.luciana-attach-direct__btn {
+  width: 100%;
+  min-height: 4.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.95rem;
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 30%, var(--composer-border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand-primary) 10%, var(--composer-bg)) 0%, var(--composer-bg) 100%);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  pointer-events: auto;
+}
+.luciana-attach-direct__btn:active {
+  transform: scale(0.97);
+  filter: brightness(1.05);
+}
+.luciana-attach-direct__btn[data-disabled='true'],
+.luciana-attach-direct__btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.luciana-attach-direct__icon {
+  width: 2.3rem;
+  height: 2.3rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--brand-primary) 16%, var(--bg-elev-2));
+  color: var(--brand-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.luciana-attach-direct__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+.luciana-attach-direct__label strong {
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.luciana-attach-direct__label small {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.15;
+}
+@media (max-width: 640px) {
+  .luciana-attach-direct {
+    grid-template-columns: 1fr;
+  }
+}
 .badge-soon-inline {
   display: inline-block;
   padding: 0.1rem 0.45rem;
