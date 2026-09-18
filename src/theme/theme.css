@@ -87,6 +87,10 @@
   flex-direction: column;
   z-index: 60; /* superior al bottom nav para que el composer no quede tapado */
   overflow: hidden;
+  isolation: isolate;
+}
+.luciana-chat-shell * {
+  pointer-events: auto;
 }
 @supports (height: 100dvh) {
   .luciana-chat-shell {
@@ -206,6 +210,14 @@
   backdrop-filter: saturate(140%) blur(10px);
   border-top: 1px solid var(--border);
   padding: 0.65rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom, 0px));
+  isolation: isolate;
+}
+.luciana-chat-composer > * {
+  pointer-events: auto;
+}
+.luciana-composer-inner {
+  position: relative;
+  z-index: 2;
 }
 @media (min-width: 768px) {
   .luciana-chat-composer {
@@ -449,16 +461,26 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   height: 2.8rem;
   flex: 0 0 auto;
   border-radius: 9999px;
-  border: 1px solid var(--composer-border);
-  background: var(--composer-bg);
-  color: var(--text-muted);
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 60%, var(--composer-border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-primary) 14%, var(--composer-bg)) 0%, var(--composer-bg) 100%);
+  color: var(--brand-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  pointer-events: auto;
   position: relative;
   z-index: 2;
+  transition: all 0.15s ease;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-primary) 22%, transparent) inset, 0 4px 14px color-mix(in srgb, var(--brand-primary) 18%, transparent);
+}
+.luciana-attach-btn:active {
+  transform: scale(0.94);
+  filter: brightness(1.05);
+}
+.luciana-attach-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-primary) 80%, transparent);
+  outline-offset: 2px;
 }
 .luciana-attach-btn:hover:not(:disabled) {
   color: var(--brand-primary);
@@ -578,8 +600,9 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   bottom: auto;
   transform: none;
   width: auto;
-  z-index: 9999;
-  box-shadow: 0 24px 80px color-mix(in srgb, #000000 50%, transparent);
+  z-index: 99999;
+  pointer-events: auto;
+  box-shadow: 0 24px 80px color-mix(in srgb, #000000 50%, transparent), 0 0 0 1px color-mix(in srgb, var(--brand-primary) 18%, transparent) inset;
 }
 .luciana-attach-menu.luciana-attach-menu--fixed::-webkit-scrollbar {
   width: 8px;

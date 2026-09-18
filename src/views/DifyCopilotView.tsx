@@ -900,19 +900,57 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       });
       return;
     }
+    try {
+      const btn = attachBtnRef.current;
+      if (btn && typeof btn.animate === 'function') {
+        try {
+          btn.animate(
+            [
+              { transform: 'scale(1)', boxShadow: 'none' },
+              { transform: 'scale(1.12)', boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-primary) 30%, transparent)' },
+              { transform: 'scale(1)', boxShadow: 'none' },
+            ],
+            { duration: 260, easing: 'ease-out' }
+          );
+        } catch {}
+      }
+    } catch {}
     const nextOpen = !attachMenuOpen;
+    let hadRect = false;
     if (nextOpen) {
       try {
         const btn = attachBtnRef.current;
         if (btn) {
           const r = btn.getBoundingClientRect();
-          setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
+          if (typeof r.top === 'number' && typeof r.left === 'number' && typeof r.width === 'number') {
+            setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
+            hadRect = true;
+          } else {
+            setAttachMenuRect(null);
+          }
         } else {
           setAttachMenuRect(null);
         }
       } catch { setAttachMenuRect(null); }
     }
     setAttachMenuOpen(nextOpen);
+    if (nextOpen && !hadRect) {
+      setToast({
+        kind: 'ok',
+        text: 'Cargando menú… si no aparece en 1 segundo, toca el clip otra vez.',
+      });
+      setTimeout(() => {
+        try {
+          const btn = attachBtnRef.current;
+          if (btn) {
+            const r = btn.getBoundingClientRect();
+            if (typeof r.top === 'number' && typeof r.left === 'number' && typeof r.width === 'number') {
+              setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
+            }
+          }
+        } catch {}
+      }, 50);
+    }
   }, [loading, generating, attachMenuOpen]);
 
   // Cerrar menú adjuntar al hacer scroll o resize (menú fixed depende de coords)
