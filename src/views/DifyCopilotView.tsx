@@ -32,10 +32,10 @@ type ChatMessage = {
   role: ChatRole;
   text: string;
   createdAt: number;
-  structured?: null | (ReadyToGenerate & { action: 'ready_to_generate' });
+  structured?: null | ({ action: 'ready_to_generate' } & ReadyToGenerate) | { action: 'transcription_ready'; lyrics: string };
   persisted?: boolean;
   attachment?: null | {
-    kind: 'image';
+    kind: 'image' | 'audio';
     previewUrl: string;
     name: string;
     bytes: number;
@@ -150,9 +150,23 @@ const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB (audios propios MP3/WAV/etc)
 const MAX_GENERIC_BYTES = 20 * 1024 * 1024; // 20 MB (otros archivos)
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const ALLOWED_AUDIO_TYPES = new Set([
-  'audio/mpeg', 'audio/mp3', 'audio/x-mp3', 'audio/mpeg3', 'audio/x-mpeg3',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/x-mp3',
+  'audio/mpeg3',
+  'audio/x-mpeg3',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/wave',
+  'audio/vnd.wave',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/ogg',
+  'audio/webm',
 ]);
-const isFileNameMp3 = (name: string) => /\.mp3$/i.test(String(name || '').trim());
+const isFileNameAllowedAudio = (name: string) => /\.(mp3|wav|m4a|ogg|webm)$/i.test(String(name || '').trim());
 const openMp3ConverterUrl = () => {
   try { window.open('https://cloudconvert.com/mp3-converter', '_blank', 'noopener,noreferrer'); } catch {}
 };
@@ -372,7 +386,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
       typeof (window as any).MediaRecorder === 'function';
     if (!canMedia) {
-      setToast({ kind: 'err', text: 'Tu navegador no permite grabar audio aquí. Usa la opción Subir audio MP3.' });
+      setToast({ kind: 'err', text: 'Tu navegador no permite grabar audio aquí. Usa la opción Subir audio.' });
       setAttachMenuOpen(false);
       return;
     }
@@ -913,7 +927,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     }
     if (kind === 'drive') {
       // No hay integración Google Drive configurada aún. Avisa honestamente y orienta a subir archivo MP3.
-      setToast({ kind: 'ok', text: '☁️ Drive: usa la opción Subir audio MP3 y selecciona tu archivo. Si tu audio está en Drive, descárgalo primero a tu teléfono/PC.' });
+      setToast({ kind: 'ok', text: '☁️ Drive: usa la opción Subir audio y selecciona tu archivo. Si tu audio está en Drive, descárgalo primero a tu teléfono/PC.' });
       setAttachMenuOpen(false);
       return;
     }
@@ -921,7 +935,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     if (!inp) return;
     try { inp.value = ''; } catch {}
     if (kind === 'image') inp.accept = 'image/jpeg,image/png,image/webp';
-    else if (kind === 'audio') inp.accept = 'audio/mpeg,.mp3';
+    else if (kind === 'audio') inp.accept = 'audio/mpeg,audio/wav,audio/mp4,audio/m4a,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm';
     else inp.accept = 'image/*,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx,.txt,.md,.rtf';
     setPendingAttachKind(kind);
     setAttachMenuOpen(false);
@@ -976,12 +990,12 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     } else if (kind === 'audio') {
       maxBytes = MAX_AUDIO_BYTES;
       errSizeText = 'El audio supera los 25 MB permitidos.';
-      errTypeText = 'Sólo se admiten archivos MP3. Convierte tu archivo antes de subirlo.';
+      errTypeText = 'Formato de audio no admitido. Usa MP3, WAV, M4A u OGG.';
       finalKind = 'audio';
       const mimeOk = ALLOWED_AUDIO_TYPES.has(mime);
-      const nameOk = isFileNameMp3(f.name);
+      const nameOk = isFileNameAllowedAudio(f.name);
       if (!mimeOk && !nameOk) {
-        setToast({ kind: 'err', text: errTypeText, actionLabel: 'Convertir a MP3', onAction: openMp3ConverterUrl });
+        setToast({ kind: 'err', text: errTypeText });
         try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
         setPendingAttachKind(null);
         return;
@@ -1010,7 +1024,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
     }
     let previewUrl = '';
-    if (finalKind === 'image') {
+    if (finalKind === 'image' || finalKind === 'audio') {
       try { previewUrl = URL.createObjectURL(f); } catch {}
     } else {
       // audio/generic: sin preview por ahora; usamos icono visualmente
@@ -1039,6 +1053,197 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
       return;
     }
+    if (attachedImg && attachedImg.kind === 'audio') {
+      const ok = (() => {
+        try {
+          return window.confirm('Antes de transcribir: ¿confirmas que este audio es tuyo o tienes autorización para usarlo?');
+        } catch {
+          return true;
+        }
+      })();
+      if (!ok) return;
+
+      setLoading(true);
+      sentScrollRef.current = true;
+      const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
+      try {
+        const accessToken = await getValidBearerToken();
+        if (!accessToken) {
+          setLoading(false);
+          setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
+          const errMsg: ChatMessage = {
+            id: uid(),
+            role: 'assistant',
+            text: 'Tu sesión de LucIAna expiró. Vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.',
+            createdAt: Date.now(),
+          };
+          setMessages((m) => [...m, errMsg]);
+          return;
+        }
+
+        let msgAudioUrl = '';
+        try { msgAudioUrl = URL.createObjectURL(attachedImg.file); } catch { msgAudioUrl = attachedImg.previewUrl || ''; }
+        const userMsg: ChatMessage = {
+          id: uid(),
+          role: 'user',
+          text,
+          createdAt: Date.now(),
+          attachment: msgAudioUrl
+            ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes }
+            : null,
+        };
+        setMessages((m) => [...m, userMsg]);
+        setInput('');
+        if (textareaRef.current) textareaRef.current.value = '';
+
+        const audioFile = attachedImg.file;
+        const audioPreviewUrl = attachedImg.previewUrl;
+        try { handleAttachRemove(); } catch {}
+
+        let activeConvId = uiState.activeConversationId;
+        let activeDifyId = conversationId;
+        if (!activeConvId) {
+          const created = await createSupabaseConversation(accessToken, { title: text.slice(0, 60) || 'Audio' });
+          if (created) {
+            activeConvId = created.id;
+            activeDifyId = String(created.internal_dify_conversation_id || '').trim();
+            setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
+          }
+        }
+        if (activeConvId) {
+          void (async () => {
+            try {
+              const prefix = `[Audio adjunto: ${audioName}] `;
+              await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: prefix + String(text || '') });
+            } catch {}
+          })();
+        }
+
+        setToast({ kind: 'ok', text: 'Transcribiendo audio…' });
+
+        let uploadJson: any = null;
+        let uploadStatus = 0;
+        try {
+          const fd = new FormData();
+          fd.append('file', audioFile, audioName);
+          const r = await fetch('/api/gpt/upload-audio', {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${accessToken}`,
+              accept: 'application/json',
+            },
+            body: fd,
+          });
+          uploadStatus = r.status;
+          const raw = await r.text();
+          try { uploadJson = raw ? JSON.parse(raw) : null; } catch { uploadJson = { error: 'invalid_json', message: raw }; }
+        } catch (e: any) {
+          uploadStatus = 0;
+          uploadJson = { error: 'network_error', message: e instanceof Error ? e.message : String(e || '') };
+        }
+        if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
+          const msg = String(uploadJson?.message || uploadJson?.detail || uploadJson?.error || `HTTP ${uploadStatus || '0'}`).trim();
+          setLoading(false);
+          const errText = msg || 'No pude subir el audio para transcribir.';
+          setToast({ kind: 'err', text: errText });
+          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
+          setMessages((m) => [...m, errMsg]);
+          return;
+        }
+
+        const audioUrl = String(uploadJson?.url || uploadJson?.upload_url || uploadJson?.uploadUrl || '').trim();
+        if (!audioUrl) {
+          setLoading(false);
+          const errText = 'No pude obtener la URL del audio subido.';
+          setToast({ kind: 'err', text: errText });
+          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
+          setMessages((m) => [...m, errMsg]);
+          return;
+        }
+
+        let trJson: any = null;
+        let trStatus = 0;
+        try {
+          const r = await fetch('/api/gpt/transcribe', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              authorization: `Bearer ${accessToken}`,
+              accept: 'application/json',
+            },
+            body: JSON.stringify({ audio_url: audioUrl, title: audioName }),
+          });
+          trStatus = r.status;
+          const raw = await r.text();
+          try { trJson = raw ? JSON.parse(raw) : null; } catch { trJson = { error: 'invalid_json', message: raw }; }
+        } catch (e: any) {
+          trStatus = 0;
+          trJson = { error: 'network_error', message: e instanceof Error ? e.message : String(e || '') };
+        }
+
+        if (trStatus < 200 || trStatus >= 300 || (trJson && trJson.success === false) || (trJson && typeof trJson.error === 'string')) {
+          const msg = String(trJson?.message || trJson?.detail || trJson?.error || `HTTP ${trStatus || '0'}`).trim();
+          setLoading(false);
+          const errText = msg || 'No pude transcribir este audio.';
+          setToast({ kind: 'err', text: errText });
+          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
+          setMessages((m) => [...m, errMsg]);
+          return;
+        }
+
+        const lyrics = String(trJson?.lyrics || '').trim();
+        if (!lyrics) {
+          setLoading(false);
+          const errText = 'No pude obtener una transcripción (texto vacío). Prueba con un fragmento más claro.';
+          setToast({ kind: 'err', text: errText });
+          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
+          setMessages((m) => [...m, errMsg]);
+          return;
+        }
+
+        const aMsg: ChatMessage = {
+          id: uid(),
+          role: 'assistant',
+          text:
+            `**Transcripción detectada:**\n\n` +
+            `${lyrics}\n\n` +
+            `¿Quieres corregirla o usarla tal cual para que LucIAna Bot la convierta en letra/canción?`,
+          createdAt: Date.now(),
+          structured: { action: 'transcription_ready', lyrics },
+        };
+        setMessages((m) => [...m, aMsg]);
+        try {
+          setInput(lyrics);
+          if (textareaRef.current) textareaRef.current.value = lyrics;
+          try { textareaRef.current?.focus?.(); } catch {}
+        } catch {}
+
+        setLoading(false);
+
+        if (activeConvId) {
+          void (async () => {
+            try {
+              const saveText = stripInternalReasoning(aMsg.text);
+              await appendMessageToConversation(accessToken, activeConvId!, { role: 'assistant', content: saveText });
+            } catch {}
+          })();
+        }
+        try {
+          if (audioPreviewUrl) {
+            // mantener el reproductor en el mensaje del usuario; cleanup del previewUrl se hace cuando el chat se desmonta
+          }
+        } catch {}
+        return;
+      } catch (e: any) {
+        setLoading(false);
+        const errText = e instanceof Error ? e.message : String(e || 'Error desconocido');
+        setToast({ kind: 'err', text: errText });
+        const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
+        setMessages((m) => [...m, errMsg]);
+        return;
+      }
+    }
+
     let imgAttachment: null | {
       kind: 'image';
       name: string;
@@ -1047,7 +1252,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       bytes_base64: string;
       previewUrl: string;
     } = null;
-    let audioHint: null | string = null;
+    let otherHint: null | string = null;
     if (attachedImg) {
       if (attachedImg.kind === 'image') {
         try {
@@ -1064,25 +1269,22 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setToast({ kind: 'err', text: 'No pude leer la imagen. Vuelve a seleccionarla.' });
           return;
         }
-      } else if (attachedImg.kind === 'audio') {
-        audioHint =
-          '🎙️ Audio adjunto. Por ahora, el chat de LucIAna Bot aún no procesa el audio directamente. Si quieres transcribirlo, usa la pestaña Crear > Quiero cantarlo o sube el audio ahí para generar la canción.';
       } else {
-        audioHint =
+        otherHint =
           '📝 Archivo adjunto (texto / PDF / Word). La lectura de documentos aún no está activa en esta versión de LucIAna Bot.';
       }
     }
     if (!text && !imgAttachment) {
-      if (audioHint) {
-        setToast({ kind: 'ok', text: audioHint });
+      if (otherHint) {
+        setToast({ kind: 'ok', text: otherHint });
       }
       return;
     }
     setLoading(true);
     sentScrollRef.current = true;
     try {
-      if (audioHint) {
-        setToast({ kind: 'ok', text: audioHint });
+      if (otherHint) {
+        setToast({ kind: 'ok', text: otherHint });
       }
       const accessToken = await getValidBearerToken();
       if (!accessToken) {
@@ -1106,7 +1308,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         attachment: imgAttachment
           ? {
               kind: 'image',
-              previewUrl: imgAttachment.previewUrl,
+              previewUrl: imgAttachment.bytes_base64,
               name: imgAttachment.name,
               bytes: imgAttachment.bytes,
             }
@@ -1115,10 +1317,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       setMessages((m) => [...m, userMsg]);
       setInput('');
       if (textareaRef.current) textareaRef.current.value = '';
-      // Limpiar preview adjunta tras enviarla (solo la que acabamos de enviar)
-      if (attachedImg && attachedImg.kind === 'image' && imgAttachment && imgAttachment.previewUrl === attachedImg.previewUrl) {
-        try { handleAttachRemove(); } catch {}
-      } else if (attachedImg) {
+      // Limpiar preview adjunta tras enviarla
+      if (attachedImg) {
         try { handleAttachRemove(); } catch {}
       }
 
@@ -1622,6 +1822,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         {messages.map((m) => {
           const isUser = m.role === 'user';
           const img = m.attachment && m.attachment.kind === 'image' ? m.attachment : null;
+          const aud = m.attachment && m.attachment.kind === 'audio' ? m.attachment : null;
           return (
             <div key={m.id} className={cn('luciana-msg-row', isUser ? 'is-user' : 'is-assistant')}>
               <div className="luciana-msg-wrap">
@@ -1632,7 +1833,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                     <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna" loading="lazy" />
                   )}
                 </div>
-                <div className="luciana-msg-bubble" style={img ? { padding: '0.5rem', overflow: 'hidden' } : undefined}>
+                <div className="luciana-msg-bubble" style={img || aud ? { padding: '0.5rem', overflow: 'hidden' } : undefined}>
                   {img && (
                     <div
                       style={{
@@ -1663,6 +1864,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                       />
                     </div>
                   )}
+                  {aud && (
+                    <div style={{ marginBottom: m.text ? '0.5rem' : '0' }}>
+                      <audio
+                        controls
+                        preload="metadata"
+                        src={aud.previewUrl}
+                        style={{ width: '260px', maxWidth: '100%' }}
+                      />
+                    </div>
+                  )}
                   {m.text ? (
                     <div
                       className="prose-luciana"
@@ -1686,6 +1897,47 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                       }}
                     >
                       <CheckCircle2 className="h-4 w-4" /> Resumen listo: revisa y pulsa <b>Generar canción</b>.
+                    </div>
+                  )}
+                  {m.structured?.action === 'transcription_ready' && (
+                    <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            const t = String((m.structured as any)?.lyrics || '').trim();
+                            if (!t) return;
+                            setInput(t);
+                            if (textareaRef.current) textareaRef.current.value = t;
+                            try { textareaRef.current?.focus?.(); } catch {}
+                            setToast({ kind: 'ok', text: 'Corrige la transcripción y luego envíala para que LucIAna Bot la use.' });
+                          } catch {}
+                        }}
+                        className="inline-flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-bold"
+                        style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                      >
+                        Corregir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            const t = String((m.structured as any)?.lyrics || '').trim();
+                            if (!t) return;
+                            setInput(t);
+                            if (textareaRef.current) textareaRef.current.value = t;
+                            setTimeout(() => { try { void sendMessage(); } catch {} }, 60);
+                          } catch {}
+                        }}
+                        className="inline-flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-black"
+                        style={{
+                          borderColor: 'transparent',
+                          background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                          color: '#fff',
+                        }}
+                      >
+                        Usar tal cual
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1991,7 +2243,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             {attachedImg.kind === 'image' && attachedImg.previewUrl ? (
               <img src={attachedImg.previewUrl} alt={attachedImg.name} loading="lazy" />
             ) : attachedImg.kind === 'audio' ? (
-              <div className="luciana-attach-preview__icon" aria-hidden="true"><Music2 className="h-7 w-7" /></div>
+              attachedImg.previewUrl ? (
+                <audio
+                  controls
+                  preload="metadata"
+                  src={attachedImg.previewUrl}
+                  style={{ width: '240px', maxWidth: '100%' }}
+                />
+              ) : (
+                <div className="luciana-attach-preview__icon" aria-hidden="true"><Music2 className="h-7 w-7" /></div>
+              )
             ) : (
               <div className="luciana-attach-preview__icon" aria-hidden="true"><Library className="h-7 w-7" /></div>
             )}
@@ -2003,7 +2264,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               {attachedImg.kind === 'image' ? (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>📸 Foto lista · se enviará junto con tu mensaje</span>
               ) : attachedImg.kind === 'audio' ? (
-                <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio adjunto · máximo 25 MB</span>
+                <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio listo · se transcribirá al enviar (máx. 25 MB)</span>
               ) : (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>📝 Archivo adjunto</span>
               )}
@@ -2059,7 +2320,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                     <span className="luciana-attach-menu__icon"><Music2 className="h-5 w-5" /></span>
                     <span className="luciana-attach-menu__label">
                       <strong>Subir audio</strong>
-                      <small>Sólo archivos MP3 · máximo 25 MB</small>
+                      <small>MP3, WAV o M4A · máximo 25 MB</small>
                     </span>
                   </button>
                   <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('mic')} role="menuitem">
