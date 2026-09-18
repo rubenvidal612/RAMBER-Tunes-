@@ -47,6 +47,7 @@ type ReadyToGenerate = {
   style: string;
   title: string;
   instrumental: boolean;
+  gender: 'Masculino' | 'Femenino';
 };
 
 type PendingGeneration = {
@@ -666,13 +667,18 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           ? (m.structured_action as any)
           : null;
       const structured: ChatMessage['structured'] = structuredRaw
-        ? {
-            action: 'ready_to_generate',
-            prompt: String(structuredRaw.prompt || '').trim(),
-            style: String(structuredRaw.style || '').trim(),
-            title: String(structuredRaw.title || '').trim(),
-            instrumental: Boolean(structuredRaw.instrumental),
-          }
+        ? (() => {
+            const gRaw = String(structuredRaw.gender || structuredRaw.vocalGender || structuredRaw.voz || '').trim();
+            const genderDefault: 'Masculino' | 'Femenino' = /fem|mujer|femenina|f/i.test(gRaw) ? 'Femenino' : 'Masculino';
+            return {
+              action: 'ready_to_generate',
+              prompt: String(structuredRaw.prompt || '').trim(),
+              style: String(structuredRaw.style || '').trim(),
+              title: String(structuredRaw.title || '').trim(),
+              instrumental: Boolean(structuredRaw.instrumental),
+              gender: genderDefault,
+            };
+          })()
         : null;
       const ts = m.created_at ? new Date(m.created_at).getTime() : Date.now();
       return {
@@ -1134,11 +1140,14 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           : null;
       let structured: ChatMessage['structured'] = null;
       if (rawStructured && String(rawStructured.action || '').toLowerCase() === 'ready_to_generate') {
+        const gRaw = String(rawStructured.gender || rawStructured.vocalGender || rawStructured.voz || '').trim();
+        const genderDefault: 'Masculino' | 'Femenino' = /fem|mujer|femenina|f/i.test(gRaw) ? 'Femenino' : 'Masculino';
         const stOk: ReadyToGenerate = {
           prompt: String(rawStructured.prompt || '').trim(),
           style: String(rawStructured.style || '').trim(),
           title: String(rawStructured.title || '').trim(),
           instrumental: Boolean(rawStructured.instrumental),
+          gender: genderDefault,
         };
         if (stOk.prompt) structured = { action: 'ready_to_generate', ...stOk };
       }
@@ -1271,14 +1280,59 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         setTimeout(() => signOutAndReload(), 1200);
         return;
       }
-      const payload = {
-        prompt: String(activeReady.prompt || '').trim().slice(0, 12000),
-        style: String(activeReady.style || '').trim().slice(0, 600),
-        title: String(activeReady.title || '').trim().slice(0, 220),
-        instrumental: Boolean(activeReady.instrumental),
+      const pendingListKey = 'ramber.pendingSunoTasks_v1';
+      const pendingLegacyKey = 'ramber.pendingSunoTask';
+      const titleRaw = String(activeReady.title || 'Canción sin título').trim().slice(0, 100) || 'Canción sin título';
+      const promptRaw = String(activeReady.prompt || '').trim().slice(0, 12000);
+      const isInstrumental = Boolean(activeReady.instrumental);
+      const gender = activeReady.gender || 'Masculino';
+      const vocalGender = gender === 'Femenino' ? 'f' : 'm';
+      const mergedLower = `${String(activeReady.style || '').toLowerCase()}\n${promptRaw.toLowerCase()}`;
+      const genrePhrases = [
+        'regional mexicano',
+        'corrido tumbado',
+        'corridos tumbados',
+        'corridos',
+        'corrido',
+        'banda',
+        'norteño',
+        'norteno',
+        'sierreño',
+        'mariachi',
+        'cumbia',
+        'reggaetón',
+        'reggaeton',
+        'salsa',
+        'bachata',
+        'merengue',
+      ];
+      const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
+      let baseStyle = String(activeReady.style || '').trim();
+      if (!baseStyle) {
+        baseStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
+      } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
+        baseStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
+      }
+      const styleWithGender = !isInstrumental
+        ? [baseStyle, `Voz deseada: ${gender}.`].filter(Boolean).join('\n')
+        : baseStyle;
+      const hasJazzMention = mergedLower.includes('jazz');
+      const payload: any = {
+        prompt: promptRaw,
+        instrumental: isInstrumental,
+        customMode: true,
         model: 'V6',
+        vocalGender: vocalGender,
+        style: styleWithGender.slice(0, 1000),
+        title: titleRaw,
+        weirdnessConstraint: 0.7,
+        styleWeight: 0.7,
+        audioWeight: 0.7,
       };
-      const r = await fetch('/api/gpt/generate', {
+      if (inferredGenre && !hasJazzMention) {
+        payload.negativeTags = 'jazz, swing, bebop, saxophone';
+      }
+      const r = await fetch('/api/suno/generate', {
         method: 'POST',
         headers: {
           'content-type': 'application/json; charset=utf-8',
@@ -1305,10 +1359,33 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         setToast({ kind: 'err', text: msg || 'Error al generar la canción.' });
         return;
       }
-      const taskId = String((json as any)?.task_id || (json as any)?.taskId || '').trim() || undefined;
+      const taskId = String((json as any)?.taskId || (json as any)?.task_id || '').trim() || undefined;
       const statusRaw = String((json as any)?.status || (taskId ? 'queued' : 'unknown')).trim();
       setLastPending({ task_id: taskId, status: statusRaw, startedAt: Date.now() });
-      const titleOk = payload.title || 'Canción sin título';
+      if (taskId) {
+        try {
+          const raw = window.localStorage.getItem(pendingListKey);
+          const arr = raw ? JSON.parse(raw) : [];
+          const list = Array.isArray(arr) ? arr : [];
+          list.push({
+            taskId,
+            kind: 'generate',
+            startedAt: Date.now(),
+            draft: {
+              title: titleRaw,
+              description: String(activeReady.style || '').toString(),
+              lyrics: promptRaw.trim() ? promptRaw : null,
+              prompt: promptRaw,
+              model: 'V6',
+              genre: gender,
+              isCover: false,
+            },
+          });
+          window.localStorage.setItem(pendingListKey, JSON.stringify(list.slice(-10)));
+          try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
+        } catch {}
+      }
+      const titleOk = titleRaw || 'Canción sin título';
       const okMsg: ChatMessage = {
         id: uid(),
         role: 'assistant',
@@ -1320,7 +1397,6 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         createdAt: Date.now(),
       };
       setMessages((m) => [...m, okMsg]);
-      // Persistir el mensaje OK de confirmación en Supabase
       if (uiState.activeConversationId) {
         void (async () => {
           try { await appendMessageToConversation(accessToken, uiState.activeConversationId!, { role: 'assistant', content: okMsg.text }); }
@@ -1630,49 +1706,96 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
                 />
               </label>
 
-              <label className="block">
+              <label className="md:col-span-2 block">
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
                   Estilo musical
                 </span>
-                <input
-                  type="text"
+                <textarea
+                  rows={3}
                   value={activeReady.style}
                   onChange={(e) => setActiveReady({ ...activeReady, style: e.target.value })}
-                  placeholder="Ej: Pop español, guitarra acústica, voz femenina suave"
+                  placeholder="Ej: Latino-pop festivo, 108 BPM, guitarra acústica, voz femenina cálida, bajo eléctrico, ambiente feliz de fiesta"
                   style={{
                     display: 'block',
                     width: '100%',
-                    height: '2.75rem',
+                    resize: 'vertical',
+                    minHeight: '5rem',
+                    maxHeight: '11rem',
                     borderRadius: '1rem',
                     border: '1px solid var(--border)',
                     background: 'var(--bg-elev-1)',
                     color: 'var(--text)',
-                    padding: '0 0.9rem',
-                    fontSize: '0.9rem',
+                    padding: '0.8rem 0.95rem',
+                    fontSize: '0.92rem',
+                    lineHeight: 1.55,
                     outline: 'none',
                   }}
                 />
-              </label>
-
-              <label
-                className="md:col-span-2 inline-flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3"
-                style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)' }}
-              >
-                <input
-                  type="checkbox"
-                  checked={activeReady.instrumental}
-                  onChange={(e) => setActiveReady({ ...activeReady, instrumental: e.target.checked })}
-                  style={{ height: '1.25rem', width: '1.25rem', accentColor: 'var(--brand-primary)' }}
-                />
-                <div className="min-w-0">
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text)' }}>
-                    ¿Es una canción instrumental?
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Si marcas esta opción se generará sin letra cantada (solo música).
-                  </div>
+                <div style={{ marginTop: '0.2rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  Cuantos más detalles mejor: género, tempo, instrumentos, estado de ánimo, acentos.
                 </div>
               </label>
+
+              <div className="md:col-span-2 block">
+                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                  Voz deseada
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveReady({ ...activeReady, gender: 'Masculino' })}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      height: '3rem',
+                      borderRadius: '1rem',
+                      border: `1px solid ${activeReady.gender === 'Masculino' ? 'transparent' : 'var(--border)'}`,
+                      background:
+                        activeReady.gender === 'Masculino'
+                          ? 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)'
+                          : 'var(--bg-elev-1)',
+                      color: activeReady.gender === 'Masculino' ? '#fff' : 'var(--text)',
+                      fontWeight: 800,
+                      fontSize: '0.95rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: activeReady.gender === 'Masculino' ? '0 10px 24px color-mix(in srgb, #2563eb 30%, transparent)' : 'none',
+                    }}
+                  >
+                    👨 Hombre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveReady({ ...activeReady, gender: 'Femenino' })}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      height: '3rem',
+                      borderRadius: '1rem',
+                      border: `1px solid ${activeReady.gender === 'Femenino' ? 'transparent' : 'var(--border)'}`,
+                      background:
+                        activeReady.gender === 'Femenino'
+                          ? 'linear-gradient(135deg, #ec4899 0%, var(--brand-accent) 100%)'
+                          : 'var(--bg-elev-1)',
+                      color: activeReady.gender === 'Femenino' ? '#fff' : 'var(--text)',
+                      fontWeight: 800,
+                      fontSize: '0.95rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: activeReady.gender === 'Femenino' ? '0 10px 24px color-mix(in srgb, #ec4899 30%, transparent)' : 'none',
+                    }}
+                  >
+                    👩 Mujer
+                  </button>
+                </div>
+                <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  Elige el tipo de voz que quieres para cantar la canción.
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 flex flex-col-reverse items-stretch gap-3 md:flex-row md:items-center md:justify-between">
