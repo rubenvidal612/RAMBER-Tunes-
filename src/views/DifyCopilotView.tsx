@@ -272,6 +272,9 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
+  const [audioBusy, setAudioBusy] = useState(false);
+  const [coverDraft, setCoverDraft] = useState<null | { title: string; style: string; gender: 'Masculino' | 'Femenino' }>(null);
+  const [coverGenerating, setCoverGenerating] = useState(false);
 
   const [micRecorderOpen, setMicRecorderOpen] = useState(false);
   const [micRecorderState, setMicRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
@@ -1041,6 +1044,374 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     setAttachedImg(null);
   }, [attachedImg]);
 
+  const confirmAudioAuth = useCallback(() => {
+    try {
+      return window.confirm('¿Confirmas que este audio es tuyo o tienes autorización para usarlo?');
+    } catch {
+      return true;
+    }
+  }, []);
+
+  const openCoverFromAudio = useCallback(() => {
+    if (!attachedImg || attachedImg.kind !== 'audio') return;
+    const base = String(attachedImg.name || 'Cover').replace(/\.[^.]+$/, '').trim().slice(0, 100) || 'Cover';
+    setCoverDraft({ title: base, style: 'General', gender: 'Masculino' });
+  }, [attachedImg]);
+
+  const handleAudioExtractLyrics = useCallback(async () => {
+    if (!attachedImg || attachedImg.kind !== 'audio') return;
+    if (loading || generating || audioBusy || coverGenerating) return;
+    if (!confirmAudioAuth()) return;
+    if (!supabaseBrowser) {
+      setToast({ kind: 'err', text: 'No se pudo conectar. Cierra y abre la app de nuevo.' });
+      return;
+    }
+
+    setAudioBusy(true);
+    setLoading(true);
+    sentScrollRef.current = true;
+    const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
+    const audioFile = attachedImg.file;
+    const msgAudioUrl = (() => {
+      try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
+    })();
+
+    try {
+      const accessToken = await getValidBearerToken();
+      if (!accessToken) {
+        setLoading(false);
+        setAudioBusy(false);
+        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
+        setTimeout(() => signOutAndReload(), 1200);
+        return;
+      }
+
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: 'user',
+        text: 'Extraer letra del audio',
+        createdAt: Date.now(),
+        attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes } : null,
+      };
+      setMessages((m) => [...m, userMsg]);
+      setCoverDraft(null);
+      try { handleAttachRemove(); } catch {}
+
+      let activeConvId = uiState.activeConversationId;
+      let activeDifyId = conversationId;
+      if (!activeConvId) {
+        const created = await createSupabaseConversation(accessToken, { title: 'Audio' });
+        if (created) {
+          activeConvId = created.id;
+          activeDifyId = String(created.internal_dify_conversation_id || '').trim();
+          setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
+        }
+      }
+      if (activeConvId) {
+        void (async () => {
+          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: `[Audio adjunto: ${audioName}] Extraer letra` }); } catch {}
+        })();
+      }
+
+      setToast({ kind: 'ok', text: 'Transcribiendo audio…' });
+
+      let uploadJson: any = null;
+      let uploadStatus = 0;
+      try {
+        const fd = new FormData();
+        fd.append('file', audioFile, audioName);
+        const r = await fetch('/api/gpt/upload-audio', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+          body: fd,
+        });
+        uploadStatus = r.status;
+        const raw = await r.text();
+        try { uploadJson = raw ? JSON.parse(raw) : null; } catch { uploadJson = { error: 'invalid_json', message: raw }; }
+      } catch {
+        uploadStatus = 0;
+        uploadJson = { error: 'network_error' };
+      }
+      if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
+        const friendly = uploadStatus === 413 ? 'El audio es demasiado pesado (máx. 25 MB).' : 'No pude subir el audio.';
+        setLoading(false);
+        setAudioBusy(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      const audioUrl = String(uploadJson?.url || uploadJson?.upload_url || uploadJson?.uploadUrl || '').trim();
+      if (!audioUrl) {
+        const friendly = 'No pude preparar el audio para transcribir.';
+        setLoading(false);
+        setAudioBusy(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      let trJson: any = null;
+      let trStatus = 0;
+      try {
+        const r = await fetch('/api/gpt/transcribe', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/json',
+          },
+          body: JSON.stringify({ audio_url: audioUrl, title: audioName }),
+        });
+        trStatus = r.status;
+        const raw = await r.text();
+        try { trJson = raw ? JSON.parse(raw) : null; } catch { trJson = { error: 'invalid_json' }; }
+      } catch {
+        trStatus = 0;
+        trJson = { error: 'network_error' };
+      }
+      if (trStatus < 200 || trStatus >= 300 || (trJson && trJson.success === false) || (trJson && typeof trJson.error === 'string')) {
+        const friendly = trStatus === 413
+          ? 'El audio es demasiado pesado para transcribir. Usa un fragmento más corto.'
+          : 'No pude transcribir este audio. Prueba con un fragmento más corto o con menos ruido.';
+        setLoading(false);
+        setAudioBusy(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      const lyrics = String(trJson?.lyrics || '').trim();
+      if (!lyrics) {
+        const friendly = 'No pude obtener una transcripción (texto vacío). Prueba con un fragmento más claro.';
+        setLoading(false);
+        setAudioBusy(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      const aMsg: ChatMessage = {
+        id: uid(),
+        role: 'assistant',
+        text:
+          `**Transcripción detectada:**\n\n` +
+          `${lyrics}\n\n` +
+          `Revísala y corrígela si quieres. Luego puedes pulsar **Usar tal cual** para mandarla al chat.`,
+        createdAt: Date.now(),
+        structured: { action: 'transcription_ready', lyrics },
+      };
+      setMessages((m) => [...m, aMsg]);
+      try {
+        setInput(lyrics);
+        if (textareaRef.current) textareaRef.current.value = lyrics;
+        try { textareaRef.current?.focus?.(); } catch {}
+      } catch {}
+
+      setLoading(false);
+      setAudioBusy(false);
+
+      if (activeConvId) {
+        void (async () => {
+          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'assistant', content: stripInternalReasoning(aMsg.text) }); } catch {}
+        })();
+      }
+    } catch {
+      const friendly = 'No pude transcribir este audio en este momento.';
+      setLoading(false);
+      setAudioBusy(false);
+      setToast({ kind: 'err', text: friendly });
+      setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+    }
+  }, [attachedImg, audioBusy, confirmAudioAuth, conversationId, coverGenerating, generating, handleAttachRemove, loading, supabaseBrowser, uiState.activeConversationId, setUi, setToast]);
+
+  const handleGenerateCoverFromAudio = useCallback(async () => {
+    if (!attachedImg || attachedImg.kind !== 'audio') return;
+    if (!coverDraft) return;
+    if (loading || generating || audioBusy || coverGenerating) return;
+    if (!confirmAudioAuth()) return;
+    if (!supabaseBrowser) {
+      setToast({ kind: 'err', text: 'No se pudo conectar. Cierra y abre la app de nuevo.' });
+      return;
+    }
+
+    setCoverGenerating(true);
+    setLoading(true);
+    sentScrollRef.current = true;
+    const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
+    const audioFile = attachedImg.file;
+    const msgAudioUrl = (() => {
+      try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
+    })();
+    const title = String(coverDraft.title || 'Cover').trim().slice(0, 100) || 'Cover';
+    const style = String(coverDraft.style || 'General').trim().slice(0, 1000) || 'General';
+    const vocalGender = coverDraft.gender === 'Femenino' ? 'f' : 'm';
+    const COST_CREDITS = 12;
+
+    try {
+      const accessToken = await getValidBearerToken();
+      if (!accessToken) {
+        setLoading(false);
+        setCoverGenerating(false);
+        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
+        setTimeout(() => signOutAndReload(), 1200);
+        return;
+      }
+
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: 'user',
+        text: `Crear cover · ${title}`,
+        createdAt: Date.now(),
+        attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes } : null,
+      };
+      setMessages((m) => [...m, userMsg]);
+
+      try { handleAttachRemove(); } catch {}
+      setCoverDraft(null);
+
+      let activeConvId = uiState.activeConversationId;
+      let activeDifyId = conversationId;
+      if (!activeConvId) {
+        const created = await createSupabaseConversation(accessToken, { title: title.slice(0, 60) || 'Cover' });
+        if (created) {
+          activeConvId = created.id;
+          activeDifyId = String(created.internal_dify_conversation_id || '').trim();
+          setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
+        }
+      }
+      if (activeConvId) {
+        void (async () => {
+          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: `[Audio adjunto: ${audioName}] Crear cover · ${title}` }); } catch {}
+        })();
+      }
+
+      setToast({ kind: 'ok', text: 'Creando cover…' });
+
+      let uploadJson: any = null;
+      let uploadStatus = 0;
+      try {
+        const fd = new FormData();
+        fd.append('file', audioFile, audioName);
+        const r = await fetch('/api/gpt/upload-audio', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+          body: fd,
+        });
+        uploadStatus = r.status;
+        const raw = await r.text();
+        try { uploadJson = raw ? JSON.parse(raw) : null; } catch { uploadJson = { error: 'invalid_json', message: raw }; }
+      } catch {
+        uploadStatus = 0;
+        uploadJson = { error: 'network_error' };
+      }
+      if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
+        const friendly = uploadStatus === 413 ? 'El audio es demasiado pesado (máx. 25 MB).' : 'No pude subir el audio.';
+        setLoading(false);
+        setCoverGenerating(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+      const uploadUrl = String(uploadJson?.url || uploadJson?.upload_url || uploadJson?.uploadUrl || '').trim();
+      const uploadPath = String(uploadJson?.r2_key || uploadJson?.upload_path || uploadJson?.uploadPath || uploadJson?.key || '').trim();
+      if (!uploadUrl && !uploadPath) {
+        const friendly = 'No pude preparar el audio para el cover.';
+        setLoading(false);
+        setCoverGenerating(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      let coverJson: any = null;
+      let coverStatus = 0;
+      try {
+        const payload: any = {
+          uploadUrl: uploadUrl || undefined,
+          uploadBucket: uploadPath ? 'ramber-tunes' : undefined,
+          uploadPath: uploadPath || undefined,
+          instrumental: false,
+          prompt: ' ',
+          style,
+          title,
+          model: 'V6',
+          vocalGender,
+        };
+        if (payload.style) payload.style = [payload.style, `Voz deseada: ${coverDraft.gender}.`].filter(Boolean).join('\n');
+        const r = await fetch('/api/suno/upload-cover', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify(payload),
+        });
+        coverStatus = r.status;
+        const raw = await r.text();
+        try { coverJson = raw ? JSON.parse(raw) : null; } catch { coverJson = { error: 'invalid_json', message: raw }; }
+      } catch {
+        coverStatus = 0;
+        coverJson = { error: 'network_error' };
+      }
+
+      if (coverStatus < 200 || coverStatus >= 300 || (coverJson && typeof coverJson.error === 'string')) {
+        const isCredits = coverStatus === 402 || String(coverJson?.error || '').toLowerCase().includes('credit');
+        const friendly = isCredits
+          ? 'No tienes créditos suficientes para crear el cover.'
+          : 'No pude crear el cover. Revisa tu audio e inténtalo de nuevo.';
+        setLoading(false);
+        setCoverGenerating(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      const taskId = String(coverJson?.taskId || coverJson?.task_id || '').trim();
+      if (!taskId) {
+        const friendly = 'No pude iniciar el cover (no recibí el identificador de la tarea).';
+        setLoading(false);
+        setCoverGenerating(false);
+        setToast({ kind: 'err', text: friendly });
+        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+        return;
+      }
+
+      try {
+        const pendingListKey = 'ramber.pendingSunoTasks_v1';
+        const pendingLegacyKey = 'ramber.pendingSunoTask';
+        const raw = window.localStorage.getItem(pendingListKey);
+        const arr = raw ? JSON.parse(raw) : [];
+        const list = Array.isArray(arr) ? arr : [];
+        list.push({
+          taskId,
+          kind: 'upload-cover',
+          startedAt: Date.now(),
+          draft: {
+            title,
+            description: style,
+            lyrics: null,
+            prompt: null,
+            model: 'V6',
+            genre: coverDraft.gender,
+            isCover: true,
+          },
+        });
+        window.localStorage.setItem(pendingListKey, JSON.stringify(list.slice(-10)));
+        try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
+      } catch {}
+
+      setLoading(false);
+      setCoverGenerating(false);
+      setToast({ kind: 'ok', text: `Cover en cola (${COST_CREDITS} créditos). Ir a Biblioteca.` });
+      setTimeout(() => { try { onChange('biblioteca'); } catch {} }, 1200);
+      return;
+    } catch {
+      const friendly = 'No pude crear el cover en este momento.';
+      setLoading(false);
+      setCoverGenerating(false);
+      setToast({ kind: 'err', text: friendly });
+      setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+    }
+  }, [attachedImg, audioBusy, confirmAudioAuth, conversationId, coverDraft, coverGenerating, generating, handleAttachRemove, loading, onChange, supabaseBrowser, uiState.activeConversationId, setUi]);
+
   useEffect(() => () => {
     // cleanup preview URL al desmontar
     if (attachedImg) { try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {} }
@@ -1054,194 +1425,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       return;
     }
     if (attachedImg && attachedImg.kind === 'audio') {
-      const ok = (() => {
-        try {
-          return window.confirm('Antes de transcribir: ¿confirmas que este audio es tuyo o tienes autorización para usarlo?');
-        } catch {
-          return true;
-        }
-      })();
-      if (!ok) return;
-
-      setLoading(true);
-      sentScrollRef.current = true;
-      const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
-      try {
-        const accessToken = await getValidBearerToken();
-        if (!accessToken) {
-          setLoading(false);
-          setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
-          const errMsg: ChatMessage = {
-            id: uid(),
-            role: 'assistant',
-            text: 'Tu sesión de LucIAna expiró. Vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.',
-            createdAt: Date.now(),
-          };
-          setMessages((m) => [...m, errMsg]);
-          return;
-        }
-
-        let msgAudioUrl = '';
-        try { msgAudioUrl = URL.createObjectURL(attachedImg.file); } catch { msgAudioUrl = attachedImg.previewUrl || ''; }
-        const userMsg: ChatMessage = {
-          id: uid(),
-          role: 'user',
-          text,
-          createdAt: Date.now(),
-          attachment: msgAudioUrl
-            ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes }
-            : null,
-        };
-        setMessages((m) => [...m, userMsg]);
-        setInput('');
-        if (textareaRef.current) textareaRef.current.value = '';
-
-        const audioFile = attachedImg.file;
-        const audioPreviewUrl = attachedImg.previewUrl;
-        try { handleAttachRemove(); } catch {}
-
-        let activeConvId = uiState.activeConversationId;
-        let activeDifyId = conversationId;
-        if (!activeConvId) {
-          const created = await createSupabaseConversation(accessToken, { title: text.slice(0, 60) || 'Audio' });
-          if (created) {
-            activeConvId = created.id;
-            activeDifyId = String(created.internal_dify_conversation_id || '').trim();
-            setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
-          }
-        }
-        if (activeConvId) {
-          void (async () => {
-            try {
-              const prefix = `[Audio adjunto: ${audioName}] `;
-              await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: prefix + String(text || '') });
-            } catch {}
-          })();
-        }
-
-        setToast({ kind: 'ok', text: 'Transcribiendo audio…' });
-
-        let uploadJson: any = null;
-        let uploadStatus = 0;
-        try {
-          const fd = new FormData();
-          fd.append('file', audioFile, audioName);
-          const r = await fetch('/api/gpt/upload-audio', {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${accessToken}`,
-              accept: 'application/json',
-            },
-            body: fd,
-          });
-          uploadStatus = r.status;
-          const raw = await r.text();
-          try { uploadJson = raw ? JSON.parse(raw) : null; } catch { uploadJson = { error: 'invalid_json', message: raw }; }
-        } catch (e: any) {
-          uploadStatus = 0;
-          uploadJson = { error: 'network_error', message: e instanceof Error ? e.message : String(e || '') };
-        }
-        if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
-          const msg = String(uploadJson?.message || uploadJson?.detail || uploadJson?.error || `HTTP ${uploadStatus || '0'}`).trim();
-          setLoading(false);
-          const errText = msg || 'No pude subir el audio para transcribir.';
-          setToast({ kind: 'err', text: errText });
-          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
-          setMessages((m) => [...m, errMsg]);
-          return;
-        }
-
-        const audioUrl = String(uploadJson?.url || uploadJson?.upload_url || uploadJson?.uploadUrl || '').trim();
-        if (!audioUrl) {
-          setLoading(false);
-          const errText = 'No pude obtener la URL del audio subido.';
-          setToast({ kind: 'err', text: errText });
-          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
-          setMessages((m) => [...m, errMsg]);
-          return;
-        }
-
-        let trJson: any = null;
-        let trStatus = 0;
-        try {
-          const r = await fetch('/api/gpt/transcribe', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json; charset=utf-8',
-              authorization: `Bearer ${accessToken}`,
-              accept: 'application/json',
-            },
-            body: JSON.stringify({ audio_url: audioUrl, title: audioName }),
-          });
-          trStatus = r.status;
-          const raw = await r.text();
-          try { trJson = raw ? JSON.parse(raw) : null; } catch { trJson = { error: 'invalid_json', message: raw }; }
-        } catch (e: any) {
-          trStatus = 0;
-          trJson = { error: 'network_error', message: e instanceof Error ? e.message : String(e || '') };
-        }
-
-        if (trStatus < 200 || trStatus >= 300 || (trJson && trJson.success === false) || (trJson && typeof trJson.error === 'string')) {
-          const msg = String(trJson?.message || trJson?.detail || trJson?.error || `HTTP ${trStatus || '0'}`).trim();
-          setLoading(false);
-          const errText = msg || 'No pude transcribir este audio.';
-          setToast({ kind: 'err', text: errText });
-          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
-          setMessages((m) => [...m, errMsg]);
-          return;
-        }
-
-        const lyrics = String(trJson?.lyrics || '').trim();
-        if (!lyrics) {
-          setLoading(false);
-          const errText = 'No pude obtener una transcripción (texto vacío). Prueba con un fragmento más claro.';
-          setToast({ kind: 'err', text: errText });
-          const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
-          setMessages((m) => [...m, errMsg]);
-          return;
-        }
-
-        const aMsg: ChatMessage = {
-          id: uid(),
-          role: 'assistant',
-          text:
-            `**Transcripción detectada:**\n\n` +
-            `${lyrics}\n\n` +
-            `¿Quieres corregirla o usarla tal cual para que LucIAna Bot la convierta en letra/canción?`,
-          createdAt: Date.now(),
-          structured: { action: 'transcription_ready', lyrics },
-        };
-        setMessages((m) => [...m, aMsg]);
-        try {
-          setInput(lyrics);
-          if (textareaRef.current) textareaRef.current.value = lyrics;
-          try { textareaRef.current?.focus?.(); } catch {}
-        } catch {}
-
-        setLoading(false);
-
-        if (activeConvId) {
-          void (async () => {
-            try {
-              const saveText = stripInternalReasoning(aMsg.text);
-              await appendMessageToConversation(accessToken, activeConvId!, { role: 'assistant', content: saveText });
-            } catch {}
-          })();
-        }
-        try {
-          if (audioPreviewUrl) {
-            // mantener el reproductor en el mensaje del usuario; cleanup del previewUrl se hace cuando el chat se desmonta
-          }
-        } catch {}
-        return;
-      } catch (e: any) {
-        setLoading(false);
-        const errText = e instanceof Error ? e.message : String(e || 'Error desconocido');
-        setToast({ kind: 'err', text: errText });
-        const errMsg: ChatMessage = { id: uid(), role: 'assistant', text: errText, createdAt: Date.now() };
-        setMessages((m) => [...m, errMsg]);
-        return;
-      }
+      setToast({ kind: 'ok', text: 'Para este audio, usa los botones “Extraer letra” o “Crear cover”.' });
+      return;
     }
 
     let imgAttachment: null | {
@@ -2219,6 +2404,236 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           </div>
         )}
 
+        {coverDraft && attachedImg && attachedImg.kind === 'audio' && (
+          <div className="luciana-msg-row is-assistant">
+            <div className="luciana-msg-wrap">
+              <div className="luciana-msg-avatar" aria-hidden>
+                <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna" loading="lazy" />
+              </div>
+              <div
+                className="luciana-msg-bubble"
+                style={{
+                  width: '100%',
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  boxShadow: 'none',
+                }}
+              >
+                <div style={{
+                  padding: '1rem 1.05rem',
+                  borderRadius: '1.25rem',
+                  border: '1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border))',
+                  background: isDark
+                    ? 'linear-gradient(135deg, rgba(124,58,237,.14), rgba(37,99,235,.10))'
+                    : 'linear-gradient(135deg, rgba(124,58,237,.08), rgba(37,99,235,.06))',
+                  backdropFilter: 'blur(8px)',
+                  color: 'var(--text)',
+                }}>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-2xl ring-1"
+                        style={{
+                          background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                          boxShadow: '0 10px 24px color-mix(in srgb, var(--brand-primary) 28%, transparent)',
+                          borderColor: 'transparent',
+                          color: '#fff',
+                        }}
+                      >
+                        <Music2 className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="text-base font-black" style={{ color: 'var(--text)' }}>
+                          Resumen para crear cover
+                        </h2>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Revisa y confirma. Se cobrarán <b style={{ color: 'var(--brand-accent)' }}>12 créditos</b> cuando pulses <b style={{ color: 'var(--brand-primary)' }}>Generar cover</b>.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCoverDraft(null)}
+                      disabled={coverGenerating || loading}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+
+                  {attachedImg.previewUrl ? (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <audio controls preload="metadata" src={attachedImg.previewUrl} style={{ width: '100%', maxWidth: '520px' }} />
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Título
+                      </span>
+                      <input
+                        type="text"
+                        value={coverDraft.title}
+                        onChange={(e) => setCoverDraft({ ...coverDraft, title: e.target.value })}
+                        placeholder="Ej: Mi cover"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          height: '2.75rem',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0 0.9rem',
+                          fontSize: '0.9rem',
+                          outline: 'none',
+                        }}
+                      />
+                    </label>
+
+                    <div className="block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Voz
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCoverDraft({ ...coverDraft, gender: 'Masculino' })}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            height: '2.75rem',
+                            borderRadius: '1rem',
+                            border: `1px solid ${coverDraft.gender === 'Masculino' ? 'transparent' : 'var(--border)'}`,
+                            background:
+                              coverDraft.gender === 'Masculino'
+                                ? 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)'
+                                : 'var(--bg-elev-1)',
+                            color: coverDraft.gender === 'Masculino' ? '#fff' : 'var(--text)',
+                            fontWeight: 800,
+                            fontSize: '0.92rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            boxShadow: coverDraft.gender === 'Masculino' ? '0 10px 24px color-mix(in srgb, #2563eb 30%, transparent)' : 'none',
+                          }}
+                        >
+                          👨 Hombre
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCoverDraft({ ...coverDraft, gender: 'Femenino' })}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            height: '2.75rem',
+                            borderRadius: '1rem',
+                            border: `1px solid ${coverDraft.gender === 'Femenino' ? 'transparent' : 'var(--border)'}`,
+                            background:
+                              coverDraft.gender === 'Femenino'
+                                ? 'linear-gradient(135deg, #ec4899 0%, var(--brand-accent) 100%)'
+                                : 'var(--bg-elev-1)',
+                            color: coverDraft.gender === 'Femenino' ? '#fff' : 'var(--text)',
+                            fontWeight: 800,
+                            fontSize: '0.92rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            boxShadow: coverDraft.gender === 'Femenino' ? '0 10px 24px color-mix(in srgb, #ec4899 30%, transparent)' : 'none',
+                          }}
+                        >
+                          👩 Mujer
+                        </button>
+                      </div>
+                    </div>
+
+                    <label className="md:col-span-2 block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Nuevo estilo musical
+                      </span>
+                      <textarea
+                        rows={3}
+                        value={coverDraft.style}
+                        onChange={(e) => setCoverDraft({ ...coverDraft, style: e.target.value })}
+                        placeholder="Ej: Pop romántico moderno, 100 BPM, guitarra acústica, ambiente suave"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          resize: 'vertical',
+                          minHeight: '5rem',
+                          maxHeight: '11rem',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0.8rem 0.95rem',
+                          fontSize: '0.92rem',
+                          lineHeight: 1.55,
+                          outline: 'none',
+                        }}
+                      />
+                      <div style={{ marginTop: '0.2rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Cuantos más detalles mejor: género, tempo, instrumentos, estado de ánimo.
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-col-reverse items-stretch gap-2 md:flex-row md:items-center md:justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setCoverDraft(null)}
+                      disabled={coverGenerating || loading}
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerateCoverFromAudio()}
+                      disabled={coverGenerating || loading}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        height: '3rem',
+                        minWidth: '220px',
+                        padding: '0 1.5rem',
+                        borderRadius: '1rem',
+                        border: '1px solid transparent',
+                        fontWeight: 900,
+                        fontSize: '1rem',
+                        color: '#fff',
+                        background: 'linear-gradient(135deg, var(--brand-primary) 0%, #ec4899 50%, var(--brand-accent) 100%)',
+                        boxShadow: '0 14px 40px color-mix(in srgb, var(--brand-primary) 32%, transparent)',
+                        cursor: coverGenerating || loading ? 'not-allowed' : 'pointer',
+                        opacity: coverGenerating || loading ? 0.78 : 1,
+                        transition: 'filter 0.15s ease, transform 0.15s ease',
+                      }}
+                    >
+                      {coverGenerating ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" /> Generando cover…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-5 w-5" /> Generar cover
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading && (
           <div className="luciana-msg-row is-assistant">
             <div className="luciana-msg-wrap">
@@ -2264,7 +2679,33 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               {attachedImg.kind === 'image' ? (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>📸 Foto lista · se enviará junto con tu mensaje</span>
               ) : attachedImg.kind === 'audio' ? (
-                <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio listo · se transcribirá al enviar (máx. 25 MB)</span>
+                <>
+                  <span className="badge-soon" style={{ opacity: 0.9 }}>🎙️ Audio listo · elige una acción</span>
+                  <div style={{ marginTop: '0.45rem', display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => void handleAudioExtractLyrics()}
+                      disabled={loading || generating || audioBusy || coverGenerating}
+                      className="inline-flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-bold disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                    >
+                      Extraer letra
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openCoverFromAudio}
+                      disabled={loading || generating || audioBusy || coverGenerating}
+                      className="inline-flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-black disabled:opacity-60"
+                      style={{
+                        borderColor: 'transparent',
+                        background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                        color: '#fff',
+                      }}
+                    >
+                      Crear cover
+                    </button>
+                  </div>
+                </>
               ) : (
                 <span className="badge-soon" style={{ opacity: 0.9 }}>📝 Archivo adjunto</span>
               )}
@@ -2288,9 +2729,9 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               className="luciana-attach-btn"
               onClick={handleAttachPick}
               disabled={loading || generating}
-              aria-label="Adjuntar (imagen, audio MP3 o grabar con micrófono)"
+              aria-label="Adjuntar (foto de letra o audio propio)"
               aria-expanded={attachMenuOpen}
-              title="Adjuntar · imagen / audio MP3 / grabar con micrófono"
+              title="Adjuntar · foto de letra / audio propio"
             >
               <Paperclip className="h-4.5 w-4.5" />
             </button>
