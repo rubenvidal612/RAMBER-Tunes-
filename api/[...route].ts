@@ -1512,23 +1512,115 @@ async function wipeOverdueFrozenCredits(admin: any): Promise<{ ok: boolean; wipe
   }
 }
 
+const CANONICAL_CREDIT_PACKS = [
+  {
+    id: 1,
+    pack_key: "mini_3",
+    name: "Mini",
+    songs: 6,
+    credits_amount: 36,
+    price_mxn: 25,
+    validity_days: 30,
+    sort_order: 1,
+    description: "6 canciones (36 créditos) · pago único",
+    is_active: true,
+  },
+  {
+    id: 2,
+    pack_key: "chico_10",
+    name: "Chico",
+    songs: 20,
+    credits_amount: 120,
+    price_mxn: 70,
+    validity_days: 30,
+    sort_order: 2,
+    description: "20 canciones (120 créditos) · pago único",
+    is_active: true,
+  },
+  {
+    id: 3,
+    pack_key: "mediano_30",
+    name: "Mediano",
+    songs: 60,
+    credits_amount: 360,
+    price_mxn: 180,
+    validity_days: 30,
+    sort_order: 3,
+    description: "60 canciones (360 créditos) · pago único",
+    is_active: true,
+  },
+  {
+    id: 4,
+    pack_key: "pack_grande_250",
+    name: "Grande",
+    songs: 100,
+    credits_amount: 600,
+    price_mxn: 250,
+    validity_days: 30,
+    sort_order: 4,
+    description: "100 canciones (600 créditos) · pago único · Agente Bot 24/7",
+    is_active: true,
+  },
+];
+
+function canonicalCreditPackByKey(packKey: string): any | null {
+  const key = String(packKey || "").trim().toLowerCase();
+  if (!key) return null;
+  return CANONICAL_CREDIT_PACKS.find((p) => String(p.pack_key).toLowerCase() === key) || null;
+}
+
+function canonicalCreditPackById(packId: any): any | null {
+  const id = Number(packId);
+  if (!Number.isFinite(id)) return null;
+  return CANONICAL_CREDIT_PACKS.find((p) => p.id === id) || null;
+}
+
 /**
- * Lista los paquetes de créditos activos (de credit_packs), ordenados por sort_order.
- * Si la tabla no existe, retorna lista vacía (para no romper).
+ * Lista los paquetes de créditos activos (combina la tabla credit_packs con la fuente canónica local).
+ * Si la tabla no existe o tiene huecos, retorna los paquetes canónicos para no romper.
  */
 async function listActiveCreditPacks(admin: any): Promise<any[]> {
+  let rows: any[] = [];
   try {
     const { data, error } = await admin
       .from("credit_packs")
-      .select("id, pack_key, name, songs, credits_amount, price_mxn, validity_days, sort_order, description")
-      .eq("is_active", true)
+      .select("id, pack_key, name, songs, credits_amount, price_mxn, validity_days, sort_order, description, is_active")
       .order("sort_order", { ascending: true })
       .order("price_mxn", { ascending: true });
-    if (error) return [];
-    return Array.isArray(data) ? data : [];
+    if (!error) rows = Array.isArray(data) ? data : [];
   } catch {
-    return [];
+    rows = [];
   }
+  const byKey = new Map<string, any>();
+  for (const p of CANONICAL_CREDIT_PACKS) byKey.set(String(p.pack_key).toLowerCase(), { ...p });
+  for (const r of rows) {
+    const key = String((r as any)?.pack_key || "").toLowerCase();
+    if (!key) continue;
+    const isActive = (r as any).is_active === false ? false : true;
+    const merged: any = {
+      id: Number((r as any).id ?? (byKey.get(key)?.id ?? 0)),
+      pack_key: String((r as any).pack_key ?? key),
+      name: String((r as any).name ?? byKey.get(key)?.name ?? key),
+      songs: Number((r as any).songs ?? byKey.get(key)?.songs ?? 0),
+      credits_amount: Number((r as any).credits_amount ?? byKey.get(key)?.credits_amount ?? 0),
+      price_mxn: Number((r as any).price_mxn ?? byKey.get(key)?.price_mxn ?? 0),
+      validity_days: Number((r as any).validity_days ?? byKey.get(key)?.validity_days ?? 30),
+      sort_order: Number((r as any).sort_order ?? byKey.get(key)?.sort_order ?? 99),
+      description:
+        String((r as any).description ?? byKey.get(key)?.description ?? "").trim() ||
+        String(byKey.get(key)?.description ?? "").trim(),
+      is_active: isActive,
+    };
+    byKey.set(key, merged);
+  }
+  const list = Array.from(byKey.values())
+    .filter((p: any) => (p as any).is_active !== false && Number((p as any).price_mxn || 0) > 0)
+    .sort((a: any, b: any) => {
+      const s = Number((a as any).sort_order || 0) - Number((b as any).sort_order || 0);
+      if (s !== 0) return s;
+      return Number((a as any).price_mxn || 0) - Number((b as any).price_mxn || 0);
+    });
+  return list;
 }
 
 async function buildRealUserIdSet(admin: any) {
@@ -5722,10 +5814,55 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor" | "masterizar";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio", amount_mxn: 350, credits: 1200, songs: 200 },
+    inicio: { title: "Pack Inicio (mensual)", amount_mxn: 350, credits: 1200, songs: 200 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
     masterizar: { title: "Masterizar Ilimitado", amount_mxn: 150, credits: 0, songs: 0 },
   };
+
+  const MINI_PACK_TX_KIND = "mini_pack";
+  function resolveMiniPackFromMetadata(meta: any) {
+    const pk = String(meta?.pack_key || meta?.packKey || "").trim().toLowerCase();
+    const pid = meta?.pack_id ?? meta?.packId ?? null;
+    const byKey = pk ? canonicalCreditPackByKey(pk) : null;
+    const byId = !byKey && pid ? canonicalCreditPackById(pid) : null;
+    const base: any = byKey || byId || null;
+    if (!base) return null;
+    return {
+      pack_key: String(base.pack_key).toLowerCase(),
+      pack_id: Number(base.id) || null,
+      title: String(base.name || base.pack_key),
+      amount_mxn: Number(base.price_mxn || 0),
+      credits: Number(base.credits_amount || 0),
+      songs: Number(base.songs || 0),
+      validity_days: Number(base.validity_days || 30),
+    };
+  }
+  function validateMiniPackMatchesAmountAndCredits(meta: any, paymentAmountMxn: any) {
+    const resolved = resolveMiniPackFromMetadata(meta);
+    if (!resolved) return { ok: false as const };
+    const expectedAmount = Number(resolved.amount_mxn);
+    const expectedCredits = Number(resolved.credits);
+    const amountPaid = Number(paymentAmountMxn);
+    const metaCredits = Number(meta?.credits ?? 0);
+    const metaAmount = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
+    const amountTolerance = 0.01;
+    const amountOk =
+      Number.isFinite(amountPaid) &&
+      Number.isFinite(expectedAmount) &&
+      expectedAmount > 0 &&
+      Math.abs(amountPaid - expectedAmount) <= amountTolerance;
+    const amountMetaOk = !Number.isFinite(metaAmount) || metaAmount <= 0
+      ? true
+      : Math.abs(metaAmount - expectedAmount) <= amountTolerance;
+    const creditsOk =
+      Number.isFinite(expectedCredits) &&
+      expectedCredits >= 0 &&
+      (!Number.isFinite(metaCredits) || metaCredits <= 0 || metaCredits === expectedCredits);
+    if (!amountOk || !amountMetaOk || !creditsOk) {
+      return { ok: false as const };
+    }
+    return { ok: true as const, ...resolved };
+  }
 
   async function fetchPayment(mpToken: string, paymentId: string) {
     const r = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, {
@@ -6104,23 +6241,51 @@ const mercadoPagoHandler = (() => {
     const userId = (meta?.user_id || meta?.userId || "").toString();
     if (!userId) return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
 
+    const transactionAmountMxn = Number(data?.transaction_amount ?? data?.transactionAmount ?? meta?.amount_mxn ?? meta?.amountMxn ?? NaN);
+    const currencyId = String(data?.currency_id || data?.currencyId || "MXN").toUpperCase().trim();
+    if (currencyId && currencyId !== "MXN") {
+      return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "bad_currency" });
+    }
+    if (!Number.isFinite(transactionAmountMxn) || transactionAmountMxn <= 0) {
+      return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "bad_amount" });
+    }
+
     const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
     if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, status: paymentStatus, already: true });
 
-    const packKey = (meta?.pack_key || meta?.packKey || "").toString();
-    const amountMxn = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
-    const credits = Number(meta?.credits ?? 0);
+    const packKeyRaw = (meta?.pack_key || meta?.packKey || "").toString();
+    const packKey = String(packKeyRaw || "").trim().toLowerCase();
+    const metaAmountMxn = Number(meta?.amount_mxn ?? meta?.amountMxn ?? 0);
+    const metaCredits = Number(meta?.credits ?? 0);
     const packIdRaw = meta?.pack_id ?? meta?.packId ?? null;
     const packId = Number.isFinite(Number(packIdRaw)) ? Number(packIdRaw) : null;
-    const validityDays = Number.isFinite(Number(meta?.validity_days ?? meta?.validityDays))
-      ? Number(meta?.validity_days ?? meta?.validityDays)
-      : 30;
+    const metaValidity = Number(meta?.validity_days ?? meta?.validityDays);
+    const validityDays = Number.isFinite(metaValidity) && metaValidity > 0 ? metaValidity : 30;
 
     const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
     const isMasterizarSubscription = txKind === "songs" && packKey === "masterizar";
-    const isMiniPack = txKind === "mini_pack";
+    const isMiniPack = txKind === MINI_PACK_TX_KIND;
+
+    const miniValidation = isMiniPack
+      ? validateMiniPackMatchesAmountAndCredits(meta, transactionAmountMxn)
+      : { ok: false as const };
+    if (isMiniPack && !miniValidation.ok) {
+      return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "mini_pack_invalid_metadata" });
+    }
+    const finalMiniPack = isMiniPack && miniValidation.ok ? {
+      pack_key: String((miniValidation as any).pack_key || packKey),
+      pack_id: Number((miniValidation as any).pack_id || packId || 0) || packId,
+      amount_mxn: Number((miniValidation as any).amount_mxn || metaAmountMxn || transactionAmountMxn || 0),
+      credits: Number((miniValidation as any).credits || metaCredits || 0),
+      songs: Number((miniValidation as any).songs || 0),
+      validity_days: Number((miniValidation as any).validity_days || validityDays || 30),
+    } : null;
 
     if (isMiniPack) {
+      const credits = Number((finalMiniPack as any).credits || 0);
+      const fixedPackKey = String((finalMiniPack as any).pack_key || packKey || "mini_pack");
+      const fixedPackId = Number((finalMiniPack as any).pack_id || packId || 0) || null;
+      const amountMxn = Number((finalMiniPack as any).amount_mxn || metaAmountMxn || transactionAmountMxn || 0);
       // ========== MINI PAQUETE: crear LOTE independiente con su propia expiración ==========
       if (!Number.isFinite(credits) || credits <= 0) {
         return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "no_credits" });
@@ -6143,8 +6308,8 @@ const mercadoPagoHandler = (() => {
         const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
         const batchResult = await insertCreditBatch(admin, {
           userId,
-          packId: packId || undefined,
-          packKey: packKey || undefined,
+          packId: fixedPackId || undefined,
+          packKey: fixedPackKey || undefined,
           paymentId,
           credits: allowed,
           validityDays: effectiveDays,
@@ -6159,7 +6324,22 @@ const mercadoPagoHandler = (() => {
           }
         }
       }
+    } else if (isPlanRenewal) {
+      const planPack = (PACKS as any)[packKey];
+      if (planPack && Number(planPack.amount_mxn)) {
+        const expected = Number(planPack.amount_mxn);
+        if (Math.abs(transactionAmountMxn - expected) > 0.01) {
+          return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "plan_bad_amount" });
+        }
+      }
     } else if (isMasterizarSubscription) {
+      if (Math.abs(transactionAmountMxn - Number(PACKS.masterizar.amount_mxn)) > 0.01) {
+        return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "master_bad_amount" });
+      }
+    }
+
+    void packKeyRaw;
+    if (isMasterizarSubscription) {
       // Activar suscripción de masterización por 30 días
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30); // 30 días desde hoy
@@ -6267,37 +6447,43 @@ const mercadoPagoHandler = (() => {
     if (!packKey) return send(res, 400, { error: "Falta packKey del paquete." });
 
     try {
-      const packs = await listActiveCreditPacks(auth.admin);
-      const pack = packs.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === packKey.toLowerCase());
-      if (!pack) return send(res, 404, { error: "Paquete no encontrado o no disponible." });
+      const canonical = canonicalCreditPackByKey(packKey);
+      if (!canonical || Number(canonical.price_mxn || 0) <= 0 || Number(canonical.credits_amount || 0) < 0) {
+        return send(res, 404, { error: "Paquete no encontrado o no disponible." });
+      }
+      const activePackList = await listActiveCreditPacks(auth.admin);
+      const active = activePackList.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === String(packKey).toLowerCase());
+      if (active && (active as any).is_active === false) {
+        return send(res, 404, { error: "Paquete no disponible en este momento." });
+      }
 
-      const packId = Number((pack as any).id ?? 0);
-      const credits = round2(Number((pack as any).credits_amount ?? 0));
-      const songs = Number((pack as any).songs ?? 0);
-      const validityDays = Number((pack as any).validity_days ?? 30);
-      const unitPrice = round2(Number((pack as any).price_mxn ?? 0));
-      const title = String((pack as any).name || "Pack de Créditos").slice(0, 200);
+      const packId = Number(canonical.id ?? 0);
+      const credits = round2(Number(canonical.credits_amount ?? 0));
+      const songs = Number(canonical.songs ?? 0);
+      const validityDays = Number(canonical.validity_days ?? 30);
+      const unitPrice = round2(Number(canonical.price_mxn ?? 0));
+      const title = String(canonical.name || "Pack de Créditos").slice(0, 200);
 
-      if (credits <= 0 || unitPrice <= 0) return send(res, 400, { error: "El paquete tiene precio o créditos inválidos." });
+      if (credits < 0 || unitPrice <= 0) return send(res, 400, { error: "El paquete tiene precio o créditos inválidos." });
 
       const origin = originFromReq(req);
       const preferenceBody: any = {
         items: [{ title, quantity: 1, currency_id: "MXN", unit_price: unitPrice }],
-        external_reference: `ramber_mp:${auth.user.id}:${packKey}`,
+        external_reference: `ramber_mp:${auth.user.id}:${String(packKey).toLowerCase()}`,
         metadata: {
           user_id: auth.user.id,
-          kind: "mini_pack",
-          pack_key: packKey,
+          kind: MINI_PACK_TX_KIND,
+          pack_key: String(packKey).toLowerCase(),
           pack_id: packId || null,
           songs: Number.isFinite(songs) ? songs : null,
           amount_mxn: unitPrice,
-          credits: credits,
+          credits,
           validity_days: validityDays,
         },
         back_urls: {
-          success: `${origin}/?mp=success&pack=${encodeURIComponent(packKey)}`,
-          failure: `${origin}/?mp=failure&pack=${encodeURIComponent(packKey)}`,
-          pending: `${origin}/?mp=pending&pack=${encodeURIComponent(packKey)}`,
+          success: `${origin}/?mp=success&pack=${encodeURIComponent(String(packKey).toLowerCase())}`,
+          failure: `${origin}/?mp=failure&pack=${encodeURIComponent(String(packKey).toLowerCase())}`,
+          pending: `${origin}/?mp=pending&pack=${encodeURIComponent(String(packKey).toLowerCase())}`,
         },
         auto_return: "approved",
         notification_url: `${origin}/api/mercadopago/webhook`,
@@ -6318,7 +6504,7 @@ const mercadoPagoHandler = (() => {
         init_point: initPoint,
         preference_id: typeof data?.id === "string" ? data.id : null,
         pack: {
-          pack_key: packKey,
+          pack_key: String(packKey).toLowerCase(),
           name: title,
           credits,
           songs,

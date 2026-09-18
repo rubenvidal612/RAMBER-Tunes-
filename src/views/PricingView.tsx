@@ -26,6 +26,7 @@ const FALLBACK_MINI_PACKS: MiniPack[] = [
   { id: 1, pack_key: 'mini_3', name: 'Mini', songs: 6, credits_amount: 36, price_mxn: 25, validity_days: 30, sort_order: 1 },
   { id: 2, pack_key: 'chico_10', name: 'Chico', songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 2 },
   { id: 3, pack_key: 'mediano_30', name: 'Mediano', songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 3 },
+  { id: 4, pack_key: 'pack_grande_250', name: 'Grande', songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 4 },
 ];
 
 const miniPackIcon = (idx: number) => {
@@ -69,10 +70,12 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         if (Array.isArray(out?.packs)) list = out.packs;
         else if (Array.isArray(out)) list = out;
 
-        // Filtrar packs inactivos y quitar el pack Grande $350 (duplicado de Pack Inicio)
+        // Filtrar packs inactivos y quitar packs que son duplicados antiguos (grande viejo o clone del plan mensual)
         const filtered = list.filter((p) => {
           if ((p as any).is_active === false) return false;
-          if (String(p.pack_key || '').toLowerCase() === 'grande_80') return false;
+          const k = String(p.pack_key || '').toLowerCase();
+          if (k === 'grande_80' && false) return false;
+          if (k === 'grande_80' && Number(p.credits_amount || 0) < 600 && Number(p.price_mxn || 0) < 200) return false;
           if (Number(p.price_mxn || 0) === 350 && Number(p.songs || 0) === 200) return false;
           return true;
         });
@@ -164,15 +167,20 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     }
   };
 
-  const packsToShow = miniPacks && miniPacks.length > 0 ? miniPacks.slice(0, 3) : FALLBACK_MINI_PACKS;
+  const packsToShow = miniPacks && miniPacks.length > 0 ? miniPacks.slice(0, 4) : FALLBACK_MINI_PACKS;
+  const miniLabel = (index: number) =>
+    index === 0 ? 'Mini Pack' : index === 1 ? 'Pack Chico' : index === 2 ? 'Pack Mediano' : 'Pack Grande';
+  const miniIcon = (index: number) => (index === 0 ? Gift : index === 1 ? Zap : index === 2 ? Package : Crown);
+  const miniAccent = (index: number) =>
+    index === 0 ? 'rose' : index === 1 ? 'amber' : index === 2 ? 'orange' : 'fuchsia';
   const planCards = [
     ...packsToShow.map((pack, index) => ({
       type: 'mini' as const,
       pack,
-      label: index === 0 ? 'Mini Pack' : index === 1 ? 'Pack Chico' : 'Pack Mediano',
-      icon: index === 0 ? Gift : index === 1 ? Zap : Package,
-      accent: index === 0 ? 'rose' : index === 1 ? 'amber' : 'orange',
-      popular: index === 2,
+      label: miniLabel(index),
+      icon: miniIcon(index),
+      accent: miniAccent(index),
+      popular: index === 3,
     })),
     { type: 'inicio' as const, label: 'Pack Inicio', icon: Crown, accent: 'blue', popular: false },
   ];
@@ -181,6 +189,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     rose: { border: 'border-rose-500/50', text: 'text-rose-400', badge: 'bg-rose-500', button: 'from-rose-600 to-pink-500', glow: 'shadow-rose-950/30' },
     amber: { border: 'border-amber-500/50', text: 'text-amber-400', badge: 'bg-amber-500', button: 'from-amber-500 to-orange-400', glow: 'shadow-amber-950/30' },
     orange: { border: 'border-orange-500/70', text: 'text-orange-400', badge: 'bg-orange-500', button: 'from-orange-600 to-orange-400', glow: 'shadow-orange-950/40' },
+    fuchsia: { border: 'border-fuchsia-500/60', text: 'text-fuchsia-400', badge: 'bg-fuchsia-600', button: 'from-fuchsia-700 to-fuchsia-500', glow: 'shadow-fuchsia-950/35' },
     blue: { border: 'border-blue-500/50', text: 'text-blue-400', badge: 'bg-blue-600', button: 'from-blue-700 to-blue-500', glow: 'shadow-blue-950/30' },
   };
 
@@ -227,8 +236,8 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const Icon = card.icon;
                 const accent = accentClasses[card.accent];
                 const features = isInicio
-                  ? ['200 canciones', 'Total 1200 créditos', 'Incluye ChatBot', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
-                  : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Clonación de voz', ...(index === 2 ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
+                  ? ['200 canciones', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
+                  : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(index >= 2 ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
                 return (
                   <article key={isInicio ? 'inicio' : pack!.pack_key} className={`relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border ${accent.border} bg-gradient-to-b from-white/[0.055] via-[#090b11] to-[#07080c] p-5 shadow-2xl ${accent.glow}`}>
                     <div className={`pointer-events-none absolute -right-16 -top-14 h-44 w-44 rounded-full blur-3xl opacity-20 ${accent.badge}`} />
@@ -338,11 +347,16 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Total {Number(p.credits_amount || 0)} créditos
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
+                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Agente Bot 24/7 para ayudarte a generar canciones
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
+                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
                       </div>
+                      {idx >= 2 ? (
+                        <div className="flex items-center gap-2 text-slate-200">
+                          <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
+                        </div>
+                      ) : null}
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Audio karaoke
                       </div>
@@ -382,45 +396,45 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                   </div>
                 </div>
                 <div className="flex items-end gap-2 mt-4 mb-5 relative">
-                  <div className="flex flex-col">
-                    <span className="text-lg font-bold text-slate-400 line-through">$500 MXN</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-5xl font-black text-white drop-shadow">$350</span>
-                      <span className="text-slate-200 font-semibold text-sm">MXN</span>
+                      <div className="flex flex-col">
+                        <span className="text-lg font-bold text-slate-400 line-through">$500 MXN</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-5xl font-black text-white drop-shadow">$350</span>
+                          <span className="text-slate-200 font-semibold text-sm">MXN</span>
+                        </div>
+                        <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente</span>
+                      </div>
                     </div>
-                    <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente</span>
-                  </div>
-                </div>
-                <div className="space-y-2 mb-5 text-sm relative">
-                  <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> 200 canciones
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Total 1200 créditos
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Incluye ChatBot
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Clonación de voz
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Videos musicales
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Audio karaoke
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Eliminar voz / STEMS
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Descargas activas
-                  </div>
-                  <div className="flex items-start gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                    <span>Saldo mensual acumulable si renuevas a tiempo</span>
-                  </div>
-                </div>
+                    <div className="space-y-2 mb-5 text-sm relative">
+                      <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> 200 canciones
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Total 1200 créditos
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Agente Bot 24/7 para ayudarte a generar canciones
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Clonación de voz
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Videos musicales
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Audio karaoke
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Eliminar voz / STEMS
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Descargas activas
+                      </div>
+                      <div className="flex items-start gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                        <span>Saldo mensual acumulable si renuevas a tiempo</span>
+                      </div>
+                    </div>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -475,11 +489,16 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Total {Number(p.credits_amount || 0)} créditos
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
+                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Agente Bot 24/7 para ayudarte a generar canciones
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
+                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
                       </div>
+                      {idx >= 2 ? (
+                        <div className="flex items-center gap-2 text-slate-200">
+                          <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
+                        </div>
+                      ) : null}
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Audio karaoke
                       </div>
