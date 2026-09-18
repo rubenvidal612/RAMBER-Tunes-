@@ -27,6 +27,23 @@ function round2(n: number) {
 
 const MAX_ACCUMULATED_CREDITS = 2000;
 
+function stripInternalReasoning(raw: any): string {
+  let s = typeof raw === "string" ? raw : String(raw == null ? "" : raw);
+  if (!s) return "";
+  try {
+    s = s.replace(/<\s*think\b[^>]*>[\s\S]*?<\s*\/\s*think\s*>/gi, "");
+    s = s.replace(/<\s*think\s*\/\s*>/gi, "");
+    s = s.replace(/<!--\s*dify[-_]?deepseek[-_]?reasoning\s*-->[\s\S]*?<!--\s*\/\s*dify[-_]?deepseek[-_]?reasoning\s*-->/gi, "");
+    s = s.replace(/<!--\s*dify[-_]?deepseek[-_]?reasoning\s*\/\s*-->/gi, "");
+    s = s.replace(/<!--\s*reasoning[\s\S]*?-->/gi, "");
+    s = s.replace(/^\s*<[?!][^>]*>/m, "");
+    s = s.replace(/\n{3,}/g, "\n\n");
+    return s.replace(/^[ \t]+|[ \t]+$/gm, (m) => m).replace(/^\s+|\s+$/g, "");
+  } catch {
+    return s;
+  }
+}
+
 function addDaysIso(days: number) {
   const d = new Date();
   d.setDate(d.getDate() + Number(days || 0));
@@ -18398,11 +18415,12 @@ const difyHandler = (() => {
       (jsonOut && typeof (jsonOut as any).text === "string" ? (jsonOut as any).text : "") ||
       (jsonOut && typeof (jsonOut as any).output_text === "string" ? (jsonOut as any).output_text : "") ||
       (typeof textOut === "string" ? textOut.slice(0, 40000) : "");
+    const cleanAnswer = stripInternalReasoning(answer);
     const newConv =
       String(
         (jsonOut && typeof (jsonOut as any).conversation_id === "string" ? (jsonOut as any).conversation_id : cid || "") || ""
       ).trim() || cid;
-    return { answer: String(answer || ""), conversationId: newConv, raw: jsonOut };
+    return { answer: cleanAnswer, conversationId: newConv, raw: jsonOut };
   }
 
   async function handleDifyChat(req: any, res: any) {
@@ -18510,12 +18528,14 @@ const difyHandler = (() => {
       }
       const structured = difyParseReadyToGenerateStructured(upstream.answer);
       const justText = structured
-        ? upstream.answer
-            .replace(/```(?:json)?[\s\S]*?```/gi, "")
-            .replace(/\{"action"\s*:\s*"ready_to_generate"[\s\S]*?\}/gi, "")
-            .replace(/\n{3,}/g, "\n\n")
-            .trim()
-        : upstream.answer;
+        ? stripInternalReasoning(
+            String(upstream.answer || "")
+              .replace(/```(?:json)?[\s\S]*?```/gi, "")
+              .replace(/\{"action"\s*:\s*"ready_to_generate"[\s\S]*?\}/gi, "")
+              .replace(/\n{3,}/g, "\n\n")
+              .trim()
+          )
+        : String(upstream.answer || "");
       return difySendJson(res, 200, {
         reply_text: justText || "",
         conversation_id: upstream.conversationId || "",
@@ -19980,7 +20000,7 @@ const chatHandler = (() => {
       messages: (msgs || []).map((m: any) => ({
         id: m.id,
         role: m.role,
-        content: m.content,
+        content: m.role === "assistant" || m.role === "system" ? stripInternalReasoning(m.content) : m.content,
         structured_action: m.structured_action || null,
         tokens: typeof m.tokens === "number" ? m.tokens : null,
         created_at: m.created_at,
@@ -20048,7 +20068,8 @@ const chatHandler = (() => {
     if (roleRaw !== "user" && roleRaw !== "assistant" && roleRaw !== "system") {
       return chatSendJson(res, 400, { success: false, error: "role_invalido", message: "El rol debe ser user, assistant o system." });
     }
-    const content = chatSafeString(body?.content || "", 50000, "");
+    const contentRaw = chatSafeString(body?.content || "", 50000, "");
+    const content = roleRaw === "assistant" || roleRaw === "system" ? stripInternalReasoning(contentRaw) : contentRaw;
     if (!content) return chatSendJson(res, 400, { success: false, error: "contenido_vacio", message: "El contenido no puede estar vacío." });
     const structured_action = body?.structured_action !== undefined && body?.structured_action !== null ? body.structured_action : null;
     const tokensRaw = body?.tokens;
@@ -20072,7 +20093,7 @@ const chatHandler = (() => {
       message: {
         id: data.id,
         role: data.role,
-        content: data.content,
+        content: data.role === "assistant" || data.role === "system" ? stripInternalReasoning(data.content) : data.content,
         structured_action: data.structured_action || null,
         tokens: typeof data.tokens === "number" ? data.tokens : null,
         created_at: data.created_at,
@@ -20099,7 +20120,8 @@ const chatHandler = (() => {
     for (const it of rawMsgs) {
       const roleRaw = chatSafeString(it?.role || "", 20, "").toLowerCase();
       if (roleRaw !== "user" && roleRaw !== "assistant" && roleRaw !== "system") continue;
-      const content = chatSafeString(it?.content || "", 50000, "");
+      const contentRaw = chatSafeString(it?.content || "", 50000, "");
+      const content = roleRaw === "assistant" || roleRaw === "system" ? stripInternalReasoning(contentRaw) : contentRaw;
       if (!content) continue;
       const structured_action = it?.structured_action !== undefined && it?.structured_action !== null ? it.structured_action : null;
       const tokensRaw = it?.tokens;
@@ -20121,7 +20143,7 @@ const chatHandler = (() => {
       messages: (data || []).map((m: any) => ({
         id: m.id,
         role: m.role,
-        content: m.content,
+        content: m.role === "assistant" || m.role === "system" ? stripInternalReasoning(m.content) : m.content,
         structured_action: m.structured_action || null,
         tokens: typeof m.tokens === "number" ? m.tokens : null,
         created_at: m.created_at,

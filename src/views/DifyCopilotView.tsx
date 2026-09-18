@@ -79,7 +79,7 @@ function escapeHTML(s: string) {
 }
 
 function simpleMarkdown(text: string, dark: boolean): string {
-  const raw = String(text || '');
+  const raw = stripInternalReasoning(text);
   if (!raw) return '';
   let out = escapeHTML(raw);
   const strongClass = dark ? 'font-semibold text-white' : 'font-semibold text-slate-900';
@@ -91,6 +91,23 @@ function simpleMarkdown(text: string, dark: boolean): string {
   out = out.replace(/\n{2,}/g, '\n\n');
   out = out.replace(/\n/g, '<br/>');
   return out;
+}
+
+function stripInternalReasoning(raw: unknown): string {
+  let s = typeof raw === 'string' ? raw : String(raw == null ? '' : raw);
+  if (!s) return '';
+  try {
+    s = s.replace(/<\s*think\b[^>]*>[\s\S]*?<\s*\/\s*think\s*>/gi, '');
+    s = s.replace(/<\s*think\s*\/\s*>/gi, '');
+    s = s.replace(/<!--\s*dify[-_]?deepseek[-_]?reasoning\s*-->[\s\S]*?<!--\s*\/\s*dify[-_]?deepseek[-_]?reasoning\s*-->/gi, '');
+    s = s.replace(/<!--\s*dify[-_]?deepseek[-_]?reasoning\s*\/\s*-->/gi, '');
+    s = s.replace(/<!--\s*reasoning[\s\S]*?-->/gi, '');
+    s = s.replace(/^\s*<[?!][^>]*>/m, '');
+    s = s.replace(/\n{3,}/g, '\n\n');
+    return s.replace(/^[ \t]+|[ \t]+$/gm, (m) => m).replace(/^\s+|\s+$/g, '');
+  } catch {
+    return s;
+  }
 }
 
 function formatDay(iso: string | null | undefined): string {
@@ -722,8 +739,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           if (loaded.ok && loaded.conversation) {
             setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
             if (loaded.messages.length > 0) {
-              setMessages(loaded.messages);
-              const lastReadyMsg = [...loaded.messages].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+              const cleaned = loaded.messages.map((m: any) =>
+                m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
+              );
+              setMessages(cleaned);
+              const lastReadyMsg = [...cleaned].reverse().find((m) => m.structured?.action === 'ready_to_generate');
               if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
             }
           }
@@ -754,8 +774,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       }
       setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
       if (loaded.messages.length > 0) {
-        setMessages(loaded.messages);
-        const lastReadyMsg = [...loaded.messages].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+        const cleaned = loaded.messages.map((m: any) =>
+          m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
+        );
+        setMessages(cleaned);
+        const lastReadyMsg = [...cleaned].reverse().find((m) => m.structured?.action === 'ready_to_generate');
         if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
       } else {
         setMessages([
@@ -1053,13 +1076,15 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         json = { error: 'network_error', reply_text: e instanceof Error ? String(e.message) : String(e || '') };
       }
 
-      const replyText = String(
-        (json && typeof (json as any).reply_text === 'string')
-          ? (json as any).reply_text
-          : (json && typeof (json as any).message === 'string')
-          ? (json as any).message
-          : 'No pude leer la respuesta de LucIAna Bot.'
-      ).trim();
+      const replyText = stripInternalReasoning(
+        String(
+          (json && typeof (json as any).reply_text === 'string')
+            ? (json as any).reply_text
+            : (json && typeof (json as any).message === 'string')
+            ? (json as any).message
+            : 'No pude leer la respuesta de LucIAna Bot.'
+        )
+      );
 
       const newCid = String(
         (json && typeof (json as any).conversation_id === 'string') ? (json as any).conversation_id : activeDifyId || ''
