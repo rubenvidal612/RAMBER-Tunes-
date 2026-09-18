@@ -915,16 +915,14 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         } catch {}
       }
     } catch {}
-    const nextOpen = !attachMenuOpen;
-    let hadRect = false;
-    if (nextOpen) {
+
+    if (!attachMenuOpen) {
       try {
         const btn = attachBtnRef.current;
         if (btn) {
           const r = btn.getBoundingClientRect();
           if (typeof r.top === 'number' && typeof r.left === 'number' && typeof r.width === 'number') {
             setAttachMenuRect({ top: r.top, left: r.left, width: r.width });
-            hadRect = true;
           } else {
             setAttachMenuRect(null);
           }
@@ -932,13 +930,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           setAttachMenuRect(null);
         }
       } catch { setAttachMenuRect(null); }
-    }
-    setAttachMenuOpen(nextOpen);
-    if (nextOpen && !hadRect) {
-      setToast({
-        kind: 'ok',
-        text: 'Cargando menú… si no aparece en 1 segundo, toca el clip otra vez.',
-      });
+      setAttachMenuOpen(true);
       setTimeout(() => {
         try {
           const btn = attachBtnRef.current;
@@ -949,7 +941,9 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             }
           }
         } catch {}
-      }, 50);
+      }, 0);
+    } else {
+      setAttachMenuOpen(false);
     }
   }, [loading, generating, attachMenuOpen]);
 
@@ -1001,17 +995,27 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       const t = ev?.target as HTMLElement | null;
       if (!t) return;
       if (attachMenuRef.current && attachMenuRef.current.contains(t)) return;
-      // click en el botón de clip lo maneja el propio onClick
       if (t.closest('.luciana-attach-btn')) return;
+      if (t.closest('.luciana-attach-menu')) return;
       setAttachMenuOpen(false);
     };
     const onEsc = (ev: any) => { if (ev?.key === 'Escape') setAttachMenuOpen(false); };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('touchstart', onDocClick as any);
+    const onBody = (ev: any) => {
+      const t = ev?.target as HTMLElement | null;
+      if (!t) return;
+      if (attachMenuRef.current && attachMenuRef.current.contains(t)) return;
+      if (t.closest('.luciana-attach-btn')) return;
+      if (t.closest('.luciana-attach-menu')) return;
+      setAttachMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick, true);
+    document.addEventListener('touchstart', onDocClick as any, true);
+    document.addEventListener('click', onBody as any, true);
     document.addEventListener('keydown', onEsc);
     return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('touchstart', onDocClick as any);
+      document.removeEventListener('mousedown', onDocClick, true);
+      document.removeEventListener('touchstart', onDocClick as any, true);
+      document.removeEventListener('click', onBody as any, true);
       document.removeEventListener('keydown', onEsc);
     };
   }, [attachMenuOpen]);
@@ -2787,19 +2791,48 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             </button>
             {attachMenuOpen && (() => {
               const menuStyle: React.CSSProperties = {};
+              let fixedMode = false;
               if (attachMenuRect && typeof attachMenuRect.left === 'number' && typeof attachMenuRect.top === 'number' && typeof attachMenuRect.width === 'number') {
+                fixedMode = true;
                 menuStyle.position = 'fixed';
                 menuStyle.left = Math.max(8, attachMenuRect.left);
-                menuStyle.top = Math.max(8, attachMenuRect.top);
-                menuStyle.transform = 'translateY(calc(-100% - 0.55rem))';
+                const spaceAbove = Math.max(8, attachMenuRect.top);
+                const roomForAbove = spaceAbove > 220;
+                if (roomForAbove) {
+                  menuStyle.top = Math.max(8, attachMenuRect.top);
+                  menuStyle.transform = 'translateY(calc(-100% - 0.55rem))';
+                } else {
+                  menuStyle.top = Math.min(window.innerHeight - 16, attachMenuRect.top + attachMenuRect.width + 8);
+                  menuStyle.transform = 'none';
+                }
                 menuStyle.minWidth = Math.max(260, attachMenuRect.width);
                 menuStyle.maxWidth = `calc(100vw - 16px)`;
-                menuStyle.maxHeight = `calc(${Math.min(attachMenuRect.top - 16, 65)}vh - 8px)`;
+                const maxH = roomForAbove ? Math.min(spaceAbove - 16, 65 * (window.innerHeight / 100) - 8) : Math.min(window.innerHeight - (attachMenuRect.top + attachMenuRect.width + 24), 65 * (window.innerHeight / 100));
+                menuStyle.maxHeight = `${Math.max(180, maxH)}px`;
                 menuStyle.overflowY = 'auto';
-                menuStyle.zIndex = 9999;
+                menuStyle.zIndex = 99999;
+              } else {
+                menuStyle.position = 'relative';
+                menuStyle.left = 0;
+                menuStyle.bottom = 'calc(100% + 0.55rem)';
+                menuStyle.transform = 'none';
+                menuStyle.minWidth = 260;
+                menuStyle.maxWidth = '90vw';
+                menuStyle.maxHeight = '60vh';
+                menuStyle.overflowY = 'auto';
+                menuStyle.zIndex = 99999;
               }
               return (
-                <div className="luciana-attach-menu luciana-attach-menu--fixed" style={menuStyle} ref={attachMenuRef} role="menu" aria-label="Opciones de adjuntar">
+                <div
+                  className={fixedMode ? 'luciana-attach-menu luciana-attach-menu--fixed' : 'luciana-attach-menu'}
+                  style={menuStyle}
+                  ref={attachMenuRef}
+                  role="menu"
+                  aria-label="Opciones de adjuntar"
+                  onMouseDown={(e) => { try { e.stopPropagation(); } catch {} }}
+                  onTouchStart={(e) => { try { e.stopPropagation(); } catch {} }}
+                  onClick={(e) => { try { e.stopPropagation(); } catch {} }}
+                >
                   <button type="button" className="luciana-attach-menu__item" onClick={() => triggerFilePickForKind('image')} role="menuitem">
                     <span className="luciana-attach-menu__icon"><ImageIcon className="h-5 w-5" /></span>
                     <span className="luciana-attach-menu__label">

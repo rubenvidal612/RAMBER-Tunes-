@@ -585,14 +585,15 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   width: max-content;
   max-width: 90vw;
   background: var(--bg-elev-1);
-  border: 1px solid var(--border);
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 40%, var(--border));
   border-radius: 1rem;
   padding: 0.4rem;
-  box-shadow: 0 20px 60px color-mix(in srgb, #000000 40%, transparent);
+  box-shadow: 0 20px 60px color-mix(in srgb, #000000 45%, transparent), 0 0 0 1px color-mix(in srgb, var(--brand-primary) 14%, transparent) inset;
   z-index: 80;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+  animation: lucianaAttachIn 140ms ease-out both;
 }
 .luciana-attach-menu.luciana-attach-menu--fixed {
   position: fixed;
@@ -602,7 +603,11 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   width: auto;
   z-index: 99999;
   pointer-events: auto;
-  box-shadow: 0 24px 80px color-mix(in srgb, #000000 50%, transparent), 0 0 0 1px color-mix(in srgb, var(--brand-primary) 18%, transparent) inset;
+  box-shadow: 0 24px 80px color-mix(in srgb, #000000 52%, transparent), 0 0 0 1px color-mix(in srgb, var(--brand-primary) 18%, transparent) inset;
+}
+@keyframes lucianaAttachIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
 }
 .luciana-attach-menu.luciana-attach-menu--fixed::-webkit-scrollbar {
   width: 8px;
