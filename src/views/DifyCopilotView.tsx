@@ -161,8 +161,33 @@ function saveUiState(s: UiState) {
 }
 
 export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }) {
-  const { theme, toggleTheme } = useTheme();
-  const isDark = theme !== 'light';
+  // Tema LOCAL del chat (NO afecta al resto del sitio)
+  const [chatTheme, setChatTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      const saved = String(window.localStorage.getItem('luciana_chat_theme_v1') || '').toLowerCase().trim();
+      if (saved === 'light' || saved === 'dark') return saved;
+    } catch { /* ignore */ }
+    // Por defecto: chat en oscuro (colores brand)
+    return 'dark';
+  });
+  const toggleChatTheme = useCallback(() => {
+    setChatTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try { window.localStorage.setItem('luciana_chat_theme_v1', next); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  // Efecto: actualiza data-chat-theme en el shell DOM por si CSS lo lee, y forzar re-render
+  useEffect(() => {
+    try {
+      const el = document.querySelector('.luciana-chat-shell') as HTMLElement | null;
+      if (el) el.setAttribute('data-chat-theme', chatTheme);
+    } catch { /* ignore */ }
+  }, [chatTheme]);
+  const isDark = chatTheme !== 'light';
+  // useTheme legacy NO se usa (el tema del chat es local)
+  void useTheme; // silence unused
+  const _legacyTheme = useTheme();
 
   const [uiState, setUiState] = useState<UiState>(() => loadUiState());
   const setUi = useCallback((updater: (prev: UiState) => UiState) => {
@@ -1015,7 +1040,14 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   }, [lastPending]);
 
   return (
-    <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot">
+    <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot" data-chat-theme={chatTheme}>
+      <div className="luciana-mobile-brand">
+        <img src={OFFICIAL_BRAND_LOGO} alt="Logo de LucIAna Music" loading="lazy" />
+        <div className="luciana-mobile-brand__text">
+          <h1>LucIAna<span> Bot</span></h1>
+          <p>Asistente musical · letra, estilo y generación</p>
+        </div>
+      </div>
       <header className="luciana-chat-header">
         <div className="flex min-w-0 items-center gap-2">
           <div className="luciana-msg-avatar" style={{ width: '2.25rem', height: '2.25rem' }}>
@@ -1051,8 +1083,8 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           )}
           <button
             type="button"
-            aria-label="Tema claro/oscuro"
-            onClick={toggleTheme}
+            aria-label="Cambiar tema del chat (solo LucIAna Bot)"
+            onClick={toggleChatTheme}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"
             style={{
               borderColor: 'var(--border)',
