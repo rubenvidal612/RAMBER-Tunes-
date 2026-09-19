@@ -20359,6 +20359,19 @@ const chatHandler = (() => {
     if (Object.keys(patch).length === 0) {
       return chatSendJson(res, 200, { success: true, updated: false });
     }
+    if (patch.deleted_at !== undefined) {
+      const { data: checkRow, error: chkErr } = await admin
+        .from("chat_conversations")
+        .select("pinned")
+        .eq("id", convId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (chkErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(chkErr?.message || chkErr) });
+      if (!checkRow) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+      if (Boolean(checkRow.pinned)) {
+        return chatSendJson(res, 409, { success: false, error: "chat_fijado", message: "Primero desfija este chat para poder eliminarlo." });
+      }
+    }
     const { data, error } = await admin
       .from("chat_conversations")
       .update(patch)
@@ -20387,6 +20400,17 @@ const chatHandler = (() => {
   async function handleSoftDeleteConversation(req: any, res: any, auth: any, convId: string) {
     if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
     const { admin, user } = auth;
+    const { data: checkRow, error: chkErr } = await admin
+      .from("chat_conversations")
+      .select("pinned")
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (chkErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(chkErr?.message || chkErr) });
+    if (!checkRow) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (Boolean(checkRow.pinned)) {
+      return chatSendJson(res, 409, { success: false, error: "chat_fijado", message: "Primero desfija este chat para poder eliminarlo." });
+    }
     const patch: any = { deleted_at: new Date().toISOString() };
     const { data, error } = await admin
       .from("chat_conversations")

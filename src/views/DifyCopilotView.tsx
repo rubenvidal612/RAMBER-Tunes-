@@ -3510,56 +3510,60 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           <Pencil className="h-4 w-4" style={{ color: 'var(--brand-primary)' }} />
                           <span>Cambiar nombre</span>
                         </button>
-                        <div style={{ height: '1px', background: 'var(--border)', margin: '0.18rem 0.25rem' }} aria-hidden="true" />
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            try {
-                              const confirm = window.confirm('¿Eliminar esta conversación? Podrás recuperarla solicitando ayuda.');
-                              if (!confirm) { setHistoryMenuOpenId(null); return; }
-                              const token = await getValidBearerToken();
-                              if (!token) { setToast({ kind: 'err', text: 'Sesión expirada. Inicia sesión de nuevo.' }); return; }
-                              const wasActive = c.id === uiState.activeConversationId;
-                              const ok = await deleteConversationById(token, c.id);
-                              if (!ok) { setToast({ kind: 'err', text: 'No pude eliminar la conversación.' }); return; }
-                              setHistoryMenuOpenId(null);
-                              setToast({ kind: 'ok', text: 'Conversación eliminada. (Se puede recuperar pidiendo ayuda).' });
-                              if (wasActive) {
-                                if (attachedImg) {
-                                  try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
-                                  setAttachedImg(null);
+                        {c.pinned ? null : (
+                          <>
+                            <div style={{ height: '1px', background: 'var(--border)', margin: '0.18rem 0.25rem' }} aria-hidden="true" />
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                try {
+                                  const confirm = window.confirm('¿Eliminar esta conversación? Podrás recuperarla solicitando ayuda.');
+                                  if (!confirm) { setHistoryMenuOpenId(null); return; }
+                                  const token = await getValidBearerToken();
+                                  if (!token) { setToast({ kind: 'err', text: 'Sesión expirada. Inicia sesión de nuevo.' }); return; }
+                                  const wasActive = c.id === uiState.activeConversationId;
+                                  const ok = await deleteConversationById(token, c.id);
+                                  if (!ok) { setToast({ kind: 'err', text: 'No pude eliminar la conversación.' }); return; }
+                                  setHistoryMenuOpenId(null);
+                                  setToast({ kind: 'ok', text: 'Conversación eliminada. (Se puede recuperar pidiendo ayuda).' });
+                                  if (wasActive) {
+                                    if (attachedImg) {
+                                      try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
+                                      setAttachedImg(null);
+                                    }
+                                    if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
+                                    else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
+                                    await startNewChat({ persistOldAsArchived: false });
+                                  } else {
+                                    void refreshHistoryList();
+                                  }
+                                } catch {
+                                  setToast({ kind: 'err', text: 'No pude eliminar la conversación.' });
                                 }
-                                if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
-                                else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
-                                await startNewChat({ persistOldAsArchived: false });
-                              } else {
-                                void refreshHistoryList();
-                              }
-                            } catch {
-                              setToast({ kind: 'err', text: 'No pude eliminar la conversación.' });
-                            }
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.55rem',
-                            padding: '0.55rem 0.7rem',
-                            borderRadius: '0.7rem',
-                            border: '0',
-                            background: 'transparent',
-                            color: 'color-mix(in srgb, #ef4444 82%, var(--text))',
-                            cursor: 'pointer',
-                            fontSize: '0.82rem',
-                            fontWeight: 700,
-                            textAlign: 'left',
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span>Eliminar chat</span>
-                        </button>
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.55rem',
+                                padding: '0.55rem 0.7rem',
+                                borderRadius: '0.7rem',
+                                border: '0',
+                                background: 'transparent',
+                                color: 'color-mix(in srgb, #ef4444 82%, var(--text))',
+                                cursor: 'pointer',
+                                fontSize: '0.82rem',
+                                fontWeight: 700,
+                                textAlign: 'left',
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span>Eliminar chat</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     ) : null}
                   </li>
