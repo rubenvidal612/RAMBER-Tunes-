@@ -72,6 +72,49 @@ function uid() {
   return 'm_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
+const COMPOSER_CHAR_LIMIT = 20000;
+const DRAFT_STORAGE_PREFIX = 'luciana_bot_draft_v1__';
+function draftStorageKey(userId: string | null | undefined, conversationId: string | null | undefined) {
+  const u = String(userId || 'anon').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'anon';
+  const c = String(conversationId || 'default').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'default';
+  return DRAFT_STORAGE_PREFIX + u + '__' + c;
+}
+function readStoredDraft(userId: string | null | undefined, conversationId: string | null | undefined): string {
+  if (typeof window === 'undefined' || !window.localStorage) return '';
+  try {
+    const raw = window.localStorage.getItem(draftStorageKey(userId, conversationId));
+    return typeof raw === 'string' ? raw : '';
+  } catch { return ''; }
+}
+function writeStoredDraft(userId: string | null | undefined, conversationId: string | null | undefined, text: string) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const key = draftStorageKey(userId, conversationId);
+    const val = String(text || '').slice(0, COMPOSER_CHAR_LIMIT);
+    if (val) window.localStorage.setItem(key, val);
+    else window.localStorage.removeItem(key);
+  } catch { /* ignore */ }
+}
+function clearStoredDraft(userId: string | null | undefined, conversationId: string | null | undefined) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try { window.localStorage.removeItem(draftStorageKey(userId, conversationId)); } catch { /* ignore */ }
+}
+
+function confirmDiscardDraft(): boolean {
+  try {
+    return window.confirm('Tienes un mensaje sin enviar. ¿Quieres descartarlo?');
+  } catch { return true; }
+}
+
+function autoresizeTextarea(el: HTMLTextAreaElement | null | undefined) {
+  if (!el) return;
+  try {
+    el.style.height = 'auto';
+    const next = Math.min(el.scrollHeight, 136); // max-height ~7.6rem
+    el.style.height = Math.max(next, 42) + 'px';
+  } catch { /* ignore */ }
+}
+
 function fileToDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -245,6 +288,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       createdAt: Date.now(),
     },
   ]);
+
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const activeConversationIdRef = useRef<string | null | undefined>(undefined);
+  const setInputAndDraftRef = useRef<((v: string, clearStorage?: boolean) => void) | null>(null);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string>('');
@@ -564,6 +612,90 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Capturar user_id desde la sesión actual (para keys localStorage por usuario)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!supabaseBrowser) return;
+        const { data } = await supabaseBrowser.auth.getUser();
+        if (cancelled) return;
+        const uid = typeof (data as any)?.user?.id === 'string' ? (data as any).user.id : null;
+        if (uid) setCurrentUserId(uid);
+        const { data: sessionData } = await supabaseBrowser.auth.getSession();
+        if (cancelled) return;
+        const suid = typeof (sessionData as any)?.session?.user?.id === 'string' ? (sessionData as any).session.user.id : null;
+        if (suid) setCurrentUserId(suid);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (typeof supabaseBrowser === 'undefined' || !supabaseBrowser) return;
+    try {
+      const { data } = supabaseBrowser.auth.onAuthStateChange((_evt: any, session: any) => {
+        const uid = typeof session?.user?.id === 'string' ? session.user.id : null;
+        setCurrentUserId(uid);
+      });
+      return () => { try { (data as any)?.subscription?.unsubscribe?.(); } catch {} };
+    } catch {}
+  }, []);
+
+  // Sincronizar activeConversationIdRef y recargar draft al cambiar conversación
+  useEffect(() => {
+    const convId = uiState.activeConversationId || conversationId || null;
+    activeConversationIdRef.current = convId;
+    const stored = readStoredDraft(currentUserId, convId);
+    if (typeof stored === 'string' && stored.trim()) {
+      setInput(stored);
+      requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
+    } else {
+      setInput('');
+      requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiState.activeConversationId, conversationId, currentUserId]);
+
+  // Persistir draft en localStorage al escribir
+  useEffect(() => {
+    const convId = uiState.activeConversationId || conversationId || activeConversationIdRef.current || null;
+    const t = window.setTimeout(() => {
+      writeStoredDraft(currentUserId, convId, input);
+      autoresizeTextarea(textareaRef.current);
+    }, 40);
+    return () => window.clearTimeout(t);
+  }, [input, uiState.activeConversationId, conversationId, currentUserId]);
+
+  // Autoresize en mount y cada re-render visual
+  useEffect(() => {
+    autoresizeTextarea(textareaRef.current);
+  }, [input]);
+
+  // Confirmar al cerrar la pestaña si hay borrador sin enviar
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!String(input || '').trim()) return;
+      try { e.preventDefault(); e.returnValue = ''; } catch {}
+      return '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [input]);
+
+  // Helper ref: setInput + sincronizar localStorage. Usado dentro de useCallback para evitar stale closures.
+  const setInputAndDraft = useCallback((newValue: string, clearStorage: boolean = false) => {
+    setInput(String(newValue || ''));
+    const convId = uiState.activeConversationId || conversationId || activeConversationIdRef.current || null;
+    if (clearStorage) {
+      clearStoredDraft(currentUserId, convId);
+    } else {
+      writeStoredDraft(currentUserId, convId, String(newValue || ''));
+    }
+    requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
+  }, [uiState.activeConversationId, conversationId, currentUserId]);
+  useEffect(() => { setInputAndDraftRef.current = setInputAndDraft; }, [setInputAndDraft]);
+
   const canSend = useMemo(() => {
     if (loading || generating) return false;
     if (!String(input || '').trim()) return false;
@@ -795,6 +927,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   const openConversation = useCallback(async (conv: ConversationSummary) => {
     try {
+      // Si hay texto sin enviar: PREGUNTAR antes de cambiar de conversación (nunca descartar silenciosamente)
+      if (String(input || '').trim()) {
+        const okDiscard = confirmDiscardDraft();
+        if (!okDiscard) return; // "Seguir escribiendo" → cancelar navegación
+      }
       setHistoryOpen(false);
       setActiveReady(null);
       setLoading(true);
@@ -836,7 +973,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     } finally {
       setLoading(false);
     }
-  }, [getValidBearerToken, loadConversationById, scrollToBottomNow, setUi]);
+  }, [getValidBearerToken, loadConversationById, scrollToBottomNow, setUi, input]);
 
   const startNewChat = useCallback(async (opts?: { persistOldAsArchived?: boolean }) => {
     try {
@@ -881,15 +1018,23 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
   const onNewChatClick = useCallback(async () => {
     try {
+      // Si hay texto sin enviar, PREGUNTAR ANTES (nunca borrar silenciosamente)
+      if (String(input || '').trim()) {
+        const okDiscard = confirmDiscardDraft();
+        if (!okDiscard) return; // "Seguir escribiendo" → salir sin tocar nada
+      }
       const ok = window.confirm('¿Quieres iniciar un nuevo chat? Tu conversación anterior se conservará en el historial.');
       if (!ok) return;
       if (attachedImg) {
         try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
         setAttachedImg(null);
       }
+      // Limpiar el borrador de ESTA conversación anterior (antes de cambiar de chat)
+      if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
+      else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
       await startNewChat({ persistOldAsArchived: true });
     } catch { /* ignore */ }
-  }, [startNewChat, attachedImg]);
+  }, [startNewChat, attachedImg, input, currentUserId, uiState.activeConversationId, conversationId]);
 
   const handleAttachPick = useCallback(() => {
     if (loading || generating) {
@@ -1201,10 +1346,9 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
       setLoading(false);
       setAudioBusy(false);
-      try {
-        setInput('');
-        if (textareaRef.current) textareaRef.current.value = '';
-      } catch {}
+      // IMPORTANTE: NO limpiar setInput aquí. El usuario pudo haber escrito texto
+      // mientras esperaba la transcripción; el borrador lo conservamos intacto.
+      requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
     } catch {
       const friendly = 'No pude transcribir este audio en este momento.';
       setLoading(false);
@@ -1503,8 +1647,11 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
         createdAt: Date.now(),
       };
       setMessages((m) => [...m, userMsg]);
-      setInput('');
+      // Limpiar SOLO al confirmar envío de texto (wizard de cover es parte del flujo conversacional real)
+      if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
+      else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
       if (textareaRef.current) textareaRef.current.value = '';
+      autoresizeTextarea(textareaRef.current);
 
       try {
         const tk = await getValidBearerToken();
@@ -2933,14 +3080,34 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               ref={textareaRef}
               className="luciana-composer-textarea"
               value={input}
-              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+              maxLength={COMPOSER_CHAR_LIMIT}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
+                // Bloqueo suave al alcanzar límite: NUNCA borra lo escrito, solo impide más caracteres
+                const raw = e.target.value;
+                const next = raw.length > COMPOSER_CHAR_LIMIT ? raw.slice(0, COMPOSER_CHAR_LIMIT) : raw;
+                setInput(next);
+                autoresizeTextarea(textareaRef.current);
+              }}
+              onInput={(e: any) => autoresizeTextarea(e?.target || textareaRef.current)}
               onKeyDown={onInputKeyDown}
               rows={1}
-              placeholder=""
+              placeholder="Escribe aquí tu idea…"
               disabled={loading || generating}
+              autoComplete="off"
+              autoCorrect="on"
+              spellCheck
             />
-            <div className="luciana-composer-counter">
-              {String(input || '').length} / 20,000
+            <div
+              className="luciana-composer-counter"
+              title={String(input || '').length >= COMPOSER_CHAR_LIMIT ? 'Has alcanzado el límite de caracteres' : ''}
+              style={{
+                color: String(input || '').length > COMPOSER_CHAR_LIMIT * 0.92
+                  ? 'color-mix(in srgb, #ef4444 85%, var(--text-muted))'
+                  : undefined,
+                fontWeight: String(input || '').length > COMPOSER_CHAR_LIMIT * 0.92 ? 700 : undefined,
+              }}
+            >
+              {Math.min(String(input || '').length, COMPOSER_CHAR_LIMIT)} / {COMPOSER_CHAR_LIMIT}
             </div>
           </div>
           <button
