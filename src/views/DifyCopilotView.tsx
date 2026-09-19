@@ -2296,63 +2296,113 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
       <div ref={listRef} className="luciana-chat-messages">
 
-        {(isEmptyState || welcomeFadingOut) && (
+        {/* Header PERMANENTE: logo + marca — visible SIEMPRE al principio de cada chat.
+            Si chat está nuevo/vacío: GRANDE y centrado (bienvenida).
+            Si chat ya tiene mensajes: COMPACTO, arriba del todo, como banner brand. */}
+        <div
+          className={cn(
+            'flex w-full flex-col items-center text-center transition-all ease-out duration-300',
+            isEmptyState ? 'min-h-full justify-center px-6 md:px-10 py-10 md:py-6' : 'px-3 md:px-4 pt-3 pb-2'
+          )}
+        >
           <div
             className={cn(
-              'flex min-h-full w-full flex-col items-center justify-center px-6 md:px-10 py-10 md:py-6 text-center transition-all ease-out duration-300',
-              welcomeFadingOut && 'opacity-0 translate-y-4 pointer-events-none'
+              'w-full flex items-center justify-center gap-3 rounded-[1.15rem] border px-3 py-3 md:px-4 md:py-3.5',
+              isEmptyState
+                ? 'border-transparent bg-transparent'
+                : ''
             )}
+            style={isEmptyState ? undefined : {
+              borderColor: 'color-mix(in srgb, var(--brand-accent) 25%, var(--border))',
+              background: isDark
+                ? 'linear-gradient(100deg, rgba(124,58,237,.12), rgba(7,10,18,1) 60%, rgba(236,72,153,.08) 100%)'
+                : 'linear-gradient(100deg, rgba(124,58,237,.06), rgba(255,255,255,1) 60%, rgba(236,72,153,.04) 100%)',
+              boxShadow: isDark ? '0 0 0 1px rgba(183,122,255,.07) inset, 0 12px 32px rgba(124,58,237,.14)' : undefined,
+            }}
           >
             <img
               src={OFFICIAL_BRAND_LOGO}
               alt="Logo oficial LucIAna Music"
               className={cn(
-                'mb-4 md:mb-3 object-contain drop-shadow-[0_0_24px_rgba(183,122,255,.45)]'
+                'object-contain drop-shadow-[0_0_24px_rgba(183,122,255,.45)] flex-shrink-0'
               )}
-              style={{
+              style={isEmptyState ? {
                 width: 'clamp(6rem, 19vw, 9rem)',
                 height: 'clamp(6rem, 19vw, 9rem)',
                 maxWidth: '144px',
                 maxHeight: '144px',
+                marginBottom: '0.15rem',
+              } : {
+                width: '3.1rem',
+                height: '3.1rem',
+                maxWidth: '48px',
+                maxHeight: '48px',
+                flexShrink: 0,
               }}
             />
-            <div style={{ maxWidth: '640px' }} className="w-full">
+            <div
+              className={cn(
+                'min-w-0 flex-1 flex',
+                isEmptyState ? 'mt-1 flex-col items-center' : 'flex-col items-start text-left'
+              )}
+              style={{ maxWidth: isEmptyState ? '640px' : undefined }}
+            >
               <div
                 className={cn(
                   'font-black tracking-tight text-balance break-words'
                 )}
                 style={{
                   color: 'var(--text)',
-                  fontSize: 'clamp(1.25rem, 5.6vw, 1.8rem)',
+                  fontSize: isEmptyState
+                    ? 'clamp(1.25rem, 5.6vw, 1.8rem)'
+                    : 'clamp(0.96rem, 3.6vw, 1.12rem)',
                   lineHeight: 1.15,
+                  textAlign: isEmptyState ? 'center' : 'left',
                 }}
               >
                 Luc<span style={{ color: 'var(--brand-accent)', WebkitTextStroke: '0.3px currentColor' }}>IA</span>na Music <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>|</span> Canciones, Covers y MP3
               </div>
-              <div
-                className="mt-2 md:mt-1.5 font-semibold"
-                style={{
-                  color: 'var(--text-muted)',
-                  fontSize: 'clamp(0.9rem, 3.4vw, 1.05rem)',
-                }}
-              >
-                Por Ruben Vidal Hernandez
-              </div>
-              <div
-                className="mt-5 md:mt-4 font-semibold"
-                style={{
-                  color: 'var(--text)',
-                  fontSize: 'clamp(0.95rem, 3.8vw, 1.08rem)',
-                  lineHeight: 1.45,
-                  maxWidth: '480px',
-                  marginInline: 'auto',
-                }}
-              >
-                Crea canciones completas con IA, elige el estilo, escribe tu idea y descarga tu MP3 al instante. 🎧⚡
-              </div>
+              {isEmptyState ? (
+                <>
+                  <div
+                    className="mt-2 md:mt-1.5 font-semibold"
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: 'clamp(0.9rem, 3.4vw, 1.05rem)',
+                    }}
+                  >
+                    Por Ruben Vidal Hernandez
+                  </div>
+                  <div
+                    className="mt-5 md:mt-4 font-semibold"
+                    style={{
+                      color: 'var(--text)',
+                      fontSize: 'clamp(0.95rem, 3.8vw, 1.08rem)',
+                      lineHeight: 1.45,
+                      maxWidth: '480px',
+                      marginInline: 'auto',
+                    }}
+                  >
+                    Crea canciones completas con IA, elige el estilo, escribe tu idea y descarga tu MP3 al instante. 🎧⚡
+                  </div>
+                </>
+              ) : (
+                <div
+                  className="mt-0.5"
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontSize: 'clamp(0.74rem, 2.8vw, 0.84rem)',
+                    fontWeight: 600,
+                  }}
+                >
+                  Por Ruben Vidal Hernandez · {uiState.conversations.find((x) => x.id === uiState.activeConversationId)?.created_at
+                    ? `Chat guardado · ${formatDay((uiState.conversations.find((x) => x.id === uiState.activeConversationId) as any)?.updated_at || (uiState.conversations.find((x) => x.id === uiState.activeConversationId) as any)?.created_at || new Date().toISOString())}`
+                    : 'Asistente musical premium · 24/7'}
+                </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
 
         {showNewChatSuggestion && !isEmptyState && (
           <div className="luciana-newchat-hint">

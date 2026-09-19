@@ -127,7 +127,100 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
               </button>
             </header>
             <nav className="luciana-mobile-drawer-list">
-              {drawerItems.map((item) => {
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] mb-2 mt-1 px-1" style={{ color: 'rgba(148,163,184,.9)' }}>
+                Menú
+              </p>
+              {mainItems.map((item) => {
+                const active = currentTab === item.id;
+                return (
+                  <button key={item.id} type="button" onClick={() => go(item.id)} className={cn('luciana-mobile-drawer-item', active && 'is-active')}>
+                    <item.icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
+                    <span className="luciana-mobile-drawer-text">
+                      <strong>{item.label}</strong>
+                      {item.description ? <small>{item.description}</small> : null}
+                    </span>
+                  </button>
+                );
+              })}
+
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] mb-2 mt-6 px-1" style={{ color: '#b77aff', textShadow: '0 0 14px rgba(183,122,255,.45)' }}>
+                ✨ Asistente Premium
+              </p>
+              {(() => {
+                const isCopilotoActive = currentTab === 'copiloto';
+                return (
+                  <button
+                    type="button"
+                    onClick={() => go('copiloto')}
+                    className={cn('luciana-mobile-drawer-item', isCopilotoActive && 'is-active')}
+                    style={{
+                      padding: '0.75rem 0.8rem',
+                      border: '1px solid rgba(183,122,255,.38)',
+                      background: 'linear-gradient(135deg, rgba(124,58,237,.24) 0%, rgba(7,10,18,1) 55%, rgba(236,72,153,.16) 100%)',
+                      boxShadow: '0 0 0 1px rgba(183,122,255,.09) inset, 0 10px 30px rgba(124,58,237,.2)',
+                      color: 'white',
+                      borderRadius: '1rem',
+                      gap: '0.7rem',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden"
+                      style={{
+                        background: 'radial-gradient(circle at 30% 20%, rgba(255,255,255,.22), rgba(183,122,255,.09) 55%, transparent 75%)',
+                        boxShadow: '0 0 0 1px rgba(183,122,255,.28) inset, 0 6px 18px rgba(183,122,255,.28)',
+                      }}
+                    >
+                      <img
+                        src="/assets/luciana-logo-oficial.png?v=20260918-2"
+                        alt="LucIAna Bot"
+                        style={{ width: '118%', height: '118%', objectFit: 'contain', transform: 'scale(1.04)' }}
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1 flex flex-col items-start text-left" style={{ gap: '1px' }}>
+                      <strong
+                        style={{
+                          background: 'linear-gradient(90deg,#f0abfc 0%,#c4b5fd 40%,#93c5fd 100%)',
+                          WebkitBackgroundClip: 'text',
+                          backgroundClip: 'text',
+                          color: 'transparent',
+                          fontWeight: 900,
+                          fontSize: '14px',
+                        }}
+                      >
+                        LucIAna Bot
+                      </strong>
+                      <small style={{
+                        fontSize: '9.5px',
+                        color: '#c4b5fd',
+                        fontWeight: 700,
+                        letterSpacing: '.14em',
+                        textTransform: 'uppercase',
+                      }}>
+                        Nueva versión · 24/7
+                      </small>
+                    </span>
+                    <span
+                      className="ml-1 shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-black"
+                      style={{
+                        background: 'linear-gradient(135deg,#ec4899,#b77aff)',
+                        color: 'white',
+                        letterSpacing: '.05em',
+                        boxShadow: '0 4px 14px rgba(236,72,153,.4)',
+                      }}
+                    >
+                      BETA
+                    </span>
+                  </button>
+                );
+              })()}
+
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] mb-2 mt-6 px-1" style={{ color: 'rgba(148,163,184,.9)' }}>
+                Herramientas
+              </p>
+              {menuItems
+                .filter((i) => i.id !== 'copiloto')
+                .map((item) => {
                 const active = currentTab === item.id;
                 return (
                   <button key={item.id} type="button" onClick={() => go(item.id)} className={cn('luciana-mobile-drawer-item', active && 'is-active')}>
