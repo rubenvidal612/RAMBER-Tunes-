@@ -20232,9 +20232,11 @@ const chatHandler = (() => {
     const { admin, user } = auth;
     let q = admin
       .from("chat_conversations")
-      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at", { count: "exact" })
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at, pinned, deleted_at", { count: "exact" })
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
+      .is("deleted_at", null)
+      .order("pinned", { ascending: false })
+      .order("updated_at", { ascending: false })
       .range(offset, offset + limit - 1);
     if (!includeArchived) q = q.is("archived_at", null);
     const { data, error, count } = await q;
@@ -20247,6 +20249,8 @@ const chatHandler = (() => {
         created_at: c.created_at,
         updated_at: c.updated_at,
         archived_at: c.archived_at || null,
+        pinned: Boolean(c.pinned),
+        deleted_at: c.deleted_at || null,
       })),
       count: typeof count === "number" ? count : (data || []).length,
       limit,
@@ -20269,7 +20273,7 @@ const chatHandler = (() => {
     const { data, error } = await admin
       .from("chat_conversations")
       .insert(payload)
-      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at")
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at, pinned, deleted_at")
       .maybeSingle();
     if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
     if (!data) return chatSendJson(res, 500, { success: false, error: "create_failed", message: "No se pudo crear la conversación." });
@@ -20281,6 +20285,9 @@ const chatHandler = (() => {
         created_at: data.created_at,
         updated_at: data.updated_at,
         internal_dify_conversation_id: data.internal_dify_conversation_id || null,
+        archived_at: data.archived_at || null,
+        pinned: Boolean(data.pinned),
+        deleted_at: data.deleted_at || null,
       },
     });
   }
@@ -20290,9 +20297,10 @@ const chatHandler = (() => {
     const { admin, user } = auth;
     const { data: conv, error: convErr } = await admin
       .from("chat_conversations")
-      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at")
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at, pinned, deleted_at")
       .eq("id", convId)
       .eq("user_id", user.id)
+      .is("deleted_at", null)
       .maybeSingle();
     if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
     if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
@@ -20310,6 +20318,8 @@ const chatHandler = (() => {
         created_at: conv.created_at,
         updated_at: conv.updated_at,
         archived_at: conv.archived_at || null,
+        pinned: Boolean(conv.pinned),
+        deleted_at: conv.deleted_at || null,
         internal_dify_conversation_id: conv.internal_dify_conversation_id || null,
         summary_snapshot: conv.summary_snapshot || {},
       },
@@ -20342,6 +20352,10 @@ const chatHandler = (() => {
     }
     if (body && body.archived === true) patch.archived_at = new Date().toISOString();
     else if (body && body.archived === false) patch.archived_at = null;
+    if (body && body.pinned === true) patch.pinned = true;
+    else if (body && body.pinned === false) patch.pinned = false;
+    if (body && body.deleted === true) patch.deleted_at = new Date().toISOString();
+    else if (body && body.deleted === false) patch.deleted_at = null;
     if (Object.keys(patch).length === 0) {
       return chatSendJson(res, 200, { success: true, updated: false });
     }
@@ -20350,7 +20364,7 @@ const chatHandler = (() => {
       .update(patch)
       .eq("id", convId)
       .eq("user_id", user.id)
-      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at")
+      .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at, pinned, deleted_at")
       .maybeSingle();
     if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
     if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
@@ -20363,7 +20377,35 @@ const chatHandler = (() => {
         created_at: data.created_at,
         updated_at: data.updated_at,
         archived_at: data.archived_at || null,
+        pinned: Boolean(data.pinned),
+        deleted_at: data.deleted_at || null,
         internal_dify_conversation_id: data.internal_dify_conversation_id || null,
+      },
+    });
+  }
+
+  async function handleSoftDeleteConversation(req: any, res: any, auth: any, convId: string) {
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    const { admin, user } = auth;
+    const patch: any = { deleted_at: new Date().toISOString() };
+    const { data, error } = await admin
+      .from("chat_conversations")
+      .update(patch)
+      .eq("id", convId)
+      .eq("user_id", user.id)
+      .select("id, title, pinned, deleted_at, updated_at")
+      .maybeSingle();
+    if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
+    if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    return chatSendJson(res, 200, {
+      success: true,
+      deleted: true,
+      conversation: {
+        id: data.id,
+        title: data.title || "Nuevo chat",
+        pinned: Boolean(data.pinned),
+        deleted_at: data.deleted_at || null,
+        updated_at: data.updated_at,
       },
     });
   }
@@ -20523,6 +20565,7 @@ const chatHandler = (() => {
       if (next && !third) {
         if (method === "GET") return handleGetConversation(req, res, auth, next);
         if (method === "PATCH") return handlePatchConversation(req, res, auth, next);
+        if (method === "DELETE") return handleSoftDeleteConversation(req, res, auth, next);
       }
 
       if (next && third === "messages" && !fourth && method === "POST") return handleAppendMessage(req, res, auth, next);

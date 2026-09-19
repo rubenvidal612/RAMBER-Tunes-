@@ -10,13 +10,18 @@ import {
   Menu,
   MessageSquarePlus,
   Mic,
+  MoreHorizontal,
   Music2,
   Paperclip,
+  Pencil,
+  Pin,
+  PinOff,
   Plus,
   Send,
   Sparkles,
   Sun,
   Moon,
+  Trash2,
   User,
   WalletCards,
   X,
@@ -63,6 +68,8 @@ type ConversationSummary = {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  pinned?: boolean;
+  deleted_at?: string | null;
   internal_dify_conversation_id?: string | null;
 };
 
@@ -303,6 +310,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyMenuOpenId, setHistoryMenuOpenId] = useState<string | null>(null);
+  const historyBackdropRef = useRef<HTMLDivElement | null>(null);
   const [bootFailed, setBootFailed] = useState(false);
   const [attachedImg, setAttachedImg] = useState<AttachedImage | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
@@ -826,10 +835,16 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const updateConversation = useCallback(async (
     token: string,
     convId: string,
-    patch: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any; archived?: boolean }
+    patch: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any; archived?: boolean; pinned?: boolean; deleted?: boolean }
   ): Promise<boolean> => {
     if (!convId) return false;
     const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}`, 'PATCH', token, patch);
+    return !!(r.ok && r.json?.success);
+  }, []);
+
+  const deleteConversationById = useCallback(async (token: string, convId: string): Promise<boolean> => {
+    if (!convId) return false;
+    const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}`, 'DELETE', token);
     return !!(r.ok && r.json?.success);
   }, []);
 
@@ -882,14 +897,25 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const fetchConversationList = useCallback(async (token: string): Promise<ConversationSummary[]> => {
     const r = await apiRequest<{ success?: boolean; conversations?: any[] }>('/api/chat?limit=100', 'GET', token);
     if (!r.ok || !r.json?.success || !Array.isArray(r.json.conversations)) return [];
-    return (r.json.conversations as ConversationSummary[]).map((c: any) => ({
+    const raw = (r.json.conversations as ConversationSummary[]).map((c: any) => ({
       id: c.id,
       title: String(c.title || 'Nuevo chat'),
       created_at: c.created_at,
       updated_at: c.updated_at,
       archived_at: c.archived_at || null,
       internal_dify_conversation_id: c.internal_dify_conversation_id || null,
+      pinned: Boolean(c.pinned),
+      deleted_at: c.deleted_at || null,
     }));
+    raw.sort((a, b) => {
+      const pa = a.pinned ? 1 : 0;
+      const pb = b.pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      const ta = new Date(a.updated_at || 0).getTime() || 0;
+      const tb = new Date(b.updated_at || 0).getTime() || 0;
+      return tb - ta;
+    });
+    return raw;
   }, []);
 
   const refreshHistoryList = useCallback(async () => {
@@ -2153,10 +2179,13 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
   // Número total de intervenciones (solo user + assistant, system si lo hubiera no cuenta)
   const totalTurns = messages.reduce((n, m) => n + (m.role === 'user' || m.role === 'assistant' ? 1 : 0), 0);
+  const isChatVeryLong = totalTurns >= 40;
   const showNewChatSuggestion = useMemo(() => {
-    const key1 = totalTurns >= 27 ? `turns_${Math.floor(totalTurns / 6)}` : null;
+    const threshold = isChatVeryLong ? 40 : 27;
+    const step = isChatVeryLong ? 10 : 6;
+    const key1 = totalTurns >= threshold ? `turns_${Math.floor(totalTurns / step)}` : null;
     return key1 && uiState.lastDismissedSuggestionKey !== key1 ? key1 : null;
-  }, [totalTurns, uiState.lastDismissedSuggestionKey]);
+  }, [totalTurns, isChatVeryLong, uiState.lastDismissedSuggestionKey]);
 
   // Sugerencia después de generar (no automática)
   const [showAfterGenerateHint, setShowAfterGenerateHint] = useState(false);
@@ -2328,7 +2357,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         {showNewChatSuggestion && !isEmptyState && (
           <div className="luciana-newchat-hint">
             <span>
-              💡 Ya lleváis unas {totalTurns} intervenciones. Si vas a empezar una idea distinta, te recomiendo crear un chat nuevo.
+              {isChatVeryLong
+                ? 'Este chat ya es muy largo. Para que LucIAna mantenga mejor el contexto, te recomendamos iniciar un chat nuevo.'
+                : `💡 Ya lleváis unas ${totalTurns} intervenciones. Si vas a empezar una idea distinta, te recomiendo crear un chat nuevo.`}
             </span>
             <button
               type="button"
@@ -3217,7 +3248,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
       <div
         className={cn('luciana-history-backdrop', historyOpen ? 'is-open' : '')}
-        onClick={() => setHistoryOpen(false)}
+        onClick={() => { setHistoryOpen(false); setHistoryMenuOpenId(null); }}
         aria-hidden={!historyOpen}
       />
       <aside
@@ -3283,16 +3314,17 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               {uiState.conversations.map((c) => {
                 const isActive = c.id === uiState.activeConversationId;
+                const isMenuOpen = historyMenuOpenId === c.id;
                 return (
-                  <li key={c.id}>
-                    <button
-                      type="button"
+                  <li key={c.id} style={{ position: 'relative' }}>
+                    <div
                       onClick={() => void openConversation(c)}
                       style={{
-                        display: 'block',
+                        display: 'flex',
                         width: '100%',
                         textAlign: 'left',
                         padding: '0.6rem 0.75rem',
+                        paddingRight: '2.3rem',
                         borderRadius: '0.85rem',
                         border: `1px solid ${isActive ? 'color-mix(in srgb, var(--brand-primary) 45%, var(--border))' : 'transparent'}`,
                         background: isActive
@@ -3300,34 +3332,236 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           : 'var(--bg-elev-1)',
                         color: 'var(--text)',
                         cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'baseline',
+                        alignItems: 'flex-start',
                         justifyContent: 'space-between',
                         gap: '0.5rem',
-                      }}>
-                        <span style={{
-                          fontWeight: 700,
-                          fontSize: '0.86rem',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          maxWidth: '72%',
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem',
                         }}>
-                          {c.title || 'Nuevo chat'}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                          {formatDay(c.updated_at || c.created_at)}
-                        </span>
-                      </div>
-                      {c.archived_at ? (
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                          Archivado · {formatDay(c.archived_at)}
+                          <span style={{
+                            fontWeight: 700,
+                            fontSize: '0.86rem',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '72%',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                          }}>
+                            {c.pinned ? (
+                              <Pin className="h-3.5 w-3.5" style={{ color: 'var(--brand-primary)', flexShrink: 0 }} />
+                            ) : null}
+                            {c.title || 'Nuevo chat'}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            {formatDay(c.updated_at || c.created_at)}
+                          </span>
                         </div>
-                      ) : null}
+                        {c.archived_at ? (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                            Archivado · {formatDay(c.archived_at)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={isMenuOpen ? 'Cerrar opciones' : 'Opciones de este chat'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setHistoryMenuOpenId(isMenuOpen ? null : c.id);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        top: '0.45rem',
+                        right: '0.35rem',
+                        width: '1.85rem',
+                        height: '1.85rem',
+                        borderRadius: '9999px',
+                        border: `1px solid ${isMenuOpen ? 'color-mix(in srgb, var(--brand-primary) 40%, var(--border))' : 'transparent'}`,
+                        background: isMenuOpen
+                          ? 'color-mix(in srgb, var(--brand-primary) 14%, var(--bg-elev-2))'
+                          : 'transparent',
+                        color: 'var(--text-muted)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        zIndex: 3,
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget.style.background = 'color-mix(in srgb, var(--brand-primary) 10%, var(--bg-elev-2))'); }}
+                      onMouseLeave={(e) => {
+                        if (!isMenuOpen) (e.currentTarget.style.background = 'transparent');
+                      }}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
                     </button>
+                    {isMenuOpen ? (
+                      <div
+                        role="menu"
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        style={{
+                          position: 'absolute',
+                          top: '2.3rem',
+                          right: '0.35rem',
+                          minWidth: '13rem',
+                          zIndex: 10,
+                          padding: '0.35rem',
+                          borderRadius: '0.9rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-2)',
+                          color: 'var(--text)',
+                          boxShadow: '0 18px 44px rgba(0,0,0,0.28)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.1rem',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            try {
+                              const token = await getValidBearerToken();
+                              if (!token) { setToast({ kind: 'err', text: 'Sesión expirada. Inicia sesión de nuevo.' }); return; }
+                              const ok = await updateConversation(token, c.id, { pinned: !c.pinned });
+                              if (!ok) { setToast({ kind: 'err', text: c.pinned ? 'No pude desfijar el chat.' : 'No pude fijar el chat.' }); return; }
+                              setHistoryMenuOpenId(null);
+                              setToast({ kind: 'ok', text: c.pinned ? 'Chat desfijado.' : 'Chat fijado. Ahora aparece primero.' });
+                              void refreshHistoryList();
+                            } catch {
+                              setToast({ kind: 'err', text: c.pinned ? 'No pude desfijar el chat.' : 'No pude fijar el chat.' });
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.55rem',
+                            padding: '0.55rem 0.7rem',
+                            borderRadius: '0.7rem',
+                            border: '0',
+                            background: 'transparent',
+                            color: 'var(--text)',
+                            cursor: 'pointer',
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            textAlign: 'left',
+                          }}
+                        >
+                          {c.pinned ? (
+                            <>
+                              <PinOff className="h-4 w-4" style={{ color: 'var(--brand-primary)' }} />
+                              <span>Desfijar chat</span>
+                            </>
+                          ) : (
+                            <>
+                              <Pin className="h-4 w-4" style={{ color: 'var(--brand-primary)' }} />
+                              <span>Fijar chat</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            try {
+                              const newName = window.prompt('Cambiar nombre del chat', c.title || 'Nuevo chat');
+                              if (newName === null) { setHistoryMenuOpenId(null); return; }
+                              const trimmed = String(newName || '').trim().slice(0, 200);
+                              if (!trimmed) { setToast({ kind: 'err', text: 'El nombre no puede quedar vacío.' }); return; }
+                              const token = await getValidBearerToken();
+                              if (!token) { setToast({ kind: 'err', text: 'Sesión expirada. Inicia sesión de nuevo.' }); return; }
+                              const ok = await updateConversation(token, c.id, { title: trimmed });
+                              if (!ok) { setToast({ kind: 'err', text: 'No pude cambiar el nombre.' }); return; }
+                              setHistoryMenuOpenId(null);
+                              setToast({ kind: 'ok', text: 'Nombre actualizado.' });
+                              void refreshHistoryList();
+                            } catch {
+                              setToast({ kind: 'err', text: 'No pude cambiar el nombre.' });
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.55rem',
+                            padding: '0.55rem 0.7rem',
+                            borderRadius: '0.7rem',
+                            border: '0',
+                            background: 'transparent',
+                            color: 'var(--text)',
+                            cursor: 'pointer',
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            textAlign: 'left',
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" style={{ color: 'var(--brand-primary)' }} />
+                          <span>Cambiar nombre</span>
+                        </button>
+                        <div style={{ height: '1px', background: 'var(--border)', margin: '0.18rem 0.25rem' }} aria-hidden="true" />
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            try {
+                              const confirm = window.confirm('¿Eliminar esta conversación? Podrás recuperarla solicitando ayuda.');
+                              if (!confirm) { setHistoryMenuOpenId(null); return; }
+                              const token = await getValidBearerToken();
+                              if (!token) { setToast({ kind: 'err', text: 'Sesión expirada. Inicia sesión de nuevo.' }); return; }
+                              const wasActive = c.id === uiState.activeConversationId;
+                              const ok = await deleteConversationById(token, c.id);
+                              if (!ok) { setToast({ kind: 'err', text: 'No pude eliminar la conversación.' }); return; }
+                              setHistoryMenuOpenId(null);
+                              setToast({ kind: 'ok', text: 'Conversación eliminada. (Se puede recuperar pidiendo ayuda).' });
+                              if (wasActive) {
+                                if (attachedImg) {
+                                  try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
+                                  setAttachedImg(null);
+                                }
+                                if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
+                                else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
+                                await startNewChat({ persistOldAsArchived: false });
+                              } else {
+                                void refreshHistoryList();
+                              }
+                            } catch {
+                              setToast({ kind: 'err', text: 'No pude eliminar la conversación.' });
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.55rem',
+                            padding: '0.55rem 0.7rem',
+                            borderRadius: '0.7rem',
+                            border: '0',
+                            background: 'transparent',
+                            color: 'color-mix(in srgb, #ef4444 82%, var(--text))',
+                            cursor: 'pointer',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            textAlign: 'left',
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span>Eliminar chat</span>
+                        </button>
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}
