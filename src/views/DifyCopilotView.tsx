@@ -7,6 +7,7 @@ import {
   Image as ImageIcon,
   Library,
   Loader2,
+  Menu,
   MessageSquarePlus,
   Mic,
   Music2,
@@ -241,7 +242,7 @@ function saveUiState(s: UiState) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
 }
 
-export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }) {
+export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewTab) => void; onMenuClick?: () => void }) {
   // Tema LOCAL del chat (NO afecta al resto del sitio)
   const [chatTheme, setChatTheme] = useState<'dark' | 'light'>(() => {
     try {
@@ -284,7 +285,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
       id: uid(),
       role: 'assistant',
       text:
-        'Hola, soy LucIAna Bot. Cuéntame de qué quieres hacer la canción: estilo, tema, título, estado de ánimo, público o cualquier detalle. Juntos definimos letra, estilo, título y si es instrumental. Cuando esté todo listo te mostraré el botón **"Generar canción"** y se cobrarán 12 créditos.',
+        '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
       createdAt: Date.now(),
     },
   ]);
@@ -307,6 +308,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [attachMenuRect, setAttachMenuRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [pendingAttachKind, setPendingAttachKind] = useState<AttachMenuKind | null>(null);
+  const [welcomeFadingOut, setWelcomeFadingOut] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
@@ -696,6 +698,25 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
   }, [uiState.activeConversationId, conversationId, currentUserId]);
   useEffect(() => { setInputAndDraftRef.current = setInputAndDraft; }, [setInputAndDraft]);
 
+  const isEmptyState = useMemo(() => (
+    messages.length <= 1 &&
+    messages.every((m) =>
+      m.role === 'assistant' && !(m.attachment) && !(m.structured?.action)
+    )
+  ), [messages]);
+
+  useEffect(() => {
+    if (!isEmptyState && !welcomeFadingOut) {
+      setWelcomeFadingOut(true);
+      const t = window.setTimeout(() => setWelcomeFadingOut(false), 320);
+      return () => window.clearTimeout(t);
+    }
+    if (isEmptyState && welcomeFadingOut) {
+      setWelcomeFadingOut(false);
+    }
+    return undefined;
+  }, [isEmptyState, welcomeFadingOut]);
+
   const canSend = useMemo(() => {
     if (loading || generating) return false;
     if (!String(input || '').trim()) return false;
@@ -960,7 +981,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
             id: uid(),
             role: 'assistant',
             text:
-              'Hola, soy LucIAna Bot. Cuéntame de qué quieres hacer la canción: estilo, tema, título, estado de ánimo, público o cualquier detalle. Juntos definimos letra, estilo, título y si es instrumental. Cuando esté todo listo te mostraré el botón **"Generar canción"** y se cobrarán 12 créditos.',
+              '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
             createdAt: Date.now(),
           },
         ]);
@@ -999,7 +1020,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           id: uid(),
           role: 'assistant',
           text:
-            'Empezamos con un chat nuevo ✨. Cuéntame de qué quieres hacer la canción: estilo, tema, título, público, estado de ánimo o cualquier detalle que se te ocurra.',
+            '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
           createdAt: Date.now(),
         },
       ]);
@@ -2150,6 +2171,18 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
     <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot" data-chat-theme={chatTheme}>
       <header className="luciana-chat-header">
         <div className="flex min-w-0 items-center gap-2">
+          {typeof onMenuClick === 'function' && (
+            <button
+              type="button"
+              className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"
+              onClick={() => onMenuClick()}
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+              aria-label="Menú principal"
+              title="Menú principal"
+            >
+              <Menu className="h-4.5 w-4.5" />
+            </button>
+          )}
           <div className="luciana-msg-avatar" style={{ width: '2.25rem', height: '2.25rem' }}>
             <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna Bot" loading="lazy" />
           </div>
@@ -2234,7 +2267,65 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
 
       <div ref={listRef} className="luciana-chat-messages">
 
-        {showNewChatSuggestion && (
+        {(isEmptyState || welcomeFadingOut) && (
+          <div
+            className={cn(
+              'flex min-h-full w-full flex-col items-center justify-center px-6 md:px-10 py-10 md:py-6 text-center transition-all ease-out duration-300',
+              welcomeFadingOut && 'opacity-0 translate-y-4 pointer-events-none'
+            )}
+          >
+            <img
+              src={OFFICIAL_BRAND_LOGO}
+              alt="Logo oficial LucIAna Music"
+              className={cn(
+                'mb-4 md:mb-3 object-contain drop-shadow-[0_0_24px_rgba(183,122,255,.45)]'
+              )}
+              style={{
+                width: 'clamp(6rem, 19vw, 9rem)',
+                height: 'clamp(6rem, 19vw, 9rem)',
+                maxWidth: '144px',
+                maxHeight: '144px',
+              }}
+            />
+            <div style={{ maxWidth: '640px' }} className="w-full">
+              <div
+                className={cn(
+                  'font-black tracking-tight text-balance break-words'
+                )}
+                style={{
+                  color: 'var(--text)',
+                  fontSize: 'clamp(1.25rem, 5.6vw, 1.8rem)',
+                  lineHeight: 1.15,
+                }}
+              >
+                Luc<span style={{ color: 'var(--brand-accent)', WebkitTextStroke: '0.3px currentColor' }}>IA</span>na Music <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>|</span> Canciones, Covers y MP3
+              </div>
+              <div
+                className="mt-2 md:mt-1.5 font-semibold"
+                style={{
+                  color: 'var(--text-muted)',
+                  fontSize: 'clamp(0.9rem, 3.4vw, 1.05rem)',
+                }}
+              >
+                Por Ruben Vidal Hernandez
+              </div>
+              <div
+                className="mt-5 md:mt-4 font-semibold"
+                style={{
+                  color: 'var(--text)',
+                  fontSize: 'clamp(0.95rem, 3.8vw, 1.08rem)',
+                  lineHeight: 1.45,
+                  maxWidth: '480px',
+                  marginInline: 'auto',
+                }}
+              >
+                Crea canciones completas con IA, elige el estilo, escribe tu idea y descarga tu MP3 al instante. 🎧⚡
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showNewChatSuggestion && !isEmptyState && (
           <div className="luciana-newchat-hint">
             <span>
               💡 Ya lleváis unas {totalTurns} intervenciones. Si vas a empezar una idea distinta, te recomiendo crear un chat nuevo.
@@ -2251,7 +2342,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           </div>
         )}
 
-        {showAfterGenerateHint && (
+        {showAfterGenerateHint && !isEmptyState && (
           <div className="luciana-newchat-hint">
             <span>✨ Canción generada correctamente. Si tienes otra idea, puedes empezar un chat nuevo.</span>
             <button
@@ -2263,7 +2354,9 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
           </div>
         )}
 
-        {messages.map((m) => {
+        {messages
+          .filter((m) => !(isEmptyState && m.role === 'assistant'))
+          .map((m) => {
           const isUser = m.role === 'user';
           const img = m.attachment && m.attachment.kind === 'image' ? m.attachment : null;
           const aud = m.attachment && m.attachment.kind === 'audio' ? m.attachment : null;
@@ -3091,7 +3184,7 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               onInput={(e: any) => autoresizeTextarea(e?.target || textareaRef.current)}
               onKeyDown={onInputKeyDown}
               rows={1}
-              placeholder="Escribe aquí tu idea…"
+              placeholder="Escribe tu idea…"
               disabled={loading || generating}
               autoComplete="off"
               autoCorrect="on"
@@ -3110,6 +3203,16 @@ export function DifyCopilotView({ onChange }: { onChange: (t: ViewTab) => void }
               {Math.min(String(input || '').length, COMPOSER_CHAR_LIMIT)} / {COMPOSER_CHAR_LIMIT}
             </div>
           </div>
+          <button
+            type="button"
+            className={cn('luciana-composer-mic', audioBusy ? 'is-busy' : '')}
+            onClick={() => triggerFilePickForKind('mic')}
+            aria-label="Grabar voz (micrófono)"
+            disabled={loading || generating}
+            data-disabled={loading || generating ? 'true' : 'false'}
+          >
+            <Mic className={cn('h-4.5 w-4.5')} />
+          </button>
           <button
             type="button"
             className="luciana-composer-send"

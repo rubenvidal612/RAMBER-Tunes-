@@ -4275,7 +4275,7 @@ export default function App() {
                </div>
              </div>
            )}
-           {currentTab === 'copiloto' && <DifyCopilotView onChange={setCurrentTab} />}
+           {currentTab === 'copiloto' && <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
           {currentTab === 'oficina' && (isAdmin ? (
@@ -4374,7 +4374,7 @@ export default function App() {
                    </div>
                  </div>
                ) : currentTab === 'copiloto' ? (
-                <DifyCopilotView onChange={setCurrentTab} />
+                <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (
