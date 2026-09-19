@@ -3205,16 +3205,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           </div>
           <button
             type="button"
-            className={cn('luciana-composer-mic', audioBusy ? 'is-busy' : '')}
-            onClick={() => triggerFilePickForKind('mic')}
-            aria-label="Grabar voz (micrófono)"
-            disabled={loading || generating}
-            data-disabled={loading || generating ? 'true' : 'false'}
-          >
-            <Mic className={cn('h-4.5 w-4.5')} />
-          </button>
-          <button
-            type="button"
             className="luciana-composer-send"
             onClick={() => void sendMessage()}
             disabled={!canSend}

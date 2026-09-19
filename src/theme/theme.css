@@ -463,8 +463,7 @@ html[data-theme='dark'] .luciana-msg-bubble code {
 }
 
 /* ----------- Adjuntar imagen letra (clip / +) ----------- */
-.luciana-attach-btn,
-.luciana-composer-mic {
+.luciana-attach-btn {
   width: 2.8rem;
   height: 2.8rem;
   flex: 0 0 auto;
@@ -482,52 +481,23 @@ html[data-theme='dark'] .luciana-msg-bubble code {
   transition: all 0.15s ease;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-primary) 22%, transparent) inset, 0 4px 14px color-mix(in srgb, var(--brand-primary) 18%, transparent);
 }
-.luciana-composer-mic {
-  border-color: color-mix(in srgb, var(--brand-accent) 60%, var(--composer-border));
-  color: var(--brand-accent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-accent) 14%, var(--composer-bg)) 0%, var(--composer-bg) 100%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-accent) 22%, transparent) inset, 0 4px 14px color-mix(in srgb, var(--brand-accent) 18%, transparent);
-}
-.luciana-attach-btn:active,
-.luciana-composer-mic:active {
+.luciana-attach-btn:active {
   transform: scale(0.94);
   filter: brightness(1.05);
 }
-.luciana-attach-btn:focus-visible,
-.luciana-composer-mic:focus-visible {
+.luciana-attach-btn:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--brand-primary) 80%, transparent);
   outline-offset: 2px;
-}
-.luciana-composer-mic:focus-visible {
-  outline-color: color-mix(in srgb, var(--brand-accent) 80%, transparent);
 }
 .luciana-attach-btn:hover:not(:disabled) {
   color: var(--brand-primary);
   border-color: color-mix(in srgb, var(--brand-primary) 40%, var(--composer-border));
   transform: translateY(-1px);
 }
-.luciana-composer-mic:hover:not(:disabled):not([data-disabled='true']) {
-  color: var(--brand-accent);
-  border-color: color-mix(in srgb, var(--brand-accent) 40%, var(--composer-border));
-  transform: translateY(-1px);
-}
 .luciana-attach-btn:disabled,
-.luciana-attach-btn[data-disabled='true'],
-.luciana-composer-mic:disabled,
-.luciana-composer-mic[data-disabled='true'] {
+.luciana-attach-btn[data-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.6;
-}
-.luciana-composer-mic.is-busy {
-  animation: lucianaMicPulse 1.1s ease-in-out infinite;
-}
-@keyframes lucianaMicPulse {
-  0%,100% {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-accent) 22%, transparent) inset, 0 4px 14px color-mix(in srgb, var(--brand-accent) 18%, transparent), 0 0 0 0 color-mix(in srgb, var(--brand-accent) 30%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-accent) 22%, transparent) inset, 0 4px 18px color-mix(in srgb, var(--brand-accent) 32%, transparent), 0 0 0 10px color-mix(in srgb, var(--brand-accent) 0%, transparent);
-  }
 }
 .luciana-attach-preview {
   max-width: 48rem;
