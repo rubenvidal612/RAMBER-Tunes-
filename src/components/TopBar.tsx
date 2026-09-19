@@ -15,7 +15,7 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
   return (
     <header className={cn('luciana-topbar', className)}>
       <div className="luciana-brand" aria-label="LucIAna Music">
-        <img src="/assets/Luciana%20SIN%20FONDO..png?v=20260918-1" alt="Logo de LucIAna Music" className="luciana-brand-logo object-contain" />
+        <img src="/assets/luciana-logo-oficial.png?v=20260918-2" alt="Logo de LucIAna Music" className="luciana-brand-logo w-9 h-9 rounded-full object-contain overflow-visible drop-shadow-[0_0_8px_rgba(183,122,255,.35)]" />
         <span className="luciana-brand-name">Luc<span>IA</span>na <b>|</b> Music</span>
       </div>
 

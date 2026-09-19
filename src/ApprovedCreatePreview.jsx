@@ -441,7 +441,7 @@ function Sidebar({ activePage, onNavigate, mobileOpen, onClose }) {
 function Header({ onMenu, onCredits }) {
   return (
     <header className="header">
-      <img className="brand-mark" src="/assets/Luciana%20SIN%20FONDO..png?v=20260918-1" alt="Logo de LucIAna Music" />
+      <img className="brand-mark" src="/assets/luciana-logo-oficial.png?v=20260918-2" alt="Logo de LucIAna Music" />
       <strong className="brand">Luc<span>IA</span>na | Music</strong>
       <div className="header-actions">
         <button className="credits" onClick={onCredits}><Coins size={22} weight="fill" /><span><small>Comprar créditos</small>2,292.4</span></button>

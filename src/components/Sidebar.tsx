@@ -129,16 +129,17 @@ export function Sidebar({ currentTab, onChange, isAdmin = false }: SidebarProps)
           }}
         >
           <div
-            className="w-[28px] h-[28px] rounded-[10px] flex items-center justify-center shrink-0 overflow-hidden"
+            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 overflow-hidden"
             style={{
-              background: 'linear-gradient(135deg, rgba(183,122,255,.35), rgba(236,72,153,.25))',
-              boxShadow: '0 4px 14px rgba(183,122,255,.25)',
+              background: 'radial-gradient(circle at 30% 20%, rgba(255,255,255,.22), rgba(183,122,255,.08) 55%, transparent 75%)',
+              boxShadow: '0 0 0 1px rgba(183,122,255,.28) inset, 0 6px 18px rgba(183,122,255,.25)',
             }}
           >
             <img
-              src="/assets/Luciana%20SIN%20FONDO..png?v=20260918-1"
+              src="/assets/luciana-logo-oficial.png?v=20260918-2"
               alt="LucIAna Bot"
-              className="w-full h-full object-contain"
+              className="w-[118%] h-[118%] object-contain"
+              style={{ transform: 'scale(1.04)' }}
             />
           </div>
           <div className="min-w-0 flex-1 flex flex-col items-start">

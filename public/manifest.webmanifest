@@ -9,19 +9,19 @@
   "theme_color": "#0a0a0a",
   "icons": [
     {
-      "src": "/assets/Luciana%20SIN%20FONDO..png?v=20260918-1",
+      "src": "/assets/luciana-logo-oficial.png?v=20260918-2",
       "sizes": "any",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/assets/Luciana%20SIN%20FONDO..png?v=20260918-1",
+      "src": "/assets/luciana-logo-oficial.png?v=20260918-2",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/Luciana%20SIN%20FONDO..png?v=20260918-1",
+      "src": "/assets/luciana-logo-oficial.png?v=20260918-2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
