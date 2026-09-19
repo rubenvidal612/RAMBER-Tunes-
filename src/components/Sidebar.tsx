@@ -114,8 +114,70 @@ export function Sidebar({ currentTab, onChange, isAdmin = false }: SidebarProps)
           ))}
         </div>
 
-        <p className="luciana-sidebar-label mt-7">ASISTENTE</p>
-        <NavButton id="copiloto" label="LucIAna Bot" icon={Bot} currentTab={currentTab} onChange={onChange} />
+        <p className="luciana-sidebar-label mt-7" style={{ color: '#b77aff', textShadow: '0 0 18px rgba(183,122,255,.35)' }}>✨ ASISTENTE PREMIUM</p>
+        <button
+          type="button"
+          onClick={() => onChange('copiloto')}
+          className="luciana-sidebar-item luciana-sidebar-copiloto"
+          style={{
+            border: '1px solid rgba(183,122,255,.35)',
+            background: 'linear-gradient(135deg, rgba(124,58,237,.22) 0%, rgba(7,10,18,1) 55%, rgba(236,72,153,.14) 100%)',
+            boxShadow: '0 0 0 1px rgba(183,122,255,.08) inset, 0 8px 28px rgba(124,58,237,.18)',
+            color: 'white',
+            fontWeight: 800,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          <div
+            className="w-[28px] h-[28px] rounded-[10px] flex items-center justify-center shrink-0 overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, rgba(183,122,255,.35), rgba(236,72,153,.25))',
+              boxShadow: '0 4px 14px rgba(183,122,255,.25)',
+            }}
+          >
+            <img
+              src="/assets/Luciana%20SIN%20FONDO..png?v=20260918-1"
+              alt="LucIAna Bot"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div className="min-w-0 flex-1 flex flex-col items-start">
+            <span
+              style={{
+                background: 'linear-gradient(90deg,#f0abfc 0%,#c4b5fd 40%,#93c5fd 100%)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+                fontWeight: 900,
+              }}
+            >
+              LucIAna Bot
+            </span>
+            <span
+              style={{
+                fontSize: '9.5px',
+                color: '#c4b5fd',
+                fontWeight: 700,
+                letterSpacing: '.14em',
+                textTransform: 'uppercase',
+                marginTop: '1px',
+              }}
+            >
+              Nueva versión · 24/7
+            </span>
+          </div>
+          <span
+            className="ml-1 shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-black"
+            style={{
+              background: 'linear-gradient(135deg,#ec4899,#b77aff)',
+              color: 'white',
+              letterSpacing: '.05em',
+              boxShadow: '0 4px 14px rgba(236,72,153,.35)',
+            }}
+          >
+            BETA
+          </span>
+        </button>
 
         <p className="luciana-sidebar-label mt-7">CUENTA</p>
         <div className="mt-2 rounded-2xl border border-white/10 bg-white/[.02] px-3 py-3">

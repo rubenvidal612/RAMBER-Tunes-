@@ -413,12 +413,12 @@ export function LucianaBotView() {
       <div className="shrink-0 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <MessageCircleMore className="w-5 h-5 text-white" />
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500/40 to-fuchsia-600/40 flex items-center justify-center shadow-lg shadow-indigo-500/20 ring-1 ring-white/10 overflow-hidden">
+              <img src="/assets/Luciana%20SIN%20FONDO..png?v=20260918-1" alt="LucIAna Bot" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
-              <div className="text-white font-extrabold text-lg">LucIAna Bot</div>
-              <div className="text-slate-300 text-xs md:text-sm">Te guía paso a paso para crear, hacer covers y revisar tu saldo.</div>
+              <div className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 via-violet-400 to-indigo-300 font-black text-lg leading-none">LucIAna Bot</div>
+              <div className="text-slate-300 text-xs md:text-sm mt-1">Te guía paso a paso para crear, hacer covers y revisar tu saldo.</div>
             </div>
           </div>
           <button

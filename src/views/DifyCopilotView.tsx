@@ -185,8 +185,8 @@ function formatDay(iso: string | null | undefined): string {
   }
 }
 
-const CHAT_AVATAR_ASSISTANT = '/logo-luciana-hd.svg?v=20260917-3';
-const OFFICIAL_BRAND_LOGO = '/assets/luciana-music-logo.jpeg';
+const CHAT_AVATAR_ASSISTANT = '/assets/Luciana%20SIN%20FONDO..png?v=20260918-1';
+const OFFICIAL_BRAND_LOGO = '/assets/Luciana%20SIN%20FONDO..png?v=20260918-1';
 const STORAGE_KEY = 'luciana_chat_ui_v1';
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB (imágenes)
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB (audios propios solo MP3)
