@@ -1311,7 +1311,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     }));
     return { list, current };
   }
-  const refreshVoiceCurrent = useCallback(async (forceStep?: VoiceFlowState['step']) => {
+  async function refreshVoiceCurrent(forceStep?: VoiceFlowState['step']) {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return null;
     const r = await callVoiceFlow<{ profile?: VoiceProfilePublic }>({ action: 'get', profileId: id }, { showError: false });
@@ -1324,8 +1324,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       step: forceStep ?? vfStepFromProfile(profile, p.open),
     }));
     return profile;
-  }, [callVoiceFlow, setVF, vfStepFromProfile]);
-  const startVoiceFlowWizard = useCallback(async () => {
+  }
+  async function startVoiceFlowWizard() {
     setVF((p) => ({ ...p, open: true, step: 'intro', busy: false }));
     const { list, current } = await refreshVoiceList();
     if (!list.length) {
@@ -1338,7 +1338,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       if (current) setVF((p) => ({ ...p, step: vfStepFromProfile(current, true) }));
       void scrollToBottomNow();
     }
-  }, [callVoiceFlow, refreshVoiceList, setVF, vfStepFromProfile, scrollToBottomNow]);
+  }
 
   // ====== Voice flow: limpiar timer al desmontar, y cargar lista al boot (cuando haya user) ======
   // NOTA: este useEffect debe ir DESPUÉS de setVF, vfStepFromProfile, callVoiceFlow, refreshVoiceList y getValidBearerToken
@@ -1394,7 +1394,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return () => { cancelled = true; };
   }, [callVoiceFlow, getValidBearerToken, refreshVoiceList, setVF, vfStepFromProfile]);
 
-  const uploadAudioToVoiceFlow = useCallback(async (profileId: string, kind: 'sample' | 'verify', file: File): Promise<boolean> => {
+  async function uploadAudioToVoiceFlow(profileId: string, kind: 'sample' | 'verify', file: File): Promise<boolean> {
     if (!file) return false;
     if (file.size > 25 * 1024 * 1024) {
       setToast({ kind: 'err', text: 'El audio supera los 25 MB permitidos.' });
@@ -1416,7 +1416,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         setToast({ kind: 'err', text: 'No pude preparar la subida del audio. Intenta de nuevo.' });
         return false;
       }
-      // PUT a la URL presignada
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('PUT', putUrl, true);
@@ -1459,8 +1458,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     } finally {
       setVF((p) => ({ ...p, uploading: false, uploadingProgress: 0, uploadKind: null, busy: false }));
     }
-  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
-  const pickVFVoiceAudioFile = useCallback((kind: 'sample' | 'verify') => {
+  }
+  function pickVFVoiceAudioFile(kind: 'sample' | 'verify') {
     const profileId = voiceFlowRef.current.selectedId;
     if (!profileId) { setToast({ kind: 'err', text: 'Primero selecciona o crea un personaje.' }); return; }
     const inp = document.createElement('input');
@@ -1473,8 +1472,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       void uploadAudioToVoiceFlow(profileId, kind, f);
     };
     try { inp.click(); } catch {}
-  }, [confirmAudioAuth, uploadAudioToVoiceFlow]);
-  const recordVFVoiceAudio = useCallback((kind: 'sample' | 'verify') => {
+  }
+  function recordVFVoiceAudio(kind: 'sample' | 'verify') {
     const profileId = voiceFlowRef.current.selectedId;
     if (!profileId) { setToast({ kind: 'err', text: 'Primero selecciona o crea un personaje.' }); return; }
     const navAny: any = typeof navigator === 'undefined' ? null : navigator;
@@ -1489,15 +1488,11 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (!confirmAudioAuth()) return;
     setVF((p) => ({ ...p, uploadKind: kind }));
     setTimeout(() => startMicRecorder().catch(() => {}), 30);
-    // Cuando el grabador termine → "on finalize" guardamos directamente en R2 usando el mismo flujo
-    // Para no tocar el grabador original, escuchamos 1 sola vez el custom event que dispara el finalize
     const finalizeOnce = () => {
       window.removeEventListener('luciana:audio-attached', finalizeOnce);
       setTimeout(async () => {
-        const att = (voiceFlowRef as any).current || voiceFlowRef.current;
         const realAttach = attachedImg;
         if (realAttach && realAttach.kind === 'audio' && realAttach.file) {
-          // Limpiamos el adjunto para que no se envíe como mensaje
           try { URL.revokeObjectURL(realAttach.previewUrl); } catch {}
           setAttachedImg(null);
           void uploadAudioToVoiceFlow(profileId, kind, realAttach.file);
@@ -1507,8 +1502,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       }, 60);
     };
     window.addEventListener('luciana:audio-attached', finalizeOnce);
-  }, [attachedImg, confirmAudioAuth, startMicRecorder, setVF, uploadAudioToVoiceFlow]);
-  const vfAcceptConsent = useCallback(async () => {
+  }
+  async function vfAcceptConsent() {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
     setVF((p) => ({ ...p, busy: true }));
@@ -1517,8 +1512,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       await refreshVoiceCurrent('sample');
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
-  const vfRequestPhrase = useCallback(async (regenerate?: boolean) => {
+  }
+  async function vfRequestPhrase(regenerate?: boolean) {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
     setVF((p) => ({ ...p, busy: true, step: 'phrase' }));
@@ -1528,8 +1523,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       void scrollToBottomNow();
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceCurrent, scrollToBottomNow, setVF]);
-  const vfSetName = useCallback(async () => {
+  }
+  async function vfSetName() {
     const id = voiceFlowRef.current.selectedId;
     const name = voiceFlowRef.current.nameInput.trim();
     if (!id) return;
@@ -1538,21 +1533,18 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     setVF((p) => ({ ...p, busy: true }));
     const r = await callVoiceFlow({ action: 'set-name', profileId: id, name }, { showError: true });
     if (r.ok) {
-      // Negocio (2026-09-19): sin paso costo. Ir directo a creating y confirmar la creación.
       await refreshVoiceCurrent('creating');
       void vfConfirmCreate();
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceCurrent, setVF, vfConfirmCreate]);
-  const vfConfirmCreate = useCallback(async () => {
+  }
+  async function vfConfirmCreate() {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
-    // (Negocio: sin cobro, sin confirmación de créditos) Ir directo a la creación del personaje.
     setVF((p) => ({ ...p, busy: true, step: 'creating' }));
     const r = await callVoiceFlow({ action: 'confirm-create', profileId: id }, { showError: true });
     if (r.ok) {
       await refreshVoiceCurrent('creating');
-      // Empezar polling de status cada 12s
       if (voiceRefreshTimerRef.current) window.clearInterval(voiceRefreshTimerRef.current);
       voiceRefreshTimerRef.current = window.setInterval(async () => {
         const state = voiceFlowRef.current;
@@ -1581,8 +1573,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       }, 12000);
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceCurrent, setVF, vfStepFromProfile]);
-  const vfReactivate = useCallback(async () => {
+  }
+  async function vfReactivate() {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
     setVF((p) => ({ ...p, busy: true }));
@@ -1591,8 +1583,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       await refreshVoiceCurrent('phrase');
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
-  const vfHide = useCallback(async () => {
+  }
+  async function vfHide() {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
     if (!window.confirm('Ocultar este personaje? Lo podrás recuperar después.')) return;
@@ -1601,8 +1593,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       await refreshVoiceList();
       setVF((p) => ({ ...p, open: false, step: 'intro' }));
     }
-  }, [callVoiceFlow, refreshVoiceList, setVF]);
-  const vfDeletePermanent = useCallback(async () => {
+  }
+  async function vfDeletePermanent() {
     const id = voiceFlowRef.current.selectedId;
     const written = voiceFlowRef.current.confirmPermanentText.trim();
     if (!id) return;
@@ -1618,10 +1610,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setToast({ kind: 'ok', text: '🗑️ Personaje eliminado de forma permanente.' });
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceList, setVF]);
+  }
 
   // ====== Detectar intención "quiero crear personaje / clonar voz" al enviar mensaje ======
-  const textSuggestsVoiceWizard = useCallback((raw: string) => {
+  function textSuggestsVoiceWizard(raw: string) {
     const t = String(raw || '').toLowerCase().trim();
     if (!t) return false;
     const keywords = [
@@ -1630,9 +1622,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       'usar mi voz', 'doble de voz', 'clon', 'personaje',
     ];
     return keywords.some((k) => t.includes(k));
-  }, []);
+  }
 
-  const wizardPushMessage = useCallback((text: string) => {
+  function wizardPushMessage(text: string) {
     const m: ChatMessage = { id: uid(), role: 'assistant', text, createdAt: Date.now() };
     setMessages((list) => [...list, m]);
     try {
@@ -1653,9 +1645,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         } catch {}
       })();
     } catch {}
-  }, [uiState]);
+  }
 
-  const transcribeAudioForWizard = useCallback(async () => {
+  async function transcribeAudioForWizard() {
     if (!attachedImg || attachedImg.kind !== 'audio') return;
     if (loading || generating || audioBusy || coverGenerating) return;
     if (!confirmAudioAuth()) return;
@@ -1819,8 +1811,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
       setLoading(false);
       setAudioBusy(false);
-      // IMPORTANTE: NO limpiar setInput aquí. El usuario pudo haber escrito texto
-      // mientras esperaba la transcripción; el borrador lo conservamos intacto.
       requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
     } catch {
       const friendly = 'No pude transcribir este audio en este momento.';
@@ -1829,7 +1819,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setToast({ kind: 'err', text: friendly });
       setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
     }
-  }, [attachedImg, audioBusy, confirmAudioAuth, coverGenerating, generating, loading, setUi, setToast, supabaseBrowser, uiState.activeConversationId, wizardPushMessage]);
+  }
 
   useEffect(() => {
     const onAutoTranscribe = () => {
@@ -1840,7 +1830,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcribeAudioForWizard]);
 
-  const handleGenerateCoverFromAudio = useCallback(async () => {
+  async function handleGenerateCoverFromAudio() {
     if (!attachedImg || attachedImg.kind !== 'audio') return;
     if (!coverDraft) return;
     if (loading || generating || audioBusy || coverGenerating) return;
@@ -2029,7 +2019,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setToast({ kind: 'err', text: friendly });
       setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
     }
-  }, [attachedImg, audioBusy, confirmAudioAuth, conversationId, coverDraft, coverGenerating, generating, handleAttachRemove, loading, onChange, supabaseBrowser, uiState.activeConversationId, setUi]);
+  }
 
   useEffect(() => () => {
     // cleanup preview URL al desmontar
@@ -2037,7 +2027,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const sendMessage = useCallback(async () => {
+  async function sendMessage() {
     const text = String(input || '').trim();
     if (!supabaseBrowser) {
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
@@ -2046,7 +2036,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
     // ========== DETECCIÓN: Crear personaje / clonar voz → abrir flujo guiado ==========
     if (!coverWizard && textSuggestsVoiceWizard(text)) {
-      // Escribimos el mensaje del usuario y abrimos el wizard (no enviamos a Dify para no confundir)
       const userMsg: ChatMessage = { id: uid(), role: 'user', text, createdAt: Date.now() };
       setMessages((m) => [...m, userMsg]);
       wizardPushMessage(
@@ -2136,7 +2125,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         createdAt: Date.now(),
       };
       setMessages((m) => [...m, userMsg]);
-      // Limpiar SOLO al confirmar envío de texto (wizard de cover es parte del flujo conversacional real)
       if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
       else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
       if (textareaRef.current) textareaRef.current.value = '';
@@ -2170,7 +2158,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     }
 
     if (attachedImg && attachedImg.kind === 'audio') {
-      // Fallback si el wizard aún no se activó (raramente, por race). Bloquear envío normal
       setToast({ kind: 'ok', text: 'Estoy preparando la transcripción. Espera un momento o vuelve a subir el audio.' });
       return;
     }
@@ -2248,12 +2235,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setMessages((m) => [...m, userMsg]);
       setInput('');
       if (textareaRef.current) textareaRef.current.value = '';
-      // Limpiar preview adjunta tras enviarla
       if (attachedImg) {
         try { handleAttachRemove(); } catch {}
       }
 
-      // Asegurar conversación activa en Supabase
       let activeConvId = uiState.activeConversationId;
       let activeDifyId = conversationId;
       if (!activeConvId) {
@@ -2264,7 +2249,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
         }
       }
-      // Guardar mensaje usuario en Supabase (async pero no bloqueante)
       if (activeConvId) {
         void (async () => {
           try {
@@ -2413,7 +2397,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
               structured_action: assistantMsg.structured || undefined,
             });
           } catch {}
-          // Actualiza título si es el primer mensaje de usuario y el título sigue siendo "Nuevo chat"
           try {
             const firstUserText = text;
             const c0 = uiState.conversations.find((c) => c.id === activeConvId);
@@ -2426,7 +2409,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
               }));
             }
             if (activeConvId === uiState.activeConversationId) {
-              // Actualizar la lista en memoria para que aparezca actualizada si abres historial
               await refreshHistoryList();
             }
           } catch {}
@@ -2437,24 +2419,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setLoading(false);
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || '') });
     }
-  }, [
-    input,
-    conversationId,
-    supabaseBrowser,
-    signOutAndReload,
-    getValidBearerToken,
-    createSupabaseConversation,
-    appendMessageToConversation,
-    updateConversation,
-    uiState.activeConversationId,
-    uiState.conversations,
-    setUi,
-    refreshHistoryList,
-    attachedImg,
-    handleAttachRemove,
-    coverWizard,
-    wizardPushMessage,
-  ]);
+  }
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
