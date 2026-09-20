@@ -971,16 +971,21 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     let alive = true;
     let authUnsub: any = null;
 
-    async function runBoot(showErr = true) {
+    async function runBoot() {
       try {
         const token = await getValidBearerToken();
         if (!token) {
-          if (showErr) setBootFailed(true);
+          setBootFailed(true);
           return;
         }
-        const list = await fetchConversationList(token);
-        if (!alive) return;
         setBootFailed(false);
+        let list: ConversationSummary[] = [];
+        try {
+          list = await fetchConversationList(token);
+        } catch (e) {
+          list = [];
+        }
+        if (!alive) return;
         setUi((p) => {
           let nextActive = p.activeConversationId;
           if (!nextActive && list.length > 0) {
@@ -991,31 +996,42 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         });
         const activeId = uiState.activeConversationId;
         if (activeId) {
-          const loaded = await loadConversationById(token, activeId);
-          if (!alive) return;
-          if (loaded.ok && loaded.conversation) {
-            setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
-            if (loaded.messages.length > 0) {
-              const cleaned = loaded.messages.map((m: any) =>
-                m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
-              );
-              setMessages(cleaned);
-              const lastReadyMsg = [...cleaned].reverse().find((m) => m.structured?.action === 'ready_to_generate');
-              if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
+          try {
+            const loaded = await loadConversationById(token, activeId);
+            if (!alive) return;
+            if (loaded.ok && loaded.conversation) {
+              setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
+              if (loaded.messages.length > 0) {
+                const cleaned = loaded.messages.map((m: any) =>
+                  m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
+                );
+                setMessages(cleaned);
+                const lastReadyMsg = [...cleaned].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+                if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
+              }
             }
+          } catch {
+            /* ignore: fallo al cargar conversación activa; no romper banner */
           }
         }
       } catch (e) {
-        if (alive && showErr) setBootFailed(true);
+        if (!alive) return;
+        try {
+          const token = await getValidBearerToken();
+          if (!token) setBootFailed(true);
+        } catch {
+          setBootFailed(true);
+        }
       }
     }
 
-    void runBoot(true);
+    void runBoot();
 
     if (supabaseBrowser && typeof (supabaseBrowser.auth as any)?.onAuthStateChange === 'function') {
       try {
         const { data } = (supabaseBrowser.auth as any).onAuthStateChange((_event: any, session: any) => {
-          if (session?.user) void runBoot(true);
+          if (session?.user) void runBoot();
+          else setBootFailed(true);
         });
         authUnsub = data?.subscription;
       } catch {}
