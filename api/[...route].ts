@@ -21117,12 +21117,14 @@ const lucianaVoiceHandler = (() => {
 
       // 8) request-phrase · Iniciar validación y pedir frase a Suno (con la muestra original guardada)
       if (action === "request-phrase" || action === "regenerate-phrase") {
+        // safeAction: variable declarada ANTES del try/catch outer para estar disponible en TODOS los catches.
+        // Evita ReferenceError: OUTER_ACTION is not defined (VF-0808-d177de).
+        const safeAction: string = String(action || "unknown");
         try {
           if (!profileId) {
             const eid = genErrorId();
             return clientError(400, "Falta identificador del personaje.", eid);
           }
-          const OUTER_ACTION = action;
           // 1. Cargar perfil (protegido: TypeError Cannot read 'from' if auth.admin bad)
           let pRows: any[] = []; let pErr: any = null;
           try {
@@ -21135,7 +21137,7 @@ const lucianaVoiceHandler = (() => {
             pRows = sel.data || []; pErr = sel.error || null;
           } catch (anyErr) {
             const eid = genErrorId();
-            serverLog(eid, OUTER_ACTION, {
+            serverLog(eid, safeAction, {
               step: "select.voice_profiles_throw",
               errMessage: anyErr instanceof Error ? anyErr.message : String(anyErr),
               errStack: anyErr instanceof Error ? anyErr.stack : undefined,
@@ -21144,7 +21146,7 @@ const lucianaVoiceHandler = (() => {
           }
           if (pErr) {
             const eid = genErrorId();
-            serverLog(eid, OUTER_ACTION, { step: "select.voice_profiles_err", err: pErr });
+            serverLog(eid, safeAction, { step: "select.voice_profiles_err", err: pErr });
             return clientError(500, "Personaje no disponible.", eid);
           }
           if (!pRows?.length) {
@@ -21335,7 +21337,7 @@ const lucianaVoiceHandler = (() => {
           });
         } catch (e) {
           const eid = genErrorId();
-          serverLog(eid, OUTER_ACTION, { step: "suno.full_try", err: e instanceof Error ? e.stack || String(e) : String(e) });
+          serverLog(eid, safeAction, { step: "suno.full_try", err: e instanceof Error ? e.stack || String(e) : String(e) });
           return clientError(502, "El proveedor no respondió bien.", eid);
         }
         } catch (outerErr) {
@@ -21345,10 +21347,10 @@ const lucianaVoiceHandler = (() => {
           const eid = genErrorId();
           try {
             // eslint-disable-next-line no-console
-            console.error(`[${eid}] lucianaVoiceHandler action=${OUTER_ACTION} step=outer_request_phrase_catch`,
+            console.error(`[${eid}] lucianaVoiceHandler action=${safeAction} step=outer_request_phrase_catch`,
               outerErr instanceof Error ? outerErr.stack || String(outerErr) : String(outerErr || ""));
           } catch {}
-          serverLog(eid, OUTER_ACTION, {
+          serverLog(eid, safeAction, {
             step: "outer_request_phrase_catch",
             errMessage: outerErr instanceof Error ? outerErr.message : String(outerErr),
             errStack: outerErr instanceof Error ? outerErr.stack : undefined,
