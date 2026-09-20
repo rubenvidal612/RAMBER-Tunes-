@@ -20709,52 +20709,45 @@ const lucianaVoiceHandler = (() => {
   async function buildPublicView(auth: any, profileRow: any | null, nowMs: number = Date.now()) {
     if (!profileRow) return { profile: null };
     const { active, latest } = await getProfileActiveActivation(auth, profileRow.id);
+    const activeId = active?.id || null;
 
-    // Estado general del personaje para el cliente (sin taskIds, sin voiceId, sin rutas privadas)
-    let state:
-      | "draft"
-      | "esperando_consentimiento"
-      | "esperando_muestra"
-      | "esperando_frase"
-      | "esperando_grabacion_verificacion"
-      | "esperando_nombre"
-      | "esperando_confirmacion_costo"
-      | "creando"
-      | "listo"
-      | "vencido"
-      | "fallo_verificacion"
-      | "oculto";
-
-    if (profileRow.deleted_at) state = "oculto";
-    else if (!profileRow.consent_given_at) state = "esperando_consentimiento";
-    else if (!profileRow.sample_original_r2_path) state = "esperando_muestra";
-    else if (active && active.status === "failed_verify") state = "fallo_verificacion";
-    else if (active && active.status === "processing") {
-      state = (active.voice_check_task_id && active.suno_voice_id) ? "creando" :
-              (active.voice_generate_task_id ? "creando" :
-               active.validate_task_id && !active.current_validate_phrase ? "esperando_frase" :
-               active.current_validate_phrase && !profileRow.last_verify_r2_path ? "esperando_grabacion_verificacion" :
-               active.current_validate_phrase && profileRow.last_verify_r2_path && !profileRow.name ? "esperando_nombre" :
-               active.current_validate_phrase && profileRow.last_verify_r2_path && profileRow.name ? "esperando_confirmacion_costo" :
-               "creando");
+    let isCreating = false;
+    let simpleStatus = "draft";
+    if (profileRow.deleted_at) simpleStatus = "hidden";
+    else if ((active && active.status === "failed_verify") || (latest && latest.status === "failed_verify") || profileRow.status === "failed_verify") {
+      simpleStatus = "failed_verify";
     } else if (active && active.status === "ready") {
-      state = new Date(active.expires_at).getTime() > nowMs ? "listo" : "vencido";
-    } else if (latest && latest.status === "failed_verify") state = "fallo_verificacion";
+      simpleStatus = new Date(active.expires_at).getTime() > nowMs ? "ready" : "expired";
+    } else if (latest && !active && latest.status === "ready") {
+      simpleStatus = "expired";
+    } else if (active && active.status === "processing" && (active.voice_generate_task_id || (active.voice_check_task_id && active.suno_voice_id))) {
+      simpleStatus = "creating";
+      isCreating = true;
+    } else if (!profileRow.consent_given_at) simpleStatus = "pending";
+    else if (!profileRow.sample_original_r2_path) simpleStatus = "pending";
     else {
-      // Sin actividad activa; determinar por campos
-      state =
-        profileRow.status === "failed_verify" ? "fallo_verificacion" :
-        !profileRow.sample_original_r2_path ? "esperando_muestra" :
-        !profileRow.last_verify_r2_path ? (latest && latest.current_validate_phrase ? "esperando_grabacion_verificacion" : "esperando_frase") :
-        !profileRow.name ? "esperando_nombre" :
-        "esperando_confirmacion_costo";
+      const hasPhrase = Boolean((active && active.current_validate_phrase) || (latest && latest.current_validate_phrase));
+      const hasVerify = Boolean(profileRow.last_verify_r2_path);
+      const hasName = Boolean(profileRow.name);
+      if (profileRow.status === "ready") simpleStatus = "ready";
+      else if (!hasPhrase) simpleStatus = "pending";
+      else if (!hasVerify) simpleStatus = "pending";
+      else if (!hasName) simpleStatus = "pending";
+      else simpleStatus = "pending";
+    }
+    if (!isCreating && (active && active.status === "processing")) {
+      if (active.voice_generate_task_id || (active.voice_check_task_id && active.suno_voice_id)) {
+        simpleStatus = "creating";
+      }
     }
 
     return {
       profile: {
         id: profileRow.id,
         name: profileRow.name || null,
-        status: state,
+        status: simpleStatus,
+        consent_given_at: profileRow.consent_given_at || null,
+        consent_version: profileRow.consent_version || null,
         created_at: profileRow.created_at,
         updated_at: profileRow.updated_at,
         expires_at: active?.expires_at || null,
@@ -20763,41 +20756,9 @@ const lucianaVoiceHandler = (() => {
         current_phrase: (active && active.current_validate_phrase) || (latest && latest.current_validate_phrase) || null,
         is_active: Boolean(active),
         cost_for_next_activation: ACTIVATION_COST,
+        active_activation_id: activeId,
       },
     };
-  }
-
-  async function ensureSongBalance(auth: any, costCents: number) {
-    // Usa mismo flujo de ensureCanAffirm + consumeSongCreditByKind existente (reimplementado light)
-    const { data: balRows, error: err1 } = await auth.admin
-      .from("credit_batches")
-      .select("*")
-      .eq("user_id", auth.user.id)
-      .order("created_at", { ascending: true });
-    if (err1) throw new Error("balance_err");
-    const rows: any[] = (balRows || []).filter((b: any) => (b.remaining_songs == null ? true : Number(b.remaining_songs) > 0));
-    const total = rows.reduce((acc, r) => acc + Number(r.remaining_credits ?? r.remaining_songs ?? 0), 0);
-    if (total < costCents) return { ok: false, message: `Te faltan créditos. (Tienes ${total} y necesitas ${costCents}).` };
-    // Consumir de las filas FIFO
-    let pending = costCents;
-    for (const r of rows) {
-      if (pending <= 0) break;
-      const remaining = Number(r.remaining_credits ?? r.remaining_songs ?? 0);
-      if (remaining <= 0) continue;
-      const take = Math.min(remaining, pending);
-      const upd = {
-        remaining_credits: remaining - take,
-        remaining_songs: (r.remaining_songs != null) ? (Number(r.remaining_songs) - take) : undefined,
-        updated_at: nowISO(),
-      };
-      if (upd.remaining_songs === undefined) delete upd.remaining_songs;
-      await auth.admin.from("credit_batches").update(upd).eq("id", r.id);
-      pending -= take;
-    }
-    await auth.admin.from("user_stats").upsert([
-      { user_id: auth.user.id, credit_balance: Math.max(0, total - costCents), updated_at: nowISO() },
-    ], { onConflict: "user_id", ignoreDuplicates: false });
-    return { ok: true };
   }
 
   async function chargeActivationIdempotent(auth: any, activationId: string) {
@@ -20810,9 +20771,23 @@ const lucianaVoiceHandler = (() => {
     if (error || !rows?.length) return { ok: false, message: "No encontré la activación." };
     const row = rows[0] as any;
     if (Number(row.cost_charged || 0) > 0) return { ok: true, already: true }; // idempotencia
-    const balOk = await ensureSongBalance(auth, ACTIVATION_COST);
-    if (!balOk.ok) return { ok: false, message: balOk.message || "Saldo insuficiente." };
-    // Intentar marcar cost_charged (segundo nivel idempotente)
+
+    // Check de saldo + consumo vía helper global FIFO existente
+    try {
+      const available = await getUserAvailableCredits(auth.admin, auth.user.id);
+      if ((available.creditsTotal || 0) < ACTIVATION_COST) {
+        return { ok: false, message: `Te faltan créditos. (Tienes ${available.creditsTotal || 0} y necesitas ${ACTIVATION_COST}).` };
+      }
+      const consumed = await consumeUserCredits(auth.admin, auth.user.id, ACTIVATION_COST);
+      if (!consumed.ok) {
+        return { ok: false, message: consumed.message || "No se pudo procesar el cobro de créditos." };
+      }
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e || "");
+      return { ok: false, message: "Error procesando créditos.", detail };
+    }
+
+    // Segundo nivel idempotente: marcar cost_charged con condición < 1
     const { error: upErr } = await auth.admin
       .from("voice_activations")
       .update({ cost_charged: ACTIVATION_COST, updated_at: nowISO() })
@@ -20853,7 +20828,7 @@ const lucianaVoiceHandler = (() => {
           const { profile } = await buildPublicView(auth, r, nowMs);
           items.push(profile);
         }
-        return send(res, 200, { ok: true, profiles: items });
+        return send(res, 200, { ok: true, list: items });
       }
 
       // 2) get · un solo personaje
@@ -20870,11 +20845,12 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, { ok: true, profile });
       }
 
-      // 3) create · nuevo personaje (solo lo empieza en draft)
+      // 3) create · nuevo personaje (solo lo empieza en draft, name NULL para no romper unicidad)
       if (action === "create") {
+        const rawName = String(payload?.name || "").trim();
         const insert: any = {
           user_id: auth.user.id,
-          name: (String(payload?.name || "").trim() || "Nuevo personaje").slice(0, 50),
+          name: rawName ? rawName.slice(0, 50) : null,
           status: "draft",
           created_at: nowISO(),
           updated_at: nowISO(),
@@ -20887,22 +20863,23 @@ const lucianaVoiceHandler = (() => {
         }
         const row = (data as any[])[0];
         const { profile } = await buildPublicView(auth, row, nowMs);
-        return send(res, 200, { ok: true, profile });
+        return send(res, 200, { ok: true, profile, profileId: row?.id || null });
       }
 
       // 4) accept-consent
       if (action === "accept-consent") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
-        if (payload?.accepted !== true && String(payload?.accepted || "").toLowerCase() !== "si") {
-          return send(res, 400, { error: "Debes aceptar el consentimiento." });
-        }
         const { error } = await auth.admin
           .from("voice_profiles")
           .update({ consent_given_at: nowISO(), consent_version: CONSENT_VERSION, updated_at: nowISO() })
           .eq("id", profileId)
           .eq("user_id", auth.user.id);
         if (error) return send(res, 500, { error: "No pude guardar el consentimiento." });
-        return send(res, 200, { ok: true, message: "Consentimiento guardado. Puedes continuar." });
+        const { data: rows } = await auth.admin
+          .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
+        const r = (rows || [])[0] || null;
+        const pub = await buildPublicView(auth, r, nowMs);
+        return send(res, 200, { ok: true, message: "Consentimiento guardado. Puedes continuar.", ...pub });
       }
 
       // 5) signed-upload-urls (sample y verify)
@@ -20911,33 +20888,40 @@ const lucianaVoiceHandler = (() => {
         const kind = String(payload?.kind || "").trim();
         if (!["sample", "verify"].includes(kind)) return send(res, 400, { error: "Tipo inválido." });
         const extension = String(payload?.extension || payload?.ext || "webm").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "webm";
+        const contentType = String(payload?.contentType || payload?.content_type || "").trim() || `audio/${extension === "mp3" ? "mpeg" : extension === "wav" ? "wav" : extension === "m4a" ? "mp4" : extension === "ogg" ? "ogg" : "webm"}`;
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const actId = String(payload?.activationId || "").trim();
         const rand = Math.random().toString(36).slice(2, 8);
+        const safeExt = extension || "webm";
         const path = kind === "sample"
-          ? `voice_profiles/${auth.user.id}/${profileId}/sample_original.${rand}.${extension}`
-          : `voice_profiles/${auth.user.id}/${profileId}/verify_${actId || "new"}.${rand}.${extension}`;
+          ? `voice_profiles/${auth.user.id}/${profileId}/sample_original.${rand}.${safeExt}`
+          : `voice_profiles/${auth.user.id}/${profileId}/verify_${actId || "new"}.${rand}.${safeExt}`;
 
-        const R2_ACCOUNT = (process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || "").toString().trim();
-        const R2_ACCESS = (process.env.R2_ACCESS || process.env.CLOUDFLARE_R2_ACCESS || "").toString().trim();
-        const R2_SECRET = (process.env.R2_SECRET || process.env.CLOUDFLARE_R2_SECRET || "").toString().trim();
-        const R2_BUCKET = (process.env.R2_BUCKET || "ramber-tunes-audio").toString().trim();
-        if (!R2_ACCOUNT || !R2_ACCESS || !R2_SECRET) return send(res, 500, { error: "Storage no configurado." });
-
-        // Obtener PUT signed via S3 presign. Usar librería nativa si existe.
+        // Usar la función global getSignedR2PutUrl(key, contentType, expiresInSeconds)
         try {
           if (typeof getSignedR2PutUrl === "function") {
-            const putUrl = await (getSignedR2PutUrl as any)(path, 30 * 60);
-            return send(res, 200, { ok: true, upload_url: putUrl, r2_path: path });
+            const putUrl = await getSignedR2PutUrl(path, contentType, 30 * 60);
+            return send(res, 200, {
+              ok: true,
+              upload_url: putUrl,
+              uploadUrl: putUrl,
+              signedPutUrl: putUrl,
+              r2_path: path,
+              suggested_path: path,
+              key: path,
+            });
           }
-        } catch { /* fallthrough */ }
-        return send(res, 500, { error: "No puedo generar la URL de subida." });
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e || "");
+          return send(res, 500, { error: "No puedo generar la URL de subida (R2).", detail });
+        }
+        return send(res, 500, { error: "No puedo generar la URL de subida (módulo R2 no cargado)." });
       }
 
       // 6) save-sample-path · guarda el path R2 de la muestra original (permanente)
       if (action === "save-sample-path") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
-        const r2Path = String(payload?.r2_path || payload?.r2Path || "").trim();
+        const r2Path = String(payload?.r2_path || payload?.r2Path || payload?.key || payload?.suggested_path || "").trim();
         if (!r2Path) return send(res, 400, { error: "Falta la ruta del audio." });
         const { error } = await auth.admin
           .from("voice_profiles")
@@ -20951,7 +20935,7 @@ const lucianaVoiceHandler = (() => {
       // 7) save-verify-path · guarda el path R2 de la grabación de la frase
       if (action === "save-verify-path") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
-        const r2Path = String(payload?.r2_path || payload?.r2Path || "").trim();
+        const r2Path = String(payload?.r2_path || payload?.r2Path || payload?.key || payload?.suggested_path || "").trim();
         const actId = String(payload?.activationId || "").trim();
         if (!r2Path) return send(res, 400, { error: "Falta ruta de grabación." });
         const { error } = await auth.admin
@@ -21041,7 +21025,12 @@ const lucianaVoiceHandler = (() => {
             if (!ok || !taskId) return send(res, 502, { error: "El proveedor no respondió la validación." });
           } else {
             // regenerate-phrase
-            const prevTaskId = String(payload?.taskId || "").trim();
+            let prevTaskId = String(payload?.taskId || "").trim();
+            if (!prevTaskId) {
+              // Fallback: buscar el taskId de la última activación del perfil
+              const prev = (await getProfileActiveActivation(auth, profile.id));
+              prevTaskId = String(prev.active?.validate_task_id || prev.latest?.validate_task_id || "").trim();
+            }
             if (!prevTaskId) return send(res, 400, { error: "Falta taskId para regenerar." });
             const { data, ok } = await fetchJSON(auth, "POST", "/api/v1/voice/regenerate", {
               taskId: prevTaskId,
@@ -21109,7 +21098,11 @@ const lucianaVoiceHandler = (() => {
           if (msg.includes("uq_voice_profiles_user_name_alive")) return send(res, 409, { error: "Ya tienes un personaje con ese nombre." });
           return send(res, 500, { error: "No pude cambiar el nombre." });
         }
-        return send(res, 200, { ok: true, message: `Nombre guardado: ${name}.` });
+        const { data: rows } = await auth.admin
+          .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
+        const r = (rows || [])[0] || null;
+        const pub = await buildPublicView(auth, r, nowMs);
+        return send(res, 200, { ok: true, message: `Nombre guardado: ${name}.`, ...pub });
       }
 
       // 10) confirm-create · cobra y crea la voz en Suno (GRABAR + voice/generate)

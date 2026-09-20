@@ -460,6 +460,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           window.setTimeout(() => {
             const preview = URL.createObjectURL(blob);
             setAttachedImg({ file, name: file.name, bytes: file.size, previewUrl: preview, kind: 'audio' });
+            try { window.dispatchEvent(new CustomEvent('luciana:audio-attached', { detail: { file, kind: 'audio' } })); } catch {}
             setToast({ kind: 'ok', text: '🎙️ Grabación lista. Puedes enviarla adjunta con tu mensaje.' });
           }, 180);
         } catch {
@@ -670,6 +671,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           window.setTimeout(() => {
             const preview = URL.createObjectURL(blob);
             setAttachedImg({ file, name: file.name, bytes: file.size, previewUrl: preview, kind: 'audio' });
+            try { window.dispatchEvent(new CustomEvent('luciana:audio-attached', { detail: { file, kind: 'audio' } })); } catch {}
             setToast({ kind: 'ok', text: '🎙️ Grabación lista. Puedes enviarla adjunta con tu mensaje.' });
           }, 180);
         })().catch(() => {
@@ -1416,13 +1418,15 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     try {
       const ext = (file.name.split('.').pop() || 'webm').toLowerCase().replace(/[^a-z0-9]/g, '') || 'webm';
       const contentType = file.type || `audio/${ext === 'mp3' ? 'mpeg' : ext}`;
-      const getUp = await callVoiceFlow<{ uploadUrl?: string; signedPutUrl?: string; upload_url?: string; suggested_path?: string; key?: string }>(
+      const getUp = await callVoiceFlow<{ uploadUrl?: string; signedPutUrl?: string; upload_url?: string; suggested_path?: string; key?: string; r2_path?: string }>(
         { action: 'get-upload-url', profileId, kind, ext, contentType, filename: file.name },
         { showError: true },
       );
       if (!getUp.ok) return false;
-      const putUrl: string = String((getUp.data as any)?.uploadUrl || (getUp.data as any)?.signedPutUrl || (getUp.data as any)?.upload_url || '').trim();
-      if (!putUrl) {
+      const getUpData: any = (getUp.data as any) || {};
+      const putUrl: string = String(getUpData.uploadUrl || getUpData.signedPutUrl || getUpData.upload_url || '').trim();
+      const r2Key: string = String(getUpData.r2_path || getUpData.suggested_path || getUpData.key || '').trim();
+      if (!putUrl || !r2Key) {
         setToast({ kind: 'err', text: 'No pude preparar la subida del audio. Intenta de nuevo.' });
         return false;
       }
@@ -1445,10 +1449,19 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         xhr.send(file);
       });
       setVF((p) => ({ ...p, uploadingProgress: 98 }));
-      const save = await callVoiceFlow(
-        { action: kind === 'sample' ? 'save-sample-path' : 'save-verify-path', profileId, filename: file.name, sizeBytes: file.size, contentType, ext },
-        { showError: true },
-      );
+      const savePayload: any = {
+        action: kind === 'sample' ? 'save-sample-path' : 'save-verify-path',
+        profileId,
+        r2_path: r2Key,
+        suggested_path: r2Key,
+        key: r2Key,
+        filename: file.name,
+        sizeBytes: file.size,
+        contentType,
+        ext,
+      };
+      if (voiceFlowRef.current?.activeActivationId) savePayload.activationId = voiceFlowRef.current.activeActivationId;
+      const save = await callVoiceFlow(savePayload, { showError: true });
       if (!save.ok) return false;
       await refreshVoiceCurrent();
       setToast({ kind: 'ok', text: kind === 'sample' ? '🎙️ Muestra original guardada correctamente.' : '🎤 Grabación de verificación guardada.' });
