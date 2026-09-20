@@ -657,10 +657,18 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
   useEffect(() => { saveUiState(uiState); }, [uiState]);
 
-  function scrollToBottomNow() {
+  function isUserNearBottom(threshold = 120): boolean {
+    const el = listRef.current;
+    if (!el) return true;
+    const remaining = el.scrollHeight - (el.clientHeight + el.scrollTop);
+    return remaining <= Math.max(0, threshold);
+  }
+
+  function scrollToBottomNow(force = false) {
     if (!listRef.current) return;
+    if (!force && !isUserNearBottom()) return;
     try {
-      listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+      listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: force ? 'smooth' : 'auto' });
     } catch {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
@@ -669,12 +677,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   useEffect(() => {
     if (sentScrollRef.current) {
       sentScrollRef.current = false;
-      scrollToBottomNow();
+      scrollToBottomNow(true);
       return;
     }
-    const t = setTimeout(() => scrollToBottomNow(), 60);
+    const t = setTimeout(() => scrollToBottomNow(false), 60);
     return () => clearTimeout(t);
-  }, [messages, loading, activeReady, generating, scrollToBottomNow]);
+  }, [messages, loading, activeReady, generating]);
 
   useEffect(() => {
     if (!toast) return;
@@ -1086,7 +1094,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       }
       setUi((p) => ({ ...p, activeConversationId: conv.id }));
       sentScrollRef.current = true;
-      setTimeout(() => scrollToBottomNow(), 30);
+      setTimeout(() => scrollToBottomNow(true), 30);
     } catch (e) {
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
     } finally {
@@ -1128,7 +1136,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         conversations: created ? [created, ...p.conversations] : p.conversations,
       }));
       sentScrollRef.current = true;
-      setTimeout(() => scrollToBottomNow(), 30);
+      setTimeout(() => scrollToBottomNow(true), 30);
       setToast({ kind: 'ok', text: 'Listo · chat nuevo creado. El anterior se guardó en el historial.' });
     } catch (e) {
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
@@ -1369,11 +1377,11 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       const r = await callVoiceFlow<{ profile?: VoiceProfilePublic; profileId?: string }>({ action: 'create' });
       if (r.ok && r.data?.profileId) {
         const { current: cur } = await refreshVoiceList({ selectId: r.data.profileId });
-        if (cur) void scrollToBottomNow();
+        if (cur) void scrollToBottomNow(true);
       }
     } else {
       if (current) setVF((p) => ({ ...p, step: vfStepFromProfile(current, true) }));
-      void scrollToBottomNow();
+      void scrollToBottomNow(true);
     }
   }
 
@@ -1557,7 +1565,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     const r = await callVoiceFlow({ action: regenerate ? 'regenerate-phrase' : 'request-phrase', profileId: id }, { showError: true });
     if (r.ok) {
       await refreshVoiceCurrent('phrase');
-      void scrollToBottomNow();
+      void scrollToBottomNow(true);
     }
     setVF((p) => ({ ...p, busy: false }));
   }
