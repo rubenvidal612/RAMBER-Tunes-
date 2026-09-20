@@ -279,7 +279,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }, [chatTheme]);
   const isDark = chatTheme !== 'light';
   // useTheme legacy NO se usa (el tema del chat es local)
-  void useTheme; // silence unused
   const _legacyTheme = useTheme();
 
   const [uiState, setUiState] = useState<UiState>(() => loadUiState());
@@ -408,7 +407,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const stopMicRecorderRef = useRef<((finalize: boolean) => Promise<void>) | null>(null);
 
   // 1) stopMicRecorderRef.function (sin useCallback + sin auto-dep)
-  const stopMicRecorder: (finalize: boolean) => Promise<void> = async (finalize: boolean) => {
+  // NOTA: function declaration (hoisting) para evitar TDZ "Cannot access before init" en build minificado
+  async function stopMicRecorder(finalize: boolean) {
     try {
       if (micRecorderStopFallbackTimerRef.current) window.clearTimeout(micRecorderStopFallbackTimerRef.current);
     } catch {}
@@ -547,7 +547,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }, [callVoiceFlow, getValidBearerToken, refreshVoiceList, setVF, vfStepFromProfile]);
 
   // 2) startMicRecorder (no useCallback, llama ref.stopMicRecorderRef → no dep circular)
-  const startMicRecorder = async () => {
+  // NOTA: function declaration (hoisting) para evitar TDZ "Cannot access before init" en build minificado
+  async function startMicRecorder() {
     setMicRecorderError('');
     const navAny: any = typeof navigator === 'undefined' ? null : navigator;
     const canMedia =

@@ -4275,7 +4275,11 @@ export default function App() {
                </div>
              </div>
            )}
-           {currentTab === 'copiloto' && <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />}
+           {currentTab === 'copiloto' && (
+             <ViewErrorBoundary title="LucIAna Bot">
+               <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />
+             </ViewErrorBoundary>
+           )}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
           {currentTab === 'oficina' && (isAdmin ? (
