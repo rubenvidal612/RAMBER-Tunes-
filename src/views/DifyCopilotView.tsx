@@ -349,7 +349,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   // ================================================================
   const VOICE_FLOW_ENABLED_IN_BOT: boolean = false;
   const VOICE_FLOW_TEMP_DISABLED_MSG: string =
-    "La creación de personajes de voz está temporalmente en preparación y no está disponible en este momento. Vuelve a intentarlo más pronto. Gracias.";
+    "La creación de personajes de voz está temporalmente no disponible. Gracias por tu paciencia.";
 
   type VoiceProfilePublic = {
     id: string;
