@@ -6,23 +6,37 @@ import './theme/theme.css';
 import {ThemeProvider} from './theme/ThemeProvider';
 
 // #region debug-point error-boundary
-class GlobalErrorBoundary extends Component<{children: any}, {hasError: boolean; error: string}> {
+class GlobalErrorBoundary extends Component<{children: any}, {hasError: boolean; error: string; stack: string; info: string}> {
   constructor(props: any) {
     super(props);
-    this.state = {hasError: false, error: ''};
+    this.state = {hasError: false, error: '', stack: '', info: ''};
   }
 
   static getDerivedStateFromError(error: any) {
     console.error('[DEBUG] GlobalErrorBoundary caught error:', error);
-    return {hasError: true, error: error?.message || String(error)};
+    return {
+      hasError: true,
+      error: error?.message || String(error),
+      stack: error?.stack || '',
+      info: ''
+    };
   }
 
   componentDidCatch(error: any, errorInfo: any) {
     console.error('[DEBUG] Error details:', error, errorInfo);
+    const infoText = [
+      errorInfo?.componentStack ? ('COMPONENT STACK:\n' + String(errorInfo.componentStack)) : '',
+    ].filter(Boolean).join('\n\n');
+    this.setState((s) => ({ ...s, info: infoText }));
   }
 
   render() {
     if (this.state.hasError) {
+      const fullBox = [
+        this.state.error ? ('ERROR:\n' + this.state.error) : '',
+        this.state.stack ? ('\nSTACK:\n' + String(this.state.stack).slice(0, 4000)) : '',
+        this.state.info ? ('\n' + this.state.info) : ''
+      ].filter(Boolean).join('\n');
       return (
         <div style={{
           position: 'fixed',
@@ -35,24 +49,29 @@ class GlobalErrorBoundary extends Component<{children: any}, {hasError: boolean;
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: 20,
-          textAlign: 'center',
-          zIndex: 9999
+          justifyContent: 'flex-start',
+          padding: '20px 16px 40px',
+          textAlign: 'left',
+          zIndex: 9999,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch'
         }}>
-          <div style={{fontSize: 24, fontWeight: 'bold', marginBottom: 10}}>¡Ups! Algo salió mal</div>
-          <div style={{marginBottom: 20, color: '#ccc'}}>La aplicación encontró un error y no puede continuar.</div>
+          <div style={{fontSize: 24, fontWeight: 'bold', marginBottom: 10, textAlign: 'center', width: '100%'}}>¡Ups! Algo salió mal</div>
+          <div style={{marginBottom: 20, color: '#ccc', textAlign: 'center', width: '100%'}}>La aplicación encontró un error y no puede continuar.</div>
           <div style={{
             backgroundColor: '#1a1a1a',
             padding: 15,
             borderRadius: 10,
             marginBottom: 20,
-            maxWidth: 500,
+            maxWidth: 720,
             width: '100%',
             overflow: 'auto',
-            fontSize: 12
+            fontSize: 12,
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word'
           }}>
-            {this.state.error}
+            {fullBox || this.state.error}
           </div>
           <button
             onClick={() => window.location.reload()}
