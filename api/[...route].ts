@@ -20790,11 +20790,49 @@ const lucianaVoiceHandler = (() => {
     try {
       if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido." });
 
+      function genErrorId(): string {
+        const hh = String(new Date().getHours()).padStart(2, "0");
+        const mm = String(new Date().getMinutes()).padStart(2, "0");
+        let rnd = "";
+        try {
+          if (typeof (globalThis as any)?.crypto?.getRandomValues === "function") {
+            const buf = new Uint8Array(3);
+            (globalThis as any).crypto.getRandomValues(buf);
+            rnd = Array.from(buf, (b: number) => b.toString(16).padStart(2, "0")).join("");
+          } else if (typeof require !== "undefined") {
+            rnd = require("crypto")?.randomBytes?.(3)?.toString?.("hex") || "";
+          }
+        } catch {}
+        if (!rnd) rnd = Math.random().toString(16).slice(2, 8).padEnd(6, "0");
+        return `VF-${hh}${mm}-${String(rnd).slice(0, 6)}`;
+      }
+
+      function clientError(httpStatus: number, userMessage: string, eid: string) {
+        return send(res, httpStatus, { error: userMessage, error_id: eid });
+      }
+      function serverLog(eid: string, actionName: string, detail: any) {
+        try {
+          // eslint-disable-next-line no-console
+          console.error(`[${eid}] lucianaVoiceHandler action=${actionName}`,
+            typeof detail === "string" ? detail
+            : detail instanceof Error ? detail.stack || String(detail)
+            : JSON.stringify(detail, null, 0).slice(0, 5000));
+        } catch {}
+      }
+
       const auth = await requireAuth(req);
-      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+      if (!auth.ok) {
+        const eid = genErrorId();
+        serverLog(eid, "auth", auth);
+        return clientError(auth.status, auth.error || "No autorizado.", eid);
+      }
 
       const payload = parseJsonBody(req);
-      if (!payload || typeof payload !== "object") return send(res, 400, { error: "Body inválido." });
+      if (!payload || typeof payload !== "object") {
+        const eid = genErrorId();
+        serverLog(eid, "parse_body", { payloadType: typeof payload, payload });
+        return clientError(400, "Petición inválida.", eid);
+      }
 
       const action = String(payload?.action || "").trim();
       const profileId = String(payload?.profileId || payload?.profile_id || "").trim();
@@ -20810,7 +20848,11 @@ const lucianaVoiceHandler = (() => {
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(20);
-        if (error) return send(res, 500, { error: "No pude listar tus personajes." });
+        if (error) {
+          const eid = genErrorId();
+          serverLog(eid, "list", error);
+          return clientError(500, "No pude listar tus personajes.", eid);
+        }
         const items = [];
         for (const r of rows || []) {
           const { profile } = await buildPublicView(auth, r, nowMs);
@@ -20821,14 +20863,25 @@ const lucianaVoiceHandler = (() => {
 
       // 2) get · un solo personaje
       if (action === "get") {
-        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        if (!profileId) {
+          const eid = genErrorId();
+          return clientError(400, "Falta identificador del personaje.", eid);
+        }
         const { data: rows, error } = await auth.admin
           .from("voice_profiles")
           .select("*")
           .eq("id", profileId)
           .eq("user_id", auth.user.id)
           .limit(1);
-        if (error || !rows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        if (error) {
+          const eid = genErrorId();
+          serverLog(eid, "get", error);
+          return clientError(500, "Personaje no disponible.", eid);
+        }
+        if (!rows?.length) {
+          const eid = genErrorId();
+          return clientError(404, "Personaje no encontrado.", eid);
+        }
         const { profile } = await buildPublicView(auth, rows[0], nowMs);
         return send(res, 200, { ok: true, profile });
       }
@@ -20849,23 +20902,6 @@ const lucianaVoiceHandler = (() => {
       // con error_id corto; al cliente SOLO le enviamos error + error_id
       // (nunca code/message/details/hint/vars/env internas).
       if (action === "create") {
-        function genErrorId(): string {
-          const hh = String(new Date().getHours()).padStart(2, "0");
-          const mm = String(new Date().getMinutes()).padStart(2, "0");
-          let rnd = "";
-          try {
-            if (typeof (globalThis as any)?.crypto?.getRandomValues === "function") {
-              const buf = new Uint8Array(3);
-              (globalThis as any).crypto.getRandomValues(buf);
-              rnd = Array.from(buf, (b: number) => b.toString(16).padStart(2, "0")).join("");
-            } else if (typeof require !== "undefined") {
-              rnd = require("crypto")?.randomBytes?.(3)?.toString?.("hex") || "";
-            }
-          } catch {}
-          if (!rnd) rnd = Math.random().toString(16).slice(2, 8).padEnd(6, "0");
-          return `VF-${hh}${mm}-${String(rnd).slice(0, 6)}`;
-        }
-
         const missingEnvs: string[] = [];
         if (!process.env.SUPABASE_URL) missingEnvs.push("SUPABASE_URL");
         if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnvs.push("SUPABASE_SERVICE_ROLE_KEY");
@@ -21073,7 +21109,10 @@ const lucianaVoiceHandler = (() => {
 
       // 8) request-phrase · Iniciar validación y pedir frase a Suno (con la muestra original guardada)
       if (action === "request-phrase" || action === "regenerate-phrase") {
-        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        if (!profileId) {
+          const eid = genErrorId();
+          return clientError(400, "Falta identificador del personaje.", eid);
+        }
         // 1. Cargar perfil
         const { data: pRows, error: pErr } = await auth.admin
           .from("voice_profiles")
@@ -21081,17 +21120,39 @@ const lucianaVoiceHandler = (() => {
           .eq("id", profileId)
           .eq("user_id", auth.user.id)
           .limit(1);
-        if (pErr || !pRows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        if (pErr) {
+          const eid = genErrorId();
+          serverLog(eid, action, pErr);
+          return clientError(500, "Personaje no disponible.", eid);
+        }
+        if (!pRows?.length) {
+          const eid = genErrorId();
+          return clientError(404, "Personaje no encontrado.", eid);
+        }
         const profile = pRows[0] as any;
-        if (!profile.sample_original_r2_path) return send(res, 400, { error: "Sube primero tu muestra de voz." });
-        if (!profile.consent_given_at) return send(res, 400, { error: "Acepta primero el consentimiento." });
+        if (!profile.sample_original_r2_path) {
+          const eid = genErrorId();
+          return clientError(400, "Sube primero tu muestra de voz.", eid);
+        }
+        if (!profile.consent_given_at) {
+          const eid = genErrorId();
+          return clientError(400, "Acepta primero el consentimiento.", eid);
+        }
 
         // 2. Firmar URL de la muestra para enviarla a Suno (2 horas vida)
         let sampleSigned = "";
         try {
           if (typeof getSignedR2Url === "function") sampleSigned = await getSignedR2Url(profile.sample_original_r2_path, 60 * 60 * 2);
-        } catch { sampleSigned = ""; }
-        if (!sampleSigned) return send(res, 500, { error: "No puedo preparar tu muestra con el proveedor." });
+        } catch (r2e) {
+          const eid = genErrorId();
+          serverLog(eid, action, { step: "getSignedR2Url", err: r2e });
+          sampleSigned = "";
+        }
+        if (!sampleSigned) {
+          const eid = genErrorId();
+          serverLog(eid, action, { step: "getSignedR2Url", empty: true });
+          return clientError(500, "No puedo preparar tu muestra con el proveedor.", eid);
+        }
 
         // ⚠️ Flujo oficial Suno: NUEVA frase → el usuario DEBE grabar/cantar EXACTAMENTE la frase nueva.
         // Cualquier grabación de verificación anterior NO SIRVE (la frase cambió).
@@ -21112,6 +21173,11 @@ const lucianaVoiceHandler = (() => {
             p_user_id: auth.user.id,
           })
           .catch(() => ({ data: null, error: null }));
+        if (insErr) {
+          const eid = genErrorId();
+          serverLog(eid, action, { step: "rpc.voice_start_new_activation", err: insErr });
+          // no romper; continuamos con fallback abajo
+        }
         let activationId: string | null = (newActRows as any)?.[0]?.id || null;
 
         // Fallback sin stored procedure
@@ -21136,10 +21202,17 @@ const lucianaVoiceHandler = (() => {
             })
             .select("id")
             .limit(1);
-          if (aerr) return send(res, 500, { error: "No puedo iniciar la validación. Intenta de nuevo." });
+          if (aerr) {
+            const eid = genErrorId();
+            serverLog(eid, action, { step: "insert.voice_activations", err: aerr });
+            return clientError(500, "No puedo iniciar la validación. Intenta de nuevo.", eid);
+          }
           activationId = (arows as any[])?.[0]?.id || null;
         }
-        if (!activationId) return send(res, 500, { error: "No se pudo preparar la validación." });
+        if (!activationId) {
+          const eid = genErrorId();
+          return clientError(500, "No se pudo preparar la validación.", eid);
+        }
 
         // 4. Llamar Suno
         let taskId = "";
@@ -21153,7 +21226,11 @@ const lucianaVoiceHandler = (() => {
               callBackUrl: callback,
             });
             taskId = String(data?.data?.taskId || "").trim();
-            if (!ok || !taskId) return send(res, 502, { error: "El proveedor no respondió la validación." });
+            if (!ok || !taskId) {
+              const eid = genErrorId();
+              serverLog(eid, action, { step: "voice/validate", ok, status, data });
+              return clientError(502, "El proveedor no respondió la validación.", eid);
+            }
           } else {
             // regenerate-phrase
             let prevTaskId = String(payload?.taskId || "").trim();
@@ -21162,20 +21239,28 @@ const lucianaVoiceHandler = (() => {
               const prev = (await getProfileActiveActivation(auth, profile.id));
               prevTaskId = String(prev.active?.validate_task_id || prev.latest?.validate_task_id || "").trim();
             }
-            if (!prevTaskId) return send(res, 400, { error: "Falta taskId para regenerar." });
-            const { data, ok } = await fetchJSON(auth, "POST", "/api/v1/voice/regenerate", {
+            if (!prevTaskId) {
+              const eid = genErrorId();
+              return clientError(400, "Falta identificación para regenerar la frase.", eid);
+            }
+            const { data, ok, status } = await fetchJSON(auth, "POST", "/api/v1/voice/regenerate", {
               taskId: prevTaskId,
               calBackUrl: absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined,
             });
             taskId = String(data?.data?.taskId || "").trim();
-            if (!ok || !taskId) return send(res, 502, { error: "No pude generar otra frase." });
+            if (!ok || !taskId) {
+              const eid = genErrorId();
+              serverLog(eid, action, { step: "voice/regenerate", ok, status, data });
+              return clientError(502, "No pude generar otra frase.", eid);
+            }
           }
           // Guardar taskId en activación
           await auth.admin
             .from("voice_activations")
             .update({ validate_task_id: taskId, status: "processing", updated_at: nowISO() })
             .eq("id", activationId)
-            .eq("user_id", auth.user.id);
+            .eq("user_id", auth.user.id)
+            .catch((e) => { const eid = genErrorId(); serverLog(eid, action, { step: "update.validate_task_id", err: e }); });
 
           // 5. Consultar frase
           const tries = [0, 1100, 2300];
@@ -21198,7 +21283,8 @@ const lucianaVoiceHandler = (() => {
               updated_at: nowISO(),
             })
             .eq("id", activationId)
-            .eq("user_id", auth.user.id);
+            .eq("user_id", auth.user.id)
+            .catch((e) => { const eid = genErrorId(); serverLog(eid, action, { step: "update.current_validate_phrase", err: e }); });
 
           return send(res, 200, {
             ok: true,
@@ -21210,7 +21296,9 @@ const lucianaVoiceHandler = (() => {
               : "Preparando frase de verificación… actualiza en un momento.",
           });
         } catch (e) {
-          return send(res, 502, { error: "El proveedor no respondió bien.", detail: e instanceof Error ? e.message : String(e) });
+          const eid = genErrorId();
+          serverLog(eid, action, { step: "suno.full_try", err: e instanceof Error ? e.stack || String(e) : String(e) });
+          return clientError(502, "El proveedor no respondió bien.", eid);
         }
       }
 
@@ -21421,7 +21509,28 @@ const lucianaVoiceHandler = (() => {
 
       return send(res, 404, { error: "Acción desconocida." });
     } catch (e) {
-      return send(res, 500, { error: "Error interno.", detail: e instanceof Error ? e.message : String(e) });
+      const eid =
+        (typeof (e as any)?.id === "string" && String((e as any).id).startsWith("VF-"))
+          ? String((e as any).id)
+          : (() => {
+              const hh = String(new Date().getHours()).padStart(2, "0");
+              const mm = String(new Date().getMinutes()).padStart(2, "0");
+              let rnd = "";
+              try {
+                if (typeof (globalThis as any)?.crypto?.getRandomValues === "function") {
+                  const buf = new Uint8Array(3); (globalThis as any).crypto.getRandomValues(buf);
+                  rnd = Array.from(buf, (b: number) => b.toString(16).padStart(2, "0")).join("");
+                } else if (typeof require !== "undefined") rnd = require("crypto")?.randomBytes?.(3)?.toString?.("hex") || "";
+              } catch {}
+              if (!rnd) rnd = Math.random().toString(16).slice(2, 8).padEnd(6, "0");
+              return `VF-${hh}${mm}-${String(rnd).slice(0, 6)}`;
+            })();
+      try {
+        // eslint-disable-next-line no-console
+        console.error(`[${eid}] lucianaVoiceHandler action=unhandled top-level_catch`,
+          e instanceof Error ? e.stack || String(e) : String(e || ""));
+      } catch {}
+      return send(res, 500, { error: "Error interno.", error_id: eid });
     }
   };
 })();

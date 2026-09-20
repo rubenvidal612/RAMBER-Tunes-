@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Cloud,
   Eye,
   EyeOff,
@@ -19,6 +20,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RefreshCw,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -366,6 +368,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     confirmPermanentText: string;
     busy: boolean;
     lastMessage: string;
+    phraseLoading: boolean;
+    phraseRequestedAt: number | null;
+    phraseError: string;
+    phraseErrorId: string | null;
   };
   const [voiceFlow, setVoiceFlow] = useState<VoiceFlowState>({
     open: false,
@@ -381,7 +387,15 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     confirmPermanentText: '',
     busy: false,
     lastMessage: '',
+    phraseLoading: false,
+    phraseRequestedAt: null,
+    phraseError: '',
+    phraseErrorId: null,
   });
+  function setVF(patch: Partial<VoiceFlowState> | ((prev: VoiceFlowState) => VoiceFlowState)): void {
+    if (typeof patch === 'function') setVoiceFlow(patch);
+    else setVoiceFlow((prev) => ({ ...prev, ...patch }));
+  }
   const voiceFlowRef = useRef(voiceFlow);
   voiceFlowRef.current = voiceFlow;
   const voiceRefreshTimerRef = useRef<number | null>(null);
@@ -1616,9 +1630,36 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   async function vfRequestPhrase(regenerate?: boolean) {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
-    setVF((p) => ({ ...p, busy: true, step: 'phrase' }));
-    const r = await callVoiceFlow({ action: regenerate ? 'regenerate-phrase' : 'request-phrase', profileId: id }, { showError: true });
-    if (r.ok) {
+    const startedAt = Date.now();
+    setVF((p) => ({
+      ...p,
+      busy: true,
+      step: 'phrase',
+      phraseLoading: true,
+      phraseRequestedAt: startedAt,
+      phraseError: '',
+      phraseErrorId: null,
+    }));
+    try {
+      const r = await callVoiceFlow(
+        { action: regenerate ? 'regenerate-phrase' : 'request-phrase', profileId: id },
+        { showError: false }
+      );
+      if (!r.ok) {
+        const errMsg = String(((r.data as any)?.error) || r.message || 'Error al pedir la frase.');
+        const errId = String(((r.data as any)?.error_id) || ((r as any)?.error_id) || '').trim() || null;
+        setVF((p) => ({
+          ...p,
+          phraseLoading: false,
+          phraseError: errMsg,
+          phraseErrorId: errId,
+        }));
+        setToast({
+          kind: 'err',
+          text: errId ? `${errMsg} (Error ${errId})` : errMsg,
+        });
+        return;
+      }
       const phraseFromResp = String(((r.data as any)?.phrase) || '').trim();
       await refreshVoiceCurrent('phrase');
       // Si el backend aún no tiene la frase (Suno tardó más de 3.5s), reintentar c/7s hasta 42s
@@ -1630,17 +1671,49 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           try {
             const p = await refreshVoiceCurrent('phrase');
             const hasNow = p && String(p.current_phrase || '').trim();
-            if (hasNow || tries >= maxTries || !voiceFlowRef.current.selectedId || voiceFlowRef.current.step !== 'phrase') {
+            if (hasNow) {
               window.clearInterval(tryTimer);
+              setVF((prev) => ({ ...prev, phraseLoading: false, phraseError: '', phraseErrorId: null }));
+              return;
+            }
+            if (tries >= maxTries || !voiceFlowRef.current.selectedId || voiceFlowRef.current.step !== 'phrase') {
+              window.clearInterval(tryTimer);
+              setVF((prev) => ({
+                ...prev,
+                phraseLoading: false,
+                phraseError: 'La frase no se pudo preparar a tiempo. Pulsa "Volver a pedir frase" para reintentar.',
+                phraseErrorId: null,
+              }));
             }
           } catch {
-            if (tries >= maxTries) window.clearInterval(tryTimer);
+            if (tries >= maxTries) {
+              window.clearInterval(tryTimer);
+              setVF((prev) => ({
+                ...prev,
+                phraseLoading: false,
+                phraseError: 'La frase no se pudo preparar a tiempo. Pulsa "Volver a pedir frase" para reintentar.',
+                phraseErrorId: null,
+              }));
+            }
           }
         }, 7000);
+      } else {
+        // Frase llegó OK
+        setVF((prev) => ({ ...prev, phraseLoading: false, phraseError: '', phraseErrorId: null }));
       }
       void scrollToBottomNow(true);
+    } catch (errAny) {
+      const errMsg = 'Error de conexión al pedir la frase.';
+      setVF((p) => ({
+        ...p,
+        phraseLoading: false,
+        phraseError: errMsg,
+        phraseErrorId: null,
+      }));
+      setToast({ kind: 'err', text: errMsg });
+    } finally {
+      setVF((p) => ({ ...p, busy: false }));
     }
-    setVF((p) => ({ ...p, busy: false }));
   }
   async function vfSetName() {
     const id = voiceFlowRef.current.selectedId;
@@ -2815,6 +2888,128 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     );
   }
 
+  function PhraseRequestingCard({
+    voiceFlow,
+    onRetry,
+  }: {
+    voiceFlow: VoiceFlowState;
+    onRetry: () => void;
+  }) {
+    // Reloj local para mostrar "sigue cargando" vs "tarda mucho -> pulsar reintentar"
+    const [, forceTick] = useState(0);
+    useEffect(() => {
+      const t = window.setInterval(() => forceTick((n) => n + 1), 1000);
+      return () => window.clearInterval(t);
+    }, []);
+
+    const now = Date.now();
+    const startedAt = voiceFlow.phraseRequestedAt || voiceFlow.current?.created_at
+      ? new Date(voiceFlow.current?.created_at || '').getTime() || now
+      : now;
+    const secsSinceRequested = Math.max(0, Math.floor((now - startedAt) / 1000));
+    const isLoading = voiceFlow.phraseLoading || voiceFlow.busy;
+    const hasError = Boolean(voiceFlow.phraseError || voiceFlow.phraseErrorId);
+    const takesTooLong = !hasError && (secsSinceRequested >= 15 || !isLoading);
+
+    // Sub-caso 1: Error explícito (el más prioritario)
+    if (hasError) {
+      return (
+        <div style={{
+          padding: '1rem 0.9rem',
+          borderRadius: '0.95rem',
+          border: '1px solid color-mix(in srgb, #ef4444 50%, var(--border))',
+          background: isDark ? 'rgba(239,68,68,.10)' : 'rgba(239,68,68,.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.6rem',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+            <AlertTriangle className="h-4 w-4" style={{ color: '#ef4444', marginTop: '2px', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ef4444', marginBottom: '0.25rem' }}>
+                No pudimos preparar la frase.
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                {String(voiceFlow.phraseError || 'Inténtalo de nuevo en unos segundos.')}
+                {voiceFlow.phraseErrorId ? ` (Error ${voiceFlow.phraseErrorId})` : ''}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={voiceFlow.busy}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-2xl px-4 text-xs font-black w-full disabled:opacity-60"
+            style={{
+              background: 'linear-gradient(135deg, #16a34a, #10b981)',
+              color: '#fff',
+              border: '1px solid transparent',
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Volver a pedir frase de verificación
+          </button>
+        </div>
+      );
+    }
+
+    // Sub-caso 2: Sigue cargando PERO ya han pasado 15s -> recomendamos reintentar
+    if (takesTooLong) {
+      return (
+        <div style={{
+          padding: '1rem 0.9rem',
+          borderRadius: '0.95rem',
+          border: '1px solid color-mix(in srgb, var(--brand-accent) 35%, var(--border))',
+          background: isDark ? 'rgba(124,58,237,.08)' : 'rgba(124,58,237,.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.6rem',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+            <Clock className="h-4 w-4" style={{ color: 'var(--brand-accent)', marginTop: '2px', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text)', marginBottom: '0.25rem' }}>
+                Está tardando más de lo normal.
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                Puedes seguir esperando, o pulsar el botón verde para volver a solicitar la frase.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={voiceFlow.busy}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-2xl px-4 text-xs font-black w-full disabled:opacity-60"
+            style={{
+              background: 'linear-gradient(135deg, #16a34a, #10b981)',
+              color: '#fff',
+              border: '1px solid transparent',
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Volver a pedir frase de verificación
+          </button>
+        </div>
+      );
+    }
+
+    // Sub-caso 3: Menos de 15s y sin error -> loader normal "Preparando..."
+    return (
+      <div style={{
+        padding: '1.1rem 1rem',
+        borderRadius: '0.95rem',
+        border: '1px solid color-mix(in srgb, var(--brand-accent) 35%, var(--border))',
+        background: 'color-mix(in srgb, var(--brand-accent) 10%, transparent)',
+        textAlign: 'center',
+        color: 'var(--text)',
+        fontSize: '0.82rem',
+        fontWeight: 800,
+      }}>
+        <Loader2 className="h-4 w-4 animate-spin" style={{ verticalAlign: '-3px', marginRight: '0.4rem' }} />
+        Preparando la frase de verificación ✨ (solo unos segundos)
+      </div>
+    );
+  }
+
   return (
     <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot" data-chat-theme={chatTheme}>
       <header className="luciana-chat-header">
@@ -3395,21 +3590,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                       <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
                         <b style={{ color: 'var(--brand-accent)' }}>Paso 3 de 5 · Frase de verificación:</b> Generaremos una frase única para confirmar que eres tú.
                       </p>
-                      {!voiceFlow.current.current_phrase || voiceFlow.busy ? (
-                        <div style={{
-                          padding: '1.1rem 1rem',
-                          borderRadius: '0.95rem',
-                          border: '1px solid color-mix(in srgb, var(--brand-accent) 35%, var(--border))',
-                          background: 'color-mix(in srgb, var(--brand-accent) 10%, transparent)',
-                          textAlign: 'center',
-                          color: 'var(--text)',
-                          fontSize: '0.82rem',
-                          fontWeight: 800,
-                        }}>
-                          <Loader2 className="h-4 w-4 animate-spin" style={{ verticalAlign: '-3px', marginRight: '0.4rem' }} />
-                          Preparando la frase de verificación ✨ (solo unos segundos)
-                        </div>
-                      ) : (
+
+                      {/* CASO A: FRASE YA LISTA ✅ */}
+                      {voiceFlow.current.current_phrase ? (
                         <div style={{
                           padding: '1.1rem 1rem',
                           borderRadius: '0.95rem',
@@ -3433,7 +3616,13 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                             “{voiceFlow.current.current_phrase}”
                           </div>
                         </div>
+                      ) : (
+                        <PhraseRequestingCard
+                          voiceFlow={voiceFlow}
+                          onRetry={() => void vfRequestPhrase(true)}
+                        />
                       )}
+
                       {voiceFlow.uploading && voiceFlow.uploadKind === 'sample' && <VFUploadProgress voiceFlow={voiceFlow} />}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                         {voiceFlow.current.current_phrase && !voiceFlow.busy && (
