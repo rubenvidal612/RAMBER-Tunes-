@@ -19,6 +19,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RotateCcw,
   Send,
   ShieldCheck,
   Sparkles,
@@ -1397,9 +1398,32 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     }));
     return profile;
   }
-  async function startVoiceFlowWizard() {
+  async function startVoiceFlowWizard(resetStuck = true) {
     setVF((p) => ({ ...p, open: true, step: 'intro', busy: false }));
     const { list, current } = await refreshVoiceList();
+
+    // Detectar perfil STUCK: paso phrase SIN frase generada y han pasado >=2 minutos desde created_at o updated_at
+    function isStuckPhrase(profile: VoiceProfilePublic | null): boolean {
+      if (!profile) return false;
+      if (!profile.consent_given_at || !profile.sample_ready) return false;
+      if (profile.current_phrase) return false;
+      if (profile.verify_ready) return false;
+      const createdAt = profile.created_at ? new Date(profile.created_at).getTime() : Date.now();
+      const ageMs = Date.now() - createdAt;
+      return ageMs >= 2 * 60 * 1000;
+    }
+
+    // Si existe perfil actual y está STUCK en Paso 3 sin frase: resetear automáticamente si resetStuck
+    if (resetStuck && current && isStuckPhrase(current)) {
+      try { await callVoiceFlow({ action: 'hide', profileId: current.id }, { showError: false }); } catch {}
+      const r2 = await callVoiceFlow<{ profile?: VoiceProfilePublic; profileId?: string }>({ action: 'create' });
+      if (r2.ok && r2.data?.profileId) {
+        const sel = await refreshVoiceList({ selectId: r2.data.profileId });
+        if (sel.current) void scrollToBottomNow(true);
+        return;
+      }
+    }
+
     if (!list.length) {
       const r = await callVoiceFlow<{ profile?: VoiceProfilePublic; profileId?: string }>({ action: 'create' });
       if (r.ok && r.data?.profileId) {
@@ -1523,7 +1547,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       const refreshed = await refreshVoiceCurrent();
       setToast({ kind: 'ok', text: kind === 'sample' ? '🎙️ Muestra original guardada correctamente.' : '🎤 Grabación de verificación guardada.' });
       // Si es la muestra sample y ya tenemos consentimiento → pedir frase AUTOMÁTICAMENTE (no hacer click manual)
-      if (kind === 'sample' && refreshed && refreshed.consent_given_at && !refreshed.validate_phrase) {
+      if (kind === 'sample' && refreshed && refreshed.consent_given_at && !refreshed.current_phrase) {
         void vfRequestPhrase(false);
       }
       return true;
@@ -1598,14 +1622,14 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       const phraseFromResp = String(((r.data as any)?.phrase) || '').trim();
       await refreshVoiceCurrent('phrase');
       // Si el backend aún no tiene la frase (Suno tardó más de 3.5s), reintentar c/7s hasta 42s
-      if (!phraseFromResp && !voiceFlowRef.current.current?.validate_phrase) {
+      if (!phraseFromResp && !voiceFlowRef.current.current?.current_phrase) {
         let tries = 0;
         const maxTries = 6;
         const tryTimer = window.setInterval(async () => {
           tries += 1;
           try {
             const p = await refreshVoiceCurrent('phrase');
-            const hasNow = p && String(p.validate_phrase || '').trim();
+            const hasNow = p && String(p.current_phrase || '').trim();
             if (hasNow || tries >= maxTries || !voiceFlowRef.current.selectedId || voiceFlowRef.current.step !== 'phrase') {
               window.clearInterval(tryTimer);
             }
@@ -3050,15 +3074,35 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setVF((p) => ({ ...p, open: false }))}
-                      disabled={voiceFlow.busy || voiceFlow.uploading}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
-                      style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
-                    >
-                      <X className="h-3.5 w-3.5" /> Cerrar
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {voiceFlow.current && voiceFlow.step !== 'intro' && voiceFlow.step !== 'creating' && voiceFlow.step !== 'ready' && voiceFlow.step !== 'expired' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm('Cancelar este personaje y empezar uno nuevo desde cero?')) return;
+                            (async () => {
+                              const id = voiceFlowRef.current.selectedId;
+                              if (id) try { await callVoiceFlow({ action: 'hide', profileId: id }, { showError: false }); } catch {}
+                              await startVoiceFlowWizard(false);
+                            })();
+                          }}
+                          disabled={voiceFlow.busy || voiceFlow.uploading}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                          style={{ borderColor: 'color-mix(in srgb, #ef4444 40%, var(--border))', color: '#ef4444', background: 'var(--bg-elev-1)' }}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Cancelar y volver a empezar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setVF((p) => ({ ...p, open: false }))}
+                        disabled={voiceFlow.busy || voiceFlow.uploading}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
+                      >
+                        <X className="h-3.5 w-3.5" /> Cerrar
+                      </button>
+                    </div>
                   </div>
 
                   {/* Sub selector: lista personajes */}
