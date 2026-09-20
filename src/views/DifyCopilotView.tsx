@@ -1305,8 +1305,27 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       let data: any = null;
       try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
       if (opts?.showError !== false && (r.status < 200 || r.status >= 300)) {
-        const msg = data?.message || data?.error || 'No pude completar la acción en el servidor.';
-        setToast({ kind: 'err', text: msg });
+        const base = data?.message || data?.error || 'No pude completar la acción en el servidor.';
+        // Si el backend devolvió debug (diagnóstico detallado action=create), armar mensaje legible
+        // para NO tener que adivinar la causa — el usuario lo lee directo en pantalla.
+        const d: any = (data as any)?.debug || null;
+        if (d && typeof d === 'object') {
+          const parts: string[] = [];
+          parts.push(`[HTTP ${r.status}] ${base}`);
+          if (d.cause_class) parts.push(`· Causa: ${String(d.cause_class)}`);
+          if (d.kind) parts.push(`· Tipo: ${String(d.kind)}`);
+          if (d.code) parts.push(`· Código BD: ${String(d.code)}`);
+          if (d.message) parts.push(`· Mensaje: ${String(d.message)}`);
+          if (d.details) parts.push(`· Detalle: ${String(d.details)}`);
+          if (d.hint) parts.push(`· Sugerencia: ${String(d.hint)}`);
+          if (Array.isArray(d.missing_env_names) && d.missing_env_names.length) {
+            parts.push(`· Variables FALTAN en Vercel: ${d.missing_env_names.join(', ')}`);
+          }
+          if (d.insert_keys) parts.push(`· Campos INSERT enviados: ${d.insert_keys.join(', ')}`);
+          setToast({ kind: 'err', text: parts.join('\n') });
+        } else {
+          setToast({ kind: 'err', text: base });
+        }
       }
       return { ok: r.status >= 200 && r.status < 300, status: r.status, data: data as T };
     } catch (e) {

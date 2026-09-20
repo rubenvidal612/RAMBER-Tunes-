@@ -20835,19 +20835,136 @@ const lucianaVoiceHandler = (() => {
 
       // 3) create · nuevo personaje (solo lo empieza en draft, name NULL para no romper unicidad)
       if (action === "create") {
+        // ===== DIAGNÓSTICO PREVIO: identificar causa exacta sin adivinar =====
+        // 1) Confirmar variables de entorno críticas de Supabase Service Role.
+        //    (Solo reportamos NOMBRES; nunca los valores reales / secretos.)
+        const missingEnvs: string[] = [];
+        if (!process.env.SUPABASE_URL) missingEnvs.push("SUPABASE_URL");
+        if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnvs.push("SUPABASE_SERVICE_ROLE_KEY");
+        if (missingEnvs.length) {
+          return send(res, 500, {
+            error: "Falta configuración en el servidor (Service Role).",
+            debug: {
+              kind: "missing_env",
+              missing_env_names: missingEnvs,
+            },
+          });
+        }
+
+        // 2) Confirmar usuario autenticado con ID.
+        if (!auth?.user?.id) {
+          return send(res, 401, {
+            error: "No hay un usuario autenticado válido para crear el personaje.",
+            debug: {
+              kind: "missing_user_id",
+              hasAuth: Boolean(auth),
+              hasUser: Boolean(auth?.user),
+              userId: auth?.user?.id ? String(auth.user.id).slice(0, 6) + "…" : null,
+            },
+          });
+        }
+
+        // 3) Pre-check rápido: el Service Role DEBE poder hacer SELECT sobre la tabla
+        //    (prueba 1=1 LIMIT 0). Si falla aquí, ya sabemos que es RLS/privilegios/tabla no existe.
+        try {
+          const { error: probeErr } = await auth.admin
+            .from("voice_profiles")
+            .select("id")
+            .eq("id", "00000000-0000-0000-0000-000000000000")
+            .limit(1);
+          if (probeErr) {
+            return send(res, 500, {
+              error: "El servidor no puede acceder a la tabla de personajes.",
+              detail: (probeErr.message || "").toString(),
+              debug: {
+                kind: "voice_profiles_select_probe_failed",
+                code: (probeErr as any)?.code || null,
+                message: (probeErr as any)?.message || null,
+                details: (probeErr as any)?.details || null,
+                hint: (probeErr as any)?.hint || null,
+              },
+            });
+          }
+        } catch (probeExc: any) {
+          return send(res, 500, {
+            error: "Excepción al consultar la tabla de personajes.",
+            detail: probeExc instanceof Error ? probeExc.message : String(probeExc || ""),
+            debug: {
+              kind: "voice_profiles_select_probe_exception",
+            },
+          });
+        }
+
         const rawName = String(payload?.name || "").trim();
+        // Generamos ID cliente-side para evitar NOT NULL sin DEFAULT gen_random_uuid() en SQL v5.1
+        // (causa muy frecuente de fallo cuando se ejecutan scripts manuales en Supabase).
+        let uuidv4: string | null = null;
+        try {
+          if (typeof (globalThis as any).crypto !== "undefined" && typeof (globalThis as any).crypto.randomUUID === "function") {
+            uuidv4 = (globalThis as any).crypto.randomUUID();
+          } else if (typeof require !== "undefined") {
+            try { uuidv4 = require("crypto").randomUUID(); } catch {}
+          }
+        } catch {}
+        // Incluimos TODAS las columnas del modelo voice_profiles EXPLÍCITAMENTE (a NULL).
+        // Esto evita cualquier fallo por "column … is not present" o NOT NULL sin DEFAULT
+        // que haya podido introducir el SQL v5.1 manual.
         const insert: any = {
           user_id: auth.user.id,
           name: rawName ? rawName.slice(0, 50) : null,
           status: "draft",
           created_at: nowISO(),
           updated_at: nowISO(),
+          consent_given_at: null,
+          consent_version: null,
+          sample_original_r2_path: null,
+          last_verify_r2_path: null,
+          deleted_at: null,
         };
-        const { data, error } = await auth.admin.from("voice_profiles").insert(insert).select().limit(1);
-        if (error) {
-          const msg = (error.message || "").toString();
-          if (msg.includes("uq_voice_profiles_user_name_alive")) return send(res, 409, { error: "Ya tienes un personaje con ese nombre." });
-          return send(res, 500, { error: "No pude crear el personaje.", detail: msg });
+        if (uuidv4) insert.id = uuidv4;
+
+        let data: any = null;
+        let insertErr: any = null;
+        try {
+          const resI = await auth.admin.from("voice_profiles").insert(insert).select().limit(1);
+          data = resI.data;
+          insertErr = resI.error;
+        } catch (exc) {
+          insertErr = exc;
+        }
+
+        if (insertErr) {
+          // PostgREST / Supabase devuelve error con forma { code, message, details, hint }.
+          // Lo devolvemos VERBATIM en campo debug para diagnóstico exacto.
+          const code = (insertErr as any)?.code ? String((insertErr as any).code) : null;
+          const message = (insertErr as any)?.message ? String((insertErr as any).message) : null;
+          const details = (insertErr as any)?.details ? String((insertErr as any).details) : null;
+          const hint = (insertErr as any)?.hint ? String((insertErr as any).hint) : null;
+          const msg = (message || "").toString();
+          // Clasificación rápida para no tener que adivinar en el frontend.
+          let cause: string = "unknown";
+          if (code === "42P01" || /relation.*does not exist/i.test(msg + " " + (details || ""))) cause = "table_missing";
+          else if (code === "42703" || /column.*does not exist/i.test(msg + " " + (details || ""))) cause = "column_missing";
+          else if (code === "23502" || /null value in column.*not null/i.test(msg + " " + (details || ""))) cause = "not_null_violation";
+          else if (code === "42501" || /permission denied|insufficient privilege|policy/i.test(msg + " " + (details || ""))) cause = "rls_or_permissions";
+          else if (code === "23505" || /uq_voice_profiles_user_name_alive|duplicate key value violates unique constraint/.test(msg + " " + (details || ""))) cause = "unique_name_alive";
+          else if (/invalid api key|invalid signature|jwt/i.test(msg + " " + (details || ""))) cause = "invalid_service_role_jwt";
+          if (cause === "unique_name_alive") return send(res, 409, { error: "Ya tienes un personaje con ese nombre." });
+          return send(res, 500, {
+            error: "No pude crear el personaje.",
+            detail: message,
+            debug: {
+              kind: "voice_profiles_insert_failed",
+              cause_class: cause,
+              user_env_mode: missingEnvs.length ? "broken" : "present",
+              has_user_id: Boolean(auth?.user?.id),
+              insert_keys: Object.keys(insert),
+              code,
+              message,
+              details,
+              hint,
+            },
+          });
         }
         const row = (data as any[])[0];
         const { profile } = await buildPublicView(auth, row, nowMs);
