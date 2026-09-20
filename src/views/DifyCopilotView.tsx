@@ -1493,8 +1493,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       if (voiceFlowRef.current?.activeActivationId) savePayload.activationId = voiceFlowRef.current.activeActivationId;
       const save = await callVoiceFlow(savePayload, { showError: true });
       if (!save.ok) return false;
-      await refreshVoiceCurrent();
+      const refreshed = await refreshVoiceCurrent();
       setToast({ kind: 'ok', text: kind === 'sample' ? '🎙️ Muestra original guardada correctamente.' : '🎤 Grabación de verificación guardada.' });
+      // Si es la muestra sample y ya tenemos consentimiento → pedir frase AUTOMÁTICAMENTE (no hacer click manual)
+      if (kind === 'sample' && refreshed && refreshed.consent_given_at && !refreshed.validate_phrase) {
+        void vfRequestPhrase(false);
+      }
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e || 'Error');
@@ -1564,7 +1568,25 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     setVF((p) => ({ ...p, busy: true, step: 'phrase' }));
     const r = await callVoiceFlow({ action: regenerate ? 'regenerate-phrase' : 'request-phrase', profileId: id }, { showError: true });
     if (r.ok) {
+      const phraseFromResp = String(((r.data as any)?.phrase) || '').trim();
       await refreshVoiceCurrent('phrase');
+      // Si el backend aún no tiene la frase (Suno tardó más de 3.5s), reintentar c/7s hasta 42s
+      if (!phraseFromResp && !voiceFlowRef.current.current?.validate_phrase) {
+        let tries = 0;
+        const maxTries = 6;
+        const tryTimer = window.setInterval(async () => {
+          tries += 1;
+          try {
+            const p = await refreshVoiceCurrent('phrase');
+            const hasNow = p && String(p.validate_phrase || '').trim();
+            if (hasNow || tries >= maxTries || !voiceFlowRef.current.selectedId || voiceFlowRef.current.step !== 'phrase') {
+              window.clearInterval(tryTimer);
+            }
+          } catch {
+            if (tries >= maxTries) window.clearInterval(tryTimer);
+          }
+        }, 7000);
+      }
       void scrollToBottomNow(true);
     }
     setVF((p) => ({ ...p, busy: false }));
@@ -2083,9 +2105,13 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (!coverWizard && textSuggestsVoiceWizard(text)) {
       const userMsg: ChatMessage = { id: uid(), role: 'user', text, createdAt: Date.now() };
       setMessages((m) => [...m, userMsg]);
+      // Forzar orden user → assistant: esperar 1 microtick antes de insertar respuesta assistant
+      await Promise.resolve();
+      setLoading(true);
       wizardPushMessage(
         '🎙️ ¡Perfecto! Vamos a **crear tu personaje de voz** paso a paso. Cuando termine, podrás usar tu propia voz para cantar cualquier canción o cover durante 24 horas.'
       );
+      setLoading(false);
       if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
       else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
       if (textareaRef.current) textareaRef.current.value = '';
