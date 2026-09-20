@@ -20973,6 +20973,17 @@ const lucianaVoiceHandler = (() => {
         } catch { sampleSigned = ""; }
         if (!sampleSigned) return send(res, 500, { error: "No puedo preparar tu muestra con el proveedor." });
 
+        // ⚠️ Flujo oficial Suno: NUEVA frase → el usuario DEBE grabar/cantar EXACTAMENTE la frase nueva.
+        // Cualquier grabación de verificación anterior NO SIRVE (la frase cambió).
+        // NULLificamos last_verify_r2_path para forzar que UI pida grabar OTRA VEZ.
+        try {
+          await auth.admin
+            .from("voice_profiles")
+            .update({ last_verify_r2_path: null, updated_at: nowISO() })
+            .eq("id", profile.id)
+            .eq("user_id", auth.user.id);
+        } catch { /* ignore; no-romper */ }
+
         // 3. Transacción atómica: desactivar activa anterior + nueva
         const language = "es";
         const { data: newActRows, error: insErr } = await auth.admin
@@ -21248,6 +21259,16 @@ const lucianaVoiceHandler = (() => {
           .insert({ user_id: auth.user.id, voice_profile_id: profile.id, status: "pending", is_active: true, created_at: nowISO(), updated_at: nowISO() })
           .select("id").limit(1);
         const activationId = (arows as any[])?.[0]?.id;
+
+        // ⚠️ Flujo oficial Suno: CADA NUEVA activación necesita FRASE NUEVA + GRABACIÓN NUEVA.
+        // No se puede reutilizar la grabación de verificación anterior (la frase es distinta).
+        // Borramos la última ruta de verify para forzar que el UI muestre el paso "graba la frase".
+        await auth.admin
+          .from("voice_profiles")
+          .update({ last_verify_r2_path: null, updated_at: nowISO() })
+          .eq("id", profile.id)
+          .eq("user_id", auth.user.id);
+
         return send(res, 200, { ok: true, activationId, status: "esperando_frase", message: "Personaje cargado. Ahora pide la frase de verificación." });
       }
 
