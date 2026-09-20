@@ -1509,7 +1509,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (!profileId) { setToast({ kind: 'err', text: 'Primero selecciona o crea un personaje.' }); return; }
     const inp = document.createElement('input');
     inp.type = 'file';
-    inp.accept = 'audio/*,.mp3,.m4a,.wav,.ogg,.webm';
+    inp.accept = '.mp3,audio/mpeg';
     inp.onchange = async () => {
       const f = inp.files?.[0];
       if (!f) return;
@@ -3257,7 +3257,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold transition disabled:opacity-60"
                           style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
                         >
-                          <Cloud className="h-3.5 w-3.5" /> Subir audio (MP3 / WAV / M4A)
+                          <Cloud className="h-3.5 w-3.5" /> Subir audio (MP3)
                         </button>
                         <button
                           type="button"
@@ -3428,7 +3428,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold transition disabled:opacity-60"
                           style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
                         >
-                          <Cloud className="h-3.5 w-3.5" /> Subir grabación (si la grabé antes)
+                          <Cloud className="h-3.5 w-3.5" /> Subir grabación (MP3)
                         </button>
                         <button
                           type="button"
