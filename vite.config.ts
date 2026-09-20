@@ -30,13 +30,6 @@ export default defineConfig(({mode}) => {
 
   return {
     plugins: [react(), tailwindcss()],
-    build: {
-      // TEMPORAL: desactivar minificación para obtener nombres de variables reales (no Ua/Ja)
-      // Revertir después de diagnosticar el TDZ
-      minify: false,
-      sourcemap: false,
-      chunkSizeWarningLimit: 5000,
-    },
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.NEXT_PUBLIC_SITE_URL': JSON.stringify(siteUrl || env.NEXT_PUBLIC_VERCEL_URL || ''),

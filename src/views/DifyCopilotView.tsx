@@ -493,59 +493,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return () => { stopMicRecorderRef.current?.(false).catch(() => {}); };
   }, []);
 
-  // ====== Voice flow: limpiar timer al desmontar, y cargar lista al boot (cuando haya user) ======
-  useEffect(() => {
-    return () => {
-      if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
-    };
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getValidBearerToken();
-        if (!token) return;
-        if (!supabaseBrowser) return;
-        const { data: { user } } = await supabaseBrowser.auth.getUser();
-        if (!user) return;
-        if (cancelled) return;
-        const { list, current } = await refreshVoiceList();
-        if (cancelled) return;
-        // Si el personaje está en proceso "creating" al cargar, arrancar polling
-        if (current && vfStepFromProfile(current, false) === 'creating') {
-          if (voiceRefreshTimerRef.current) window.clearInterval(voiceRefreshTimerRef.current);
-          voiceRefreshTimerRef.current = window.setInterval(async () => {
-            const state = voiceFlowRef.current;
-            if (!state.selectedId || state.step !== 'creating') {
-              if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
-              return;
-            }
-            const res = await callVoiceFlow({ action: 'refresh-status', profileId: state.selectedId }, { showError: false });
-            if (res.ok) {
-              const p: VoiceProfilePublic | undefined = (res.data as any)?.profile;
-              if (p) {
-                setVF((prev) => ({
-                  ...prev,
-                  current: p,
-                  list: prev.list.map((x) => (x.id === p.id ? p : x)),
-                  step: (() => {
-                    const next = vfStepFromProfile(p, prev.open);
-                    if (next === 'ready' || next === 'expired' || next === 'verify') {
-                      if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
-                    }
-                    return next;
-                  })(),
-                }));
-              }
-            }
-          }, 12000);
-        }
-        void list;
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [callVoiceFlow, getValidBearerToken, refreshVoiceList, setVF, vfStepFromProfile]);
-
   // 2) startMicRecorder (no useCallback, llama ref.stopMicRecorderRef → no dep circular)
   // NOTA: function declaration (hoisting) para evitar TDZ "Cannot access before init" en build minificado
   async function startMicRecorder() {
@@ -1409,6 +1356,61 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       void scrollToBottomNow();
     }
   }, [callVoiceFlow, refreshVoiceList, setVF, vfStepFromProfile, scrollToBottomNow]);
+
+  // ====== Voice flow: limpiar timer al desmontar, y cargar lista al boot (cuando haya user) ======
+  // NOTA: este useEffect debe ir DESPUÉS de setVF, vfStepFromProfile, callVoiceFlow, refreshVoiceList y getValidBearerToken
+  // para evitar TDZ "Cannot access before initialization" en modo StrictMode + build minificado.
+  useEffect(() => {
+    return () => {
+      if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+    };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getValidBearerToken();
+        if (!token) return;
+        if (!supabaseBrowser) return;
+        const { data: { user } } = await supabaseBrowser.auth.getUser();
+        if (!user) return;
+        if (cancelled) return;
+        const { list, current } = await refreshVoiceList();
+        if (cancelled) return;
+        if (current && vfStepFromProfile(current, false) === 'creating') {
+          if (voiceRefreshTimerRef.current) window.clearInterval(voiceRefreshTimerRef.current);
+          voiceRefreshTimerRef.current = window.setInterval(async () => {
+            const state = voiceFlowRef.current;
+            if (!state.selectedId || state.step !== 'creating') {
+              if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+              return;
+            }
+            const res = await callVoiceFlow({ action: 'refresh-status', profileId: state.selectedId }, { showError: false });
+            if (res.ok) {
+              const p: VoiceProfilePublic | undefined = (res.data as any)?.profile;
+              if (p) {
+                setVF((prev) => ({
+                  ...prev,
+                  current: p,
+                  list: prev.list.map((x) => (x.id === p.id ? p : x)),
+                  step: (() => {
+                    const next = vfStepFromProfile(p, prev.open);
+                    if (next === 'ready' || next === 'expired' || next === 'verify') {
+                      if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+                    }
+                    return next;
+                  })(),
+                }));
+              }
+            }
+          }, 12000);
+        }
+        void list;
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [callVoiceFlow, getValidBearerToken, refreshVoiceList, setVF, vfStepFromProfile]);
+
   const uploadAudioToVoiceFlow = useCallback(async (profileId: string, kind: 'sample' | 'verify', file: File): Promise<boolean> => {
     if (!file) return false;
     if (file.size > 25 * 1024 * 1024) {
