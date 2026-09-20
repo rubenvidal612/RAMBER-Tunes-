@@ -969,12 +969,18 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
   useEffect(() => {
     let alive = true;
-    void (async () => {
+    let authUnsub: any = null;
+
+    async function runBoot(showErr = true) {
       try {
         const token = await getValidBearerToken();
-        if (!token) { setBootFailed(true); return; }
+        if (!token) {
+          if (showErr) setBootFailed(true);
+          return;
+        }
         const list = await fetchConversationList(token);
         if (!alive) return;
+        setBootFailed(false);
         setUi((p) => {
           let nextActive = p.activeConversationId;
           if (!nextActive && list.length > 0) {
@@ -1000,10 +1006,25 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           }
         }
       } catch (e) {
-        if (alive) setBootFailed(true);
+        if (alive && showErr) setBootFailed(true);
       }
-    })();
-    return () => { alive = false; };
+    }
+
+    void runBoot(true);
+
+    if (supabaseBrowser && typeof (supabaseBrowser.auth as any)?.onAuthStateChange === 'function') {
+      try {
+        const { data } = (supabaseBrowser.auth as any).onAuthStateChange((_event: any, session: any) => {
+          if (session?.user) void runBoot(true);
+        });
+        authUnsub = data?.subscription;
+      } catch {}
+    }
+
+    return () => {
+      alive = false;
+      try { authUnsub?.unsubscribe?.(); } catch {}
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
