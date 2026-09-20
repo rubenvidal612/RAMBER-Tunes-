@@ -20695,16 +20695,24 @@ const lucianaVoiceHandler = (() => {
   }
 
   async function getProfileActiveActivation(auth: any, profileId: string) {
-    const { data: rows, error } = await auth.admin
-      .from("voice_activations")
-      .select("*")
-      .eq("voice_profile_id", profileId)
-      .eq("user_id", auth.user.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
-    if (error) throw new Error("DB_ERR:" + (error.message || String(error)));
-    const alive = (rows || []).filter((r: any) => Boolean(r.is_active) && (r.expires_at == null || new Date(r.expires_at).getTime() > Date.now()));
-    return { latest: (rows || [])[0] || null, rows: rows || [], active: alive[0] || null };
+    try {
+      const { data: rows, error } = await auth.admin
+        .from("voice_activations")
+        .select("*")
+        .eq("voice_profile_id", profileId)
+        .eq("user_id", auth.user.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) {
+        return { error: new Error("DB_ERR:" + (error.message || String(error))), latest: null, rows: [], active: null };
+      }
+      const alive = (rows || []).filter((r: any) => Boolean(r.is_active) && (r.expires_at == null || new Date(r.expires_at).getTime() > Date.now()));
+      return { latest: (rows || [])[0] || null, rows: rows || [], active: alive[0] || null, error: null };
+    } catch (anyErr) {
+      // Captura TypeError: Cannot read property 'from' of undefined / etc.
+      const wrapped = anyErr instanceof Error ? anyErr : new Error(String(anyErr || "unknown"));
+      return { error: wrapped, latest: null, rows: [], active: null };
+    }
   }
 
   async function buildPublicView(auth: any, profileRow: any | null, nowMs: number = Date.now()) {
@@ -21109,35 +21117,49 @@ const lucianaVoiceHandler = (() => {
 
       // 8) request-phrase · Iniciar validación y pedir frase a Suno (con la muestra original guardada)
       if (action === "request-phrase" || action === "regenerate-phrase") {
-        if (!profileId) {
-          const eid = genErrorId();
-          return clientError(400, "Falta identificador del personaje.", eid);
-        }
-        // 1. Cargar perfil
-        const { data: pRows, error: pErr } = await auth.admin
-          .from("voice_profiles")
-          .select("*")
-          .eq("id", profileId)
-          .eq("user_id", auth.user.id)
-          .limit(1);
-        if (pErr) {
-          const eid = genErrorId();
-          serverLog(eid, action, pErr);
-          return clientError(500, "Personaje no disponible.", eid);
-        }
-        if (!pRows?.length) {
-          const eid = genErrorId();
-          return clientError(404, "Personaje no encontrado.", eid);
-        }
-        const profile = pRows[0] as any;
-        if (!profile.sample_original_r2_path) {
-          const eid = genErrorId();
-          return clientError(400, "Sube primero tu muestra de voz.", eid);
-        }
-        if (!profile.consent_given_at) {
-          const eid = genErrorId();
-          return clientError(400, "Acepta primero el consentimiento.", eid);
-        }
+        try {
+          if (!profileId) {
+            const eid = genErrorId();
+            return clientError(400, "Falta identificador del personaje.", eid);
+          }
+          const OUTER_ACTION = action;
+          // 1. Cargar perfil (protegido: TypeError Cannot read 'from' if auth.admin bad)
+          let pRows: any[] = []; let pErr: any = null;
+          try {
+            const sel = await auth.admin
+              .from("voice_profiles")
+              .select("*")
+              .eq("id", profileId)
+              .eq("user_id", auth.user.id)
+              .limit(1);
+            pRows = sel.data || []; pErr = sel.error || null;
+          } catch (anyErr) {
+            const eid = genErrorId();
+            serverLog(eid, OUTER_ACTION, {
+              step: "select.voice_profiles_throw",
+              errMessage: anyErr instanceof Error ? anyErr.message : String(anyErr),
+              errStack: anyErr instanceof Error ? anyErr.stack : undefined,
+            });
+            return clientError(500, "Personaje no disponible.", eid);
+          }
+          if (pErr) {
+            const eid = genErrorId();
+            serverLog(eid, OUTER_ACTION, { step: "select.voice_profiles_err", err: pErr });
+            return clientError(500, "Personaje no disponible.", eid);
+          }
+          if (!pRows?.length) {
+            const eid = genErrorId();
+            return clientError(404, "Personaje no encontrado.", eid);
+          }
+          const profile = pRows[0] as any;
+          if (!profile.sample_original_r2_path) {
+            const eid = genErrorId();
+            return clientError(400, "Sube primero tu muestra de voz.", eid);
+          }
+          if (!profile.consent_given_at) {
+            const eid = genErrorId();
+            return clientError(400, "Acepta primero el consentimiento.", eid);
+          }
 
         // 2. Firmar URL de la muestra para enviarla a Suno (URL FIRMADA TEMPORAL SOLAMENTE)
         //    - PRIVACIDAD CRÍTICA: audios biométricos NUNCA públicos.
@@ -21313,8 +21335,26 @@ const lucianaVoiceHandler = (() => {
           });
         } catch (e) {
           const eid = genErrorId();
-          serverLog(eid, action, { step: "suno.full_try", err: e instanceof Error ? e.stack || String(e) : String(e) });
+          serverLog(eid, OUTER_ACTION, { step: "suno.full_try", err: e instanceof Error ? e.stack || String(e) : String(e) });
           return clientError(502, "El proveedor no respondió bien.", eid);
+        }
+        } catch (outerErr) {
+          // Catch EXTERNO de request-phrase / regenerate-phrase:
+          // Captura CUALQUIER throw síncrono/permiso no controlado (TypeError Cannot read 'from' de auth.admin, undefined vars, etc.)
+          // para que NUNCA caiga en el catch top genérico "Error interno."
+          const eid = genErrorId();
+          try {
+            // eslint-disable-next-line no-console
+            console.error(`[${eid}] lucianaVoiceHandler action=${OUTER_ACTION} step=outer_request_phrase_catch`,
+              outerErr instanceof Error ? outerErr.stack || String(outerErr) : String(outerErr || ""));
+          } catch {}
+          serverLog(eid, OUTER_ACTION, {
+            step: "outer_request_phrase_catch",
+            errMessage: outerErr instanceof Error ? outerErr.message : String(outerErr),
+            errStack: outerErr instanceof Error ? outerErr.stack : undefined,
+            toString: String(outerErr || ""),
+          });
+          return clientError(500, "No pudimos preparar tu solicitud en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
         }
       }
 
@@ -21562,10 +21602,19 @@ const lucianaVoiceHandler = (() => {
             })();
       try {
         // eslint-disable-next-line no-console
-        console.error(`[${eid}] lucianaVoiceHandler action=unhandled top-level_catch`,
-          e instanceof Error ? e.stack || String(e) : String(e || ""));
-      } catch {}
-      return send(res, 500, { error: "Error interno.", error_id: eid });
+        console.error(`[${eid}] lucianaVoiceHandler action=${String((action as any) || "unknown")} step=top_catch_unhandled`,
+          JSON.stringify({
+            step: "top_catch_unhandled",
+            errConstructor: e instanceof Error ? e.constructor.name : typeof e,
+            errMessage: e instanceof Error ? e.message : String(e || ""),
+            errStack: e instanceof Error ? e.stack : undefined,
+            errToString: String(e || ""),
+          }, (k, v) => (v === undefined ? null : typeof v === "bigint" ? String(v) : v), 2).slice(0, 4000));
+      } catch {
+        // eslint-disable-next-line no-console
+        try { console.error(`[${eid}] lucianaVoiceHandler action=unknown step=top_catch_unhandled`, e instanceof Error ? e.stack || String(e) : String(e || "")); } catch {}
+      }
+      return send(res, 500, { error: "No pudimos procesar tu petición. Inténtalo de nuevo o contacta a soporte.", error_id: eid });
     }
   };
 })();
