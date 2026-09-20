@@ -20602,6 +20602,696 @@ const chatHandler = (() => {
   };
 })();
 
+// ============================================================
+// LUCIANA VOICE FLOW · PERSONAJE PERMANENTE + ACTIVACIONES 24h
+// TODO acceso es exclusivamente por este endpoint.
+// RLS: 0 políticas = navegador no lee nada directo; solo Service Role.
+// ============================================================
+const lucianaVoiceHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+  function pickBody(p: any, keys: string[]) {
+    const o: any = {};
+    for (const k of keys) if (p != null && k in p) o[k] = p[k];
+    return o;
+  }
+  function nowISO() { return new Date().toISOString(); }
+  function addHoursISO(h: number) { const d = new Date(); d.setHours(d.getHours() + h); return d.toISOString(); }
+
+  // Texto consentimiento (versionado; guardamos consent_version con la aceptación)
+  const CONSENT_VERSION = "v1-es-20260919";
+  const CONSENT_TEXT =
+    "Confirmo que esta es mi voz o que tengo autorización explícita para usarla.";
+
+  // Cobro real por activación (igual a CREDIT_COSTS.clone_voice; NO cambiar)
+  const ACTIVATION_COST = CREDIT_COSTS?.clone_voice ?? 15;
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") { try { return JSON.parse(req.body); } catch { return null; } }
+    return req.body ?? null;
+  }
+
+  async function requireAuth(req: any) {
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+    const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Falta configuración de Supabase." };
+    }
+    const authHeader = (req.headers.authorization || req.headers.Authorization || "").toString();
+    const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado." };
+    const createClient = await getSupabaseCreateClient();
+    const sbAnon = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data, error } = await sbAnon.auth.getUser(token);
+    if (error || !data?.user) return { ok: false as const, status: 401, error: "Sesión inválida." };
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user: data.user, admin };
+  }
+
+  // Reutiliza handlers Suno existentes como funciones internas con stub req/res.
+  async function callSunoAdmin<T = any>(auth: any, handlerName: string, payload: any, query: any = {}): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const headers: any = {};
+      const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+      if (supabaseService) headers["Authorization"] = `Bearer ${supabaseService}`;
+      const params = new URLSearchParams();
+      params.set("action", handlerName);
+      for (const k of Object.keys(query || {})) params.set(k, query[k]);
+      const url = `${process.env.SUNO_API_BASE || "https://sunoapiorg.redpandaai.co"}/api/v1/${handlerName}?${params.toString()}`;
+      const hasBody = payload != null && typeof payload === "object" && Object.keys(payload).length > 0;
+      fetch(url, {
+        method: hasBody ? "POST" : "GET",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: hasBody ? JSON.stringify(payload) : undefined,
+      }).then(async (r) => {
+        const text = await r.text();
+        let data: any = null;
+        try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+        resolve(data as any);
+      }).catch(reject);
+    });
+  }
+
+  async function fetchJSON(auth: any, method: "GET" | "POST", apiPath: string, payload?: any) {
+    const sunoBase = (process.env.SUNO_API_BASE || process.env.SUNO_KEY_BASE || "https://sunoapiorg.redpandaai.co").toString().replace(/\/+$/, "");
+    const url = `${sunoBase}${apiPath.startsWith("/") ? "" : "/"}${apiPath}`;
+    const opts: any = {
+      method,
+      headers: { "content-type": "application/json", Accept: "application/json" },
+    };
+    const sKey = (process.env.SUNO_API_KEY || process.env.SUNO_KEY || "").toString().trim();
+    if (sKey) opts.headers.Authorization = `Bearer ${sKey}`;
+    if (method === "POST" && payload != null) opts.body = JSON.stringify(payload);
+    const r = await fetch(url, opts);
+    const text = await r.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { _raw: text }; }
+    return { ok: r.ok, status: r.status, data, text };
+  }
+
+  async function getProfileActiveActivation(auth: any, profileId: string) {
+    const { data: rows, error } = await auth.admin
+      .from("voice_activations")
+      .select("*")
+      .eq("voice_profile_id", profileId)
+      .eq("user_id", auth.user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) throw new Error("DB_ERR:" + (error.message || String(error)));
+    const alive = (rows || []).filter((r: any) => Boolean(r.is_active) && (r.expires_at == null || new Date(r.expires_at).getTime() > Date.now()));
+    return { latest: (rows || [])[0] || null, rows: rows || [], active: alive[0] || null };
+  }
+
+  async function buildPublicView(auth: any, profileRow: any | null, nowMs: number = Date.now()) {
+    if (!profileRow) return { profile: null };
+    const { active, latest } = await getProfileActiveActivation(auth, profileRow.id);
+
+    // Estado general del personaje para el cliente (sin taskIds, sin voiceId, sin rutas privadas)
+    let state:
+      | "draft"
+      | "esperando_consentimiento"
+      | "esperando_muestra"
+      | "esperando_frase"
+      | "esperando_grabacion_verificacion"
+      | "esperando_nombre"
+      | "esperando_confirmacion_costo"
+      | "creando"
+      | "listo"
+      | "vencido"
+      | "fallo_verificacion"
+      | "oculto";
+
+    if (profileRow.deleted_at) state = "oculto";
+    else if (!profileRow.consent_given_at) state = "esperando_consentimiento";
+    else if (!profileRow.sample_original_r2_path) state = "esperando_muestra";
+    else if (active && active.status === "failed_verify") state = "fallo_verificacion";
+    else if (active && active.status === "processing") {
+      state = (active.voice_check_task_id && active.suno_voice_id) ? "creando" :
+              (active.voice_generate_task_id ? "creando" :
+               active.validate_task_id && !active.current_validate_phrase ? "esperando_frase" :
+               active.current_validate_phrase && !profileRow.last_verify_r2_path ? "esperando_grabacion_verificacion" :
+               active.current_validate_phrase && profileRow.last_verify_r2_path && !profileRow.name ? "esperando_nombre" :
+               active.current_validate_phrase && profileRow.last_verify_r2_path && profileRow.name ? "esperando_confirmacion_costo" :
+               "creando");
+    } else if (active && active.status === "ready") {
+      state = new Date(active.expires_at).getTime() > nowMs ? "listo" : "vencido";
+    } else if (latest && latest.status === "failed_verify") state = "fallo_verificacion";
+    else {
+      // Sin actividad activa; determinar por campos
+      state =
+        profileRow.status === "failed_verify" ? "fallo_verificacion" :
+        !profileRow.sample_original_r2_path ? "esperando_muestra" :
+        !profileRow.last_verify_r2_path ? (latest && latest.current_validate_phrase ? "esperando_grabacion_verificacion" : "esperando_frase") :
+        !profileRow.name ? "esperando_nombre" :
+        "esperando_confirmacion_costo";
+    }
+
+    return {
+      profile: {
+        id: profileRow.id,
+        name: profileRow.name || null,
+        status: state,
+        created_at: profileRow.created_at,
+        updated_at: profileRow.updated_at,
+        expires_at: active?.expires_at || null,
+        sample_ready: Boolean(profileRow.sample_original_r2_path),
+        verify_ready: Boolean(profileRow.last_verify_r2_path),
+        current_phrase: (active && active.current_validate_phrase) || (latest && latest.current_validate_phrase) || null,
+        is_active: Boolean(active),
+        cost_for_next_activation: ACTIVATION_COST,
+      },
+    };
+  }
+
+  async function ensureSongBalance(auth: any, costCents: number) {
+    // Usa mismo flujo de ensureCanAffirm + consumeSongCreditByKind existente (reimplementado light)
+    const { data: balRows, error: err1 } = await auth.admin
+      .from("credit_batches")
+      .select("*")
+      .eq("user_id", auth.user.id)
+      .order("created_at", { ascending: true });
+    if (err1) throw new Error("balance_err");
+    const rows: any[] = (balRows || []).filter((b: any) => (b.remaining_songs == null ? true : Number(b.remaining_songs) > 0));
+    const total = rows.reduce((acc, r) => acc + Number(r.remaining_credits ?? r.remaining_songs ?? 0), 0);
+    if (total < costCents) return { ok: false, message: `Te faltan créditos. (Tienes ${total} y necesitas ${costCents}).` };
+    // Consumir de las filas FIFO
+    let pending = costCents;
+    for (const r of rows) {
+      if (pending <= 0) break;
+      const remaining = Number(r.remaining_credits ?? r.remaining_songs ?? 0);
+      if (remaining <= 0) continue;
+      const take = Math.min(remaining, pending);
+      const upd = {
+        remaining_credits: remaining - take,
+        remaining_songs: (r.remaining_songs != null) ? (Number(r.remaining_songs) - take) : undefined,
+        updated_at: nowISO(),
+      };
+      if (upd.remaining_songs === undefined) delete upd.remaining_songs;
+      await auth.admin.from("credit_batches").update(upd).eq("id", r.id);
+      pending -= take;
+    }
+    await auth.admin.from("user_stats").upsert([
+      { user_id: auth.user.id, credit_balance: Math.max(0, total - costCents), updated_at: nowISO() },
+    ], { onConflict: "user_id", ignoreDuplicates: false });
+    return { ok: true };
+  }
+
+  async function chargeActivationIdempotent(auth: any, activationId: string) {
+    const { data: rows, error } = await auth.admin
+      .from("voice_activations")
+      .select("id, cost_charged, voice_generate_task_id")
+      .eq("id", activationId)
+      .eq("user_id", auth.user.id)
+      .limit(1);
+    if (error || !rows?.length) return { ok: false, message: "No encontré la activación." };
+    const row = rows[0] as any;
+    if (Number(row.cost_charged || 0) > 0) return { ok: true, already: true }; // idempotencia
+    const balOk = await ensureSongBalance(auth, ACTIVATION_COST);
+    if (!balOk.ok) return { ok: false, message: balOk.message || "Saldo insuficiente." };
+    // Intentar marcar cost_charged (segundo nivel idempotente)
+    const { error: upErr } = await auth.admin
+      .from("voice_activations")
+      .update({ cost_charged: ACTIVATION_COST, updated_at: nowISO() })
+      .eq("id", activationId)
+      .eq("user_id", auth.user.id)
+      .lt("cost_charged", 1);
+    if (upErr) return { ok: false, message: "No pude procesar el cobro. Intenta de nuevo." };
+    return { ok: true };
+  }
+
+  return async function handler(req: any, res: any) {
+    try {
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido." });
+
+      const auth = await requireAuth(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+      const payload = parseJsonBody(req);
+      if (!payload || typeof payload !== "object") return send(res, 400, { error: "Body inválido." });
+
+      const action = String(payload?.action || "").trim();
+      const profileId = String(payload?.profileId || payload?.profile_id || "").trim();
+
+      const nowMs = Date.now();
+
+      // 1) list · mis personajes
+      if (action === "list") {
+        const { data: rows, error } = await auth.admin
+          .from("voice_profiles")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(20);
+        if (error) return send(res, 500, { error: "No pude listar tus personajes." });
+        const items = [];
+        for (const r of rows || []) {
+          const { profile } = await buildPublicView(auth, r, nowMs);
+          items.push(profile);
+        }
+        return send(res, 200, { ok: true, profiles: items });
+      }
+
+      // 2) get · un solo personaje
+      if (action === "get") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const { data: rows, error } = await auth.admin
+          .from("voice_profiles")
+          .select("*")
+          .eq("id", profileId)
+          .eq("user_id", auth.user.id)
+          .limit(1);
+        if (error || !rows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        const { profile } = await buildPublicView(auth, rows[0], nowMs);
+        return send(res, 200, { ok: true, profile });
+      }
+
+      // 3) create · nuevo personaje (solo lo empieza en draft)
+      if (action === "create") {
+        const insert: any = {
+          user_id: auth.user.id,
+          name: (String(payload?.name || "").trim() || "Nuevo personaje").slice(0, 50),
+          status: "draft",
+          created_at: nowISO(),
+          updated_at: nowISO(),
+        };
+        const { data, error } = await auth.admin.from("voice_profiles").insert(insert).select().limit(1);
+        if (error) {
+          const msg = (error.message || "").toString();
+          if (msg.includes("uq_voice_profiles_user_name_alive")) return send(res, 409, { error: "Ya tienes un personaje con ese nombre." });
+          return send(res, 500, { error: "No pude crear el personaje.", detail: msg });
+        }
+        const row = (data as any[])[0];
+        const { profile } = await buildPublicView(auth, row, nowMs);
+        return send(res, 200, { ok: true, profile });
+      }
+
+      // 4) accept-consent
+      if (action === "accept-consent") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        if (payload?.accepted !== true && String(payload?.accepted || "").toLowerCase() !== "si") {
+          return send(res, 400, { error: "Debes aceptar el consentimiento." });
+        }
+        const { error } = await auth.admin
+          .from("voice_profiles")
+          .update({ consent_given_at: nowISO(), consent_version: CONSENT_VERSION, updated_at: nowISO() })
+          .eq("id", profileId)
+          .eq("user_id", auth.user.id);
+        if (error) return send(res, 500, { error: "No pude guardar el consentimiento." });
+        return send(res, 200, { ok: true, message: "Consentimiento guardado. Puedes continuar." });
+      }
+
+      // 5) signed-upload-urls (sample y verify)
+      //    Devuelve URLs firmadas de SUBIDA (PUT) y el R2 path privado a guardar.
+      if (action === "get-upload-url") {
+        const kind = String(payload?.kind || "").trim();
+        if (!["sample", "verify"].includes(kind)) return send(res, 400, { error: "Tipo inválido." });
+        const extension = String(payload?.extension || payload?.ext || "webm").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "webm";
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const actId = String(payload?.activationId || "").trim();
+        const rand = Math.random().toString(36).slice(2, 8);
+        const path = kind === "sample"
+          ? `voice_profiles/${auth.user.id}/${profileId}/sample_original.${rand}.${extension}`
+          : `voice_profiles/${auth.user.id}/${profileId}/verify_${actId || "new"}.${rand}.${extension}`;
+
+        const R2_ACCOUNT = (process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || "").toString().trim();
+        const R2_ACCESS = (process.env.R2_ACCESS || process.env.CLOUDFLARE_R2_ACCESS || "").toString().trim();
+        const R2_SECRET = (process.env.R2_SECRET || process.env.CLOUDFLARE_R2_SECRET || "").toString().trim();
+        const R2_BUCKET = (process.env.R2_BUCKET || "ramber-tunes-audio").toString().trim();
+        if (!R2_ACCOUNT || !R2_ACCESS || !R2_SECRET) return send(res, 500, { error: "Storage no configurado." });
+
+        // Obtener PUT signed via S3 presign. Usar librería nativa si existe.
+        try {
+          if (typeof getSignedR2PutUrl === "function") {
+            const putUrl = await (getSignedR2PutUrl as any)(path, 30 * 60);
+            return send(res, 200, { ok: true, upload_url: putUrl, r2_path: path });
+          }
+        } catch { /* fallthrough */ }
+        return send(res, 500, { error: "No puedo generar la URL de subida." });
+      }
+
+      // 6) save-sample-path · guarda el path R2 de la muestra original (permanente)
+      if (action === "save-sample-path") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const r2Path = String(payload?.r2_path || payload?.r2Path || "").trim();
+        if (!r2Path) return send(res, 400, { error: "Falta la ruta del audio." });
+        const { error } = await auth.admin
+          .from("voice_profiles")
+          .update({ sample_original_r2_path: r2Path, updated_at: nowISO() })
+          .eq("id", profileId)
+          .eq("user_id", auth.user.id);
+        if (error) return send(res, 500, { error: "No pude guardar la muestra." });
+        return send(res, 200, { ok: true, message: "Muestra original guardada." });
+      }
+
+      // 7) save-verify-path · guarda el path R2 de la grabación de la frase
+      if (action === "save-verify-path") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const r2Path = String(payload?.r2_path || payload?.r2Path || "").trim();
+        const actId = String(payload?.activationId || "").trim();
+        if (!r2Path) return send(res, 400, { error: "Falta ruta de grabación." });
+        const { error } = await auth.admin
+          .from("voice_profiles")
+          .update({ last_verify_r2_path: r2Path, updated_at: nowISO() })
+          .eq("id", profileId)
+          .eq("user_id", auth.user.id);
+        if (error) return send(res, 500, { error: "No pude guardar la grabación." });
+        if (actId) {
+          // Registrar también en la activación por si acaso.
+          await auth.admin.from("voice_activations").update({ updated_at: nowISO() }).eq("id", actId).eq("user_id", auth.user.id).catch(() => {});
+        }
+        return send(res, 200, { ok: true, message: "Grabación de verificación guardada." });
+      }
+
+      // 8) request-phrase · Iniciar validación y pedir frase a Suno (con la muestra original guardada)
+      if (action === "request-phrase" || action === "regenerate-phrase") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        // 1. Cargar perfil
+        const { data: pRows, error: pErr } = await auth.admin
+          .from("voice_profiles")
+          .select("*")
+          .eq("id", profileId)
+          .eq("user_id", auth.user.id)
+          .limit(1);
+        if (pErr || !pRows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        const profile = pRows[0] as any;
+        if (!profile.sample_original_r2_path) return send(res, 400, { error: "Sube primero tu muestra de voz." });
+        if (!profile.consent_given_at) return send(res, 400, { error: "Acepta primero el consentimiento." });
+
+        // 2. Firmar URL de la muestra para enviarla a Suno (2 horas vida)
+        let sampleSigned = "";
+        try {
+          if (typeof getSignedR2Url === "function") sampleSigned = await getSignedR2Url(profile.sample_original_r2_path, 60 * 60 * 2);
+        } catch { sampleSigned = ""; }
+        if (!sampleSigned) return send(res, 500, { error: "No puedo preparar tu muestra con el proveedor." });
+
+        // 3. Transacción atómica: desactivar activa anterior + nueva
+        const language = "es";
+        const { data: newActRows, error: insErr } = await auth.admin
+          .rpc("voice_start_new_activation", {
+            p_profile_id: profile.id,
+            p_user_id: auth.user.id,
+          })
+          .catch(() => ({ data: null, error: null }));
+        let activationId: string | null = (newActRows as any)?.[0]?.id || null;
+
+        // Fallback sin stored procedure
+        if (!activationId) {
+          try {
+            await auth.admin
+              .from("voice_activations")
+              .update({ is_active: false, updated_at: nowISO() })
+              .eq("voice_profile_id", profile.id)
+              .eq("user_id", auth.user.id)
+              .eq("is_active", true);
+          } catch { /* ignore; unique index lo protege */ }
+          const { data: arows, error: aerr } = await auth.admin
+            .from("voice_activations")
+            .insert({
+              user_id: auth.user.id,
+              voice_profile_id: profile.id,
+              status: action === "regenerate-phrase" ? "processing" : "pending",
+              is_active: true,
+              created_at: nowISO(),
+              updated_at: nowISO(),
+            })
+            .select("id")
+            .limit(1);
+          if (aerr) return send(res, 500, { error: "No puedo iniciar la validación. Intenta de nuevo." });
+          activationId = (arows as any[])?.[0]?.id || null;
+        }
+        if (!activationId) return send(res, 500, { error: "No se pudo preparar la validación." });
+
+        // 4. Llamar Suno
+        let taskId = "";
+        let phrase = "";
+        try {
+          if (action === "request-phrase") {
+            const callback = absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined;
+            const { data, ok, status } = await fetchJSON(auth, "POST", "/api/v1/voice/validate", {
+              sampleUrl: sampleSigned,
+              language,
+              callBackUrl: callback,
+            });
+            taskId = String(data?.data?.taskId || "").trim();
+            if (!ok || !taskId) return send(res, 502, { error: "El proveedor no respondió la validación." });
+          } else {
+            // regenerate-phrase
+            const prevTaskId = String(payload?.taskId || "").trim();
+            if (!prevTaskId) return send(res, 400, { error: "Falta taskId para regenerar." });
+            const { data, ok } = await fetchJSON(auth, "POST", "/api/v1/voice/regenerate", {
+              taskId: prevTaskId,
+              calBackUrl: absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined,
+            });
+            taskId = String(data?.data?.taskId || "").trim();
+            if (!ok || !taskId) return send(res, 502, { error: "No pude generar otra frase." });
+          }
+          // Guardar taskId en activación
+          await auth.admin
+            .from("voice_activations")
+            .update({ validate_task_id: taskId, status: "processing", updated_at: nowISO() })
+            .eq("id", activationId)
+            .eq("user_id", auth.user.id);
+
+          // 5. Consultar frase
+          const tries = [0, 1100, 2300];
+          for (let i = 0; i < tries.length; i++) {
+            if (i > 0) await new Promise((r) => setTimeout(r, tries[i]));
+            const { data: vinfo, ok } = await fetchJSON(auth, "GET", `/api/v1/voice/validate-info?taskId=${encodeURIComponent(taskId)}`);
+            const status = String(vinfo?.data?.status || "").toLowerCase();
+            const validateInfo = String(vinfo?.data?.validateInfo || "").trim();
+            if (validateInfo) { phrase = validateInfo; break; }
+            if (status === "wait_validating" && validateInfo) phrase = validateInfo;
+            if (status === "failed" || status === "error") break;
+          }
+
+          await auth.admin
+            .from("voice_activations")
+            .update({
+              validate_task_id: taskId,
+              current_validate_phrase: phrase || null,
+              status: phrase ? "awaiting_verify" : "processing",
+              updated_at: nowISO(),
+            })
+            .eq("id", activationId)
+            .eq("user_id", auth.user.id);
+
+          return send(res, 200, {
+            ok: true,
+            activationId,
+            phrase: phrase || null,
+            status: phrase ? "esperando_grabacion_verificacion" : "creando",
+            message: phrase
+              ? "Frase lista. Grábala tal cual está escrita."
+              : "Preparando frase de verificación… actualiza en un momento.",
+          });
+        } catch (e) {
+          return send(res, 502, { error: "El proveedor no respondió bien.", detail: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // 9) set-name · nombre del personaje (antes de confirmar costo)
+      if (action === "set-name") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const name = String(payload?.name || "").trim().slice(0, 50);
+        if (!name) return send(res, 400, { error: "Dale un nombre al personaje." });
+        const { error } = await auth.admin
+          .from("voice_profiles")
+          .update({ name, updated_at: nowISO() })
+          .eq("id", profileId)
+          .eq("user_id", auth.user.id);
+        if (error) {
+          const msg = (error.message || "").toString();
+          if (msg.includes("uq_voice_profiles_user_name_alive")) return send(res, 409, { error: "Ya tienes un personaje con ese nombre." });
+          return send(res, 500, { error: "No pude cambiar el nombre." });
+        }
+        return send(res, 200, { ok: true, message: `Nombre guardado: ${name}.` });
+      }
+
+      // 10) confirm-create · cobra y crea la voz en Suno (GRABAR + voice/generate)
+      if (action === "confirm-create") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const { data: pRows, error: pErr } = await auth.admin
+          .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
+        if (pErr || !pRows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        const profile = pRows[0] as any;
+        if (!profile.consent_given_at) return send(res, 400, { error: "Acepta el consentimiento." });
+        if (!profile.sample_original_r2_path) return send(res, 400, { error: "Sube tu muestra de voz." });
+        if (!profile.last_verify_r2_path) return send(res, 400, { error: "Graba la frase de verificación." });
+        const name = String(profile.name || "").trim().slice(0, 50);
+        if (!name) return send(res, 400, { error: "Ponle nombre al personaje." });
+
+        // Obtener activación activa o última
+        const { active, latest } = await getProfileActiveActivation(auth, profile.id);
+        const source: any = active || latest;
+        if (!source) return send(res, 400, { error: "Pide la frase de verificación primero." });
+        if (!source.validate_task_id) return send(res, 400, { error: "Pide la frase de verificación primero." });
+        if (!source.current_validate_phrase) return send(res, 400, { error: "La frase de verificación aún no está lista." });
+
+        // Cobro 15 créditos (idempotente; si ya se cobró, no cobra 2)
+        const charge = await chargeActivationIdempotent(auth, source.id);
+        if (!charge.ok) return send(res, 402, { error: charge.message || "No puedo procesar el pago." });
+
+        // Firmar verifyUrl para Suno voice/generate
+        let verifySigned = "";
+        try {
+          if (typeof getSignedR2Url === "function") verifySigned = await getSignedR2Url(profile.last_verify_r2_path, 60 * 60 * 2);
+        } catch { verifySigned = ""; }
+        if (!verifySigned) return send(res, 500, { error: "No puedo preparar la grabación de verificación." });
+
+        const callback = absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined;
+        const voiceGeneratePayload: any = {
+          taskId: source.validate_task_id,
+          verifyUrl: verifySigned,
+          voiceName: name,
+          callBackUrl: callback,
+        };
+        const { data, ok, status } = await fetchJSON(auth, "POST", "/api/v1/voice/generate", voiceGeneratePayload);
+        const generateTaskId = String(data?.data?.taskId || "").trim();
+        if (!ok || !generateTaskId) return send(res, 502, { error: "El proveedor no pudo crear la voz." });
+        await auth.admin
+          .from("voice_activations")
+          .update({ voice_generate_task_id: generateTaskId, status: "processing", updated_at: nowISO() })
+          .eq("id", source.id)
+          .eq("user_id", auth.user.id);
+
+        return send(res, 200, {
+          ok: true,
+          activationId: source.id,
+          status: "creando",
+          cost_charged: ACTIVATION_COST,
+          message: "Estoy creando tu personaje de voz 🎙️ Puede tardar un momento. Actualiza en unos segundos.",
+        });
+      }
+
+      // 11) refresh-status · polling (backend consulta a Suno; NUNCA pongas polling agresivo; intervalo > 12s)
+      if (action === "refresh-status") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const { data: pRows, error: pErr } = await auth.admin
+          .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
+        if (pErr || !pRows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        const profile = pRows[0] as any;
+
+        const { active, latest } = await getProfileActiveActivation(auth, profile.id);
+        const src: any = active || latest;
+        if (!src) return send(res, 200, await buildPublicView(auth, profile));
+
+        // 1. Si tenemos voice_generate_task_id PERO NO voice_record_task_id, consultar record-info hasta obtener voiceId
+        if (src.voice_generate_task_id && !src.voice_record_task_id) {
+          try {
+            const { data: rinfo } = await fetchJSON(auth, "GET",
+              `/api/v1/voice/record-info?taskId=${encodeURIComponent(src.voice_generate_task_id)}`);
+            const voiceId = String(rinfo?.data?.voiceId || "").trim();
+            const status = String(rinfo?.data?.status || "").toLowerCase();
+            const upd: any = { updated_at: nowISO() };
+            if (voiceId) { upd.suno_voice_id = voiceId; upd.voice_record_task_id = src.voice_generate_task_id; }
+            if (status === "failed" || status === "error") upd.status = "failed_generate";
+            if (Object.keys(upd).length > 1) {
+              await auth.admin.from("voice_activations").update(upd).eq("id", src.id).eq("user_id", auth.user.id);
+            }
+          } catch { /* ignore */ }
+        }
+
+        // 2. Si tenemos suno_voice_id PERO NO is_active=true y NO ready, llamar check-voice
+        const src2: any = (await getProfileActiveActivation(auth, profile.id)).active
+                      || (await getProfileActiveActivation(auth, profile.id)).latest;
+        if (src2?.suno_voice_id) {
+          try {
+            const { data: cv } = await fetchJSON(auth, "POST", "/api/v1/voice/check-voice", { task_id: src2.voice_record_task_id || src2.voice_generate_task_id || src2.suno_voice_id });
+            const isAvailable = Boolean(cv?.data?.isAvailable);
+            if (isAvailable) {
+              const now = nowISO();
+              // Actualizar actividad a ready + expires 24h. Y si hubiera otra activa, desactivar (filtro unique).
+              try {
+                await auth.admin.from("voice_activations")
+                  .update({ is_active: false, updated_at: now })
+                  .eq("voice_profile_id", profile.id).eq("user_id", auth.user.id).neq("id", src2.id).eq("is_active", true);
+              } catch { /* unique index protege */ }
+              await auth.admin.from("voice_activations")
+                .update({
+                  status: "ready",
+                  is_active: true,
+                  expires_at: addHoursISO(24),
+                  voice_check_task_id: src2.voice_record_task_id || src2.voice_generate_task_id || null,
+                  updated_at: now,
+                })
+                .eq("id", src2.id).eq("user_id", auth.user.id);
+              await auth.admin.from("voice_profiles").update({ status: "ready", updated_at: now }).eq("id", profile.id).eq("user_id", auth.user.id);
+            } else {
+              const status = String(cv?.data?.status || "").toLowerCase();
+              if (status === "failed" || status === "error" || cv?.data?.errorMessage) {
+                await auth.admin
+                  .from("voice_activations")
+                  .update({ status: "failed_verify", updated_at: nowISO() })
+                  .eq("id", src2.id).eq("user_id", auth.user.id);
+                await auth.admin.from("voice_profiles").update({ status: "failed_verify", updated_at: nowISO() })
+                  .eq("id", profile.id).eq("user_id", auth.user.id);
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        return send(res, 200, await buildPublicView(auth, profile));
+      }
+
+      // 12) reactivate · crear nueva activación usando la muestra original guardada
+      if (action === "reactivate") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const { data: pRows } = await auth.admin
+          .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
+        if (!pRows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        const profile = pRows[0] as any;
+        if (!profile.sample_original_r2_path) return send(res, 400, { error: "Primero sube una muestra original." });
+
+        try { // desactivar previa activa
+          await auth.admin.from("voice_activations").update({ is_active: false, updated_at: nowISO() })
+            .eq("voice_profile_id", profile.id).eq("user_id", auth.user.id).eq("is_active", true);
+        } catch { /* unique protege */ }
+        const { data: arows } = await auth.admin.from("voice_activations")
+          .insert({ user_id: auth.user.id, voice_profile_id: profile.id, status: "pending", is_active: true, created_at: nowISO(), updated_at: nowISO() })
+          .select("id").limit(1);
+        const activationId = (arows as any[])?.[0]?.id;
+        return send(res, 200, { ok: true, activationId, status: "esperando_frase", message: "Personaje cargado. Ahora pide la frase de verificación." });
+      }
+
+      // 13) hide (soft delete) vs delete-permanent (confirmado en UI 2 pasos)
+      if (action === "hide") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        await auth.admin
+          .from("voice_profiles").update({ deleted_at: nowISO(), updated_at: nowISO() })
+          .eq("id", profileId).eq("user_id", auth.user.id);
+        return send(res, 200, { ok: true, message: "Personaje ocultado. Puedes pedirme que lo recupere." });
+      }
+      if (action === "delete-permanently") {
+        if (!profileId) return send(res, 400, { error: "Falta profileId." });
+        const confirm = String(payload?.confirm || "").trim();
+        if (confirm !== "ELIMINAR_PERMANENTEMENTE") return send(res, 400, { error: "Confirmación requerida." });
+        const { data: rows, error } = await auth.admin
+          .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
+        if (error || !rows?.length) return send(res, 404, { error: "Personaje no encontrado." });
+        const profile = rows[0] as any;
+
+        const toDelete: string[] = [];
+        if (profile.sample_original_r2_path) toDelete.push(profile.sample_original_r2_path);
+        if (profile.last_verify_r2_path) toDelete.push(profile.last_verify_r2_path);
+        if (toDelete.length) { try { await deleteFromR2(toDelete); } catch { /* ignore */ } }
+        // borrar activaciones + perfil (hard delete)
+        await auth.admin.from("voice_activations").delete().eq("voice_profile_id", profile.id).eq("user_id", auth.user.id);
+        await auth.admin.from("voice_profiles").delete().eq("id", profile.id).eq("user_id", auth.user.id);
+        return send(res, 200, { ok: true, message: "Personaje eliminado de forma permanente junto con sus audios." });
+      }
+
+      return send(res, 404, { error: "Acción desconocida." });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno.", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
 export default async function handler(req: any, res: any) {
   try {
     const u = new URL(req.url, "http://localhost");
@@ -20641,6 +21331,7 @@ export default async function handler(req: any, res: any) {
     if (head === "support") return supportHandler(req, res);
     if (head === "ai") return aiHandler(req, res);
     if (head === "luciana-bot") return lucianaBotHandler(req, res);
+    if (head === "luciana" && next === "voice-flow") return lucianaVoiceHandler(req, res);
     if (head === "affiliates") return affiliatesHandler(req, res);
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);

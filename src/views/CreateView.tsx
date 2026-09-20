@@ -239,6 +239,43 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     } catch {
     }
   }, []);
+
+  useEffect(() => {
+    const w = window as any;
+    const applyFromGlobal = () => {
+      try {
+        const g: any = w?.__LUCIANA_SELECTED_CLONE_VOICE__;
+        if (g && typeof g.id === 'string' && g.id) {
+          const v = { voiceId: String(g.id), name: String(g.name || 'Personaje') };
+          setSelectedVoice(v);
+          if (typeof w.toast === 'function') {
+            try {
+              w.toast({ kind: 'ok', text: `🎙️ Voz seleccionada: ${v.name}` });
+            } catch {}
+          }
+          return true;
+        }
+      } catch {}
+      return false;
+    };
+    const fromEvent = (e: any) => {
+      const d: any = e?.detail;
+      if (d && typeof d.id === 'string' && d.id) {
+        const v = { voiceId: String(d.id), name: String(d.name || 'Personaje') };
+        setSelectedVoice(v);
+        if (typeof w.toast === 'function') {
+          try {
+            w.toast({ kind: 'ok', text: `🎙️ Voz seleccionada: ${v.name}` });
+          } catch {}
+        }
+      }
+    };
+    applyFromGlobal();
+    w.addEventListener?.('luciana:voice-selected', fromEvent);
+    return () => {
+      w.removeEventListener?.('luciana:voice-selected', fromEvent);
+    };
+  }, []);
   const [newVoiceName, setNewVoiceName] = useState('');
   const [newVoiceDescription, setNewVoiceDescription] = useState('');
   const [voiceSourceFile, setVoiceSourceFile] = useState<File | null>(null);

@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Cloud,
+  Eye,
+  EyeOff,
   History,
   Image as ImageIcon,
   Library,
@@ -18,11 +20,13 @@ import {
   PinOff,
   Plus,
   Send,
+  ShieldCheck,
   Sparkles,
   Sun,
   Moon,
   Trash2,
   User,
+  Volume2,
   WalletCards,
   X,
 } from 'lucide-react';
@@ -334,6 +338,56 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }>(null);
   const [coverGenerating, setCoverGenerating] = useState(false);
 
+  type VoiceProfilePublic = {
+    id: string;
+    name: string | null;
+    status: string;
+    consent_given_at: string | null;
+    consent_version: string | null;
+    sample_ready: boolean;
+    verify_ready: boolean;
+    current_phrase: string | null;
+    is_active: boolean;
+    expires_at: string | null;
+    cost_for_next_activation: number;
+    active_activation_id: string | null;
+  };
+  type VoiceFlowState = {
+    open: boolean;
+    list: VoiceProfilePublic[];
+    listLoading: boolean;
+    selectedId: string | null;
+    current: VoiceProfilePublic | null;
+    step: 'intro' | 'consent' | 'sample' | 'phrase' | 'verify' | 'name' | 'cost' | 'creating' | 'ready' | 'expired' | 'hidden';
+    uploadKind: 'sample' | 'verify' | null;
+    uploading: boolean;
+    uploadingProgress: number;
+    nameInput: string;
+    confirmPermanentText: string;
+    busy: boolean;
+    lastMessage: string;
+  };
+  const [voiceFlow, setVoiceFlow] = useState<VoiceFlowState>({
+    open: false,
+    list: [],
+    listLoading: false,
+    selectedId: null,
+    current: null,
+    step: 'intro',
+    uploadKind: null,
+    uploading: false,
+    uploadingProgress: 0,
+    nameInput: '',
+    confirmPermanentText: '',
+    busy: false,
+    lastMessage: '',
+  });
+  const voiceFlowRef = useRef(voiceFlow);
+  voiceFlowRef.current = voiceFlow;
+  const voiceRefreshTimerRef = useRef<number | null>(null);
+
+  const VF_ACTIVATION_COST = 15;
+
   const [micRecorderOpen, setMicRecorderOpen] = useState(false);
   const [micRecorderState, setMicRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
   const [micRecorderError, setMicRecorderError] = useState('');
@@ -437,6 +491,59 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   useEffect(() => {
     return () => { stopMicRecorderRef.current?.(false).catch(() => {}); };
   }, []);
+
+  // ====== Voice flow: limpiar timer al desmontar, y cargar lista al boot (cuando haya user) ======
+  useEffect(() => {
+    return () => {
+      if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+    };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getValidBearerToken();
+        if (!token) return;
+        if (!supabaseBrowser) return;
+        const { data: { user } } = await supabaseBrowser.auth.getUser();
+        if (!user) return;
+        if (cancelled) return;
+        const { list, current } = await refreshVoiceList();
+        if (cancelled) return;
+        // Si el personaje está en proceso "creating" al cargar, arrancar polling
+        if (current && vfStepFromProfile(current, false) === 'creating') {
+          if (voiceRefreshTimerRef.current) window.clearInterval(voiceRefreshTimerRef.current);
+          voiceRefreshTimerRef.current = window.setInterval(async () => {
+            const state = voiceFlowRef.current;
+            if (!state.selectedId || state.step !== 'creating') {
+              if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+              return;
+            }
+            const res = await callVoiceFlow({ action: 'refresh-status', profileId: state.selectedId }, { showError: false });
+            if (res.ok) {
+              const p: VoiceProfilePublic | undefined = (res.data as any)?.profile;
+              if (p) {
+                setVF((prev) => ({
+                  ...prev,
+                  current: p,
+                  list: prev.list.map((x) => (x.id === p.id ? p : x)),
+                  step: (() => {
+                    const next = vfStepFromProfile(p, prev.open);
+                    if (next === 'ready' || next === 'expired' || next === 'verify') {
+                      if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+                    }
+                    return next;
+                  })(),
+                }));
+              }
+            }
+          }, 12000);
+        }
+        void list;
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [callVoiceFlow, getValidBearerToken, refreshVoiceList, setVF, vfStepFromProfile]);
 
   // 2) startMicRecorder (no useCallback, llama ref.stopMicRecorderRef → no dep circular)
   const startMicRecorder = async () => {
@@ -1206,6 +1313,325 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     }
   }, []);
 
+  const setVF = useCallback((updater: (p: VoiceFlowState) => VoiceFlowState) => {
+    setVoiceFlow((prev) => {
+      const next = updater(prev);
+      voiceFlowRef.current = next;
+      return next;
+    });
+  }, []);
+  const vfStepFromProfile = useCallback((p: VoiceProfilePublic | null, listOpen: boolean): VoiceFlowState['step'] => {
+    if (!p) return listOpen ? 'intro' : 'intro';
+    const s = String(p.status || '').toLowerCase();
+    const isExpired = p.expires_at ? Date.now() > new Date(p.expires_at).getTime() : false;
+    if (s === 'failed_verify') return 'verify';
+    if (!p.consent_given_at) return 'consent';
+    if (!p.sample_ready) return 'sample';
+    if (!p.current_phrase) return 'phrase';
+    if (!p.verify_ready) return 'verify';
+    if (!p.name) return 'name';
+    if (!p.is_active && (s === 'pending' || s === 'processing' || s === 'creating')) return 'creating';
+    if (p.is_active && !isExpired && s === 'ready') return 'ready';
+    if (isExpired || (!p.is_active && (s === 'ready' || s === 'expired' || s === ''))) return 'expired';
+    return 'cost';
+  }, []);
+  const callVoiceFlow = useCallback(async <T = any>(payload: any, opts?: { showError?: boolean; list?: boolean }): Promise<{ ok: boolean; status: number; data: T }> => {
+    try {
+      const token = await getValidBearerToken();
+      if (!token) {
+        if (opts?.showError !== false) setToast({ kind: 'err', text: 'Sesión expirada. Inicia sesión de nuevo.' });
+        return { ok: false, status: 401, data: { error: 'Sin sesión' } as any };
+      }
+      const r = await fetch('/api/luciana/voice-flow', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, accept: 'application/json' },
+        body: JSON.stringify(payload || {}),
+      });
+      const text = await r.text();
+      let data: any = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+      if (opts?.showError !== false && (r.status < 200 || r.status >= 300)) {
+        const msg = data?.message || data?.error || 'No pude completar la acción en el servidor.';
+        setToast({ kind: 'err', text: msg });
+      }
+      return { ok: r.status >= 200 && r.status < 300, status: r.status, data: data as T };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e || 'Error de conexión');
+      if (opts?.showError !== false) setToast({ kind: 'err', text: `Sin conexión al servidor: ${msg}` });
+      return { ok: false, status: 0, data: { error: msg } as any };
+    }
+  }, [getValidBearerToken]);
+  const refreshVoiceList = useCallback(async (opts?: { selectId?: string | null }) => {
+    setVF((p) => ({ ...p, listLoading: true }));
+    const r = await callVoiceFlow<{ list?: VoiceProfilePublic[]; profile?: VoiceProfilePublic }>({ action: 'list' }, { showError: false });
+    const list: VoiceProfilePublic[] = Array.isArray((r.data as any)?.list) ? (r.data as any).list : [];
+    const first = list[0] || null;
+    const selectedId = opts?.selectId ?? voiceFlowRef.current.selectedId ?? first?.id ?? null;
+    const current = list.find((x) => x.id === selectedId) || first;
+    setVF((p) => ({
+      ...p,
+      listLoading: false,
+      list,
+      selectedId: current?.id || selectedId || null,
+      current: current || null,
+      step: current ? vfStepFromProfile(current, p.open) : (list.length ? 'intro' : 'intro'),
+    }));
+    return { list, current };
+  }, [callVoiceFlow, setVF, vfStepFromProfile]);
+  const refreshVoiceCurrent = useCallback(async (forceStep?: VoiceFlowState['step']) => {
+    const id = voiceFlowRef.current.selectedId;
+    if (!id) return null;
+    const r = await callVoiceFlow<{ profile?: VoiceProfilePublic }>({ action: 'get', profileId: id }, { showError: false });
+    const profile: VoiceProfilePublic | undefined = (r.data as any)?.profile;
+    if (!profile) return null;
+    setVF((p) => ({
+      ...p,
+      current: profile,
+      list: p.list.map((x) => (x.id === profile.id ? profile : x)),
+      step: forceStep ?? vfStepFromProfile(profile, p.open),
+    }));
+    return profile;
+  }, [callVoiceFlow, setVF, vfStepFromProfile]);
+  const startVoiceFlowWizard = useCallback(async () => {
+    setVF((p) => ({ ...p, open: true, step: 'intro', busy: false }));
+    const { list, current } = await refreshVoiceList();
+    if (!list.length) {
+      const r = await callVoiceFlow<{ profile?: VoiceProfilePublic; profileId?: string }>({ action: 'create' });
+      if (r.ok && r.data?.profileId) {
+        const { current: cur } = await refreshVoiceList({ selectId: r.data.profileId });
+        if (cur) void scrollToBottomNow();
+      }
+    } else {
+      if (current) setVF((p) => ({ ...p, step: vfStepFromProfile(current, true) }));
+      void scrollToBottomNow();
+    }
+  }, [callVoiceFlow, refreshVoiceList, setVF, vfStepFromProfile, scrollToBottomNow]);
+  const uploadAudioToVoiceFlow = useCallback(async (profileId: string, kind: 'sample' | 'verify', file: File): Promise<boolean> => {
+    if (!file) return false;
+    if (file.size > 25 * 1024 * 1024) {
+      setToast({ kind: 'err', text: 'El audio supera los 25 MB permitidos.' });
+      return false;
+    }
+    setVF((p) => ({ ...p, uploading: true, uploadingProgress: 2, uploadKind: kind, busy: true }));
+    try {
+      const ext = (file.name.split('.').pop() || 'webm').toLowerCase().replace(/[^a-z0-9]/g, '') || 'webm';
+      const contentType = file.type || `audio/${ext === 'mp3' ? 'mpeg' : ext}`;
+      const getUp = await callVoiceFlow<{ uploadUrl?: string; signedPutUrl?: string; upload_url?: string; suggested_path?: string; key?: string }>(
+        { action: 'get-upload-url', profileId, kind, ext, contentType, filename: file.name },
+        { showError: true },
+      );
+      if (!getUp.ok) return false;
+      const putUrl: string = String((getUp.data as any)?.uploadUrl || (getUp.data as any)?.signedPutUrl || (getUp.data as any)?.upload_url || '').trim();
+      if (!putUrl) {
+        setToast({ kind: 'err', text: 'No pude preparar la subida del audio. Intenta de nuevo.' });
+        return false;
+      }
+      // PUT a la URL presignada
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', putUrl, true);
+        try { xhr.setRequestHeader('Content-Type', contentType); } catch {}
+        xhr.upload.onprogress = (e) => {
+          if (e.total > 0) {
+            const pct = Math.min(96, Math.round((e.loaded / e.total) * 100));
+            setVF((prev) => ({ ...prev, uploadingProgress: pct }));
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`HTTP ${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(file);
+      });
+      setVF((p) => ({ ...p, uploadingProgress: 98 }));
+      const save = await callVoiceFlow(
+        { action: kind === 'sample' ? 'save-sample-path' : 'save-verify-path', profileId, filename: file.name, sizeBytes: file.size, contentType, ext },
+        { showError: true },
+      );
+      if (!save.ok) return false;
+      await refreshVoiceCurrent();
+      setToast({ kind: 'ok', text: kind === 'sample' ? '🎙️ Muestra original guardada correctamente.' : '🎤 Grabación de verificación guardada.' });
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e || 'Error');
+      setToast({ kind: 'err', text: `No pude subir el audio: ${msg}` });
+      return false;
+    } finally {
+      setVF((p) => ({ ...p, uploading: false, uploadingProgress: 0, uploadKind: null, busy: false }));
+    }
+  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
+  const pickVFVoiceAudioFile = useCallback((kind: 'sample' | 'verify') => {
+    const profileId = voiceFlowRef.current.selectedId;
+    if (!profileId) { setToast({ kind: 'err', text: 'Primero selecciona o crea un personaje.' }); return; }
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'audio/*,.mp3,.m4a,.wav,.ogg,.webm';
+    inp.onchange = async () => {
+      const f = inp.files?.[0];
+      if (!f) return;
+      if (!confirmAudioAuth()) return;
+      void uploadAudioToVoiceFlow(profileId, kind, f);
+    };
+    try { inp.click(); } catch {}
+  }, [confirmAudioAuth, uploadAudioToVoiceFlow]);
+  const recordVFVoiceAudio = useCallback((kind: 'sample' | 'verify') => {
+    const profileId = voiceFlowRef.current.selectedId;
+    if (!profileId) { setToast({ kind: 'err', text: 'Primero selecciona o crea un personaje.' }); return; }
+    const navAny: any = typeof navigator === 'undefined' ? null : navigator;
+    const canMedia =
+      typeof window !== 'undefined' &&
+      typeof navAny?.mediaDevices?.getUserMedia === 'function' &&
+      typeof (window as any).MediaRecorder === 'function';
+    if (!canMedia) {
+      setToast({ kind: 'err', text: 'Tu navegador no permite grabar aquí. Usa la opción Subir audio.' });
+      return;
+    }
+    if (!confirmAudioAuth()) return;
+    setVF((p) => ({ ...p, uploadKind: kind }));
+    setTimeout(() => startMicRecorder().catch(() => {}), 30);
+    // Cuando el grabador termine → "on finalize" guardamos directamente en R2 usando el mismo flujo
+    // Para no tocar el grabador original, escuchamos 1 sola vez el custom event que dispara el finalize
+    const finalizeOnce = () => {
+      window.removeEventListener('luciana:audio-attached', finalizeOnce);
+      setTimeout(async () => {
+        const att = (voiceFlowRef as any).current || voiceFlowRef.current;
+        const realAttach = attachedImg;
+        if (realAttach && realAttach.kind === 'audio' && realAttach.file) {
+          // Limpiamos el adjunto para que no se envíe como mensaje
+          try { URL.revokeObjectURL(realAttach.previewUrl); } catch {}
+          setAttachedImg(null);
+          void uploadAudioToVoiceFlow(profileId, kind, realAttach.file);
+        } else {
+          setVF((p) => ({ ...p, uploadKind: null }));
+        }
+      }, 60);
+    };
+    window.addEventListener('luciana:audio-attached', finalizeOnce);
+  }, [attachedImg, confirmAudioAuth, startMicRecorder, setVF, uploadAudioToVoiceFlow]);
+  const vfAcceptConsent = useCallback(async () => {
+    const id = voiceFlowRef.current.selectedId;
+    if (!id) return;
+    setVF((p) => ({ ...p, busy: true }));
+    const r = await callVoiceFlow({ action: 'accept-consent', profileId: id }, { showError: true });
+    if (r.ok) {
+      await refreshVoiceCurrent('sample');
+    }
+    setVF((p) => ({ ...p, busy: false }));
+  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
+  const vfRequestPhrase = useCallback(async (regenerate?: boolean) => {
+    const id = voiceFlowRef.current.selectedId;
+    if (!id) return;
+    setVF((p) => ({ ...p, busy: true, step: 'phrase' }));
+    const r = await callVoiceFlow({ action: regenerate ? 'regenerate-phrase' : 'request-phrase', profileId: id }, { showError: true });
+    if (r.ok) {
+      await refreshVoiceCurrent('phrase');
+      void scrollToBottomNow();
+    }
+    setVF((p) => ({ ...p, busy: false }));
+  }, [callVoiceFlow, refreshVoiceCurrent, scrollToBottomNow, setVF]);
+  const vfSetName = useCallback(async () => {
+    const id = voiceFlowRef.current.selectedId;
+    const name = voiceFlowRef.current.nameInput.trim();
+    if (!id) return;
+    if (!name) { setToast({ kind: 'err', text: 'Escribe un nombre para tu personaje.' }); return; }
+    if (name.length > 50) { setToast({ kind: 'err', text: 'El nombre es muy largo (máximo 50 caracteres).' }); return; }
+    setVF((p) => ({ ...p, busy: true }));
+    const r = await callVoiceFlow({ action: 'set-name', profileId: id, name }, { showError: true });
+    if (r.ok) {
+      await refreshVoiceCurrent('cost');
+    }
+    setVF((p) => ({ ...p, busy: false }));
+  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
+  const vfConfirmCreate = useCallback(async () => {
+    const id = voiceFlowRef.current.selectedId;
+    if (!id) return;
+    const confirmOk = window.confirm(`Esta operación cuesta ${VF_ACTIVATION_COST} créditos (solo una vez por activación). ¿Confirmar?`);
+    if (!confirmOk) return;
+    setVF((p) => ({ ...p, busy: true, step: 'creating' }));
+    const r = await callVoiceFlow({ action: 'confirm-create', profileId: id }, { showError: true });
+    if (r.ok) {
+      await refreshVoiceCurrent('creating');
+      // Empezar polling de status cada 12s
+      if (voiceRefreshTimerRef.current) window.clearInterval(voiceRefreshTimerRef.current);
+      voiceRefreshTimerRef.current = window.setInterval(async () => {
+        const state = voiceFlowRef.current;
+        if (!state.selectedId || state.step !== 'creating') {
+          if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+          return;
+        }
+        const res = await callVoiceFlow({ action: 'refresh-status', profileId: state.selectedId }, { showError: false });
+        if (res.ok) {
+          const p: VoiceProfilePublic | undefined = (res.data as any)?.profile;
+          if (p) {
+            setVF((prev) => ({
+              ...prev,
+              current: p,
+              list: prev.list.map((x) => (x.id === p.id ? p : x)),
+              step: (() => {
+                const next = vfStepFromProfile(p, prev.open);
+                if (next === 'ready' || next === 'expired' || next === 'verify') {
+                  if (voiceRefreshTimerRef.current) { window.clearInterval(voiceRefreshTimerRef.current); voiceRefreshTimerRef.current = null; }
+                }
+                return next;
+              })(),
+            }));
+          }
+        }
+      }, 12000);
+    }
+    setVF((p) => ({ ...p, busy: false }));
+  }, [VF_ACTIVATION_COST, callVoiceFlow, refreshVoiceCurrent, setVF, vfStepFromProfile]);
+  const vfReactivate = useCallback(async () => {
+    const id = voiceFlowRef.current.selectedId;
+    if (!id) return;
+    setVF((p) => ({ ...p, busy: true }));
+    const r = await callVoiceFlow({ action: 'reactivate', profileId: id }, { showError: true });
+    if (r.ok) {
+      await refreshVoiceCurrent('phrase');
+    }
+    setVF((p) => ({ ...p, busy: false }));
+  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
+  const vfHide = useCallback(async () => {
+    const id = voiceFlowRef.current.selectedId;
+    if (!id) return;
+    if (!window.confirm('Ocultar este personaje? Lo podrás recuperar después.')) return;
+    const r = await callVoiceFlow({ action: 'hide', profileId: id }, { showError: true });
+    if (r.ok) {
+      await refreshVoiceList();
+      setVF((p) => ({ ...p, open: false, step: 'intro' }));
+    }
+  }, [callVoiceFlow, refreshVoiceList, setVF]);
+  const vfDeletePermanent = useCallback(async () => {
+    const id = voiceFlowRef.current.selectedId;
+    const written = voiceFlowRef.current.confirmPermanentText.trim();
+    if (!id) return;
+    if (written !== 'ELIMINAR_PERMANENTEMENTE') {
+      setToast({ kind: 'err', text: 'Escribe exactamente ELIMINAR_PERMANENTEMENTE para confirmar.' });
+      return;
+    }
+    setVF((p) => ({ ...p, busy: true }));
+    const r = await callVoiceFlow({ action: 'delete-permanently', profileId: id, confirm: written }, { showError: true });
+    if (r.ok) {
+      setVF((p) => ({ ...p, confirmPermanentText: '', selectedId: null, current: null, open: false, step: 'intro' }));
+      await refreshVoiceList();
+      setToast({ kind: 'ok', text: '🗑️ Personaje eliminado de forma permanente.' });
+    }
+    setVF((p) => ({ ...p, busy: false }));
+  }, [callVoiceFlow, refreshVoiceList, setVF]);
+
+  // ====== Detectar intención "quiero crear personaje / clonar voz" al enviar mensaje ======
+  const textSuggestsVoiceWizard = useCallback((raw: string) => {
+    const t = String(raw || '').toLowerCase().trim();
+    if (!t) return false;
+    const keywords = [
+      'clonar voz', 'clona mi voz', 'clonar mi voz', 'crear personaje', 'crea un personaje',
+      'mi personaje', 'personaje de voz', 'personaje voz', 'mi voz como', 'con mi voz',
+      'usar mi voz', 'doble de voz', 'clon', 'personaje',
+    ];
+    return keywords.some((k) => t.includes(k));
+  }, []);
+
   const wizardPushMessage = useCallback((text: string) => {
     const m: ChatMessage = { id: uid(), role: 'assistant', text, createdAt: Date.now() };
     setMessages((list) => [...list, m]);
@@ -1615,6 +2041,22 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     const text = String(input || '').trim();
     if (!supabaseBrowser) {
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
+      return;
+    }
+
+    // ========== DETECCIÓN: Crear personaje / clonar voz → abrir flujo guiado ==========
+    if (!coverWizard && textSuggestsVoiceWizard(text)) {
+      // Escribimos el mensaje del usuario y abrimos el wizard (no enviamos a Dify para no confundir)
+      const userMsg: ChatMessage = { id: uid(), role: 'user', text, createdAt: Date.now() };
+      setMessages((m) => [...m, userMsg]);
+      wizardPushMessage(
+        '🎙️ ¡Perfecto! Vamos a **crear tu personaje de voz** paso a paso. Cuando termine, podrás usar tu propia voz para cantar cualquier canción o cover durante 24 horas.'
+      );
+      if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
+      else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
+      if (textareaRef.current) textareaRef.current.value = '';
+      autoresizeTextarea(textareaRef.current);
+      void startVoiceFlowWizard();
       return;
     }
 
@@ -2196,6 +2638,96 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return () => clearTimeout(t);
   }, [lastPending]);
 
+  function VFRow({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          padding: highlight ? '10px 14px' : '4px 2px',
+          borderRadius: 12,
+          border: highlight ? '1px solid rgba(236, 72, 153, 0.35)' : '1px solid transparent',
+          background: highlight
+            ? 'linear-gradient(135deg, rgba(236,72,153,0.08) 0%, rgba(124,58,237,0.08) 50%, rgba(37,99,235,0.08) 100%)'
+            : 'transparent',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 0.12,
+            textTransform: 'uppercase',
+            color: 'var(--text-dim)',
+            opacity: 0.9,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: highlight ? 800 : 600,
+            color: highlight ? '#ec4899' : 'var(--text)',
+            lineHeight: 1.3,
+          }}
+        >
+          {value}
+        </div>
+      </div>
+    );
+  }
+
+  function VFUploadProgress({ voiceFlow }: { voiceFlow: VoiceFlowState }) {
+    const pct = Math.max(0, Math.min(100, voiceFlow.uploadingProgress || 0));
+    return (
+      <div
+        style={{
+          marginTop: 14,
+          padding: '10px 14px',
+          borderRadius: 12,
+          border: '1px solid var(--border)',
+          background: 'var(--bg-elev-1)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+            {pct < 98 ? 'Subiendo audio…' : 'Finalizando…'}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              color: '#7c3aed',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {pct}%
+          </div>
+        </div>
+        <div
+          style={{
+            height: 8,
+            width: '100%',
+            borderRadius: 4,
+            background: 'var(--border)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${pct}%`,
+              transition: 'width 180ms ease',
+              background: 'linear-gradient(90deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="luciana-chat-shell" role="application" aria-label="LucIAna Bot" data-chat-theme={chatTheme}>
       <header className="luciana-chat-header">
@@ -2278,6 +2810,24 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
             }}
           >
             <MessageSquarePlus className="h-3.5 w-3.5" /> Nuevo chat
+          </button>
+          <button
+            type="button"
+            aria-label="Crear personaje de voz"
+            onClick={() => void startVoiceFlowWizard()}
+            className={cn(
+              'inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-[0.72rem] font-black transition sm:px-3',
+            )}
+            style={{
+              background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+              color: '#fff',
+              border: '1px solid transparent',
+              boxShadow: '0 10px 28px color-mix(in srgb, #7c3aed 28%, transparent)',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget.style.filter = 'brightness(1.08)'); }}
+            onMouseLeave={(e) => { (e.currentTarget.style.filter = 'none'); }}
+          >
+            <Mic className="h-3.5 w-3.5" /> Crear personaje
           </button>
         </div>
       </header>
@@ -2382,6 +2932,890 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
             >
               Nuevo chat
             </button>
+          </div>
+        )}
+
+        {/* ====== TARJETA FLUJO CREAR PERSONAJE / CLONAR VOZ ====== */}
+        {voiceFlow.open && (
+          <div className="luciana-msg-row is-assistant" style={{ marginTop: '0.25rem', marginBottom: '0.5rem' }}>
+            <div className="luciana-msg-wrap" style={{ width: '100%' }}>
+              <div className="luciana-msg-avatar" aria-hidden>
+                <img src={CHAT_AVATAR_ASSISTANT} alt="LucIAna" loading="lazy" />
+              </div>
+              <div
+                className="luciana-msg-bubble"
+                style={{
+                  width: '100%',
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  boxShadow: 'none',
+                }}
+              >
+                <div style={{
+                  padding: '1rem 1.05rem',
+                  borderRadius: '1.25rem',
+                  border: '1px solid color-mix(in srgb, #ec4899 28%, color-mix(in srgb, #7c3aed 22%, var(--border)))',
+                  background: isDark
+                    ? 'linear-gradient(135deg, rgba(236,72,153,.12), rgba(124,58,237,.12) 50%, rgba(37,99,235,.10))'
+                    : 'linear-gradient(135deg, rgba(236,72,153,.08), rgba(124,58,237,.07) 50%, rgba(37,99,235,.06))',
+                  backdropFilter: 'blur(8px)',
+                  color: 'var(--text)',
+                }}>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-2xl ring-1"
+                        style={{
+                          background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+                          boxShadow: '0 10px 24px color-mix(in srgb, #7c3aed 26%, transparent)',
+                          borderColor: 'transparent',
+                          color: '#fff',
+                        }}
+                      >
+                        <Volume2 className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="text-base font-black" style={{ color: 'var(--text)' }}>
+                          Crea tu personaje de voz
+                        </h2>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Tu propia voz para cantar canciones y covers. Disponible 24h. Cobro único de <b style={{ color: 'var(--brand-accent)' }}>{VF_ACTIVATION_COST} créditos</b>.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVF((p) => ({ ...p, open: false }))}
+                      disabled={voiceFlow.busy || voiceFlow.uploading}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'var(--bg-elev-1)' }}
+                    >
+                      <X className="h-3.5 w-3.5" /> Cerrar
+                    </button>
+                  </div>
+
+                  {/* Sub selector: lista personajes */}
+                  {voiceFlow.list.length > 1 && (
+                    <div style={{ marginBottom: '0.8rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {voiceFlow.list.map((p) => {
+                        const active = p.id === voiceFlow.selectedId;
+                        const exp = p.expires_at ? Date.now() > new Date(p.expires_at).getTime() : false;
+                        const statusBadge =
+                          !p.consent_given_at ? 'Pendiente' :
+                          !p.sample_ready ? 'Muestra' :
+                          !p.current_phrase ? 'Frase' :
+                          !p.verify_ready ? 'Verif.' :
+                          !p.name ? 'Nombre' :
+                          p.is_active && !exp ? '✅ Listo' :
+                          exp ? '⏰ Vencido' :
+                          String(p.status || '').toLowerCase() === 'ready' ? '✅ Listo' : 'Creando…';
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setVF((prev) => ({
+                                ...prev,
+                                selectedId: p.id,
+                                current: p,
+                                step: vfStepFromProfile(p, prev.open),
+                              }));
+                            }}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition"
+                            style={{
+                              borderColor: active ? 'transparent' : 'var(--border)',
+                              background: active ? 'linear-gradient(135deg, #ec4899, #7c3aed)' : 'var(--bg-elev-1)',
+                              color: active ? '#fff' : 'var(--text)',
+                              boxShadow: active ? '0 10px 24px color-mix(in srgb, #7c3aed 28%, transparent)' : 'none',
+                            }}
+                          >
+                            <span>{p.name || 'Personaje sin nombre'}</span>
+                            <span style={{
+                              fontSize: '0.6rem',
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '999px',
+                              border: `1px solid ${active ? '#ffffff55' : 'var(--border)'}`,
+                              opacity: 0.9,
+                            }}>{statusBadge}</span>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const r = await callVoiceFlow<{ profileId?: string }>({ action: 'create' });
+                          if (r.ok && r.data?.profileId) { await refreshVoiceList({ selectId: r.data.profileId }); }
+                        }}
+                        className="inline-flex h-9 items-center gap-1 rounded-2xl border border-dashed px-3 text-xs font-bold"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'transparent' }}
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Nuevo personaje
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ========== PASO INTRO (si no hay personaje) ========== */}
+                  {!voiceFlow.current && (
+                    <div style={{ padding: '0.75rem 0.5rem', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                      {voiceFlow.listLoading ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Loader2 className="h-4 w-4 animate-spin" /> Cargando tus personajes…
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                          <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '0.92rem' }}>
+                            🎙️ Aún no tienes personajes. Crea el primero en 6 pasos rápidos:
+                          </p>
+                          <ol style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.55 }}>
+                            <li>Confirmo que la voz es mía (consentimiento).</li>
+                            <li>Subo o grabo una muestra de mi voz original (15-60s).</li>
+                            <li>Suno genera una frase de verificación única.</li>
+                            <li>Grabo la frase exactamente como me la pide Suno.</li>
+                            <li>Elijo un nombre para mi personaje.</li>
+                            <li>Confirmo y pago 15 créditos → ¡listo en ~2 min!</li>
+                          </ol>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const r = await callVoiceFlow<{ profileId?: string }>({ action: 'create' });
+                              if (r.ok && r.data?.profileId) { await refreshVoiceList({ selectId: r.data.profileId }); }
+                            }}
+                            disabled={voiceFlow.busy}
+                            className="mt-1 inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black self-start"
+                            style={{
+                              background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+                              color: '#fff',
+                              boxShadow: '0 12px 30px color-mix(in srgb, #7c3aed 32%, transparent)',
+                              cursor: voiceFlow.busy ? 'progress' : 'pointer',
+                              opacity: voiceFlow.busy ? 0.8 : 1,
+                            }}
+                          >
+                            {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                            Empezar ahora
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ========== BARRA DE PROGRESO PASOS ========== */}
+                  {voiceFlow.current && (
+                    <div style={{
+                      marginBottom: '0.8rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.4rem',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      color: 'var(--text-muted)',
+                    }}>
+                      {['Consentimiento', 'Muestra', 'Frase', 'Verificación', 'Nombre', 'Costo'].map((lbl, i) => {
+                        const step = voiceFlow.step;
+                        const stepOrder: VoiceFlowState['step'][] = ['consent', 'sample', 'phrase', 'verify', 'name', 'cost', 'creating', 'ready', 'expired', 'hidden'];
+                        const curIdx = Math.max(0, stepOrder.indexOf(step === 'intro' ? 'consent' : step));
+                        const done = i < curIdx;
+                        const active = i === curIdx;
+                        return (
+                          <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flex: 1 }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              width: '1.1rem',
+                              height: '1.1rem',
+                              borderRadius: '999px',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.6rem',
+                              fontWeight: 900,
+                              color: done || active ? '#fff' : 'var(--text-muted)',
+                              background: done ? 'linear-gradient(135deg,#22c55e,#16a34a)' : active ? 'linear-gradient(135deg,#ec4899,#7c3aed)' : 'var(--bg-elev-2)',
+                              border: `1px solid ${active ? 'transparent' : done ? 'transparent' : 'var(--border)'}`,
+                            }}>{done ? '✓' : i + 1}</span>
+                            <span style={{
+                              color: active ? 'var(--text)' : done ? 'var(--brand-primary)' : 'var(--text-muted)',
+                              fontWeight: active ? 800 : 700,
+                              whiteSpace: 'nowrap',
+                            }}>{lbl}</span>
+                            {i < 5 && <div style={{ flex: 1, height: '2px', background: done ? '#22c55e66' : 'var(--border)', borderRadius: '2px' }} />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* ========== PASO 1: CONSENTIMIENTO ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'consent' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 1 de 6 · Consentimiento:</b> Para proteger tu identidad, debes confirmar que la voz que vas a usar es tuya o que tienes autorización escrita.
+                      </p>
+                      <div style={{
+                        padding: '0.7rem 0.85rem',
+                        borderRadius: '0.95rem',
+                        border: '1px dashed color-mix(in srgb, var(--brand-accent) 40%, var(--border))',
+                        background: 'color-mix(in srgb, var(--brand-accent) 8%, transparent)',
+                        color: isDark ? '#fce7f3' : '#831843',
+                        fontSize: '0.8rem',
+                        lineHeight: 1.45,
+                      }}>
+                        <ShieldCheck className="h-4 w-4" style={{ display: 'inline', verticalAlign: '-3px', marginRight: '0.35rem' }} />
+                        <b>Confirmo que esta es mi voz o que tengo autorización explícita para usarla.</b> Guardaré tu aceptación junto con la fecha y la versión del texto (v1-es-20260919).
+                      </div>
+                      {voiceFlow.uploading && voiceFlow.uploadKind && (
+                        <VFUploadProgress voiceFlow={voiceFlow} />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void vfAcceptConsent()}
+                        disabled={voiceFlow.busy}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black self-start"
+                        style={{
+                          background: 'linear-gradient(135deg, #16a34a 0%, #10b981 100%)',
+                          color: '#fff',
+                          boxShadow: '0 12px 30px rgba(34,197,94,0.3)',
+                          cursor: voiceFlow.busy ? 'progress' : 'pointer',
+                          opacity: voiceFlow.busy ? 0.8 : 1,
+                        }}
+                      >
+                        {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        Acepto y continuar
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ========== PASO 2: MUESTRA ORIGINAL ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'sample' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 2 de 6 · Muestra de tu voz original (15 - 60 segundos):</b> Habla o canta claro, sin ruido de fondo, en un lugar silencioso. Si dudas, usa el micrófono.
+                      </p>
+                      <div style={{
+                        padding: '0.6rem 0.8rem',
+                        borderRadius: '0.9rem',
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-elev-1)',
+                        fontSize: '0.72rem',
+                        color: 'var(--text-muted)',
+                        lineHeight: 1.45,
+                      }}>
+                        💡 <b>Consejos para una muestra perfecta:</b> Habla o canta con tu voz natural (sin hacer voces raras). Sin música de fondo, sin ecos, sin ruido de viento/ventilador. 15-40s es ideal. Puedes grabarla en el móvil sin problema.
+                      </div>
+                      {voiceFlow.current.sample_ready ? (
+                        <div style={{
+                          padding: '0.55rem 0.8rem',
+                          borderRadius: '0.9rem',
+                          border: '1px solid #22c55e55',
+                          background: 'color-mix(in srgb, #22c55e 12%, transparent)',
+                          color: isDark ? '#bbf7d0' : '#14532d',
+                          fontSize: '0.8rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          fontWeight: 800,
+                        }}>
+                          <CheckCircle2 className="h-4 w-4" /> Muestra original guardada correctamente.
+                        </div>
+                      ) : null}
+                      {voiceFlow.uploading && voiceFlow.uploadKind === 'sample' && (
+                        <VFUploadProgress voiceFlow={voiceFlow} />
+                      )}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => pickVFVoiceAudioFile('sample')}
+                          disabled={voiceFlow.busy || voiceFlow.uploading}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold transition disabled:opacity-60"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                        >
+                          <Cloud className="h-3.5 w-3.5" /> Subir audio (MP3 / WAV / M4A)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void recordVFVoiceAudio('sample')}
+                          disabled={voiceFlow.busy || voiceFlow.uploading}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-black transition disabled:opacity-60"
+                          style={{
+                            background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 100%)',
+                            color: '#fff',
+                            boxShadow: '0 10px 24px color-mix(in srgb, #7c3aed 30%, transparent)',
+                            border: '1px solid transparent',
+                          }}
+                        >
+                          <Mic className="h-3.5 w-3.5" /> Grabar ahora con micrófono
+                        </button>
+                        {voiceFlow.current.sample_ready && (
+                          <button
+                            type="button"
+                            onClick={() => void vfRequestPhrase(false)}
+                            disabled={voiceFlow.busy}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-black self-end ml-auto disabled:opacity-60"
+                            style={{
+                              background: 'linear-gradient(135deg, #16a34a, #10b981)',
+                              color: '#fff',
+                              border: '1px solid transparent',
+                            }}
+                          >
+                            Siguiente paso → Generar frase <Sparkles className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== PASO 3: FRASE VERIFICACIÓN ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'phrase' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 3 de 6 · Frase de verificación:</b> Suno genera una frase única para confirmar que eres tú.
+                      </p>
+                      {!voiceFlow.current.current_phrase || voiceFlow.busy ? (
+                        <div style={{
+                          padding: '1.1rem 1rem',
+                          borderRadius: '0.95rem',
+                          border: '1px solid color-mix(in srgb, var(--brand-accent) 35%, var(--border))',
+                          background: 'color-mix(in srgb, var(--brand-accent) 10%, transparent)',
+                          textAlign: 'center',
+                          color: 'var(--text)',
+                          fontSize: '0.82rem',
+                          fontWeight: 800,
+                        }}>
+                          <Loader2 className="h-4 w-4 animate-spin" style={{ verticalAlign: '-3px', marginRight: '0.4rem' }} />
+                          Preparando la frase de verificación ✨ (solo unos segundos)
+                        </div>
+                      ) : (
+                        <div style={{
+                          padding: '1.1rem 1rem',
+                          borderRadius: '0.95rem',
+                          border: '1px solid color-mix(in srgb, var(--brand-primary) 40%, var(--border))',
+                          background: isDark
+                            ? 'linear-gradient(135deg, rgba(37,99,235,.14), rgba(124,58,237,.12))'
+                            : 'linear-gradient(135deg, rgba(37,99,235,.08), rgba(124,58,237,.07))',
+                          textAlign: 'center',
+                        }}>
+                          <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '0.4rem' }}>
+                            Canta o lee esta frase exactamente
+                          </div>
+                          <div style={{
+                            fontSize: 'clamp(1rem, 3.6vw, 1.35rem)',
+                            fontWeight: 900,
+                            color: 'var(--text)',
+                            lineHeight: 1.25,
+                            wordBreak: 'break-word',
+                            fontStyle: 'italic',
+                          }}>
+                            “{voiceFlow.current.current_phrase}”
+                          </div>
+                        </div>
+                      )}
+                      {voiceFlow.uploading && voiceFlow.uploadKind === 'sample' && <VFUploadProgress voiceFlow={voiceFlow} />}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {voiceFlow.current.current_phrase && !voiceFlow.busy && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void vfRequestPhrase(true)}
+                              disabled={voiceFlow.busy}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition disabled:opacity-60"
+                              style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text-muted)' }}
+                            >
+                              <Sparkles className="h-3.5 w-3.5" /> Quiero otra frase distinta
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setVF((p) => ({ ...p, step: 'verify' }))}
+                              disabled={voiceFlow.busy}
+                              className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-black ml-auto disabled:opacity-60"
+                              style={{
+                                background: 'linear-gradient(135deg, #16a34a, #10b981)',
+                                color: '#fff',
+                                border: '1px solid transparent',
+                              }}
+                            >
+                              Siguiente → Grabar verificación <Mic className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== PASO 4: GRABAR VERIFICACIÓN ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'verify' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 4 de 6 · Verificación:</b> Ahora graba leyendo/cantando la frase anterior <b>exactamente igual</b>. Si fallas, puedes repetirla.
+                      </p>
+                      {voiceFlow.current.current_phrase && (
+                        <div style={{
+                          padding: '0.55rem 0.8rem',
+                          borderRadius: '0.9rem',
+                          border: '1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border))',
+                          background: isDark ? 'rgba(37,99,235,.10)' : 'rgba(37,99,235,.06)',
+                          fontSize: '0.88rem',
+                          fontWeight: 800,
+                          color: 'var(--text)',
+                          textAlign: 'center',
+                          lineHeight: 1.3,
+                        }}>
+                          “{voiceFlow.current.current_phrase}”
+                        </div>
+                      )}
+                      {String(voiceFlow.current.status || '').toLowerCase() === 'failed_verify' && (
+                        <div style={{
+                          padding: '0.55rem 0.8rem',
+                          borderRadius: '0.9rem',
+                          border: '1px solid #f43f5e55',
+                          background: 'color-mix(in srgb, #f43f5e 12%, transparent)',
+                          color: isDark ? '#fecdd3' : '#881337',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                        }}>
+                          ⚠️ La verificación anterior falló. Asegúrate de leer la frase exactamente igual, sin ruido de fondo y con tu voz natural. Vuelve a grabar.
+                        </div>
+                      )}
+                      {voiceFlow.current.verify_ready && (
+                        <div style={{
+                          padding: '0.55rem 0.8rem',
+                          borderRadius: '0.9rem',
+                          border: '1px solid #22c55e55',
+                          background: 'color-mix(in srgb, #22c55e 12%, transparent)',
+                          color: isDark ? '#bbf7d0' : '#14532d',
+                          fontSize: '0.8rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          fontWeight: 800,
+                        }}>
+                          <CheckCircle2 className="h-4 w-4" /> Verificación guardada.
+                        </div>
+                      )}
+                      {voiceFlow.uploading && voiceFlow.uploadKind === 'verify' && <VFUploadProgress voiceFlow={voiceFlow} />}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => pickVFVoiceAudioFile('verify')}
+                          disabled={voiceFlow.busy || voiceFlow.uploading}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold transition disabled:opacity-60"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                        >
+                          <Cloud className="h-3.5 w-3.5" /> Subir grabación (si la grabé antes)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void recordVFVoiceAudio('verify')}
+                          disabled={voiceFlow.busy || voiceFlow.uploading}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-black transition disabled:opacity-60"
+                          style={{
+                            background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 100%)',
+                            color: '#fff',
+                            boxShadow: '0 10px 24px color-mix(in srgb, #7c3aed 30%, transparent)',
+                            border: '1px solid transparent',
+                          }}
+                        >
+                          <Mic className="h-3.5 w-3.5" /> Grabar la frase ahora
+                        </button>
+                        {voiceFlow.current.verify_ready && (
+                          <button
+                            type="button"
+                            onClick={() => setVF((p) => ({ ...p, step: 'name', nameInput: p.current?.name || '' }))}
+                            disabled={voiceFlow.busy}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-4 text-xs font-black ml-auto disabled:opacity-60"
+                            style={{
+                              background: 'linear-gradient(135deg, #16a34a, #10b981)',
+                              color: '#fff',
+                              border: '1px solid transparent',
+                            }}
+                          >
+                            Siguiente → Poner nombre <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== PASO 5: NOMBRE ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'name' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 5 de 6 · Nombre del personaje:</b> Ponle un nombre corto (máx. 50 caracteres). Después lo encontrarás en la lista de voces al crear canciones.
+                      </p>
+                      <label className="block" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--brand-primary)' }}>
+                          Nombre
+                        </span>
+                        <input
+                          type="text"
+                          value={voiceFlow.nameInput}
+                          onChange={(e) => setVF((p) => ({ ...p, nameInput: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); void vfSetName(); }
+                          }}
+                          maxLength={50}
+                          placeholder="Ej: Mi Voz, Mariachi Voz, Voz Carlos..."
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            height: '2.85rem',
+                            borderRadius: '0.9rem',
+                            border: '1px solid var(--border)',
+                            background: 'var(--bg-elev-1)',
+                            color: 'var(--text)',
+                            padding: '0 0.95rem',
+                            fontSize: '0.92rem',
+                            fontWeight: 700,
+                            outline: 'none',
+                          }}
+                        />
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                          {voiceFlow.nameInput.length} / 50
+                        </div>
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => setVF((p) => ({ ...p, step: 'verify' }))}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text-muted)' }}
+                        >
+                          ← Volver a verificación
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void vfSetName()}
+                          disabled={voiceFlow.busy || !voiceFlow.nameInput.trim()}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl px-5 text-xs font-black ml-auto disabled:opacity-60"
+                          style={{
+                            background: 'linear-gradient(135deg, #16a34a, #10b981)',
+                            color: '#fff',
+                            border: '1px solid transparent',
+                          }}
+                        >
+                          {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Guardar nombre
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== PASO 6: COSTO + CONFIRMAR ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'cost' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 6 de 6 · Resumen y costo:</b> Revisa los detalles y confirma.
+                      </p>
+                      <div style={{
+                        padding: '0.8rem 0.9rem',
+                        borderRadius: '0.95rem',
+                        border: '1px solid color-mix(in srgb, var(--brand-accent) 30%, var(--border))',
+                        background: isDark
+                          ? 'linear-gradient(135deg, rgba(236,72,153,.10), rgba(124,58,237,.10))'
+                          : 'linear-gradient(135deg, rgba(236,72,153,.06), rgba(124,58,237,.06))',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                        gap: '0.5rem',
+                        fontSize: '0.78rem',
+                      }}>
+                        <VFRow label="Personaje" value={voiceFlow.current.name || '—'} />
+                        <VFRow label="Muestra original" value={voiceFlow.current.sample_ready ? '✅ Lista' : '❌ Pendiente'} />
+                        <VFRow label="Frase" value={voiceFlow.current.current_phrase ? '✅ Generada' : '❌ Pendiente'} />
+                        <VFRow label="Verificación" value={voiceFlow.current.verify_ready ? '✅ Hecha' : '❌ Pendiente'} />
+                        <VFRow label="Vigencia" value="24 horas (desde que esté listo)" />
+                        <VFRow label="Costo" value={`${VF_ACTIVATION_COST} créditos (una vez)`} highlight />
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => setVF((p) => ({ ...p, step: 'name', nameInput: p.current?.name || '' }))}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text-muted)' }}
+                        >
+                          ← Cambiar nombre
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void vfConfirmCreate()}
+                          disabled={voiceFlow.busy}
+                          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl px-6 text-sm font-black ml-auto disabled:opacity-70"
+                          style={{
+                            background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+                            color: '#fff',
+                            boxShadow: '0 14px 34px color-mix(in srgb, #7c3aed 32%, transparent)',
+                            border: '1px solid transparent',
+                            cursor: voiceFlow.busy ? 'progress' : 'pointer',
+                          }}
+                        >
+                          {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                          Crear personaje · {VF_ACTIVATION_COST} créditos
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== ESTADO: CREANDO (polling) ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'creating' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                      <div style={{
+                        padding: '1rem 1rem',
+                        borderRadius: '0.95rem',
+                        border: '1px solid color-mix(in srgb, var(--brand-primary) 35%, var(--border))',
+                        background: isDark ? 'rgba(37,99,235,.10)' : 'rgba(37,99,235,.06)',
+                        textAlign: 'center',
+                      }}>
+                        <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--brand-primary)', verticalAlign: '-4px', marginRight: '0.5rem' }} />
+                        <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text)' }}>
+                          🎙️ Creando tu personaje… Suno está entrenando tu voz.
+                        </span>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                          Esto suele tardar entre <b>1 y 3 minutos</b>. Puedes irte a otra pestaña; cuando esté listo aparecerá automáticamente. Actualizo el estado cada 12 segundos.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const r = await callVoiceFlow({ action: 'refresh-status', profileId: voiceFlow.current?.id }, { showError: false });
+                          if (r.ok) {
+                            const p: VoiceProfilePublic | undefined = (r.data as any)?.profile;
+                            if (p) {
+                              setVF((prev) => ({
+                                ...prev,
+                                current: p,
+                                list: prev.list.map((x) => (x.id === p.id ? p : x)),
+                                step: vfStepFromProfile(p, prev.open),
+                              }));
+                            }
+                          }
+                        }}
+                        className="self-start inline-flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold"
+                        style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text)' }}
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Comprobar ahora mismo
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ========== ESTADO: LISTO (is_active, expires_at no pasado) ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'ready' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                      <div style={{
+                        padding: '1rem 1rem',
+                        borderRadius: '0.95rem',
+                        border: '1px solid #22c55e66',
+                        background: isDark ? 'linear-gradient(135deg, rgba(34,197,94,.14), rgba(16,185,129,.10))' : 'linear-gradient(135deg, rgba(34,197,94,.08), rgba(16,185,129,.06))',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+                          <CheckCircle2 className="h-5 w-5" style={{ color: '#22c55e' }} />
+                          <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text)' }}>
+                            🎉 ¡Tu personaje <span style={{ color: '#16a34a' }}>“{voiceFlow.current.name || 'Tu personaje'}”</span> está listo!
+                          </div>
+                        </div>
+                        <div style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '0.4rem',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-muted)',
+                          fontWeight: 700,
+                        }}>
+                          <span style={{
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '999px',
+                            border: '1px solid #22c55e44',
+                            background: isDark ? 'rgba(34,197,94,.14)' : 'rgba(34,197,94,.08)',
+                            color: isDark ? '#bbf7d0' : '#14532d',
+                          }}>
+                            ✅ Disponible hasta {voiceFlow.current.expires_at
+                              ? new Date(voiceFlow.current.expires_at).toLocaleString('es-ES', {
+                                  day: '2-digit', month: '2-digit', year: 'numeric',
+                                  hour: '2-digit', minute: '2-digit',
+                                })
+                              : '—'}
+                          </span>
+                          <span style={{
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '999px',
+                            border: '1px solid #7c3aed44',
+                            background: isDark ? 'rgba(124,58,237,.14)' : 'rgba(124,58,237,.08)',
+                            color: isDark ? '#ddd6fe' : '#4c1d95',
+                          }}>
+                            🎤 Ya está seleccionada para usarse al crear
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              onChange('studio');
+                              (window as any).__LUCIANA_SELECTED_CLONE_VOICE__ = {
+                                id: voiceFlow.current?.active_activation_id || voiceFlow.current?.id || null,
+                                name: voiceFlow.current?.name || 'Mi personaje',
+                                type: 'suno-personaje',
+                                fromBot: true,
+                                ts: Date.now(),
+                              };
+                              window.dispatchEvent(new (window as any).CustomEvent('luciana:voice-selected', {
+                                detail: (window as any).__LUCIANA_SELECTED_CLONE_VOICE__,
+                              }));
+                              setToast({ kind: 'ok', text: '🎙️ Voz seleccionada. Ahora crea tu canción.' });
+                            } catch {}
+                          }}
+                          className="inline-flex h-11 items-center gap-1.5 rounded-2xl px-5 text-sm font-black"
+                          style={{
+                            background: 'linear-gradient(135deg, #16a34a 0%, #10b981 100%)',
+                            color: '#fff',
+                            boxShadow: '0 12px 30px rgba(34,197,94,0.32)',
+                            border: '1px solid transparent',
+                          }}
+                        >
+                          <Sparkles className="h-4 w-4" /> Crear canción con esta voz
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              onChange('studio');
+                              (window as any).__LUCIANA_SELECTED_CLONE_VOICE__ = {
+                                id: voiceFlow.current?.active_activation_id || voiceFlow.current?.id || null,
+                                name: voiceFlow.current?.name || 'Mi personaje',
+                                type: 'suno-personaje',
+                                fromBot: true,
+                                mode: 'cover',
+                                ts: Date.now(),
+                              };
+                              window.dispatchEvent(new (window as any).CustomEvent('luciana:voice-selected', {
+                                detail: (window as any).__LUCIANA_SELECTED_CLONE_VOICE__,
+                              }));
+                              setToast({ kind: 'ok', text: '🎙️ Voz seleccionada. Ahora crea tu cover.' });
+                            } catch {}
+                          }}
+                          className="inline-flex h-11 items-center gap-1.5 rounded-2xl px-5 text-sm font-black"
+                          style={{
+                            background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                            color: '#fff',
+                            boxShadow: '0 12px 30px rgba(124,58,237,0.32)',
+                            border: '1px solid transparent',
+                          }}
+                        >
+                          <Music2 className="h-4 w-4" /> Crear cover con esta voz
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void vfHide()}
+                          disabled={voiceFlow.busy}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text-muted)' }}
+                        >
+                          <EyeOff className="h-3.5 w-3.5" /> Ocultar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVF((p) => ({ ...p, step: 'expired' }))}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold ml-auto"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text-muted)' }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Eliminar / Reactivar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ========== ESTADO: VENCIDO / REACTIVAR ========== */}
+                  {voiceFlow.current && voiceFlow.step === 'expired' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                      <div style={{
+                        padding: '1rem 1rem',
+                        borderRadius: '0.95rem',
+                        border: '1px solid #f59e0b55',
+                        background: isDark ? 'rgba(245,158,11,.12)' : 'rgba(245,158,11,.08)',
+                      }}>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text)' }}>
+                          ⏰ Tu personaje <b>“{voiceFlow.current.name || 'Tu personaje'}”</b> venció su vigencia de 24h.
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.4rem', lineHeight: 1.45 }}>
+                          ✅ Buenas noticias: <b>la muestra original se conserva</b> (no tienes que volver a subir tu voz de nuevo).
+                          Solo tenemos que pedir una frase nueva y volver a grabar la verificación, y listo.
+                          El costo es el mismo: <b style={{ color: 'var(--brand-accent)' }}>{VF_ACTIVATION_COST} créditos</b>.
+                        </div>
+                      </div>
+
+                      <div style={{
+                        padding: '0.75rem 0.85rem',
+                        borderRadius: '0.9rem',
+                        border: '1px dashed #f43f5e55',
+                        background: isDark ? 'rgba(244,63,94,.10)' : 'rgba(244,63,94,.06)',
+                        fontSize: '0.78rem',
+                        color: isDark ? '#fecdd3' : '#881337',
+                      }}>
+                        <b>⚠️ ¿Quieres eliminarlo para siempre?</b> Esto borra tu muestra original, la última verificación y todas las activaciones. No se puede deshacer.
+                        <label style={{ display: 'block', marginTop: '0.5rem' }}>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                            Escribe aquí para confirmar:
+                          </span>
+                          <input
+                            type="text"
+                            value={voiceFlow.confirmPermanentText}
+                            onChange={(e) => setVF((p) => ({ ...p, confirmPermanentText: e.target.value }))}
+                            placeholder="ELIMINAR_PERMANENTEMENTE"
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              marginTop: '0.3rem',
+                              height: '2.5rem',
+                              borderRadius: '0.75rem',
+                              border: '1px solid var(--border)',
+                              background: 'var(--bg-elev-1)',
+                              color: 'var(--text)',
+                              padding: '0 0.8rem',
+                              fontSize: '0.82rem',
+                              fontWeight: 700,
+                              outline: 'none',
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => void vfReactivate()}
+                          disabled={voiceFlow.busy}
+                          className="inline-flex h-11 items-center gap-1.5 rounded-2xl px-5 text-sm font-black disabled:opacity-70"
+                          style={{
+                            background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+                            color: '#fff',
+                            boxShadow: '0 14px 34px color-mix(in srgb, #7c3aed 32%, transparent)',
+                            border: '1px solid transparent',
+                          }}
+                        >
+                          {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                          🔄 Reactivar personaje · {VF_ACTIVATION_COST} créditos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void vfDeletePermanent()}
+                          disabled={voiceFlow.busy || voiceFlow.confirmPermanentText.trim() !== 'ELIMINAR_PERMANENTEMENTE'}
+                          className="inline-flex h-11 items-center gap-1.5 rounded-2xl px-5 text-sm font-black disabled:opacity-40"
+                          style={{
+                            background: '#f43f5e',
+                            color: '#fff',
+                            border: '1px solid transparent',
+                            marginLeft: 'auto',
+                          }}
+                        >
+                          {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          Eliminar permanentemente
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
