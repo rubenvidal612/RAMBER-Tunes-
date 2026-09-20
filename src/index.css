@@ -106,12 +106,12 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .luciana-mobile-drawer { position: fixed; inset: 0; z-index: 150; display: flex; align-items: stretch; justify-content: flex-start; }
 .luciana-mobile-drawer-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.72); backdrop-filter: blur(7px); }
-.luciana-mobile-drawer-panel { position: relative; height: 100%; width: min(330px, 86vw); background: #070a12; border-right: 1px solid var(--lm-line); box-shadow: 30px 0 70px rgba(0,0,0,.6); display: flex; flex-direction: column; }
-.luciana-mobile-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px; border-bottom: 1px solid var(--lm-line); }
+.luciana-mobile-drawer-panel { position: relative; height: 100%; max-height: 100vh; max-height: 100dvh; width: min(330px, 86vw); background: #070a12; border-right: 1px solid var(--lm-line); box-shadow: 30px 0 70px rgba(0,0,0,.6); display: flex; flex-direction: column; min-height: 0; }
+.luciana-mobile-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px; border-bottom: 1px solid var(--lm-line); flex: 0 0 auto; }
 .luciana-mobile-drawer-header small { color: #9b5cff; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
 .luciana-mobile-drawer-header h2 { font-size: 18px; font-weight: 800; letter-spacing: -.02em; margin-top: 4px; }
 .luciana-mobile-drawer-header button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--lm-line); color: #aab2c2; }
-.luciana-mobile-drawer-list { padding: 14px 10px 18px; overflow-y: auto; display: grid; gap: 6px; }
+.luciana-mobile-drawer-list { padding: 14px 10px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; display: grid; gap: 6px; align-content: start; }
 .luciana-mobile-drawer-item { width: 100%; min-height: 46px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 14px; border: 1px solid transparent; color: #8f99ad; text-align: left; }
 .luciana-mobile-drawer-item:hover { color: #eef1f8; background: rgba(255,255,255,.035); }
 .luciana-mobile-drawer-item.is-active { color: white; border-color: rgba(155,92,255,.2); background: linear-gradient(90deg, rgba(116,50,220,.27), rgba(116,50,220,.09)); box-shadow: inset 3px 0 0 var(--lm-purple); }

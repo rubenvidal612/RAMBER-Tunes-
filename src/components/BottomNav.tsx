@@ -232,65 +232,65 @@ export function BottomNav({ currentTab, onChange, isAdmin = false }: BottomNavPr
                   </button>
                 );
               })}
-            </nav>
 
-            <div className="mt-5 mb-2 px-3">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500 mb-2">Cuenta</p>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-3">
-                <div className="text-[15px] font-bold text-white truncate">{displayName}</div>
-                <div className="mt-0.5 text-[11px] text-slate-400 break-all">{authEmail || '—'}</div>
+              <div className="mt-6 px-2">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500 mb-2">Cuenta</p>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-3">
+                  <div className="text-[15px] font-bold text-white truncate">{displayName}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-400 break-all">{authEmail || '—'}</div>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {accountItemsAdmin.filter((i) => !i.adminOnly || isAdmin).map((item) => {
+                    const active = currentTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => go(item.id)}
+                        className={cn('luciana-mobile-drawer-item', active && 'is-active')}
+                      >
+                        <item.icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
+                        <span className="luciana-mobile-drawer-text"><strong>{item.label}</strong></span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => void doSignOut()}
+                    disabled={isSigningOut}
+                    className="luciana-mobile-drawer-item disabled:opacity-60"
+                  >
+                    <LogOut className="w-[18px] h-[18px]" strokeWidth={1.8} />
+                    <span className="luciana-mobile-drawer-text"><strong>{isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</strong></span>
+                  </button>
+                </div>
               </div>
-              <div className="mt-2 space-y-1">
-                {accountItemsAdmin.filter((i) => !i.adminOnly || isAdmin).map((item) => {
-                  const active = currentTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => go(item.id)}
-                      className={cn('luciana-mobile-drawer-item', active && 'is-active')}
-                    >
-                      <item.icon className="w-[18px] h-[18px]" strokeWidth={active ? 2.25 : 1.8} />
-                      <span className="luciana-mobile-drawer-text"><strong>{item.label}</strong></span>
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => void doSignOut()}
-                  disabled={isSigningOut}
-                  className="luciana-mobile-drawer-item disabled:opacity-60"
-                >
-                  <LogOut className="w-[18px] h-[18px]" strokeWidth={1.8} />
-                  <span className="luciana-mobile-drawer-text"><strong>{isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</strong></span>
+
+              <div className="mt-4 mb-2 px-2 space-y-2">
+                <button type="button" className="w-full text-left rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/10 via-white/[0.02] to-fuchsia-500/10 px-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-indigo-300">
+                      <CircleHelp className="w-[18px] h-[18px]" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <strong className="block text-[14px] text-white">¿Necesitas ayuda?</strong>
+                      <small className="block text-[11px] text-slate-400">Centro de ayuda</small>
+                    </div>
+                  </div>
+                </button>
+                <button type="button" onClick={() => go('planes')} className="w-full text-left rounded-2xl border border-yellow-400/15 bg-gradient-to-br from-yellow-400/12 to-yellow-500/5 px-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center text-yellow-300">
+                      <WalletCards className="w-[18px] h-[18px]" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <small className="block text-[10px] text-yellow-300/80 uppercase tracking-wide">Créditos disponibles</small>
+                      <strong className="block text-[14px] text-yellow-100">Obtener créditos</strong>
+                    </div>
+                  </div>
                 </button>
               </div>
-            </div>
-
-            <div className="mt-3 mb-4 px-3 space-y-2">
-              <button type="button" className="w-full text-left rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/10 via-white/[0.02] to-fuchsia-500/10 px-3 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-indigo-300">
-                    <CircleHelp className="w-[18px] h-[18px]" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <strong className="block text-[14px] text-white">¿Necesitas ayuda?</strong>
-                    <small className="block text-[11px] text-slate-400">Centro de ayuda</small>
-                  </div>
-                </div>
-              </button>
-              <button type="button" onClick={() => go('planes')} className="w-full text-left rounded-2xl border border-yellow-400/15 bg-gradient-to-br from-yellow-400/12 to-yellow-500/5 px-3 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-9 h-9 rounded-xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center text-yellow-300">
-                    <WalletCards className="w-[18px] h-[18px]" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <small className="block text-[10px] text-yellow-300/80 uppercase tracking-wide">Créditos disponibles</small>
-                    <strong className="block text-[14px] text-yellow-100">Obtener créditos</strong>
-                  </div>
-                </div>
-              </button>
-            </div>
+            </nav>
           </section>
         </div>
       ) : null}

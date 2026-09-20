@@ -4315,7 +4315,7 @@ export default function App() {
         {/* Desktop 3-column layout */}
         <div className={`${currentTab === 'landing' ? 'home-desktop-layout' : 'hidden md:flex'} flex-1 min-h-0 overflow-hidden`}>
            {/* Sidebar */}
-           <div className="w-[200px] lg:w-[240px] shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col">
+           <div className="w-[200px] lg:w-[240px] shrink-0 min-h-0 h-full border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col overflow-hidden">
              <Sidebar currentTab={currentTab} onChange={handleTabChange} isAdmin={isAdmin} />
            </div>
 
