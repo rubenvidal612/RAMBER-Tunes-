@@ -340,6 +340,17 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }>(null);
   const [coverGenerating, setCoverGenerating] = useState(false);
 
+  // ================================================================
+  // FEATURE FLAG TEMPORAL (2026-09-20)
+  //   Desactiva la experiencia "Crear personaje / Clonar voz" dentro
+  //   del chat LucIAna Bot mientras terminamos de estabilizarla en
+  //   producción. No borra datos ni código; solo oculta acceso.
+  //   Para volver a activarla: cambiar a true.
+  // ================================================================
+  const VOICE_FLOW_ENABLED_IN_BOT: boolean = false;
+  const VOICE_FLOW_TEMP_DISABLED_MSG: string =
+    "La creación de personajes de voz está temporalmente en preparación y no está disponible en este momento. Vuelve a intentarlo más pronto. Gracias.";
+
   type VoiceProfilePublic = {
     id: string;
     name: string | null;
@@ -1413,6 +1424,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return profile;
   }
   async function startVoiceFlowWizard(resetStuck = true) {
+    if (!VOICE_FLOW_ENABLED_IN_BOT) {
+      try {
+        toast.error(VOICE_FLOW_TEMP_DISABLED_MSG);
+      } catch {}
+      return;
+    }
     setVF((p) => ({ ...p, open: true, step: 'intro', busy: false }));
     const { list, current } = await refreshVoiceList();
 
@@ -2232,6 +2249,18 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       // Forzar orden user → assistant: esperar 1 microtick antes de insertar respuesta assistant
       await Promise.resolve();
       setLoading(true);
+
+      if (!VOICE_FLOW_ENABLED_IN_BOT) {
+        // Bloqueo temporal: NO abrir flujo. Responder al usuario mensaje seguro.
+        wizardPushMessage(VOICE_FLOW_TEMP_DISABLED_MSG);
+        setLoading(false);
+        if (setInputAndDraftRef.current) setInputAndDraftRef.current('', true);
+        else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
+        if (textareaRef.current) textareaRef.current.value = '';
+        autoresizeTextarea(textareaRef.current);
+        return;
+      }
+
       wizardPushMessage(
         '🎙️ ¡Perfecto! Vamos a **crear tu personaje de voz** paso a paso. Cuando termine, podrás usar tu propia voz para cantar cualquier canción o cover durante 24 horas.'
       );
@@ -3093,24 +3122,26 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           >
             <MessageSquarePlus className="h-3.5 w-3.5" /> Nuevo chat
           </button>
-          <button
-            type="button"
-            aria-label="Crear personaje de voz"
-            onClick={() => void startVoiceFlowWizard()}
-            className={cn(
-              'inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-[0.72rem] font-black transition sm:px-3',
-            )}
-            style={{
-              background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
-              color: '#fff',
-              border: '1px solid transparent',
-              boxShadow: '0 10px 28px color-mix(in srgb, #7c3aed 28%, transparent)',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget.style.filter = 'brightness(1.08)'); }}
-            onMouseLeave={(e) => { (e.currentTarget.style.filter = 'none'); }}
-          >
-            <Mic className="h-3.5 w-3.5" /> Crear personaje
-          </button>
+          {VOICE_FLOW_ENABLED_IN_BOT && (
+            <button
+              type="button"
+              aria-label="Crear personaje de voz"
+              onClick={() => void startVoiceFlowWizard()}
+              className={cn(
+                'inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-[0.72rem] font-black transition sm:px-3',
+              )}
+              style={{
+                background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
+                color: '#fff',
+                border: '1px solid transparent',
+                boxShadow: '0 10px 28px color-mix(in srgb, #7c3aed 28%, transparent)',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget.style.filter = 'brightness(1.08)'); }}
+              onMouseLeave={(e) => { (e.currentTarget.style.filter = 'none'); }}
+            >
+              <Mic className="h-3.5 w-3.5" /> Crear personaje
+            </button>
+          )}
         </div>
       </header>
 
@@ -3218,7 +3249,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         )}
 
         {/* ====== TARJETA FLUJO CREAR PERSONAJE / CLONAR VOZ ====== */}
-        {voiceFlow.open && (
+        {VOICE_FLOW_ENABLED_IN_BOT && voiceFlow.open && (
           <div className="luciana-msg-row is-assistant" style={{ marginTop: '0.25rem', marginBottom: '0.5rem' }}>
             <div className="luciana-msg-wrap" style={{ width: '100%' }}>
               <div className="luciana-msg-avatar" aria-hidden>
