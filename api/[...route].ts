@@ -21140,18 +21140,43 @@ const lucianaVoiceHandler = (() => {
         }
 
         // 2. Firmar URL de la muestra para enviarla a Suno (2 horas vida)
+        //    - Si R2 está configurado y getSignedR2Url existe: URL FIRMADA (privada)
+        //    - Si falla firma o no hay función: intentar URL PÚBLICA directa de R2_PUBLIC_BASE_URL
+        //    - Si tampoco hay URL pública: devolvemos error_id claro (no catch top genérico)
         let sampleSigned = "";
+        const samplePath = String(profile.sample_original_r2_path || "").trim();
         try {
-          if (typeof getSignedR2Url === "function") sampleSigned = await getSignedR2Url(profile.sample_original_r2_path, 60 * 60 * 2);
-        } catch (r2e) {
+          if (typeof getSignedR2Url === "function" && samplePath) {
+            try {
+              sampleSigned = String(await getSignedR2Url(samplePath, 60 * 60 * 2) || "").trim();
+            } catch (r2e) {
+              const eid = genErrorId();
+              serverLog(eid, action, { step: "getSignedR2Url_throw", err: r2e instanceof Error ? r2e.stack || String(r2e) : String(r2e) });
+              sampleSigned = "";
+            }
+          }
+          // Fallback: URL pública sin firma (si el bucket es público, R2 lee sin firma)
+          if (!sampleSigned && samplePath) {
+            const pubBase = String(process.env.R2_PUBLIC_BASE_URL || process.env.R2_PUBLIC || "").replace(/\/+$/, "");
+            if (pubBase) {
+              sampleSigned = `${pubBase}${samplePath.startsWith("/") ? "" : "/"}${samplePath}`;
+            }
+          }
+        } catch (r2Outer) {
           const eid = genErrorId();
-          serverLog(eid, action, { step: "getSignedR2Url", err: r2e });
+          serverLog(eid, action, { step: "getSignedR2Url_outer", err: r2Outer instanceof Error ? r2Outer.stack || String(r2Outer) : String(r2Outer) });
           sampleSigned = "";
         }
         if (!sampleSigned) {
           const eid = genErrorId();
-          serverLog(eid, action, { step: "getSignedR2Url", empty: true });
-          return clientError(500, "No puedo preparar tu muestra con el proveedor.", eid);
+          const missingR2Envs: string[] = [];
+          if (!process.env.R2_ACCOUNT_ID) missingR2Envs.push("R2_ACCOUNT_ID");
+          if (!process.env.R2_ACCESS_KEY_ID) missingR2Envs.push("R2_ACCESS_KEY_ID");
+          if (!process.env.R2_SECRET_ACCESS_KEY) missingR2Envs.push("R2_SECRET_ACCESS_KEY");
+          if (!process.env.R2_BUCKET_NAME) missingR2Envs.push("R2_BUCKET_NAME");
+          if (!process.env.R2_PUBLIC_BASE_URL && !process.env.R2_PUBLIC) missingR2Envs.push("R2_PUBLIC_BASE_URL (opcional, fallback bucket público)");
+          serverLog(eid, action, { step: "sample_url_empty", missingEnvs: missingR2Envs.join(","), samplePath });
+          return clientError(500, "No puedo preparar tu muestra de voz (credenciales Cloudflare). Contacta a soporte o inténtalo de nuevo.", eid);
         }
 
         // ⚠️ Flujo oficial Suno: NUEVA frase → el usuario DEBE grabar/cantar EXACTAMENTE la frase nueva.
