@@ -263,13 +263,13 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     // Por defecto: chat en modo claro
     return 'light';
   });
-  const toggleChatTheme = useCallback(() => {
+  function toggleChatTheme() {
     setChatTheme((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';
       try { window.localStorage.setItem('luciana_chat_theme_v1', next); } catch { /* ignore */ }
       return next;
     });
-  }, []);
+  }
   // Efecto: actualiza data-chat-theme en el shell DOM por si CSS lo lee, y forzar re-render
   useEffect(() => {
     try {
@@ -282,13 +282,13 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const _legacyTheme = useTheme();
 
   const [uiState, setUiState] = useState<UiState>(() => loadUiState());
-  const setUi = useCallback((updater: (prev: UiState) => UiState) => {
+  function setUi(updater: (prev: UiState) => UiState) {
     setUiState((prev) => {
       const next = updater(prev);
       saveUiState(next);
       return next;
     });
-  }, []);
+  }
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
@@ -657,14 +657,14 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
   useEffect(() => { saveUiState(uiState); }, [uiState]);
 
-  const scrollToBottomNow = useCallback(() => {
+  function scrollToBottomNow() {
     if (!listRef.current) return;
     try {
       listRef.current.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
     } catch {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, []);
+  }
 
   useEffect(() => {
     if (sentScrollRef.current) {
@@ -753,8 +753,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [input]);
 
-  // Helper ref: setInput + sincronizar localStorage. Usado dentro de useCallback para evitar stale closures.
-  const setInputAndDraft = useCallback((newValue: string, clearStorage: boolean = false) => {
+  // Helper ref: setInput + sincronizar localStorage. Usado dentro de callbacks para evitar stale closures.
+  function setInputAndDraft(newValue: string, clearStorage: boolean = false) {
     setInput(String(newValue || ''));
     const convId = uiState.activeConversationId || conversationId || activeConversationIdRef.current || null;
     if (clearStorage) {
@@ -763,8 +763,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       writeStoredDraft(currentUserId, convId, String(newValue || ''));
     }
     requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
-  }, [uiState.activeConversationId, conversationId, currentUserId]);
-  useEffect(() => { setInputAndDraftRef.current = setInputAndDraft; }, [setInputAndDraft]);
+  }
+  useEffect(() => { setInputAndDraftRef.current = setInputAndDraft; });
 
   const isEmptyState = useMemo(() => (
     messages.length <= 1 &&
@@ -791,15 +791,15 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return true;
   }, [input, loading, generating]);
 
-  const signOutAndReload = useCallback(() => {
+  function signOutAndReload() {
     try { void supabaseBrowser?.auth?.signOut?.().catch(() => {}); } catch {}
     try {
       const base = window.location.origin.toString().replace(/\/+$/, '');
       window.location.href = `${base}/crear`;
     } catch {}
-  }, []);
+  }
 
-  const getValidBearerToken = useCallback(async (): Promise<string | null> => {
+  async function getValidBearerToken(): Promise<string | null> {
     if (!supabaseBrowser) return null;
     let accessToken = '';
     let sessionOk = false;
@@ -837,38 +837,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       } catch {}
     }
     return sessionOk && accessToken ? accessToken : null;
-  }, [signOutAndReload]);
-
-  async function apiRequest<T = any>(url: string, method: 'GET' | 'POST' | 'PATCH', token: string, body?: any): Promise<{ ok: boolean; status: number; json: T | null; raw: string }> {
-    const headers: Record<string, string> = {
-      accept: 'application/json',
-      authorization: `Bearer ${token}`,
-    };
-    let payload: BodyInit | undefined;
-    if (body !== undefined) {
-      headers['content-type'] = 'application/json; charset=utf-8';
-      payload = JSON.stringify(body);
-    }
-    try {
-      const r = await fetch(url, { method, headers, body: payload });
-      const raw = await r.text();
-      let json: any = null;
-      try { json = raw ? JSON.parse(raw) : null; } catch { json = null; }
-      return { ok: r.ok, status: r.status, json, raw };
-    } catch (e: any) {
-      return {
-        ok: false,
-        status: 0,
-        json: null,
-        raw: e instanceof Error ? e.message : String(e || ''),
-      };
-    }
   }
 
-  const createSupabaseConversation = useCallback(async (
+  async function createSupabaseConversation(
     token: string,
     opts?: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any }
-  ): Promise<ConversationSummary | null> => {
+  ): Promise<ConversationSummary | null> {
     const body: any = {};
     if (opts?.title) body.title = opts.title;
     if (opts?.internal_dify_conversation_id) body.internal_dify_conversation_id = opts.internal_dify_conversation_id;
@@ -876,39 +850,41 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     const r = await apiRequest<{ success?: boolean; conversation?: any }>('/api/chat', 'POST', token, body);
     if (r.ok && r.json?.success && r.json.conversation) return r.json.conversation as ConversationSummary;
     return null;
-  }, []);
+  }
 
-  const appendMessageToConversation = useCallback(async (
+  async function appendMessageToConversation(
     token: string,
     convId: string,
     msg: { role: ChatRole; content: string; structured_action?: any; tokens?: number }
-  ): Promise<boolean> => {
+  ): Promise<boolean> {
     if (!convId) return false;
     const body: any = { role: msg.role, content: msg.content };
     if (msg.structured_action !== undefined && msg.structured_action !== null) body.structured_action = msg.structured_action;
     if (msg.tokens !== undefined && msg.tokens !== null) body.tokens = msg.tokens;
     const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}/messages`, 'POST', token, body);
     return !!(r.ok && r.json?.success);
-  }, []);
+  }
 
-  const updateConversation = useCallback(async (
+  async function updateConversation(
     token: string,
     convId: string,
     patch: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any; archived?: boolean; pinned?: boolean; deleted?: boolean }
-  ): Promise<boolean> => {
+  ): Promise<boolean> {
     if (!convId) return false;
     const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}`, 'PATCH', token, patch);
     return !!(r.ok && r.json?.success);
-  }, []);
+  }
 
-  const deleteConversationById = useCallback(async (token: string, convId: string): Promise<boolean> => {
+  async function deleteConversationById(token: string, convId: string): Promise<boolean> {
     if (!convId) return false;
     const r = await apiRequest<{ success?: boolean }>(`/api/chat/${encodeURIComponent(convId)}`, 'DELETE', token);
     return !!(r.ok && r.json?.success);
-  }, []);
+  }
 
-  const loadConversationById = useCallback(async (token: string, convId: string)
-    : Promise<{ conversation: ConversationSummary | null; messages: ChatMessage[]; ok: boolean }> => {
+  async function loadConversationById(
+    token: string,
+    convId: string
+  ): Promise<{ conversation: ConversationSummary | null; messages: ChatMessage[]; ok: boolean }> {
     const r = await apiRequest<{ success?: boolean; conversation?: any; messages?: any[] }>(
       `/api/chat/${encodeURIComponent(convId)}`,
       'GET',
@@ -951,9 +927,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       messages: msgs,
       ok: true,
     };
-  }, []);
+  }
 
-  const fetchConversationList = useCallback(async (token: string): Promise<ConversationSummary[]> => {
+  async function fetchConversationList(token: string): Promise<ConversationSummary[]> {
     const r = await apiRequest<{ success?: boolean; conversations?: any[] }>('/api/chat?limit=100', 'GET', token);
     if (!r.ok || !r.json?.success || !Array.isArray(r.json.conversations)) return [];
     const raw = (r.json.conversations as ConversationSummary[]).map((c: any) => ({
@@ -975,9 +951,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       return tb - ta;
     });
     return raw;
-  }, []);
+  }
 
-  const refreshHistoryList = useCallback(async () => {
+  async function refreshHistoryList() {
     try {
       setHistoryLoading(true);
       const token = await getValidBearerToken();
@@ -989,7 +965,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     } finally {
       setHistoryLoading(false);
     }
-  }, [fetchConversationList, getValidBearerToken, setUi]);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -1031,7 +1007,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openConversation = useCallback(async (conv: ConversationSummary) => {
+  async function openConversation(conv: ConversationSummary) {
     try {
       // Si hay texto sin enviar: PREGUNTAR antes de cambiar de conversación (nunca descartar silenciosamente)
       if (String(input || '').trim()) {
@@ -1079,9 +1055,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     } finally {
       setLoading(false);
     }
-  }, [getValidBearerToken, loadConversationById, scrollToBottomNow, setUi, input]);
+  }
 
-  const startNewChat = useCallback(async (opts?: { persistOldAsArchived?: boolean }) => {
+  async function startNewChat(opts?: { persistOldAsArchived?: boolean }) {
     try {
       const token = await getValidBearerToken();
       if (!token) {
@@ -1120,9 +1096,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     } catch (e) {
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
     }
-  }, [createSupabaseConversation, messages, scrollToBottomNow, setUi, uiState.activeConversationId, updateConversation, getValidBearerToken]);
+  }
 
-  const onNewChatClick = useCallback(async () => {
+  async function onNewChatClick() {
     try {
       // Si hay texto sin enviar, PREGUNTAR ANTES (nunca borrar silenciosamente)
       if (String(input || '').trim()) {
@@ -1140,9 +1116,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       else { setInput(''); clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); }
       await startNewChat({ persistOldAsArchived: true });
     } catch { /* ignore */ }
-  }, [startNewChat, attachedImg, input, currentUserId, uiState.activeConversationId, conversationId]);
+  }
 
-  const handleAttachPick = useCallback(() => {
+  function handleAttachPick() {
     if (loading || generating) {
       setToast({
         kind: 'ok',
@@ -1151,9 +1127,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       return;
     }
     setAttachMenuOpen((o) => !o);
-  }, [loading, generating]);
+  }
 
-  const triggerFilePickForKind = useCallback((kind: AttachMenuKind) => {
+  function triggerFilePickForKind(kind: AttachMenuKind) {
     if (kind === 'mic') {
       startMicRecorder().catch(() => {});
       return;
@@ -1173,9 +1149,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     setPendingAttachKind(kind);
     setAttachMenuOpen(false);
     try { inp.click(); } catch {}
-  }, []);
+  }
 
-  const handleAttachFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+  function handleAttachFileChange(e: ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files || files.length === 0) { setPendingAttachKind(null); return; }
     const f = files[0];
@@ -1247,32 +1223,32 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (finalKind === 'audio') {
       setTimeout(() => { try { window.dispatchEvent(new (window as any).CustomEvent('luciana:audio-attached')); } catch {} }, 0);
     }
-  }, [attachedImg, pendingAttachKind]);
+  }
 
-  const handleAttachRemove = useCallback(() => {
+  function handleAttachRemove() {
     if (!attachedImg) return;
     try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
     setAttachedImg(null);
     setCoverWizard(null);
     setCoverDraft(null);
-  }, [attachedImg]);
+  }
 
-  const confirmAudioAuth = useCallback(() => {
+  function confirmAudioAuth(): boolean {
     try {
       return window.confirm('¿Confirmas que este audio es tuyo o tienes autorización para usarlo?');
     } catch {
       return true;
     }
-  }, []);
+  }
 
-  const setVF = useCallback((updater: (p: VoiceFlowState) => VoiceFlowState) => {
+  function setVF(updater: (p: VoiceFlowState) => VoiceFlowState) {
     setVoiceFlow((prev) => {
       const next = updater(prev);
       voiceFlowRef.current = next;
       return next;
     });
-  }, []);
-  const vfStepFromProfile = useCallback((p: VoiceProfilePublic | null, listOpen: boolean): VoiceFlowState['step'] => {
+  }
+  function vfStepFromProfile(p: VoiceProfilePublic | null, listOpen: boolean): VoiceFlowState['step'] {
     if (!p) return listOpen ? 'intro' : 'intro';
     const s = String(p.status || '').toLowerCase();
     const isExpired = p.expires_at ? Date.now() > new Date(p.expires_at).getTime() : false;
@@ -1285,11 +1261,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (!p.is_active && (s === 'pending' || s === 'processing' || s === 'creating')) return 'creating';
     if (p.is_active && !isExpired && s === 'ready') return 'ready';
     if (isExpired || (!p.is_active && (s === 'ready' || s === 'expired' || s === ''))) return 'expired';
-    // (Negocio: sin paso costo) si todo está listo pero aún inactivo → creating.
     if (!p.is_active) return 'creating';
     return 'creating';
-  }, []);
-  const callVoiceFlow = useCallback(async <T = any>(payload: any, opts?: { showError?: boolean; list?: boolean }): Promise<{ ok: boolean; status: number; data: T }> => {
+  }
+  async function callVoiceFlow<T = any>(payload: any, opts?: { showError?: boolean; list?: boolean }): Promise<{ ok: boolean; status: number; data: T }> {
     try {
       const token = await getValidBearerToken();
       if (!token) {
@@ -1318,8 +1293,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       if (opts?.showError !== false) setToast({ kind: 'err', text: `Sin conexión al servidor: ${msg}` });
       return { ok: false, status: 0, data: { error: msg } as any };
     }
-  }, [getValidBearerToken]);
-  const refreshVoiceList = useCallback(async (opts?: { selectId?: string | null }) => {
+  }
+  async function refreshVoiceList(opts?: { selectId?: string | null }) {
     setVF((p) => ({ ...p, listLoading: true }));
     const r = await callVoiceFlow<{ list?: VoiceProfilePublic[]; profile?: VoiceProfilePublic }>({ action: 'list' }, { showError: false });
     const list: VoiceProfilePublic[] = Array.isArray((r.data as any)?.list) ? (r.data as any).list : [];
@@ -1335,7 +1310,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       step: current ? vfStepFromProfile(current, p.open) : (list.length ? 'intro' : 'intro'),
     }));
     return { list, current };
-  }, [callVoiceFlow, setVF, vfStepFromProfile]);
+  }
   const refreshVoiceCurrent = useCallback(async (forceStep?: VoiceFlowState['step']) => {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return null;
