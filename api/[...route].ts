@@ -20626,8 +20626,9 @@ const lucianaVoiceHandler = (() => {
   const CONSENT_TEXT =
     "Confirmo que esta es mi voz o que tengo autorización explícita para usarla.";
 
-  // Cobro real por activación (igual a CREDIT_COSTS.clone_voice; NO cambiar)
-  const ACTIVATION_COST = CREDIT_COSTS?.clone_voice ?? 15;
+  // NOTA DE NEGOCIO (2026-09-19): Crear personaje y reactivar personaje es GRATIS para el cliente.
+  // Los créditos solo se descuentan al generar canciones o covers (cobro Suno por crear la voz es costo interno).
+  const ACTIVATION_COST = 0;
 
   function parseJsonBody(req: any) {
     if (typeof req.body === "string") { try { return JSON.parse(req.body); } catch { return null; } }
@@ -20762,6 +20763,8 @@ const lucianaVoiceHandler = (() => {
   }
 
   async function chargeActivationIdempotent(auth: any, activationId: string) {
+    // NEGOCIO (2026-09-19): crear/reactivar personaje es GRATIS para el cliente.
+    // Esta función se mantiene por compatibilidad (sin cobro ni consumo de créditos).
     const { data: rows, error } = await auth.admin
       .from("voice_activations")
       .select("id, cost_charged, voice_generate_task_id")
@@ -20769,33 +20772,18 @@ const lucianaVoiceHandler = (() => {
       .eq("user_id", auth.user.id)
       .limit(1);
     if (error || !rows?.length) return { ok: false, message: "No encontré la activación." };
+    // Idempotencia: si ya está marcado no volvemos a escribir.
     const row = rows[0] as any;
-    if (Number(row.cost_charged || 0) > 0) return { ok: true, already: true }; // idempotencia
-
-    // Check de saldo + consumo vía helper global FIFO existente
-    try {
-      const available = await getUserAvailableCredits(auth.admin, auth.user.id);
-      if ((available.creditsTotal || 0) < ACTIVATION_COST) {
-        return { ok: false, message: `Te faltan créditos. (Tienes ${available.creditsTotal || 0} y necesitas ${ACTIVATION_COST}).` };
-      }
-      const consumed = await consumeUserCredits(auth.admin, auth.user.id, ACTIVATION_COST);
-      if (!consumed.ok) {
-        return { ok: false, message: consumed.message || "No se pudo procesar el cobro de créditos." };
-      }
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e || "");
-      return { ok: false, message: "Error procesando créditos.", detail };
+    if (Number(row.cost_charged || 0) <= 0) {
+      await auth.admin
+        .from("voice_activations")
+        .update({ cost_charged: 0, updated_at: nowISO() })
+        .eq("id", activationId)
+        .eq("user_id", auth.user.id)
+        .lt("cost_charged", 1)
+        .catch(() => {});
     }
-
-    // Segundo nivel idempotente: marcar cost_charged con condición < 1
-    const { error: upErr } = await auth.admin
-      .from("voice_activations")
-      .update({ cost_charged: ACTIVATION_COST, updated_at: nowISO() })
-      .eq("id", activationId)
-      .eq("user_id", auth.user.id)
-      .lt("cost_charged", 1);
-    if (upErr) return { ok: false, message: "No pude procesar el cobro. Intenta de nuevo." };
-    return { ok: true };
+    return { ok: true, already: true };
   }
 
   return async function handler(req: any, res: any) {

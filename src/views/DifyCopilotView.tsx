@@ -385,7 +385,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   voiceFlowRef.current = voiceFlow;
   const voiceRefreshTimerRef = useRef<number | null>(null);
 
-  const VF_ACTIVATION_COST = 15;
+  // NOTA DE NEGOCIO (2026-09-19): Crear personaje y reactivar personaje es GRATIS.
+  // Los créditos solo se descuentan al generar canciones o covers (costo interno).
+  const VF_ACTIVATION_COST = 0;
 
   const [micRecorderOpen, setMicRecorderOpen] = useState(false);
   const [micRecorderState, setMicRecorderState] = useState<'idle' | 'recording' | 'stopping'>('idle');
@@ -1283,7 +1285,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (!p.is_active && (s === 'pending' || s === 'processing' || s === 'creating')) return 'creating';
     if (p.is_active && !isExpired && s === 'ready') return 'ready';
     if (isExpired || (!p.is_active && (s === 'ready' || s === 'expired' || s === ''))) return 'expired';
-    return 'cost';
+    // (Negocio: sin paso costo) si todo está listo pero aún inactivo → creating.
+    if (!p.is_active) return 'creating';
+    return 'creating';
   }, []);
   const callVoiceFlow = useCallback(async <T = any>(payload: any, opts?: { showError?: boolean; list?: boolean }): Promise<{ ok: boolean; status: number; data: T }> => {
     try {
@@ -1555,15 +1559,16 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     setVF((p) => ({ ...p, busy: true }));
     const r = await callVoiceFlow({ action: 'set-name', profileId: id, name }, { showError: true });
     if (r.ok) {
-      await refreshVoiceCurrent('cost');
+      // Negocio (2026-09-19): sin paso costo. Ir directo a creating y confirmar la creación.
+      await refreshVoiceCurrent('creating');
+      void vfConfirmCreate();
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [callVoiceFlow, refreshVoiceCurrent, setVF]);
+  }, [callVoiceFlow, refreshVoiceCurrent, setVF, vfConfirmCreate]);
   const vfConfirmCreate = useCallback(async () => {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
-    const confirmOk = window.confirm(`Esta operación cuesta ${VF_ACTIVATION_COST} créditos (solo una vez por activación). ¿Confirmar?`);
-    if (!confirmOk) return;
+    // (Negocio: sin cobro, sin confirmación de créditos) Ir directo a la creación del personaje.
     setVF((p) => ({ ...p, busy: true, step: 'creating' }));
     const r = await callVoiceFlow({ action: 'confirm-create', profileId: id }, { showError: true });
     if (r.ok) {
@@ -1597,7 +1602,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       }, 12000);
     }
     setVF((p) => ({ ...p, busy: false }));
-  }, [VF_ACTIVATION_COST, callVoiceFlow, refreshVoiceCurrent, setVF, vfStepFromProfile]);
+  }, [callVoiceFlow, refreshVoiceCurrent, setVF, vfStepFromProfile]);
   const vfReactivate = useCallback(async () => {
     const id = voiceFlowRef.current.selectedId;
     if (!id) return;
@@ -2969,7 +2974,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                 }}
               >
                 <div style={{
-                  padding: '1rem 1.05rem',
+                  padding: '1rem 1.05rem calc(1.1rem + env(safe-area-inset-bottom, 0px))',
                   borderRadius: '1.25rem',
                   border: '1px solid color-mix(in srgb, #ec4899 28%, color-mix(in srgb, #7c3aed 22%, var(--border)))',
                   background: isDark
@@ -2977,6 +2982,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                     : 'linear-gradient(135deg, rgba(236,72,153,.08), rgba(124,58,237,.07) 50%, rgba(37,99,235,.06))',
                   backdropFilter: 'blur(8px)',
                   color: 'var(--text)',
+                  // Evitar que la tarjeta se corte / superponga con la caja de escritura en PC + móvil.
+                  position: 'relative',
+                  zIndex: 2,
                 }}>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
@@ -2996,7 +3004,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           Crea tu personaje de voz
                         </h2>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          Tu propia voz para cantar canciones y covers. Disponible 24h. Cobro único de <b style={{ color: 'var(--brand-accent)' }}>{VF_ACTIVATION_COST} créditos</b>.
+                          Tu propia voz para cantar canciones y covers. Disponible 24h. <b style={{ color: '#22c55e' }}>Crear tu personaje es gratis.</b> Los créditos solo se usan al generar canciones o covers.
                         </p>
                       </div>
                     </div>
@@ -3081,16 +3089,28 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                           <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '0.92rem' }}>
-                            🎙️ Aún no tienes personajes. Crea el primero en 6 pasos rápidos:
+                            🎙️ Aún no tienes personajes. Crea el primero en 5 pasos rápidos:
                           </p>
                           <ol style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.55 }}>
                             <li>Confirmo que la voz es mía (consentimiento).</li>
                             <li>Subo o grabo una muestra de mi voz original (15-60s).</li>
-                            <li>Suno genera una frase de verificación única.</li>
-                            <li>Grabo la frase exactamente como me la pide Suno.</li>
-                            <li>Elijo un nombre para mi personaje.</li>
-                            <li>Confirmo y pago 15 créditos → ¡listo en ~2 min!</li>
+                            <li>Generaremos una frase de verificación única.</li>
+                            <li>Grabo la frase exactamente como aparece.</li>
+                            <li>Elijo un nombre para mi personaje → ¡listo en ~2 min!</li>
                           </ol>
+                          <div style={{
+                            marginTop: '0.4rem',
+                            padding: '0.55rem 0.8rem',
+                            borderRadius: '0.85rem',
+                            border: '1px solid #22c55e40',
+                            background: isDark ? 'rgba(34,197,94,.08)' : 'rgba(34,197,94,.05)',
+                            fontSize: '0.78rem',
+                            lineHeight: 1.4,
+                            color: isDark ? '#bbf7d0' : '#14532d',
+                            fontWeight: 700,
+                          }}>
+                            ✨ <b>Crear tu personaje es gratis.</b> Los créditos solo se usan al generar canciones o covers.
+                          </div>
                           <button
                             type="button"
                             onClick={async () => {
@@ -3127,10 +3147,14 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                       fontWeight: 700,
                       color: 'var(--text-muted)',
                     }}>
-                      {['Consentimiento', 'Muestra', 'Frase', 'Verificación', 'Nombre', 'Costo'].map((lbl, i) => {
+                      {['Consentimiento', 'Muestra', 'Frase', 'Verificación', 'Nombre'].map((lbl, i) => {
                         const step = voiceFlow.step;
-                        const stepOrder: VoiceFlowState['step'][] = ['consent', 'sample', 'phrase', 'verify', 'name', 'cost', 'creating', 'ready', 'expired', 'hidden'];
-                        const curIdx = Math.max(0, stepOrder.indexOf(step === 'intro' ? 'consent' : step));
+                        const stepOrder: VoiceFlowState['step'][] = ['consent', 'sample', 'phrase', 'verify', 'name', 'creating', 'ready', 'expired', 'hidden'];
+                        // Para la barra: 'creating' y más allá ya se marca como completo (nombre está hecho).
+                        const mappedStep: VoiceFlowState['step'] = (step === 'cost' || step === 'creating' || step === 'ready' || step === 'expired' || step === 'hidden')
+                          ? 'name'
+                          : step;
+                        const curIdx = Math.max(0, stepOrder.indexOf(mappedStep === 'intro' ? 'consent' : mappedStep));
                         const done = i < curIdx;
                         const active = i === curIdx;
                         return (
@@ -3153,7 +3177,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                               fontWeight: active ? 800 : 700,
                               whiteSpace: 'nowrap',
                             }}>{lbl}</span>
-                            {i < 5 && <div style={{ flex: 1, height: '2px', background: done ? '#22c55e66' : 'var(--border)', borderRadius: '2px' }} />}
+                            {i < 4 && <div style={{ flex: 1, height: '2px', background: done ? '#22c55e66' : 'var(--border)', borderRadius: '2px' }} />}
                           </div>
                         );
                       })}
@@ -3164,7 +3188,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                   {voiceFlow.current && voiceFlow.step === 'consent' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                        <b style={{ color: 'var(--brand-accent)' }}>Paso 1 de 6 · Consentimiento:</b> Para proteger tu identidad, debes confirmar que la voz que vas a usar es tuya o que tienes autorización escrita.
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 1 de 5 · Consentimiento:</b> Para proteger tu identidad, debes confirmar que la voz que vas a usar es tuya o que tienes autorización escrita.
                       </p>
                       <div style={{
                         padding: '0.7rem 0.85rem',
@@ -3204,7 +3228,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                   {voiceFlow.current && voiceFlow.step === 'sample' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                        <b style={{ color: 'var(--brand-accent)' }}>Paso 2 de 6 · Muestra de tu voz original (15 - 60 segundos):</b> Habla o canta claro, sin ruido de fondo, en un lugar silencioso. Si dudas, usa el micrófono.
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 2 de 5 · Muestra de tu voz original (15 - 60 segundos):</b> Habla o canta claro, sin ruido de fondo, en un lugar silencioso. Si dudas, usa el micrófono.
                       </p>
                       <div style={{
                         padding: '0.6rem 0.8rem',
@@ -3283,7 +3307,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                   {voiceFlow.current && voiceFlow.step === 'phrase' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                        <b style={{ color: 'var(--brand-accent)' }}>Paso 3 de 6 · Frase de verificación:</b> Suno genera una frase única para confirmar que eres tú.
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 3 de 5 · Frase de verificación:</b> Generaremos una frase única para confirmar que eres tú.
                       </p>
                       {!voiceFlow.current.current_phrase || voiceFlow.busy ? (
                         <div style={{
@@ -3360,7 +3384,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                   {voiceFlow.current && voiceFlow.step === 'verify' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                        <b style={{ color: 'var(--brand-accent)' }}>Paso 4 de 6 · Verificación:</b> Ahora graba leyendo/cantando la frase anterior <b>exactamente igual</b>. Si fallas, puedes repetirla.
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 4 de 5 · Verificación:</b> Ahora graba leyendo/cantando la frase anterior <b>exactamente igual</b>. Si fallas, puedes repetirla.
                       </p>
                       {voiceFlow.current.current_phrase && (
                         <div style={{
@@ -3454,7 +3478,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                   {voiceFlow.current && voiceFlow.step === 'name' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                        <b style={{ color: 'var(--brand-accent)' }}>Paso 5 de 6 · Nombre del personaje:</b> Ponle un nombre corto (máx. 50 caracteres). Después lo encontrarás en la lista de voces al crear canciones.
+                        <b style={{ color: 'var(--brand-accent)' }}>Paso 5 de 5 · Nombre del personaje:</b> Ponle un nombre corto (máx. 50 caracteres). Después lo encontrarás en la lista de voces al crear canciones.
                       </p>
                       <label className="block" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                         <span style={{ fontSize: '0.72rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--brand-primary)' }}>
@@ -3514,59 +3538,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                     </div>
                   )}
 
-                  {/* ========== PASO 6: COSTO + CONFIRMAR ========== */}
-                  {voiceFlow.current && voiceFlow.step === 'cost' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                      <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text)' }}>
-                        <b style={{ color: 'var(--brand-accent)' }}>Paso 6 de 6 · Resumen y costo:</b> Revisa los detalles y confirma.
-                      </p>
-                      <div style={{
-                        padding: '0.8rem 0.9rem',
-                        borderRadius: '0.95rem',
-                        border: '1px solid color-mix(in srgb, var(--brand-accent) 30%, var(--border))',
-                        background: isDark
-                          ? 'linear-gradient(135deg, rgba(236,72,153,.10), rgba(124,58,237,.10))'
-                          : 'linear-gradient(135deg, rgba(236,72,153,.06), rgba(124,58,237,.06))',
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-                        gap: '0.5rem',
-                        fontSize: '0.78rem',
-                      }}>
-                        <VFRow label="Personaje" value={voiceFlow.current.name || '—'} />
-                        <VFRow label="Muestra original" value={voiceFlow.current.sample_ready ? '✅ Lista' : '❌ Pendiente'} />
-                        <VFRow label="Frase" value={voiceFlow.current.current_phrase ? '✅ Generada' : '❌ Pendiente'} />
-                        <VFRow label="Verificación" value={voiceFlow.current.verify_ready ? '✅ Hecha' : '❌ Pendiente'} />
-                        <VFRow label="Vigencia" value="24 horas (desde que esté listo)" />
-                        <VFRow label="Costo" value={`${VF_ACTIVATION_COST} créditos (una vez)`} highlight />
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => setVF((p) => ({ ...p, step: 'name', nameInput: p.current?.name || '' }))}
-                          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-xs font-bold"
-                          style={{ borderColor: 'var(--border)', background: 'var(--bg-elev-1)', color: 'var(--text-muted)' }}
-                        >
-                          ← Cambiar nombre
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void vfConfirmCreate()}
-                          disabled={voiceFlow.busy}
-                          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl px-6 text-sm font-black ml-auto disabled:opacity-70"
-                          style={{
-                            background: 'linear-gradient(135deg, #ec4899 0%, #7c3aed 50%, #2563eb 100%)',
-                            color: '#fff',
-                            boxShadow: '0 14px 34px color-mix(in srgb, #7c3aed 32%, transparent)',
-                            border: '1px solid transparent',
-                            cursor: voiceFlow.busy ? 'progress' : 'pointer',
-                          }}
-                        >
-                          {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-                          Crear personaje · {VF_ACTIVATION_COST} créditos
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {/* ========== PASO 6 (RETIRADO): sin paso costo. Se salta directo a creating ========== */}
 
                   {/* ========== ESTADO: CREANDO (polling) ========== */}
                   {voiceFlow.current && voiceFlow.step === 'creating' && (
@@ -3580,7 +3552,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                       }}>
                         <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--brand-primary)', verticalAlign: '-4px', marginRight: '0.5rem' }} />
                         <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text)' }}>
-                          🎙️ Creando tu personaje… Suno está entrenando tu voz.
+                          🎙️ Creando tu personaje… preparando tu voz.
                         </span>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
                           Esto suele tardar entre <b>1 y 3 minutos</b>. Puedes irte a otra pestaña; cuando esté listo aparecerá automáticamente. Actualizo el estado cada 12 segundos.
@@ -3808,7 +3780,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           }}
                         >
                           {voiceFlow.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-                          🔄 Reactivar personaje · {VF_ACTIVATION_COST} créditos
+                          🔄 Reactivar personaje
                         </button>
                         <button
                           type="button"
