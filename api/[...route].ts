@@ -21139,44 +21139,35 @@ const lucianaVoiceHandler = (() => {
           return clientError(400, "Acepta primero el consentimiento.", eid);
         }
 
-        // 2. Firmar URL de la muestra para enviarla a Suno (2 horas vida)
-        //    - Si R2 está configurado y getSignedR2Url existe: URL FIRMADA (privada)
-        //    - Si falla firma o no hay función: intentar URL PÚBLICA directa de R2_PUBLIC_BASE_URL
-        //    - Si tampoco hay URL pública: devolvemos error_id claro (no catch top genérico)
-        let sampleSigned = "";
+        // 2. Firmar URL de la muestra para enviarla a Suno (URL FIRMADA TEMPORAL SOLAMENTE)
+        //    - PRIVACIDAD CRÍTICA: audios biométricos NUNCA públicos.
+        //    - No se usa ninguna URL pública ni fallback; si falla la firma, cortamos el flujo.
+        //    - TTL: PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS (24h por defecto L474)
+        //      para dar tiempo al proveedor de entrar en cola antes de descargar.
         const samplePath = String(profile.sample_original_r2_path || "").trim();
-        try {
-          if (typeof getSignedR2Url === "function" && samplePath) {
-            try {
-              sampleSigned = String(await getSignedR2Url(samplePath, 60 * 60 * 2) || "").trim();
-            } catch (r2e) {
-              const eid = genErrorId();
-              serverLog(eid, action, { step: "getSignedR2Url_throw", err: r2e instanceof Error ? r2e.stack || String(r2e) : String(r2e) });
-              sampleSigned = "";
-            }
-          }
-          // Fallback: URL pública sin firma (si el bucket es público, R2 lee sin firma)
-          if (!sampleSigned && samplePath) {
-            const pubBase = String(process.env.R2_PUBLIC_BASE_URL || process.env.R2_PUBLIC || "").replace(/\/+$/, "");
-            if (pubBase) {
-              sampleSigned = `${pubBase}${samplePath.startsWith("/") ? "" : "/"}${samplePath}`;
-            }
-          }
-        } catch (r2Outer) {
+        let sampleSigned = "";
+        if (typeof getSignedR2Url !== "function" || !samplePath) {
           const eid = genErrorId();
-          serverLog(eid, action, { step: "getSignedR2Url_outer", err: r2Outer instanceof Error ? r2Outer.stack || String(r2Outer) : String(r2Outer) });
+          serverLog(eid, action, { step: "getSignedR2Url_check", samplePath, getSignedR2Url_type: typeof getSignedR2Url });
+          return clientError(500, "No podemos preparar tu muestra en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+        }
+        try {
+          sampleSigned = String(await getSignedR2Url(samplePath, PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS) || "").trim();
+        } catch (r2e) {
+          const eid = genErrorId();
+          // getR2Env lanza exactamente "Missing required R2 environment variables" si faltan las 4 vars.
+          serverLog(eid, action, {
+            step: "getSignedR2Url_throw",
+            errMessage: r2e instanceof Error ? r2e.message : String(r2e),
+            errStack: r2e instanceof Error ? r2e.stack : undefined,
+            samplePath,
+          });
           sampleSigned = "";
         }
         if (!sampleSigned) {
           const eid = genErrorId();
-          const missingR2Envs: string[] = [];
-          if (!process.env.R2_ACCOUNT_ID) missingR2Envs.push("R2_ACCOUNT_ID");
-          if (!process.env.R2_ACCESS_KEY_ID) missingR2Envs.push("R2_ACCESS_KEY_ID");
-          if (!process.env.R2_SECRET_ACCESS_KEY) missingR2Envs.push("R2_SECRET_ACCESS_KEY");
-          if (!process.env.R2_BUCKET_NAME) missingR2Envs.push("R2_BUCKET_NAME");
-          if (!process.env.R2_PUBLIC_BASE_URL && !process.env.R2_PUBLIC) missingR2Envs.push("R2_PUBLIC_BASE_URL (opcional, fallback bucket público)");
-          serverLog(eid, action, { step: "sample_url_empty", missingEnvs: missingR2Envs.join(","), samplePath });
-          return clientError(500, "No puedo preparar tu muestra de voz (credenciales Cloudflare). Contacta a soporte o inténtalo de nuevo.", eid);
+          serverLog(eid, action, { step: "sample_url_empty_after_throw", samplePath });
+          return clientError(500, "No podemos preparar tu muestra en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
         }
 
         // ⚠️ Flujo oficial Suno: NUEVA frase → el usuario DEBE grabar/cantar EXACTAMENTE la frase nueva.
@@ -21373,12 +21364,31 @@ const lucianaVoiceHandler = (() => {
         const charge = await chargeActivationIdempotent(auth, source.id);
         if (!charge.ok) return send(res, 402, { error: charge.message || "No puedo procesar el pago." });
 
-        // Firmar verifyUrl para Suno voice/generate
+        // Firmar verifyUrl para Suno voice/generate (URL FIRMADA TEMPORAL SOLAMENTE)
+        const verifyPath = String(profile.last_verify_r2_path || "").trim();
         let verifySigned = "";
+        if (typeof getSignedR2Url !== "function" || !verifyPath) {
+          const eid = genErrorId();
+          serverLog(eid, action, { step: "getSignedR2Url_verify_check", verifyPath, getSignedR2Url_type: typeof getSignedR2Url });
+          return clientError(500, "No podemos preparar tu grabación en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+        }
         try {
-          if (typeof getSignedR2Url === "function") verifySigned = await getSignedR2Url(profile.last_verify_r2_path, 60 * 60 * 2);
-        } catch { verifySigned = ""; }
-        if (!verifySigned) return send(res, 500, { error: "No puedo preparar la grabación de verificación." });
+          verifySigned = String(await getSignedR2Url(verifyPath, PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS) || "").trim();
+        } catch (r2e) {
+          const eid = genErrorId();
+          serverLog(eid, action, {
+            step: "getSignedR2Url_verify_throw",
+            errMessage: r2e instanceof Error ? r2e.message : String(r2e),
+            errStack: r2e instanceof Error ? r2e.stack : undefined,
+            verifyPath,
+          });
+          verifySigned = "";
+        }
+        if (!verifySigned) {
+          const eid = genErrorId();
+          serverLog(eid, action, { step: "verify_url_empty_after_throw", verifyPath });
+          return clientError(500, "No podemos preparar tu grabación en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+        }
 
         const callback = absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined;
         const voiceGeneratePayload: any = {
