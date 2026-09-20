@@ -847,6 +847,33 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     return sessionOk && accessToken ? accessToken : null;
   }
 
+  async function apiRequest<T = any>(
+    url: string,
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    bearerToken: string,
+    body?: any,
+  ): Promise<{ ok: boolean; status: number; json: T | null }> {
+    try {
+      const headers: Record<string, string> = {
+        accept: 'application/json',
+        authorization: `Bearer ${String(bearerToken || '').trim()}`,
+      };
+      if (body !== undefined && body !== null) headers['content-type'] = 'application/json; charset=utf-8';
+      const r = await fetch(url, {
+        method,
+        headers,
+        body: (body !== undefined && body !== null) ? JSON.stringify(body) : undefined,
+      });
+      const raw = await r.text();
+      let json: any = null;
+      try { json = raw ? JSON.parse(raw) : null; } catch { json = { _raw: raw } as any; }
+      return { ok: r.status >= 200 && r.status < 300, status: r.status, json: json as T | null };
+    } catch (e) {
+      const msg = e instanceof Error ? String(e.message) : String(e || '');
+      return { ok: false, status: 0, json: { error: 'network_error', message: msg } as any };
+    }
+  }
+
   async function createSupabaseConversation(
     token: string,
     opts?: { title?: string; internal_dify_conversation_id?: string; summary_snapshot?: any }
