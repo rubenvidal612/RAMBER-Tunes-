@@ -68,14 +68,14 @@ button { -webkit-tap-highlight-color: transparent; }
 .luciana-bank-pill strong { color: white; }
 
 .luciana-sidebar { width: 100%; min-height: 0; height: 100%; display: flex; flex-direction: column; background: #070a12; }
-.luciana-sidebar-scroll { padding: 22px 14px; overflow-y: auto; }
+.luciana-sidebar-scroll { padding: 22px 14px; overflow-y: auto; flex: 1 1 auto; min-height: 0; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
 .luciana-sidebar-label { margin: 0 10px 10px; color: #596277; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
 .luciana-sidebar-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 11px; border: 1px solid transparent; border-radius: 11px; color: #8f99ad; font-size: 13px; font-weight: 600; text-align: left; transition: .18s ease; }
 .luciana-sidebar-item:hover { color: #eef1f8; background: rgba(255,255,255,.035); }
 .luciana-sidebar-item.is-active { color: white; border-color: rgba(155,92,255,.2); background: linear-gradient(90deg, rgba(116,50,220,.27), rgba(116,50,220,.09)); box-shadow: inset 3px 0 0 var(--lm-purple); }
 .luciana-sidebar-item.is-active svg { color: #c084fc; }
 .luciana-sidebar-item small { margin-left: auto; color: #596277; font-size: 8px; text-transform: uppercase; }
-.luciana-sidebar-footer { margin-top: auto; padding: 13px; border-top: 1px solid var(--lm-line); display: grid; gap: 9px; }
+.luciana-sidebar-footer { padding: 16px 14px 6px; display: grid; gap: 9px; }
 .luciana-help-card { display: flex; align-items: center; gap: 10px; color: #adb5c5; text-align: left; padding: 9px 10px; border-radius: 12px; }
 .luciana-help-card:hover { background: rgba(255,255,255,.04); color: white; }
 .luciana-help-card > span { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: rgba(155,92,255,.12); color: #b77aff; }

@@ -191,17 +191,17 @@ export function Sidebar({ currentTab, onChange, isAdmin = false }: SidebarProps)
           ))}
           <ActionButton label="Cerrar sesión" icon={LogOut} onClick={handleSignOut} />
         </div>
-      </nav>
 
-      <div className="luciana-sidebar-footer">
-        <button type="button" className="luciana-help-card">
-          <span><CircleHelp className="w-5 h-5" /></span>
-          <div><strong>¿Necesitas ayuda?</strong><small>Centro de ayuda</small></div>
-        </button>
-        <button type="button" onClick={() => onChange('planes')} className="luciana-sidebar-credits">
-          <div><small>Créditos disponibles</small><strong><WalletCards className="w-4 h-4" /> Obtener créditos</strong></div>
-        </button>
-      </div>
+        <div className="luciana-sidebar-footer">
+          <button type="button" className="luciana-help-card">
+            <span><CircleHelp className="w-5 h-5" /></span>
+            <div><strong>¿Necesitas ayuda?</strong><small>Centro de ayuda</small></div>
+          </button>
+          <button type="button" onClick={() => onChange('planes')} className="luciana-sidebar-credits">
+            <div><small>Créditos disponibles</small><strong><WalletCards className="w-4 h-4" /> Obtener créditos</strong></div>
+          </button>
+        </div>
+      </nav>
     </aside>
   );
 }
