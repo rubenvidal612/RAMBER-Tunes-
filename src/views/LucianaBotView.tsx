@@ -250,21 +250,30 @@ export function LucianaBotView() {
     try {
       const t = await getAccessToken();
       if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
+      const controller = new AbortController();
+      const timeoutMs = 60000;
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
       const r = await fetch('/api/luciana-bot/chat', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${t.token}`,
         },
         body: JSON.stringify({ session: customSession || session, event }),
-      });
+      }).finally(() => window.clearTimeout(timer));
       const out = await r.json().catch(() => ({}));
       if (!r.ok || !out?.session) {
         throw new Error((out?.detail || out?.error || 'No pude hablar con LucIAna Bot.').toString());
       }
       setSession(out.session as ChatSession);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ocurrió un error.');
+      const msg = e instanceof Error ? e.message : 'Ocurrió un error.';
+      if (/aborted|abort|timeout|timed out/i.test(msg)) {
+        setError('Está tardando más de lo normal. Revisa tu internet y vuelve a intentar.');
+      } else {
+        setError(msg);
+      }
     } finally {
       if (!opts?.silent) setIsSending(false);
     }
@@ -313,8 +322,11 @@ export function LucianaBotView() {
     if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión.');
     const contentType = (file.type || '').trim() || (file.name.toLowerCase().endsWith('.mp3') ? 'audio/mpeg' : 'application/octet-stream');
 
+    const prepController = new AbortController();
+    const prepTimer = window.setTimeout(() => prepController.abort(), 30000);
     const prep = await fetch('/api/upload-audio', {
       method: 'POST',
+      signal: prepController.signal,
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${t.token}`,
@@ -323,7 +335,7 @@ export function LucianaBotView() {
         title: file.name,
         contentType,
       }),
-    });
+    }).finally(() => window.clearTimeout(prepTimer));
     const prepOut = await prep.json().catch(() => ({}));
     if (!prep.ok) {
       throw new Error((prepOut?.detail || prepOut?.error || 'No pude preparar la subida del audio.').toString());
@@ -333,18 +345,24 @@ export function LucianaBotView() {
     let key = (prepOut?.key || '').toString().trim();
 
     if (prepOut?.uploadUrl) {
+      const putController = new AbortController();
+      const putTimer = window.setTimeout(() => putController.abort(), 120000);
       const put = await fetch(prepOut.uploadUrl, {
         method: 'PUT',
+        signal: putController.signal,
         headers: { 'content-type': contentType },
         body: file,
-      });
+      }).finally(() => window.clearTimeout(putTimer));
       if (!put.ok) {
         throw new Error(`No pude subir el audio (HTTP ${put.status}).`);
       }
     } else if (!url) {
       const base64 = await fileToBase64(file);
+      const directController = new AbortController();
+      const directTimer = window.setTimeout(() => directController.abort(), 120000);
       const direct = await fetch('/api/upload-audio', {
         method: 'POST',
+        signal: directController.signal,
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${t.token}`,
@@ -354,7 +372,7 @@ export function LucianaBotView() {
           contentType,
           file: base64,
         }),
-      });
+      }).finally(() => window.clearTimeout(directTimer));
       const directOut = await direct.json().catch(() => ({}));
       if (!direct.ok || directOut?.ok === false) {
         throw new Error((directOut?.detail || directOut?.message || directOut?.error || 'No pude subir el audio.').toString());

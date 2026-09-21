@@ -14637,7 +14637,10 @@ const aiHandler = (() => {
     if (!url) return send(res, 400, { error: "uploadUrl inválido" });
 
     try {
-      const fr = await fetch(url);
+      const controller = new AbortController();
+      const timeoutMs = 120000;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const fr = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
       if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
 
       const contentType = (fr.headers.get("content-type") || "").toString();
@@ -15715,6 +15718,49 @@ const lucianaBotHandler = (() => {
     const kind = normalizeText(session.draft.pendingKind || "generate", 80);
     if (!taskId) return;
 
+    if (kind === "transcribe-lyrics") {
+      const audio = session.draft.referenceAudio;
+      const uploadUrl = normalizeText(audio?.url || "", 2000);
+      const mimeType = normalizeText(audio?.contentType || "audio/mpeg", 120) || "audio/mpeg";
+      if (!uploadUrl) {
+        session.draft.pendingTaskId = undefined;
+        session.draft.pendingKind = undefined;
+        session.step = "generate-lyrics";
+        setComposer(session, "multiline", "Pégame la letra o unas líneas de referencia…", "Guardar");
+        pushAssistant(session, "No pude encontrar el audio que subiste. Si quieres, pégame aquí la letra manualmente o unas líneas de referencia.", {
+          inputMode: "multiline",
+        });
+        return;
+      }
+
+      const tr = await internalJson(req, "/api/ai/transcribe-lyrics", {
+        method: "POST",
+        body: { uploadUrl, mimeType },
+      });
+      const lyrics = normalizeText(tr.out?.lyrics || "", 12000);
+      session.draft.pendingTaskId = undefined;
+      session.draft.pendingKind = undefined;
+
+      if (!tr.ok || tr.out?.ok === false || !lyrics) {
+        session.step = "generate-lyrics";
+        setComposer(session, "multiline", "Pégame la letra o unas líneas de referencia…", "Guardar");
+        pushAssistant(
+          session,
+          (tr.out?.message || "No pude sacar bien la letra de ese audio.").toString() + "\n\nSi quieres, pégame aquí la letra manualmente o unas líneas de referencia.",
+          { inputMode: "multiline" },
+        );
+        return;
+      }
+
+      session.draft.originalLyrics = lyrics;
+      session.draft.lyrics = lyrics;
+      pushAssistant(session, `Te detecté esta letra del audio:\n\n${lyrics}`, {
+        quickReplies: [{ id: "audio-lyrics-ok", label: "Seguir", value: "generate:audio:continue", icon: "arrow-right", variant: "primary" }],
+      });
+      askGenre(session);
+      return;
+    }
+
     if (kind === "generate" || kind === "upload-cover") {
       const songs = await getSongsByTask(auth.admin, auth.user.id, taskId);
       if (songs.length > 0) {
@@ -16205,27 +16251,12 @@ const lucianaBotHandler = (() => {
             contentType,
             size: Number(file?.size || 0),
           };
-          const tr = await internalJson(req, "/api/ai/transcribe-lyrics", {
-            method: "POST",
-            body: { uploadUrl: session.draft.referenceAudio.url, mimeType: contentType || "audio/mpeg" },
-          });
-          const lyrics = normalizeText(tr.out?.lyrics || "", 12000);
-          if (!tr.ok || tr.out?.ok === false || !lyrics) {
-            session.step = "generate-lyrics";
-            setComposer(session, "multiline", "Pégame la letra o unas líneas de referencia…", "Guardar");
-            pushAssistant(
-              session,
-              (tr.out?.message || "No pude sacar bien la letra de ese audio.").toString() + "\n\nSi quieres, pégame aquí la letra manualmente o unas líneas de referencia.",
-              { inputMode: "multiline" },
-            );
-            return send(res, 200, { ok: true, session });
-          }
-          session.draft.originalLyrics = lyrics;
-          session.draft.lyrics = lyrics;
-          pushAssistant(session, `Te detecté esta letra del audio:\n\n${lyrics}`, {
-            quickReplies: [{ id: "audio-lyrics-ok", label: "Seguir", value: "generate:audio:continue", icon: "arrow-right", variant: "primary" }],
-          });
-          askGenre(session);
+          const nextTaskId = makeMessageId("transcribe");
+          session.step = "generate-audio-polling";
+          session.draft.pendingTaskId = nextTaskId;
+          session.draft.pendingKind = "transcribe-lyrics";
+          setComposer(session, "disabled", "Transcribiendo letra…", "Enviar");
+          upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendo…");
           return send(res, 200, { ok: true, session });
         }
 
