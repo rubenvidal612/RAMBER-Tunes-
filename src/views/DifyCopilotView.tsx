@@ -349,7 +349,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   // ================================================================
   const VOICE_FLOW_ENABLED_IN_BOT: boolean = false;
   const VOICE_FLOW_TEMP_DISABLED_MSG: string =
-    "La creación de personajes de voz está temporalmente no disponible. Gracias por tu paciencia.";
+    "🎙️ Para clonar tu voz, abre el menú ☰ y entra a “Clonador de voz”.\n\nAhí sigue estos pasos:\n1. Pulsa “Crear personaje”.\n2. Confirma que tienes permiso para usar esa voz.\n3. Sube o graba una muestra de tu voz.\n4. Lee o canta la frase de verificación que aparezca.\n5. Ponle un nombre a tu personaje y espera a que quede listo.\n\nCrear tu personaje es gratis. Los créditos solo se usan cuando generas canciones o covers.\n\nEste proceso se realiza fuera del chat para cuidar tu privacidad y verificar tu voz correctamente.";
 
   type VoiceProfilePublic = {
     id: string;
@@ -1426,7 +1426,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   async function startVoiceFlowWizard(resetStuck = true) {
     if (!VOICE_FLOW_ENABLED_IN_BOT) {
       try {
-        toast.error(VOICE_FLOW_TEMP_DISABLED_MSG);
+        setVF((p) => ({ ...p, open: false, busy: false }));
+      } catch {}
+      try {
+        wizardPushMessage(VOICE_FLOW_TEMP_DISABLED_MSG);
       } catch {}
       return;
     }
