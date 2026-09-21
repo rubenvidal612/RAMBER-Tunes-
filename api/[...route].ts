@@ -14638,10 +14638,10 @@ const aiHandler = (() => {
 
     try {
       const controller = new AbortController();
-      const timeoutMs = 120000;
+      const timeoutMs = 60000;
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       const fr = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
-      if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio", detail: `HTTP ${fr.status}` });
+      if (!fr.ok) return send(res, 502, { error: "No pude leer tu audio." });
 
       const contentType = (fr.headers.get("content-type") || "").toString();
       const mimeType = normalizeAudioMimeType(mimeTypeHint) || normalizeAudioMimeType(contentType) || "audio/mpeg";
@@ -14656,11 +14656,18 @@ const aiHandler = (() => {
       if ((out as any).status === "SIN_LETRA") return send(res, 200, { ok: true, lyrics: "", status: "SIN_LETRA", message: "No detecté voz/canto en ese audio." });
       return send(res, 200, { ok: true, lyrics: out.lyrics || "", status: "OK" });
     } catch (e) {
+      const pad = (n: number) => n.toString().padStart(2, "0");
+      const d = new Date();
+      const eid = `TR-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}-${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`;
+      try {
+        // eslint-disable-next-line no-console
+        console.error(`[${eid}] handleTranscribeLyrics`, e instanceof Error ? e.stack || e.message : String(e));
+      } catch {}
       return send(res, 200, {
         ok: false,
         error: "Error transcribiendo",
-        message: "No pude transcribir la letra. Intenta con un audio más claro o más corto.",
-        detail: e instanceof Error ? e.message : String(e),
+        message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+        error_id: eid,
       });
     }
   }
@@ -15719,12 +15726,51 @@ const lucianaBotHandler = (() => {
     if (!taskId) return;
 
     if (kind === "transcribe-lyrics") {
+      const startedAt = Number(session.draft.pendingStartedAt ?? 0) || 0;
+      const pendingFlow = normalizeText(session.draft.pendingFlow || session.flow || "generate", 40);
+      if (startedAt > 0 && Date.now() - startedAt >= 60000) {
+        session.draft.pendingTaskId = undefined;
+        session.draft.pendingKind = undefined;
+        session.draft.pendingStartedAt = undefined;
+        session.draft.pendingFlow = undefined;
+        if (pendingFlow === "cover") {
+          session.step = "cover-audio";
+          setComposer(session, "audio", "Súbeme el MP3 para hacer el cover…", "Enviar");
+          pushAssistant(session, "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.", {
+            quickReplies: [
+              { id: "cover-retry-audio", label: "Reintentar", value: "cover:retry-audio", icon: "refresh", variant: "primary" },
+              { id: "cover-manual-lyrics", label: "Escribir letra", value: "cover:lyrics:manual", icon: "edit", variant: "secondary" },
+            ],
+            inputMode: "audio",
+          });
+          return;
+        }
+        session.step = "generate-lyrics";
+        setComposer(session, "multiline", "Pégame la letra o unas líneas de referencia…", "Guardar");
+        pushAssistant(session, "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.", {
+          quickReplies: [
+            { id: "gen-retry-audio", label: "Reintentar", value: "generate:retry-audio", icon: "refresh", variant: "primary" },
+            { id: "gen-manual-lyrics", label: "Escribir letra", value: "generate:write-lyrics", icon: "edit", variant: "secondary" },
+          ],
+          inputMode: "multiline",
+        });
+        return;
+      }
+
       const audio = session.draft.referenceAudio;
       const uploadUrl = normalizeText(audio?.url || "", 2000);
       const mimeType = normalizeText(audio?.contentType || "audio/mpeg", 120) || "audio/mpeg";
       if (!uploadUrl) {
         session.draft.pendingTaskId = undefined;
         session.draft.pendingKind = undefined;
+        session.draft.pendingStartedAt = undefined;
+        session.draft.pendingFlow = undefined;
+        if (pendingFlow === "cover") {
+          session.step = "cover-lyrics-manual";
+          setComposer(session, "multiline", "Pega aquí la letra…", "Guardar");
+          pushAssistant(session, "No pude encontrar el audio que subiste. Pega aquí la letra manualmente.", { inputMode: "multiline" });
+          return;
+        }
         session.step = "generate-lyrics";
         setComposer(session, "multiline", "Pégame la letra o unas líneas de referencia…", "Guardar");
         pushAssistant(session, "No pude encontrar el audio que subiste. Si quieres, pégame aquí la letra manualmente o unas líneas de referencia.", {
@@ -15740,15 +15786,36 @@ const lucianaBotHandler = (() => {
       const lyrics = normalizeText(tr.out?.lyrics || "", 12000);
       session.draft.pendingTaskId = undefined;
       session.draft.pendingKind = undefined;
+      session.draft.pendingStartedAt = undefined;
+      session.draft.pendingFlow = undefined;
 
       if (!tr.ok || tr.out?.ok === false || !lyrics) {
+        const msg = (tr.out?.message || "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.").toString();
+        const id = normalizeText(tr.out?.error_id || "", 40);
+        const safeMsg = [msg, id ? `(Error ${id})` : ""].filter(Boolean).join(" ");
+        if (pendingFlow === "cover") {
+          session.step = "cover-lyrics-manual";
+          setComposer(session, "multiline", "Pega aquí la letra…", "Guardar");
+          pushAssistant(session, safeMsg, { inputMode: "multiline" });
+          return;
+        }
         session.step = "generate-lyrics";
         setComposer(session, "multiline", "Pégame la letra o unas líneas de referencia…", "Guardar");
-        pushAssistant(
-          session,
-          (tr.out?.message || "No pude sacar bien la letra de ese audio.").toString() + "\n\nSi quieres, pégame aquí la letra manualmente o unas líneas de referencia.",
-          { inputMode: "multiline" },
-        );
+        pushAssistant(session, safeMsg, { inputMode: "multiline" });
+        return;
+      }
+
+      if (pendingFlow === "cover") {
+        session.draft.coverLyrics = lyrics;
+        session.step = "cover-lyrics-confirm";
+        setComposer(session, "disabled", "Confirma la letra…", "Enviar");
+        pushAssistant(session, `Te detecté esta letra del audio:\n\n${lyrics}\n\n¿La letra está correcta?`, {
+          quickReplies: [
+            { id: "cover-lyrics-ok", label: "Sí, está correcta", value: "cover:lyrics:ok", icon: "check", variant: "primary" },
+            { id: "cover-lyrics-manual", label: "No, escribiré la letra", value: "cover:lyrics:manual", icon: "edit", variant: "secondary" },
+          ],
+          inputMode: "disabled",
+        });
         return;
       }
 
@@ -16134,6 +16201,104 @@ const lucianaBotHandler = (() => {
       }
 
       if (session.step === "home") {
+        if (eventType === "file" && file) {
+          session.draft.homeUploadedFile = {
+            url: normalizeText(file?.url || "", 2000),
+            key: normalizeText(file?.key || "", 500),
+            fileName: normalizeText(file?.fileName || "", 200),
+            contentType: normalizeText(file?.contentType || "", 120),
+            size: Number(file?.size || 0),
+          };
+          setComposer(session, "disabled", "Elige una opción…", "Enviar");
+          pushAssistant(session, "Recibí tu MP3. ¿Qué quieres hacer con este audio?", {
+            quickReplies: [
+              { id: "home-file-cover", label: "Hacer cover", value: "home:file:cover", icon: "sparkles", variant: "primary" },
+              { id: "home-file-generate", label: "Crear canción", value: "home:file:generate", icon: "music", variant: "secondary" },
+              { id: "home-file-master", label: "Masterizar", value: "home:file:mastering", icon: "upload", variant: "secondary" },
+              { id: "home-file-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+            ],
+            inputMode: "disabled",
+          });
+          return send(res, 200, { ok: true, session });
+        }
+
+        if (eventType === "quick_reply" && eventValue.startsWith("home:file:")) {
+          const saved = session.draft.homeUploadedFile;
+          const savedFile = saved && typeof saved === "object" ? saved : null;
+          if (!savedFile?.url) {
+            resetHome(session, "No encontré el audio que subiste. Súbelo otra vez, por favor.");
+            return send(res, 200, { ok: true, session });
+          }
+
+          const contentType = normalizeText(savedFile?.contentType || "", 120).toLowerCase();
+          const fileNameLower = normalizeText(savedFile?.fileName || "", 200).toLowerCase();
+          const isMp3 = contentType === "audio/mpeg" || fileNameLower.endsWith(".mp3");
+          if (!isMp3) {
+            resetHome(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/");
+            return send(res, 200, { ok: true, session });
+          }
+
+          const mode = eventValue.replace("home:file:", "").trim();
+          session.draft.homeUploadedFile = undefined;
+
+          if (mode === "cover") {
+            session.flow = "cover";
+            session.step = "cover-audio";
+            session.draft.coverAudio = {
+              url: normalizeText(savedFile?.url || "", 2000),
+              key: normalizeText(savedFile?.key || "", 500),
+              fileName: normalizeText(savedFile?.fileName || "", 200),
+              contentType: contentType,
+              size: Number(savedFile?.size || 0),
+            };
+            session.draft.referenceAudio = session.draft.coverAudio;
+            const nextTaskId = makeMessageId("transcribe");
+            session.step = "cover-transcribe-polling";
+            session.draft.pendingTaskId = nextTaskId;
+            session.draft.pendingKind = "transcribe-lyrics";
+            session.draft.pendingStartedAt = Date.now();
+            session.draft.pendingFlow = "cover";
+            setComposer(session, "disabled", "Transcribiendo letra…", "Enviar");
+            upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendo…");
+            return send(res, 200, { ok: true, session });
+          }
+
+          if (mode === "generate") {
+            session.flow = "generate";
+            session.step = "generate-audio";
+            session.draft.referenceAudio = {
+              url: normalizeText(savedFile?.url || "", 2000),
+              key: normalizeText(savedFile?.key || "", 500),
+              fileName: normalizeText(savedFile?.fileName || "", 200),
+              contentType: contentType,
+              size: Number(savedFile?.size || 0),
+            };
+            const nextTaskId = makeMessageId("transcribe");
+            session.step = "generate-audio-polling";
+            session.draft.pendingTaskId = nextTaskId;
+            session.draft.pendingKind = "transcribe-lyrics";
+            session.draft.pendingStartedAt = Date.now();
+            session.draft.pendingFlow = "generate";
+            setComposer(session, "disabled", "Transcribiendo letra…", "Enviar");
+            upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendo…");
+            return send(res, 200, { ok: true, session });
+          }
+
+          if (mode === "mastering") {
+            session.flow = "mastering";
+            session.step = "mastering-audio";
+            session.draft.masteringAudio = {
+              url: normalizeText(savedFile?.url || "", 2000),
+              key: normalizeText(savedFile?.key || "", 500),
+              fileName: normalizeText(savedFile?.fileName || "", 200),
+              contentType: contentType,
+              size: Number(savedFile?.size || 0),
+            };
+            await startMastering(req, session);
+            return send(res, 200, { ok: true, session });
+          }
+        }
+
         const route =
           eventType === "quick_reply" && eventValue.startsWith("menu:")
             ? (() => {
@@ -16255,6 +16420,8 @@ const lucianaBotHandler = (() => {
           session.step = "generate-audio-polling";
           session.draft.pendingTaskId = nextTaskId;
           session.draft.pendingKind = "transcribe-lyrics";
+          session.draft.pendingStartedAt = Date.now();
+          session.draft.pendingFlow = "generate";
           setComposer(session, "disabled", "Transcribiendo letra…", "Enviar");
           upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendo…");
           return send(res, 200, { ok: true, session });
@@ -16433,28 +16600,125 @@ const lucianaBotHandler = (() => {
       }
 
       if (session.flow === "cover") {
+        if (eventType === "quick_reply" && eventValue === "cover:retry-audio") {
+          session.step = "cover-audio";
+          setComposer(session, "audio", "Súbeme el MP3 para hacer el cover…", "Enviar");
+          pushAssistant(session, "Súbeme el MP3 que quieres usar para el cover.", { inputMode: "audio" });
+          return send(res, 200, { ok: true, session });
+        }
+
+        if (eventType === "quick_reply" && eventValue === "cover:lyrics:manual") {
+          session.step = "cover-lyrics-manual";
+          setComposer(session, "multiline", "Pega aquí la letra…", "Guardar");
+          pushAssistant(session, "Pega aquí la letra manualmente.", { inputMode: "multiline" });
+          return send(res, 200, { ok: true, session });
+        }
+
         if (session.step === "cover-audio" && eventType === "file" && file) {
+          const contentType = normalizeText(file?.contentType || "", 120).toLowerCase();
+          const fileNameLower = normalizeText(file?.fileName || "", 200).toLowerCase();
+          const isMp3 = contentType === "audio/mpeg" || fileNameLower.endsWith(".mp3");
+          if (!isMp3) {
+            pushAssistant(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/", {
+              inputMode: "audio",
+              quickReplies: [{ id: "cover-home-bad-file", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            });
+            return send(res, 200, { ok: true, session });
+          }
+
           session.draft.coverAudio = {
             url: normalizeText(file?.url || "", 2000),
             key: normalizeText(file?.key || "", 500),
             fileName: normalizeText(file?.fileName || "", 200),
-            contentType: normalizeText(file?.contentType || "", 120),
+            contentType: contentType,
             size: Number(file?.size || 0),
           };
-          session.step = "cover-extra";
-          setComposer(session, "multiline", "Escribe indicaciones extra para el cover (opcional)…", "Guardar");
-          pushAssistant(session, "Listo. Si quieres, dime indicaciones extra para el cover. Si no, lo hago con estilo general.", {
-            quickReplies: [{ id: "cover-no-extra", label: "Sin indicaciones", value: "cover:confirm", icon: "arrow-right", variant: "primary" }],
+          session.draft.referenceAudio = session.draft.coverAudio;
+          const nextTaskId = makeMessageId("transcribe");
+          session.step = "cover-transcribe-polling";
+          session.draft.pendingTaskId = nextTaskId;
+          session.draft.pendingKind = "transcribe-lyrics";
+          session.draft.pendingStartedAt = Date.now();
+          session.draft.pendingFlow = "cover";
+          setComposer(session, "disabled", "Transcribiendo letra…", "Enviar");
+          upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendo…");
+          return send(res, 200, { ok: true, session });
+        }
+
+        if (session.step === "cover-lyrics-confirm" && eventType === "quick_reply") {
+          if (eventValue === "cover:lyrics:ok") {
+            session.step = "cover-genre";
+            setComposer(session, "multiline", "Dime el género musical…", "Guardar");
+            pushAssistant(session, "Ahora dime el género musical.", {
+              quickReplies: [...genreReplies(), { id: "cover-genre-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+              inputMode: "multiline",
+            });
+            return send(res, 200, { ok: true, session });
+          }
+          if (eventValue === "cover:lyrics:manual") {
+            session.step = "cover-lyrics-manual";
+            setComposer(session, "multiline", "Pega aquí la letra…", "Guardar");
+            pushAssistant(session, "Pega aquí la letra manualmente.", { inputMode: "multiline" });
+            return send(res, 200, { ok: true, session });
+          }
+        }
+
+        if (session.step === "cover-lyrics-manual" && eventType === "message" && eventText) {
+          session.draft.coverLyrics = eventText;
+          session.step = "cover-genre";
+          setComposer(session, "multiline", "Dime el género musical…", "Guardar");
+          pushAssistant(session, "Ahora dime el género musical.", {
+            quickReplies: [...genreReplies(), { id: "cover-genre-home-2", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
             inputMode: "multiline",
           });
           return send(res, 200, { ok: true, session });
         }
-        if (session.step === "cover-extra") {
-          if (eventType === "message") session.draft.extraInstructions = eventText;
-          if ((eventType === "message" && eventText) || (eventType === "quick_reply" && eventValue === "cover:confirm")) {
-            await startCover(req, session);
+
+        if (session.step === "cover-genre") {
+          if (eventType === "quick_reply" && eventValue.startsWith("genre:")) {
+            session.draft.genre = eventValue.replace("genre:", "").trim();
+          }
+          if (eventType === "message" && eventText) {
+            session.draft.genre = eventText;
+          }
+          if ((eventType === "message" && eventText) || (eventType === "quick_reply" && eventValue.startsWith("genre:"))) {
+            session.step = "cover-extra";
+            setComposer(session, "multiline", "Escribe indicaciones extra (opcional)…", "Guardar");
+            pushAssistant(session, "Ahora dime cualquier detalle extra (opcional). Si no tienes, puedes omitirlo.", {
+              quickReplies: [{ id: "cover-skip-extra", label: "Sin indicaciones", value: "cover:extra:skip", icon: "arrow-right", variant: "secondary" }],
+              inputMode: "multiline",
+            });
             return send(res, 200, { ok: true, session });
           }
+        }
+
+        if (session.step === "cover-extra") {
+          if (eventType === "message") session.draft.extraInstructions = eventText;
+          if ((eventType === "message" && eventText) || (eventType === "quick_reply" && eventValue === "cover:extra:skip")) {
+            session.step = "cover-confirm";
+            setComposer(session, "disabled", "Confirma para generar…", "Enviar");
+            const summary: string[] = [];
+            if (session.draft.genre) summary.push(`Género: ${session.draft.genre}`);
+            if (session.draft.extraInstructions) summary.push(`Detalles: ${session.draft.extraInstructions}`);
+            pushAssistant(session, `Listo.\n\n${summary.filter(Boolean).join("\n")}\n\n¿Genero el cover así?`, {
+              quickReplies: [
+                { id: "cover-confirm", label: "Generar cover", value: "cover:confirm", icon: "sparkles", variant: "primary" },
+                { id: "cover-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+              ],
+              inputMode: "disabled",
+            });
+            return send(res, 200, { ok: true, session });
+          }
+        }
+
+        if (session.step === "cover-confirm" && eventType === "quick_reply" && eventValue === "cover:confirm") {
+          await startCover(req, session);
+          return send(res, 200, { ok: true, session });
+        }
+
+        if (session.step === "cover-transcribe-polling") {
+          await pollPendingTask(req, auth, session);
+          return send(res, 200, { ok: true, session });
         }
         if (session.step === "cover-polling") {
           await pollPendingTask(req, auth, session);

@@ -2143,7 +2143,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
     if (isTranscribingAudioLyrics) return;
     setIsTranscribingAudioLyrics(true);
-    if (auto) setAudioLyricsStatus('Transcribiendo letra…');
+    if (auto) setAudioLyricsStatus('Estamos transcribiendo la letra de tu audio automáticamente.');
     try {
       const t = await getAccessToken();
       if (!t.ok) {
@@ -2164,15 +2164,22 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       };
       const byName = (audioFile?.name || '').toString().trim().toLowerCase();
       const mimeType = ((audioFile?.type || '').toString().trim() || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 60000);
       const r = await fetch('/api/ai/transcribe-lyrics', {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
         body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType }),
-      });
+      }).finally(() => window.clearTimeout(timer));
       const out = await r.json().catch(() => ({}));
       if (!r.ok || out?.ok === false) {
         if (!auto) alert((out?.message || out?.detail || out?.error || 'No se pudo transcribir la letra.').toString());
-        if (auto) setAudioLyricsStatus((out?.message || 'No pude transcribir la letra automáticamente.').toString());
+        if (auto) {
+          const msg = (out?.message || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.').toString();
+          const id = (out?.error_id || '').toString();
+          setAudioLyricsStatus([msg, id ? `(Error ${id})` : ''].filter(Boolean).join(' '));
+        }
         return;
       }
       const status = (out?.status || '').toString().trim().toUpperCase();
@@ -2191,7 +2198,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       if (auto) setAudioLyricsStatus('');
     } catch (e) {
       if (!auto) alert(e instanceof Error ? e.message : 'Error transcribiendo la letra.');
-      if (auto) setAudioLyricsStatus('No pude transcribir la letra automáticamente.');
+      if (auto) {
+        const msg = e instanceof Error ? e.message : '';
+        if (/aborted|abort|timeout|timed out/i.test(msg)) {
+          setAudioLyricsStatus('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
+        } else {
+          setAudioLyricsStatus('No pude transcribir la letra automáticamente.');
+        }
+      }
     } finally {
       setIsTranscribingAudioLyrics(false);
     }
@@ -7140,6 +7154,24 @@ function CustomForm({
             {!!audioLyricsStatus && (
               <div className="mt-2 text-[12px] text-slate-400">
                 {audioLyricsStatus}
+                {!isTranscribingAudioLyrics && /no pudimos transcribir este audio/i.test(String(audioLyricsStatus || '')) ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => transcribeLyricsFromAudio(true).catch(() => {})}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-extrabold text-white hover:bg-white/10"
+                    >
+                      Reintentar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAudioLyricsStatus('')}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-extrabold text-white hover:bg-white/10"
+                    >
+                      Escribir letra
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
 

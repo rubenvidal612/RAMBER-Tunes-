@@ -3630,6 +3630,16 @@ function LyricsStep({ data, setData, setToast, handlers }) {
                 ? 'Estamos transcribiendo la letra de tu audio automáticamente.'
                 : audioLyricsStatus || 'Si la transcripción automática no detecta bien la letra, puedes escribirla manualmente aquí.'}
           </span>
+          {Boolean(audioLyricsStatus) && /no pudimos transcribir este audio/i.test(String(audioLyricsStatus || '')) && !isTranscribingAudioLyrics ? (
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => transcribeLyricsFromAudio().catch(() => {})} style={{ padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800 }}>
+                Reintentar
+              </button>
+              <button type="button" onClick={() => { setAudioLyricsStatus(''); setToast('Pega la letra manualmente en el campo de abajo.'); }} style={{ padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800 }}>
+                Escribir letra
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {usingAI ? <>
@@ -5079,15 +5089,20 @@ function ApprovedCreateContent(props) {
       };
       const byName = (data.file?.name || '').toString().trim().toLowerCase();
       const mimeType = ((data.file?.type || '').toString().trim() || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 60000);
       const r = await fetch('/api/ai/transcribe-lyrics', {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
         body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType }),
-      });
+      }).finally(() => window.clearTimeout(timer));
       const out = await r.json().catch(() => ({}));
       if (requestVersion !== audioRequestVersionRef.current) return;
       if (!r.ok || out?.ok === false) {
-        setAudioLyricsStatus((out?.message || out?.detail || out?.error || 'No se pudo transcribir automáticamente. Puedes escribir la letra manualmente.').toString());
+        const msg = (out?.message || out?.error || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.').toString();
+        const id = (out?.error_id || '').toString();
+        setAudioLyricsStatus([msg, id ? `(Error ${id})` : ''].filter(Boolean).join(' '));
         return;
       }
       const status = (out?.status || '').toString().trim().toUpperCase();
@@ -5103,9 +5118,14 @@ function ApprovedCreateContent(props) {
       setData((prev) => ({ ...prev, lyrics: normalizeLyricsTags(text) }));
       setAudioLyricsStatus('');
       setToast('Letra detectada del audio. Puedes revisarla y editarla en el paso 2.');
-    } catch {
+    } catch (e) {
       if (requestVersion !== audioRequestVersionRef.current) return;
-      setAudioLyricsStatus('No se pudo transcribir automáticamente. Puedes escribir la letra manualmente.');
+      const msg = e instanceof Error ? e.message : '';
+      if (/aborted|abort|timeout|timed out/i.test(msg)) {
+        setAudioLyricsStatus('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
+      } else {
+        setAudioLyricsStatus('No se pudo transcribir automáticamente. Puedes escribir la letra manualmente.');
+      }
     } finally {
       if (requestVersion !== audioRequestVersionRef.current) return;
       setIsTranscribingAudioLyrics(false);
