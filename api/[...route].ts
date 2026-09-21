@@ -12736,6 +12736,32 @@ const adminHandler = (() => {
     return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
   }
 
+  // ----------- Helpers administración (error_id + serverLog seguros) -----------
+  function genAdminErrorId(prefix = "ADM") {
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const d = new Date();
+    const rnd = Math.floor(100000 + Math.random() * 900000).toString(36).slice(0, 6);
+    return `${prefix}-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}-${rnd}`;
+  }
+  function safeStringify(v: any, max = 4096) {
+    try { const s = JSON.stringify(v); if (s && s.length > max) return s.slice(0, max) + "..."; return s; } catch { try { return String(v).slice(0, max); } catch { return ""; } }
+  }
+  function adminServerLog(eid: string, handler: string, detail: any) {
+    try {
+      // eslint-disable-next-line no-console
+      console.error(`[${eid}] handler=${handler}`, safeStringify(detail));
+    } catch {}
+  }
+  function adminSendError(res: any, httpStatus: number, userMsg: string, eid: string, extra?: any) {
+    const payload: any = { error: userMsg, error_id: eid };
+    if (extra && typeof extra === "object") {
+      for (const k of Object.keys(extra)) {
+        if (extra[k] !== undefined && extra[k] !== null) payload[k] = extra[k];
+      }
+    }
+    return send(res, httpStatus, payload);
+  }
+
   async function requireAdmin(req: any) {
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
@@ -12767,16 +12793,18 @@ const adminHandler = (() => {
   }
 
   async function handleGetCollaborators(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
+    const eid = genAdminErrorId("ADMCOL");
+    const safeHandler = "handleGetCollaborators";
+    try {
+      if ((req.method || "").toUpperCase() !== "GET") return adminSendError(res, 405, "Método no permitido", eid);
+      const auth = await requireAdmin(req);
+      if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
     try {
       const vr = await auth.admin
         .from("vendor_settings")
         .select("user_id, role, commission_type, commission_value, force_countdown_only, can_show_payment_info, updated_at, created_at")
         .order("updated_at", { ascending: false });
-      if (vr.error) return send(res, 500, { error: "No pude leer colaboradores", detail: vr.error.message });
+      if (vr.error) return adminSendError(res, 500, "No pude leer colaboradores", eid, { detail: vr.error.message });
 
       const rows = Array.isArray(vr.data) ? vr.data : [];
       const userIds = Array.from(new Set(rows.map((x: any) => String(x?.user_id || "").trim()).filter(Boolean)));
@@ -12807,26 +12835,42 @@ const adminHandler = (() => {
         };
       });
 
-      return send(res, 200, { ok: true, items });
+      return send(res, 200, { ok: true, items, error_id: eid });
     } catch (e) {
-      return send(res, 500, { error: "No pude leer colaboradores", detail: e instanceof Error ? e.message : String(e) });
+      adminServerLog(eid, safeHandler, {
+        step: "catch_inner",
+        errMessage: e instanceof Error ? e.message : String(e),
+        errStack: e instanceof Error ? e.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
+    }
+    } catch (outer) {
+      adminServerLog(eid, safeHandler, {
+        step: "catch_outer",
+        errMessage: outer instanceof Error ? outer.message : String(outer),
+        errStack: outer instanceof Error ? outer.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
     }
   }
 
   async function handleAssignCollaborator(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const eid = genAdminErrorId("ADMCOL");
+    const safeHandler = "handleAssignCollaborator";
+    try {
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      const auth = await requireAdmin(req);
+      if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+      const body = parseJsonBody(req);
+      if (!body) return adminSendError(res, 400, "Body inválido", eid);
 
-    const email = String(body?.email || "").trim().toLowerCase();
-    const requestedRole = String(body?.role || "").trim().toLowerCase();
-    const commissionValue = Number(body?.commission_value ?? 0);
-    if (!email) return send(res, 400, { error: "Falta email" });
-    if (requestedRole !== "empleado") return send(res, 400, { error: "En esta fase solo se permite role = empleado" });
-    if (!Number.isFinite(commissionValue) || commissionValue < 0) return send(res, 400, { error: "commission_value inválido" });
+      const email = String(body?.email || "").trim().toLowerCase();
+      const requestedRole = String(body?.role || "").trim().toLowerCase();
+      const commissionValue = Number(body?.commission_value ?? 0);
+      if (!email) return adminSendError(res, 400, "Falta email", eid);
+      if (requestedRole !== "empleado") return adminSendError(res, 400, "En esta fase solo se permite role = empleado", eid);
+      if (!Number.isFinite(commissionValue) || commissionValue < 0) return adminSendError(res, 400, "commission_value inválido", eid);
 
     try {
       let userId = "";
@@ -12838,15 +12882,15 @@ const adminHandler = (() => {
 
       if (!userId) {
         const found = await findUserIdByEmail(auth, email);
-        if (!found.ok) return send(res, found.status || 404, { error: found.error || "No encontré ese usuario por correo.", detail: found.detail || null });
+        if (!found.ok) return adminSendError(res, found.status || 404, found.error || "No encontré ese usuario por correo.", eid, { detail: found.detail || null });
         userId = String(found.userId || "").trim();
       }
 
-      if (!userId) return send(res, 404, { error: "No encontré ese usuario por correo." });
+      if (!userId) return adminSendError(res, 404, "No encontré ese usuario por correo.", eid);
 
       await ensureProfileExists(auth.admin, userId);
       const up = await auth.admin.from("profiles").upsert({ id: userId, email }, { onConflict: "id" });
-      if (up?.error) return send(res, 500, { error: "No pude asegurar el perfil del colaborador", detail: up.error.message });
+      if (up?.error) return adminSendError(res, 500, "No pude asegurar el perfil del colaborador", eid, { detail: up.error.message });
 
       const row = {
         user_id: userId,
@@ -12858,7 +12902,7 @@ const adminHandler = (() => {
         updated_at: new Date().toISOString(),
       };
       const wr = await auth.admin.from("vendor_settings").upsert(row, { onConflict: "user_id" }).select("user_id, role, commission_type, commission_value").maybeSingle();
-      if (wr.error) return send(res, 500, { error: "No pude guardar el colaborador", detail: wr.error.message });
+      if (wr.error) return adminSendError(res, 500, "No pude guardar el colaborador", eid, { detail: wr.error.message });
 
       return send(res, 200, {
         ok: true,
@@ -12871,9 +12915,23 @@ const adminHandler = (() => {
           force_countdown_only: true,
           can_show_payment_info: false,
         },
+        error_id: eid,
       });
     } catch (e) {
-      return send(res, 500, { error: "No pude guardar el colaborador", detail: e instanceof Error ? e.message : String(e) });
+      adminServerLog(eid, safeHandler, {
+        step: "catch_inner",
+        errMessage: e instanceof Error ? e.message : String(e),
+        errStack: e instanceof Error ? e.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
+    }
+    } catch (outer) {
+      adminServerLog(eid, safeHandler, {
+        step: "catch_outer",
+        errMessage: outer instanceof Error ? outer.message : String(outer),
+        errStack: outer instanceof Error ? outer.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
     }
   }
 
@@ -13405,151 +13463,191 @@ const adminHandler = (() => {
   }
 
   async function handleGrantCredits(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const eid = genAdminErrorId("ADMGRN");
+    const safeHandler = "handleGrantCredits";
+    try {
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      const auth = await requireAdmin(req);
+      if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
-    const email = (body?.email || "").toString().trim().toLowerCase();
-    const credits = Number(body?.credits ?? 0);
-    if (!email) return send(res, 400, { error: "Falta email" });
-    if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
+      const body = parseJsonBody(req);
+      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      const email = (body?.email || "").toString().trim().toLowerCase();
+      const credits = Number(body?.credits ?? 0);
+      if (!email) return adminSendError(res, 400, "Falta email", eid);
+      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "Créditos inválidos", eid);
 
-    const admin = auth.admin;
-    const found = await findUserIdByEmail(auth, email);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const userId = found.userId;
+      const admin = auth.admin;
+      const found = await findUserIdByEmail(auth, email);
+      if (!found.ok) return adminSendError(res, found.status, found.error || "Usuario no encontrado", eid, { detail: (found as any)?.detail || null });
+      const userId = found.userId;
 
-    const upd = await adjustUserCredits(admin, userId, credits);
-    if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      const upd = await adjustUserCredits(admin, userId, credits);
+      if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar créditos", eid);
 
-    await admin.from("mp_transactions").insert({
-      user_id: userId,
-      kind: "admin_grant",
-      pack_key: "admin",
-      amount_mxn: 0,
-      payment_id: `admin_grant:${auth.user.id}:${Date.now()}`,
-    });
+      const insert = await admin.from("mp_transactions").insert({
+        user_id: userId,
+        kind: "admin_grant",
+        pack_key: "admin",
+        amount_mxn: 0,
+        payment_id: `admin_grant:${auth.user.id}:${Date.now()}`,
+      });
+      if (insert?.error) {
+        adminServerLog(eid, safeHandler, { step: "insert.mp_transactions_err", err: insert.error });
+      }
 
-    return send(res, 200, { ok: true, user_id: userId, credited: credits, new_credits: upd.credits ?? null });
+      return send(res, 200, { ok: true, user_id: userId, credited: credits, new_credits: upd.credits ?? null, error_id: eid });
+    } catch (outer) {
+      adminServerLog(eid, safeHandler, {
+        step: "catch_outer",
+        errMessage: outer instanceof Error ? outer.message : String(outer),
+        errStack: outer instanceof Error ? outer.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
+    }
   }
 
   async function handleGrantMiniPack(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const eid = genAdminErrorId("ADMPCK");
+    const safeHandler = "handleGrantMiniPack";
+    try {
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      const auth = await requireAdmin(req);
+      if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
-    const email = (body?.email || "").toString().trim().toLowerCase();
-    const packKey = (body?.packKey || body?.pack_key || "").toString().trim();
-    if (!email) return send(res, 400, { error: "Falta email" });
-    if (!packKey) return send(res, 400, { error: "Falta packKey" });
+      const body = parseJsonBody(req);
+      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      const email = (body?.email || "").toString().trim().toLowerCase();
+      const packKey = (body?.packKey || body?.pack_key || "").toString().trim();
+      if (!email) return adminSendError(res, 400, "Falta email", eid);
+      if (!packKey) return adminSendError(res, 400, "Falta packKey", eid);
 
-    const admin = auth.admin;
-    const found = await findUserIdByEmail(auth, email);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const userId = found.userId;
+      const admin = auth.admin;
+      const found = await findUserIdByEmail(auth, email);
+      if (!found.ok) return adminSendError(res, found.status, found.error || "Usuario no encontrado", eid, { detail: (found as any)?.detail || null });
+      const userId = found.userId;
 
-    const packs = await listActiveCreditPacks(admin);
-    const pack = packs.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === packKey.toLowerCase());
-    if (!pack) return send(res, 404, { error: "Paquete no encontrado o no disponible." });
+      const packs = await listActiveCreditPacks(admin);
+      const pack = packs.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === packKey.toLowerCase());
+      if (!pack) return adminSendError(res, 404, "Paquete no encontrado o no disponible.", eid);
 
-    const packId = Number((pack as any).id ?? 0);
-    const credits = round2(Number((pack as any).credits_amount ?? 0));
-    const validityDays = Number((pack as any).validity_days ?? 30);
-    if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos en el paquete." });
-    if (!Number.isFinite(validityDays) || validityDays <= 0) return send(res, 400, { error: "Vigencia inválida en el paquete." });
+      const packId = Number((pack as any).id ?? 0);
+      const credits = round2(Number((pack as any).credits_amount ?? 0));
+      const validityDays = Number((pack as any).validity_days ?? 30);
+      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "Créditos inválidos en el paquete.", eid);
+      if (!Number.isFinite(validityDays) || validityDays <= 0) return adminSendError(res, 400, "Vigencia inválida en el paquete.", eid);
 
-    const paymentId = `admin_mini_pack:${auth.user.id}:${userId}:${Date.now()}`;
-    const batch = await insertCreditBatch(admin, {
-      userId,
-      packId: Number.isFinite(packId) && packId > 0 ? packId : undefined,
-      packKey,
-      paymentId,
-      credits,
-      validityDays,
-      amountMxn: 0,
-      note: `Admin recarga mini pack (${packKey})`,
-    });
-    if (!batch.ok) return send(res, 500, { error: batch.error || "No pude crear el lote del mini paquete." });
+      const paymentId = `admin_mini_pack:${auth.user.id}:${userId}:${Date.now()}`;
+      const batch = await insertCreditBatch(admin, {
+        userId,
+        packId: Number.isFinite(packId) && packId > 0 ? packId : undefined,
+        packKey,
+        paymentId,
+        credits,
+        validityDays,
+        amountMxn: 0,
+        note: `Admin recarga mini pack (${packKey})`,
+      });
+      if (!batch.ok) return adminSendError(res, 500, batch.error || "No pude crear el lote del mini paquete.", eid);
 
-    await admin.from("mp_transactions").insert({
-      user_id: userId,
-      kind: "admin_mini_pack",
-      pack_key: packKey,
-      amount_mxn: 0,
-      payment_id: paymentId,
-    });
+      const insert = await admin.from("mp_transactions").insert({
+        user_id: userId,
+        kind: "admin_mini_pack",
+        pack_key: packKey,
+        amount_mxn: 0,
+        payment_id: paymentId,
+      });
+      if (insert?.error) {
+        adminServerLog(eid, safeHandler, { step: "insert.mp_transactions_err", err: insert.error });
+      }
 
-    return send(res, 200, { ok: true, user_id: userId, pack_key: packKey, credits, batch_id: batch.batchId ?? null });
+      return send(res, 200, { ok: true, user_id: userId, pack_key: packKey, credits, batch_id: batch.batchId ?? null, error_id: eid });
+    } catch (outer) {
+      adminServerLog(eid, safeHandler, {
+        step: "catch_outer",
+        errMessage: outer instanceof Error ? outer.message : String(outer),
+        errStack: outer instanceof Error ? outer.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
+    }
   }
 
   async function handleTransferCredits(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const eid = genAdminErrorId("ADMTRN");
+    const safeHandler = "handleTransferCredits";
+    try {
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      const auth = await requireAdmin(req);
+      if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
-    const email = (body?.email || "").toString().trim().toLowerCase();
-    const credits = round2(Number(body?.credits ?? 0));
-    if (!email) return send(res, 400, { error: "Falta email" });
-    if (!Number.isFinite(credits) || credits <= 0) return send(res, 400, { error: "Créditos inválidos" });
+      const body = parseJsonBody(req);
+      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      const email = (body?.email || "").toString().trim().toLowerCase();
+      const credits = round2(Number(body?.credits ?? 0));
+      if (!email) return adminSendError(res, 400, "Falta email", eid);
+      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "Créditos inválidos", eid);
 
-    const admin = auth.admin;
-    const found = await findUserIdByEmail(auth, email);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const fromUserId = found.userId;
-    const toUserId = auth.user.id;
+      const admin = auth.admin;
+      const found = await findUserIdByEmail(auth, email);
+      if (!found.ok) return adminSendError(res, found.status, found.error || "Usuario no encontrado", eid, { detail: (found as any)?.detail || null });
+      const fromUserId = found.userId;
+      const toUserId = auth.user.id;
 
-    const ensureFrom = await ensureProfileExists(admin, fromUserId);
-    if (!ensureFrom.ok) return send(res, 500, { error: "No pude preparar el usuario.", detail: ensureFrom.error });
-    const ensureTo = await ensureProfileExists(admin, toUserId);
-    if (!ensureTo.ok) return send(res, 500, { error: "No pude preparar tu cuenta.", detail: ensureTo.error });
+      const ensureFrom = await ensureProfileExists(admin, fromUserId);
+      if (!ensureFrom.ok) return adminSendError(res, 500, "No pude preparar el usuario.", eid, { detail: ensureFrom.error });
+      const ensureTo = await ensureProfileExists(admin, toUserId);
+      if (!ensureTo.ok) return adminSendError(res, 500, "No pude preparar tu cuenta.", eid, { detail: ensureTo.error });
 
-    const fromProfile = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
-    if (fromProfile.error) return send(res, 500, { error: "No pude leer el saldo del usuario.", detail: fromProfile.error.message });
-    const fromCreditsBefore = round2(creditsFromProfile(fromProfile.data));
-    const toProfileBefore = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
-    const toCreditsBefore = toProfileBefore.error ? null : round2(creditsFromProfile(toProfileBefore.data));
-    if (fromCreditsBefore < credits) {
-      return send(res, 400, { error: `El usuario solo tiene ${fromCreditsBefore} créditos.` });
+      const fromProfile = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
+      if (fromProfile.error) return adminSendError(res, 500, "No pude leer el saldo del usuario.", eid, { detail: fromProfile.error.message });
+      const fromCreditsBefore = round2(creditsFromProfile(fromProfile.data));
+      const toProfileBefore = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
+      const toCreditsBefore = toProfileBefore.error ? null : round2(creditsFromProfile(toProfileBefore.data));
+      if (fromCreditsBefore < credits) {
+        return adminSendError(res, 400, `El usuario solo tiene ${fromCreditsBefore} créditos.`, eid);
+      }
+      const transferId = `admin_transfer:${toUserId}:${fromUserId}:${Date.now()}`;
+
+      const out = await consumeUserCredits(admin, fromUserId, credits);
+      if (!out.ok) return adminSendError(res, 500, out.error || "No pude quitar créditos.", eid);
+
+      const inc = await adjustUserCredits(admin, toUserId, credits);
+      if (!inc.ok) {
+        try { await adjustUserCredits(admin, fromUserId, credits); } catch {}
+        return adminSendError(res, 500, inc.error || "No pude regresarte los créditos (revertido).", eid);
+      }
+
+      const insertTr = await admin.from("mp_transactions").insert([
+        { user_id: fromUserId, kind: "admin_transfer_out", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:out` },
+        { user_id: toUserId, kind: "admin_transfer_in", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:in` },
+      ]);
+      if (insertTr?.error) adminServerLog(eid, safeHandler, { step: "insert.mp_transactions_err", err: insertTr.error });
+
+      const fromProfileAfter = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
+      const fromCreditsAfter = fromProfileAfter.error ? null : round2(creditsFromProfile(fromProfileAfter.data));
+      const toProfileAfter = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
+      const toCreditsAfter = toProfileAfter.error ? null : round2(creditsFromProfile(toProfileAfter.data));
+
+      return send(res, 200, {
+        ok: true,
+        from_user_id: fromUserId,
+        to_user_id: toUserId,
+        transferred: credits,
+        from_credits_before: fromCreditsBefore,
+        from_credits_after: fromCreditsAfter,
+        to_credits_before: toCreditsBefore,
+        to_credits_after: toCreditsAfter,
+        note: "Esto mueve el saldo interno (profiles). El saldo del proveedor (Suno) no se puede mover.",
+        error_id: eid,
+      });
+    } catch (outer) {
+      adminServerLog(eid, safeHandler, {
+        step: "catch_outer",
+        errMessage: outer instanceof Error ? outer.message : String(outer),
+        errStack: outer instanceof Error ? outer.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
     }
-    const transferId = `admin_transfer:${toUserId}:${fromUserId}:${Date.now()}`;
-
-
-    const out = await consumeUserCredits(admin, fromUserId, credits);
-    if (!out.ok) return send(res, 500, { error: out.error || "No pude quitar créditos." });
-
-    const inc = await adjustUserCredits(admin, toUserId, credits);
-    if (!inc.ok) {
-      await adjustUserCredits(admin, fromUserId, credits);
-      return send(res, 500, { error: inc.error || "No pude regresarte los créditos (revertido)." });
-    }
-
-    await admin.from("mp_transactions").insert([
-      { user_id: fromUserId, kind: "admin_transfer_out", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:out` },
-      { user_id: toUserId, kind: "admin_transfer_in", pack_key: "admin", amount_mxn: 0, payment_id: `${transferId}:in` },
-    ]);
-
-    const fromProfileAfter = await admin.from("profiles").select("*").eq("id", fromUserId).maybeSingle();
-    const fromCreditsAfter = fromProfileAfter.error ? null : round2(creditsFromProfile(fromProfileAfter.data));
-    const toProfileAfter = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
-    const toCreditsAfter = toProfileAfter.error ? null : round2(creditsFromProfile(toProfileAfter.data));
-
-    return send(res, 200, {
-      ok: true,
-      from_user_id: fromUserId,
-      to_user_id: toUserId,
-      transferred: credits,
-      from_credits_before: fromCreditsBefore,
-      from_credits_after: fromCreditsAfter,
-      to_credits_before: toCreditsBefore,
-      to_credits_after: toCreditsAfter,
-      note: "Esto mueve el saldo interno (profiles). El saldo del proveedor (Suno) no se puede mover.",
-    });
   }
 
   async function setUserCreditsAbsolute(admin: any, userId: string, nextCredits: number) {
@@ -13573,59 +13671,71 @@ const adminHandler = (() => {
   }
 
   async function handleSetPlan(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const eid = genAdminErrorId("ADMPLN");
+    const safeHandler = "handleSetPlan";
+    try {
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      const auth = await requireAdmin(req);
+      if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
-    const email = (body?.email || "").toString().trim().toLowerCase();
-    const plan_key = (body?.plan_key || "").toString().trim().toLowerCase();
-    const credits_mode = (body?.credits_mode || "none").toString().trim().toLowerCase();
-    const credits = Number(body?.credits ?? 0);
+      const body = parseJsonBody(req);
+      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      const email = (body?.email || "").toString().trim().toLowerCase();
+      const plan_key = (body?.plan_key || "").toString().trim().toLowerCase();
+      const credits_mode = (body?.credits_mode || "none").toString().trim().toLowerCase();
+      const credits = Number(body?.credits ?? 0);
 
-    if (!email) return send(res, 400, { error: "Falta email" });
-    if (!(plan_key === "ninguno" || plan_key === "inicio" || plan_key === "productor")) {
-      return send(res, 400, { error: "Plan inválido" });
-    }
-    if (!(credits_mode === "none" || credits_mode === "default" || credits_mode === "set")) {
-      return send(res, 400, { error: "Modo de créditos inválido" });
-    }
-
-    const admin = auth.admin;
-    const found = await findUserIdByEmail(auth, email);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const userId = found.userId;
-
-    const payment_id = `admin_plan:${auth.user.id}:${userId}:${Date.now()}`;
-    await admin.from("mp_transactions").insert({
-      user_id: userId,
-      kind: "songs",
-      pack_key: plan_key,
-      amount_mxn: 0,
-      payment_id,
-    });
-
-    if (credits_mode === "default") {
-      let add = 0;
-      if (plan_key === "inicio") add = 1200;
-      if (plan_key === "productor") add = 2000;
-      if (add > 0) {
-        const upd = await applyCreditRolloverWithCap(admin, {
-          userId,
-          monthlyCredits: add,
-          subscriptionActive: true,
-          renewalPaidSuccessfully: true,
-        });
-        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+      if (!email) return adminSendError(res, 400, "Falta email", eid);
+      if (!(plan_key === "ninguno" || plan_key === "inicio" || plan_key === "productor")) {
+        return adminSendError(res, 400, "Plan inválido", eid);
       }
-    } else if (credits_mode === "set") {
-      if (!Number.isFinite(credits) || credits < 0) return send(res, 400, { error: "Créditos inválidos" });
-      const upd = await setUserCreditsAbsolute(admin, userId, credits);
-      if (!upd.ok) return send(res, 500, { error: upd.error || "No pude fijar créditos" });
-    }
+      if (!(credits_mode === "none" || credits_mode === "default" || credits_mode === "set")) {
+        return adminSendError(res, 400, "Modo de créditos inválido", eid);
+      }
 
-    return send(res, 200, { ok: true, user_id: userId, plan_key, credits_mode });
+      const admin = auth.admin;
+      const found = await findUserIdByEmail(auth, email);
+      if (!found.ok) return adminSendError(res, found.status, found.error || "Usuario no encontrado", eid, { detail: (found as any)?.detail || null });
+      const userId = found.userId;
+
+      const payment_id = `admin_plan:${auth.user.id}:${userId}:${Date.now()}`;
+      const insertTr = await admin.from("mp_transactions").insert({
+        user_id: userId,
+        kind: "songs",
+        pack_key: plan_key,
+        amount_mxn: 0,
+        payment_id,
+      });
+      if (insertTr?.error) adminServerLog(eid, safeHandler, { step: "insert.mp_transactions_err", err: insertTr.error });
+
+      if (credits_mode === "default") {
+        let add = 0;
+        if (plan_key === "inicio") add = 1200;
+        if (plan_key === "productor") add = 2000;
+        if (add > 0) {
+          const upd = await applyCreditRolloverWithCap(admin, {
+            userId,
+            monthlyCredits: add,
+            subscriptionActive: true,
+            renewalPaidSuccessfully: true,
+          });
+          if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar créditos", eid);
+        }
+      } else if (credits_mode === "set") {
+        if (!Number.isFinite(credits) || credits < 0) return adminSendError(res, 400, "Créditos inválidos", eid);
+        const upd = await setUserCreditsAbsolute(admin, userId, credits);
+        if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude fijar créditos", eid);
+      }
+
+      return send(res, 200, { ok: true, user_id: userId, plan_key, credits_mode, error_id: eid });
+    } catch (outer) {
+      adminServerLog(eid, safeHandler, {
+        step: "catch_outer",
+        errMessage: outer instanceof Error ? outer.message : String(outer),
+        errStack: outer instanceof Error ? outer.stack : undefined,
+      });
+      return adminSendError(res, 500, "Algo salió mal.", eid);
+    }
   }
 
   async function handleFeedback(req: any, res: any) {

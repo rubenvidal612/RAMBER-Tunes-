@@ -425,7 +425,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        alert((out?.detail || out?.error || 'No pude guardar el colaborador.').toString());
+        const msg = (out?.error || out?.detail || 'No pude guardar el colaborador.').toString();
+        const id = (out?.error_id || '').toString();
+        alert([msg, id ? `(Error ${id})` : ''].filter(Boolean).join(' '));
         return;
       }
       alert('Listo. Colaborador guardado.');
@@ -469,7 +471,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       if (!r.ok) {
         const msg = (out?.error || 'No pude enviar créditos.').toString();
         const detail = (out?.detail || '').toString();
-        alert([msg, detail].filter(Boolean).join('\n'));
+        const id = (out?.error_id || '').toString();
+        const idBlock = id ? `(Error ${id})` : '';
+        alert([msg, detail, idBlock].filter(Boolean).join('\n'));
         return;
       }
       alert(`Listo. Se enviaron ${n} créditos a ${email}.`);
@@ -508,7 +512,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       if (!r.ok) {
         const msg = (out?.error || 'No pude quitar créditos.').toString();
         const detail = (out?.detail || '').toString();
-        alert([msg, detail].filter(Boolean).join('\n'));
+        const id = (out?.error_id || '').toString();
+        const idBlock = id ? `(Error ${id})` : '';
+        alert([msg, detail, idBlock].filter(Boolean).join('\n'));
         return;
       }
       const fb = Number(out?.from_credits_before ?? NaN);
@@ -630,7 +636,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       if (!r.ok) {
         const msg = (out?.error || 'No pude recargar el mini paquete.').toString();
         const detail = (out?.detail || '').toString();
-        alert([msg, detail].filter(Boolean).join('\n'));
+        const id = (out?.error_id || '').toString();
+        const idBlock = id ? `(Error ${id})` : '';
+        alert([msg, detail, idBlock].filter(Boolean).join('\n'));
         return;
       }
       alert('Listo. Se agregó el mini paquete como lote (30 días).');
@@ -675,7 +683,9 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       if (!r.ok) {
         const msg = (out?.error || 'No pude cambiar el plan.').toString();
         const detail = (out?.detail || '').toString();
-        alert([msg, detail].filter(Boolean).join('\n'));
+        const id = (out?.error_id || '').toString();
+        const idBlock = id ? `(Error ${id})` : '';
+        alert([msg, detail, idBlock].filter(Boolean).join('\n'));
         return;
       }
       alert('Listo. Se actualizó el plan.');
