@@ -1924,8 +1924,15 @@ export default function App() {
     if (note) setUpdateNote(note);
   };
 
-  const showToast = (message: string) => {
-    const text = String(message || '').trim();
+  const showToast = (message: string | { title?: string; message: string; tone?: 'error' | 'success' | 'warning' | 'info' }) => {
+    if (message != null && typeof message === 'object' && typeof (message as any).message === 'string') {
+      const obj = message as { title?: string; message: string; tone?: 'error' | 'success' | 'warning' | 'info' };
+      const text = String(obj.message || '').trim();
+      if (!text) return;
+      showStyledAlert({ title: obj.title, message: text, tone: obj.tone });
+      return;
+    }
+    const text = String((typeof message === 'string' ? message : '') || '').trim();
     if (!text) return;
     const lower = text.toLowerCase();
     const isError =
@@ -1939,6 +1946,22 @@ export default function App() {
       lower.includes('expir');
     if (isError) {
       showStyledAlert(text);
+      return;
+    }
+    const isConfirm =
+      lower.includes('listo') ||
+      lower.includes('guardad') ||
+      lower.includes('actualiz') ||
+      lower.includes('cread') ||
+      lower.includes('agregad') ||
+      lower.includes('eliminad') ||
+      lower.includes('recarg') ||
+      lower.includes('copiad') ||
+      lower.includes('confirmad') ||
+      lower.includes('exit') ||
+      lower.includes('ok.');
+    if (isConfirm) {
+      showStyledAlert({ title: 'Listo', message: text, tone: 'success' });
       return;
     }
     setToast(text);
