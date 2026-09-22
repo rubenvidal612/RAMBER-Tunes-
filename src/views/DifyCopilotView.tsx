@@ -438,8 +438,71 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     voice: 'Hombre' | 'Mujer' | '';
   }>(null);
   const [coverAudioMsgId, setCoverAudioMsgId] = useState<string | null>(null);
-  const coverAudioRef = useRef<{ file: File; previewUrl: string; name: string; bytes: number } | null>(null);
+  const coverAudioRef = useRef<{
+    file?: File | null;
+    previewUrl: string;
+    name: string;
+    bytes: number;
+    mime?: string;
+    r2Key?: string;
+  } | null>(null);
+  const coverSnapshotLockRef = useRef<number>(0);
+  const lastSavedSnapshotRef = useRef<string>("");
   const [coverGenerating, setCoverGenerating] = useState(false);
+
+  async function persistCoverSnapshot(pending?: {
+    audioMeta?: { msg_id: string | null; r2_key: string | null; name: string | null; mime: string | null; bytes: number | null };
+    wizard?: typeof coverWizard | null;
+    draft?: typeof coverDraft | null;
+  }) {
+    try {
+      const activeConvId = uiState.activeConversationId as string | null | undefined;
+      if (!activeConvId) return;
+      const tk = await getValidBearerToken();
+      if (!tk) return;
+      const audioIn = pending?.audioMeta;
+      const wizIn = pending?.wizard === undefined ? coverWizard : pending?.wizard;
+      const draftIn = pending?.draft === undefined ? coverDraft : pending?.draft;
+      const audio = audioIn ? audioIn : (coverAudioRef.current ? {
+        msg_id: coverAudioMsgId,
+        r2_key: coverAudioRef.current.r2Key || null,
+        name: coverAudioRef.current.name || null,
+        mime: (coverAudioRef.current as any)?.mime || null,
+        bytes: Number(coverAudioRef.current.bytes || 0) || null,
+      } : null);
+      const snapshot: any = { version: 1, saved_at: new Date().toISOString() };
+      if (audio) snapshot.audio = audio;
+      if (wizIn) snapshot.wizard = wizIn;
+      if (draftIn) snapshot.draft = draftIn;
+      const token = ++coverSnapshotLockRef.current;
+      try {
+        const convRes = await fetch(`/api/chat/${encodeURIComponent(activeConvId)}`, {
+          method: 'GET',
+          headers: { authorization: `Bearer ${tk}`, accept: 'application/json' },
+        });
+        if (token !== coverSnapshotLockRef.current) return;
+        let base: any = {};
+        if (convRes.ok) {
+          try {
+            const j = await convRes.json();
+            if (j?.success && j?.conversation?.summary_snapshot && typeof j.conversation.summary_snapshot === 'object') {
+              base = { ...j.conversation.summary_snapshot };
+            }
+          } catch {}
+        }
+        const toSend: any = { summary_snapshot: { ...base, cover_draft: snapshot } };
+        const patchRes = await fetch(`/api/chat/${encodeURIComponent(activeConvId)}`, {
+          method: 'PATCH',
+          headers: { authorization: `Bearer ${tk}`, 'content-type': 'application/json; charset=utf-8', accept: 'application/json' },
+          body: JSON.stringify(toSend),
+        });
+        try {
+          lastSavedSnapshotRef.current = JSON.stringify(snapshot);
+        } catch {}
+        void patchRes;
+      } catch {}
+    } catch {}
+  }
 
   // ================================================================
   // FEATURE FLAG TEMPORAL (2026-09-20)
@@ -1046,13 +1109,23 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   async function loadConversationById(
     token: string,
     convId: string
-  ): Promise<{ conversation: ConversationSummary | null; messages: ChatMessage[]; ok: boolean }> {
-    const r = await apiRequest<{ success?: boolean; conversation?: any; messages?: any[] }>(
+  ): Promise<{
+    conversation: ConversationSummary | null;
+    messages: ChatMessage[];
+    ok: boolean;
+    cover_audio_preview?: string;
+    cover_draft_snapshot?: any;
+  }> {
+    const r = await apiRequest<{ success?: boolean; conversation?: any; messages?: any[]; cover_audio_preview?: string }>(
       `/api/chat/${encodeURIComponent(convId)}`,
       'GET',
       token
     );
     if (!r.ok || !r.json?.success) return { conversation: null, messages: [], ok: false };
+    const coverAudioPreview = typeof r.json.cover_audio_preview === 'string' ? r.json.cover_audio_preview : '';
+    const coverDraftSnapshot = (r.json?.conversation && typeof r.json.conversation === 'object' && (r.json.conversation as any).summary_snapshot && typeof (r.json.conversation as any).summary_snapshot === 'object')
+      ? (r.json.conversation as any).summary_snapshot?.cover_draft || null
+      : null;
     const rawMsgs = Array.isArray(r.json.messages) ? r.json.messages : [];
     const msgs: ChatMessage[] = rawMsgs.map((m: any) => {
       const role: ChatRole = m.role === 'user' ? 'user' : 'assistant';
@@ -1074,6 +1147,24 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
             };
           })()
         : null;
+      let attachment: ChatMessage['attachment'] = null;
+      try {
+        const sa = m.structured_action;
+        if (sa && typeof sa === 'object' && (sa as any).action === 'audio_attachment') {
+          const kind = String((sa as any).kind || 'audio').trim() || 'audio';
+          const name = String((sa as any).name || '').trim();
+          const bytes = Number((sa as any).bytes || 0) || 0;
+          const preview = typeof (m as any).attachment_preview_url === 'string' ? (m as any).attachment_preview_url : '';
+          if (preview || name) {
+            attachment = {
+              kind: (kind as any) === 'audio' ? 'audio' : 'audio',
+              previewUrl: preview,
+              name,
+              bytes,
+            };
+          }
+        }
+      } catch {}
       const ts = m.created_at ? new Date(m.created_at).getTime() : Date.now();
       return {
         id: String(m.id || uid()),
@@ -1081,6 +1172,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         text: String(m.content || ''),
         createdAt: Number.isFinite(ts) ? ts : Date.now(),
         structured,
+        attachment,
         persisted: true,
       };
     });
@@ -1088,6 +1180,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       conversation: (r.json.conversation as ConversationSummary) || null,
       messages: msgs,
       ok: true,
+      cover_audio_preview: coverAudioPreview || undefined,
+      cover_draft_snapshot: coverDraftSnapshot || undefined,
     };
   }
 
@@ -1241,10 +1335,74 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         const withSeq = cleaned.map((m: any) => assignSeqToMessage(m));
         setMessages(withSeq);
         rebaseSeqFromList(withSeq);
-        setCoverAudioMsgId(null);
-        coverAudioRef.current = null;
-        setCoverDraft(null);
-        setCoverWizard(null);
+
+        let rehydratedAudio: any = null;
+        let rehydratedWizard: any = null;
+        let rehydratedDraft: any = null;
+        let rehydratedMsgId: string | null = null;
+        let rehydratedPreview = typeof (loaded as any).cover_audio_preview === 'string' ? String((loaded as any).cover_audio_preview).trim() : '';
+
+        try {
+          const snap = (loaded as any).cover_draft_snapshot;
+          if (snap && typeof snap === 'object') {
+            try {
+              const a = snap.audio;
+              if (a && typeof a === 'object') {
+                rehydratedMsgId = typeof a.msg_id === 'string' ? a.msg_id : null;
+                const name = String(a.name || '').trim();
+                const mime = String(a.mime || 'audio/mpeg').trim();
+                const bytes = Number(a.bytes || 0) || 0;
+                const r2Key = String(a.r2_key || '').trim();
+                if (name || rehydratedPreview || r2Key) {
+                  rehydratedAudio = {
+                    file: null,
+                    previewUrl: rehydratedPreview,
+                    name,
+                    bytes,
+                    mime: mime || 'audio/mpeg',
+                    r2Key: r2Key,
+                  };
+                }
+              }
+            } catch {}
+            try {
+              const w = snap.wizard;
+              if (w && typeof w === 'object' && ['lyrics','style','mood','direction','title','voice','summary'].includes(String(w.phase || ''))) {
+                rehydratedWizard = {
+                  phase: String(w.phase || 'summary'),
+                  lyrics: String(w.lyrics || ''),
+                  style: String(w.style || ''),
+                  mood: String(w.mood || ''),
+                  direction: String(w.direction || ''),
+                  title: String(w.title || ''),
+                  voice: String(w.voice || '') === 'Mujer' ? 'Mujer' : (String(w.voice || '') === 'Hombre' ? 'Hombre' : ''),
+                };
+              }
+            } catch {}
+            try {
+              const d = snap.draft;
+              if (d && typeof d === 'object' && (d.title || d.style || d.gender)) {
+                rehydratedDraft = {
+                  title: String(d.title || 'Cover').slice(0, 100) || 'Cover',
+                  style: String(d.style || '').trim(),
+                  gender: String(d.gender || '') === 'Femenino' ? 'Femenino' : 'Masculino',
+                  instructions: typeof d.instructions === 'string' ? d.instructions : '',
+                };
+              }
+            } catch {}
+          }
+        } catch {}
+
+        if (rehydratedAudio) {
+          coverAudioRef.current = rehydratedAudio;
+          setCoverAudioMsgId(rehydratedMsgId);
+        } else {
+          coverAudioRef.current = null;
+          setCoverAudioMsgId(null);
+        }
+        if (rehydratedWizard) setCoverWizard(rehydratedWizard); else setCoverWizard(null);
+        if (rehydratedDraft) setCoverDraft(rehydratedDraft); else setCoverDraft(null);
+
         const lastReadyMsg = [...withSeq].reverse().find((m) => m.structured?.action === 'ready_to_generate');
         if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
       } else {
@@ -2005,6 +2163,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     const msgAudioUrl = (() => {
       try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
     })();
+    let audioR2Key = '';
+    let audioMime = '';
     coverAudioRef.current = { file: audioFile, previewUrl: msgAudioUrl || attachedImg.previewUrl || '', name: audioName, bytes: audioBytes };
 
     let controller: AbortController | null = null;
@@ -2032,6 +2192,23 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       controller = null;
     };
 
+    const saveSnapshotAfter = (audio: { r2_key?: string | null; mime?: string | null; name?: string | null; bytes?: number | null; msg_id?: string | null }, wizard: typeof coverWizard | null = coverWizard, draft: typeof coverDraft | null = coverDraft) => {
+      try {
+        const bytes = Number(audio.bytes || audioBytes || 0) || null;
+        void persistCoverSnapshot({
+          audioMeta: {
+            msg_id: audio.msg_id || localAudioMsgId || null,
+            r2_key: audio.r2_key || null,
+            name: audio.name || audioName || null,
+            mime: audio.mime || null,
+            bytes,
+          },
+          wizard,
+          draft,
+        });
+      } catch {}
+    };
+
     const showErrorButtons = (msg: string, errId?: string) => {
       const idLabel = errId ? ` (Error ${String(errId).trim()})` : '';
       const safeMsg = `${msg}${idLabel}`.trim();
@@ -2051,12 +2228,13 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         };
         return [...m, last];
       });
+      saveSnapshotAfter({ r2_key: audioR2Key || null, mime: audioMime || null }, null, null);
     };
 
     const showLyricsAndConfirm = (lyrics: string) => {
       const trimmed = String(lyrics || '').replace(/\r\n/g, '\n').trim();
       setStatusText(`Audio listo · ${audioName}`);
-      setCoverWizard({
+      const nextWiz: typeof coverWizard = {
         phase: 'lyrics',
         lyrics: trimmed,
         style: '',
@@ -2064,7 +2242,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         direction: '',
         title: '',
         voice: '',
-      });
+      };
+      setCoverWizard(nextWiz);
       const aMsg: ChatMessage = {
         id: uid(),
         role: 'assistant',
@@ -2092,6 +2271,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           }
         } catch {}
       })();
+      saveSnapshotAfter({ r2_key: audioR2Key || null, mime: audioMime || null }, nextWiz, null);
     };
 
     try {
@@ -2125,11 +2305,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           activeConvId = created.id;
           setUi((p) => ({ ...p, activeConversationId: activeConvId!, conversations: created ? [created, ...p.conversations] : p.conversations }));
         }
-      }
-      if (activeConvId) {
-        void (async () => {
-          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'user', content: `[Audio adjunto: ${audioName}]` }); } catch {}
-        })();
       }
 
       try {
@@ -2166,6 +2341,31 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       }
 
       const audioUrl = String(uploadJson?.url || uploadJson?.upload_url || uploadJson?.uploadUrl || '').trim();
+      audioR2Key = String(uploadJson?.r2_key || uploadJson?.key || '').trim();
+      audioMime = String(uploadJson?.content_type || uploadJson?.contentType || audioFile?.type || 'audio/mpeg').trim();
+      if (coverAudioRef.current) {
+        coverAudioRef.current.r2Key = audioR2Key;
+        coverAudioRef.current.mime = audioMime;
+      }
+      if (activeConvId && audioR2Key) {
+        void (async () => {
+          try {
+            await appendMessageToConversation(accessToken, activeConvId!, {
+              role: 'user',
+              content: `[Audio adjunto: ${audioName}]`,
+              structured_action: {
+                action: 'audio_attachment',
+                kind: 'audio',
+                r2_key: audioR2Key,
+                name: audioName,
+                mime: audioMime || 'audio/mpeg',
+                bytes: audioBytes || 0,
+              },
+            });
+          } catch {}
+        })();
+      }
+      saveSnapshotAfter({ r2_key: audioR2Key || null, mime: audioMime || null, name: audioName, bytes: audioBytes || 0, msg_id: localAudioMsgId }, null, null);
       if (!audioUrl) {
         const friendly = 'No pude preparar el audio para transcribir.';
         setToast({ kind: 'err', text: friendly });
@@ -2248,6 +2448,18 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcribeAudioForWizard]);
 
+  useEffect(() => {
+    const hasAudio = !!coverAudioRef.current || !!coverAudioMsgId;
+    const hasWizard = !!coverWizard;
+    const hasDraft = !!coverDraft;
+    if (!hasAudio && !hasWizard && !hasDraft) return;
+    const id = window.setTimeout(() => {
+      void persistCoverSnapshot();
+    }, 250);
+    return () => { try { window.clearTimeout(id); } catch {} };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coverWizard, coverDraft, coverAudioMsgId]);
+
   async function handleGenerateCoverFromAudio() {
     const audioSrc = coverAudioRef.current || (attachedImg && attachedImg.kind === 'audio' ? {
       file: attachedImg.file,
@@ -2255,7 +2467,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       name: attachedImg.name,
       bytes: attachedImg.bytes,
     } : null);
-    if (!audioSrc || !audioSrc.file) return;
+    if (!audioSrc) return;
+    const hasFile = !!(audioSrc.file && typeof (audioSrc.file as any).arrayBuffer === 'function');
+    const hasR2Key = typeof (audioSrc as any).r2Key === 'string' && String((audioSrc as any).r2Key).trim().length > 0;
+    if (!hasFile && !hasR2Key) return;
     if (!coverDraft) return;
     if (!coverWizard || coverWizard.phase !== 'summary') return;
     if (loading || generating || audioBusy || coverGenerating) return;
@@ -2338,20 +2553,33 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
       let uploadJson: any = null;
       let uploadStatus = 0;
-      try {
-        const fd = new FormData();
-        fd.append('file', audioFile, audioName);
-        const r = await fetch('/api/gpt/upload-audio', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-          body: fd,
-        });
-        uploadStatus = r.status;
-        const raw = await r.text();
-        try { uploadJson = raw ? JSON.parse(raw) : null; } catch { uploadJson = { error: 'invalid_json', message: raw }; }
-      } catch {
+      if (hasR2Key && !hasFile) {
+        try {
+          uploadStatus = 200;
+          uploadJson = { success: true, r2_key: String((audioSrc as any).r2Key).trim() };
+        } catch {
+          uploadStatus = 0;
+          uploadJson = { error: 'invalid_r2key' };
+        }
+      } else if (hasFile) {
+        try {
+          const fd = new FormData();
+          fd.append('file', audioFile as any, audioName);
+          const r = await fetch('/api/gpt/upload-audio', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+            body: fd,
+          });
+          uploadStatus = r.status;
+          const raw = await r.text();
+          try { uploadJson = raw ? JSON.parse(raw) : null; } catch { uploadJson = { error: 'invalid_json', message: raw }; }
+        } catch {
+          uploadStatus = 0;
+          uploadJson = { error: 'network_error' };
+        }
+      } else {
         uploadStatus = 0;
-        uploadJson = { error: 'network_error' };
+        uploadJson = { error: 'no_audio_source' };
       }
       if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
         const friendly = uploadStatus === 413 ? 'El audio es demasiado pesado (máx. 25 MB).' : 'No pude subir el audio.';
@@ -2554,7 +2782,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         );
       } else if (phase === 'title') {
         if (/^(sugiere uno|sugiere|propon|propón|tu eliges|tú eliges|elige|elije|sugerir)[\s\.!,¡]*$/i.test(textLower)) {
-          const base = String(attachedImg.name || 'Cover').replace(/\.[^.]+$/, '').trim();
+          const base = String(coverAudioRef.current?.name || attachedImg?.name || 'Cover').replace(/\.[^.]+$/, '').trim();
           next.title = base ? `${base} · cover` : 'Mi cover';
         } else {
           next.title = normalized;

@@ -21033,6 +21033,34 @@ const chatHandler = (() => {
       .eq("conversation_id", convId)
       .order("created_at", { ascending: true });
     if (msgErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(msgErr?.message || msgErr) });
+    const summary = (conv.summary_snapshot && typeof conv.summary_snapshot === "object" && conv.summary_snapshot !== null)
+      ? conv.summary_snapshot
+      : {};
+    let coverAudioPreview = "";
+    try {
+      const r2KeyRaw = (summary as any)?.cover_draft?.audio?.r2_key;
+      if (typeof r2KeyRaw === "string" && r2KeyRaw.trim()) {
+        coverAudioPreview = String(await getSignedR2Url(r2KeyRaw.trim(), 3600) || "").trim();
+      }
+    } catch {}
+    const finalMsgs = await Promise.all((msgs || []).map(async (m: any) => {
+      let preview = "";
+      try {
+        const sa = m.structured_action;
+        if (sa && typeof sa === "object" && (sa as any).action === "audio_attachment" && typeof (sa as any).r2_key === "string" && (sa as any).r2_key.trim()) {
+          preview = String(await getSignedR2Url(String((sa as any).r2_key).trim(), 3600) || "").trim();
+        }
+      } catch {}
+      return {
+        id: m.id,
+        role: m.role,
+        content: m.role === "assistant" || m.role === "system" ? stripInternalReasoning(m.content) : m.content,
+        structured_action: m.structured_action || null,
+        tokens: typeof m.tokens === "number" ? m.tokens : null,
+        created_at: m.created_at,
+        attachment_preview_url: preview || undefined,
+      };
+    }));
     return chatSendJson(res, 200, {
       success: true,
       conversation: {
@@ -21044,16 +21072,10 @@ const chatHandler = (() => {
         pinned: Boolean(conv.pinned),
         deleted_at: conv.deleted_at || null,
         internal_dify_conversation_id: conv.internal_dify_conversation_id || null,
-        summary_snapshot: conv.summary_snapshot || {},
+        summary_snapshot: summary,
+        cover_audio_preview: coverAudioPreview || undefined,
       },
-      messages: (msgs || []).map((m: any) => ({
-        id: m.id,
-        role: m.role,
-        content: m.role === "assistant" || m.role === "system" ? stripInternalReasoning(m.content) : m.content,
-        structured_action: m.structured_action || null,
-        tokens: typeof m.tokens === "number" ? m.tokens : null,
-        created_at: m.created_at,
-      })),
+      messages: finalMsgs,
     });
   }
 
