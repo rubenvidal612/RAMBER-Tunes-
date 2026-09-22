@@ -366,6 +366,42 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     }
   }, [messages]);
 
+  function updateMessageById(msgId: string, patch: Partial<ChatMessage>): void {
+    if (!msgId) return;
+    try {
+      setMessages((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          if (m.id !== msgId) return m;
+          const merged: any = { ...m, ...(patch || {}) };
+          changed = true;
+          return merged as ChatMessage;
+        });
+        return changed ? next : prev;
+      });
+    } catch {}
+  }
+
+  function sanitizeStyleValue(raw: string): string {
+    try {
+      let s = String(raw || '').replace(/\r\n/g, '\n').trim();
+      if (!s) return '';
+      s = s.replace(/^\s*[\?\.\!\,\;\:\-_\*\#]+[\s\.]+/g, '');
+      s = s.replace(/\s{2,}/g, ' ');
+      let safety = 8;
+      while (safety-- > 0 && s.length > 0 && /^[\?\.\!\,\;\:\-_\*\#\s]+/.test(s)) {
+        s = s.replace(/^[\?\.\!\,\;\:\-_\*\#\s]+/, '');
+      }
+      safety = 8;
+      while (safety-- > 0 && s.length > 0 && /[\?\.\!\,\;\:\-_\*\#\s]+$/.test(s)) {
+        s = s.replace(/[\?\.\!\,\;\:\-_\*\#\s]+$/, '');
+      }
+      return s.slice(0, 400);
+    } catch {
+      return String(raw || '').trim().slice(0, 400);
+    }
+  }
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const activeConversationIdRef = useRef<string | null | undefined>(undefined);
   const setInputAndDraftRef = useRef<((v: string, clearStorage?: boolean) => void) | null>(null);
@@ -391,7 +427,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const attachBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
   const [audioBusy, setAudioBusy] = useState(false);
-  const [coverDraft, setCoverDraft] = useState<null | { title: string; style: string; gender: 'Masculino' | 'Femenino' }>(null);
+  const [coverDraft, setCoverDraft] = useState<null | { title: string; style: string; gender: 'Masculino' | 'Femenino'; instructions?: string }>(null);
   const [coverWizard, setCoverWizard] = useState<null | {
     phase: 'lyrics' | 'style' | 'mood' | 'direction' | 'title' | 'voice' | 'summary';
     lyrics: string;
@@ -401,6 +437,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     title: string;
     voice: 'Hombre' | 'Mujer' | '';
   }>(null);
+  const [coverAudioMsgId, setCoverAudioMsgId] = useState<string | null>(null);
+  const coverAudioRef = useRef<{ file: File; previewUrl: string; name: string; bytes: number } | null>(null);
   const [coverGenerating, setCoverGenerating] = useState(false);
 
   // ================================================================
@@ -1132,6 +1170,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                 const withSeq = cleaned.map((m: any) => assignSeqToMessage(m));
                 setMessages(withSeq);
                 rebaseSeqFromList(withSeq);
+                setCoverAudioMsgId(null);
+                coverAudioRef.current = null;
+                setCoverDraft(null);
+                setCoverWizard(null);
                 const lastReadyMsg = [...withSeq].reverse().find((m) => m.structured?.action === 'ready_to_generate');
                 if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
               }
@@ -1199,10 +1241,18 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         const withSeq = cleaned.map((m: any) => assignSeqToMessage(m));
         setMessages(withSeq);
         rebaseSeqFromList(withSeq);
+        setCoverAudioMsgId(null);
+        coverAudioRef.current = null;
+        setCoverDraft(null);
+        setCoverWizard(null);
         const lastReadyMsg = [...withSeq].reverse().find((m) => m.structured?.action === 'ready_to_generate');
         if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
       } else {
         insertSeqRef.current = 0;
+        setCoverAudioMsgId(null);
+        coverAudioRef.current = null;
+        setCoverDraft(null);
+        setCoverWizard(null);
         setMessages([
           assignSeqToMessage({
             id: uid(),
@@ -1243,6 +1293,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setActiveReady(null);
       setLastPending(null);
       insertSeqRef.current = 0;
+      setCoverAudioMsgId(null);
+      coverAudioRef.current = null;
+      setCoverDraft(null);
+      setCoverWizard(null);
       setMessages([
         assignSeqToMessage({
           id: uid(),
@@ -1396,8 +1450,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     if (!attachedImg) return;
     try { URL.revokeObjectURL(attachedImg.previewUrl); } catch {}
     setAttachedImg(null);
-    setCoverWizard(null);
-    setCoverDraft(null);
+    if (!coverWizard && !coverDraft) {
+      setCoverAudioMsgId(null);
+      coverAudioRef.current = null;
+    }
+    if (!coverWizard) setCoverWizard(null);
+    if (!coverDraft) setCoverDraft(null);
   }
 
   function confirmAudioAuth(): boolean {
@@ -1943,13 +2001,26 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     setCoverWizard(null);
     const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
     const audioFile = attachedImg.file;
+    const audioBytes = Number(attachedImg.bytes || 0);
     const msgAudioUrl = (() => {
       try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
     })();
+    coverAudioRef.current = { file: audioFile, previewUrl: msgAudioUrl || attachedImg.previewUrl || '', name: audioName, bytes: audioBytes };
 
     let controller: AbortController | null = null;
     let timeoutTimer: number | null = null;
     let abortedByTimeout = false;
+    let localAudioMsgId = coverAudioMsgId;
+
+    const setStatusText = (label: string, extra?: Partial<ChatMessage>) => {
+      try {
+        if (!localAudioMsgId) return;
+        const patch: any = {};
+        if (label) patch.text = label;
+        if (extra) Object.assign(patch, extra);
+        updateMessageById(localAudioMsgId, patch);
+      } catch {}
+    };
 
     const cleanBusy = () => {
       setLoading(false);
@@ -1965,6 +2036,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       const idLabel = errId ? ` (Error ${String(errId).trim()})` : '';
       const safeMsg = `${msg}${idLabel}`.trim();
       setToast({ kind: 'err', text: safeMsg });
+      setStatusText(`Audio fallido · ${audioName}`);
       setMessages((m) => {
         const last: ChatMessage = {
           id: uid(),
@@ -1983,6 +2055,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
     const showLyricsAndConfirm = (lyrics: string) => {
       const trimmed = String(lyrics || '').replace(/\r\n/g, '\n').trim();
+      setStatusText(`Audio listo · ${audioName}`);
       setCoverWizard({
         phase: 'lyrics',
         lyrics: trimmed,
@@ -2029,14 +2102,21 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         return;
       }
 
-      const userMsg: ChatMessage = {
-        id: uid(),
-        role: 'user',
-        text: `Audio adjunto · ${audioName}`,
-        createdAt: Date.now(),
-        attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes } : null,
-      };
-      setMessages((m) => [...m, userMsg]);
+      if (!localAudioMsgId) {
+        const newId = uid();
+        localAudioMsgId = newId;
+        setCoverAudioMsgId(newId);
+        const userMsg: ChatMessage = {
+          id: newId,
+          role: 'user',
+          text: `Subiendo audio · ${audioName}`,
+          createdAt: Date.now(),
+          attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: audioBytes } : null,
+        };
+        setMessages((m) => [...m, userMsg]);
+      } else {
+        setStatusText(`Subiendo audio · ${audioName}`);
+      }
 
       let activeConvId = uiState.activeConversationId;
       if (!activeConvId) {
@@ -2052,7 +2132,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         })();
       }
 
+      try {
+        setAttachedImg(null);
+      } catch {}
+
       setToast({ kind: 'ok', text: 'Transcribiendo audio…' });
+      setStatusText(`Procesando audio · ${audioName}`);
       wizardPushMessage('🎙️ Transcribiendo tu audio… esto puede tardar entre 10 y 60 segundos.');
 
       let uploadJson: any = null;
@@ -2075,6 +2160,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
         const friendly = uploadStatus === 413 ? 'El audio es demasiado pesado (máx. 25 MB).' : 'No pude subir el audio.';
         setToast({ kind: 'err', text: friendly });
+        setStatusText(`Audio fallido · ${audioName}`);
         setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
         return;
       }
@@ -2083,6 +2169,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       if (!audioUrl) {
         const friendly = 'No pude preparar el audio para transcribir.';
         setToast({ kind: 'err', text: friendly });
+        setStatusText(`Audio fallido · ${audioName}`);
         setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
         return;
       }
@@ -2162,8 +2249,15 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }, [transcribeAudioForWizard]);
 
   async function handleGenerateCoverFromAudio() {
-    if (!attachedImg || attachedImg.kind !== 'audio') return;
+    const audioSrc = coverAudioRef.current || (attachedImg && attachedImg.kind === 'audio' ? {
+      file: attachedImg.file,
+      previewUrl: attachedImg.previewUrl || '',
+      name: attachedImg.name,
+      bytes: attachedImg.bytes,
+    } : null);
+    if (!audioSrc || !audioSrc.file) return;
     if (!coverDraft) return;
+    if (!coverWizard || coverWizard.phase !== 'summary') return;
     if (loading || generating || audioBusy || coverGenerating) return;
     if (!confirmAudioAuth()) return;
     if (!supabaseBrowser) {
@@ -2171,21 +2265,36 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       return;
     }
 
+    const lyricsFinal = String(coverWizard.lyrics || '').trim();
+    if (!lyricsFinal) {
+      setToast({ kind: 'err', text: 'Falta la letra para hacer el cover. Vuelve atrás y pega la letra.' });
+      try {
+        setCoverWizard({ ...coverWizard, phase: 'lyrics' });
+      } catch {}
+      return;
+    }
+
     setCoverGenerating(true);
     setLoading(true);
     sentScrollRef.current = true;
-    const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
-    const audioFile = attachedImg.file;
-    const msgAudioUrl = (() => {
-      try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
+    const audioName = String(audioSrc.name || audioSrc.file?.name || 'audio').slice(0, 160) || 'audio';
+    const audioFile = audioSrc.file;
+    const audioBytes = Number(audioSrc.bytes || 0);
+    const msgAudioUrl = audioSrc.previewUrl || (() => {
+      try { return URL.createObjectURL(audioFile); } catch { return ''; }
     })();
     const title = String(coverDraft.title || 'Cover').trim().slice(0, 100) || 'Cover';
-    const styleRaw = String(coverDraft.style || '').trim().slice(0, 1200);
-    const styleParts = [styleRaw].filter(Boolean);
-    if (coverDraft.gender) styleParts.push(`Voz deseada: ${coverDraft.gender}.`);
-    const style = styleParts.filter(Boolean).join('\n') || 'Pop';
+    const styleClean = sanitizeStyleValue(coverDraft.style || '');
+    const instrRaw = String((coverDraft as any)?.instructions || '').trim();
+    const instructionsClean = sanitizeStyleValue(instrRaw);
     const vocalGender = coverDraft.gender === 'Femenino' ? 'f' : 'm';
     const COST_CREDITS = 12;
+
+    const styleFinal = [
+      styleClean || null,
+      instructionsClean || null,
+      (coverDraft.gender ? `Voz deseada: ${coverDraft.gender}.` : null),
+    ].filter(Boolean).join('\n') || 'Pop';
 
     try {
       const accessToken = await getValidBearerToken();
@@ -2202,7 +2311,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         role: 'user',
         text: `Crear cover · ${title}`,
         createdAt: Date.now(),
-        attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: attachedImg.bytes } : null,
+        attachment: msgAudioUrl ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: audioBytes } : null,
       };
       setMessages((m) => [...m, userMsg]);
 
@@ -2266,19 +2375,17 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       let coverJson: any = null;
       let coverStatus = 0;
       try {
-        const lyrics = String((coverWizard && coverWizard.phase === 'summary' && coverWizard.lyrics) || (coverDraft && (coverDraft as any).lyrics) || '').trim();
         const payload: any = {
           uploadUrl: uploadUrl || undefined,
           uploadBucket: uploadPath ? 'ramber-tunes' : undefined,
           uploadPath: uploadPath || undefined,
           instrumental: false,
-          prompt: lyrics || ' ',
-          style,
+          prompt: lyricsFinal,
+          style: styleFinal,
           title,
           model: 'V6',
           vocalGender,
         };
-        if (payload.style) payload.style = [payload.style, `Voz deseada: ${coverDraft.gender}.`].filter(Boolean).join('\n');
         const r = await fetch('/api/suno/upload-cover', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
@@ -2326,9 +2433,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           startedAt: Date.now(),
           draft: {
             title,
-            description: style,
-            lyrics: null,
-            prompt: null,
+            description: styleFinal,
+            lyrics: lyricsFinal,
+            prompt: instructionsClean,
             model: 'V6',
             genre: coverDraft.gender,
             isCover: true,
@@ -2488,13 +2595,20 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
       if (next.phase === 'summary') {
         const genderFinal: 'Masculino' | 'Femenino' = next.voice === 'Mujer' ? 'Femenino' : 'Masculino';
-        const styleBits = [next.style, next.mood, next.direction].filter(Boolean);
-        const styleFinal = styleBits.join(' · ');
-        setCoverDraft({ title: next.title || 'Cover', style: styleFinal, gender: genderFinal });
+        const styleClean = sanitizeStyleValue(next.style || '');
+        const instrBits = [next.mood, next.direction].map((s) => sanitizeStyleValue(String(s || ''))).filter(Boolean);
+        const instrFinal = instrBits.join(' · ');
+        setCoverDraft({
+          title: String(next.title || 'Cover').trim().slice(0, 100) || 'Cover',
+          style: styleClean || 'Pop',
+          gender: genderFinal,
+          instructions: instrFinal,
+        });
         const summaryText =
           `✨ Ya tenemos todo para el cover:\n\n` +
           `**Título:** ${next.title || 'Cover'}\n` +
-          `**Estilo / dirección:** ${styleFinal || 'Pop'}\n` +
+          `**Estilo musical:** ${styleClean || 'Pop'}\n` +
+          (instrFinal ? `**Instrucciones:** ${instrFinal}\n` : '') +
           `**Voz:** ${next.voice || genderFinal}\n\n` +
           `Revisa los detalles arriba. Cuando esté bien pulsa **Generar cover** (12 créditos).`;
         wizardPushMessage(summaryText);
@@ -4638,7 +4752,11 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           </div>
         )}
 
-        {coverDraft && attachedImg && attachedImg.kind === 'audio' && coverWizard && coverWizard.phase === 'summary' && (
+        {coverDraft && (attachedImg?.kind === 'audio' || coverAudioRef.current) && coverWizard && coverWizard.phase === 'summary' && (() => {
+          const coverAudioPreview = (coverAudioRef.current && coverAudioRef.current.previewUrl) || (attachedImg?.kind === 'audio' ? attachedImg.previewUrl : '');
+          const cleanStyleVal = sanitizeStyleValue(coverDraft.style);
+          const instructionsVal = String((coverDraft as any)?.instructions || '').trim();
+          return (
           <div className="luciana-msg-row is-assistant">
             <div className="luciana-msg-wrap">
               <div className="luciana-msg-avatar" aria-hidden>
@@ -4697,9 +4815,9 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                     </button>
                   </div>
 
-                  {attachedImg.previewUrl ? (
+                  {coverAudioPreview ? (
                     <div style={{ marginBottom: '0.75rem' }}>
-                      <audio controls preload="metadata" src={attachedImg.previewUrl} style={{ width: '100%', maxWidth: '520px' }} />
+                      <audio controls preload="metadata" src={coverAudioPreview} style={{ width: '100%', maxWidth: '520px' }} />
                     </div>
                   ) : null}
 
@@ -4788,13 +4906,42 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
                     <label className="md:col-span-2 block">
                       <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
+                        Letra
+                      </span>
+                      <textarea
+                        rows={6}
+                        value={coverWizard.lyrics}
+                        onChange={(e) => setCoverWizard((prev) => prev ? { ...prev, lyrics: e.target.value } : prev)}
+                        placeholder="Pega aquí la letra de la canción (debe contener la letra real, no instrucciones)."
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          resize: 'vertical',
+                          minHeight: '9rem',
+                          maxHeight: '18rem',
+                          borderRadius: '1rem',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elev-1)',
+                          color: 'var(--text)',
+                          padding: '0.8rem 0.95rem',
+                          fontSize: '0.9rem',
+                          lineHeight: 1.55,
+                          outline: 'none',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      />
+                    </label>
+
+                    <label className="md:col-span-2 block">
+                      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
                         Estilo musical
                       </span>
                       <textarea
                         rows={3}
-                        value={coverDraft.style}
+                        value={cleanStyleVal}
                         onChange={(e) => setCoverDraft({ ...coverDraft, style: e.target.value })}
-                        placeholder="Ej: Pop romántico moderno, 100 BPM, guitarra acústica, ambiente suave"
+                        placeholder="Ej: Pop romántico moderno, Reggaetón, Balada, Rock, Banda, Ranchero…"
                         style={{
                           display: 'block',
                           width: '100%',
@@ -4815,19 +4962,19 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
                     <label className="md:col-span-2 block">
                       <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--brand-primary)' }}>
-                        Letra / prompt
+                        Prompt / instrucciones
                       </span>
                       <textarea
-                        rows={6}
-                        value={coverWizard.lyrics}
-                        onChange={(e) => setCoverWizard((prev) => prev ? { ...prev, lyrics: e.target.value } : prev)}
-                        placeholder="Letra que usará el cover"
+                        rows={4}
+                        value={instructionsVal}
+                        onChange={(e) => setCoverDraft({ ...coverDraft, instructions: e.target.value })}
+                        placeholder="Ej: Banda sinaloense, voz de hombre profunda, tempo medio, guitarra acústica, ambiente íntimo, alegre y bailable…"
                         style={{
                           display: 'block',
                           width: '100%',
                           resize: 'vertical',
-                          minHeight: '9rem',
-                          maxHeight: '18rem',
+                          minHeight: '6rem',
+                          maxHeight: '14rem',
                           borderRadius: '1rem',
                           border: '1px solid var(--border)',
                           background: 'var(--bg-elev-1)',
@@ -4836,8 +4983,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                           fontSize: '0.9rem',
                           lineHeight: 1.55,
                           outline: 'none',
-                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                          whiteSpace: 'pre-wrap',
                         }}
                       />
                     </label>
@@ -4906,7 +5051,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {loading && (
           <div className="luciana-msg-row is-assistant">
