@@ -14332,36 +14332,31 @@ const aiHandler = (() => {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    const withTimeout = async (p, ms) => {
+    const withTimeout = async (p: any, ms: number) => {
       const m = Math.max(1, Number(ms) || 1);
       return await Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), m))]);
     };
 
-    const extractInteractionText = (interaction) => {
-      const direct = interaction?.output_text || interaction?.outputText || interaction?.text;
-      if (typeof direct === "string" && direct.trim()) return direct;
-
-      const outs = interaction?.outputs;
-      if (Array.isArray(outs)) {
-        const parts = outs
-          .filter((o) => o && o.type === "text" && typeof o.text === "string")
-          .map((o) => o.text);
-        const joined = parts.join("");
-        if (joined && joined.trim()) return joined;
-      }
-
-      return "";
-    };
-
     const geminiMime = "audio/mpeg";
-    const blob = new Blob([audioBuf], { type: "audio/mpeg" });
+    const blob = new Blob([audioBuf], { type: geminiMime });
 
     const startedAt = Date.now();
-    const audioFile = await withTimeout(ai.files.upload({ file: blob, config: { mimeType: geminiMime } }), timeoutMs);
+    let audioFile: any = null;
+    try {
+      audioFile = await withTimeout(
+        ai.files.upload({ file: blob, config: { mimeType: geminiMime } } as any),
+        timeoutMs
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const status = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : null;
+      return { ok: false, error: msg, status: typeof status === "number" ? status : 0, interaction_keys: "", output_length: 0 };
+    }
+
     const remaining = Math.max(1, (Number(timeoutMs) || 1) - (Date.now() - startedAt));
 
     const fileUri = audioFile && typeof audioFile === "object" && typeof audioFile.uri === "string" ? audioFile.uri : "";
-    if (!fileUri) return { ok: false, error: "No se pudo obtener URI del archivo (Gemini Files)." };
+    if (!fileUri) return { ok: false, error: "No se pudo obtener URI del archivo (Gemini Files).", status: 0, interaction_keys: "", output_length: 0 };
 
     const fileMime =
       audioFile && typeof audioFile === "object" && typeof audioFile.mimeType === "string"
@@ -14370,33 +14365,62 @@ const aiHandler = (() => {
           ? audioFile.mime_type
           : geminiMime;
 
-    let interaction = null;
+    let interaction: any = null;
     try {
       interaction = await withTimeout(
         ai.interactions.create(
           {
             model: "gemini-3.5-transcribe",
-            input: [{ type: "audio", uri: fileUri, mime_type: fileMime }],
-            generation_config: { transcription_config: { language_codes: ["es-MX"], mode: "verbatim" } },
+            input: [{ type: "audio", uri: fileUri, mime_type: fileMime } as any],
+            generation_config: {
+              transcription_config: { language_codes: ["es-MX"], mode: "verbatim" },
+            },
           },
-          { timeout: remaining }
+          { timeout: remaining } as any
         ),
         remaining + 200
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const status = e && typeof e === "object" && typeof e.status === "number" ? e.status : null;
-      return { ok: false, error: msg, status: typeof status === "number" ? status : 0, interaction_keys: "" };
+      const status = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : null;
+      const keys = e && typeof e === "object" ? Object.keys(e).slice(0, 40).join(",") : "";
+      return {
+        ok: false,
+        error: msg,
+        status: typeof status === "number" ? status : 0,
+        interaction_keys: keys,
+        output_length: 0,
+      };
     }
 
-    const interactionKeys =
-      interaction && typeof interaction === "object" ? Object.keys(interaction).slice(0, 40).join(",") : "";
-    const directText = interaction && typeof interaction === "object" && typeof interaction.output_text === "string" ? interaction.output_text : "";
-    const text = (directText || extractInteractionText(interaction)).replace(/\r\n/g, "\n").trim();
+    const interactionKeys = interaction && typeof interaction === "object" ? Object.keys(interaction).slice(0, 40).join(",") : "";
+    let text = "";
+    if (interaction && typeof interaction === "object") {
+      const direct = interaction.output_text;
+      if (typeof direct === "string") text = direct;
+      if (!text && typeof interaction.outputText === "string") text = interaction.outputText;
+      if (!text && typeof interaction.text === "string") text = interaction.text;
+      if (!text && Array.isArray(interaction.outputs)) {
+        const parts = interaction.outputs
+          .filter((o: any) => o && typeof o === "object" && o.type === "text" && typeof o.text === "string")
+          .map((o: any) => String(o.text));
+        text = parts.join("");
+      }
+      if (!text && Array.isArray(interaction.steps)) {
+        const collected: string[] = [];
+        for (const step of interaction.steps) {
+          if (!step || typeof step !== "object") continue;
+          const st = step.output_text || step.outputText || step.text;
+          if (typeof st === "string" && st.trim()) collected.push(st);
+        }
+        if (collected.length) text = collected.join("\n");
+      }
+    }
+    text = String(text || "").replace(/\r\n/g, "\n").trim();
     const outLen = text ? text.length : 0;
     if (!text) return { ok: false, error: "empty_transcription", status: 200, interaction_keys: interactionKeys, output_length: outLen };
 
-    return { ok: true, lyrics: text, status: "OK", interaction_keys: interactionKeys, output_length: outLen };
+    return { ok: true, lyrics: text, status: 200, interaction_keys: interactionKeys, output_length: outLen };
   }
 
   async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
@@ -14871,8 +14895,7 @@ const aiHandler = (() => {
         }
 
         const remainingAfterDownload = Math.max(1000, timeoutMs - (Date.now() - startedAt));
-        const reserveForFallback = 15000;
-        const primaryBudget = Math.max(1000, remainingAfterDownload - reserveForFallback);
+        const primaryBudget = remainingAfterDownload;
         let primaryStatus = 0;
         let primaryErrorCode = "";
         let primaryErrorMessage = "";
@@ -14910,58 +14933,18 @@ const aiHandler = (() => {
           primaryErrorMessage = e instanceof Error ? e.message : String(e);
         }
 
-        fallbackAttempted = true;
-        modelUsed = "gemini-3.6-flash";
-        const remainingForFallback = Math.max(1000, timeoutMs - (Date.now() - startedAt));
-        const fallbackBudget = remainingForFallback;
-        const withTimeout = async (p: any, ms: number) => {
-          const m = Math.max(1, Number(ms) || 1);
-          return await Promise.race([
-            p,
-            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), m)),
-          ]);
-        };
-
-        let fallbackOut: any = null;
-        try {
-          fallbackOut = await withTimeout(transcribeLyricsWithGemini(ab, mimeType), fallbackBudget);
-        } catch (e) {
-          fallbackErrorName = e instanceof Error && e.name ? e.name : "Error";
-          fallbackErrorMessage = e instanceof Error ? e.message : String(e);
-          const st = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : 0;
-          fallbackStatus = safeNum(st);
-          fallbackOut = { ok: false, error: fallbackErrorMessage, status: fallbackStatus };
-        }
-
-        if (fallbackOut && fallbackOut.ok) {
-          const fallbackLyrics = String(fallbackOut.lyrics || "");
-          fallbackOutputLength = fallbackLyrics.trim().length;
-          if (fallbackLyrics.trim()) {
-            fallbackStatus = 200;
-            const ms = Date.now() - startedAt;
-            try {
-              console.log(
-                `[${eid}] transcribe-lyrics status=200 model=${modelUsed} fallback=1 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=1 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name= fallback_error_message= ms=${ms}`
-              );
-              if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
-            } catch {}
-            return safeFinalize(200, "success", { ok: true, lyrics: fallbackLyrics });
-          }
-        }
-
-        if (!fallbackStatus) fallbackStatus = safeNum(fallbackOut && fallbackOut.status);
-        if (!fallbackErrorMessage) fallbackErrorMessage = fallbackOut && typeof fallbackOut.error === "string" ? fallbackOut.error : "";
-        if (!fallbackErrorName) fallbackErrorName = fallbackErrorMessage ? "FallbackError" : "";
+        fallbackAttempted = false;
+        modelUsed = "gemini-3.5-transcribe";
         const ms = Date.now() - startedAt;
-        const isFallbackTimeout = /timeout/i.test(fallbackErrorMessage || "") && !fallbackStatus;
-        const finalS = 502;
+        const isPrimaryTimeout = /timeout/i.test(primaryErrorMessage || "");
+        const finalS = isPrimaryTimeout ? 504 : 502;
         try {
           console.log(
-            `[${eid}] transcribe-lyrics status=${finalS} model=${modelUsed} fallback=1 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=1 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name=${short(fallbackErrorName, 60)} fallback_error_message=${short(fallbackErrorMessage, 140)} ms=${ms}`
+            `[${eid}] transcribe-lyrics status=${finalS} model=${modelUsed} fallback=0 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=0 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name=${short(fallbackErrorName, 60)} fallback_error_message=${short(fallbackErrorMessage, 140)} ms=${ms}`
           );
           if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
         } catch {}
-        return safeFinalize(finalS, isFallbackTimeout ? "timeout" : "error", {
+        return safeFinalize(finalS, isPrimaryTimeout ? "timeout" : "error", {
           ok: false,
           message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
           error_id: eid,
