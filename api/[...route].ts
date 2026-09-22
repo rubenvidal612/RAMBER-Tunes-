@@ -14706,13 +14706,19 @@ const aiHandler = (() => {
   }
 
   async function handleTranscribeLyrics(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-
-    const auth = await requireUser(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    const method = (req.method || "").toUpperCase();
+    if (method !== "POST") {
+      const s = 405;
+      const ms = 0;
+      try {
+        console.log(`transcribe-lyrics completed status=${s} ms=${ms} result=error`);
+      } catch {}
+      return send(res, s, {
+        ok: false,
+        message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+        error: "Método no permitido",
+      });
+    }
 
     const pad = (n) => String(n).padStart(2, "0");
     const d = new Date();
@@ -14720,174 +14726,271 @@ const aiHandler = (() => {
     const oneLine = (s) => String(s || "").replace(/\s+/g, " ").trim();
     const short = (s, n) => oneLine(s).slice(0, Math.max(0, Number(n) || 0));
     const safeNum = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    const sendErr = (s: number, userMsg: string) => {
+      return send(res, s, { ok: false, message: userMsg, error_id: eid });
+    };
 
-    const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
-    const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
-    const url = safeUrl(uploadUrl);
-    if (!url) {
+    let finalStatus = 500;
+    let finalResult: "success" | "error" | "timeout" = "error";
+    const startedAt = Date.now();
+
+    const flushCompleted = () => {
+      const ms = Math.max(0, Date.now() - startedAt);
       try {
-        console.log(
-          `[${eid}] transcribe-lyrics status=400 model=none fallback=0 primary_status=0 primary_error_code=uploadUrl_invalid primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
-        );
+        console.log(`transcribe-lyrics completed status=${finalStatus} ms=${ms} result=${finalResult}`);
       } catch {}
-      return send(res, 400, {
-        ok: false,
-        message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
-        error_id: eid,
-      });
-    }
+    };
+
+    const safeFinalize = (s: number, result: "success" | "error" | "timeout", respBody: any) => {
+      finalStatus = safeNum(s) || s;
+      finalResult = result;
+      flushCompleted();
+      return send(res, finalStatus, respBody);
+    };
 
     try {
-      const startedAt = Date.now();
-      const controller = new AbortController();
+      const auth = await requireUser(req);
+      if (!auth.ok) {
+        const s = safeNum(auth.status) || 401;
+        return safeFinalize(s, "error", {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
+
+      const payload = parseJsonBody(req);
+      if (!payload) {
+        return safeFinalize(400, "error", {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
+
+      const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
+      const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
+      const url = safeUrl(uploadUrl);
+      if (!url) {
+        return safeFinalize(400, "error", {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
+
       const timeoutMs = 60000;
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const fr = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
-      if (!fr.ok) {
+      const overallCtrl = new AbortController();
+      const overallTimer = setTimeout(() => overallCtrl.abort(), timeoutMs);
+      const clearOverall = () => {
         try {
-          console.log(
-            `[${eid}] transcribe-lyrics status=502 model=none fallback=0 primary_status=0 primary_error_code=fetch_audio_${fr.status} primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
-          );
+          clearTimeout(overallTimer);
         } catch {}
-        return send(res, 502, {
-          ok: false,
-          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
-          error_id: eid,
-        });
-      }
-
-      const contentType = (fr.headers.get("content-type") || "").toString();
-      const mimeType = normalizeAudioMimeType(mimeTypeHint) || normalizeAudioMimeType(contentType) || "audio/mpeg";
-      const ab = await fr.arrayBuffer();
-      const size = ab.byteLength || 0;
-      if (size <= 0) {
-        try {
-          console.log(
-            `[${eid}] transcribe-lyrics status=400 model=none fallback=0 primary_status=0 primary_error_code=empty_audio primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
-          );
-        } catch {}
-        return send(res, 400, {
-          ok: false,
-          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
-          error_id: eid,
-        });
-      }
-      if (size > 15 * 1024 * 1024) {
-        try {
-          console.log(
-            `[${eid}] transcribe-lyrics status=413 model=none fallback=0 primary_status=0 primary_error_code=audio_too_large primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
-          );
-        } catch {}
-        return send(res, 413, {
-          ok: false,
-          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
-          error_id: eid,
-        });
-      }
-
-      const remainingAfterDownload = Math.max(1000, timeoutMs - (Date.now() - startedAt));
-      const reserveForFallback = 15000;
-      const primaryBudget = Math.max(1000, remainingAfterDownload - reserveForFallback);
-      let primaryStatus = 0;
-      let primaryErrorCode = "";
-      let primaryErrorMessage = "";
-      let primaryOutputLength = 0;
-      let primaryKeys = "";
-
-      let fallbackAttempted = false;
-      let fallbackStatus = 0;
-      let fallbackOutputLength = 0;
-      let fallbackErrorName = "";
-      let fallbackErrorMessage = "";
-
-      let modelUsed = "gemini-3.5-transcribe";
-      try {
-        const out = await transcribeLyricsWithGeminiTranscribe(ab, primaryBudget);
-        primaryStatus = safeNum(out && out.status);
-        primaryKeys = out && typeof out.interaction_keys === "string" ? out.interaction_keys : "";
-        primaryOutputLength = safeNum(out && out.output_length);
-        const lyrics = out && out.ok ? String(out.lyrics || "") : "";
-        if (out && out.ok && lyrics.trim()) {
-          const ms = Date.now() - startedAt;
-          try {
-            console.log(
-              `[${eid}] transcribe-lyrics status=200 model=${modelUsed} fallback=0 primary_status=${primaryStatus} primary_error_code= primary_error_message= primary_output_length=${primaryOutputLength} fallback_attempted=0 fallback_status=0 fallback_output_length=0 ms=${ms}`
-            );
-            if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
-          } catch {}
-          return send(res, 200, { ok: true, lyrics });
-        }
-        const errStr = out && typeof out.error === "string" ? out.error : "";
-        primaryErrorMessage = errStr;
-        primaryErrorCode = primaryStatus ? String(primaryStatus) : errStr || "transcribe_failed";
-      } catch (e) {
-        primaryErrorCode = "exception";
-        primaryErrorMessage = e instanceof Error ? e.message : String(e);
-      }
-
-      fallbackAttempted = true;
-      modelUsed = "gemini-3.6-flash";
-      const remainingForFallback = Math.max(1000, timeoutMs - (Date.now() - startedAt));
-      const fallbackBudget = remainingForFallback;
-      const withTimeout = async (p, ms) => {
-        const m = Math.max(1, Number(ms) || 1);
-        return await Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), m))]);
       };
 
-      let fallbackOut = null;
       try {
-        fallbackOut = await withTimeout(transcribeLyricsWithGemini(ab, mimeType), fallbackBudget);
-      } catch (e) {
-        fallbackErrorName = e instanceof Error && e.name ? e.name : "Error";
-        fallbackErrorMessage = e instanceof Error ? e.message : String(e);
-        const st = e && typeof e === "object" && typeof e.status === "number" ? e.status : 0;
-        fallbackStatus = safeNum(st);
-        fallbackOut = { ok: false, error: fallbackErrorMessage, status: fallbackStatus };
-      }
-
-      if (fallbackOut && fallbackOut.ok) {
-        const fallbackLyrics = String(fallbackOut.lyrics || "");
-        fallbackOutputLength = fallbackLyrics.trim().length;
-        if (fallbackLyrics.trim()) {
-          fallbackStatus = 200;
-          const ms = Date.now() - startedAt;
+        let fr: any = null;
+        try {
+          fr = await fetch(url, { signal: overallCtrl.signal });
+        } catch (e) {
+          const isTimeout = e instanceof Error && (e.name === "AbortError" || /abort|timeout/i.test(e.message || ""));
+          const s = isTimeout ? 504 : 502;
+          const r = isTimeout ? "timeout" : "error";
           try {
             console.log(
-              `[${eid}] transcribe-lyrics status=200 model=${modelUsed} fallback=1 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=1 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name= fallback_error_message= ms=${ms}`
+              `[${eid}] transcribe-lyrics status=${s} model=none fallback=0 primary_status=0 primary_error_code=${isTimeout ? "fetch_audio_timeout" : "fetch_audio_exception"} primary_error_message=${short(e instanceof Error ? e.message : String(e), 140)} primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
             );
-            if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
           } catch {}
-          return send(res, 200, { ok: true, lyrics: fallbackLyrics });
+          return safeFinalize(s, r, {
+            ok: false,
+            message: isTimeout
+              ? "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente."
+              : "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+            error_id: eid,
+          });
+        } finally {
+          clearOverall();
         }
-      }
 
-      if (!fallbackStatus) fallbackStatus = safeNum(fallbackOut && fallbackOut.status);
-      if (!fallbackErrorMessage) fallbackErrorMessage = fallbackOut && typeof fallbackOut.error === "string" ? fallbackOut.error : "";
-      if (!fallbackErrorName) fallbackErrorName = fallbackErrorMessage ? "FallbackError" : "";
-      const ms = Date.now() - startedAt;
-      try {
-        console.log(
-          `[${eid}] transcribe-lyrics status=502 model=${modelUsed} fallback=1 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=1 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name=${short(fallbackErrorName, 60)} fallback_error_message=${short(fallbackErrorMessage, 140)} ms=${ms}`
-        );
-        if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
-      } catch {}
-      return send(res, 502, {
-        ok: false,
-        message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
-        error_id: eid,
-      });
+        if (!fr || !fr.ok) {
+          const s = fr && typeof fr.status === "number" && fr.status >= 400 ? fr.status : 502;
+          try {
+            console.log(
+              `[${eid}] transcribe-lyrics status=${s} model=none fallback=0 primary_status=0 primary_error_code=fetch_audio_${s} primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
+            );
+          } catch {}
+          return safeFinalize(s, "error", {
+            ok: false,
+            message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+            error_id: eid,
+          });
+        }
+
+        const contentType = (fr.headers.get("content-type") || "").toString();
+        const mimeType = normalizeAudioMimeType(mimeTypeHint) || normalizeAudioMimeType(contentType) || "audio/mpeg";
+        let ab: any = null;
+        try {
+          ab = await fr.arrayBuffer();
+        } catch (e) {
+          try {
+            console.log(
+              `[${eid}] transcribe-lyrics status=502 model=none fallback=0 primary_status=0 primary_error_code=arraybuffer_exception primary_error_message=${short(e instanceof Error ? e.message : String(e), 140)} primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
+            );
+          } catch {}
+          return safeFinalize(502, "error", {
+            ok: false,
+            message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+            error_id: eid,
+          });
+        }
+
+        const size = (ab && typeof ab.byteLength === "number" ? ab.byteLength : 0) || 0;
+        if (size <= 0) {
+          try {
+            console.log(
+              `[${eid}] transcribe-lyrics status=400 model=none fallback=0 primary_status=0 primary_error_code=empty_audio primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
+            );
+          } catch {}
+          return safeFinalize(400, "error", {
+            ok: false,
+            message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+            error_id: eid,
+          });
+        }
+        if (size > 15 * 1024 * 1024) {
+          try {
+            console.log(
+              `[${eid}] transcribe-lyrics status=413 model=none fallback=0 primary_status=0 primary_error_code=audio_too_large primary_error_message= primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
+            );
+          } catch {}
+          return safeFinalize(413, "error", {
+            ok: false,
+            message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+            error_id: eid,
+          });
+        }
+
+        const remainingAfterDownload = Math.max(1000, timeoutMs - (Date.now() - startedAt));
+        const reserveForFallback = 15000;
+        const primaryBudget = Math.max(1000, remainingAfterDownload - reserveForFallback);
+        let primaryStatus = 0;
+        let primaryErrorCode = "";
+        let primaryErrorMessage = "";
+        let primaryOutputLength = 0;
+        let primaryKeys = "";
+
+        let fallbackAttempted = false;
+        let fallbackStatus = 0;
+        let fallbackOutputLength = 0;
+        let fallbackErrorName = "";
+        let fallbackErrorMessage = "";
+
+        let modelUsed = "gemini-3.5-transcribe";
+        try {
+          const out = await transcribeLyricsWithGeminiTranscribe(ab, primaryBudget);
+          primaryStatus = safeNum(out && out.status);
+          primaryKeys = out && typeof out.interaction_keys === "string" ? out.interaction_keys : "";
+          primaryOutputLength = safeNum(out && out.output_length);
+          const lyrics = out && out.ok ? String(out.lyrics || "") : "";
+          if (out && out.ok && lyrics.trim()) {
+            const ms = Date.now() - startedAt;
+            try {
+              console.log(
+                `[${eid}] transcribe-lyrics status=200 model=${modelUsed} fallback=0 primary_status=${primaryStatus} primary_error_code= primary_error_message= primary_output_length=${primaryOutputLength} fallback_attempted=0 fallback_status=0 fallback_output_length=0 ms=${ms}`
+              );
+              if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
+            } catch {}
+            return safeFinalize(200, "success", { ok: true, lyrics });
+          }
+          const errStr = out && typeof out.error === "string" ? out.error : "";
+          primaryErrorMessage = errStr;
+          primaryErrorCode = primaryStatus ? String(primaryStatus) : errStr || "transcribe_failed";
+        } catch (e) {
+          primaryErrorCode = "exception";
+          primaryErrorMessage = e instanceof Error ? e.message : String(e);
+        }
+
+        fallbackAttempted = true;
+        modelUsed = "gemini-3.6-flash";
+        const remainingForFallback = Math.max(1000, timeoutMs - (Date.now() - startedAt));
+        const fallbackBudget = remainingForFallback;
+        const withTimeout = async (p: any, ms: number) => {
+          const m = Math.max(1, Number(ms) || 1);
+          return await Promise.race([
+            p,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), m)),
+          ]);
+        };
+
+        let fallbackOut: any = null;
+        try {
+          fallbackOut = await withTimeout(transcribeLyricsWithGemini(ab, mimeType), fallbackBudget);
+        } catch (e) {
+          fallbackErrorName = e instanceof Error && e.name ? e.name : "Error";
+          fallbackErrorMessage = e instanceof Error ? e.message : String(e);
+          const st = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : 0;
+          fallbackStatus = safeNum(st);
+          fallbackOut = { ok: false, error: fallbackErrorMessage, status: fallbackStatus };
+        }
+
+        if (fallbackOut && fallbackOut.ok) {
+          const fallbackLyrics = String(fallbackOut.lyrics || "");
+          fallbackOutputLength = fallbackLyrics.trim().length;
+          if (fallbackLyrics.trim()) {
+            fallbackStatus = 200;
+            const ms = Date.now() - startedAt;
+            try {
+              console.log(
+                `[${eid}] transcribe-lyrics status=200 model=${modelUsed} fallback=1 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=1 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name= fallback_error_message= ms=${ms}`
+              );
+              if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
+            } catch {}
+            return safeFinalize(200, "success", { ok: true, lyrics: fallbackLyrics });
+          }
+        }
+
+        if (!fallbackStatus) fallbackStatus = safeNum(fallbackOut && fallbackOut.status);
+        if (!fallbackErrorMessage) fallbackErrorMessage = fallbackOut && typeof fallbackOut.error === "string" ? fallbackOut.error : "";
+        if (!fallbackErrorName) fallbackErrorName = fallbackErrorMessage ? "FallbackError" : "";
+        const ms = Date.now() - startedAt;
+        const isFallbackTimeout = /timeout/i.test(fallbackErrorMessage || "") && !fallbackStatus;
+        const finalS = 502;
+        try {
+          console.log(
+            `[${eid}] transcribe-lyrics status=${finalS} model=${modelUsed} fallback=1 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=1 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name=${short(fallbackErrorName, 60)} fallback_error_message=${short(fallbackErrorMessage, 140)} ms=${ms}`
+          );
+          if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
+        } catch {}
+        return safeFinalize(finalS, isFallbackTimeout ? "timeout" : "error", {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      } catch (e) {
+        const isAbort = e instanceof Error && e.name === "AbortError";
+        const isTimeout = isAbort || /abort|timeout/i.test(e instanceof Error ? e.message : String(e));
+        const s = isTimeout ? 504 : 500;
+        const r = isTimeout ? "timeout" : "error";
+        try {
+          console.log(
+            `[${eid}] transcribe-lyrics status=${s} model=none fallback=0 primary_status=0 primary_error_code=exception primary_error_message=${short(e instanceof Error ? e.message : String(e), 140)} primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
+          );
+        } catch {}
+        return safeFinalize(s, r, {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
     } catch (e) {
+      const s = 500;
       try {
         console.log(
-          `[${eid}] transcribe-lyrics status=500 model=none fallback=0 primary_status=0 primary_error_code=exception primary_error_message=${short(
-            e instanceof Error ? e.message : String(e),
-            140
-          )} primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
+          `[${eid}] transcribe-lyrics status=${s} model=none fallback=0 primary_status=0 primary_error_code=top_exception primary_error_message=${short(e instanceof Error ? e.message : String(e), 140)} primary_output_length=0 fallback_attempted=0 fallback_status=0 fallback_output_length=0`
         );
       } catch {}
-      return send(res, 500, {
+      return safeFinalize(s, "error", {
         ok: false,
-        error: "Error transcribiendo",
         message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
         error_id: eid,
       });

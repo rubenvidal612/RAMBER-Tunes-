@@ -5066,16 +5066,30 @@ function ApprovedCreateContent(props) {
   const transcribeLyricsFromAudio = async () => {
     if (!audioUploadUrl) return;
     if (isTranscribingAudioLyrics) return;
+
     const requestVersion = audioRequestVersionRef.current;
+    const prevLyrics = (data?.lyrics || '').toString();
+
     setIsTranscribingAudioLyrics(true);
     setAudioLyricsStatus('Transcribiendo letra…');
+
+    const markError = (msg, id) => {
+      const next = [msg, id ? `(Error ${id})` : ''].filter(Boolean).join(' ').trim();
+      setAudioLyricsStatus(next || msg);
+    };
+
+    let controller = null;
+    let timeoutTimer = null;
+    let abortedByTimeout = false;
+
     try {
       const t = await getAccessToken();
+      if (requestVersion !== audioRequestVersionRef.current) return;
       if (!t.ok) {
-        if (requestVersion !== audioRequestVersionRef.current) return;
-        setAudioLyricsStatus(t.error || 'No se pudo transcribir automáticamente. Puedes escribir la letra manualmente.');
+        markError(t.error || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
         return;
       }
+
       const guessMimeType = (u) => {
         const s = (u || '').toString().trim().toLowerCase();
         const q = s.split('?')[0].split('#')[0];
@@ -5087,48 +5101,85 @@ function ApprovedCreateContent(props) {
         if (q.endsWith('.webm')) return 'audio/webm';
         return '';
       };
-      const byName = (data.file?.name || '').toString().trim().toLowerCase();
-      const mimeType = ((data.file?.type || '').toString().trim() || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 60000);
+      const byName = (data?.file?.name || '').toString().trim().toLowerCase();
+      const mimeType = ((data?.file?.type || '').toString().trim() || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
+
+      controller = new AbortController();
+      timeoutTimer = window.setTimeout(() => {
+        if (!controller) return;
+        abortedByTimeout = true;
+        try {
+          controller.abort();
+        } catch {}
+      }, 65000);
+
       const r = await fetch('/api/ai/transcribe-lyrics', {
         method: 'POST',
         signal: controller.signal,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
         body: JSON.stringify({ uploadUrl: audioUploadUrl, mimeType }),
-      }).finally(() => window.clearTimeout(timer));
-      const out = await r.json().catch(() => ({}));
+      });
+
+      let out = {};
+      try {
+        out = (await r.json()) || {};
+      } catch {
+        out = {};
+      }
+
       if (requestVersion !== audioRequestVersionRef.current) return;
-      if (!r.ok || out?.ok === false) {
-        const msg = (out?.message || out?.error || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.').toString();
+
+      const lyricsCandidate = (out?.lyrics || '').toString().trim();
+
+      if (r.ok && out?.ok === true && lyricsCandidate.length > 0) {
+        // No sobrescribir si el usuario ya escribió manualmente y cambió desde antes
+        const currentLyrics = (data?.lyrics || '').toString();
+        if (prevLyrics && prevLyrics.length > 0 && currentLyrics !== prevLyrics) {
+          markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
+          return;
+        }
+        setData((prev) => ({ ...prev, lyrics: normalizeLyricsTags(lyricsCandidate) }));
+        setAudioLyricsStatus('');
+        setToast('Letra detectada del audio. Puedes revisarla y editarla en el paso 2.');
+        return;
+      }
+
+      if (requestVersion !== audioRequestVersionRef.current) return;
+
+      if (out?.ok === false) {
+        const msg = (out?.message || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.').toString();
         const id = (out?.error_id || '').toString();
-        setAudioLyricsStatus([msg, id ? `(Error ${id})` : ''].filter(Boolean).join(' '));
+        markError(msg, id);
         return;
       }
-      const status = (out?.status || '').toString().trim().toUpperCase();
-      if (status === 'ILEGIBLE' || status === 'SIN_LETRA') {
-        setAudioLyricsStatus((out?.message || 'No pude transcribir la letra automáticamente. Puedes escribirla manualmente.').toString());
+
+      if (r.ok) {
+        markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
         return;
       }
-      const text = (out?.lyrics || out?.text || '').toString().trim();
-      if (!text) {
-        setAudioLyricsStatus('No pude detectar la letra automáticamente. Puedes escribirla manualmente.');
-        return;
+
+      {
+        const msg = 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.';
+        const id = (out?.error_id || '').toString();
+        markError(msg, id);
       }
-      setData((prev) => ({ ...prev, lyrics: normalizeLyricsTags(text) }));
-      setAudioLyricsStatus('');
-      setToast('Letra detectada del audio. Puedes revisarla y editarla en el paso 2.');
     } catch (e) {
       if (requestVersion !== audioRequestVersionRef.current) return;
-      const msg = e instanceof Error ? e.message : '';
-      if (/aborted|abort|timeout|timed out/i.test(msg)) {
-        setAudioLyricsStatus('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
-      } else {
-        setAudioLyricsStatus('No se pudo transcribir automáticamente. Puedes escribir la letra manualmente.');
+      const isAbort = abortedByTimeout || (e instanceof DOMException && e.name === 'AbortError') || /abort|timeout|timed out/i.test(e instanceof Error ? e.message : String(e));
+      if (abortedByTimeout || isAbort) {
+        markError('La transcripción tardó demasiado. Intenta de nuevo o escribe la letra manualmente.');
+        return;
       }
+      markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
     } finally {
-      if (requestVersion !== audioRequestVersionRef.current) return;
-      setIsTranscribingAudioLyrics(false);
+      if (timeoutTimer != null) {
+        window.clearTimeout(timeoutTimer);
+        timeoutTimer = null;
+      }
+      controller = null;
+      if (requestVersion === audioRequestVersionRef.current) {
+        setIsTranscribingAudioLyrics(false);
+      }
     }
   };
 
