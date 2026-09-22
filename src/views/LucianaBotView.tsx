@@ -426,6 +426,26 @@ export function LucianaBotView() {
     return uploading ? 'Subiendo audio…' : 'LucIAna está pensando…';
   }, [uploading, isSending, session?.flow]);
 
+  const orderedMessages = useMemo<ChatMessage[]>(() => {
+    const raw = Array.isArray(session?.messages) ? session!.messages : [];
+    try {
+      return raw.map((m, idx) => ({
+        ...m,
+        _order: (Number.isFinite((m as any)._order) ? (m as any)._order : idx) as number,
+        _createdAt: Number.isFinite((m as any)._createdAt) ? (m as any)._createdAt : idx,
+      } as any)).sort((a: any, b: any) => {
+        const ca = Number.isFinite(a._createdAt) ? a._createdAt : (Number.isFinite(a._order) ? a._order : 0);
+        const cb = Number.isFinite(b._createdAt) ? b._createdAt : (Number.isFinite(b._order) ? b._order : 0);
+        if (ca !== cb) return ca - cb;
+        const oa = Number.isFinite(a._order) ? a._order : 0;
+        const ob = Number.isFinite(b._order) ? b._order : 0;
+        return oa - ob;
+      }) as ChatMessage[];
+    } catch {
+      return raw;
+    }
+  }, [session?.messages]);
+
   return (
     <div className="h-full min-h-0 flex flex-col bg-[#05070d]">
       <div className="shrink-0 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 via-white/5 to-fuchsia-500/10 px-4 md:px-6 py-4">
@@ -451,7 +471,7 @@ export function LucianaBotView() {
       </div>
 
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-3 md:px-5 py-4 space-y-4">
-        {(session?.messages || []).map((message) => {
+        {orderedMessages.map((message) => {
           const isAssistant = message.role === 'assistant';
           return (
             <div key={message.id} className={cn('flex', isAssistant ? 'justify-start' : 'justify-end')}>

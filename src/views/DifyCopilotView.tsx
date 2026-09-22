@@ -300,8 +300,71 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       text:
         '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
       createdAt: Date.now(),
+      _seq: 0 as any,
     },
   ]);
+  const insertSeqRef = useRef<number>(1);
+
+  function nextInsertSeq(): number {
+    try {
+      const n = insertSeqRef.current;
+      insertSeqRef.current = (Number.isFinite(n) ? n : 0) + 1;
+      return n;
+    } catch {
+      return Date.now();
+    }
+  }
+
+  function assignSeqToMessage<T extends object>(m: T): T & { _seq: number } {
+    const out: any = { ...m };
+    if (typeof out._seq !== 'number' || !Number.isFinite(out._seq)) {
+      out._seq = nextInsertSeq();
+    }
+    return out;
+  }
+
+  function rebaseSeqFromList(list: ChatMessage[]): void {
+    try {
+      let maxSeq = -1;
+      for (const m of list) {
+        const s = typeof (m as any)?._seq === 'number' ? (m as any)._seq : -1;
+        if (s > maxSeq) maxSeq = s;
+      }
+      insertSeqRef.current = Math.max(0, maxSeq + 1);
+    } catch {}
+  }
+
+  function sortMessagesAscStable(list: ChatMessage[]): ChatMessage[] {
+    if (!Array.isArray(list) || list.length === 0) return [];
+    try {
+      return [...list].sort((a, b) => {
+        const at = typeof (a as any)?.createdAt === 'number' ? (a as any).createdAt : 0;
+        const bt = typeof (b as any)?.createdAt === 'number' ? (b as any).createdAt : 0;
+        if (at !== bt) return at - bt;
+        const as = typeof (a as any)?._seq === 'number' ? (a as any)._seq : 0;
+        const bs = typeof (b as any)?._seq === 'number' ? (b as any)._seq : 0;
+        return as - bs;
+      });
+    } catch {
+      return list;
+    }
+  }
+
+  const orderedMessages = useMemo<ChatMessage[]>(() => {
+    try {
+      let needsSeq = false;
+      for (const m of messages) {
+        if (typeof (m as any)?._seq !== 'number') { needsSeq = true; break; }
+      }
+      if (needsSeq) {
+        const normalized = messages.map((m) => assignSeqToMessage(m));
+        return sortMessagesAscStable(normalized);
+      }
+      return sortMessagesAscStable(messages);
+    } catch {
+      return messages;
+    }
+  }, [messages]);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const activeConversationIdRef = useRef<string | null | undefined>(undefined);
@@ -801,11 +864,11 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   useEffect(() => { setInputAndDraftRef.current = setInputAndDraft; });
 
   const isEmptyState = useMemo(() => (
-    messages.length <= 1 &&
-    messages.every((m) =>
+    orderedMessages.length <= 1 &&
+    orderedMessages.every((m) =>
       m.role === 'assistant' && !(m.attachment) && !(m.structured?.action)
     )
-  ), [messages]);
+  ), [orderedMessages]);
 
   useEffect(() => {
     if (!isEmptyState && !welcomeFadingOut) {
@@ -1066,8 +1129,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                 const cleaned = loaded.messages.map((m: any) =>
                   m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
                 );
-                setMessages(cleaned);
-                const lastReadyMsg = [...cleaned].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+                const withSeq = cleaned.map((m: any) => assignSeqToMessage(m));
+                setMessages(withSeq);
+                rebaseSeqFromList(withSeq);
+                const lastReadyMsg = [...withSeq].reverse().find((m) => m.structured?.action === 'ready_to_generate');
                 if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
               }
             }
@@ -1131,18 +1196,21 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         const cleaned = loaded.messages.map((m: any) =>
           m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
         );
-        setMessages(cleaned);
-        const lastReadyMsg = [...cleaned].reverse().find((m) => m.structured?.action === 'ready_to_generate');
+        const withSeq = cleaned.map((m: any) => assignSeqToMessage(m));
+        setMessages(withSeq);
+        rebaseSeqFromList(withSeq);
+        const lastReadyMsg = [...withSeq].reverse().find((m) => m.structured?.action === 'ready_to_generate');
         if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
       } else {
+        insertSeqRef.current = 0;
         setMessages([
-          {
+          assignSeqToMessage({
             id: uid(),
             role: 'assistant',
             text:
               '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
             createdAt: Date.now(),
-          },
+          }),
         ]);
       }
       setUi((p) => ({ ...p, activeConversationId: conv.id }));
@@ -1174,14 +1242,15 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       setConversationId('');
       setActiveReady(null);
       setLastPending(null);
+      insertSeqRef.current = 0;
       setMessages([
-        {
+        assignSeqToMessage({
           id: uid(),
           role: 'assistant',
           text:
             '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
           createdAt: Date.now(),
-        },
+        }),
       ]);
       setUi((p) => ({
         ...p,
@@ -2863,7 +2932,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const readyIsValid = !!(activeReady && String(activeReady.prompt || '').trim());
 
   // Número total de intervenciones (solo user + assistant, system si lo hubiera no cuenta)
-  const totalTurns = messages.reduce((n, m) => n + (m.role === 'user' || m.role === 'assistant' ? 1 : 0), 0);
+  const totalTurns = orderedMessages.reduce((n, m) => n + (m.role === 'user' || m.role === 'assistant' ? 1 : 0), 0);
   const isChatVeryLong = totalTurns >= 40;
   const showNewChatSuggestion = useMemo(() => {
     const threshold = isChatVeryLong ? 40 : 27;
@@ -4167,7 +4236,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           </div>
         )}
 
-        {messages
+        {orderedMessages
           .filter((m) => !(isEmptyState && m.role === 'assistant'))
           .map((m) => {
           const isUser = m.role === 'user';
