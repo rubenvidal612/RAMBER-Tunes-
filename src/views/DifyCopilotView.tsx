@@ -34,6 +34,7 @@ import {
   X,
 } from 'lucide-react';
 import { getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { formatLyricsForEditing } from '@/lib/lyricsFormatting.js';
 import { cn } from '@/lib/utils';
 import type { ViewTab } from '@/types';
 import { useTheme } from '../theme/ThemeProvider';
@@ -2232,7 +2233,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     };
 
     const showLyricsAndConfirm = (lyrics: string) => {
-      const trimmed = String(lyrics || '').replace(/\r\n/g, '\n').trim();
+      const formatted = formatLyricsForEditing(lyrics);
+      const trimmed = String(formatted || '').replace(/\r\n/g, '\n').trim();
       setStatusText(`Audio listo · ${audioName}`);
       const nextWiz: typeof coverWizard = {
         phase: 'lyrics',

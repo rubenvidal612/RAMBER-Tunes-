@@ -16,6 +16,7 @@ import approvedCreditCss from "./approved-create/credit-fix.css?raw";
 import approvedDesignCss from "./approved-create/design-v2.css?raw";
 import approvedPlayerCss from "./approved-create/player-options.css?raw";
 import { ensureAnonSession, getAccessToken } from "./lib/supabaseBrowser";
+import { formatLyricsForEditing } from "./lib/lyricsFormatting.js";
 
 const pendingListKey = 'ramber.pendingSunoTasks_v1';
 const pendingLegacyKey = 'ramber.pendingSunoTask';
@@ -5138,7 +5139,7 @@ function ApprovedCreateContent(props) {
           markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
           return;
         }
-        setData((prev) => ({ ...prev, lyrics: normalizeLyricsTags(lyricsCandidate) }));
+        setData((prev) => ({ ...prev, lyrics: formatLyricsForEditing(lyricsCandidate) }));
         setAudioLyricsStatus('');
         setToast('Letra detectada del audio. Puedes revisarla y editarla en el paso 2.');
         return;

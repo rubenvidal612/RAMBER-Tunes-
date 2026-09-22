@@ -3,6 +3,7 @@ import { Dices, RefreshCw, Plus, Music, Maximize2, List, X, ChevronDown, User, A
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { formatLyricsForEditing } from '@/lib/lyricsFormatting.js';
 
 const isDev =
   typeof window !== 'undefined' &&
@@ -2215,7 +2216,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
           return;
         }
-        setLyrics(normalizeLyricsTags(lyricsCandidate));
+        setLyrics(formatLyricsForEditing(lyricsCandidate));
         setAudioLyricsStatus('');
         return;
       }
