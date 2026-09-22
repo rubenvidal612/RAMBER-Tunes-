@@ -2317,8 +2317,39 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       } catch {}
     };
 
+    const removeErrorMessagesAssociatedWithAudioMsgId = (audioMsgId: string | null) => {
+      if (!audioMsgId || !isActiveChatEpoch(startEpoch)) return;
+      const target = String(audioMsgId).trim();
+      if (!target) return;
+      setMessages((m) => m.filter((msg) => {
+        if (!msg || msg.role !== 'assistant') return true;
+        // Conservar mensajes wizard_lyrics o que no sean de error
+        const sa = (msg as any).structured_action || (msg.structured && typeof msg.structured === 'object' ? msg.structured : null);
+        if (sa && typeof sa === 'object') {
+          const msgIdTag = String((sa as any).audio_msg_id || (sa as any).forAudioMsgId || '').trim();
+          if (msgIdTag === target) return false;
+        }
+        if (msg.quickReplies) {
+          const hasRetryOrManual = msg.quickReplies.some((q) => String(q.value || '').startsWith('cover:transcribe:'));
+          if (hasRetryOrManual) {
+            // Si el texto coincide con transcribe retry/manual, removerlo por seguridad
+            const txt = String(msg.text || '').toLowerCase();
+            if (
+              txt.includes('transcribir') ||
+              txt.includes('transcripción') ||
+              txt.includes('disponibilidad') ||
+              txt.includes('disponibilidad para transcribir') ||
+              txt.includes('esperando disponibilidad')
+            ) return false;
+          }
+        }
+        return true;
+      }));
+    };
+
     const showErrorButtons = (msg: string, errId?: string) => {
       if (!isActiveChatEpoch(startEpoch)) return;
+      removeErrorMessagesAssociatedWithAudioMsgId(localAudioMsgId || null);
       const idLabel = errId ? ` (Error ${String(errId).trim()})` : '';
       const safeMsg = `${msg}${idLabel}`.trim();
       setToast({ kind: 'err', text: safeMsg });
@@ -2335,13 +2366,54 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
           ],
           inputMode: 'text',
         };
+        (last as any).structured_action = { action: 'transcribe_error', kind: 'error', audio_msg_id: localAudioMsgId || '', error_id: errId || '' };
         return [...m, last];
       });
       saveSnapshotAfter({ r2_key: audioR2Key || null, mime: audioMime || null }, null, null);
     };
 
+    const showRateLimitState = (retryAfterSeconds: number, errId?: string) => {
+      if (!isActiveChatEpoch(startEpoch)) return;
+      const seconds = Math.max(3, Math.min(90, Number(retryAfterSeconds) || 15));
+      removeErrorMessagesAssociatedWithAudioMsgId(localAudioMsgId || null);
+      const waitingText = `Esperando disponibilidad para transcribir… (reintento en ~${seconds} s)`;
+      setStatusText(waitingText);
+      const epoch = startEpoch;
+      let countdown = seconds;
+      const tick = () => {
+        if (!isActiveChatEpoch(epoch)) return;
+        if (countdown <= 0) {
+          if (!isActiveChatEpoch(epoch)) return;
+          removeErrorMessagesAssociatedWithAudioMsgId(localAudioMsgId || null);
+          setStatusText(`Procesando audio · ${audioName}`);
+          void transcribeAudioForWizard({ reuseMsgId: localAudioMsgId || null, forcedAttached: sourceImg, forcedCaption: opts?.forcedCaption || null, epoch: startEpoch }).catch(() => {});
+          return;
+        }
+        setStatusText(`Esperando disponibilidad para transcribir… (reintento en ~${countdown} s)`);
+        countdown--;
+        registerTimeout(tick, 1000, { boundEpoch: epoch });
+      };
+      setMessages((m) => {
+        const last: ChatMessage = {
+          id: uid(),
+          role: 'assistant',
+          text: `😮‍💨 Hay mucha demanda ahora mismo. Esperamos ${seconds} segundos y reintentamos automáticamente. Si no quieres esperar, pulsa **Reintentar** para probar ya, o **Escribir letra** para pasarla manualmente.`,
+          createdAt: Date.now(),
+          quickReplies: [
+            { id: 'cover-transcribe-retry-now', label: 'Reintentar ya', value: 'cover:transcribe:retry', icon: 'refresh', variant: 'primary' },
+            { id: 'cover-transcribe-manual-now', label: 'Escribir letra', value: 'cover:transcribe:manual', icon: 'edit', variant: 'secondary' },
+          ],
+          inputMode: 'text',
+        };
+        (last as any).structured_action = { action: 'transcribe_rate_limit', kind: 'info', audio_msg_id: localAudioMsgId || '', error_id: errId || '', retry_after: seconds };
+        return [...m, last];
+      });
+      registerTimeout(tick, 1000, { boundEpoch: epoch });
+    };
+
     const showLyricsAndConfirm = (lyrics: string) => {
       if (!isActiveChatEpoch(startEpoch)) return;
+      removeErrorMessagesAssociatedWithAudioMsgId(localAudioMsgId || null);
       const formatted = formatLyricsForEditing(lyrics);
       const trimmed = String(formatted || '').replace(/\r\n/g, '\n').trim();
       setStatusText(`Audio listo · ${audioName}`);
@@ -2372,6 +2444,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         ],
         inputMode: 'multiline',
       };
+      (aMsg as any).structured_action = { action: 'wizard_lyrics_success', kind: 'info', audio_msg_id: localAudioMsgId || '' };
       setMessages((m) => [...m, aMsg]);
       void (async () => {
         if (!isActiveChatEpoch(startEpoch)) return;
@@ -2546,6 +2619,12 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
       const msg = (trJson?.message || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.').toString();
       const id = (trJson?.error_id || '').toString();
+      const recoverable = (trStatus === 429) || (trJson && Boolean((trJson as any).recoverable));
+      const retryAfterRaw = Number((trJson as any)?.retry_after) || 0;
+      if (recoverable) {
+        showRateLimitState(retryAfterRaw || 15, id);
+        return;
+      }
       showErrorButtons(msg, id);
       return;
     } catch {

@@ -14370,6 +14370,27 @@ const aiHandler = (() => {
 
     const startedAt = Date.now();
     let audioFile: any = null;
+    const extractRetryAfter = (e: any, fallback: number = 0) => {
+      try {
+        const fb = Number(fallback) || 0;
+        if (e && typeof e === 'object') {
+          if (typeof (e as any).retry_after === 'number') return Number((e as any).retry_after) || fb;
+          if (typeof (e as any).retryAfter === 'number') return Number((e as any).retryAfter) || fb;
+          if (typeof (e as any)?.response?.headers?.get === 'function') {
+            try {
+              const h = String((e as any).response.headers.get('Retry-After') || '').trim();
+              if (/^\d+$/.test(h)) return Number(h) || fb;
+            } catch {}
+          }
+          try {
+            const objStr = JSON.stringify(e);
+            const m = /retry[_\s-]?after["' \n\t:=]*(\d+)/i.exec(objStr);
+            if (m) return Number(m[1]) || fb;
+          } catch {}
+        }
+        return fb;
+      } catch { return fallback; }
+    };
     try {
       audioFile = await withTimeout(
         ai.files.upload({ file: blob, config: { mimeType: geminiMime } } as any),
@@ -14378,7 +14399,16 @@ const aiHandler = (() => {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const status = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : null;
-      return { ok: false, error: msg, status: typeof status === "number" ? status : 0, interaction_keys: "", output_length: 0 };
+      const statusFb = typeof status === "number" ? status : 0;
+      const realStatus = statusFb || ((/429|rate.?limit|quota|resource exhausted/i.test(msg || "")) ? 429 : 0);
+      return {
+        ok: false,
+        error: msg,
+        status: realStatus || 0,
+        interaction_keys: "",
+        output_length: 0,
+        retry_after: extractRetryAfter(e, realStatus === 429 ? 15 : 0),
+      };
     }
 
     const remaining = Math.max(1, (Number(timeoutMs) || 1) - (Date.now() - startedAt));
@@ -14412,12 +14442,15 @@ const aiHandler = (() => {
       const msg = e instanceof Error ? e.message : String(e);
       const status = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : null;
       const keys = e && typeof e === "object" ? Object.keys(e).slice(0, 40).join(",") : "";
+      const statusFb = typeof status === "number" ? status : 0;
+      const realStatus = statusFb || ((/429|rate.?limit|quota|resource exhausted/i.test(msg || "")) ? 429 : 0);
       return {
         ok: false,
         error: msg,
-        status: typeof status === "number" ? status : 0,
+        status: realStatus || 0,
         interaction_keys: keys,
         output_length: 0,
+        retry_after: extractRetryAfter(e, realStatus === 429 ? 15 : 0),
       };
     }
 
@@ -14947,12 +14980,15 @@ const aiHandler = (() => {
         let fallbackErrorMessage = "";
 
         let modelUsed = "gemini-3.5-transcribe";
+        let primary429RetryAfter = 0;
         try {
           const out = await transcribeLyricsWithGeminiTranscribe(ab, primaryBudget);
           primaryStatus = safeNum(out && out.status);
           primaryKeys = out && typeof out.interaction_keys === "string" ? out.interaction_keys : "";
           primaryOutputLength = safeNum(out && out.output_length);
           const lyrics = out && out.ok ? String(out.lyrics || "") : "";
+          const retryAfterRaw = out && typeof (out as any).retry_after === "number" ? Number((out as any).retry_after) || 0 : 0;
+          if (retryAfterRaw > 0) primary429RetryAfter = retryAfterRaw;
           if (out && out.ok && lyrics.trim()) {
             const ms = Date.now() - startedAt;
             try {
@@ -14969,19 +15005,49 @@ const aiHandler = (() => {
         } catch (e) {
           primaryErrorCode = "exception";
           primaryErrorMessage = e instanceof Error ? e.message : String(e);
+          const maybeStatus = e && typeof e === "object" && typeof (e as any).status === "number" ? Number((e as any).status) : 0;
+          if (maybeStatus >= 400 && !primaryStatus) primaryStatus = maybeStatus;
+          const maybeRetry = e && typeof e === "object" && typeof (e as any).retry_after === "number" ? Number((e as any).retry_after) : 0;
+          if (maybeRetry > 0 && !primary429RetryAfter) primary429RetryAfter = maybeRetry;
         }
 
         fallbackAttempted = false;
         modelUsed = "gemini-3.5-transcribe";
         const ms = Date.now() - startedAt;
         const isPrimaryTimeout = /timeout/i.test(primaryErrorMessage || "");
-        const finalS = isPrimaryTimeout ? 504 : 502;
+        const errLower = String(primaryErrorMessage || "").toLowerCase();
+        const isRateLimit =
+          primaryStatus === 429 ||
+          errLower.includes("429") ||
+          errLower.includes("rate limit") ||
+          errLower.includes("quota") ||
+          errLower.includes("resource exhausted") ||
+          errLower.includes("too many requests");
+        let retryAfterSeconds = 0;
+        if (isRateLimit) {
+          retryAfterSeconds = Number(primary429RetryAfter) || 0;
+          if (!retryAfterSeconds) {
+            const m = /retry[_\s-]?after\D+(\d+)/i.exec(primaryErrorMessage || "");
+            retryAfterSeconds = m ? Number(m[1]) || 0 : 0;
+          }
+          if (!retryAfterSeconds) retryAfterSeconds = 15;
+        }
+        const finalS = isRateLimit ? 429 : (isPrimaryTimeout ? 504 : 502);
         try {
           console.log(
             `[${eid}] transcribe-lyrics status=${finalS} model=${modelUsed} fallback=0 primary_status=${primaryStatus} primary_error_code=${short(primaryErrorCode, 40)} primary_error_message=${short(primaryErrorMessage, 140)} primary_output_length=${primaryOutputLength} fallback_attempted=0 fallback_status=${fallbackStatus} fallback_output_length=${fallbackOutputLength} fallback_error_name=${short(fallbackErrorName, 60)} fallback_error_message=${short(fallbackErrorMessage, 140)} ms=${ms}`
           );
           if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
         } catch {}
+        if (isRateLimit) {
+          return safeFinalize(429, "error", {
+            ok: false,
+            message: "Esperando disponibilidad para transcribir…",
+            error_id: eid,
+            recoverable: true,
+            retry_after: retryAfterSeconds,
+          });
+        }
         return safeFinalize(finalS, isPrimaryTimeout ? "timeout" : "error", {
           ok: false,
           message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
