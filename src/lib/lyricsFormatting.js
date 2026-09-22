@@ -1,5 +1,54 @@
+function stripLyricsFencesAndNoise(src) {
+  let s = String(src || '').replace(/\r\n/g, '\n');
+  // 1) Quitar fences markdown de apertura: ```language o ``` o --- + título
+  s = s.replace(/^[ \t]*```[ \t]*(?:lyrics|text|markdown|md|song|letras?|es|en)?[ \t]*\n?/gi, '');
+  s = s.replace(/^[ \t]*~~~[ \t]*(?:lyrics|text|markdown|md|song)?[ \t]*\n?/gi, '');
+  s = s.replace(/^[ \t]*(---+|\*\*\*+)[ \t]*\n?/g, '');
+  // 2) Quitar fences markdown de cierre (al final o líneas que contengan solo ```)
+  s = s.replace(/\n[ \t]*```[ \t]*$/g, '');
+  s = s.replace(/\n[ \t]*~~~[ \t]*$/g, '');
+  s = s.replace(/^[ \t]*```[ \t]*$/gm, '');
+  s = s.replace(/^[ \t]*~~~[ \t]*$/gm, '');
+  // 3) Quitar fences de cierre al final sin newline
+  s = s.replace(/```[ \t]*$/g, '');
+  s = s.replace(/~~~[ \t]*$/g, '');
+  // 4) Quitar filas de encabezado tipo "Lyrics:" / "Letra:" / "Title:" / (texto técnico residual corto)
+  const lines = s.split('\n');
+  const out = [];
+  let sawLyrics = false;
+  for (let i = 0; i < lines.length; i++) {
+    let ln = lines[i];
+    let trimmed = ln.trim();
+    if (!trimmed) { out.push(''); continue; }
+    if (!sawLyrics) {
+      const tLower = trimmed.toLowerCase().trim();
+      // Quitar hasta 3 líneas técnicas iniciales, MÁS LÍMITES estrictos para no borrar estrofas
+      if (out.filter(Boolean).length < 3 && trimmed.length <= 80) {
+        const looksHeader =
+          /^(letras?|lyrics|title|título|canción|cancion|song|audio file|transcript|transcripción|transcripcion|output|resultado|letra de la canción|lyrics for)[ \t]*[:：-]?/i.test(trimmed) ||
+          /^(aqu[ií] est[aá] la|here is the|ahora la letra|letra limpia|letra estructurada|estructura|structured lyrics)/i.test(trimmed) ||
+          /^\[[ \t]*(letras?|lyrics|transcripci[oó]n|resultado|texto)[ \t]*\]$/i.test(trimmed);
+        if (looksHeader) continue;
+      }
+      sawLyrics = true;
+    }
+    // Quitar etiquetas técnicas tipo "```" residuales
+    const re = /^[ \t]*(```|~~~)[ \t]*(lyrics|text|markdown|md|song|letras?)?[ \t]*$/i;
+    if (re.test(trimmed)) continue;
+    // Quitar líneas tipo "Fin de la letra" / "End of lyrics" / "---"
+    const lTrim = trimmed.toLowerCase();
+    if ((lTrim === '---' || lTrim === '***' || lTrim === '…') && trimmed.length < 10) continue;
+    if (/^(fin de la[s]? (letras?|canci[oó]n)|end of (lyrics|song|text))$/i.test(trimmed)) continue;
+    out.push(ln);
+  }
+  s = out.join('\n');
+  s = s.replace(/\n{3,}/g, '\n\n').trim();
+  return s;
+}
+
 function normalizeLyricsTags(t) {
-  const lines = (t || '').toString().replace(/\r\n/g, '\n').split('\n');
+  const cleaned = stripLyricsFencesAndNoise(t);
+  const lines = (cleaned || '').toString().split('\n');
   const mapped = lines.map((line) => {
     const s = line.trim();
     if (!s) return '';
@@ -198,7 +247,8 @@ function wrapLines(text) {
 
 function formatLyricsWithSections(raw) {
   try {
-    const src = String(raw || '').replace(/\r\n/g, '\n').trim();
+    const cleaned = stripLyricsFencesAndNoise(raw);
+    const src = String(cleaned || '').trim();
     if (!src) return '';
     const preExisting = normalizeLyricsTags(src);
     const preLines = preExisting.split('\n').map((s) => s.trim());
