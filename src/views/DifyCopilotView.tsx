@@ -406,6 +406,71 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const activeConversationIdRef = useRef<string | null | undefined>(undefined);
   const setInputAndDraftRef = useRef<((v: string, clearStorage?: boolean) => void) | null>(null);
+  const chatEpochRef = useRef<number>(0);
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
+  const chatTimerHandlesRef = useRef<Set<number>>(new Set());
+  const chatIntervalHandlesRef = useRef<Set<number>>(new Set());
+  const sendBusyRef = useRef(false);
+
+  function bumpChatEpoch() {
+    chatEpochRef.current = (chatEpochRef.current || 0) + 1;
+    try {
+      chatAbortControllerRef.current?.abort();
+    } catch {}
+    try {
+      chatAbortControllerRef.current = new AbortController();
+    } catch { chatAbortControllerRef.current = null; }
+    try {
+      for (const h of chatTimerHandlesRef.current) { try { window.clearTimeout(h); } catch {} }
+    } catch {}
+    try { chatTimerHandlesRef.current.clear(); } catch {}
+    try {
+      for (const h of chatIntervalHandlesRef.current) { try { window.clearInterval(h); } catch {} }
+    } catch {}
+    try { chatIntervalHandlesRef.current.clear(); } catch {}
+  }
+
+  function isActiveChatEpoch(e: number | undefined) {
+    return typeof e === 'number' ? e === chatEpochRef.current : true;
+  }
+
+  function guardedSetState<S>(
+    setter: React.Dispatch<React.SetStateAction<S>>,
+    valueOrUpdater: S | ((prev: S) => S),
+    expectedEpoch: number,
+  ) {
+    if (!isActiveChatEpoch(expectedEpoch)) return;
+    setter(valueOrUpdater as any);
+  }
+
+  function registerTimeout(
+    cb: () => void,
+    ms: number,
+    opts?: { boundEpoch?: number },
+  ): number {
+    const epoch = (typeof opts?.boundEpoch === 'number' ? opts.boundEpoch : chatEpochRef.current) as number;
+    const handle = window.setTimeout(() => {
+      try { chatTimerHandlesRef.current.delete(handle); } catch {}
+      if (!isActiveChatEpoch(epoch)) return;
+      try { cb(); } catch {}
+    }, ms);
+    try { chatTimerHandlesRef.current.add(handle); } catch {}
+    return handle;
+  }
+
+  function registerInterval(cb: () => void, ms: number, opts?: { boundEpoch?: number }): number {
+    const epoch = (typeof opts?.boundEpoch === 'number' ? opts.boundEpoch : chatEpochRef.current) as number;
+    const handle = window.setInterval(() => {
+      if (!isActiveChatEpoch(epoch)) {
+        try { chatIntervalHandlesRef.current.delete(handle); } catch {}
+        try { window.clearInterval(handle); } catch {}
+        return;
+      }
+      try { cb(); } catch {}
+    }, ms);
+    try { chatIntervalHandlesRef.current.add(handle); } catch {}
+    return handle;
+  }
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -450,6 +515,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   const coverSnapshotLockRef = useRef<number>(0);
   const lastSavedSnapshotRef = useRef<string>("");
   const [coverGenerating, setCoverGenerating] = useState(false);
+  const transcribeAudioPendingSnapRef = useRef<AttachedImage | null>(null);
 
   async function persistCoverSnapshot(pending?: {
     audioMeta?: { msg_id: string | null; r2_key: string | null; name: string | null; mime: string | null; bytes: number | null };
@@ -1308,33 +1374,37 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }, []);
 
   async function openConversation(conv: ConversationSummary) {
+    bumpChatEpoch();
+    const epoch = chatEpochRef.current;
     try {
       // Si hay texto sin enviar: PREGUNTAR antes de cambiar de conversación (nunca descartar silenciosamente)
       if (String(input || '').trim()) {
         const okDiscard = confirmDiscardDraft();
         if (!okDiscard) return; // "Seguir escribiendo" → cancelar navegación
       }
-      setHistoryOpen(false);
-      setActiveReady(null);
-      setLoading(true);
+      if (!conv?.id) return;
+      guardedSetState(setHistoryOpen, false, epoch);
+      guardedSetState(setActiveReady, null, epoch);
+      guardedSetState(setLoading, true, epoch);
       const token = await getValidBearerToken();
-      if (!token) {
-        setLoading(false);
+      if (!token || !isActiveChatEpoch(epoch)) {
+        if (isActiveChatEpoch(epoch)) guardedSetState(setLoading, false, epoch);
         return;
       }
       const loaded = await loadConversationById(token, conv.id);
+      if (!isActiveChatEpoch(epoch)) return;
       if (!loaded.ok || !loaded.conversation) {
-        setLoading(false);
-        setToast({ kind: 'err', text: 'No pude abrir esa conversación.' });
+        guardedSetState(setLoading, false, epoch);
+        guardedSetState(setToast, { kind: 'err', text: 'No pude abrir esa conversación.' }, epoch);
         return;
       }
-      setConversationId(String(loaded.conversation.internal_dify_conversation_id || '').trim());
+      guardedSetState(setConversationId, String(loaded.conversation.internal_dify_conversation_id || '').trim(), epoch);
       if (loaded.messages.length > 0) {
         const cleaned = loaded.messages.map((m: any) =>
           m.role === 'assistant' || m.role === 'system' ? { ...m, text: stripInternalReasoning(m.text) } : m
         );
         const withSeq = cleaned.map((m: any) => assignSeqToMessage(m));
-        setMessages(withSeq);
+        guardedSetState(setMessages, withSeq, epoch);
         rebaseSeqFromList(withSeq);
 
         let rehydratedAudio: any = null;
@@ -1396,47 +1466,51 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
         if (rehydratedAudio) {
           coverAudioRef.current = rehydratedAudio;
-          setCoverAudioMsgId(rehydratedMsgId);
+          guardedSetState(setCoverAudioMsgId, rehydratedMsgId, epoch);
         } else {
           coverAudioRef.current = null;
-          setCoverAudioMsgId(null);
+          guardedSetState(setCoverAudioMsgId, null, epoch);
         }
-        if (rehydratedWizard) setCoverWizard(rehydratedWizard); else setCoverWizard(null);
-        if (rehydratedDraft) setCoverDraft(rehydratedDraft); else setCoverDraft(null);
+        if (rehydratedWizard) guardedSetState(setCoverWizard, rehydratedWizard, epoch); else guardedSetState(setCoverWizard, null, epoch);
+        if (rehydratedDraft) guardedSetState(setCoverDraft, rehydratedDraft, epoch); else guardedSetState(setCoverDraft, null, epoch);
 
         const lastReadyMsg = [...withSeq].reverse().find((m) => m.structured?.action === 'ready_to_generate');
-        if (lastReadyMsg && lastReadyMsg.structured) setActiveReady({ ...lastReadyMsg.structured });
+        if (lastReadyMsg && lastReadyMsg.structured) guardedSetState(setActiveReady, { ...lastReadyMsg.structured }, epoch);
       } else {
         insertSeqRef.current = 0;
-        setCoverAudioMsgId(null);
+        guardedSetState(setCoverAudioMsgId, null, epoch);
         coverAudioRef.current = null;
-        setCoverDraft(null);
-        setCoverWizard(null);
-        setMessages([
+        guardedSetState(setCoverDraft, null, epoch);
+        guardedSetState(setCoverWizard, null, epoch);
+        guardedSetState(setMessages, [
           assignSeqToMessage({
             id: uid(),
             role: 'assistant',
-            text:
-              '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
+            text: '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
             createdAt: Date.now(),
           }),
-        ]);
+        ], epoch);
       }
       setUi((p) => ({ ...p, activeConversationId: conv.id }));
       sentScrollRef.current = true;
-      setTimeout(() => scrollToBottomNow(true), 30);
+      registerTimeout(() => scrollToBottomNow(true), 30, { boundEpoch: epoch });
     } catch (e) {
+      if (!isActiveChatEpoch(chatEpochRef.current)) return;
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
     } finally {
-      setLoading(false);
+      if (isActiveChatEpoch(chatEpochRef.current)) setLoading(false);
     }
   }
 
   async function startNewChat(opts?: { persistOldAsArchived?: boolean }) {
+    bumpChatEpoch();
+    const epoch = chatEpochRef.current;
     try {
       const token = await getValidBearerToken();
-      if (!token) {
-        setToast({ kind: 'err', text: 'Sesión expirada para guardar el historial. Inicia sesión de nuevo.' });
+      if (!token || !isActiveChatEpoch(epoch)) {
+        if (token) {
+          guardedSetState(setToast, { kind: 'err', text: 'Sesión expirada para guardar el historial. Inicia sesión de nuevo.' }, epoch);
+        }
         return;
       }
       // Persistir el chat actual si tiene mensajes reales (> 1 para evitar mensaje bienvenida solo)
@@ -1448,32 +1522,40 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         })();
       }
       const created = await createSupabaseConversation(token, { title: 'Nuevo chat' });
-      setConversationId('');
-      setActiveReady(null);
-      setLastPending(null);
+      if (!isActiveChatEpoch(epoch)) return;
+      guardedSetState(setConversationId, '', epoch);
+      guardedSetState(setActiveReady, null, epoch);
+      guardedSetState(setLastPending, null, epoch);
       insertSeqRef.current = 0;
-      setCoverAudioMsgId(null);
+      guardedSetState(setCoverAudioMsgId, null, epoch);
       coverAudioRef.current = null;
-      setCoverDraft(null);
-      setCoverWizard(null);
-      setMessages([
+      guardedSetState(setCoverDraft, null, epoch);
+      guardedSetState(setCoverWizard, null, epoch);
+      guardedSetState(setLoading, false, epoch);
+      guardedSetState(setGenerating, false, epoch);
+      guardedSetState(setCoverGenerating, false, epoch);
+      guardedSetState(setAttachedImg, null, epoch);
+      guardedSetState(setInput, '', epoch);
+      if (textareaRef.current) textareaRef.current.value = '';
+      autoresizeTextarea(textareaRef.current);
+      guardedSetState(setMessages, [
         assignSeqToMessage({
           id: uid(),
           role: 'assistant',
-          text:
-            '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
+          text: '¡Hola! 🎶 Cuéntame qué canción quieres crear.',
           createdAt: Date.now(),
         }),
-      ]);
+      ], epoch);
       setUi((p) => ({
         ...p,
         activeConversationId: created?.id || null,
         conversations: created ? [created, ...p.conversations] : p.conversations,
       }));
       sentScrollRef.current = true;
-      setTimeout(() => scrollToBottomNow(true), 30);
-      setToast({ kind: 'ok', text: 'Listo · chat nuevo creado. El anterior se guardó en el historial.' });
+      registerTimeout(() => scrollToBottomNow(true), 30, { boundEpoch: epoch });
+      guardedSetState(setToast, { kind: 'ok', text: 'Listo · chat nuevo creado. El anterior se guardó en el historial.' }, epoch);
     } catch (e) {
+      if (!isActiveChatEpoch(chatEpochRef.current)) return;
       setToast({ kind: 'err', text: e instanceof Error ? e.message : String(e || 'Error') });
     }
   }
@@ -2144,37 +2226,61 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     } catch {}
   }
 
-  async function transcribeAudioForWizard() {
-    if (!attachedImg || attachedImg.kind !== 'audio') return;
-    if (loading || generating || audioBusy || coverGenerating) return;
+  async function transcribeAudioForWizard(opts?: {
+    reuseMsgId?: string | null;
+    forcedAttached?: AttachedImage | null;
+    forcedCaption?: string | null;
+    epoch?: number;
+  }) {
+    const startEpoch = typeof opts?.epoch === 'number' ? (opts.epoch as number) : chatEpochRef.current;
+    const forcedImg = opts?.forcedAttached || null;
+    const sourceImg = forcedImg || attachedImg;
+    if (!sourceImg || sourceImg.kind !== 'audio') return;
+    if (loading || generating || audioBusy || coverGenerating) {
+      if (!opts?.forcedAttached) return;
+    }
     if (!confirmAudioAuth()) return;
     if (!supabaseBrowser) {
-      setToast({ kind: 'err', text: 'No se pudo conectar. Cierra y abre la app de nuevo.' });
+      if (isActiveChatEpoch(startEpoch)) setToast({ kind: 'err', text: 'No se pudo conectar. Cierra y abre la app de nuevo.' });
       return;
     }
 
     setAudioBusy(true);
     setLoading(true);
     sentScrollRef.current = true;
-    setCoverDraft(null);
-    setCoverWizard(null);
-    const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
-    const audioFile = attachedImg.file;
-    const audioBytes = Number(attachedImg.bytes || 0);
+    if (isActiveChatEpoch(startEpoch)) {
+      setCoverDraft(null);
+      setCoverWizard(null);
+    }
+    const audioName = String(sourceImg.name || sourceImg.file?.name || 'audio').slice(0, 160) || 'audio';
+    const audioFile = sourceImg.file;
+    const audioBytes = Number(sourceImg.bytes || 0);
     const msgAudioUrl = (() => {
-      try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
+      if (audioFile) {
+        try { return URL.createObjectURL(audioFile); } catch {}
+      }
+      return sourceImg.previewUrl || '';
     })();
     let audioR2Key = '';
     let audioMime = '';
-    coverAudioRef.current = { file: audioFile, previewUrl: msgAudioUrl || attachedImg.previewUrl || '', name: audioName, bytes: audioBytes };
+    if (audioFile || msgAudioUrl) {
+      coverAudioRef.current = {
+        file: audioFile || null,
+        previewUrl: msgAudioUrl || sourceImg.previewUrl || '',
+        name: audioName,
+        bytes: audioBytes,
+        mime: String(sourceImg.file?.type || 'audio/mpeg').trim() || undefined,
+      };
+    }
 
     let controller: AbortController | null = null;
     let timeoutTimer: number | null = null;
     let abortedByTimeout = false;
-    let localAudioMsgId = coverAudioMsgId;
+    let localAudioMsgId = opts?.reuseMsgId || coverAudioMsgId;
 
     const setStatusText = (label: string, extra?: Partial<ChatMessage>) => {
       try {
+        if (!isActiveChatEpoch(startEpoch)) return;
         if (!localAudioMsgId) return;
         const patch: any = {};
         if (label) patch.text = label;
@@ -2184,6 +2290,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     };
 
     const cleanBusy = () => {
+      if (!isActiveChatEpoch(startEpoch)) return;
       setLoading(false);
       setAudioBusy(false);
       if (timeoutTimer != null) {
@@ -2211,6 +2318,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     };
 
     const showErrorButtons = (msg: string, errId?: string) => {
+      if (!isActiveChatEpoch(startEpoch)) return;
       const idLabel = errId ? ` (Error ${String(errId).trim()})` : '';
       const safeMsg = `${msg}${idLabel}`.trim();
       setToast({ kind: 'err', text: safeMsg });
@@ -2233,6 +2341,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     };
 
     const showLyricsAndConfirm = (lyrics: string) => {
+      if (!isActiveChatEpoch(startEpoch)) return;
       const formatted = formatLyricsForEditing(lyrics);
       const trimmed = String(formatted || '').replace(/\r\n/g, '\n').trim();
       setStatusText(`Audio listo · ${audioName}`);
@@ -2265,6 +2374,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       };
       setMessages((m) => [...m, aMsg]);
       void (async () => {
+        if (!isActiveChatEpoch(startEpoch)) return;
         try {
           const accessToken = await getValidBearerToken();
           const activeConvId = uiState.activeConversationId;
@@ -2278,13 +2388,19 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
 
     try {
       const accessToken = await getValidBearerToken();
-      if (!accessToken) {
-        setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
-        setTimeout(() => signOutAndReload(), 1200);
+      if (!accessToken || !isActiveChatEpoch(startEpoch)) {
+        if (accessToken) {
+          if (isActiveChatEpoch(startEpoch)) {
+            setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
+            registerTimeout(() => signOutAndReload(), 1200, { boundEpoch: startEpoch });
+          }
+        }
+        cleanBusy();
         return;
       }
 
       if (!localAudioMsgId) {
+        if (!isActiveChatEpoch(startEpoch)) return;
         const newId = uid();
         localAudioMsgId = newId;
         setCoverAudioMsgId(newId);
@@ -2696,9 +2812,174 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }, []);
 
   async function sendMessage() {
+    if (sendBusyRef.current) {
+      setToast({ kind: 'ok', text: 'Espera un momento, ya estoy enviando el mensaje anterior.' });
+      return;
+    }
+    sendBusyRef.current = true;
+    try {
+      return await sendMessageImpl();
+    } finally {
+      sendBusyRef.current = false;
+    }
+  }
+
+  async function sendMessageImpl() {
     const text = String(input || '').trim();
     if (!supabaseBrowser) {
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
+      return;
+    }
+
+    // ========== A) ENVÍO ATÓMICO TEXTO + AUDIO ADJUNTO ==========
+    if (attachedImg && attachedImg.kind === 'audio') {
+      const epoch = chatEpochRef.current;
+      const audioName = String(attachedImg.name || attachedImg.file?.name || 'audio').slice(0, 160) || 'audio';
+      const audioBytes = Number(attachedImg.bytes || 0);
+      const audioFile = attachedImg.file || null;
+      const msgAudioUrl = (() => {
+        if (!audioFile) return attachedImg.previewUrl || '';
+        try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
+      })();
+      const caption = String(text || '').trim();
+      const hasCaption = Boolean(caption);
+
+      // Evitar doble envío si no hay texto ni audio (no debería pasar pero defensivo)
+      if (!hasCaption && !audioFile) return;
+
+      // 1) snapshot: guardar attached temporal antes de borrar, para reintentos
+      const audioSnap: AttachedImage = { ...attachedImg };
+
+      // 2) Crear ÚNICO mensaje user: TEXTO (caption) + AUDIO (attachment) juntos
+      const newMsgId = uid();
+      const userMsg: ChatMessage = {
+        id: newMsgId,
+        role: 'user',
+        text: hasCaption ? caption : `Subiendo audio · ${audioName}`,
+        createdAt: Date.now(),
+        attachment: msgAudioUrl
+          ? { kind: 'audio', previewUrl: msgAudioUrl, name: audioName, bytes: audioBytes }
+          : null,
+        inputMode: 'text',
+      };
+      if (hasCaption) {
+        (userMsg as any).caption = caption;
+      }
+      setMessages((m) => [...m, userMsg]);
+
+      // 3) Limpiar composer de inmediato y seguro
+      setInput('');
+      if (setInputAndDraftRef.current) {
+        try { setInputAndDraftRef.current('', true); } catch {}
+      } else {
+        try { clearStoredDraft(currentUserId, uiState.activeConversationId || conversationId || null); } catch {}
+      }
+      if (textareaRef.current) textareaRef.current.value = '';
+      autoresizeTextarea(textareaRef.current);
+      // Quitar preview temporal del composer (mantener audioSnap para transcripción/reintentos)
+      try { handleAttachRemove(); } catch {}
+
+      // 4) Asegurar conversación activa (crear si no existía)
+      let accessToken = '';
+      try {
+        accessToken = (await getValidBearerToken()) || '';
+        if (!accessToken || !isActiveChatEpoch(epoch)) {
+          if (!accessToken) {
+            guardedSetState(setLoading, false, epoch);
+            guardedSetState(setToast, { kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' }, epoch);
+            const errMsg: ChatMessage = {
+              id: uid(),
+              role: 'assistant',
+              text: 'Tu sesión de LucIAna expiró. Vuelve a iniciar sesión con Google para seguir usando a LucIAna Bot.',
+              createdAt: Date.now(),
+            };
+            guardedSetState(setMessages, (m) => [...m, errMsg], epoch);
+          }
+          return;
+        }
+
+        if (!uiState.activeConversationId) {
+          const titleForConv = (caption || audioName || 'Cover con audio').slice(0, 60) || 'Nuevo chat';
+          const created = await createSupabaseConversation(accessToken, { title: titleForConv });
+          if (!isActiveChatEpoch(epoch)) return;
+          if (created) {
+            setUi((p) => ({
+              ...p,
+              activeConversationId: created.id,
+              conversations: created ? [created, ...p.conversations] : p.conversations,
+            }));
+            setConversationId(String(created.internal_dify_conversation_id || '').trim());
+          }
+        }
+      } catch {
+        if (!isActiveChatEpoch(epoch)) return;
+        guardedSetState(setLoading, false, epoch);
+        return;
+      }
+
+      // Guardar el caption en el structured_action (mensaje user) para Supabase junto al audio_attachment
+      try {
+        if (isActiveChatEpoch(epoch) && uiState.activeConversationId) {
+          void (async () => {
+            try {
+              const payload: any = {
+                role: 'user',
+                content: hasCaption
+                  ? `${caption}\n\n[Audio adjunto: ${audioName}]`
+                  : `[Audio adjunto: ${audioName}]`,
+                structured_action: {
+                  action: 'audio_attachment',
+                  kind: 'audio',
+                  name: audioName,
+                  mime: String(audioSnap.file?.type || 'audio/mpeg').trim() || 'audio/mpeg',
+                  bytes: Number(audioSnap.bytes || 0) || 0,
+                  r2_key: null,
+                },
+              };
+              if (hasCaption) {
+                (payload.structured_action as any).caption = caption;
+              }
+              await appendMessageToConversation(accessToken, uiState.activeConversationId!, payload);
+            } catch {}
+          })();
+        }
+      } catch {}
+
+      // 5) Preparar para el wizard de transcripción usando attached temporal sin borrar, y marcar loading
+      setCoverAudioMsgId(newMsgId);
+      // coverAudioRef SIN File temporal? No: necesitamos el File para transcripción. Mantener audioSnap y volver a poblar attachedImg temporal
+      if (audioFile) {
+        coverAudioRef.current = {
+          file: audioFile,
+          previewUrl: msgAudioUrl || audioSnap.previewUrl || '',
+          name: audioName,
+          bytes: audioBytes,
+          mime: String(audioSnap.file?.type || 'audio/mpeg').trim() || undefined,
+        };
+      } else {
+        coverAudioRef.current = {
+          previewUrl: msgAudioUrl || audioSnap.previewUrl || '',
+          name: audioName,
+          bytes: audioBytes,
+          mime: String(audioSnap.file?.type || 'audio/mpeg').trim() || undefined,
+          r2Key: (audioSnap as any).r2Key,
+        };
+      }
+      // attachedImg sigue siendo null (composer limpio). Pero transcribeAudioForWizard lo necesita para triggerarse por useEffect → reponer attachedImg internamente vía ref.
+      (transcribeAudioPendingSnapRef as any).current = audioSnap;
+      setAudioBusy(true);
+      setLoading(true);
+      sentScrollRef.current = true;
+      registerTimeout(() => scrollToBottomNow(true), 15, { boundEpoch: epoch });
+      registerTimeout(() => {
+        if (!isActiveChatEpoch(epoch)) return;
+        transcribeAudioForWizard({
+          reuseMsgId: newMsgId,
+          forcedAttached: audioSnap,
+          forcedCaption: hasCaption ? caption : null,
+          epoch,
+        }).catch(() => {});
+      }, 20, { boundEpoch: epoch });
       return;
     }
 
