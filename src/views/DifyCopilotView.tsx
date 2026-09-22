@@ -1878,11 +1878,83 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       try { return URL.createObjectURL(audioFile); } catch { return attachedImg.previewUrl || ''; }
     })();
 
+    let controller: AbortController | null = null;
+    let timeoutTimer: number | null = null;
+    let abortedByTimeout = false;
+
+    const cleanBusy = () => {
+      setLoading(false);
+      setAudioBusy(false);
+      if (timeoutTimer != null) {
+        try { window.clearTimeout(timeoutTimer); } catch {}
+        timeoutTimer = null;
+      }
+      controller = null;
+    };
+
+    const showErrorButtons = (msg: string, errId?: string) => {
+      const idLabel = errId ? ` (Error ${String(errId).trim()})` : '';
+      const safeMsg = `${msg}${idLabel}`.trim();
+      setToast({ kind: 'err', text: safeMsg });
+      setMessages((m) => {
+        const last: ChatMessage = {
+          id: uid(),
+          role: 'assistant',
+          text: safeMsg,
+          createdAt: Date.now(),
+          quickReplies: [
+            { id: 'cover-transcribe-retry', label: 'Reintentar', value: 'cover:transcribe:retry', icon: 'refresh', variant: 'primary' },
+            { id: 'cover-transcribe-manual', label: 'Escribir letra', value: 'cover:transcribe:manual', icon: 'edit', variant: 'secondary' },
+          ],
+          inputMode: 'text',
+        };
+        return [...m, last];
+      });
+    };
+
+    const showLyricsAndConfirm = (lyrics: string) => {
+      const trimmed = String(lyrics || '').replace(/\r\n/g, '\n').trim();
+      setCoverWizard({
+        phase: 'lyrics',
+        lyrics: trimmed,
+        style: '',
+        mood: '',
+        direction: '',
+        title: '',
+        voice: '',
+      });
+      const aMsg: ChatMessage = {
+        id: uid(),
+        role: 'assistant',
+        text:
+          `🎙️ Detecté esta letra:\n\n` +
+          `\`\`\`\n${trimmed}\n\`\`\`\n\n` +
+          `¿Está correcta o quieres cambiar algo?\n` +
+          `- Si está bien: escríbeme **“sí está bien”** (o cualquier confirmación corta).\n` +
+          `- Si quieres corregirla: pégame la letra corregida (solo la letra).`,
+        createdAt: Date.now(),
+        structured: { action: 'wizard_lyrics', lyrics: trimmed },
+        quickReplies: [
+          { id: 'cover-lyrics-ok', label: 'Sí, está correcta', value: 'cover:lyrics:ok', icon: 'check', variant: 'primary' },
+          { id: 'cover-lyrics-manual', label: 'Editar letra', value: 'cover:lyrics:manual', icon: 'edit', variant: 'secondary' },
+        ],
+        inputMode: 'multiline',
+      };
+      setMessages((m) => [...m, aMsg]);
+      void (async () => {
+        try {
+          const accessToken = await getValidBearerToken();
+          const activeConvId = uiState.activeConversationId;
+          if (accessToken && activeConvId) {
+            try { await appendMessageToConversation(accessToken, activeConvId, { role: 'assistant', content: stripInternalReasoning(aMsg.text) }); } catch {}
+          }
+        } catch {}
+      })();
+    };
+
     try {
       const accessToken = await getValidBearerToken();
       if (!accessToken) {
-        setLoading(false);
-        setAudioBusy(false);
         setToast({ kind: 'err', text: 'Sesión expirada. Vuelve a iniciar sesión con Google.' });
         setTimeout(() => signOutAndReload(), 1200);
         return;
@@ -1933,8 +2005,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       }
       if (uploadStatus < 200 || uploadStatus >= 300 || (uploadJson && uploadJson.success === false) || (uploadJson && typeof uploadJson.error === 'string')) {
         const friendly = uploadStatus === 413 ? 'El audio es demasiado pesado (máx. 25 MB).' : 'No pude subir el audio.';
-        setLoading(false);
-        setAudioBusy(false);
         setToast({ kind: 'err', text: friendly });
         setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
         return;
@@ -1943,92 +2013,73 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       const audioUrl = String(uploadJson?.url || uploadJson?.upload_url || uploadJson?.uploadUrl || '').trim();
       if (!audioUrl) {
         const friendly = 'No pude preparar el audio para transcribir.';
-        setLoading(false);
-        setAudioBusy(false);
         setToast({ kind: 'err', text: friendly });
         setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
         return;
       }
 
-      let trJson: any = null;
+      let trJson: any = {};
       let trStatus = 0;
+      let trOk = false;
       try {
-        const r = await fetch('/api/gpt/transcribe', {
+        controller = new AbortController();
+        timeoutTimer = window.setTimeout(() => {
+          if (!controller) return;
+          abortedByTimeout = true;
+          try { controller.abort(); } catch {}
+        }, 65000);
+
+        const byName = (audioFile?.name || '').toString().trim().toLowerCase();
+        const byType = (audioFile?.type || '').toString().trim();
+        const mimeType = byType || (byName.endsWith('.mp3') ? 'audio/mpeg' : 'audio/mpeg');
+
+        const r = await fetch('/api/ai/transcribe-lyrics', {
           method: 'POST',
+          signal: controller.signal,
           headers: {
             'content-type': 'application/json; charset=utf-8',
             authorization: `Bearer ${accessToken}`,
             accept: 'application/json',
+            'x-transcribe-source': 'bot',
           },
-          body: JSON.stringify({ audio_url: audioUrl, title: audioName }),
+          body: JSON.stringify({ uploadUrl: audioUrl, mimeType, source: 'bot' }),
         });
         trStatus = r.status;
         const raw = await r.text();
-        try { trJson = raw ? JSON.parse(raw) : null; } catch { trJson = { error: 'invalid_json' }; }
-      } catch {
+        try { trJson = raw ? JSON.parse(raw) : {}; } catch { trJson = { error: 'invalid_json' }; }
+        trOk = r.ok && trJson && trJson.ok === true && typeof trJson?.lyrics === 'string' && String(trJson.lyrics || '').trim().length > 0;
+      } catch (e) {
+        const isAbort = abortedByTimeout || (e instanceof DOMException && e.name === 'AbortError') || /abort|timeout|timed out/i.test(e instanceof Error ? e.message : String(e));
+        if (abortedByTimeout || isAbort) {
+          showErrorButtons('La transcripción tardó demasiado. Intenta de nuevo o escribe la letra manualmente.');
+          return;
+        }
         trStatus = 0;
         trJson = { error: 'network_error' };
+        trOk = false;
       }
-      if (trStatus < 200 || trStatus >= 300 || (trJson && trJson.success === false) || (trJson && typeof trJson.error === 'string')) {
-        const friendly = trStatus === 413
-          ? 'El audio es demasiado pesado para transcribir. Usa un fragmento más corto.'
-          : 'No pude transcribir este audio. Prueba con un fragmento más corto o con menos ruido.';
-        setLoading(false);
-        setAudioBusy(false);
-        setToast({ kind: 'err', text: friendly });
-        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+
+      if (trOk) {
+        const lyrics = String(trJson?.lyrics || '').trim();
+        showLyricsAndConfirm(lyrics);
         return;
       }
 
-      const lyrics = String(trJson?.lyrics || '').trim();
-      if (!lyrics) {
-        const friendly = 'No pude obtener una transcripción (texto vacío). Prueba con un fragmento más claro.';
-        setLoading(false);
-        setAudioBusy(false);
-        setToast({ kind: 'err', text: friendly });
-        setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+      if (abortedByTimeout) {
+        showErrorButtons('La transcripción tardó demasiado. Intenta de nuevo o escribe la letra manualmente.');
         return;
       }
 
-      setCoverWizard({
-        phase: 'lyrics',
-        lyrics,
-        style: '',
-        mood: '',
-        direction: '',
-        title: '',
-        voice: '',
-      });
-
-      const aMsg: ChatMessage = {
-        id: uid(),
-        role: 'assistant',
-        text:
-          `🎙️ Detecté esta letra:\n\n` +
-          `\`\`\`\n${lyrics}\n\`\`\`\n\n` +
-          `¿Está correcta o quieres cambiar algo?\n` +
-          `- Si está bien: escríbeme **“sí está bien”** (o cualquier confirmación corta).\n` +
-          `- Si quieres corregirla: pégame la letra corregida (solo la letra).`,
-        createdAt: Date.now(),
-        structured: { action: 'wizard_lyrics', lyrics },
-      };
-      setMessages((m) => [...m, aMsg]);
-
-      if (activeConvId) {
-        void (async () => {
-          try { await appendMessageToConversation(accessToken, activeConvId!, { role: 'assistant', content: stripInternalReasoning(aMsg.text) }); } catch {}
-        })();
-      }
-
-      setLoading(false);
-      setAudioBusy(false);
-      requestAnimationFrame(() => autoresizeTextarea(textareaRef.current));
+      const msg = (trJson?.message || 'No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.').toString();
+      const id = (trJson?.error_id || '').toString();
+      showErrorButtons(msg, id);
+      return;
     } catch {
-      const friendly = 'No pude transcribir este audio en este momento.';
-      setLoading(false);
-      setAudioBusy(false);
-      setToast({ kind: 'err', text: friendly });
-      setMessages((m) => [...m, { id: uid(), role: 'assistant', text: friendly, createdAt: Date.now() }]);
+      showErrorButtons('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
+      return;
+    } finally {
+      cleanBusy();
+      try { requestAnimationFrame(() => autoresizeTextarea(textareaRef.current)); } catch {}
     }
   }
 

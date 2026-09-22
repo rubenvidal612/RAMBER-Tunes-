@@ -14731,11 +14731,16 @@ const aiHandler = (() => {
 
   async function handleTranscribeLyrics(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
+    let transcribeSource: "create" | "bot" = "create";
+    try {
+      const hSrc = String(req?.headers?.["x-transcribe-source"] || "").trim().toLowerCase();
+      if (hSrc === "bot") transcribeSource = "bot";
+    } catch {}
     if (method !== "POST") {
       const s = 405;
       const ms = 0;
       try {
-        console.log(`transcribe-lyrics completed status=${s} ms=${ms} result=error`);
+        console.log(`transcribe-lyrics source=${transcribeSource} status=${s} ms=${ms} result=error`);
       } catch {}
       return send(res, s, {
         ok: false,
@@ -14761,7 +14766,7 @@ const aiHandler = (() => {
     const flushCompleted = () => {
       const ms = Math.max(0, Date.now() - startedAt);
       try {
-        console.log(`transcribe-lyrics completed status=${finalStatus} ms=${ms} result=${finalResult}`);
+        console.log(`transcribe-lyrics source=${transcribeSource} status=${finalStatus} ms=${ms} result=${finalResult}`);
       } catch {}
     };
 
@@ -14791,6 +14796,11 @@ const aiHandler = (() => {
           error_id: eid,
         });
       }
+
+      try {
+        const pSrc = String(payload?.source || "").trim().toLowerCase();
+        if (pSrc === "bot") transcribeSource = "bot";
+      } catch {}
 
       const uploadUrl = typeof payload?.uploadUrl === "string" ? payload.uploadUrl.trim() : "";
       const mimeTypeHint = typeof payload?.mimeType === "string" ? payload.mimeType.trim() : "";
@@ -16089,7 +16099,7 @@ const lucianaBotHandler = (() => {
 
       const tr = await internalJson(req, "/api/ai/transcribe-lyrics", {
         method: "POST",
-        body: { uploadUrl, mimeType },
+        body: { uploadUrl, mimeType, source: "bot" },
       });
       const lyrics = normalizeText(tr.out?.lyrics || "", 12000);
       session.draft.pendingTaskId = undefined;
