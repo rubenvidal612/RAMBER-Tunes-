@@ -14205,7 +14205,7 @@ const aiHandler = (() => {
       };
     }
 
-    const mod: any = await import("@google/genai");
+    const mod = await import("@google/genai");
     const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
     if (!GoogleGenAI) return { ok: false as const, error: "No pude cargar Gemini (@google/genai)" };
 
@@ -14314,6 +14314,82 @@ const aiHandler = (() => {
         "La transcripción no está disponible en este momento. " +
         "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
     };
+  }
+
+  async function transcribeLyricsWithGeminiTranscribe(audioBuf, timeoutMs) {
+    const apiKey = String(
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+      process.env.GEMINI_KEY ||
+      process.env.GOOGLE_AI_STUDIO_KEY ||
+      process.env.AI_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      ""
+    ).trim();
+    if (!apiKey) {
+      return {
+        ok: false,
+        error: "Falta GEMINI_API_KEY en Vercel",
+        userMessage: "La transcripción no está configurada. Falta GEMINI_API_KEY en Vercel.",
+      };
+    }
+
+    const mod: any = await import("@google/genai");
+    const GoogleGenAI = mod?.GoogleGenAI || mod?.default?.GoogleGenAI;
+    if (!GoogleGenAI) return { ok: false, error: "No pude cargar Gemini (@google/genai)" };
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const withTimeout = async (p, ms) => {
+      const m = Math.max(1, Number(ms) || 1);
+      return await Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), m))]);
+    };
+
+    const extractInteractionText = (interaction) => {
+      const direct = interaction?.output_text || interaction?.outputText || interaction?.text;
+      if (typeof direct === "string" && direct.trim()) return direct;
+
+      const outs = interaction?.outputs;
+      if (Array.isArray(outs)) {
+        const parts = outs
+          .filter((o) => o && o.type === "text" && typeof o.text === "string")
+          .map((o) => o.text);
+        const joined = parts.join("");
+        if (joined && joined.trim()) return joined;
+      }
+
+      return "";
+    };
+
+    const geminiMime = "audio/mpeg";
+    const blob = new Blob([audioBuf], { type: "audio/mpeg" });
+
+    const startedAt = Date.now();
+    const audioFile = await withTimeout(ai.files.upload({ file: blob, config: { mimeType: geminiMime } }), timeoutMs);
+    const remaining = Math.max(1, (Number(timeoutMs) || 1) - (Date.now() - startedAt));
+
+    const fileUri = audioFile && typeof audioFile === "object" && typeof audioFile.uri === "string" ? audioFile.uri : "";
+    if (!fileUri) return { ok: false, error: "No se pudo obtener URI del archivo (Gemini Files)." };
+
+    const interaction = await withTimeout(
+      ai.interactions.create(
+        {
+          model: "gemini-3.5-transcribe",
+          input: [{ type: "audio", uri: fileUri, mime_type: geminiMime }],
+          generation_config: { transcription_config: { language_codes: ["es-MX"], type: "verbatim" } },
+        },
+        { timeout: remaining }
+      ),
+      remaining + 200
+    );
+
+    const text = extractInteractionText(interaction).replace(/\r\n/g, "\n").trim();
+    if (!text) return { ok: false, error: "Gemini no devolvió texto", userMessage: "No pude transcribir la letra." };
+
+    return { ok: true, lyrics: text, status: "OK" };
   }
 
   async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
@@ -14637,6 +14713,7 @@ const aiHandler = (() => {
     if (!url) return send(res, 400, { error: "uploadUrl inválido" });
 
     try {
+      const startedAt = Date.now();
       const controller = new AbortController();
       const timeoutMs = 60000;
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -14650,20 +14727,77 @@ const aiHandler = (() => {
       if (size <= 0) return send(res, 400, { error: "El audio está vacío" });
       if (size > 15 * 1024 * 1024) return send(res, 413, { error: "Audio muy pesado para transcribir. Sube un fragmento más corto." });
 
-      const out = await transcribeLyricsWithGemini(ab, mimeType);
-      if (!out.ok) return send(res, 200, { ok: false, error: out.error || "No pude transcribir", message: (out as any).userMessage || "No pude transcribir la letra." });
-      if ((out as any).status === "ILEGIBLE") return send(res, 200, { ok: true, lyrics: "", status: "ILEGIBLE", message: "No pude entender la letra con este audio. Prueba con un fragmento más corto o con menos ruido." });
-      if ((out as any).status === "SIN_LETRA") return send(res, 200, { ok: true, lyrics: "", status: "SIN_LETRA", message: "No detecté voz/canto en ese audio." });
-      return send(res, 200, { ok: true, lyrics: out.lyrics || "", status: "OK" });
+      const remainingMs = Math.max(1000, timeoutMs - (Date.now() - startedAt));
+
+      const pad = (n) => String(n).padStart(2, "0");
+      const d = new Date();
+      const eid = `TR-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}-${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`;
+
+      let transcribeError = "";
+      try {
+        const out = await transcribeLyricsWithGeminiTranscribe(ab, remainingMs);
+        if (out && out.ok) {
+          return send(res, 200, { ok: true, lyrics: (out.lyrics || "").toString() });
+        }
+        transcribeError = (out && typeof out.error === "string" ? out.error : "Error transcribiendo (Gemini Transcribe)") || "";
+      } catch (e) {
+        transcribeError = e instanceof Error ? e.message : String(e);
+      }
+
+      try {
+        console.error(`[${eid}] handleTranscribeLyrics gemini-3.5-transcribe failed`, transcribeError);
+      } catch {}
+
+      const lower = String(transcribeError || "").toLowerCase();
+      const isKeyInvalid = lower.includes("api_key_invalid") || lower.includes("api key not valid") || lower.includes("api key");
+      const isTimeout = lower.includes("timeout") || lower.includes("timed out");
+      const shouldFallback =
+        !isTimeout &&
+        !isKeyInvalid &&
+        (lower.includes("not found") ||
+          lower.includes("404") ||
+          lower.includes("unsupported") ||
+          lower.includes("invalid") ||
+          lower.includes("unimplemented") ||
+          lower.includes("does not exist") ||
+          lower.includes("unknown field") ||
+          lower.includes("model"));
+
+      if (!shouldFallback) {
+        return send(res, 502, {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
+
+      const fallbackOut = await transcribeLyricsWithGemini(ab, mimeType);
+      if (!fallbackOut.ok) {
+        try {
+          console.error(`[${eid}] handleTranscribeLyrics fallback gemini-3.6-flash failed`, fallbackOut.error);
+        } catch {}
+        return send(res, 502, {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
+      if (fallbackOut.status !== "OK" || !(fallbackOut.lyrics || "").toString().trim()) {
+        return send(res, 422, {
+          ok: false,
+          message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
+          error_id: eid,
+        });
+      }
+      return send(res, 200, { ok: true, lyrics: (fallbackOut.lyrics || "").toString() });
     } catch (e) {
-      const pad = (n: number) => n.toString().padStart(2, "0");
+      const pad = (n) => String(n).padStart(2, "0");
       const d = new Date();
       const eid = `TR-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}-${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`;
       try {
-        // eslint-disable-next-line no-console
         console.error(`[${eid}] handleTranscribeLyrics`, e instanceof Error ? e.stack || e.message : String(e));
       } catch {}
-      return send(res, 200, {
+      return send(res, 500, {
         ok: false,
         error: "Error transcribiendo",
         message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
