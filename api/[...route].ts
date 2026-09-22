@@ -13167,10 +13167,35 @@ const adminHandler = (() => {
         const uid = String(found?.id || "").trim();
         if (uid) return { ok: true as const, userId: uid };
       }
-      return { ok: false as const, status: 404, error: "No encontré ese usuario por correo." };
     }
 
-    return { ok: false as const, status: 500, error: "Supabase Auth Admin no disponible (getUserByEmail/listUsers)" };
+    // FALLBACK: si Auth Admin no lo encontró, buscar por profiles.email
+    // (puede pasar si el profile se creó pero el usuario nunca inició sesión real
+    //  o hay desfase entre auth.users y profiles.email).
+    try {
+      const adminClient = authCtx?.admin;
+      if (adminClient && typeof adminClient.from === "function") {
+        const q = adminClient
+          .from("profiles")
+          .select("id, email, full_name, user_id")
+          .or(`email.eq.${clean.toLowerCase()},user_id.eq.${clean.toLowerCase()}`)
+          .limit(5);
+        const { data: rows, error: e } = await q;
+        if (!e && Array.isArray(rows)) {
+          for (const row of rows) {
+            const rowEmail = String((row as any)?.email || "").trim().toLowerCase();
+            const rowId = String((row as any)?.id || (row as any)?.user_id || "").trim();
+            if (rowId && (!rowEmail || rowEmail === clean)) {
+              return { ok: true as const, userId: rowId };
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignorar fallback silenciosamente; devolver error de Auth
+    }
+
+    return { ok: false as const, status: 404, error: "No encontré ese usuario por correo.", detail: `Ese correo (${clean}) no existe en auth.users ni en profiles. Asegúrate de que el usuario haya iniciado sesión al menos una vez.` };
   }
 
   async function sumPayments(admin: any, sinceIso: string | null) {
@@ -13719,22 +13744,25 @@ const adminHandler = (() => {
             subscriptionActive: true,
             renewalPaidSuccessfully: true,
           });
-          if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar créditos", eid);
+          if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar créditos", eid, { detail: `email=${email}; credits_mode=default; add=${add}` });
         }
       } else if (credits_mode === "set") {
         if (!Number.isFinite(credits) || credits < 0) return adminSendError(res, 400, "Créditos inválidos", eid);
         const upd = await setUserCreditsAbsolute(admin, userId, credits);
-        if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude fijar créditos", eid);
+        if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude fijar créditos", eid, { detail: `email=${email}; credits_mode=set; credits=${String(credits)}` });
       }
 
       return send(res, 200, { ok: true, user_id: userId, plan_key, credits_mode, error_id: eid });
     } catch (outer) {
+      const outerMsg = outer instanceof Error ? String(outer.message || outer) : String(outer || "");
       adminServerLog(eid, safeHandler, {
         step: "catch_outer",
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo salió mal.", eid, {
+        detail: `email=${String(body?.email || "")}; plan_key=${String(body?.plan_key || "")}; credits_mode=${String(body?.credits_mode || "")}; raw=${outerMsg.slice(0, 300)}`,
+      });
     }
   }
 

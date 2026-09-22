@@ -4283,7 +4283,7 @@ export default function App() {
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
           {currentTab === 'oficina' && (isAdmin ? (
-            <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} />
+            <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} onToast={showToast} />
           ) : (
             <div className="flex-1 grid place-items-center p-6 text-center"><div><Shield className="mx-auto h-10 w-10 text-violet-400" /><div className="mt-3 font-extrabold text-white">Área privada</div><div className="mt-1 text-sm text-slate-400">Oficina está disponible únicamente para la cuenta administradora.</div></div></div>
           ))}
@@ -4385,7 +4385,7 @@ export default function App() {
                  <VendorView />
               ) : currentTab === 'oficina' ? (
                 isAdmin ? (
-                  <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} />
+                  <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} onToast={showToast} />
                 ) : (
                   <div className="flex-1 grid place-items-center p-6 text-center"><div><Shield className="mx-auto h-10 w-10 text-violet-400" /><div className="mt-3 font-extrabold text-white">Área privada</div><div className="mt-1 text-sm text-slate-400">Oficina está disponible únicamente para la cuenta administradora.</div></div></div>
                 )
@@ -4870,7 +4870,7 @@ export default function App() {
         className="hidden"
       />
 
-      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} />}
+      {isSettingsOpen && <SettingsView onClose={() => setIsSettingsOpen(false)} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} onToast={showToast} />}
       {isPricingOpen && (
         <PricingView
           onClose={() => {

@@ -5,7 +5,19 @@ import { signInWithGoogle, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { isAdminEmail } from '@/lib/authz';
 import { cn } from '@/lib/utils';
 
-export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOffice = false, pageMode = false }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void; initialOffice?: boolean; pageMode?: boolean }) {
+export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOffice = false, pageMode = false, onToast }: { onClose: () => void; onOpenPricing?: () => void; onOpenUpdates?: () => void; initialOffice?: boolean; pageMode?: boolean; onToast?: (msg: string | { title?: string; message: string; tone?: 'error' | 'success' | 'warning' | 'info' }) => void }) {
+  const notify = (msg: string | { title?: string; message: string; tone?: 'error' | 'success' | 'warning' | 'info' }) => {
+    try {
+      if (typeof onToast === 'function') onToast(msg);
+      else if (typeof msg === 'string') window.alert(msg);
+      else window.alert(`${msg.title ? `${msg.title}\n\n` : ''}${msg.message || ''}`);
+    } catch {
+      try {
+        if (typeof msg === 'string') window.alert(msg);
+        else window.alert(`${msg.title ? `${msg.title}\n\n` : ''}${msg.message || ''}`);
+      } catch {}
+    }
+  };
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const { credits, creditsExpiresAt, planExpiresAt, refreshCredits } = useUserCredits();
   const [userName, setUserName] = useState('Usuario');
@@ -610,12 +622,12 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
     if (!supabaseBrowser) return;
     const email = planEmail.trim().toLowerCase();
     if (!email) {
-      alert('Pon el correo del usuario.');
+      notify({ title: 'Falta el correo', message: 'Pon el correo del usuario en el campo “correo@gmail.com”.', tone: 'warning' });
       return;
     }
     const packKey = (officeMiniPackKey || '').toString().trim();
     if (!packKey) {
-      alert('Selecciona un mini paquete.');
+      notify({ title: 'Selecciona un paquete', message: 'Elige un mini paquete en el recuadro antes de recargar.', tone: 'warning' });
       return;
     }
     setOfficeMiniPackBusy(true);
@@ -624,7 +636,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       const token = data?.session?.access_token;
       const sessionEmail = String(data?.session?.user?.email || '').trim().toLowerCase();
       if (!token) {
-        alert('No se pudo iniciar sesión.');
+        notify({ title: 'Sesión expirada', message: 'Cierra sesión y vuelve a entrar con tu cuenta de administrador.', tone: 'error' });
         return;
       }
       const r = await fetch('/api/admin/grant-mini-pack', {
@@ -637,11 +649,30 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         const msg = (out?.error || 'No pude recargar el mini paquete.').toString();
         const detail = (out?.detail || '').toString();
         const id = (out?.error_id || '').toString();
-        const idBlock = id ? `(Error ${id})` : '';
-        alert([msg, detail, idBlock].filter(Boolean).join('\n'));
+        const lines: string[] = [
+          `Correo: ${email}`,
+          `Paquete: ${packKey}`,
+          msg,
+        ];
+        if (detail) lines.push(`Detalle: ${detail}`);
+        if (id) lines.push(`Código: ${id}`);
+        lines.push('');
+        lines.push('Si dice “No encontré ese usuario por correo”:');
+        lines.push('1) Asegúrate de que el usuario haya iniciado sesión al menos una vez.');
+        lines.push('2) Revisa que el correo no tenga espacios ni puntos de más.');
+        lines.push('3) Si no está dado de alta, dile que abra la app y entre con Google.');
+        notify({
+          title: 'No se pudo recargar',
+          message: lines.join('\n'),
+          tone: 'error',
+        });
         return;
       }
-      alert('Listo. Se agregó el mini paquete como lote (30 días).');
+      notify({
+        title: 'Listo',
+        message: `Se agregó el mini paquete ${packKey} a ${email} como lote (30 días).`,
+        tone: 'success',
+      });
       openOffice().catch(() => {});
       if (sessionEmail && sessionEmail === email) refreshCredits?.();
     } finally {
@@ -653,12 +684,12 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
     if (!supabaseBrowser) return;
     const email = planEmail.trim().toLowerCase();
     if (!email) {
-      alert('Pon el correo del usuario.');
+      notify({ title: 'Falta el correo', message: 'Pon el correo del usuario en el campo “correo@gmail.com”.', tone: 'warning' });
       return;
     }
     const manual = Number(planCreditsManual);
     if (planCreditsMode === 'set' && (!Number.isFinite(manual) || manual < 0)) {
-      alert('Créditos manuales inválidos.');
+      notify({ title: 'Créditos inválidos', message: 'Pon un número de créditos válido (mayor o igual que 0).', tone: 'warning' });
       return;
     }
     setPlanBusy(true);
@@ -666,7 +697,7 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
       const { data } = await supabaseBrowser.auth.getSession();
       const token = data?.session?.access_token;
       if (!token) {
-        alert('No se pudo iniciar sesión.');
+        notify({ title: 'Sesión expirada', message: 'Cierra sesión y vuelve a entrar con tu cuenta de administrador.', tone: 'error' });
         return;
       }
       const r = await fetch('/api/admin/set-plan', {
@@ -684,11 +715,29 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         const msg = (out?.error || 'No pude cambiar el plan.').toString();
         const detail = (out?.detail || '').toString();
         const id = (out?.error_id || '').toString();
-        const idBlock = id ? `(Error ${id})` : '';
-        alert([msg, detail, idBlock].filter(Boolean).join('\n'));
+        const lines: string[] = [
+          `Correo: ${email}`,
+          msg,
+        ];
+        if (detail) lines.push(`Detalle: ${detail}`);
+        if (id) lines.push(`Código: ${id}`);
+        lines.push('');
+        lines.push('Si dice “No encontré ese usuario por correo”:');
+        lines.push('1) Asegúrate de que el usuario haya iniciado sesión al menos una vez.');
+        lines.push('2) Revisa que el correo no tenga espacios ni puntos de más.');
+        lines.push('3) Si no está dado de alta, dile que abra la app y entre con Google.');
+        notify({
+          title: 'No se pudo guardar el plan',
+          message: lines.join('\n'),
+          tone: 'error',
+        });
         return;
       }
-      alert('Listo. Se actualizó el plan.');
+      notify({
+        title: 'Listo',
+        message: `Se actualizó el plan de ${email} (${planKey} · modo créditos: ${planCreditsMode}).`,
+        tone: 'success',
+      });
       openOffice().catch(() => {});
     } finally {
       setPlanBusy(false);
