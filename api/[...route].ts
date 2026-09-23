@@ -1522,7 +1522,19 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 25,
     validity_days: 30,
     sort_order: 1,
-    description: "6 canciones (36 créditos) · pago único",
+    description: "6 canciones (36 créditos) · pago único · Solo una vez por cuenta",
+    is_active: true,
+  },
+  {
+    id: 5,
+    pack_key: "inicio_50",
+    name: "Inicio",
+    songs: 12,
+    credits_amount: 72,
+    price_mxn: 50,
+    validity_days: 30,
+    sort_order: 2,
+    description: "12 canciones (72 créditos) · pago único · Agente Bot 24/7",
     is_active: true,
   },
   {
@@ -5820,6 +5832,23 @@ const mercadoPagoHandler = (() => {
   };
 
   const MINI_PACK_TX_KIND = "mini_pack";
+  const TRIAL_PACK_KEY = "mini_3"; // Pack de prueba $25: una sola vez por cuenta, para siempre
+
+  async function userHasApprovedPack(admin: any, userId: string, packKey: string): Promise<boolean> {
+    if (!userId || !packKey) return false;
+    try {
+      const { data } = await admin
+        .from("mp_transactions")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("pack_key", String(packKey).trim().toLowerCase())
+        .limit(1);
+      return Array.isArray(data) && data.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   function resolveMiniPackFromMetadata(meta: any) {
     const pk = String(meta?.pack_key || meta?.packKey || "").trim().toLowerCase();
     const pid = meta?.pack_id ?? meta?.packId ?? null;
@@ -6082,6 +6111,10 @@ const mercadoPagoHandler = (() => {
 
     const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
     const isMiniPack = txKind === "mini_pack";
+    if (isMiniPack && String(packKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
+      const already = await userHasApprovedPack(auth.admin, auth.user.id, TRIAL_PACK_KEY);
+      if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: false, already: true, reason: "trial_already_used" });
+    }
     if (Number.isFinite(credits) && credits > 0) {
       if (isMiniPack) {
         await ensureProfileExists(auth.admin, auth.user.id);
@@ -6286,6 +6319,13 @@ const mercadoPagoHandler = (() => {
       const fixedPackKey = String((finalMiniPack as any).pack_key || packKey || "mini_pack");
       const fixedPackId = Number((finalMiniPack as any).pack_id || packId || 0) || null;
       const amountMxn = Number((finalMiniPack as any).amount_mxn || metaAmountMxn || transactionAmountMxn || 0);
+      // Pack de prueba $25: una sola vez por cuenta. Revalidamos ANTES de acreditar (defensa en profundidad).
+      if (String(fixedPackKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
+        const already = await userHasApprovedPack(admin, userId, TRIAL_PACK_KEY);
+        if (already) {
+          return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "trial_already_used" });
+        }
+      }
       // ========== MINI PAQUETE: crear LOTE independiente con su propia expiración ==========
       if (!Number.isFinite(credits) || credits <= 0) {
         return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "no_credits" });
@@ -6416,9 +6456,25 @@ const mercadoPagoHandler = (() => {
     const createClient = await getSupabaseCreateClient();
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
+    // Si viene token, devolvemos qué packs ya compró (aprobados) para ocultar el Pack de prueba.
+    let purchasedPackKeys: string[] = [];
+    const auth = await requireUser(req);
+    if (auth.ok) {
+      try {
+        const { data } = await admin.from("mp_transactions").select("pack_key").eq("user_id", auth.user.id);
+        if (Array.isArray(data)) {
+          purchasedPackKeys = data
+            .map((r: any) => String((r as any)?.pack_key || "").trim().toLowerCase())
+            .filter(Boolean);
+        }
+      } catch {
+        // sin auth o error: catálogo público sin marcar compras
+      }
+    }
+
     try {
       const packs = await listActiveCreditPacks(admin);
-      return send(res, 200, { ok: true, packs });
+      return send(res, 200, { ok: true, packs, purchased_pack_keys: purchasedPackKeys });
     } catch (e) {
       return send(res, 500, { error: "No pude listar los paquetes.", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -6455,6 +6511,14 @@ const mercadoPagoHandler = (() => {
       const active = activePackList.find((p: any) => String((p as any).pack_key || "").trim().toLowerCase() === String(packKey).toLowerCase());
       if (active && (active as any).is_active === false) {
         return send(res, 404, { error: "Paquete no disponible en este momento." });
+      }
+
+      // Pack de prueba $25: una sola vez por cuenta (para siempre). Se valida ANTES de crear el checkout.
+      if (String(packKey).trim().toLowerCase() === TRIAL_PACK_KEY) {
+        const already = await userHasApprovedPack(auth.admin, auth.user.id, TRIAL_PACK_KEY);
+        if (already) {
+          return send(res, 403, { error: "Ya usaste tu Pack de prueba." });
+        }
       }
 
       const packId = Number(canonical.id ?? 0);

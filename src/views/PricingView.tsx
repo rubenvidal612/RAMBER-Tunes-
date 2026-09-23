@@ -24,21 +24,53 @@ interface MiniPack {
 
 const FALLBACK_MINI_PACKS: MiniPack[] = [
   { id: 1, pack_key: 'mini_3', name: 'Mini', songs: 6, credits_amount: 36, price_mxn: 25, validity_days: 30, sort_order: 1 },
-  { id: 2, pack_key: 'chico_10', name: 'Chico', songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 2 },
-  { id: 3, pack_key: 'mediano_30', name: 'Mediano', songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 3 },
-  { id: 4, pack_key: 'pack_grande_250', name: 'Grande', songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 4 },
+  { id: 5, pack_key: 'inicio_50', name: 'Inicio', songs: 12, credits_amount: 72, price_mxn: 50, validity_days: 30, sort_order: 2 },
+  { id: 2, pack_key: 'chico_10', name: 'Chico', songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 3 },
+  { id: 3, pack_key: 'mediano_30', name: 'Mediano', songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 4 },
+  { id: 4, pack_key: 'pack_grande_250', name: 'Grande', songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 5 },
 ];
 
-const miniPackIcon = (idx: number) => {
-  const icons = [Gift, Zap, Package, Crown];
+const miniPackStyle = (pack: MiniPack) => {
+  const key = String(pack.pack_key || '').toLowerCase();
+  const indexMap: Record<string, number> = {
+    mini_3: 0,
+    chico_10: 1,
+    mediano_30: 2,
+    pack_grande_250: 3,
+    inicio_50: 4,
+  };
+  const idx = indexMap[key] ?? 0;
+  const icons = [Gift, Zap, Package, Crown, Zap];
   const colors = [
     { bg: 'from-rose-500/20 to-pink-500/20', border: 'border-rose-500/30', text: 'text-rose-300', btn: 'bg-rose-500 hover:bg-rose-400', tag: 'bg-rose-500 text-white', ring: 'ring-rose-400/30' },
     { bg: 'from-amber-500/20 to-yellow-500/20', border: 'border-amber-500/30', text: 'text-amber-300', btn: 'bg-amber-500 hover:bg-amber-400', tag: 'bg-amber-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10', ring: 'ring-amber-400/30' },
     { bg: 'from-orange-500/20 to-red-500/20', border: 'border-orange-500/30', text: 'text-orange-300', btn: 'bg-orange-500 hover:bg-orange-400', tag: 'bg-orange-500 text-white', ring: 'ring-orange-400/30' },
     { bg: 'from-fuchsia-500/20 to-purple-500/20', border: 'border-fuchsia-500/30', text: 'text-fuchsia-300', btn: 'bg-fuchsia-500 hover:bg-fuchsia-400', tag: 'bg-fuchsia-500 text-white', ring: 'ring-fuchsia-400/30' },
+    { bg: 'from-violet-500/20 to-indigo-500/20', border: 'border-violet-500/30', text: 'text-violet-300', btn: 'bg-violet-500 hover:bg-violet-400', tag: 'bg-violet-500 text-white', ring: 'ring-violet-400/30' },
   ];
-  const i = Math.max(0, Math.min(icons.length - 1, idx));
-  return { Icon: icons[i], ...colors[i] };
+  const labelMap: Record<string, string> = {
+    mini_3: 'Pack de prueba',
+    chico_10: 'Pack Chico',
+    mediano_30: 'Pack Mediano',
+    pack_grande_250: 'Pack Grande',
+    inicio_50: 'Pack Inicio',
+  };
+  const accentMap: Record<string, string> = {
+    mini_3: 'rose',
+    chico_10: 'amber',
+    mediano_30: 'orange',
+    pack_grande_250: 'fuchsia',
+    inicio_50: 'violet',
+  };
+  return {
+    Icon: icons[idx],
+    label: labelMap[key] || String(pack.name || 'Pack'),
+    accent: accentMap[key] || 'rose',
+    showsVideos: key === 'mediano_30' || key === 'pack_grande_250',
+    isTrial: key === 'mini_3',
+    popular: key === 'pack_grande_250',
+    ...colors[idx],
+  };
 };
 
 export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
@@ -46,6 +78,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [miniPacks, setMiniPacks] = useState<MiniPack[] | null>(null);
   const [loadingMini, setLoadingMini] = useState(true);
+  const [purchasedPackKeys, setPurchasedPackKeys] = useState<string[]>([]);
 
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
   const versions = songs * 2;
@@ -63,9 +96,19 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     let alive = true;
     (async () => {
       try {
-        const r = await fetch('/api/mercadopago/packs');
+        let headers: Record<string, string> = {};
+        try {
+          const t = await getAccessToken();
+          if (t.ok) headers['authorization'] = `Bearer ${t.token}`;
+        } catch {
+          // sin sesión: catálogo público sin marcar compras
+        }
+        const r = await fetch('/api/mercadopago/packs', { headers });
         const out = await r.json().catch(() => []);
         if (!alive) return;
+        if (Array.isArray(out?.purchased_pack_keys)) {
+          setPurchasedPackKeys(out.purchased_pack_keys.map((k: any) => String(k || '').toLowerCase()));
+        }
         let list: MiniPack[] = [];
         if (Array.isArray(out?.packs)) list = out.packs;
         else if (Array.isArray(out)) list = out;
@@ -167,22 +210,23 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     }
   };
 
-  const packsToShow = miniPacks && miniPacks.length > 0 ? miniPacks.slice(0, 4) : FALLBACK_MINI_PACKS;
-  const miniLabel = (index: number) =>
-    index === 0 ? 'Mini Pack' : index === 1 ? 'Pack Chico' : index === 2 ? 'Pack Mediano' : 'Pack Grande';
-  const miniIcon = (index: number) => (index === 0 ? Gift : index === 1 ? Zap : index === 2 ? Package : Crown);
-  const miniAccent = (index: number) =>
-    index === 0 ? 'rose' : index === 1 ? 'amber' : index === 2 ? 'orange' : 'fuchsia';
+  const packsToShow = miniPacks && miniPacks.length > 0 ? miniPacks : FALLBACK_MINI_PACKS;
+  const trialUsed = purchasedPackKeys.includes('mini_3');
   const planCards = [
-    ...packsToShow.map((pack, index) => ({
-      type: 'mini' as const,
-      pack,
-      label: miniLabel(index),
-      icon: miniIcon(index),
-      accent: miniAccent(index),
-      popular: index === 3,
-    })),
-    { type: 'inicio' as const, label: 'Pack Inicio', icon: Crown, accent: 'blue', popular: false },
+    ...packsToShow.map((pack) => {
+      const s = miniPackStyle(pack);
+      return {
+        type: 'mini' as const,
+        pack,
+        label: s.label,
+        icon: s.Icon,
+        accent: s.accent,
+        popular: s.popular,
+        showsVideos: s.showsVideos,
+        isTrial: s.isTrial,
+      };
+    }),
+    { type: 'inicio' as const, label: 'Pack Inicio', icon: Crown, accent: 'blue', popular: false, showsVideos: false, isTrial: false },
   ];
 
   const accentClasses: Record<string, { border: string; text: string; badge: string; button: string; glow: string }> = {
@@ -191,6 +235,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     orange: { border: 'border-orange-500/70', text: 'text-orange-400', badge: 'bg-orange-500', button: 'from-orange-600 to-orange-400', glow: 'shadow-orange-950/40' },
     fuchsia: { border: 'border-fuchsia-500/60', text: 'text-fuchsia-400', badge: 'bg-fuchsia-600', button: 'from-fuchsia-700 to-fuchsia-500', glow: 'shadow-fuchsia-950/35' },
     blue: { border: 'border-blue-500/50', text: 'text-blue-400', badge: 'bg-blue-600', button: 'from-blue-700 to-blue-500', glow: 'shadow-blue-950/30' },
+    violet: { border: 'border-violet-500/50', text: 'text-violet-400', badge: 'bg-violet-600', button: 'from-violet-700 to-violet-500', glow: 'shadow-violet-950/30' },
   };
 
   if (pageMode) {
@@ -227,7 +272,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[0,1,2,3].map((item) => <div key={item} className="h-[500px] animate-pulse rounded-3xl border border-white/10 bg-white/5" />)}</div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {planCards.map((card, index) => {
+              {planCards.map((card) => {
                 const isInicio = card.type === 'inicio';
                 const pack = card.type === 'mini' ? card.pack : null;
                 const songsCount = isInicio ? 200 : displaySongsForPack(pack!);
@@ -235,9 +280,10 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const price = isInicio ? 350 : Number(pack?.price_mxn || 0);
                 const Icon = card.icon;
                 const accent = accentClasses[card.accent];
+                const isTrialUsed = !isInicio && card.isTrial && trialUsed;
                 const features = isInicio
                   ? ['200 canciones', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
-                  : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(index >= 2 ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
+                  : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(card.showsVideos ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
                 return (
                   <article key={isInicio ? 'inicio' : pack!.pack_key} className={`relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border ${accent.border} bg-gradient-to-b from-white/[0.055] via-[#090b11] to-[#07080c] p-5 shadow-2xl ${accent.glow}`}>
                     <div className={`pointer-events-none absolute -right-16 -top-14 h-44 w-44 rounded-full blur-3xl opacity-20 ${accent.badge}`} />
@@ -248,12 +294,13 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `${songsCount} Canciones`}</div>
                       <div className="mt-2 flex items-end gap-2"><span className="text-4xl font-black">${price.toFixed(0)}</span><span className="pb-1 text-xs font-bold text-slate-300">MXN{isInicio ? ' / mes' : ''}</span></div>
                       <div className="mt-1 text-[10px] text-slate-400">{isInicio ? 'Plan recurrente' : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}</div>
+                      {card.isTrial ? <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-rose-500/10 border border-rose-500/30 px-2 py-1 text-[10px] font-bold text-rose-300">{isTrialUsed ? 'Ya usaste tu Pack de prueba' : 'Disponible una sola vez por cuenta'}</div> : null}
                     </div>
                     <ul className="relative mt-6 flex-1 space-y-3">
                       {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
                     </ul>
-                    <button type="button" disabled={isBusy} onClick={() => isInicio ? buy('inicio') : buyMini(pack!.pack_key)} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
-                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : `Comprar $${price.toFixed(0)}`}<ArrowRight className="h-4 w-4" />
+                    <button type="button" disabled={isBusy || isTrialUsed} onClick={() => isInicio ? buy('inicio') : buyMini(pack!.pack_key)} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
+                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `Comprar $${price.toFixed(0)}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
                     </button>
                   </article>
                 );
@@ -312,8 +359,9 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             </div>
           ) : (!miniPacks || miniPacks.length === 0) ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {FALLBACK_MINI_PACKS.map((p, idx) => {
-                const { Icon, bg, border, text, btn, tag, ring } = miniPackIcon(idx);
+              {FALLBACK_MINI_PACKS.map((p) => {
+                const { Icon, bg, border, text, btn, tag, ring, label, showsVideos, isTrial } = miniPackStyle(p);
+                const isTrialUsed = isTrial && trialUsed;
                 const price = Number(p.price_mxn || 0);
                 const nSongs = displaySongsForPack(p);
                 const validity = Number(p.validity_days || 30);
@@ -327,7 +375,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     </div>
                     <div className="flex items-start justify-between mb-1 relative">
                       <div className={`inline-flex items-center gap-1.5 ${tag} px-3 py-1 rounded-full text-xs font-black shadow-md`}>
-                        <Icon className="w-3.5 h-3.5" /> {p.name}
+                        <Icon className="w-3.5 h-3.5" /> {label}
                       </div>
                     </div>
                     <div className="flex items-end gap-2 mt-4 mb-5 relative">
@@ -337,6 +385,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                           <span className="text-slate-200 font-semibold text-sm">MXN</span>
                         </div>
                         <span className="text-slate-300 text-xs mt-1 font-medium">Vigencia {validity} días</span>
+                        {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? 'Ya usaste tu Pack de prueba' : 'Disponible una sola vez por cuenta'}</span> : null}
                       </div>
                     </div>
                     <div className="space-y-2 mb-5 text-sm relative">
@@ -352,7 +401,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
                       </div>
-                      {idx >= 2 ? (
+                      {showsVideos ? (
                         <div className="flex items-center gap-2 text-slate-200">
                           <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
                         </div>
@@ -377,10 +426,10 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         e.stopPropagation();
                         buyMini(p.pack_key);
                       }}
-                      disabled={isBusy}
+                      disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      {isBusy ? 'Abriendo…' : `Comprar $${price.toFixed(0)}`}
+                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `Comprar $${price.toFixed(0)}`}
                     </button>
                   </div>
                 );
@@ -451,8 +500,9 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {miniPacks.map((p, idx) => {
-                const { Icon, bg, border, text, btn, tag, ring } = miniPackIcon(idx);
+              {miniPacks.map((p) => {
+                const { Icon, bg, border, text, btn, tag, ring, label, showsVideos, isTrial } = miniPackStyle(p);
+                const isTrialUsed = isTrial && trialUsed;
                 const price = Number(p.price_mxn || 0);
                 const nSongs = displaySongsForPack(p);
                 const validity = Number(p.validity_days || 30);
@@ -467,7 +517,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
 
                     <div className="flex items-start justify-between mb-1 relative">
                       <div className={`inline-flex items-center gap-1.5 ${tag} px-3 py-1 rounded-full text-xs font-black shadow-md`}>
-                        <Icon className="w-3.5 h-3.5" /> {p.name}
+                        <Icon className="w-3.5 h-3.5" /> {label}
                       </div>
                     </div>
 
@@ -478,6 +528,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                           <span className="text-slate-200 font-semibold text-sm">MXN</span>
                         </div>
                         <span className="text-slate-300 text-xs mt-1 font-medium">Vigencia {validity} días</span>
+                        {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? 'Ya usaste tu Pack de prueba' : 'Disponible una sola vez por cuenta'}</span> : null}
                       </div>
                     </div>
 
@@ -494,7 +545,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
                       </div>
-                      {idx >= 2 ? (
+                      {showsVideos ? (
                         <div className="flex items-center gap-2 text-slate-200">
                           <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
                         </div>
@@ -520,10 +571,10 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         e.stopPropagation();
                         buyMini(p.pack_key);
                       }}
-                      disabled={isBusy}
+                      disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      {isBusy ? 'Abriendo…' : `Comprar $${price.toFixed(0)}`}
+                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `Comprar $${price.toFixed(0)}`}
                     </button>
                   </div>
                 );
