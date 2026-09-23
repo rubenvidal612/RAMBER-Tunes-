@@ -3067,7 +3067,17 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
     }
 
     // ========== WIZARD CONVERSACIONAL para cover desde audio ==========
-    if (coverWizard && attachedImg && attachedImg.kind === 'audio') {
+    if (coverWizard) {
+      const hasAudioRef =
+        !!coverAudioMsgId ||
+        (!!coverAudioRef.current &&
+          (Boolean((coverAudioRef.current as any).r2Key) ||
+            Boolean((coverAudioRef.current as any).file) ||
+            Boolean(String((coverAudioRef.current as any).previewUrl || '').trim())));
+      if (!hasAudioRef && !(attachedImg && attachedImg.kind === 'audio')) {
+        setToast({ kind: 'ok', text: 'Adjunta el audio MP3 para continuar con el cover.' });
+        return;
+      }
       if (!text) {
         setToast({ kind: 'ok', text: 'Escríbeme tu respuesta para seguir.' });
         return;
@@ -3080,18 +3090,71 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       let next: typeof coverWizard = { ...coverWizard };
 
       if (phase === 'lyrics') {
-        if (affirmRe.test(textLower)) {
+        const trimmedRaw = String(normalized || '').trim();
+        const affirmPrefixRe =
+          /^(si|s[íi]|correcto|ok|okay|esta bien|está bien|va bien|bien|tal cual|usar tal cual|confirmar|si esta|sí está|asi esta|así está|perfecto|listo|ya esta|ya está|continuar|seguir)(?:[\s\.,!¡¿\?]+|$)/i;
+        const mAff = affirmPrefixRe.exec(trimmedRaw);
+        const hasAffirmPrefix = !!mAff;
+        const isAffirmOnly = affirmRe.test(textLower);
+        const extra = hasAffirmPrefix ? trimmedRaw.slice(mAff![0].length).trim().replace(/^[\s,;:\-\.]+/, '').trim() : '';
+
+        if (isAffirmOnly) {
           next.phase = 'style';
           wizardPushMessage(
             '✅ Letra confirmada.\n\nAhora dime: ¿de qué **género o estilo musical** quieres que sea tu cover?\n' +
-            'Ejemplos: pop, reggaetón, balada, rock, bachata, jazz, electrónica, ranchero, urbano…'
+              'Ejemplos: pop, reggaetón, balada, rock, bachata, jazz, electrónica, ranchero, urbano…'
           );
+        } else if (hasAffirmPrefix && extra) {
+          const extraLower = extra.toLowerCase();
+          const voiceDetected = /mujer|femenin|voz\s+de\s+mujer|voz\s+femen/i.test(extraLower)
+            ? 'Mujer'
+            : /hombre|masculin|voz\s+de\s+hombre|voz\s+mascul/i.test(extraLower)
+              ? 'Hombre'
+              : '';
+          const stripVoice = (s: string) =>
+            s
+              .replace(/\bvoz\s+de\s+(hombre|mujer)\b/gi, '')
+              .replace(/\bvoz\s+(masculina|femenina)\b/gi, '')
+              .replace(/\bcon\s+voz\s+de\s+(hombre|mujer)\b/gi, '')
+              .replace(/\bcon\s+voz\s+(masculina|femenina)\b/gi, '')
+              .replace(/\bvoz\s+(de)?\s*(hombre|mujer)\b/gi, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+          const extraNoVoice = stripVoice(extra);
+          const pickStyle = (s: string) => {
+            const l = s.toLowerCase();
+            if (/banda/.test(l)) return /sinaloense/.test(l) ? 'Banda sinaloense' : 'Banda';
+            if (/rancher/.test(l)) return 'Ranchera';
+            if (/mariach/.test(l)) return 'Mariachi';
+            if (/corrido/.test(l)) return 'Corrido';
+            if (/norteñ|norteno/.test(l)) return 'Norteño';
+            if (/cumbia/.test(l)) return 'Cumbia';
+            if (/salsa/.test(l)) return 'Salsa';
+            if (/bachata/.test(l)) return 'Bachata';
+            if (/reggaet/.test(l)) return 'Reggaetón';
+            if (/\btrap\b/.test(l)) return 'Trap';
+            if (/balad/.test(l)) return 'Balada';
+            if (/\bpop\b/.test(l)) return 'Pop';
+            if (/\brock\b/.test(l)) return 'Rock';
+            return '';
+          };
+          const styleDetected = pickStyle(extraNoVoice);
+          const instructionsDetected = sanitizeStyleValue(extraNoVoice);
+          if (voiceDetected) next.voice = voiceDetected;
+          if (styleDetected) next.style = styleDetected;
+          else if (!String(next.style || '').trim() && instructionsDetected) next.style = instructionsDetected;
+          next.direction = instructionsDetected;
+          if (!String(next.title || '').trim()) {
+            const base = String(coverAudioRef.current?.name || 'Cover').replace(/\.[^.]+$/, '').trim();
+            next.title = base ? `${base} · cover` : 'Mi cover';
+          }
+          next.phase = 'summary';
         } else {
           next.lyrics = normalized;
           next.phase = 'style';
           wizardPushMessage(
             '✅ Letra actualizada.\n\nAhora dime: ¿de qué **género o estilo musical** quieres que sea tu cover?\n' +
-            'Ejemplos: pop, reggaetón, balada, rock, bachata, jazz, electrónica, ranchero, urbano…'
+              'Ejemplos: pop, reggaetón, balada, rock, bachata, jazz, electrónica, ranchero, urbano…'
           );
         }
       } else if (phase === 'style') {
