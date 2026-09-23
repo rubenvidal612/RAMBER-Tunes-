@@ -30,6 +30,8 @@ const FALLBACK_MINI_PACKS: MiniPack[] = [
   { id: 4, pack_key: 'pack_grande_250', name: 'Grande', songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 5 },
 ];
 
+const TRIAL_ALREADY_USED_TEXT = 'Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.';
+
 const miniPackStyle = (pack: MiniPack) => {
   const key = String(pack.pack_key || '').toLowerCase();
   const indexMap: Record<string, number> = {
@@ -294,7 +296,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `${songsCount} Canciones`}</div>
                       <div className="mt-2 flex items-end gap-2"><span className="text-4xl font-black">${price.toFixed(0)}</span><span className="pb-1 text-xs font-bold text-slate-300">MXN{isInicio ? ' / mes' : ''}</span></div>
                       <div className="mt-1 text-[10px] text-slate-400">{isInicio ? 'Plan recurrente' : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}</div>
-                      {card.isTrial ? <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-rose-500/10 border border-rose-500/30 px-2 py-1 text-[10px] font-bold text-rose-300">{isTrialUsed ? 'Ya usaste tu Pack de prueba' : 'Disponible una sola vez por cuenta'}</div> : null}
+                      {card.isTrial ? <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-rose-500/10 border border-rose-500/30 px-2 py-1 text-[10px] font-bold text-rose-300">{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</div> : null}
                     </div>
                     <ul className="relative mt-6 flex-1 space-y-3">
                       {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
@@ -385,7 +387,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                           <span className="text-slate-200 font-semibold text-sm">MXN</span>
                         </div>
                         <span className="text-slate-300 text-xs mt-1 font-medium">Vigencia {validity} días</span>
-                        {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? 'Ya usaste tu Pack de prueba' : 'Disponible una sola vez por cuenta'}</span> : null}
+                        {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</span> : null}
                       </div>
                     </div>
                     <div className="space-y-2 mb-5 text-sm relative">
@@ -528,7 +530,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                           <span className="text-slate-200 font-semibold text-sm">MXN</span>
                         </div>
                         <span className="text-slate-300 text-xs mt-1 font-medium">Vigencia {validity} días</span>
-                        {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? 'Ya usaste tu Pack de prueba' : 'Disponible una sola vez por cuenta'}</span> : null}
+                        {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</span> : null}
                       </div>
                     </div>
 

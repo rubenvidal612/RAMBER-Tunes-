@@ -5833,16 +5833,13 @@ const mercadoPagoHandler = (() => {
 
   const MINI_PACK_TX_KIND = "mini_pack";
   const TRIAL_PACK_KEY = "mini_3"; // Pack de prueba $25: una sola vez por cuenta, para siempre
+  const TRIAL_ALREADY_USED_MESSAGE = "Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.";
 
+  // Tabla de control mini_3_claims (user_id PK). No se tocan los registros históricos de mp_transactions.
   async function userHasApprovedPack(admin: any, userId: string, packKey: string): Promise<boolean> {
-    if (!userId || !packKey) return false;
+    if (!userId) return false;
     try {
-      const { data } = await admin
-        .from("mp_transactions")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("pack_key", String(packKey).trim().toLowerCase())
-        .limit(1);
+      const { data } = await admin.from("mini_3_claims").select("user_id").eq("user_id", userId).limit(1);
       return Array.isArray(data) && data.length > 0;
     } catch {
       return false;
@@ -6113,7 +6110,7 @@ const mercadoPagoHandler = (() => {
     const isMiniPack = txKind === "mini_pack";
     if (isMiniPack && String(packKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
       const already = await userHasApprovedPack(auth.admin, auth.user.id, TRIAL_PACK_KEY);
-      if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: false, already: true, reason: "trial_already_used" });
+      if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: false, already: true, reason: "trial_already_used", message: TRIAL_ALREADY_USED_MESSAGE });
     }
     if (Number.isFinite(credits) && credits > 0) {
       if (isMiniPack) {
@@ -6319,11 +6316,17 @@ const mercadoPagoHandler = (() => {
       const fixedPackKey = String((finalMiniPack as any).pack_key || packKey || "mini_pack");
       const fixedPackId = Number((finalMiniPack as any).pack_id || packId || 0) || null;
       const amountMxn = Number((finalMiniPack as any).amount_mxn || metaAmountMxn || transactionAmountMxn || 0);
-      // Pack de prueba $25: una sola vez por cuenta. Revalidamos ANTES de acreditar (defensa en profundidad).
+      // Pack de prueba $25: una sola vez por cuenta. Registramos el claim ANTES de acreditar.
+      // La PK user_id en mini_3_claims garantiza atomicidad: dos intentos simultáneos no duplican crédito.
       if (String(fixedPackKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
-        const already = await userHasApprovedPack(admin, userId, TRIAL_PACK_KEY);
-        if (already) {
-          return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "trial_already_used" });
+        const claim = await admin.from("mini_3_claims").insert({ user_id: userId, payment_id: paymentId });
+        if (claim.error) {
+          const code = String((claim.error as any)?.code || "");
+          const msg = String((claim.error as any)?.message || "");
+          if (code === "23505" || msg.toLowerCase().includes("duplicate")) {
+            return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "trial_already_used", message: TRIAL_ALREADY_USED_MESSAGE });
+          }
+          return send(res, 500, { error: "No pude registrar la compra del Pack de prueba.", detail: msg || code });
         }
       }
       // ========== MINI PAQUETE: crear LOTE independiente con su propia expiración ==========
@@ -6456,16 +6459,14 @@ const mercadoPagoHandler = (() => {
     const createClient = await getSupabaseCreateClient();
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-    // Si viene token, devolvemos qué packs ya compró (aprobados) para ocultar el Pack de prueba.
+    // Si viene token, devolvemos si ya usó el Pack de prueba (mini_3) vía la tabla de control.
     let purchasedPackKeys: string[] = [];
     const auth = await requireUser(req);
     if (auth.ok) {
       try {
-        const { data } = await admin.from("mp_transactions").select("pack_key").eq("user_id", auth.user.id);
-        if (Array.isArray(data)) {
-          purchasedPackKeys = data
-            .map((r: any) => String((r as any)?.pack_key || "").trim().toLowerCase())
-            .filter(Boolean);
+        const { data } = await admin.from("mini_3_claims").select("user_id").eq("user_id", auth.user.id).limit(1);
+        if (Array.isArray(data) && data.length > 0) {
+          purchasedPackKeys = ["mini_3"];
         }
       } catch {
         // sin auth o error: catálogo público sin marcar compras
@@ -6517,7 +6518,7 @@ const mercadoPagoHandler = (() => {
       if (String(packKey).trim().toLowerCase() === TRIAL_PACK_KEY) {
         const already = await userHasApprovedPack(auth.admin, auth.user.id, TRIAL_PACK_KEY);
         if (already) {
-          return send(res, 403, { error: "Ya usaste tu Pack de prueba." });
+          return send(res, 403, { error: TRIAL_ALREADY_USED_MESSAGE });
         }
       }
 
