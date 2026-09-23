@@ -2538,12 +2538,16 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         coverAudioRef.current.r2Key = audioR2Key;
         coverAudioRef.current.mime = audioMime;
       }
+      const captionCtx = String(opts?.forcedCaption || '').trim();
       if (activeConvId && audioR2Key) {
         void (async () => {
           try {
+            const content = captionCtx
+              ? `${captionCtx}\n\n[Audio adjunto: ${audioName}]`
+              : `[Audio adjunto: ${audioName}]`;
             await appendMessageToConversation(accessToken, activeConvId!, {
               role: 'user',
-              content: `[Audio adjunto: ${audioName}]`,
+              content,
               structured_action: {
                 action: 'audio_attachment',
                 kind: 'audio',
@@ -2551,6 +2555,7 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
                 name: audioName,
                 mime: audioMime || 'audio/mpeg',
                 bytes: audioBytes || 0,
+                caption: captionCtx || undefined,
               },
             });
           } catch {}
@@ -2635,15 +2640,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
       try { requestAnimationFrame(() => autoresizeTextarea(textareaRef.current)); } catch {}
     }
   }
-
-  useEffect(() => {
-    const onAutoTranscribe = () => {
-      try { window.setTimeout(() => void transcribeAudioForWizard(), 0); } catch {}
-    };
-    window.addEventListener('luciana:audio-attached', onAutoTranscribe);
-    return () => { window.removeEventListener('luciana:audio-attached', onAutoTranscribe); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcribeAudioForWizard]);
 
   useEffect(() => {
     const hasAudio = !!coverAudioRef.current || !!coverAudioMsgId;
@@ -2891,6 +2887,10 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }, []);
 
   async function sendMessage() {
+    if (loading || generating || audioBusy || coverGenerating) {
+      setToast({ kind: 'ok', text: 'Estoy procesando. Espera un momento…' });
+      return;
+    }
     if (sendBusyRef.current) {
       setToast({ kind: 'ok', text: 'Espera un momento, ya estoy enviando el mensaje anterior.' });
       return;
@@ -2904,7 +2904,8 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
   }
 
   async function sendMessageImpl() {
-    const text = String(input || '').trim();
+    const rawComposer = textareaRef.current ? textareaRef.current.value : input;
+    const text = String(rawComposer || '').trim();
     if (!supabaseBrowser) {
       setToast({ kind: 'err', text: 'No se pudo conectar con LucIAna. Cierra y abre la app de nuevo.' });
       return;
@@ -2995,34 +2996,6 @@ export function DifyCopilotView({ onChange, onMenuClick }: { onChange: (t: ViewT
         guardedSetState(setLoading, false, epoch);
         return;
       }
-
-      // Guardar el caption en el structured_action (mensaje user) para Supabase junto al audio_attachment
-      try {
-        if (isActiveChatEpoch(epoch) && uiState.activeConversationId) {
-          void (async () => {
-            try {
-              const payload: any = {
-                role: 'user',
-                content: hasCaption
-                  ? `${caption}\n\n[Audio adjunto: ${audioName}]`
-                  : `[Audio adjunto: ${audioName}]`,
-                structured_action: {
-                  action: 'audio_attachment',
-                  kind: 'audio',
-                  name: audioName,
-                  mime: String(audioSnap.file?.type || 'audio/mpeg').trim() || 'audio/mpeg',
-                  bytes: Number(audioSnap.bytes || 0) || 0,
-                  r2_key: null,
-                },
-              };
-              if (hasCaption) {
-                (payload.structured_action as any).caption = caption;
-              }
-              await appendMessageToConversation(accessToken, uiState.activeConversationId!, payload);
-            } catch {}
-          })();
-        }
-      } catch {}
 
       // 5) Preparar para el wizard de transcripción usando attached temporal sin borrar, y marcar loading
       setCoverAudioMsgId(newMsgId);
