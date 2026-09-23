@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Sparkles, Package, Zap, Crown, Gift, ShieldCheck, Headphones, LockKeyhole, Info, ArrowRight, RefreshCcw } from 'lucide-react';
+import { Check, Sparkles, Package, Zap, Crown, Gift, ShieldCheck, Headphones, LockKeyhole, Info, ArrowRight, RefreshCcw, CreditCard, Globe2 } from 'lucide-react';
 import { useUserCredits } from '@/hooks/useUserCredits';
 import { getAccessToken } from '@/lib/supabaseBrowser';
 import { CREDIT_COSTS } from '@/lib/credits';
@@ -81,6 +81,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
   const [miniPacks, setMiniPacks] = useState<MiniPack[] | null>(null);
   const [loadingMini, setLoadingMini] = useState(true);
   const [purchasedPackKeys, setPurchasedPackKeys] = useState<string[]>([]);
+  const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'stripe'>('mercadopago');
 
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
   const versions = songs * 2;
@@ -184,7 +185,10 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
-      const r = await fetch('/api/mercadopago/create-mini-pack-preference', {
+      const endpoint = paymentProvider === 'stripe'
+        ? '/api/stripe/create-checkout'
+        : '/api/mercadopago/create-mini-pack-preference';
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -198,12 +202,14 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         alert([out?.error || 'No se pudo iniciar el pago.', detail].filter(Boolean).join('\n\n'));
         return;
       }
-      const initPoint = typeof out?.init_point === 'string' ? out.init_point : '';
-      if (!initPoint) {
+      const checkoutUrl = paymentProvider === 'stripe'
+        ? (typeof out?.checkout_url === 'string' ? out.checkout_url : '')
+        : (typeof out?.init_point === 'string' ? out.init_point : '');
+      if (!checkoutUrl) {
         alert('No recibí link de pago.');
         return;
       }
-      window.location.href = initPoint;
+      window.location.href = checkoutUrl;
     } catch (e) {
       console.error(e);
       alert('No pude iniciar el pago. Revisa tu conexión e intenta de nuevo.');
@@ -240,6 +246,23 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     violet: { border: 'border-violet-500/50', text: 'text-violet-400', badge: 'bg-violet-600', button: 'from-violet-700 to-violet-500', glow: 'shadow-violet-950/30' },
   };
 
+  const paymentMethodPicker = (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+      <div className="mb-2 text-xs font-bold text-slate-300">Método de pago para paquetes únicos</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button type="button" onClick={() => setPaymentProvider('mercadopago')} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${paymentProvider === 'mercadopago' ? 'border-sky-400 bg-sky-500/10 text-white' : 'border-white/10 bg-black/10 text-slate-300 hover:bg-white/5'}`}>
+          <CreditCard className="h-5 w-5 shrink-0 text-sky-300" />
+          <span><span className="block text-sm font-bold">Mercado Pago</span><span className="block text-[10px] text-slate-400">México: saldo, tarjeta y medios locales</span></span>
+        </button>
+        <button type="button" onClick={() => setPaymentProvider('stripe')} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${paymentProvider === 'stripe' ? 'border-violet-400 bg-violet-500/10 text-white' : 'border-white/10 bg-black/10 text-slate-300 hover:bg-white/5'}`}>
+          <Globe2 className="h-5 w-5 shrink-0 text-violet-300" />
+          <span><span className="block text-sm font-bold">Tarjeta internacional</span><span className="block text-[10px] text-slate-400">Stripe Checkout · pago seguro con tarjeta</span></span>
+        </button>
+      </div>
+      <p className="mt-2 text-[10px] text-slate-500">El Pack Inicio mensual continúa por Mercado Pago mientras activamos suscripciones con Stripe.</p>
+    </div>
+  );
+
   if (pageMode) {
     return (
       <div className="relative flex-1 min-h-0 overflow-y-auto bg-[#050911] text-white">
@@ -269,6 +292,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             <div className="flex-1"><span className="block">Los <b className="text-blue-300">Mini Packs</b> son compras únicas con vigencia de 30 días.</span><span className="block">El <b className="text-blue-300">Pack Inicio</b> es un plan mensual con renovación automática.</span></div>
             <Info className="h-4 w-4 shrink-0 text-slate-400" />
           </div>
+          {paymentMethodPicker}
 
           {loadingMini ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[0,1,2,3].map((item) => <div key={item} className="h-[500px] animate-pulse rounded-3xl border border-white/10 bg-white/5" />)}</div>
@@ -302,7 +326,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
                     </ul>
                     <button type="button" disabled={isBusy || isTrialUsed} onClick={() => isInicio ? buy('inicio') : buyMini(pack!.pack_key)} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
-                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `Comprar $${price.toFixed(0)}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
+                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} $${price.toFixed(0)}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
                     </button>
                   </article>
                 );
@@ -338,6 +362,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         <p className="text-slate-300 text-[15px]">
           Compra canciones para poder descargar y seguir creando.
         </p>
+        {paymentMethodPicker}
 
         {/* ========= PAQUETES (MINI + INICIO) — HASTA ARRIBA ========= */}
         <div className="relative pt-2">
@@ -431,7 +456,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `Comprar $${price.toFixed(0)}`}
+                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} $${price.toFixed(0)}`}
                     </button>
                   </div>
                 );
@@ -576,7 +601,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `Comprar $${price.toFixed(0)}`}
+                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} $${price.toFixed(0)}`}
                     </button>
                   </div>
                 );

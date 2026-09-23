@@ -6651,6 +6651,236 @@ const mercadoPagoHandler = (() => {
   };
 })();
 
+// =================== STRIPE CHECKOUT (PAQUETES DE PAGO ÚNICO) ===================
+// Las claves de Stripe viven únicamente en las variables privadas de Vercel.
+const stripeHandler = (() => {
+  const TRIAL_PACK_KEY = "mini_3";
+  const TRIAL_ALREADY_USED_MESSAGE = "Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (Buffer.isBuffer(req.body)) {
+      try { return JSON.parse(req.body.toString("utf8")); } catch { return null; }
+    }
+    if (typeof req.body === "string") {
+      try { return JSON.parse(req.body); } catch { return null; }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers?.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase." };
+    }
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "Inicia sesión para comprar un paquete." };
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return { ok: false as const, status: 401, error: "Tu sesión ya no es válida." };
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user: data.user, admin };
+  }
+
+  async function readRawBody(req: any): Promise<Buffer> {
+    if (Buffer.isBuffer(req.body)) return req.body;
+    if (typeof req.body === "string") return Buffer.from(req.body, "utf8");
+    if (req.body instanceof Uint8Array) return Buffer.from(req.body);
+    if (req.body && typeof req.body === "object") {
+      throw new Error("El webhook recibió un body parseado; necesita el body original para validar la firma de Stripe.");
+    }
+    return await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const onData = (chunk: any) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const onEnd = () => { cleanup(); resolve(Buffer.concat(chunks)); };
+      const onError = (error: any) => { cleanup(); reject(error); };
+      const cleanup = () => {
+        try { req.removeListener?.("data", onData); req.removeListener?.("end", onEnd); req.removeListener?.("error", onError); } catch {}
+      };
+      req.on("data", onData);
+      req.on("end", onEnd);
+      req.on("error", onError);
+    });
+  }
+
+  async function verifyWebhookSignature(raw: Buffer, signature: string, secret: string) {
+    const entries = signature.split(",").map((part) => part.split("=", 2));
+    const timestamp = entries.find(([key]) => key === "t")?.[1] || "";
+    const signatures = entries.filter(([key]) => key === "v1").map(([, value]) => value || "");
+    const timestampMs = Number(timestamp) * 1000;
+    if (!timestamp || !Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60 * 1000 || signatures.length === 0) return false;
+    const crypto: any = await import("crypto");
+    const expected = crypto.createHmac("sha256", secret).update(`${timestamp}.${raw.toString("utf8")}`, "utf8").digest("hex");
+    return signatures.some((value) => {
+      const a = Buffer.from(expected, "utf8");
+      const b = Buffer.from(value, "utf8");
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    });
+  }
+
+  async function handleCreateCheckout(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const stripeSecret = (process.env.STRIPE_SECRET_KEY || "").trim();
+    if (!stripeSecret) return send(res, 503, { error: "Los pagos internacionales todavía no están configurados." });
+
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const payload = parseJsonBody(req);
+    const packKey = String(payload?.packKey || payload?.pack_key || "").trim().toLowerCase();
+    if (!packKey) return send(res, 400, { error: "Falta elegir el paquete." });
+
+    const canonical: any = canonicalCreditPackByKey(packKey);
+    if (!canonical || Number(canonical.price_mxn || 0) <= 0 || Number(canonical.credits_amount || 0) <= 0) {
+      return send(res, 404, { error: "Paquete no encontrado o no disponible." });
+    }
+    const { data: activePacks } = await auth.admin.from("credit_packs").select("pack_key, is_active").eq("pack_key", packKey).limit(1);
+    if (Array.isArray(activePacks) && activePacks[0] && (activePacks[0] as any).is_active === false) {
+      return send(res, 404, { error: "Paquete no disponible en este momento." });
+    }
+    if (packKey === TRIAL_PACK_KEY) {
+      const { data: usedTrial } = await auth.admin.from("mini_3_claims").select("user_id").eq("user_id", auth.user.id).limit(1);
+      if (Array.isArray(usedTrial) && usedTrial.length > 0) return send(res, 403, { error: TRIAL_ALREADY_USED_MESSAGE });
+    }
+
+    const priceMxn = round2(Number(canonical.price_mxn));
+    const credits = round2(Number(canonical.credits_amount));
+    const packId = Number(canonical.id || 0) || null;
+    const origin = originFromReq(req);
+    const form = new URLSearchParams();
+    form.set("mode", "payment");
+    form.set("payment_method_types[0]", "card");
+    form.set("client_reference_id", String(auth.user.id));
+    form.set("success_url", `${origin}/?stripe=success&pack=${encodeURIComponent(packKey)}&session_id={CHECKOUT_SESSION_ID}`);
+    form.set("cancel_url", `${origin}/?stripe=cancelled&pack=${encodeURIComponent(packKey)}`);
+    form.set("line_items[0][quantity]", "1");
+    form.set("line_items[0][price_data][currency]", "mxn");
+    form.set("line_items[0][price_data][unit_amount]", String(Math.round(priceMxn * 100)));
+    form.set("line_items[0][price_data][product_data][name]", String(canonical.name || "Paquete LucIAna Music").slice(0, 200));
+    for (const [key, value] of Object.entries({
+      user_id: String(auth.user.id), pack_key: packKey, pack_id: packId ? String(packId) : "", credits: String(credits), amount_mxn: String(priceMxn), kind: "mini_pack",
+    })) {
+      if (value) form.set(`metadata[${key}]`, value);
+    }
+
+    try {
+      const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${stripeSecret}`, "content-type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+      const session = await stripeRes.json().catch(() => null);
+      if (!stripeRes.ok || !session?.url || !session?.id) {
+        return send(res, 502, { error: "No pude crear el Checkout de Stripe.", detail: session?.error?.message || null });
+      }
+      return send(res, 200, { ok: true, checkout_url: session.url, session_id: session.id });
+    } catch (error) {
+      return send(res, 502, { error: "No pude conectar con Stripe.", detail: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  async function handleWebhook(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET || "").trim();
+    const supabaseUrl = (process.env.SUPABASE_URL || "").trim();
+    const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+    if (!webhookSecret || !supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables del webhook de Stripe." });
+    const signature = String(req.headers?.["stripe-signature"] || "");
+    let raw: Buffer;
+    try { raw = await readRawBody(req); } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : "Body inválido." }); }
+    if (!(await verifyWebhookSignature(raw, signature, webhookSecret))) return send(res, 400, { error: "Firma de Stripe inválida." });
+    let event: any;
+    try { event = JSON.parse(raw.toString("utf8")); } catch { return send(res, 400, { error: "Evento de Stripe inválido." }); }
+    if (!["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(String(event?.type || ""))) return send(res, 200, { ok: true, ignored: true });
+
+    const session = event?.data?.object || {};
+    if (session?.payment_status !== "paid") return send(res, 200, { ok: true, ignored: true });
+    const metadata = session?.metadata || {};
+    const userId = String(metadata.user_id || session.client_reference_id || "").trim();
+    const packKey = String(metadata.pack_key || "").trim().toLowerCase();
+    const sessionId = String(session.id || "").trim();
+    const amountMxn = Number(session.amount_total || 0) / 100;
+    if (!sessionId || !userId || !packKey || String(session.currency || "").toLowerCase() !== "mxn") return send(res, 200, { ok: true, skipped: "metadata_or_currency" });
+    const canonical: any = canonicalCreditPackByKey(packKey);
+    if (!canonical || Math.abs(amountMxn - Number(canonical.price_mxn || 0)) > 0.01) return send(res, 200, { ok: true, skipped: "invalid_pack_or_amount" });
+
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : null;
+    const { error: claimError } = await admin.from("stripe_checkout_transactions").insert({
+      checkout_session_id: sessionId, payment_intent_id: paymentIntentId, user_id: userId,
+      pack_id: Number(canonical.id || 0) || null, pack_key: packKey, amount_mxn: amountMxn, currency: "mxn", status: "paid",
+    });
+    if (claimError) {
+      const code = String((claimError as any)?.code || "");
+      const message = String((claimError as any)?.message || "").toLowerCase();
+      if (code === "23505" || message.includes("duplicate")) return send(res, 200, { ok: true, already: true });
+      return send(res, 500, { error: "No pude registrar el pago de Stripe." });
+    }
+
+    let trialClaimed = false;
+    try {
+      if (packKey === TRIAL_PACK_KEY) {
+        const { error } = await admin.from("mini_3_claims").insert({ user_id: userId, payment_id: `stripe:${sessionId}` });
+        if (error) {
+          const code = String((error as any)?.code || "");
+          const message = String((error as any)?.message || "").toLowerCase();
+          if (code === "23505" || message.includes("duplicate")) {
+            await admin.from("stripe_checkout_transactions").update({ status: "blocked_trial" }).eq("checkout_session_id", sessionId);
+            return send(res, 200, { ok: true, skipped: "trial_already_used" });
+          }
+          throw error;
+        }
+        trialClaimed = true;
+      }
+
+      await ensureProfileExists(admin, userId);
+      const { data: profile } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+      const profileCredits = creditsFromProfile(profile);
+      const batchCredits = await getActiveBatchCredits(admin, userId);
+      const unlimited = isAdminEmail(String((profile as any)?.email || ""));
+      const credits = round2(Number(canonical.credits_amount || 0));
+      const validityDays = Number(canonical.validity_days ?? 30);
+      const effectiveDays = Number.isFinite(validityDays) && validityDays > 0 ? validityDays : 30;
+      const allowed = unlimited ? credits : round2(Math.max(0, Math.min(credits, MAX_ACCUMULATED_CREDITS - round2(profileCredits + batchCredits))));
+      if (allowed > 0) {
+        await admin.from("profiles").update({ credits_expires_at: addDaysIso(Math.max(effectiveDays, 60)) }).eq("id", userId);
+        const batch = await insertCreditBatch(admin, {
+          userId, packId: Number(canonical.id || 0) || undefined, packKey, paymentId: `stripe:${sessionId}`,
+          credits: allowed, validityDays: effectiveDays, amountMxn, note: `Compra Stripe ${packKey} ${sessionId}`,
+        });
+        if (!batch.ok) throw new Error(batch.error || "No pude acreditar créditos.");
+      }
+      await admin.from("stripe_checkout_transactions").update({ credits_granted_at: new Date().toISOString() }).eq("checkout_session_id", sessionId);
+      return send(res, 200, { ok: true, credited: true });
+    } catch (error) {
+      if (trialClaimed) await admin.from("mini_3_claims").delete().eq("user_id", userId).eq("payment_id", `stripe:${sessionId}`);
+      await admin.from("stripe_checkout_transactions").delete().eq("checkout_session_id", sessionId);
+      return send(res, 500, { error: error instanceof Error ? error.message : "No pude acreditar el pago." });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const action = pathname.split("/").filter(Boolean).pop()?.toLowerCase() || "";
+    if (action === "create-checkout") return handleCreateCheckout(req, res);
+    if (action === "webhook") return handleWebhook(req, res);
+    return send(res, 404, { error: "Ruta de Stripe no encontrada." });
+  };
+})();
+
 const libraryHandler = (() => {
   const TABLE = "library_items";
   const ITEM_TYPE = "song";
@@ -22556,6 +22786,7 @@ export default async function handler(req: any, res: any) {
     if (head === "karaoke") return karaokeHandler(req, res);
     if (head === "suno") return sunoHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
+    if (head === "stripe") return stripeHandler(req, res);
     if (head === "library") return libraryHandler(req, res);
     if (head === "mastering") return masteringHandler(req, res);
     if (head === "masterizar-unlimited") return masterizarUnlimitedHandler(req, res);
