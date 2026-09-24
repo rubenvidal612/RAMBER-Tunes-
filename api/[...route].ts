@@ -14852,6 +14852,7 @@ const aiHandler = (() => {
 
   async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
     const apiKey = String(
+      process.env.GEMINI_TRANSCRIBE_API_KEY ||
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_GEMINI_API_KEY ||
       process.env.GOOGLE_API_KEY ||
@@ -15109,27 +15110,35 @@ const aiHandler = (() => {
       let out: any = null;
       try {
         out = await generateLyricsWithSuno(topic, gender, style, req);
-      } catch {
+      } catch (e: any) {
+        console.error("[handleGenerateLyrics] suno error:", e?.message || String(e));
         out = null;
       }
       if (!out || !out.ok) {
-        out = await generateLyricsWithGemini(topic, gender, style);
+        try {
+          out = await generateLyricsWithGemini(topic, gender, style);
+        } catch (e: any) {
+          console.error("[handleGenerateLyrics] gemini error:", e?.message || String(e));
+          out = null;
+        }
       }
       
-      if (!out.ok) {
+      if (!out || !out.ok) {
+        const technicalErr = String(out?.error || "No pude generar letras").slice(0, 500);
+        console.error("[handleGenerateLyrics] final fail. user=", auth.user.email, "technicalErr=", technicalErr);
+        const userFriendly = "No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.";
         return send(res, 200, { 
           ok: false, 
-          error: out.error || "No pude generar letras", 
-          message: out.userMessage || "No pude generar letras para ese tema." 
+          message: userFriendly,
         });
       }
 
       const lyrics = typeof (out as any)?.lyrics === "string" ? String((out as any).lyrics).trim() : "";
       if (!lyrics) {
+        console.error("[handleGenerateLyrics] empty lyrics after provider ok");
         return send(res, 200, {
           ok: false,
-          error: "La IA no devolvió letra",
-          message: "La IA no devolvió letra para ese tema. Intenta con un tema más específico o espera unos minutos y vuelve a intentar.",
+          message: "No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.",
         });
       }
 
@@ -15147,11 +15156,10 @@ const aiHandler = (() => {
         remaining
       });
     } catch (e) {
+      console.error("[handleGenerateLyrics] uncaught top-level:", e instanceof Error ? e.message : String(e));
       return send(res, 200, {
         ok: false,
-        error: "Error generando letras",
-        message: "No pude generar letras. Intenta con un tema diferente o más tarde.",
-        detail: e instanceof Error ? e.message : String(e),
+        message: "No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.",
       });
     }
   }

@@ -4939,8 +4939,16 @@ function ApprovedCreateContent(props) {
         }),
       });
       const result = await response.json().catch(() => ({}));
+      const userFriendly = 'No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.';
       if (!response.ok || result?.ok === false) {
-        setToast(result.error || result.message || 'No se pudo generar letras con IA.');
+        const rawError = String(result?.error || result?.message || '').trim();
+        console.warn('[generateLyricsWithAI] failed raw:', { ok: response.ok, status: response.status, result });
+        const looksTechnical =
+          /{.*}/.test(rawError) ||
+          /\[object Object\]/.test(rawError) ||
+          /PERMISSION_DENIED|403|401|429|500|502|503|quota|rate limit|permission|forbidden|denied|api key|api_key/i.test(rawError) ||
+          rawError.length > 180;
+        setToast(looksTechnical ? userFriendly : (rawError || userFriendly));
         return false;
       }
       const nextLyrics = (result?.lyrics || '').toString().trim();
@@ -4948,10 +4956,12 @@ function ApprovedCreateContent(props) {
         setData((prev) => ({ ...prev, aiLyricsGenerated: true, lyrics: normalizeLyricsTags(nextLyrics) }));
         return true;
       }
-      setToast((result?.message || 'La IA no devolvió letra. Intenta con un tema más específico o espera unos minutos.').toString());
+      console.warn('[generateLyricsWithAI] empty lyrics response:', result);
+      setToast(userFriendly);
       return false;
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Error generando letras con IA.');
+      console.error('[generateLyricsWithAI] exception:', e);
+      setToast('No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.');
       return false;
     } finally {
       setIsGeneratingLyrics(false);
