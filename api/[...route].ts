@@ -6656,6 +6656,41 @@ const mercadoPagoHandler = (() => {
 const stripeHandler = (() => {
   const TRIAL_PACK_KEY = "mini_3";
   const TRIAL_ALREADY_USED_MESSAGE = "Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.";
+  const FALLBACK_USD_TO_MXN = 20.8;
+  let cachedRate: { rate: number; fetchedAt: number } | null = null;
+  const CACHE_MS = 10 * 60 * 1000;
+
+  async function fetchUsdToMxnRate(): Promise<{ rate: number; sources: string[] }> {
+    const now = Date.now();
+    if (cachedRate && now - cachedRate.fetchedAt < CACHE_MS) return { rate: cachedRate.rate, sources: ["cache"] };
+    const endpoints = [
+      { url: "https://open.er-api.com/v6/latest/USD", parse: (json: any) => Number(json?.rates?.MXN || 0) },
+      { url: "https://api.exchangerate-api.com/v4/latest/USD", parse: (json: any) => Number(json?.rates?.MXN || 0) },
+    ];
+    const sources: string[] = [];
+    for (const ep of endpoints) {
+      try {
+        const r = await fetch(ep.url, { signal: AbortSignal.timeout(3500) });
+        if (!r.ok) continue;
+        const json = await r.json().catch(() => null);
+        const rate = ep.parse(json);
+        if (Number.isFinite(rate) && rate > 10 && rate < 80) {
+          cachedRate = { rate, fetchedAt: now };
+          return { rate, sources: [ep.url] };
+        }
+      } catch {
+        sources.push(`${ep.url}=fail`);
+      }
+    }
+    return { rate: FALLBACK_USD_TO_MXN, sources: sources.length > 0 ? sources : ["static_fallback"] };
+  }
+
+  function mxnToUsd(mxnAmount: number, rate: number): number {
+    const mxn = Number.isFinite(mxnAmount) ? Number(mxnAmount) : 0;
+    const r = Number.isFinite(rate) && rate > 0 ? Number(rate) : FALLBACK_USD_TO_MXN;
+    const usd = mxn / r;
+    return Math.round(usd * 100) / 100;
+  }
 
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -6758,6 +6793,8 @@ const stripeHandler = (() => {
     const priceMxn = round2(Number(canonical.price_mxn));
     const credits = round2(Number(canonical.credits_amount));
     const packId = Number(canonical.id || 0) || null;
+    const { rate } = await fetchUsdToMxnRate();
+    const usdAmount = mxnToUsd(priceMxn, rate);
     const origin = originFromReq(req);
     const form = new URLSearchParams();
     form.set("mode", "payment");
@@ -6766,11 +6803,11 @@ const stripeHandler = (() => {
     form.set("success_url", `${origin}/?stripe=success&pack=${encodeURIComponent(packKey)}&session_id={CHECKOUT_SESSION_ID}`);
     form.set("cancel_url", `${origin}/?stripe=cancelled&pack=${encodeURIComponent(packKey)}`);
     form.set("line_items[0][quantity]", "1");
-    form.set("line_items[0][price_data][currency]", "mxn");
-    form.set("line_items[0][price_data][unit_amount]", String(Math.round(priceMxn * 100)));
+    form.set("line_items[0][price_data][currency]", "usd");
+    form.set("line_items[0][price_data][unit_amount]", String(Math.round(usdAmount * 100)));
     form.set("line_items[0][price_data][product_data][name]", String(canonical.name || "Paquete LucIAna Music").slice(0, 200));
     for (const [key, value] of Object.entries({
-      user_id: String(auth.user.id), pack_key: packKey, pack_id: packId ? String(packId) : "", credits: String(credits), amount_mxn: String(priceMxn), kind: "mini_pack",
+      user_id: String(auth.user.id), pack_key: packKey, pack_id: packId ? String(packId) : "", credits: String(credits), amount_mxn: String(priceMxn), amount_usd: String(usdAmount), fx_rate_usd_to_mxn: String(rate), kind: "mini_pack",
     })) {
       if (value) form.set(`metadata[${key}]`, value);
     }
@@ -6811,17 +6848,37 @@ const stripeHandler = (() => {
     const userId = String(metadata.user_id || session.client_reference_id || "").trim();
     const packKey = String(metadata.pack_key || "").trim().toLowerCase();
     const sessionId = String(session.id || "").trim();
-    const amountMxn = Number(session.amount_total || 0) / 100;
-    if (!sessionId || !userId || !packKey || String(session.currency || "").toLowerCase() !== "mxn") return send(res, 200, { ok: true, skipped: "metadata_or_currency" });
+    const rawAmount = Number(session.amount_total || 0) / 100;
+    const currency = String(session.currency || "").toLowerCase();
+    const metaPriceMxn = Number(metadata.amount_mxn || 0);
+    const metaPriceUsd = Number(metadata.amount_usd || 0);
+    const fxRate = Number(metadata.fx_rate_usd_to_mxn || 0);
+    let amountMxn = Number.isFinite(metaPriceMxn) && metaPriceMxn > 0 ? metaPriceMxn : 0;
+    if (!sessionId || !userId || !packKey) return send(res, 200, { ok: true, skipped: "metadata_or_session" });
     const canonical: any = canonicalCreditPackByKey(packKey);
-    if (!canonical || Math.abs(amountMxn - Number(canonical.price_mxn || 0)) > 0.01) return send(res, 200, { ok: true, skipped: "invalid_pack_or_amount" });
+    if (!canonical) return send(res, 200, { ok: true, skipped: "invalid_pack" });
+    const expectedMxn = Number(canonical.price_mxn || 0);
+    let amountMatches = false;
+    if (currency === "usd" && Number.isFinite(metaPriceUsd) && metaPriceUsd > 0) {
+      amountMatches = Math.abs(rawAmount - metaPriceUsd) <= 0.01;
+      if (!amountMxn) amountMxn = expectedMxn;
+    } else if (currency === "mxn") {
+      amountMatches = Math.abs(rawAmount - expectedMxn) <= 0.01;
+      if (!amountMxn) amountMxn = rawAmount;
+    } else if (amountMxn > 0) {
+      amountMatches = Math.abs(amountMxn - expectedMxn) <= 0.01;
+    }
+    if (!amountMatches) return send(res, 200, { ok: true, skipped: "invalid_amount", info: { currency, rawAmount, expectedMxn, amountMxn, metaPriceUsd } });
 
     const createClient = await getSupabaseCreateClient();
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
     const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : null;
     const { error: claimError } = await admin.from("stripe_checkout_transactions").insert({
       checkout_session_id: sessionId, payment_intent_id: paymentIntentId, user_id: userId,
-      pack_id: Number(canonical.id || 0) || null, pack_key: packKey, amount_mxn: amountMxn, currency: "mxn", status: "paid",
+      pack_id: Number(canonical.id || 0) || null, pack_key: packKey,
+      amount_mxn: round2(amountMxn || expectedMxn), currency: currency || "usd",
+      amount_usd: currency === "usd" ? round2(rawAmount) : (metaPriceUsd || null),
+      fx_rate_usd_to_mxn: fxRate || null, status: "paid",
     });
     if (claimError) {
       const code = String((claimError as any)?.code || "");
@@ -6877,6 +6934,20 @@ const stripeHandler = (() => {
     const action = pathname.split("/").filter(Boolean).pop()?.toLowerCase() || "";
     if (action === "create-checkout") return handleCreateCheckout(req, res);
     if (action === "webhook") return handleWebhook(req, res);
+    if (action === "rates") {
+      if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+      try {
+        const { rate, sources } = await fetchUsdToMxnRate();
+        return send(res, 200, {
+          ok: true,
+          rates: { usd_to_mxn: rate, fallback_static: FALLBACK_USD_TO_MXN },
+          sources,
+          fetched_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        return send(res, 502, { ok: false, error: "No pude consultar el tipo de cambio.", rates: { usd_to_mxn: FALLBACK_USD_TO_MXN, fallback_static: FALLBACK_USD_TO_MXN } });
+      }
+    }
     return send(res, 404, { error: "Ruta de Stripe no encontrada." });
   };
 })();

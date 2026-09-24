@@ -82,6 +82,48 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
   const [loadingMini, setLoadingMini] = useState(true);
   const [purchasedPackKeys, setPurchasedPackKeys] = useState<string[]>([]);
   const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'stripe'>('mercadopago');
+  const [fx, setFx] = useState<{ usd_to_mxn: number; fetched_at?: string | null; sources?: string[] | null }>({ usd_to_mxn: 20.8 });
+  const [fxLoading, setFxLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch('/api/stripe/rates', { cache: 'no-store' });
+        const out = await r.json().catch(() => ({}));
+        const rate = Number(out?.rates?.usd_to_mxn || 0);
+        if (!alive) return;
+        if (Number.isFinite(rate) && rate > 10 && rate < 80) {
+          setFx({ usd_to_mxn: rate, fetched_at: out?.fetched_at || null, sources: out?.sources || null });
+        }
+      } catch {
+        // fallback ya definido
+      } finally {
+        if (alive) setFxLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  function toUsd(mxnAmount: number): number {
+    const mxn = Number.isFinite(mxnAmount) ? Number(mxnAmount) : 0;
+    const rate = Number.isFinite(fx.usd_to_mxn) && fx.usd_to_mxn > 0 ? fx.usd_to_mxn : 20.8;
+    const usd = mxn / rate;
+    return Math.round(usd * 100) / 100;
+  }
+
+  function displayPrice(mxnAmount: number, opts?: { forStripe?: boolean }): { symbol: string; amount: string; code: string; suffix?: string } {
+    const stripe = !!(opts?.forStripe);
+    if (stripe) {
+      return { symbol: '$', amount: toUsd(mxnAmount).toFixed(2), code: 'USD', suffix: undefined };
+    }
+    return { symbol: '$', amount: Number(mxnAmount).toFixed(0), code: 'MXN', suffix: undefined };
+  }
+
+  function packDisplayPrice(pack: MiniPack | null, isInicio?: boolean): { price: number; forStripe: boolean } {
+    const mxn = isInicio ? 350 : Number((pack as any)?.price_mxn || 0);
+    return { price: mxn, forStripe: paymentProvider === 'stripe' && !isInicio };
+  }
 
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
   const versions = songs * 2;
@@ -252,11 +294,11 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
       <div className="grid gap-2 sm:grid-cols-2">
         <button type="button" onClick={() => setPaymentProvider('mercadopago')} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${paymentProvider === 'mercadopago' ? 'border-sky-400 bg-sky-500/10 text-white' : 'border-white/10 bg-black/10 text-slate-300 hover:bg-white/5'}`}>
           <CreditCard className="h-5 w-5 shrink-0 text-sky-300" />
-          <span><span className="block text-sm font-bold">Mercado Pago</span><span className="block text-[10px] text-slate-400">México: saldo, tarjeta y medios locales</span></span>
+          <span><span className="block text-sm font-bold">Mercado Pago</span><span className="block text-[10px] text-slate-400">México · Precios en $ MXN</span></span>
         </button>
         <button type="button" onClick={() => setPaymentProvider('stripe')} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${paymentProvider === 'stripe' ? 'border-violet-400 bg-violet-500/10 text-white' : 'border-white/10 bg-black/10 text-slate-300 hover:bg-white/5'}`}>
           <Globe2 className="h-5 w-5 shrink-0 text-violet-300" />
-          <span><span className="block text-sm font-bold">Tarjeta internacional</span><span className="block text-[10px] text-slate-400">Stripe Checkout · pago seguro con tarjeta</span></span>
+          <span><span className="block text-sm font-bold">Tarjeta internacional</span><span className="block text-[10px] text-slate-400">Stripe Checkout · Precios en $ USD</span></span>
         </button>
       </div>
       <p className="mt-2 text-[10px] text-slate-500">El Pack Inicio mensual continúa por Mercado Pago mientras activamos suscripciones con Stripe.</p>
@@ -303,7 +345,8 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const pack = card.type === 'mini' ? card.pack : null;
                 const songsCount = isInicio ? 200 : displaySongsForPack(pack!);
                 const creditsCount = isInicio ? 1200 : Number(pack?.credits_amount || 0);
-                const price = isInicio ? 350 : Number(pack?.price_mxn || 0);
+                const priceMeta = packDisplayPrice(pack, isInicio);
+                const priceView = displayPrice(priceMeta.price, { forStripe: priceMeta.forStripe });
                 const Icon = card.icon;
                 const accent = accentClasses[card.accent];
                 const isTrialUsed = !isInicio && card.isTrial && trialUsed;
@@ -318,7 +361,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black text-white ${accent.badge}`}>{card.label}</span>
                       <Icon className={`mt-5 h-9 w-9 ${accent.text}`} />
                       <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `${songsCount} Canciones`}</div>
-                      <div className="mt-2 flex items-end gap-2"><span className="text-4xl font-black">${price.toFixed(0)}</span><span className="pb-1 text-xs font-bold text-slate-300">MXN{isInicio ? ' / mes' : ''}</span></div>
+                      <div className="mt-2 flex items-end gap-2"><span className="text-4xl font-black">{priceView.symbol}{priceView.amount}</span><span className="pb-1 text-xs font-bold text-slate-300">{priceView.code}{isInicio ? ' / mes' : ''}</span></div>
                       <div className="mt-1 text-[10px] text-slate-400">{isInicio ? 'Plan recurrente' : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}</div>
                       {card.isTrial ? <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-rose-500/10 border border-rose-500/30 px-2 py-1 text-[10px] font-bold text-rose-300">{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</div> : null}
                     </div>
@@ -326,7 +369,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
                     </ul>
                     <button type="button" disabled={isBusy || isTrialUsed} onClick={() => isInicio ? buy('inicio') : buyMini(pack!.pack_key)} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
-                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} $${price.toFixed(0)}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
+                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} ${priceView.symbol}${priceView.amount}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
                     </button>
                   </article>
                 );
@@ -389,7 +432,8 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
               {FALLBACK_MINI_PACKS.map((p) => {
                 const { Icon, bg, border, text, btn, tag, ring, label, showsVideos, isTrial } = miniPackStyle(p);
                 const isTrialUsed = isTrial && trialUsed;
-                const price = Number(p.price_mxn || 0);
+                const priceMeta = packDisplayPrice(p, false);
+                const priceView = displayPrice(priceMeta.price, { forStripe: priceMeta.forStripe });
                 const nSongs = displaySongsForPack(p);
                 const validity = Number(p.validity_days || 30);
                 return (
@@ -408,8 +452,8 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     <div className="flex items-end gap-2 mt-4 mb-5 relative">
                       <div className="flex flex-col">
                         <div className="flex items-baseline gap-1.5">
-                          <span className="text-5xl font-black text-white drop-shadow">${price.toFixed(0)}</span>
-                          <span className="text-slate-200 font-semibold text-sm">MXN</span>
+                          <span className="text-5xl font-black text-white drop-shadow">{priceView.symbol}{priceView.amount}</span>
+                          <span className="text-slate-200 font-semibold text-sm">{priceView.code}</span>
                         </div>
                         <span className="text-slate-300 text-xs mt-1 font-medium">Vigencia {validity} días</span>
                         {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</span> : null}
@@ -456,7 +500,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} $${price.toFixed(0)}`}
+                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} ${priceView.symbol}${priceView.amount}`}
                     </button>
                   </div>
                 );
@@ -551,8 +595,8 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     <div className="flex items-end gap-2 mt-4 mb-5 relative">
                       <div className="flex flex-col">
                         <div className="flex items-baseline gap-1.5">
-                          <span className="text-5xl font-black text-white drop-shadow">${price.toFixed(0)}</span>
-                          <span className="text-slate-200 font-semibold text-sm">MXN</span>
+                          <span className="text-5xl font-black text-white drop-shadow">{priceView.symbol}{priceView.amount}</span>
+                          <span className="text-slate-200 font-semibold text-sm">{priceView.code}</span>
                         </div>
                         <span className="text-slate-300 text-xs mt-1 font-medium">Vigencia {validity} días</span>
                         {isTrial ? <span className={`mt-1 inline-flex text-[11px] font-bold ${isTrialUsed ? 'text-slate-400' : 'text-rose-300'}`}>{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</span> : null}
@@ -601,7 +645,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
                     >
-                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} $${price.toFixed(0)}`}
+                      {isBusy ? 'Abriendo…' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} ${priceView.symbol}${priceView.amount}`}
                     </button>
                   </div>
                 );
