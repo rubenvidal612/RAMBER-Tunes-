@@ -219,8 +219,9 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
     }
   };
 
-  const buyMini = async (packKey: string) => {
-    console.log('[PricingView.buyMini] click — packKey=', packKey, ' | paymentProvider=', paymentProvider);
+  const buyMini = async (packKey: string, providerArg: 'mercadopago' | 'stripe') => {
+    const provider = providerArg === 'stripe' ? 'stripe' : 'mercadopago';
+    console.log('[PricingView.buyMini] OBLIGATORIO — packKey=', packKey, ' | providerArg=', providerArg, ' | provider FINAL=', provider);
     setIsBusy(true);
     try {
       const t = await getAccessToken();
@@ -228,7 +229,6 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         alert(t.error || 'No se pudo iniciar sesión.');
         return;
       }
-      const provider = paymentProvider === 'stripe' ? 'stripe' : 'mercadopago';
       const endpoint = provider === 'stripe'
         ? '/api/stripe/create-checkout'
         : '/api/mercadopago/create-mini-pack-preference';
@@ -259,10 +259,13 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
       const checkoutUrl = provider === 'stripe'
         ? (typeof out?.checkout_url === 'string' ? out.checkout_url : '')
         : (typeof out?.init_point === 'string' ? out.init_point : '');
-      console.log('[PricingView.buyMini] checkoutUrl=', checkoutUrl, ' | provider=', provider);
+      console.log('[PricingView.buyMini] REDIRIGIENDO A checkoutUrl=', checkoutUrl, ' | provider=', provider);
       if (!checkoutUrl) {
         alert('No recibí link de pago.');
         return;
+      }
+      if (provider === 'stripe' && checkoutUrl.includes('mercadopago')) {
+        console.error('[PricingView.buyMini] CRITICO: provider stripe pero checkoutUrl contiene mercadopago. URL=', checkoutUrl);
       }
       window.location.href = checkoutUrl;
     } catch (e) {
@@ -399,7 +402,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     <ul className="relative mt-6 flex-1 space-y-3">
                       {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
                     </ul>
-                    <button type="button" data-provider-mini={isInicio ? 'mercadopago-inicio' : paymentProvider} disabled={isBusy || isTrialUsed} onClick={() => { console.log('[PricingView] XL grid onClick — isInicio=', isInicio, 'paymentProvider=', paymentProvider, 'pack_key=', pack?.pack_key); isInicio ? buy('inicio') : buyMini(pack!.pack_key); }} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
+                    <button type="button" data-provider-mini={isInicio ? 'mercadopago-inicio' : paymentProvider} disabled={isBusy || isTrialUsed} onClick={() => { console.log('[PricingView] XL grid onClick — isInicio=', isInicio, 'paymentProvider=', paymentProvider, 'pack_key=', pack?.pack_key); isInicio ? buy('inicio') : buyMini(pack!.pack_key, paymentProvider); }} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
                       {isBusy ? 'Abriendo…' : isInicio ? `Elegir Pack Inicio · ${inicioButtonLabel()}` : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con Stripe' : 'Comprar'} ${priceView.symbol}${priceView.amount}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
                     </button>
                   </article>
@@ -528,7 +531,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         e.preventDefault();
                         e.stopPropagation();
                         console.log('[PricingView] minipack onClick — paymentProvider=', paymentProvider, 'pack_key=', p.pack_key);
-                        buyMini(p.pack_key);
+                        buyMini(p.pack_key, paymentProvider);
                       }}
                       disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
@@ -692,7 +695,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         e.preventDefault();
                         e.stopPropagation();
                         console.log('[PricingView] minipack onClick — paymentProvider=', paymentProvider, 'pack_key=', p.pack_key);
-                        buyMini(p.pack_key);
+                        buyMini(p.pack_key, paymentProvider);
                       }}
                       disabled={isBusy || isTrialUsed}
                       className={`relative w-full ${btn} text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30`}
