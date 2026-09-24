@@ -271,6 +271,18 @@ const MODEL_PROVIDER_CODE = {
   'Mureka Auto': { provider: 'mureka', model: 'auto' },
   'Mureka V9': { provider: 'mureka', model: 'mureka-9' },
 };
+/**
+ * Devuelve el costo en créditos según el modelo seleccionado.
+ * - Mureka V9.5 = 24 créditos (modelo avanzado).
+ * - Cualquier otro modelo (Suno V6, V6 Wild, V6 Mini, Mureka Auto, Mureka V9) = 12 créditos (estándar).
+ * @param {string} modelLabel Nombre visible del modelo.
+ * @returns {number} Número entero de créditos a cobrar.
+ */
+function creditsCostForModel(modelLabel) {
+  const code = MODEL_PROVIDER_CODE[modelLabel];
+  if (code && code.provider === 'mureka' && code.model === 'mureka-9.5') return 24;
+  return 12;
+}
 
 const navItems = [
   [House, "Inicio"],
@@ -3890,6 +3902,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
   const lyricsSub = usingAI
     ? (lyricsOk ? `${data.lyrics.length} caracteres · Puedes editarla en el Paso 2` : "Vuelve al Paso 2 y pulsa 'Generar letra con IA'")
     : (lyricsOk ? `${data.lyrics.length} caracteres` : "Vuelve al Paso 2 para escribirla");
+  const costCredits = creditsCostForModel(data.model);
   return (
     <section className="review-wrap">
       <div className="section-title"><span className="eyebrow">PASO 4 DE 4</span><h1>Revisa tu canción</h1><p>Comprueba toda la información antes de enviarla a generar.</p></div>
@@ -3903,12 +3916,12 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
       </div>
       <div className="requirements-box">
-        <div><strong>Antes de generar</strong><span>{submitting ? "Enviando a Suno…" : isReady ? "Todo está completo" : "Completa los elementos pendientes"}</span></div>
+        <div><strong>Antes de generar</strong><span>{submitting ? (MODEL_TO_PROVIDER[data.model] === 'mureka' ? "Enviando a Mureka…" : "Enviando a Suno…") : isReady ? "Todo está completo" : "Completa los elementos pendientes"}</span></div>
         <ul>{requirements.map(([label, complete]) => <li key={label} className={complete ? "complete" : "pending"}>{complete ? <Check size={18} weight="bold" /> : <X size={17} weight="bold" />}<span>{label}</span></li>)}</ul>
       </div>
       <button className="mock-generate" disabled={submitting || !isReady} onClick={() => handlers?.handleSubmitGenerate?.()}>
         {submitting ? <Loader2 size={22} className="animate-spin" /> : <MusicNote size={22} weight="fill" />}
-        <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generando…" : "Generar canción"}</span>
+        <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generando…" : `Generar canción (${costCredits} créditos)`}</span>
       </button>
       <p className="safe-note"><Info size={18} /> El botón solo se habilita al completar todos los requisitos. Después de generar, irás a tu Biblioteca para ver el progreso.</p>
     </section>
@@ -5246,12 +5259,12 @@ function ApprovedCreateContent(props) {
       return false;
     }
 
-    const costPerSong = 12;
+    const costPerSong = creditsCostForModel(data.model);
     if ((credits || 0) < costPerSong) {
       if (onOpenBalance) onOpenBalance();
       setCreditsGate({
         title: 'Créditos insuficientes',
-        message: `Necesitas al menos ${costPerSong} créditos para generar una canción. Tu saldo actual es ${(credits || 0).toFixed(1)}.`,
+        message: `Necesitas al menos ${costPerSong} créditos para generar una canción con el modelo seleccionado. Tu saldo actual es ${(credits || 0).toFixed(1)}.`,
       });
       return false;
     }

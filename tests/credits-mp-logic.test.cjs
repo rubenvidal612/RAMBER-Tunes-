@@ -2,10 +2,10 @@
 // JavaScript puro. NO REQUIERE claves.
 
 const CANONICAL_CREDIT_PACKS = [
-  { id: 1, pack_key: "mini_3", name: "Mini", songs: 6, credits_amount: 36, price_mxn: 25, validity_days: 30, sort_order: 1, description: "6 canciones (36 créditos) · pago único", is_active: true },
-  { id: 2, pack_key: "chico_10", name: "Chico", songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 2, description: "20 canciones (120 créditos) · pago único", is_active: true },
-  { id: 3, pack_key: "mediano_30", name: "Mediano", songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 3, description: "60 canciones (360 créditos) · pago único", is_active: true },
-  { id: 4, pack_key: "pack_grande_250", name: "Grande", songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 4, description: "100 canciones (600 créditos) · pago único · Agente Bot 24/7", is_active: true },
+  { id: 1, pack_key: "mini_3", name: "Mini", songs: 6, credits_amount: 36, price_mxn: 25, validity_days: 30, sort_order: 1, description: "Hasta 6 canciones estándar (36 créditos) · pago único", is_active: true },
+  { id: 2, pack_key: "chico_10", name: "Chico", songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 2, description: "Hasta 20 canciones estándar (120 créditos) · pago único", is_active: true },
+  { id: 3, pack_key: "mediano_30", name: "Mediano", songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 3, description: "Hasta 60 canciones estándar (360 créditos) · pago único", is_active: true },
+  { id: 4, pack_key: "pack_grande_250", name: "Grande", songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 4, description: "Hasta 100 canciones estándar (600 créditos) · pago único · Agente Bot 24/7", is_active: true },
 ];
 
 const PACKS_PLANES = {

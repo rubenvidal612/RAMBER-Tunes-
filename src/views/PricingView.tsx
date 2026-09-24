@@ -368,8 +368,8 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const accent = accentClasses[card.accent];
                 const isTrialUsed = !isInicio && card.isTrial && trialUsed;
                 const features = isInicio
-                  ? ['200 canciones', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
-                  : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(card.showsVideos ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
+                  ? ['Hasta 200 canciones estándar', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
+                  : [`Hasta ${songsCount} canciones estándar`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(card.showsVideos ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
                 const inicioButtonLabel = () => {
                   if (!isInicio) return '';
                   const mxnView = displayPrice(350, { forStripe: false });
@@ -385,7 +385,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     <div className="relative">
                       <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black text-white ${accent.badge}`}>{card.label}</span>
                       <Icon className={`mt-5 h-9 w-9 ${accent.text}`} />
-                      <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `${songsCount} Canciones`}</div>
+                      <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `Hasta ${songsCount} canciones estándar`}</div>
                       <div className="mt-2 flex flex-col">
                         {isInicio && inicioStrikeMeta ? (
                           <span className="text-xs font-bold text-slate-400 line-through mb-1">{inicioStrikeMeta.symbol}{inicioStrikeMeta.amount} {inicioStrikeMeta.code}</span>
@@ -410,6 +410,11 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
               })}
             </div>
           )}
+
+          <div className="bg-amber-500/10 border border-amber-400/20 rounded-2xl p-4 text-amber-300 text-sm space-y-1">
+            <p className="font-black text-amber-200">* Cálculo de canciones</p>
+            <p>El cálculo de canciones está basado en el motor estándar (Suno / Mureka Auto, 12 créditos por generación). El uso de modelos avanzados como Mureka V9.5 consume 24 créditos.</p>
+          </div>
 
           <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#0b101c] p-5 sm:flex-row">
             <div className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-2xl border border-violet-400/20 bg-violet-500/10 text-violet-300"><ShieldCheck className="h-6 w-6" /></span><span><span className="block font-extrabold text-violet-300">Tus compras están protegidas</span><span className="mt-1 block text-xs text-slate-400">Tus pagos son 100% seguros y tu información está encriptada.</span></span></div>
@@ -495,7 +500,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     </div>
                     <div className="space-y-2 mb-5 text-sm relative">
                       <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> {nSongs} canciones
+                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Hasta {nSongs} canciones estándar
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Total {Number(p.credits_amount || 0)} créditos
@@ -575,7 +580,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     </div>
                     <div className="space-y-2 mb-5 text-sm relative">
                       <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
-                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> 200 canciones
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Hasta 200 canciones estándar
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className="w-5 h-5 text-blue-400 shrink-0" /> Total 1200 créditos
@@ -658,7 +663,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
 
                     <div className="space-y-2 mb-5 text-sm relative">
                       <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> {nSongs} canciones
+                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Hasta {nSongs} canciones estándar
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Total {Number(p.credits_amount || 0)} créditos
@@ -743,7 +748,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
 
                     <div className="space-y-2 mb-5 text-sm relative">
                       <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
-                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> 200 canciones
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Hasta 200 canciones estándar
                       </div>
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className="w-5 h-5 text-blue-400 shrink-0" /> Total 1200 créditos
@@ -794,6 +799,11 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
           )}
         </div>
         {/* ========= FIN SECCION DE PAQUETES (ARRIBA) ========= */}
+
+        <div className="bg-amber-500/10 border border-amber-400/20 rounded-2xl p-4 text-amber-300 text-sm space-y-1">
+          <p className="font-black text-amber-200">* Cálculo de canciones</p>
+          <p>El cálculo de canciones está basado en el motor estándar (Suno / Mureka Auto, 12 créditos por generación). El uso de modelos avanzados como Mureka V9.5 consume 24 créditos.</p>
+        </div>
 
         <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 flex items-center gap-2 text-indigo-300 font-medium text-sm">
           <Sparkles className="w-4 h-4" /> Cada canción crea 2 versiones (A y B)

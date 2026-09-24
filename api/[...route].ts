@@ -1522,7 +1522,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 25,
     validity_days: 30,
     sort_order: 1,
-    description: "6 canciones (36 créditos) · pago único · Solo una vez por cuenta",
+    description: "Hasta 6 canciones estándar (36 créditos) · pago único · Solo una vez por cuenta",
     is_active: true,
   },
   {
@@ -1534,7 +1534,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 50,
     validity_days: 30,
     sort_order: 2,
-    description: "12 canciones (72 créditos) · pago único · Agente Bot 24/7",
+    description: "Hasta 12 canciones estándar (72 créditos) · pago único · Agente Bot 24/7",
     is_active: true,
   },
   {
@@ -1546,7 +1546,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 70,
     validity_days: 30,
     sort_order: 2,
-    description: "20 canciones (120 créditos) · pago único",
+    description: "Hasta 20 canciones estándar (120 créditos) · pago único",
     is_active: true,
   },
   {
@@ -1558,7 +1558,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 180,
     validity_days: 30,
     sort_order: 3,
-    description: "60 canciones (360 créditos) · pago único",
+    description: "Hasta 60 canciones estándar (360 créditos) · pago único",
     is_active: true,
   },
   {
@@ -1570,7 +1570,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 250,
     validity_days: 30,
     sort_order: 4,
-    description: "100 canciones (600 créditos) · pago único · Agente Bot 24/7",
+    description: "Hasta 100 canciones estándar (600 créditos) · pago único · Agente Bot 24/7",
     is_active: true,
   },
 ];
@@ -22984,6 +22984,9 @@ const murekaHandler = (() => {
       const validModels = ["mureka-9.5", "auto", "mureka-9"];
       const model = validModels.indexOf(requestedModel) >= 0 ? requestedModel : "auto";
 
+      // Costo dinámico por modelo: Mureka V9.5 = 24 créditos; resto = 12 créditos (Suno cualquiera / Mureka Auto / Mureka V9)
+      const costCredits = model === "mureka-9.5" ? 24 : 12;
+
       const lyricsRaw = typeof body.lyrics === "string" ? body.lyrics : "";
       const promptRaw = (typeof body.prompt === "string" ? body.prompt : "") ||
                         ((typeof body.title === "string" ? body.title : "") + ". " + (typeof body.style === "string" ? body.style : ""));
@@ -23003,10 +23006,10 @@ const murekaHandler = (() => {
 
       let consumedOk = false;
       try {
-        const cRes = await consumeUserCredits(admin, userId, 12);
+        const cRes = await consumeUserCredits(admin, userId, costCredits);
         consumedOk = Boolean(cRes && cRes.ok);
       } catch (e) {
-        console.error("[murekaHandler.generate] consumeUserCredits error userId=", userId, "err=", e && e.message);
+        console.error("[murekaHandler.generate] consumeUserCredits error userId=", userId, "cost=", costCredits, "err=", e && e.message);
       }
       if (!consumedOk) {
         return send(res, 402, { ok:false, message:"No tienes suficientes créditos para generar la canción." });
@@ -23016,8 +23019,8 @@ const murekaHandler = (() => {
       async function refund() {
         if (refunded) return;
         refunded = true;
-        try { await adjustUserCredits(admin, userId, 12); } catch (e) {
-          console.error("[murekaHandler.generate] refund FAIL userId=", userId, "err=", e && e.message);
+        try { await adjustUserCredits(admin, userId, costCredits); } catch (e) {
+          console.error("[murekaHandler.generate] refund FAIL userId=", userId, "cost=", costCredits, "err=", e && e.message);
         }
       }
 
@@ -23043,10 +23046,10 @@ const murekaHandler = (() => {
       }
 
       try {
-        const extraJson = JSON.stringify({ provider:"mureka", model:model, title:titleIn, gender:genderIn });
+        const extraJson = JSON.stringify({ provider:"mureka", model:model, title:titleIn, gender:genderIn, cost_credits: costCredits });
         try {
-          const baseRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: 12, consumed: false, status: "queued", extra: extraJson };
-          const minimalRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: 12, consumed: false };
+          const baseRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: costCredits, consumed: false, status: "queued", extra: extraJson };
+          const minimalRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: costCredits, consumed: false };
           const q1 = await admin.from("suno_tasks").insert([baseRow]);
           if (q1 && q1.error) {
             await admin.from("suno_tasks").insert([minimalRow]);
@@ -23123,13 +23126,28 @@ const murekaHandler = (() => {
 
       const statusMureka = pickMurekaStatus(qRes.json);
 
+      // Determinar el costo original de la tarea para hacer refunds correctos
+      let taskCost = 12;
+      try {
+        let rowCost = Number((taskRow && (taskRow as any).cost));
+        if (!Number.isFinite(rowCost) || rowCost <= 0) rowCost = 0;
+        if (rowCost > 0) {
+          taskCost = rowCost;
+        } else if (taskRow && (taskRow as any).extra) {
+          const ex = typeof (taskRow as any).extra === "string" ? JSON.parse((taskRow as any).extra) : (taskRow as any).extra;
+          const fromCost = Number(ex && ex.cost_credits);
+          if (Number.isFinite(fromCost) && fromCost > 0) taskCost = fromCost;
+          else if (ex && String(ex.model).toLowerCase() === "mureka-9.5") taskCost = 24;
+        }
+      } catch (_) { taskCost = 12; }
+
       if (statusMureka === "failed" || statusMureka === "error" || statusMureka === "cancelled") {
         let refunded2 = false;
         try {
-          await adjustUserCredits(admin, userId, 12);
+          await adjustUserCredits(admin, userId, taskCost);
           refunded2 = true;
         } catch (e) {
-          console.error("[murekaHandler.query] refund on FAIL taskId=", taskIdFromPath, "err=", e && e.message);
+          console.error("[murekaHandler.query] refund on FAIL taskId=", taskIdFromPath, "taskCost=", taskCost, "err=", e && e.message);
         }
         try {
           if (taskRow) {

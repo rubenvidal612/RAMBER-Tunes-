@@ -34,6 +34,10 @@ const MODEL_CODE_TO_PROVIDER: Record<string, string> = {
   'mureka-9': 'mureka',
 };
 
+function creditsCostForModelCode(modelCode: string): 12 | 24 {
+  return modelCode === 'mureka-9.5' ? 24 : 12;
+}
+
 const MODEL_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(
   Object.entries(MODEL_LABEL_TO_CODE).map(([k, v]) => [v, k])
 );
@@ -3522,6 +3526,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return false;
       }
 
+      const costCredits = creditsCostForModelCode(model);
+      if (typeof credits === 'number' && Number.isFinite(credits) && credits < costCredits) {
+        setCreditsGate({
+          title: 'Créditos insuficientes',
+          message: `Necesitas al menos ${costCredits} créditos para generar una canción con el modelo seleccionado.`,
+        });
+        onOpenBalance?.();
+        return false;
+      }
+
       const provider = MODEL_CODE_TO_PROVIDER[model] || 'suno';
 
       if (provider === 'mureka') {
@@ -4399,7 +4413,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           ? 'Extender (Próximamente)'
                           : audioUploadUrl && audioAction === 'library'
                             ? 'Guardar en Biblioteca'
-                            : 'Crear'}
+                            : `Generar canción (${creditsCostForModelCode(model)} créditos)`}
             </span>
           </button>
         </div>
@@ -6350,9 +6364,13 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       return;
     }
     
-    if (credits < 1) {
-      alert('No tienes créditos suficientes. Compra más créditos para crear canciones.');
-      if (onOpenBalance) onOpenBalance();
+    const costCredits = creditsCostForModelCode(model);
+    if (typeof credits === 'number' && Number.isFinite(credits) && credits < costCredits) {
+      setCreditsGate({
+        title: 'Créditos insuficientes',
+        message: `Necesitas al menos ${costCredits} créditos para generar una canción con el modelo seleccionado.`,
+      });
+      onOpenBalance?.();
       return;
     }
     
@@ -6793,7 +6811,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                 Generando...
               </>
             ) : (
-              '🎵 Crear y ver en Biblioteca'
+              `🎵 Generar canción (${creditsCostForModelCode(model)} créditos)`
             )}
           </button>
         )}
