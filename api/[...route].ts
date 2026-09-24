@@ -7250,7 +7250,7 @@ const libraryHandler = (() => {
   async function listSongsBasic(admin: any, userId: string, deleted: boolean) {
     const q = admin
       .from(TABLE)
-      .select("id,title,description,lyrics,gender,suno_model,audio_url,cover_url,created_at,deleted_at,deleted_reason,suno_task_id,suno_audio_id,is_cover")
+      .select("id,title,description,lyrics,gender,suno_model,model_version,provider,mureka_task_id,metadata,audio_url,cover_url,created_at,deleted_at,deleted_reason,suno_task_id,suno_audio_id,is_cover")
       .eq("user_id", userId)
       .eq("type", ITEM_TYPE)
       .order(deleted ? "deleted_at" : "created_at", { ascending: false })
@@ -22834,6 +22834,492 @@ const lucianaVoiceHandler = (() => {
   };
 })();
 
+// #region Mureka
+const murekaHandler = (() => {
+  function send(res, status, body) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req) {
+    if (typeof req.body === "string") {
+      try { return JSON.parse(req.body); } catch { return null; }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  function pickMurekaTaskId(respBody) {
+    if (!respBody) return "";
+    if (typeof respBody.task_id === "string") return respBody.task_id;
+    if (respBody.data && typeof respBody.data.task_id === "string") return respBody.data.task_id;
+    if (respBody.data && respBody.data.task && typeof respBody.data.task.id === "string") return respBody.data.task.id;
+    if (typeof respBody.id === "string") return respBody.id;
+    return "";
+  }
+
+  function pickMurekaStatus(respBody) {
+    if (!respBody) return "unknown";
+    const d = respBody.data || respBody;
+    const s = d.status || respBody.status;
+    if (typeof s === "string") return s.toLowerCase();
+    return "unknown";
+  }
+
+  function extractMurekaTracks(respBody) {
+    const candidates = [];
+    if (respBody && Array.isArray(respBody.data?.choices)) candidates.push(respBody.data.choices);
+    if (respBody && Array.isArray(respBody.data?.output)) candidates.push(respBody.data.output);
+    if (respBody && Array.isArray(respBody.choices)) candidates.push(respBody.choices);
+    if (respBody && Array.isArray(respBody.output)) candidates.push(respBody.output);
+    if (respBody && Array.isArray(respBody.data?.data?.choices)) candidates.push(respBody.data.data.choices);
+    for (let i = 0; i < candidates.length; i++) {
+      const arr = candidates[i];
+      if (Array.isArray(arr) && arr.length > 0) {
+        return arr.map(function (t) {
+          return {
+            audio_url: typeof t.audio_url === "string" ? t.audio_url :
+                       typeof t.mp3_url === "string" ? t.mp3_url :
+                       typeof t.url === "string" ? t.url : "",
+            cover_url: typeof t.image_url === "string" ? t.image_url :
+                       typeof t.cover_url === "string" ? t.cover_url : "",
+            title: typeof t.title === "string" ? t.title : "",
+            lyrics: typeof t.lyrics === "string" ? t.lyrics : (typeof t.lyric === "string" ? t.lyric : "")
+          };
+        }).filter(function (t) { return t.audio_url.length > 0; });
+      }
+    }
+    return [];
+  }
+
+  async function murekaFetch(pathOrFull, method, apiKey, bodyObj, timeoutMs) {
+    const url = /^https?:\/\//i.test(pathOrFull) ? pathOrFull : ("https://api.mureka.ai/v1" + pathOrFull);
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    let timer = null;
+    if (ctrl) {
+      timer = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, timeoutMs || 30000);
+    }
+    try {
+      const opts = {
+        method: method || "GET",
+        headers: { "Authorization": "Bearer " + apiKey },
+        signal: ctrl ? ctrl.signal : undefined
+      };
+      if (bodyObj != null) {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(bodyObj);
+      }
+      const r = await fetch(url, opts);
+      let text = "";
+      try { text = await r.text(); } catch (_) {}
+      let json = null;
+      try { if (text.length > 0) json = JSON.parse(text); } catch (_) {}
+      return { ok: r.ok, status: r.status, text: text.slice(0, 2000), json: json };
+    } catch (e) {
+      return { ok: false, status: 0, text: (e instanceof Error ? e.message : String(e)).slice(0, 500), json: null };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function tryInsertLibraryItemsFallback(admin, row) {
+    let current = { ...row };
+    let lastErr = null;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      try {
+        const q = await admin.from("library_items").insert([current]).select("id, title, audio_url, cover_url, lyrics").maybeSingle();
+        if (q && !q.error && q.data) return { ok: true, data: q.data };
+        if (q && q.error) lastErr = q.error;
+        else break;
+      } catch (e) {
+        lastErr = e;
+      }
+      const msg = String(lastErr && (lastErr.message || (lastErr.error && lastErr.error.message) || "") || "");
+      const m1 = msg.match(/column \"([^\"]+)\" of relation \"library_items\" does not exist/i);
+      const m2 = msg.match(/Could not find the '([^']+)' column/i);
+      const col = (m1 && m1[1] ? m1[1] : (m2 && m2[1] ? m2[1] : "")).trim();
+      if (col && Object.prototype.hasOwnProperty.call(current, col)) {
+        delete current[col];
+        continue;
+      }
+      const lower = msg.toLowerCase();
+      if (lower.includes("invalid input syntax") || lower.includes("json")) {
+        if (current.metadata != null) { delete current.metadata; continue; }
+        if (current.gender != null) { delete current.gender; continue; }
+      }
+      break;
+    }
+    return { ok: false, error: lastErr };
+  }
+
+  async function handle(req, res) {
+    const urlStr = String(req.url || "").split("?")[0];
+    const parts = urlStr.split("/").filter(Boolean);
+    const sub = parts[2] || "";
+    const subsub = parts[3] || "";
+    const method = String(req.method || "GET").toUpperCase();
+
+    const apiKey = String(process.env.MUREKA_API_KEY || "").trim();
+    const userFriendlyNoConfig = "Proveedor Mureka no está configurado en este momento. Intenta nuevamente más tarde.";
+    const userFriendlyGenerateFail = "No pudimos iniciar la generación con Mureka. Créditos devueltos.";
+
+    if (method === "POST" && sub === "generate") {
+      const token = getAuthToken(req);
+      const auth = token ? await requireAnyUserFromToken(token) : { ok: false };
+      if (!auth || !auth.ok) return send(res, 401, { ok:false, message:"No autorizado." });
+      const userId = String(auth.user && auth.user.id ? auth.user.id : "");
+      const admin = auth.admin;
+      if (!userId || !admin) return send(res, 401, { ok:false, message:"No autorizado." });
+
+      let body = null;
+      try { body = parseJsonBody(req); } catch (_) { body = {}; }
+      body = body && typeof body === "object" ? body : {};
+
+      const requestedModel = typeof body.model === "string" ? body.model.trim().toLowerCase().slice(0, 32) : "";
+      const validModels = ["mureka-9.5", "auto", "mureka-9"];
+      const model = validModels.indexOf(requestedModel) >= 0 ? requestedModel : "auto";
+
+      const lyricsRaw = typeof body.lyrics === "string" ? body.lyrics : "";
+      const promptRaw = (typeof body.prompt === "string" ? body.prompt : "") ||
+                        ((typeof body.title === "string" ? body.title : "") + ". " + (typeof body.style === "string" ? body.style : ""));
+      const titleIn = (typeof body.title === "string" ? body.title : "").slice(0, 140) || "Canción Mureka";
+      const genderIn = String(body.gender || "").toLowerCase().startsWith("m") ? "m" :
+                       String(body.gender || "").toLowerCase().startsWith("f") ? "f" : null;
+      const nVal = Number(body.n);
+      const n = Number.isFinite(nVal) && nVal >= 1 && nVal <= 4 ? Math.floor(nVal) : 2;
+
+      if (lyricsRaw.trim().length === 0 && promptRaw.trim().length === 0) {
+        return send(res, 400, { ok:false, message:"Debes proporcionar al menos una letra o un estilo/descripción para generar la canción." });
+      }
+
+      if (!apiKey) {
+        return send(res, 500, { ok:false, message: userFriendlyNoConfig });
+      }
+
+      let consumedOk = false;
+      try {
+        const cRes = await consumeUserCredits(admin, userId, 12);
+        consumedOk = Boolean(cRes && cRes.ok);
+      } catch (e) {
+        console.error("[murekaHandler.generate] consumeUserCredits error userId=", userId, "err=", e && e.message);
+      }
+      if (!consumedOk) {
+        return send(res, 402, { ok:false, message:"No tienes suficientes créditos para generar la canción." });
+      }
+
+      let refunded = false;
+      async function refund() {
+        if (refunded) return;
+        refunded = true;
+        try { await adjustUserCredits(admin, userId, 12); } catch (e) {
+          console.error("[murekaHandler.generate] refund FAIL userId=", userId, "err=", e && e.message);
+        }
+      }
+
+      const payloadMureka = {
+        lyrics: lyricsRaw,
+        prompt: promptRaw,
+        model: model,
+        n: n
+      };
+      const gRes = await murekaFetch("/song/generate", "POST", apiKey, payloadMureka, 30000);
+      if (!gRes.ok || !gRes.json) {
+        console.error("[murekaHandler.generate] Mureka POST fail userId=", userId,
+          "status=", gRes.status, "text=", String(gRes.text || "").slice(0, 800));
+        await refund();
+        return send(res, 502, { ok:false, message: userFriendlyGenerateFail });
+      }
+      const taskId = pickMurekaTaskId(gRes.json);
+      if (!taskId) {
+        console.error("[murekaHandler.generate] Mureka response NO taskId userId=", userId,
+          "json=", JSON.stringify(gRes.json || {}).slice(0, 1200));
+        await refund();
+        return send(res, 502, { ok:false, message: userFriendlyGenerateFail });
+      }
+
+      try {
+        const extraJson = JSON.stringify({ provider:"mureka", model:model, title:titleIn, gender:genderIn });
+        try {
+          const baseRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: 12, consumed: false, status: "queued", extra: extraJson };
+          const minimalRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: 12, consumed: false };
+          const q1 = await admin.from("suno_tasks").insert([baseRow]);
+          if (q1 && q1.error) {
+            await admin.from("suno_tasks").insert([minimalRow]);
+          }
+        } catch (insErr) {
+          console.warn("[murekaHandler.generate] suno_tasks insert fallback: saltando insert por error. err=",
+            insErr && insErr.message);
+        }
+      } catch (_) {}
+
+      return send(res, 200, { ok:true, provider:"mureka", model:model, task_id:taskId, status:"queued" });
+    }
+
+    if (method === "GET" && sub === "query") {
+      const taskIdFromPath = String(subsub || "").trim();
+      if (!taskIdFromPath) return send(res, 400, { ok:false, message:"Falta task_id." });
+
+      const token = getAuthToken(req);
+      const auth = token ? await requireAnyUserFromToken(token) : { ok: false };
+      if (!auth || !auth.ok) return send(res, 401, { ok:false, message:"No autorizado." });
+      const userId = String(auth.user && auth.user.id ? auth.user.id : "");
+      const admin = auth.admin;
+      if (!userId || !admin) return send(res, 401, { ok:false, message:"No autorizado." });
+
+      let ownerOk = false;
+      let taskRow = null;
+      try {
+        const q = await admin.from("suno_tasks").select("task_id, user_id, kind, extra, status")
+          .eq("task_id", taskIdFromPath).limit(1).maybeSingle();
+        taskRow = q && q.data;
+        if (taskRow && String(taskRow.user_id || "") === userId) ownerOk = true;
+      } catch (_) { ownerOk = false; }
+      if (!ownerOk) {
+        try {
+          let found = false;
+          try {
+            const q2 = await admin.from("library_items").select("id, user_id, mureka_task_id")
+              .eq("mureka_task_id", taskIdFromPath).eq("user_id", userId).limit(1).maybeSingle();
+            if (q2 && q2.data && String(q2.data.user_id || "") === userId) found = true;
+          } catch (_) { found = false; }
+          ownerOk = found;
+        } catch (_) {}
+      }
+      if (!ownerOk) return send(res, 403, { ok:false, message:"No autorizado." });
+
+      try {
+        let existingQ = null;
+        try {
+          existingQ = await admin.from("library_items")
+            .select("id, title, audio_url, cover_url, lyrics, provider, model_version, mureka_task_id")
+            .eq("mureka_task_id", taskIdFromPath).eq("user_id", userId);
+        } catch (_) {
+          existingQ = { data: [] };
+        }
+        if (existingQ && Array.isArray(existingQ.data) && existingQ.data.length > 0) {
+          return send(res, 200, {
+            ok:true, status:"succeeded", provider:"mureka",
+            library_item_ids: existingQ.data.map(function (r) { return String(r.id); }),
+            tracks: existingQ.data
+          });
+        }
+      } catch (_) {}
+
+      if (!apiKey) {
+        return send(res, 500, { ok:false, status:"error", message: userFriendlyNoConfig });
+      }
+
+      const qRes = await murekaFetch("/song/query/" + encodeURIComponent(taskIdFromPath), "GET", apiKey, null, 10000);
+      if (!qRes.ok || !qRes.json) {
+        console.error("[murekaHandler.query] Mureka GET query fail userId=", userId, "taskId=", taskIdFromPath,
+          "status=", qRes.status, "text=", String(qRes.text || "").slice(0, 800));
+        return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
+      }
+
+      const statusMureka = pickMurekaStatus(qRes.json);
+
+      if (statusMureka === "failed" || statusMureka === "error" || statusMureka === "cancelled") {
+        let refunded2 = false;
+        try {
+          await adjustUserCredits(admin, userId, 12);
+          refunded2 = true;
+        } catch (e) {
+          console.error("[murekaHandler.query] refund on FAIL taskId=", taskIdFromPath, "err=", e && e.message);
+        }
+        try {
+          if (taskRow) {
+            try {
+              await admin.from("suno_tasks").update({ status: "failed", consumed: false }).eq("task_id", taskIdFromPath);
+            } catch (_) {
+              try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskIdFromPath); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        console.error("[murekaHandler.query] Mureka status=failed taskId=", taskIdFromPath,
+          "payload=", JSON.stringify(qRes.json || {}).slice(0, 1200));
+        return send(res, 200, { ok:false, status:"failed", message:"No se pudo generar la canción con Mureka. Créditos devueltos." });
+      }
+
+      if (statusMureka === "queued" || statusMureka === "preparing" || statusMureka === "running" || statusMureka === "processing") {
+        let progress = null;
+        const d = qRes.json && qRes.json.data ? qRes.json.data : (qRes.json || {});
+        if (typeof d.progress === "number") progress = d.progress;
+        else if (typeof d.percentage === "number") progress = d.percentage;
+        return send(res, 200, { ok:true, status:statusMureka, progress: progress, message:"Generando canción con Mureka..." });
+      }
+
+      if (statusMureka === "succeeded" || statusMureka === "success" || statusMureka === "done" || statusMureka === "completed") {
+        const tracks = extractMurekaTracks(qRes.json);
+        let modelCode = "mureka-9.5";
+        if (taskRow && taskRow.extra) {
+          try {
+            const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
+            if (ex && typeof ex.model === "string") modelCode = ex.model;
+          } catch (_) {}
+        }
+        let genderFromExtra = null;
+        let titleDefault = "Canción Mureka";
+        if (taskRow && taskRow.extra) {
+          try {
+            const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
+            if (ex) {
+              if (ex.gender) genderFromExtra = ex.gender;
+              if (typeof ex.title === "string" && ex.title.trim().length > 0) titleDefault = ex.title;
+            }
+          } catch (_) {}
+        }
+
+        const finalIds = [];
+        const finalTracks = [];
+        let atLeastOneInserted = false;
+
+        for (let idx = 0; idx < (tracks.length || 0); idx++) {
+          const tr = tracks[idx];
+          if (!tr || !tr.audio_url) continue;
+
+          let dedupeSkipped = false;
+          try {
+            let dedupeQ = null;
+            try {
+              dedupeQ = await admin.from("library_items").select("id, audio_url, mureka_task_id")
+                .eq("user_id", userId).eq("mureka_task_id", taskIdFromPath).limit(10);
+            } catch (_) { dedupeQ = null; }
+            if (dedupeQ && Array.isArray(dedupeQ.data) && dedupeQ.data.length >= (idx + 1)) {
+              const row = dedupeQ.data[idx] || null;
+              if (row) {
+                finalIds.push(String(row.id));
+                finalTracks.push({ id: String(row.id), audio_url: row.audio_url });
+                dedupeSkipped = true;
+              }
+            }
+          } catch (_) {}
+          if (dedupeSkipped) continue;
+
+          let finalAudioUrl = tr.audio_url;
+          try {
+            if (!/\.r2\.cloudflarestorage\.com/i.test(tr.audio_url) && typeof uploadToR2 === "function") {
+              try {
+                const ctrl2 = typeof AbortController === "function" ? new AbortController() : null;
+                let tim = null;
+                if (ctrl2) tim = setTimeout(function () { try { ctrl2.abort(); } catch (_) {} }, 90000);
+                try {
+                  const resp2 = await fetch(tr.audio_url, { signal: ctrl2 ? ctrl2.signal : undefined });
+                  if (resp2 && resp2.ok) {
+                    const ab = await resp2.arrayBuffer();
+                    const buf = Buffer.from(ab);
+                    const ts = Date.now();
+                    const r2Path = "imports/" + userId + "/" + ts + "_mureka_" + taskIdFromPath + "_" + idx + ".mp3";
+                    try {
+                      const r2Url = await uploadToR2(r2Path, buf, "audio/mpeg");
+                      if (r2Url && typeof r2Url === "string" && /^https?:\/\//i.test(r2Url)) {
+                        finalAudioUrl = r2Url;
+                      }
+                    } catch (upErr) {
+                      console.error("[murekaHandler.query] uploadToR2 FAIL", upErr && upErr.message, "fallback to original URL");
+                    }
+                  }
+                } finally {
+                  if (tim) clearTimeout(tim);
+                }
+              } catch (fErr) {
+                console.error("[murekaHandler.query] audio fetch FAIL fallback original, err=", fErr && fErr.message);
+              }
+            }
+          } catch (bigErr) {
+            console.error("[murekaHandler.query] R2 block fallback, err=", bigErr && bigErr.message);
+          }
+
+          const metaObj = {
+            stem_provider: "mureka",
+            stem_endpoint_hint: "/v1/song/stem-separation",
+            mureka_model: modelCode,
+            mureka_idx: idx,
+            generated_at: new Date().toISOString()
+          };
+          const songTitle = (typeof tr.title === "string" && tr.title.trim().length > 0) ? tr.title.slice(0, 140) : (titleDefault + " " + (idx + 1));
+          const songLyrics = (typeof tr.lyrics === "string" && tr.lyrics.trim().length > 0) ? tr.lyrics : "";
+          const coverFinal = tr.cover_url || "";
+
+          let rowId = null;
+          try {
+            const toInsert = {
+              user_id: userId,
+              type: "song",
+              title: songTitle,
+              description: null,
+              lyrics: songLyrics,
+              gender: genderFromExtra,
+              audio_url: finalAudioUrl,
+              cover_url: coverFinal,
+              suno_task_id: null,
+              suno_audio_id: null,
+              suno_model: null,
+              provider: "mureka",
+              model_version: modelCode,
+              mureka_task_id: taskIdFromPath,
+              metadata: metaObj,
+              is_cover: false
+            };
+            const insRes = await tryInsertLibraryItemsFallback(admin, toInsert);
+            if (insRes.ok && insRes.data) {
+              rowId = String(insRes.data.id);
+              atLeastOneInserted = true;
+              finalIds.push(rowId);
+              finalTracks.push({
+                id: rowId,
+                title: insRes.data.title,
+                audio_url: insRes.data.audio_url,
+                cover_url: insRes.data.cover_url,
+                lyrics: insRes.data.lyrics
+              });
+            }
+          } catch (insErr) {
+            console.error("[murekaHandler.query] INSERT library_items FAIL. err=", insErr && insErr.message,
+              "details=", (insErr && insErr.details ? String(insErr.details).slice(0, 1000) : ""),
+              "hint=", (insErr && insErr.hint ? String(insErr.hint) : ""));
+          }
+        }
+
+        try {
+          if (taskRow) {
+            try {
+              await admin.from("suno_tasks").update({ status: "completed", consumed: atLeastOneInserted }).eq("task_id", taskIdFromPath);
+            } catch (_) {
+              try { await admin.from("suno_tasks").update({ consumed: atLeastOneInserted }).eq("task_id", taskIdFromPath); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+
+        if (finalIds.length === 0) {
+          console.error("[murekaHandler.query] SUCCEEDED pero 0 canciones guardadas. userId=", userId, "taskId=", taskIdFromPath,
+            "tracksRaw=", JSON.stringify(tracks).slice(0, 1000));
+          return send(res, 200, { ok:false, status:"failed", message:"No se pudo finalizar la canción con Mureka. Revisa Mis canciones en unos minutos." });
+        }
+
+        return send(res, 200, {
+          ok:true,
+          status:"succeeded",
+          provider:"mureka",
+          library_item_ids: finalIds,
+          tracks: finalTracks
+        });
+      }
+
+      return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
+    }
+
+    return send(res, 404, { ok:false, message:"Endpoint Mureka no encontrado." });
+  }
+
+  return handle;
+})();
+// #endregion Mureka
+
 export default async function handler(req: any, res: any) {
   try {
     const u = new URL(req.url, "http://localhost");
@@ -22864,6 +23350,7 @@ export default async function handler(req: any, res: any) {
 
     if (head === "karaoke") return karaokeHandler(req, res);
     if (head === "suno") return sunoHandler(req, res);
+    if (head === "mureka") return murekaHandler(req, res);
     if (head === "mercadopago") return mercadoPagoHandler(req, res);
     if (head === "stripe") return stripeHandler(req, res);
     if (head === "library") return libraryHandler(req, res);

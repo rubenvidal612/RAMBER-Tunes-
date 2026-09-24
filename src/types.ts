@@ -16,6 +16,10 @@ export interface SongItem {
   description?: string;
   lyrics?: string;
   sunoModel?: string;
+  provider?: 'suno' | 'mureka' | string | null;
+  modelVersion?: string | null;
+  murekaTaskId?: string | null;
+  metadata?: any | null;
   style?: string[];
   genre?: string;
   isPublic?: boolean;

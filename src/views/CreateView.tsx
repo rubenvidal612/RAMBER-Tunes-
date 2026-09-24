@@ -16,6 +16,28 @@ const isDev =
     return false;
   })();
 
+const MODEL_LABEL_TO_CODE: Record<string, string> = {
+  'Suno V6 · Calidad total y clonar voz': 'V6',
+  'Suno V6 Wild · Más creativo': 'V6_WILD',
+  'Suno V6 Mini · Rápido y ligero': 'V6_MINI',
+  'Mureka V9.5 (Recomendado)': 'mureka-9.5',
+  'Mureka Auto': 'auto',
+  'Mureka V9': 'mureka-9',
+};
+
+const MODEL_CODE_TO_PROVIDER: Record<string, string> = {
+  'V6': 'suno',
+  'V6_WILD': 'suno',
+  'V6_MINI': 'suno',
+  'mureka-9.5': 'mureka',
+  'auto': 'mureka',
+  'mureka-9': 'mureka',
+};
+
+const MODEL_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(MODEL_LABEL_TO_CODE).map(([k, v]) => [v, k])
+);
+
 function normalizeLyricsTags(t: string) {
   const lines = (t || '').toString().replaceAll('\r\n', '\n').split('\n');
   const mapped = lines.map((line) => {
@@ -196,7 +218,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const studioRecorderAudioCtxRef = useRef<AudioContext | null>(null);
   const studioRecorderAnalyserRef = useRef<AnalyserNode | null>(null);
 
-  const [model, setModel] = useState<'V6' | 'V6_WILD' | 'V6_MINI'>('V6');
+  const [model, setModel] = useState<string>('V6');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const modelBtnRef = useRef<HTMLButtonElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
@@ -206,6 +228,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
   const [styleInfluence, setStyleInfluence] = useState(70);
   const [audioInfluence, setAudioInfluence] = useState(30);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+
+  const isMureka = MODEL_CODE_TO_PROVIDER[model] === 'mureka';
 
   const [isVoicesPickerOpen, setIsVoicesPickerOpen] = useState(false);
   const [isMasterizarModalOpen, setIsMasterizarModalOpen] = useState(false);
@@ -3498,6 +3522,130 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         return false;
       }
 
+      const provider = MODEL_CODE_TO_PROVIDER[model] || 'suno';
+
+      if (provider === 'mureka') {
+        const mergedLower = `${(instructions || '').toString().trim().toLowerCase()}\n${(prompt || '').toString().trim().toLowerCase()}`;
+        const genrePhrases = [
+          'regional mexicano',
+          'corrido tumbado',
+          'corridos tumbados',
+          'corridos',
+          'corrido',
+          'banda',
+          'norteño',
+          'norteno',
+          'sierreño',
+          'sierreño',
+          'mariachi',
+          'cumbia',
+          'reggaetón',
+          'reggaeton',
+          'salsa',
+          'bachata',
+          'merengue',
+        ];
+        const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
+        const easyGenreLabel = (easyModeSelections.customGenre || '').trim() || easyModeData.genres.find(g => g.id === easyModeSelections.genre)?.name || '';
+        const easyMoodLabel = easyModeData.moods.find(m => m.id === easyModeSelections.mood)?.name || '';
+        const easyLyricMode = (easyModeSelections.lyricMode || '').trim();
+        const easyExtraInstructions = (easyModeSelections.extraInstructions || '').trim();
+        const baseStyle = mode === 'facil'
+          ? [
+              easyGenreLabel ? `Genero: ${easyGenreLabel}` : '',
+              easyMoodLabel ? `Animo: ${easyMoodLabel}` : '',
+              easyLyricMode === 'custom' ? 'Usar letra proporcionada por el usuario' : 'La IA escribe la letra',
+              easyExtraInstructions ? `Instrucciones extra: ${easyExtraInstructions}` : '',
+            ].filter(Boolean).join('\n')
+          : (instructions || '').toString().trim();
+        const hasJazzMention = mergedLower.includes('jazz');
+        let finalStyle = baseStyle;
+        if (!finalStyle) {
+          finalStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
+        } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
+          finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
+        }
+        const hasSelectedVoiceForMureka = Boolean((selectedVoice?.voiceId || '').toString().trim());
+        const styleForMureka = !hasSelectedVoiceForMureka && !instrumental
+          ? [finalStyle, `Voz deseada: ${gender}.`].filter(Boolean).join('\n').slice(0, 1000)
+          : finalStyle.slice(0, 1000);
+        const murekaPayload: any = {
+          provider: 'mureka',
+          model,
+          title: normalizedSongTitle,
+          lyrics: (baseLyrics || '').toString().trim() || undefined,
+          style: styleForMureka,
+          gender: gender || undefined,
+          prompt: `${normalizedSongTitle}. ${styleForMureka}`,
+          n: 2,
+        };
+        const rm = await fetch('/api/mureka/generate', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${t.token}`,
+          },
+          body: JSON.stringify(murekaPayload),
+        });
+        const outM = await rm.json().catch(() => ({}));
+        if (!rm.ok) {
+          const msg = (outM?.detail || outM?.error || outM?.message || 'No se pudo crear la canción.').toString();
+          const raw = msg.trim().toLowerCase();
+          const isPlanExpired =
+            raw.includes('paquete vencio') ||
+            raw.includes('paquete venció') ||
+            (raw.includes('plan') && (raw.includes('vencio') || raw.includes('venció')));
+          const isCreditsExpired =
+            raw.includes('creditos han vencido') ||
+            raw.includes('créditos han vencido') ||
+            raw.includes('tus creditos han vencido') ||
+            raw.includes('tus créditos han vencido');
+          if (isPlanExpired || isCreditsExpired) {
+            setCreditsGate({
+              title: isPlanExpired ? 'Plan vencido' : 'Créditos vencidos',
+              message: isPlanExpired
+                ? 'Tu plan está vencido. Para seguir creando canciones, necesitas recargar.'
+                : 'Tus créditos vencieron. Para seguir creando canciones, necesitas recargar.',
+            });
+            return false;
+          }
+          alert(msg);
+          return false;
+        }
+        const taskIdM = typeof outM?.taskId === 'string' ? outM.taskId : '';
+        if (!taskIdM) {
+          alert('No recibí taskId del servidor.');
+          return false;
+        }
+        try {
+          const raw = window.localStorage.getItem(pendingListKey);
+          const arr = raw ? JSON.parse(raw) : [];
+          const list = Array.isArray(arr) ? arr : [];
+          list.push({
+            taskId: taskIdM,
+            kind: 'generate',
+            startedAt: Date.now(),
+            draft: {
+              title: normalizedSongTitle,
+              description: (mode === 'simple' ? description : instructions).toString(),
+              lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
+              prompt: prompt,
+              model,
+              genre: gender,
+              isCover: Boolean(audioFile || audioUploadUrl),
+            },
+          });
+          window.localStorage.setItem(pendingListKey, JSON.stringify(list));
+          try {
+            window.localStorage.removeItem(pendingLegacyKey);
+          } catch {
+          }
+        } catch {
+        }
+        onGoLibrary?.();
+        return true;
+      }
+
       const hasSelectedVoice = Boolean((selectedVoice?.voiceId || '').toString().trim());
       const requestedVocalGender = !hasSelectedVoice
         ? (gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined)
@@ -3824,9 +3972,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                 style={{ colorScheme: 'dark' }}
                 className="bg-transparent text-xs font-semibold text-slate-200 outline-none appearance-none pr-4"
               >
-                <option value="V6" className="bg-[#0b0f16] text-slate-200">Suno V6 · Calidad total y clonar voz</option>
-                <option value="V6_WILD" className="bg-[#0b0f16] text-slate-200">Suno V6 Wild · Más creativo</option>
-                <option value="V6_MINI" className="bg-[#0b0f16] text-slate-200">Suno V6 Mini · Rápido y ligero</option>
+                <optgroup label="Suno">
+                  <option value="V6" className="bg-[#0b0f16] text-slate-200">Suno V6 · Calidad total y clonar voz</option>
+                  <option value="V6_WILD" className="bg-[#0b0f16] text-slate-200">Suno V6 Wild · Más creativo</option>
+                  <option value="V6_MINI" className="bg-[#0b0f16] text-slate-200">Suno V6 Mini · Rápido y ligero</option>
+                </optgroup>
+                <optgroup label="Mureka">
+                  <option value="mureka-9.5" className="bg-[#0b0f16] text-slate-200">Mureka V9.5 (Recomendado)</option>
+                  <option value="auto" className="bg-[#0b0f16] text-slate-200">Mureka Auto</option>
+                  <option value="mureka-9" className="bg-[#0b0f16] text-slate-200">Mureka V9</option>
+                </optgroup>
               </select>
               <ChevronDown className="w-4 h-4 text-slate-200 -ml-3 pointer-events-none" />
             </div>
@@ -3838,15 +3993,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             onClick={() => setIsModelMenuOpen((v) => !v)}
             className="hidden md:flex items-center gap-2 border border-white/20 hover:border-white/40 rounded-full px-3 py-1.5 hover:bg-white/5 transition-colors"
           >
-            <span className="text-xs font-semibold text-slate-200">{model === 'V6_WILD' ? 'Suno V6 Wild · Más creativo' : model === 'V6_MINI' ? 'Suno V6 Mini · Rápido y ligero' : 'Suno V6 · Calidad total y clonar voz'}</span>
+            <span className="text-xs font-semibold text-slate-200">{MODEL_CODE_TO_LABEL[model] || 'Suno V6 · Calidad total y clonar voz'}</span>
             <ChevronDown className={cn("w-4 h-4 text-slate-200 transition-transform", isModelMenuOpen ? "rotate-180" : "rotate-0")} />
           </button>
 
           {isModelMenuOpen && (
             <div
               ref={modelMenuRef}
-              className="hidden md:block absolute right-0 mt-2 w-[160px] bg-[#0b0f16] border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.55)] z-[90]"
+              className="hidden md:block absolute right-0 mt-2 w-[200px] bg-[#0b0f16] border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.55)] z-[90]"
             >
+              <div className="text-[11px] uppercase tracking-wider text-white/50 px-4 pt-3 pb-1">Suno</div>
               {[
                 { value: 'V6', label: 'Suno V6 · Calidad total y clonar voz' },
                 { value: 'V6_WILD', label: 'Suno V6 Wild · Más creativo' },
@@ -3860,7 +4016,28 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                     setIsModelMenuOpen(false);
                   }}
                   className={cn(
-                    "w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors",
+                    "w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors",
+                    model === (m.value as any) ? "text-emerald-300" : "text-slate-200"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+              <div className="text-[11px] uppercase tracking-wider text-white/50 px-4 pt-3 pb-1">Mureka</div>
+              {[
+                { value: 'mureka-9.5', label: 'Mureka V9.5 (Recomendado)' },
+                { value: 'auto', label: 'Mureka Auto' },
+                { value: 'mureka-9', label: 'Mureka V9' },
+              ].map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    setModel(m.value as any);
+                    setIsModelMenuOpen(false);
+                  }}
+                  className={cn(
+                    "w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors",
                     model === (m.value as any) ? "text-emerald-300" : "text-slate-200"
                   )}
                 >
@@ -7348,21 +7525,27 @@ function CustomForm({
 
         {showMoreOptions && (
           <div className="mt-4 space-y-4">
-            <SliderRow
-              label="Nivel de creatividad"
-              value={weirdness}
-              onChange={setWeirdness}
-            />
-            <SliderRow
-              label="Peso de la instrucción"
-              value={styleInfluence}
-              onChange={setStyleInfluence}
-            />
-            <SliderRow
-              label="Peso del audio original"
-              value={audioInfluence}
-              onChange={setAudioInfluence}
-            />
+            <div style={{ opacity: isMureka ? 0.5 : 1, pointerEvents: isMureka ? 'none' : 'auto' }}>
+              <SliderRow
+                label="Nivel de creatividad"
+                value={weirdness}
+                onChange={setWeirdness}
+              />
+            </div>
+            <div style={{ opacity: isMureka ? 0.5 : 1, pointerEvents: isMureka ? 'none' : 'auto' }}>
+              <SliderRow
+                label="Peso de la instrucción"
+                value={styleInfluence}
+                onChange={setStyleInfluence}
+              />
+            </div>
+            <div style={{ opacity: isMureka ? 0.5 : 1, pointerEvents: isMureka ? 'none' : 'auto' }}>
+              <SliderRow
+                label="Peso del audio original"
+                value={audioInfluence}
+                onChange={setAudioInfluence}
+              />
+            </div>
           </div>
         )}
       </div>

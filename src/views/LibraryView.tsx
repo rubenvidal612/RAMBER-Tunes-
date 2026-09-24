@@ -1535,6 +1535,19 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     return Number.isNaN(ms) ? null : ms;
   };
 
+  const getProviderBadge = (s: SongItem): { label: string; cls: string } => {
+    const p = String(s.provider || '').toLowerCase();
+    const implicitSuno = !s.provider && (Boolean(s.sunoTaskId) || Boolean(s.sunoModel));
+    const m = s.modelVersion || s.sunoModel || '';
+    if (p === 'mureka') {
+      const short = m === 'auto' ? 'Auto' : m === 'mureka-9' ? 'V9' : m === 'mureka-9.5' ? 'V9.5' : (m || '').replace(/^mureka-?/, '');
+      return { label: 'Mureka' + (short ? ` ${short}` : ''), cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide' };
+    }
+    const isSuno = p === 'suno' || implicitSuno;
+    const shortSuno = m === 'V6_WILD' ? 'V6 Wild' : m === 'V6_MINI' ? 'V6 Mini' : m === 'V5_5' ? 'V5.5' : m === 'V4_5PLUS' ? 'V4.5+' : m === 'V4_5ALL' ? 'V4.5 All' : m === 'V4_5' ? 'V4.5' : m;
+    return { label: 'Suno' + (shortSuno ? ` ${shortSuno}` : ''), cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide' };
+  };
+
   const formatModelBadge = (song: SongItem) => {
     const raw = (song.sunoModel || '').toString().trim();
     if (!raw) return 'N/D';
@@ -1798,7 +1811,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-xl font-extrabold text-white">{song.title || 'Pista sin título'}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="truncate text-xl font-extrabold text-white">{song.title || 'Pista sin título'}</div>
+                      {(() => {
+                        const pb = getProviderBadge(song);
+                        return (
+                          <div className={`${pb.cls} shrink-0`}>
+                            {pb.label}
+                          </div>
+                        );
+                      })()}
+                    </div>
                     <div className="mt-1 text-xs text-slate-400">{getSongSubtitle(song) || 'Canción en tu biblioteca'}</div>
                   </div>
                   {!isMobilePanel ? (
@@ -1814,7 +1837,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">{formatSongStatus(song)}</span>
-                  <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-300">{formatModelBadge(song)}</span>
+                  {(() => {
+                    const pb = getProviderBadge(song);
+                    return <span className={`${pb.cls} px-2.5 py-1 text-[11px]`}>{pb.label}</span>;
+                  })()}
                   <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-400">{song.isPublic ? 'Público' : 'Privado'}</span>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -2792,8 +2818,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                                   alt={song.title || 'Cover'}
                                   className="h-full w-full object-cover"
                                 />
+                                {(() => {
+                                  const pb = getProviderBadge(song);
+                                  return (
+                                    <div className={`absolute top-1 left-1 z-10 ${pb.cls}`}>
+                                      {pb.label}
+                                    </div>
+                                  );
+                                })()}
                                 {durationSec > 0 ? (
-                                  <div className="absolute bottom-1 right-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                                  <div className="absolute bottom-1 right-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-white z-10">
                                     {fmtDuration(durationSec)}
                                   </div>
                                 ) : null}
@@ -2879,7 +2913,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
 
                                 <div className="mt-3 flex flex-wrap items-center gap-2">
                                   <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">{formatSongStatus(song)}</span>
-                                  <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-300">{formatModelBadge(song)}</span>
+                                  {(() => {
+                                    const pb = getProviderBadge(song);
+                                    return <span className={`${pb.cls} px-2.5 py-1 text-[11px]`}>{pb.label}</span>;
+                                  })()}
                                   <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-400">{song.isPublic ? 'Pública' : 'Privada'}</span>
                                   {folderName ? <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-400">📁 {folderName}</span> : null}
                                 </div>
@@ -3968,6 +4005,7 @@ function SongOptionsSheet({
   const [personaVocalEnd, setPersonaVocalEnd] = useState(30);
   const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
   const coverPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const isMureka = String(song.provider || '').toLowerCase() === 'mureka';
   const [showCoverUrl, setShowCoverUrl] = useState(false);
   const [coverUrlInput, setCoverUrlInput] = useState('');
   const [showTrim, setShowTrim] = useState(false);
@@ -5246,6 +5284,12 @@ function SongOptionsSheet({
   };
 
   const separateStems = async (type: 'separate_vocal' | 'split_stem') => {
+    if (isMureka) {
+      const msg = 'Próximamente: separación de instrumentos y voz para canciones creadas con Mureka.';
+      try { onToast?.(msg); } catch {}
+      alert(msg);
+      return;
+    }
     setIsBusy(true);
     try {
       const t = await getAccessToken();
@@ -5859,19 +5903,19 @@ function SongOptionsSheet({
                             <ChevronRight className="w-5 h-5 text-slate-500" />
                           </button>
                         ) : null}
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
+                        <button className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <div className="flex items-center gap-3">
-                            <AudioLines className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Eliminar voz / Karaoke</span>
+                            <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
+                            <span className={cn("font-semibold", isMureka ? "text-slate-500" : "text-slate-100")}>Eliminar voz / Karaoke</span>
                           </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                          <ChevronRight className={cn("w-5 h-5", isMureka ? "text-slate-600" : "text-slate-500")} />
                         </button>
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
+                        <button className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <div className="flex items-center gap-3">
-                            <AudioLines className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">STEMS (Pistas separadas)</span>
+                            <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
+                            <span className={cn("font-semibold", isMureka ? "text-slate-500" : "text-slate-100")}>STEMS (Pistas separadas)</span>
                           </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                          <ChevronRight className={cn("w-5 h-5", isMureka ? "text-slate-600" : "text-slate-500")} />
                         </button>
                       </div>
                     </div>
@@ -6072,14 +6116,14 @@ function SongOptionsSheet({
                             <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover</div>
                           </button>
                         ) : null}
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy}>
-                          <AudioLines className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Eliminar voz / Karaoke</div>
+                        <button className={cn("rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
+                          <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
+                          <div className={cn("mt-3 font-semibold text-sm", isMureka ? "text-slate-500" : "text-slate-100")}>Eliminar voz / Karaoke</div>
                         </button>
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy}>
-                          <AudioLines className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">STEMS</div>
-                          <div className="mt-1 text-[12px] text-slate-500">Pistas separadas</div>
+                        <button className={cn("rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
+                          <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
+                          <div className={cn("mt-3 font-semibold text-sm", isMureka ? "text-slate-500" : "text-slate-100")}>STEMS</div>
+                          <div className={cn("mt-1 text-[12px]", isMureka ? "text-slate-600" : "text-slate-500")}>Pistas separadas</div>
                         </button>
                       </div>
                     </div>

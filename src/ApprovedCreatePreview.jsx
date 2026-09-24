@@ -249,9 +249,28 @@ const models = [
   ["Suno V6", "Calidad total · Ideal para clonar voz"],
   ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
   ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
+  ["Mureka V9.5 (Recomendado)", "Mejor calidad Mureka · Equilibrado"],
+  ["Mureka Auto", "Mureka elige la versión óptima"],
+  ["Mureka V9", "Versión estable anterior"],
 ];
 const VALID_MODEL_NAMES = new Set(models.map(([name]) => name));
 const normalizeModelName = (m) => VALID_MODEL_NAMES.has(m) ? m : "Suno V6";
+const MODEL_TO_PROVIDER = {
+  'Suno V6': 'suno',
+  'Suno V6 Wild': 'suno',
+  'Suno V6 Mini': 'suno',
+  'Mureka V9.5 (Recomendado)': 'mureka',
+  'Mureka Auto': 'mureka',
+  'Mureka V9': 'mureka',
+};
+const MODEL_PROVIDER_CODE = {
+  'Suno V6': { provider: 'suno', model: 'V6' },
+  'Suno V6 Wild': { provider: 'suno', model: 'V6_WILD' },
+  'Suno V6 Mini': { provider: 'suno', model: 'V6_MINI' },
+  'Mureka V9.5 (Recomendado)': { provider: 'mureka', model: 'mureka-9.5' },
+  'Mureka Auto': { provider: 'mureka', model: 'auto' },
+  'Mureka V9': { provider: 'mureka', model: 'mureka-9' },
+};
 
 const navItems = [
   [House, "Inicio"],
@@ -3680,6 +3699,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
   const improving = Boolean(handlers?.isBoostingStyle);
   const translating = Boolean(handlers?.isTranslatingStyle);
   const showAudioInfluence = data.audioSource === 'upload' && (Boolean(data.file) || Boolean(handlers?.audioUploadUrl) || Boolean(handlers?.isUploadingAudio) || Boolean(handlers?.audioUploadError));
+  const isMureka = MODEL_TO_PROVIDER[data.model] === 'mureka';
   const needsAudioReupload =
     Boolean(handlers?.audioReuploadNeeded) &&
     data.audioSource === 'upload' &&
@@ -3725,7 +3745,13 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
         <label className="field-label">Motor y versión <InfoTip title="Motor y versión">Cada versión ofrece una forma distinta de interpretar tu canción.</InfoTip></label>
         <div className="select-wrap">
           <button className="select-button" onClick={() => setModelOpen(!modelOpen)}><span>{normalizeModelName(data.model)}</span><SlidersHorizontal size={20} /></button>
-          {modelOpen && <div className="model-menu">{models.map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}<p><Info size={16} /> Más motores próximamente</p></div>}
+          {modelOpen && <div className="model-menu">
+            <div className="model-group-label">Suno</div>
+            {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'suno').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
+            <div className="model-group-label" style={{ marginTop: 8 }}>Mureka</div>
+            {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'mureka').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
+            <p><Info size={16} /> Más motores próximamente</p>
+          </div>}
         </div>
         <label className="field-label top-gap">Nombre de la canción <InfoTip title="Nombre de la canción">Este nombre es obligatorio y se usará al generar la canción.</InfoTip></label>
         <input className="title-input" value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} placeholder="Escribe el nombre de la canción" />
@@ -3770,9 +3796,10 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
                 </button>
               </div>
               <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-              <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} scrollGuard />
-              <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />
-              {showAudioInfluence ? (
+              {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
+              {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} scrollGuard />}
+              {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />}
+              {!isMureka && showAudioInfluence ? (
                 <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
               ) : null}
             </div>
@@ -3786,9 +3813,10 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
               </button>
             </div>
             <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-            <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} />
-            <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} />
-            {showAudioInfluence ? (
+            {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
+            {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} />}
+            {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} />}
+            {!isMureka && showAudioInfluence ? (
               <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} />
             ) : null}
           </>
@@ -5247,12 +5275,139 @@ function ApprovedCreateContent(props) {
         return false;
       }
 
-      const modelMap = {
-        'Suno V6': 'V6',
-        'Suno V6 Wild': 'V6_WILD',
-        'Suno V6 Mini': 'V6_MINI',
-      };
-      const modelCode = modelMap[data.model] || 'V6';
+      const { provider: reqProvider, model: reqModelCode } = MODEL_PROVIDER_CODE[data.model] || { provider: 'suno', model: 'V6' };
+      const modelCode = reqModelCode;
+      const isMureka = reqProvider === 'mureka';
+
+      if (isMureka) {
+        const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId);
+        const requestedVocalGender = !hasSelectedVoice
+          ? (data.vocalGender === 'f' ? 'f' : data.vocalGender === 'm' ? 'm' : undefined)
+          : undefined;
+        if (hasAudioCover) {
+          setToast('Audio referencia no compatible con Mureka aún; solo se usará el estilo escrito.');
+        }
+        const mergedLower = `${data.style.toString().trim().toLowerCase()}\n${prompt.toLowerCase()}`;
+        const genrePhrases = [
+          'regional mexicano', 'corrido tumbado', 'corridos tumbados', 'corridos', 'corrido',
+          'banda', 'norteño', 'norteno', 'sierreño', 'mariachi', 'cumbia',
+          'reggaetón', 'reggaeton', 'salsa', 'bachata', 'merengue',
+        ];
+        const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
+        const baseStyle = data.style.toString().trim();
+        let finalStyle = baseStyle;
+        if (!finalStyle) {
+          finalStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
+        } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
+          finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
+        }
+        const finalLyricsString = baseLyrics;
+        const murekaPayload = {
+          provider: 'mureka',
+          model: reqModelCode,
+          title: normalizedSongTitle,
+          lyrics: finalLyricsString,
+          style: finalStyle,
+          gender: requestedVocalGender,
+          prompt: `${normalizedSongTitle}. ${finalStyle}`,
+          n: 2,
+        };
+        const mr = await fetch('/api/mureka/generate', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${t.token}`,
+          },
+          body: JSON.stringify(murekaPayload),
+        });
+        const mOut = await mr.json().catch(() => ({}));
+        if (!mr.ok) {
+          const msg = (mOut?.detail || mOut?.error || mOut?.message || 'No se pudo crear la canción con Mureka.').toString();
+          setToast(msg);
+          return false;
+        }
+        const mTaskId = typeof mOut?.task_id === 'string' ? mOut.task_id : typeof mOut?.taskId === 'string' ? mOut.taskId : '';
+        if (!mTaskId) {
+          setToast('No recibí taskId del servidor Mureka.');
+          return false;
+        }
+        try {
+          const raw = window.localStorage.getItem(pendingListKey);
+          const arr = raw ? JSON.parse(raw) : [];
+          const list = Array.isArray(arr) ? arr : [];
+          const acceptedAt = Date.now();
+          list.push({
+            taskId: mTaskId,
+            kind: 'mureka-generate',
+            provider: 'mureka',
+            startedAt: acceptedAt,
+            draft: {
+              title: normalizedSongTitle,
+              description: data.style.toString(),
+              lyrics: baseLyrics || null,
+              prompt: `${normalizedSongTitle}. ${finalStyle}`,
+              model: reqModelCode,
+              genre: requestedVocalGender || '',
+              isCover: false,
+              provider: 'mureka',
+            },
+          });
+          window.localStorage.setItem(pendingListKey, JSON.stringify(list));
+          try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
+        } catch {}
+        (async () => {
+          const maxAttempts = 96;
+          let attempt = 0;
+          while (attempt < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+            attempt += 1;
+            try {
+              const pollT = await getAccessToken();
+              if (!pollT.ok) break;
+              const qr = await fetch(`/api/mureka/query/${encodeURIComponent(mTaskId)}`, {
+                method: 'GET',
+                headers: { authorization: `Bearer ${pollT.token}` },
+              });
+              const qOut = await qr.json().catch(() => ({}));
+              const status = String(qOut?.status || '').toLowerCase();
+              if (status === 'failed') {
+                setToast(qOut?.message?.toString() || 'La generación con Mureka falló.');
+                break;
+              }
+              if (status === 'succeeded') {
+                break;
+              }
+              if (status === 'queued' || status === 'preparing' || status === 'running') {
+                setToast('Generando con Mureka...');
+                continue;
+              }
+            } catch {
+            }
+          }
+          if (attempt >= maxAttempts) {
+            setToast('La canción está tardando más de lo normal. Revísala en Mis canciones en unos minutos.');
+          }
+        })();
+        clearGenerationSession();
+        removeSelectedAudio({ nextAudioSource: 'none' });
+        setData((prev) => ({
+          ...prev,
+          title: '',
+          lyrics: '',
+          lyricInstruction: '',
+          aiLyricsGenerated: false,
+          style: '',
+          styleOriginal: '',
+          styleTranslated: false,
+          negative: '',
+          audioSource: 'none',
+          file: null,
+        }));
+        setStep(0);
+        if (onGoLibrary) onGoLibrary();
+        return true;
+      }
+
       const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId);
       const requestedVocalGender = !hasSelectedVoice
         ? (data.vocalGender === 'f' ? 'f' : data.vocalGender === 'm' ? 'm' : undefined)

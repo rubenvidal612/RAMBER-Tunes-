@@ -27,6 +27,20 @@ export function MiniPlayer({ song, isPlaying, onPlayPause, onClose, placement = 
     return `${m}:${String(r).padStart(2, '0')}`;
   };
 
+  const getProviderBadgeMini = (s: SongItem): { label: string; cls: string } => {
+    const p = String(s.provider || '').toLowerCase();
+    const implicitSuno = !s.provider && (Boolean(s.sunoTaskId) || Boolean(s.sunoModel));
+    const mv = s.modelVersion || s.sunoModel || '';
+    if (p === 'mureka') {
+      const short = mv === 'auto' ? 'Auto' : mv === 'mureka-9' ? 'V9' : mv === 'mureka-9.5' ? 'V9.5' : (mv || '').replace(/^mureka-?/, '');
+      return { label: 'Mureka' + (short ? ` ${short}` : ''), cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide' };
+    }
+    const shortSuno = mv === 'V6_WILD' ? 'V6 Wild' : mv === 'V6_MINI' ? 'V6 Mini' : mv === 'V5_5' ? 'V5.5' : mv === 'V4_5PLUS' ? 'V4.5+' : mv === 'V4_5ALL' ? 'V4.5 All' : mv === 'V4_5' ? 'V4.5' : mv;
+    return { label: 'Suno' + (shortSuno ? ` ${shortSuno}` : ''), cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30 rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide' };
+  };
+
+  const pb = getProviderBadgeMini(song);
+
   return (
     <div
       className={`fixed ${bottomClass} md:bottom-4 left-2 right-2 bg-[#0b0f16] border border-white/10 rounded-2xl p-3 shadow-2xl shadow-black/50 z-[120] animate-in slide-in-from-bottom-5`}
@@ -36,9 +50,15 @@ export function MiniPlayer({ song, isPlaying, onPlayPause, onClose, placement = 
           <div className="w-10 h-10 bg-white/10 rounded-md flex items-center justify-center flex-shrink-0 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 opacity-70" />
             <div className="w-3 h-3 bg-white rounded-full relative z-10" />
+            <div className={`absolute top-0.5 right-0.5 z-20 ${pb.cls}`}>
+              {pb.label}
+            </div>
           </div>
           <div className="flex-1 truncate">
-            <p className="text-sm font-bold text-white truncate">{song.title || 'Pista sin título'}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-bold text-white truncate">{song.title || 'Pista sin título'}</p>
+              <span className={`shrink-0 ${pb.cls}`}>{pb.label}</span>
+            </div>
             <p className="text-xs text-gray-400 truncate">{song.description || 'Maqueta'}</p>
           </div>
         </div>
