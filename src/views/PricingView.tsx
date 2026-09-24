@@ -122,7 +122,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
 
   function packDisplayPrice(pack: MiniPack | null, isInicio?: boolean): { price: number; forStripe: boolean } {
     const mxn = isInicio ? 350 : Number((pack as any)?.price_mxn || 0);
-    return { price: mxn, forStripe: paymentProvider === 'stripe' && !isInicio };
+    return { price: mxn, forStripe: paymentProvider === 'stripe' };
   }
 
   const songs = Math.floor((credits || 0) / CREDIT_COSTS.generate_music);
@@ -301,7 +301,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
           <span><span className="block text-sm font-bold">Tarjeta internacional</span><span className="block text-[10px] text-slate-400">Stripe Checkout · Precios en $ USD</span></span>
         </button>
       </div>
-      <p className="mt-2 text-[10px] text-slate-500">El Pack Inicio mensual continúa por Mercado Pago mientras activamos suscripciones con Stripe.</p>
+      <p className="mt-2 text-[10px] text-slate-500">El Pack Inicio mensual se cobra con Mercado Pago (suscripción). Al seleccionar Tarjeta internacional verás el equivalente aproximado en USD.</p>
     </div>
   );
 
@@ -347,12 +347,21 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const creditsCount = isInicio ? 1200 : Number(pack?.credits_amount || 0);
                 const priceMeta = packDisplayPrice(pack, isInicio);
                 const priceView = displayPrice(priceMeta.price, { forStripe: priceMeta.forStripe });
+                const inicioStrikeMeta = isInicio ? displayPrice(500, { forStripe: priceMeta.forStripe }) : null;
                 const Icon = card.icon;
                 const accent = accentClasses[card.accent];
                 const isTrialUsed = !isInicio && card.isTrial && trialUsed;
                 const features = isInicio
                   ? ['200 canciones', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
                   : [`${songsCount} canciones`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(card.showsVideos ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
+                const inicioButtonLabel = () => {
+                  if (!isInicio) return '';
+                  const mxnView = displayPrice(350, { forStripe: false });
+                  if (paymentProvider === 'stripe') {
+                    return `Plan mensual ${priceView.symbol}${priceView.amount} ${priceView.code} / mes aprox`;
+                  }
+                  return `${priceView.symbol}${priceView.amount} ${priceView.code} / mes`;
+                };
                 return (
                   <article key={isInicio ? 'inicio' : pack!.pack_key} className={`relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border ${accent.border} bg-gradient-to-b from-white/[0.055] via-[#090b11] to-[#07080c] p-5 shadow-2xl ${accent.glow}`}>
                     <div className={`pointer-events-none absolute -right-16 -top-14 h-44 w-44 rounded-full blur-3xl opacity-20 ${accent.badge}`} />
@@ -361,15 +370,24 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black text-white ${accent.badge}`}>{card.label}</span>
                       <Icon className={`mt-5 h-9 w-9 ${accent.text}`} />
                       <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `${songsCount} Canciones`}</div>
-                      <div className="mt-2 flex items-end gap-2"><span className="text-4xl font-black">{priceView.symbol}{priceView.amount}</span><span className="pb-1 text-xs font-bold text-slate-300">{priceView.code}{isInicio ? ' / mes' : ''}</span></div>
-                      <div className="mt-1 text-[10px] text-slate-400">{isInicio ? 'Plan recurrente' : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}</div>
+                      <div className="mt-2 flex flex-col">
+                        {isInicio && inicioStrikeMeta ? (
+                          <span className="text-xs font-bold text-slate-400 line-through mb-1">{inicioStrikeMeta.symbol}{inicioStrikeMeta.amount} {inicioStrikeMeta.code}</span>
+                        ) : null}
+                        <div className="flex items-end gap-2"><span className="text-4xl font-black">{priceView.symbol}{priceView.amount}</span><span className="pb-1 text-xs font-bold text-slate-300">{priceView.code}{isInicio ? ' / mes' : ''}</span></div>
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-400">
+                        {isInicio
+                          ? (paymentProvider === 'stripe' ? `Equivale $350 MXN / mes · Plan recurrente · Pago con Mercado Pago` : 'Plan recurrente')
+                          : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}
+                      </div>
                       {card.isTrial ? <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-rose-500/10 border border-rose-500/30 px-2 py-1 text-[10px] font-bold text-rose-300">{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</div> : null}
                     </div>
                     <ul className="relative mt-6 flex-1 space-y-3">
                       {features.map((feature) => <li key={feature} className="flex items-start gap-2 text-[11px] text-slate-300"><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${accent.border}`}><Check className={`h-2.5 w-2.5 ${accent.text}`} /></span><span>{feature}</span></li>)}
                     </ul>
                     <button type="button" disabled={isBusy || isTrialUsed} onClick={() => isInicio ? buy('inicio') : buyMini(pack!.pack_key)} className={`relative mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${accent.button} text-sm font-black text-white shadow-lg disabled:opacity-60`}>
-                      {isBusy ? 'Abriendo…' : isInicio ? 'Elegir Pack Inicio' : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} ${priceView.symbol}${priceView.amount}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
+                      {isBusy ? 'Abriendo…' : isInicio ? `Elegir Pack Inicio · ${inicioButtonLabel()}` : isTrialUsed ? 'Ya usaste tu Pack de prueba' : `${paymentProvider === 'stripe' ? 'Pagar con tarjeta' : 'Comprar'} ${priceView.symbol}${priceView.amount}`}{!isTrialUsed ? <ArrowRight className="h-4 w-4" /> : null}
                     </button>
                   </article>
                 );
@@ -506,23 +524,35 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 );
               })}
               {/* Pack Inicio (en fallback también) */}
-              <div className="relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-b from-blue-900/30 to-transparent p-5 ring-1 ring-blue-400/30 hover:scale-[1.02] transition-transform duration-200">
-                <div className="absolute -right-6 -top-6 opacity-10">
-                  <Crown className="w-28 h-28 text-blue-400" />
-                </div>
-                <div className="flex items-start justify-between mb-1 relative">
-                  <div className="inline-flex items-center gap-1.5 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-black shadow-md">
-                    <Crown className="w-3.5 h-3.5" /> Pack Inicio
-                  </div>
-                </div>
-                <div className="flex items-end gap-2 mt-4 mb-5 relative">
+              {(() => {
+                const inicioPriceMeta = packDisplayPrice(null, true);
+                const inicioPriceView = displayPrice(inicioPriceMeta.price, { forStripe: inicioPriceMeta.forStripe });
+                const strikeView = displayPrice(500, { forStripe: inicioPriceMeta.forStripe });
+                const btnInicio = (() => {
+                  if (isBusy) return 'Abriendo…';
+                  if (paymentProvider === 'stripe') {
+                    return `Plan mensual ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes aprox`;
+                  }
+                  return `Comprar ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes`;
+                })();
+                return (
+                  <div key="inicio-fallback" className="relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-b from-blue-900/30 to-transparent p-5 ring-1 ring-blue-400/30 hover:scale-[1.02] transition-transform duration-200">
+                    <div className="absolute -right-6 -top-6 opacity-10">
+                      <Crown className="w-28 h-28 text-blue-400" />
+                    </div>
+                    <div className="flex items-start justify-between mb-1 relative">
+                      <div className="inline-flex items-center gap-1.5 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-black shadow-md">
+                        <Crown className="w-3.5 h-3.5" /> Pack Inicio
+                      </div>
+                    </div>
+                    <div className="flex items-end gap-2 mt-4 mb-5 relative">
                       <div className="flex flex-col">
-                        <span className="text-lg font-bold text-slate-400 line-through">$500 MXN</span>
+                        <span className="text-lg font-bold text-slate-400 line-through">{strikeView.symbol}{strikeView.amount} {strikeView.code}</span>
                         <div className="flex items-baseline gap-1.5">
-                          <span className="text-5xl font-black text-white drop-shadow">$350</span>
-                          <span className="text-slate-200 font-semibold text-sm">MXN</span>
+                          <span className="text-5xl font-black text-white drop-shadow">{inicioPriceView.symbol}{inicioPriceView.amount}</span>
+                          <span className="text-slate-200 font-semibold text-sm">{inicioPriceView.code}</span>
                         </div>
-                        <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente</span>
+                        <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente{paymentProvider === 'stripe' ? ' · Pago con Mercado Pago ($350 MXN)' : ''}</span>
                       </div>
                     </div>
                     <div className="space-y-2 mb-5 text-sm relative">
@@ -555,26 +585,29 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                         <span>Saldo mensual acumulable si renuevas a tiempo</span>
                       </div>
                     </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    buy('inicio');
-                  }}
-                  disabled={isBusy}
-                  className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
-                >
-                  {isBusy ? 'Abriendo…' : 'Comprar $350 / mes'}
-                </button>
-              </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        buy('inicio');
+                      }}
+                      disabled={isBusy}
+                      className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
+                    >
+                      {btnInicio}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {miniPacks.map((p) => {
                 const { Icon, bg, border, text, btn, tag, ring, label, showsVideos, isTrial } = miniPackStyle(p);
                 const isTrialUsed = isTrial && trialUsed;
-                const price = Number(p.price_mxn || 0);
+                const priceMeta = packDisplayPrice(p, false);
+                const priceView = displayPrice(priceMeta.price, { forStripe: priceMeta.forStripe });
                 const nSongs = displaySongsForPack(p);
                 const validity = Number(p.validity_days || 30);
                 return (
@@ -652,72 +685,86 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
               })}
 
               {/* Pack Inicio — MISMA TARJETA, MISMO TAMAÑO */}
-              <div className="relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-b from-blue-900/30 to-transparent p-5 ring-1 ring-blue-400/30 hover:scale-[1.02] transition-transform duration-200">
-                <div className="absolute -right-6 -top-6 opacity-10">
-                  <Crown className="w-28 h-28 text-blue-400" />
-                </div>
-
-                <div className="flex items-start justify-between mb-1 relative">
-                  <div className="inline-flex items-center gap-1.5 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-black shadow-md">
-                    <Crown className="w-3.5 h-3.5" /> Pack Inicio
-                  </div>
-                </div>
-
-                <div className="flex items-end gap-2 mt-4 mb-5 relative">
-                  <div className="flex flex-col">
-                    <span className="text-lg font-bold text-slate-400 line-through">$500 MXN</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-5xl font-black text-white drop-shadow">$350</span>
-                      <span className="text-slate-200 font-semibold text-sm">MXN</span>
+              {(() => {
+                const inicioPriceMeta = packDisplayPrice(null, true);
+                const inicioPriceView = displayPrice(inicioPriceMeta.price, { forStripe: inicioPriceMeta.forStripe });
+                const strikeView = displayPrice(500, { forStripe: inicioPriceMeta.forStripe });
+                const btnInicio = (() => {
+                  if (isBusy) return 'Abriendo…';
+                  if (paymentProvider === 'stripe') {
+                    return `Plan mensual ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes aprox`;
+                  }
+                  return `Comprar ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes`;
+                })();
+                return (
+                  <div key="inicio-normal" className="relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-b from-blue-900/30 to-transparent p-5 ring-1 ring-blue-400/30 hover:scale-[1.02] transition-transform duration-200">
+                    <div className="absolute -right-6 -top-6 opacity-10">
+                      <Crown className="w-28 h-28 text-blue-400" />
                     </div>
-                    <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente</span>
-                  </div>
-                </div>
 
-                <div className="space-y-2 mb-5 text-sm relative">
-                  <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> 200 canciones
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Total 1200 créditos
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Incluye ChatBot
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Clonación de voz
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Videos musicales
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Audio karaoke
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Eliminar voz / STEMS
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0" /> Descargas activas
-                  </div>
-                  <div className="flex items-start gap-2 text-slate-200">
-                    <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                    <span>Saldo mensual acumulable si renuevas a tiempo</span>
-                  </div>
-                </div>
+                    <div className="flex items-start justify-between mb-1 relative">
+                      <div className="inline-flex items-center gap-1.5 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-black shadow-md">
+                        <Crown className="w-3.5 h-3.5" /> Pack Inicio
+                      </div>
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    buy('inicio');
-                  }}
-                  disabled={isBusy}
-                  className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
-                >
-                  {isBusy ? 'Abriendo…' : 'Comprar $350 / mes'}
-                </button>
-              </div>
+                    <div className="flex items-end gap-2 mt-4 mb-5 relative">
+                      <div className="flex flex-col">
+                        <span className="text-lg font-bold text-slate-400 line-through">{strikeView.symbol}{strikeView.amount} {strikeView.code}</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-5xl font-black text-white drop-shadow">{inicioPriceView.symbol}{inicioPriceView.amount}</span>
+                          <span className="text-slate-200 font-semibold text-sm">{inicioPriceView.code}</span>
+                        </div>
+                        <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente{paymentProvider === 'stripe' ? ' · Pago con Mercado Pago ($350 MXN)' : ''}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 mb-5 text-sm relative">
+                      <div className="flex items-center gap-2 text-slate-100 font-bold text-base">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> 200 canciones
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Total 1200 créditos
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Incluye ChatBot
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Clonación de voz
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Videos musicales
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Audio karaoke
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Eliminar voz / STEMS
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0" /> Descargas activas
+                      </div>
+                      <div className="flex items-start gap-2 text-slate-200">
+                        <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                        <span>Saldo mensual acumulable si renuevas a tiempo</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        buy('inicio');
+                      }}
+                      disabled={isBusy}
+                      className="relative w-full bg-blue-500 hover:bg-blue-400 text-white h-[46px] rounded-full font-extrabold text-base transition-colors disabled:opacity-60 shadow-lg shadow-black/30"
+                    >
+                      {btnInicio}
+                    </button>
+                  </div>
+                );
+              })()}
 
             </div>
           )}
