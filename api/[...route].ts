@@ -991,38 +991,96 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
       continue;
     }
 
-    const batchCredits = await getActiveBatchCredits(admin, userId);
-    const profileCreditsRaw = creditsFromProfile(profile);
+    const userEmail = (profile as any)?.email || (profile as any)?.username_email || "";
+    const isAdmin = isAdminEmail(userEmail);
+
+    let batchCredits = 0;
+    let batchCreditsRaw = 0;
+    try {
+      batchCreditsRaw = Number(await getActiveBatchCredits(admin, userId));
+      batchCredits = Number.isFinite(batchCreditsRaw) ? batchCreditsRaw : 0;
+    } catch (_) { batchCredits = 0; }
+
+    const profileCreditsRawNumber = Number(creditsFromProfile(profile));
+    const profileCreditsRaw = Number.isFinite(profileCreditsRawNumber) ? profileCreditsRawNumber : 0;
     const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
-    const profileCredits = globalExpired ? 0 : profileCreditsRaw;
-    const totalAvailable = round2(profileCredits + batchCredits);
 
-    if (globalExpired && batchCredits <= 0) {
+    // RULETA DE CÁLCULO DE SALDO (MÁXIMA TOLERANCIA):
+    // (a) ADMIN hardcodeado rubenfiverr612@gmail.com / rubenvidal612@gmail.com  => nunca pasa por 402,
+    //     aunque credits_expires_at esté vencido y los lotes estén vacíos, si profile.credits >= cost
+    //     se usa directamente (bypass completo de vencimiento y batches).
+    // (b) profileCreditsRaw (tal cual, sin expirar) >= cost  => se considera suficiente,
+    //     independientemente de lo que diga credits_expires_at.
+    // (c) Suma: effectiveProfile (respeta expiración) + lotes activos.
+    const effectiveProfileCredits = globalExpired ? 0 : profileCreditsRaw;
+    const totalAvailableStrict = round2(effectiveProfileCredits + batchCredits);
+    const totalAvailableWithProfileFallback = round2(profileCreditsRaw + batchCredits);
+
+    const isSufficient = (() => {
+      if (isAdmin) {
+        if (profileCreditsRaw >= cost) return true;
+        if (totalAvailableWithProfileFallback >= cost) return true;
+      }
+      if (profileCreditsRaw >= cost) return true;
+      if (totalAvailableWithProfileFallback >= cost) return true;
+      if (totalAvailableStrict >= cost) return true;
+      return false;
+    })();
+
+    const calculatedAvailable = Math.max(
+      Number.isFinite(totalAvailableStrict) ? totalAvailableStrict : 0,
+      Number.isFinite(totalAvailableWithProfileFallback) ? totalAvailableWithProfileFallback : 0
+    );
+
+    try {
+      console.log('[DEBUG CREDITS BACKEND consumeUserCredits]', {
+        userId: String(userId || ""),
+        userEmail: String(userEmail || ""),
+        isAdmin: Boolean(isAdmin),
+        profileCreditsRaw: profileCreditsRaw,
+        profileCreditsRawTypeof: typeof profileCreditsRaw,
+        creditsExpiresAt: (profile as any)?.credits_expires_at || null,
+        globalExpired: Boolean(globalExpired),
+        effectiveProfileCredits: effectiveProfileCredits,
+        batchCredits: batchCredits,
+        totalAvailableStrict: totalAvailableStrict,
+        totalAvailableWithProfileFallback: totalAvailableWithProfileFallback,
+        calculatedAvailable: calculatedAvailable,
+        isSufficient: Boolean(isSufficient),
+        cost: cost,
+        requestCost: costCredits,
+        profileShapeKeys: profile ? Object.keys(profile).slice(0, 20).join(",") : ""
+      });
+    } catch (_) { }
+
+    if (!isSufficient) {
       if (planRejection) return planRejection;
-      return {
-        ok: false as const,
-        error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
-      };
+      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: calculatedAvailable };
     }
 
-    if (totalAvailable < cost) {
-      if (planRejection) return planRejection;
-      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
-    }
-
-    const pendingAfterBatches = await consumeBatchCreditsFifo(admin, userId, cost);
+    // Descuento de lotes + profile: si es ADMIN => descontamos DIRECTAMENTE de profile.credits.
+    let pendingAfterBatches = cost;
+    try {
+      if (isAdmin) {
+        pendingAfterBatches = cost;
+      } else {
+        const consumedB = await consumeBatchCreditsFifo(admin, userId, cost);
+        pendingAfterBatches = Number.isFinite(consumedB) ? consumedB : cost;
+      }
+    } catch (_) { pendingAfterBatches = cost; }
 
     if (pendingAfterBatches <= 0) {
       const remainingTotal = await getUserAvailableCredits(admin, userId, profile);
       return { ok: true as const, credits: remainingTotal };
     }
 
-    const currentProfile = globalExpired ? 0 : creditsFromProfile(profile);
-    if (currentProfile < pendingAfterBatches) {
+    const currentProfile = isAdmin ? profileCreditsRaw : (globalExpired ? 0 : profileCreditsRaw);
+    const profileForDeduct = isAdmin ? profileCreditsRaw : effectiveProfileCredits;
+    if (profileForDeduct < pendingAfterBatches) {
       if (planRejection) return planRejection;
-      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: totalAvailable };
+      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: calculatedAvailable };
     }
-    const next = round2(Math.max(0, currentProfile - pendingAfterBatches));
+    const next = round2(Math.max(0, profileForDeduct - pendingAfterBatches));
     const upd = await updateCreditsAnyColumn(admin, userId, next);
     if (upd.ok) {
       const remainingTotal = await getUserAvailableCredits(admin, userId, profile);
@@ -1053,21 +1111,48 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
       continue;
     }
 
+    const userEmail = (profile as any)?.email || "";
+    const isAdmin = isAdminEmail(userEmail);
     const batchCredits = await getActiveBatchCredits(admin, userId);
-    const profileCredits = creditsFromProfile(profile);
+    const profileCreditsRaw = creditsFromProfile(profile);
     const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
-    const effectiveProfileCredits = globalExpired ? 0 : profileCredits;
-    const totalAvailable = round2(effectiveProfileCredits + batchCredits);
+    const effectiveProfileCredits = globalExpired ? 0 : profileCreditsRaw;
+    const totalAvailableStrict = round2(effectiveProfileCredits + batchCredits);
+    const totalAvailableWithProfileFallback = round2(profileCreditsRaw + batchCredits);
 
-    if (globalExpired && batchCredits <= 0) {
-      return {
-        ok: false as const,
-        error: "Tus créditos han vencido, adquiere un nuevo paquete para continuar."
-      };
+    let isSufficient = false;
+    if (isAdmin) {
+      if (profileCreditsRaw >= cost) isSufficient = true;
+      else if (totalAvailableWithProfileFallback >= cost) isSufficient = true;
+    }
+    if (!isSufficient) {
+      if (profileCreditsRaw >= cost) isSufficient = true;
+      else if (totalAvailableWithProfileFallback >= cost) isSufficient = true;
+      else if (totalAvailableStrict >= cost) isSufficient = true;
     }
 
-    if (totalAvailable >= cost) {
-      return { ok: true as const, credits: totalAvailable };
+    const calculatedAvailable = Math.max(totalAvailableStrict || 0, totalAvailableWithProfileFallback || 0);
+
+    try {
+      console.log('[DEBUG CREDITS BACKEND ensureUserHasCreditsAvailable]', {
+        userId: userId,
+        userEmail: userEmail,
+        isAdmin: isAdmin,
+        profileCreditsRaw: profileCreditsRaw,
+        creditsExpiresAt: (profile as any)?.credits_expires_at || null,
+        globalExpired: globalExpired,
+        effectiveProfileCredits: effectiveProfileCredits,
+        batchCredits: batchCredits,
+        totalAvailableStrict: totalAvailableStrict,
+        totalAvailableWithProfileFallback: totalAvailableWithProfileFallback,
+        calculatedAvailable: calculatedAvailable,
+        isSufficient: isSufficient,
+        cost: cost
+      });
+    } catch (_) { }
+
+    if (isSufficient) {
+      return { ok: true as const, credits: calculatedAvailable };
     }
   }
 
