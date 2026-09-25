@@ -3531,7 +3531,19 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const costCredits = creditsCostForModelCode(model);
       const creditsNum = Number(credits ?? NaN);
       const costNum = Number(costCredits || 0);
-      if (Number.isFinite(creditsNum) && creditsNum < costNum) {
+      try {
+        console.log('DEBUG CREDITS CHECK CreateView.tsx handleCreate creditGate expert:', {
+          credits_prop_raw: credits,
+          creditsNum: creditsNum,
+          costNum: costNum,
+          typeof_credits: typeof credits,
+          creditsIsFinite: Number.isFinite(creditsNum),
+          wouldBlockClient: Number.isFinite(creditsNum) && creditsNum < costNum,
+        });
+      } catch (_) {}
+      // Gate estricto REMOVIDO. Dejamos que el backend (/api/suno/generate o /api/mureka/generate)
+      // valide y cobre los 12 créditos formalmente en Supabase.
+      if (false && Number.isFinite(creditsNum) && creditsNum < costNum) {
         setCreditsGate({
           title: 'Créditos insuficientes',
           message: `Necesitas al menos ${costNum} créditos para generar una canción con el modelo seleccionado.`,
@@ -6374,7 +6386,19 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
     const costCredits = creditsCostForModelCode(model);
     const creditsNum = Number(credits ?? NaN);
     const costNum = Number(costCredits || 0);
-    if (Number.isFinite(creditsNum) && creditsNum < costNum) {
+    try {
+      console.log('DEBUG CREDITS CHECK CreateView.tsx handleGenerate creditGate easy:', {
+        credits_prop_raw: credits,
+        creditsNum: creditsNum,
+        costNum: costNum,
+        typeof_credits: typeof credits,
+        creditsIsFinite: Number.isFinite(creditsNum),
+        wouldBlockClient: Number.isFinite(creditsNum) && creditsNum < costNum,
+      });
+    } catch (_) {}
+    // Gate estricto REMOVIDO. Dejamos que el backend (/api/suno/generate o /api/mureka/generate)
+    // valide y cobre los 12 créditos formalmente en Supabase.
+    if (false && Number.isFinite(creditsNum) && creditsNum < costNum) {
       setCreditsGate({
         title: 'Créditos insuficientes',
         message: `Necesitas al menos ${costNum} créditos para generar una canción con el modelo seleccionado.`,

@@ -5260,7 +5260,23 @@ function ApprovedCreateContent(props) {
     const costPerSong = creditsCostForModel(data.model);
     const creditsNum = Number(credits ?? NaN);
     const costNum = Number(costPerSong || 0);
-    if (Number.isFinite(creditsNum) && creditsNum < costNum) {
+    try {
+      console.log('DEBUG CREDITS CHECK ApprovedCreatePreview.jsx creditGate:', {
+        credits_prop_raw: credits,
+        creditsNum: creditsNum,
+        costNum: costNum,
+        typeof_credits: typeof credits,
+        creditsIsFinite: Number.isFinite(creditsNum),
+        wouldBlockClient: Number.isFinite(creditsNum) && creditsNum < costNum,
+        userProfileCredits: (typeof window !== 'undefined' && window.__debugProfile && window.__debugProfile.credits) ? window.__debugProfile.credits : null,
+      });
+    } catch (_) {}
+    // GATE REMOVIDO: permitimos que SIEMPRE pase al handler de generación.
+    // El backend (/api/mureka/generate, /api/suno/generate) es el juez final
+    // único del saldo real y descuenta los créditos formalmente en la DB.
+    // Esto evita falsos positivos cuando el prop `credits` no llega sincronizado
+    // mientras el navbar sí muestra 1,322.
+    if (false && Number.isFinite(creditsNum) && creditsNum < costNum) {
       if (onOpenBalance) onOpenBalance();
       setCreditsGate({
         title: 'Créditos insuficientes',
