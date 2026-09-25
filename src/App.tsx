@@ -3334,7 +3334,8 @@ export default function App() {
       busy = true;
       try {
         const t = await getAccessToken();
-        if (!t.ok) return;
+        const hasToken = Boolean(t && t.ok && typeof (t as any).token === 'string' && (t as any).token.length > 20);
+        const tokenStr: string = hasToken ? String((t as any).token) : '';
 
         const isMureka = isMurekaPending(pending);
 
@@ -3342,8 +3343,10 @@ export default function App() {
         // RUTA MUREKA: Consultar /api/mureka/query/<taskId>
         // =========================================================
         if (isMureka) {
+          const headersM: Record<string, string> = {};
+          if (hasToken) headersM['Authorization'] = `Bearer ${tokenStr}`;
           const rm = await fetch(`/api/mureka/query/${encodeURIComponent(pending.taskId)}`, {
-            headers: { authorization: `Bearer ${t.token}` },
+            headers: headersM,
           });
           const outM = await rm.json().catch(() => ({}));
           if (!rm.ok) {
@@ -3457,8 +3460,10 @@ export default function App() {
         // =========================================================
         // RUTA SUNO (ORIGINAL): Consultar /api/suno/task
         // =========================================================
+        const headersS: Record<string, string> = {};
+        if (hasToken) headersS['Authorization'] = `Bearer ${tokenStr}`;
         const r = await fetch(`/api/suno/task?taskId=${encodeURIComponent(pending.taskId)}&kind=${encodeURIComponent(pending.kind || "generate")}`, {
-          headers: { authorization: `Bearer ${t.token}` },
+          headers: headersS,
         });
         const out = await r.json().catch(() => ({}));
         if (!r.ok) {
