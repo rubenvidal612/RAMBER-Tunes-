@@ -22850,7 +22850,7 @@ const murekaHandler = (() => {
   }
 
   function getAuthToken(req) {
-    const authHeader = (req.headers.authorization || "").toString();
+    const authHeader = (req.headers.authorization || req.headers.Authorization || "").toString();
     return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
   }
 
@@ -23145,7 +23145,7 @@ const murekaHandler = (() => {
           const ex = typeof (taskRow as any).extra === "string" ? JSON.parse((taskRow as any).extra) : (taskRow as any).extra;
           const fromCost = Number(ex && ex.cost_credits);
           if (Number.isFinite(fromCost) && fromCost > 0) taskCost = fromCost;
-          else if (ex && String(ex.model).toLowerCase() === "mureka-9.5") taskCost = 24;
+          else taskCost = 12;
         }
       } catch (_) { taskCost = 12; }
 

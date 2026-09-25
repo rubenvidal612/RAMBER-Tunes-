@@ -35,7 +35,9 @@ const MODEL_CODE_TO_PROVIDER: Record<string, string> = {
 };
 
 function creditsCostForModelCode(modelCode: string): 12 | 24 {
-  return modelCode === 'mureka-9.5' ? 24 : 12;
+  // Mureka entrega 1 canción por solicitud (12 créditos).
+  // Suno también = 12 créditos estándar. Todos los modelos mismo costo.
+  return 12;
 }
 
 const MODEL_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(

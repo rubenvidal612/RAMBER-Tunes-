@@ -273,14 +273,12 @@ const MODEL_PROVIDER_CODE = {
 };
 /**
  * Devuelve el costo en créditos según el modelo seleccionado.
- * - Mureka V9.5 = 24 créditos (modelo avanzado).
- * - Cualquier otro modelo (Suno V6, V6 Wild, V6 Mini, Mureka Auto, Mureka V9) = 12 créditos (estándar).
+ * - TODOS los modelos = 12 créditos estándar (Suno V6/V6 Wild/V6 Mini, Mureka V9.5/Auto/V9).
+ *   Mureka entrega 1 canción por llamada a $0.15 USD → 12 créditos igual que Suno.
  * @param {string} modelLabel Nombre visible del modelo.
  * @returns {number} Número entero de créditos a cobrar.
  */
 function creditsCostForModel(modelLabel) {
-  const code = MODEL_PROVIDER_CODE[modelLabel];
-  if (code && code.provider === 'mureka' && code.model === 'mureka-9.5') return 24;
   return 12;
 }
 
