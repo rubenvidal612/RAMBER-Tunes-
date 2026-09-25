@@ -22990,8 +22990,9 @@ const murekaHandler = (() => {
       const validModels = ["mureka-9.5", "auto", "mureka-9"];
       const model = validModels.indexOf(requestedModel) >= 0 ? requestedModel : "auto";
 
-      // Costo dinámico por modelo: Mureka V9.5 = 24 créditos; resto = 12 créditos (Suno cualquiera / Mureka Auto / Mureka V9)
-      const costCredits = model === "mureka-9.5" ? 24 : 12;
+      // Costo dinámico por modelo: TODOS los modelos Mureka (V9.5 / Auto / V9) = 12 créditos
+      // Mureka entrega 1 sola canción por solicitud a $0.15 USD → 12 créditos estándar.
+      const costCredits = 12;
 
       const lyricsRaw = typeof body.lyrics === "string" ? body.lyrics : "";
       const promptRaw = (typeof body.prompt === "string" ? body.prompt : "") ||

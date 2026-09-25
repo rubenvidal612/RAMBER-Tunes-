@@ -5258,11 +5258,13 @@ function ApprovedCreateContent(props) {
     }
 
     const costPerSong = creditsCostForModel(data.model);
-    if ((credits || 0) < costPerSong) {
+    const creditsNum = Number(credits ?? NaN);
+    const costNum = Number(costPerSong || 0);
+    if (Number.isFinite(creditsNum) && creditsNum < costNum) {
       if (onOpenBalance) onOpenBalance();
       setCreditsGate({
         title: 'Créditos insuficientes',
-        message: `Necesitas al menos ${costPerSong} créditos para generar una canción con el modelo seleccionado. Tu saldo actual es ${(credits || 0).toFixed(1)}.`,
+        message: `Necesitas al menos ${costNum} créditos para generar una canción con el modelo seleccionado. Tu saldo actual es ${creditsNum.toFixed(1)}.`,
       });
       return false;
     }

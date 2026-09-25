@@ -3529,10 +3529,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       }
 
       const costCredits = creditsCostForModelCode(model);
-      if (typeof credits === 'number' && Number.isFinite(credits) && credits < costCredits) {
+      const creditsNum = Number(credits ?? NaN);
+      const costNum = Number(costCredits || 0);
+      if (Number.isFinite(creditsNum) && creditsNum < costNum) {
         setCreditsGate({
           title: 'Créditos insuficientes',
-          message: `Necesitas al menos ${costCredits} créditos para generar una canción con el modelo seleccionado.`,
+          message: `Necesitas al menos ${costNum} créditos para generar una canción con el modelo seleccionado.`,
         });
         onOpenBalance?.();
         return false;
@@ -6370,10 +6372,12 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
     }
     
     const costCredits = creditsCostForModelCode(model);
-    if (typeof credits === 'number' && Number.isFinite(credits) && credits < costCredits) {
+    const creditsNum = Number(credits ?? NaN);
+    const costNum = Number(costCredits || 0);
+    if (Number.isFinite(creditsNum) && creditsNum < costNum) {
       setCreditsGate({
         title: 'Créditos insuficientes',
-        message: `Necesitas al menos ${costCredits} créditos para generar una canción con el modelo seleccionado.`,
+        message: `Necesitas al menos ${costNum} créditos para generar una canción con el modelo seleccionado.`,
       });
       onOpenBalance?.();
       return;
