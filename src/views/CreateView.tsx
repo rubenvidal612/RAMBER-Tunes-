@@ -3638,6 +3638,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           list.push({
             taskId: taskIdM,
             kind: 'generate',
+            provider: 'mureka',
             startedAt: Date.now(),
             draft: {
               title: normalizedSongTitle,
@@ -3806,6 +3807,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
             listPending.push({
               taskId: taskId2,
               kind: 'generate',
+              provider: 'suno',
               startedAt: Date.now(),
               draft: {
                 title: normalizedSongTitle,
@@ -3844,6 +3846,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         list.push({
           taskId,
           kind: 'generate',
+          provider: 'suno',
           startedAt: Date.now(),
           draft: {
             title: normalizedSongTitle,

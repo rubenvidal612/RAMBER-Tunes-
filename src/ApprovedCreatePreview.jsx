@@ -5574,6 +5574,7 @@ function ApprovedCreateContent(props) {
             listPending.push({
               taskId: taskId2,
               kind: hasAudioCover ? 'upload-cover' : 'generate',
+              provider: 'suno',
               startedAt: Date.now(),
               draft: {
                 title: normalizedSongTitle,
@@ -5625,6 +5626,7 @@ function ApprovedCreateContent(props) {
         list.push({
           taskId,
           kind: hasAudioCover ? 'upload-cover' : 'generate',
+          provider: 'suno',
           startedAt: acceptedAt,
           draft: {
             title: normalizedSongTitle,

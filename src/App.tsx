@@ -3312,6 +3312,21 @@ export default function App() {
       return { instrumentalUrl, vocalUrl };
     };
 
+    const isMurekaPending = (item: any) => {
+      try {
+        if (!item) return false;
+        const provider = String(item?.provider || '').toLowerCase().trim();
+        if (provider === 'mureka') return true;
+        const kind = String(item?.kind || '').toLowerCase().trim();
+        if (kind.startsWith('mureka') || kind.includes('mureka')) return true;
+        const draftModel = String(item?.draft?.model || '').trim().toLowerCase();
+        if (['mureka-9.5', 'auto', 'mureka-9', 'mureka-o2', 'mureka-7.6', 'mureka-8'].includes(draftModel)) return true;
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
     const tick = async () => {
       if (busy) return;
       const pending = readNextPending();
@@ -3320,6 +3335,128 @@ export default function App() {
       try {
         const t = await getAccessToken();
         if (!t.ok) return;
+
+        const isMureka = isMurekaPending(pending);
+
+        // =========================================================
+        // RUTA MUREKA: Consultar /api/mureka/query/<taskId>
+        // =========================================================
+        if (isMureka) {
+          const rm = await fetch(`/api/mureka/query/${encodeURIComponent(pending.taskId)}`, {
+            headers: { authorization: `Bearer ${t.token}` },
+          });
+          const outM = await rm.json().catch(() => ({}));
+          if (!rm.ok) {
+            const msgM = (outM?.detail || outM?.error || outM?.message || `HTTP ${Number(rm.status || 0)}`).toString();
+            bumpTaskError(pending.taskId, msgM);
+            return;
+          }
+          const statusRaw = String(outM?.status || '').trim();
+          const statusLower = statusRaw.toLowerCase();
+
+          // Actualizar progress y providerStatus
+          let pctM: number | null = null;
+          if (typeof outM?.progress === 'number') {
+            pctM = Math.max(0, Math.min(100, Math.round(Number(outM.progress))));
+          } else if (statusLower === 'succeeded' || statusLower === 'success' || statusLower === 'done' || statusLower === 'completed') {
+            pctM = 100;
+          } else if (statusLower === 'queued' || statusLower === 'preparing') {
+            pctM = 10;
+          } else if (statusLower === 'running' || statusLower === 'processing') {
+            pctM = 60;
+          }
+          patchTask(pending.taskId, {
+            providerStatus: statusRaw || 'MUREKA_RUNNING',
+            progressPct: typeof pctM === 'number' ? pctM : undefined,
+            lastError: '', failCount: 0, lastErrorAt: null,
+          });
+
+          // STATUS: SUCCEEDED / SUCCESS / DONE / COMPLETED → guardar canciones
+          if (statusLower === 'succeeded' || statusLower === 'success' || statusLower === 'done' || statusLower === 'completed') {
+            const kind = (pending.kind || 'generate').toLowerCase();
+            const rawTracks: any[] = Array.isArray(outM?.tracks) ? outM.tracks : (Array.isArray(outM?.data?.tracks) ? outM.data.tracks : []);
+            const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
+            const tracksM = rawTracks
+              .map((x: any) => ({
+                audioUrl: cleanStr(x?.audio_url || x?.audioUrl || x?.url || ''),
+                title: cleanStr(x?.title || ''),
+                coverUrl: cleanStr(x?.cover_url || x?.coverUrl || x?.image_url || ''),
+                lyrics: cleanStr(x?.lyrics || x?.lyric || ''),
+                id: cleanStr(x?.id || ''),
+              }))
+              .filter((x: any) => x.audioUrl.startsWith('http'));
+
+            if (tracksM.length === 0 && Array.isArray(outM?.library_item_ids) && outM.library_item_ids.length > 0) {
+              try {
+                await refreshLibrary();
+              } catch {}
+              const list = migrateLegacyIfNeeded();
+              const rest = Array.isArray(list) ? list.slice(1) : [];
+              writeList(rest);
+              showToast(`Listo: se guardaron ${outM.library_item_ids.length} canciones en tu Biblioteca.`);
+              return;
+            }
+
+            if (tracksM.length === 0) {
+              return;
+            }
+
+            const draft = pending.draft ?? {};
+            const baseTitle = String(draft?.title || 'Canción');
+            const draftLyrics = typeof draft?.lyrics === 'string' && draft.lyrics.trim() ? String(draft.lyrics) : '';
+            const draftPrompt = typeof draft?.prompt === 'string' && draft.prompt.trim() ? String(draft.prompt) : '';
+            const draftDescription = typeof draft?.description === 'string' && draft.description.trim() ? String(draft.description) : '';
+            const draftModel = typeof draft?.model === 'string' && draft.model.trim() ? String(draft.model).trim() : '';
+            for (let i = 0; i < tracksM.length; i++) {
+              const track = tracksM[i];
+              const suffix =
+                tracksM.length === 2 ? (i === 0 ? 'A' : i === 1 ? 'B' : String(i + 1)) : tracksM.length > 1 ? String(i + 1) : '';
+              const finalTitle = (() => {
+                const providerTitle = track.title;
+                const chosen = providerTitle || baseTitle;
+                if (!suffix) return chosen;
+                const hasSuffix = new RegExp(`\\s${suffix}$`, 'i').test(chosen);
+                return hasSuffix ? chosen : `${chosen} ${suffix}`;
+              })();
+              const autoLyrics = track.lyrics || draftLyrics || draftPrompt || draftDescription || '';
+              await addCancion({
+                id: track.id || `${pending.taskId}_${i + 1}`,
+                title: finalTitle,
+                description: draftDescription,
+                lyrics: autoLyrics || undefined,
+                sunoModel: draftModel || undefined,
+                genre: typeof draft?.genre === 'string' ? draft.genre : undefined,
+                audioUrl: track.audioUrl,
+                coverUrl: track.coverUrl || undefined,
+                sunoTaskId: pending.taskId,
+                sunoAudioId: track.id || null,
+                isCover: Boolean(draft?.isCover),
+              });
+            }
+            const list = migrateLegacyIfNeeded();
+            const rest = Array.isArray(list) ? list.slice(1) : [];
+            writeList(rest);
+            showToast(tracksM.length > 1 ? `Listo: se guardaron ${tracksM.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
+            return;
+          }
+
+          // STATUS: FAILED / ERROR / CANCELLED → error y eliminar
+          if (statusLower === 'failed' || statusLower === 'error' || statusLower === 'cancelled' || statusLower === 'canceled') {
+            const msgM = String(outM?.message || outM?.error || 'Error en la generación').trim();
+            const list = migrateLegacyIfNeeded();
+            const rest = Array.isArray(list) ? list.slice(1) : [];
+            writeList(rest);
+            showToast(msgM || 'Error en la generación con Mureka.');
+            return;
+          }
+
+          // Cualquier otro status → seguir haciendo polling (running / preparing / unknown)
+          return;
+        }
+
+        // =========================================================
+        // RUTA SUNO (ORIGINAL): Consultar /api/suno/task
+        // =========================================================
         const r = await fetch(`/api/suno/task?taskId=${encodeURIComponent(pending.taskId)}&kind=${encodeURIComponent(pending.kind || "generate")}`, {
           headers: { authorization: `Bearer ${t.token}` },
         });
@@ -3437,9 +3574,9 @@ export default function App() {
               isCover: Boolean(draft?.isCover),
             });
           }
-          const list = migrateLegacyIfNeeded();
-          const rest = Array.isArray(list) ? list.slice(1) : [];
-          writeList(rest);
+          const list2 = migrateLegacyIfNeeded();
+          const rest2 = Array.isArray(list2) ? list2.slice(1) : [];
+          writeList(rest2);
           showToast(tracks.length > 1 ? `Listo: se guardaron ${tracks.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
           return;
         }

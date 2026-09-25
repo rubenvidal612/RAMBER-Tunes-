@@ -22875,9 +22875,12 @@ const murekaHandler = (() => {
     const candidates = [];
     if (respBody && Array.isArray(respBody.data?.choices)) candidates.push(respBody.data.choices);
     if (respBody && Array.isArray(respBody.data?.output)) candidates.push(respBody.data.output);
+    if (respBody && Array.isArray(respBody.data?.results)) candidates.push(respBody.data.results);
     if (respBody && Array.isArray(respBody.choices)) candidates.push(respBody.choices);
     if (respBody && Array.isArray(respBody.output)) candidates.push(respBody.output);
+    if (respBody && Array.isArray(respBody.results)) candidates.push(respBody.results);
     if (respBody && Array.isArray(respBody.data?.data?.choices)) candidates.push(respBody.data.data.choices);
+    if (respBody && Array.isArray(respBody.data?.data?.results)) candidates.push(respBody.data.data.results);
     for (let i = 0; i < candidates.length; i++) {
       const arr = candidates[i];
       if (Array.isArray(arr) && arr.length > 0) {
@@ -22885,9 +22888,12 @@ const murekaHandler = (() => {
           return {
             audio_url: typeof t.audio_url === "string" ? t.audio_url :
                        typeof t.mp3_url === "string" ? t.mp3_url :
-                       typeof t.url === "string" ? t.url : "",
+                       typeof t.url === "string" ? t.url :
+                       typeof t.audioUrl === "string" ? t.audioUrl : "",
             cover_url: typeof t.image_url === "string" ? t.image_url :
-                       typeof t.cover_url === "string" ? t.cover_url : "",
+                       typeof t.cover_url === "string" ? t.cover_url :
+                       typeof t.imageUrl === "string" ? t.imageUrl :
+                       typeof t.coverUrl === "string" ? t.coverUrl : "",
             title: typeof t.title === "string" ? t.title : "",
             lyrics: typeof t.lyrics === "string" ? t.lyrics : (typeof t.lyric === "string" ? t.lyric : "")
           };
@@ -23028,7 +23034,9 @@ const murekaHandler = (() => {
         lyrics: lyricsRaw,
         prompt: promptRaw,
         model: model,
-        n: n
+        n: n,
+        number_of_songs: n,
+        count: n
       };
       const gRes = await murekaFetch("/song/generate", "POST", apiKey, payloadMureka, 30000);
       if (!gRes.ok || !gRes.json) {
@@ -23171,7 +23179,9 @@ const murekaHandler = (() => {
         return send(res, 200, { ok:true, status:statusMureka, progress: progress, message:"Generando canción con Mureka..." });
       }
 
-      if (statusMureka === "succeeded" || statusMureka === "success" || statusMureka === "done" || statusMureka === "completed") {
+      if (statusMureka === "succeeded" || statusMureka === "success" || statusMureka === "done" || statusMureka === "completed" ||
+          statusMureka === "finished" || statusMureka === "finish" || statusMureka === "complete" ||
+          statusMureka === "successed" || statusMureka === "ok" || statusMureka === "ready" || statusMureka === "200") {
         const tracks = extractMurekaTracks(qRes.json);
         let modelCode = "mureka-9.5";
         if (taskRow && taskRow.extra) {
