@@ -2172,71 +2172,12 @@ const sunoHandler = (() => {
           `cost=${cost} ` +
           `model=${model} ` +
           `provider_code=${Number(data?.code || 0)} ` +
-          `requested_model_in_insert=true`
+          `requested_model_in_insert=true ` +
+          `note=STATUS_COLUMN_NOT_EXIST_IN_SCHEMA_REAL_PGRST204_SO_NOT_SENT`
         );
       } catch {}
 
-      let supabaseServiceKeyLen = 0;
-      try { supabaseServiceKeyLen = String(auth?.supabaseService || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim().length; } catch {}
-      let effectiveRole = "";
-      let effectiveAuthUid = "";
-      let effectiveRoleError = "";
-      try {
-        const { data: effRow, error: effErr } = await auth.admin
-          .rpc("effective_role_and_auth_uid_suno_diag", {})
-          .limit(1)
-          .maybeSingle();
-        if (effErr) {
-          const { rows, error: rawErr }: any = await auth.admin.raw(
-            "SELECT current_user AS cu, current_setting('role', true) AS cr, current_setting('request.jwt.claim.sub', true) AS sub"
-          );
-          if (rawErr) effectiveRoleError = String(rawErr.message || rawErr || "").slice(0, 200);
-          else if (Array.isArray(rows) && rows[0]) {
-            effectiveRole = String((rows[0].cr || rows[0].cu) || "").slice(0, 40);
-            effectiveAuthUid = String(rows[0].sub || "").slice(0, 8) + "..." + String(rows[0].sub || "").slice(-4);
-          }
-        } else if (effRow) {
-          effectiveRole = String((effRow as any).role || (effRow as any).cr || "").slice(0, 40);
-          effectiveAuthUid = String((effRow as any).auth_uid || (effRow as any).sub || "").slice(0, 8) + "..." + String((effRow as any).auth_uid || "").slice(-4);
-        }
-      } catch (e: any) {
-        try {
-          const { rows, error: rawErr }: any = await auth.admin.raw(
-            "SELECT current_user AS cu, current_setting('role', true) AS cr, current_setting('request.jwt.claim.sub', true) AS sub"
-          );
-          if (rawErr) effectiveRoleError = String(rawErr.message || rawErr || "").slice(0, 200);
-          else if (Array.isArray(rows) && rows[0]) {
-            effectiveRole = String((rows[0].cr || rows[0].cu) || "").slice(0, 40);
-            effectiveAuthUid = String(rows[0].sub || "").slice(0, 8) + "..." + String(rows[0].sub || "").slice(-4);
-          }
-        } catch (e2: any) {
-          effectiveRoleError = (e2 instanceof Error ? e2.message : String(e2)).slice(0, 200);
-        }
-      }
-      try {
-        const uuidEq = (() => {
-          try {
-            if (!effectiveAuthUid || effectiveAuthUid.length < 6) return "no_jwt_sub";
-            return (userUuidStr.slice(0, 8) === effectiveAuthUid.slice(0, 8) && userUuidStr.slice(-4) === effectiveAuthUid.slice(-4))
-              ? "match_truncated"
-              : "mismatch_truncated";
-          } catch { return "compare_error"; }
-        })();
-        console.log(
-          `[SUNO_CREATE_LIFETIME GENERATE] ` +
-          `event=pre_insert_effective_role ` +
-          `taskId=${taskId} ` +
-          `service_key_len=${supabaseServiceKeyLen} ` +
-          `pg_effective_role=${effectiveRole || "(unknown)"} ` +
-          `pg_auth_uid=${effectiveAuthUid || "(null)"} ` +
-          `insert_row_user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(null)"} ` +
-          `auth_uid_vs_insert_user_id=${uuidEq} ` +
-          `role_error=${effectiveRoleError || "(none)"} ` +
-          `rls_policy_suno_tasks_insert_own_expected=IF_role_IS_SERVICE_ROLE_THEN_RLS_IGNORED__ELSE_auth_uid_MUST_EQUAL_insert_row_user_id`
-        );
-      } catch {}
-
-      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true, status: "queued" };
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
       const withModel = { ...baseTaskRow, requested_model: model };
       const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
       let insertOk = false;
@@ -2259,28 +2200,24 @@ const sunoHandler = (() => {
           insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
           if (isMissingColumnError(ins1.error)) {
             const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
-            if (ins2?.error && isMissingColumnError(ins2.error)) {
+            if (ins2?.error) {
               ins2ErrMsg = String(ins2.error?.message || ins2.error || "").slice(0, 400);
               ins2ErrCode = String(ins2.error?.code || "").slice(0, 16);
               insertLastError = ins2ErrMsg;
               insertLastPgCode = ins2ErrCode;
               insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
-              const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
-              if (ins3?.error) {
-                ins3ErrMsg = String(ins3.error?.message || ins3.error || "").slice(0, 400);
-                ins3ErrCode = String(ins3.error?.code || "").slice(0, 16);
-                insertLastError = ins3ErrMsg;
-                insertLastPgCode = ins3ErrCode;
-                insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
-              } else {
-                insertOk = true;
+              if (isMissingColumnError(ins2.error)) {
+                const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
+                if (ins3?.error) {
+                  ins3ErrMsg = String(ins3.error?.message || ins3.error || "").slice(0, 400);
+                  ins3ErrCode = String(ins3.error?.code || "").slice(0, 16);
+                  insertLastError = ins3ErrMsg;
+                  insertLastPgCode = ins3ErrCode;
+                  insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
+                } else {
+                  insertOk = true;
+                }
               }
-            } else if (ins2?.error) {
-              ins2ErrMsg = String(ins2.error?.message || ins2.error || "").slice(0, 400);
-              ins2ErrCode = String(ins2.error?.code || "").slice(0, 16);
-              insertLastError = ins2ErrMsg;
-              insertLastPgCode = ins2ErrCode;
-              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
             } else {
               insertOk = true;
             }
@@ -2482,11 +2419,96 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
+      const userUuidStr = String(user.id || "").trim();
+      try {
+        console.log(
+          `[SUNO_CREATE_LIFETIME EXTEND] ` +
+          `event=provider_task_id_ok ` +
+          `taskId=${taskId} ` +
+          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
+          `user_id_len=${userUuidStr.length} ` +
+          `kind=extend ` +
+          `cost=${cost} ` +
+          `model=${model} ` +
+          `note=STATUS_COLUMN_NOT_EXIST_IN_SCHEMA_REAL_PGRST204_SO_NOT_SENT`
+        );
+      } catch {}
+
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "extend", cost, consumed: true };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-      if (ins1?.error && isMissingColumnError(ins1.error)) {
-        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "extend", cost, consumed: true };
+      let insertOk = false;
+      let insertLastError = "";
+      let insertLastPgCode = "";
+      let insertLastPgDetail = "";
+      try {
+        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+        if (ins1?.error) {
+          insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
+          insertLastPgCode = String(ins1.error?.code || "").slice(0, 16);
+          insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
+          if (isMissingColumnError(ins1.error)) {
+            const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
+            if (ins2?.error) {
+              insertLastError = String(ins2.error?.message || ins2.error || "").slice(0, 500);
+              insertLastPgCode = String(ins2.error?.code || "").slice(0, 16);
+              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
+              if (isMissingColumnError(ins2.error)) {
+                const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
+                if (ins3?.error) {
+                  insertLastError = String(ins3.error?.message || ins3.error || "").slice(0, 500);
+                  insertLastPgCode = String(ins3.error?.code || "").slice(0, 16);
+                  insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
+                } else {
+                  insertOk = true;
+                }
+              }
+            } else {
+              insertOk = true;
+            }
+          }
+        } else {
+          insertOk = true;
+        }
+      } catch (e: any) {
+        insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
+        insertLastPgCode = String((e as any)?.code || "").slice(0, 16);
+      }
+      try {
+        console.log(
+          `[SUNO_CREATE_LIFETIME EXTEND] ` +
+          `event=insert_suno_tasks_end ` +
+          `taskId=${taskId} ` +
+          `insert_ok=${insertOk} ` +
+          `insert_error=${insertLastError || "(none)"} ` +
+          `pg_code=${insertLastPgCode || "(none)"} ` +
+          `pg_detail=${insertLastPgDetail || "(none)"}`
+        );
+      } catch {}
+
+      if (!insertOk) {
+        let refunded = false;
+        let refundError = "";
+        if (!isAdmin) {
+          try { await adjustUserCredits(auth.admin, user.id, cost); refunded = true; }
+          catch (e: any) { refundError = (e instanceof Error ? (e.message || String(e)) : String(e)).slice(0, 300); }
+        }
+        try {
+          console.error(
+            `[CRITICAL SUNO_CREATE_LIFETIME EXTEND TASK_PERSIST_FAILED] ` +
+            `taskId=${taskId} pg_code=${insertLastPgCode || "(none)"} supabase_error=${insertLastError || "(unknown)"} refunded=${refunded} refund_error=${refundError || "(none)"}`
+          );
+        } catch {}
+        return send(res, 500, {
+          error: "Error interno guardando la tarea de Suno en la base de datos.",
+          code: "TASK_PERSIST_FAILED",
+          taskId,
+          refunded,
+          pg_code: insertLastPgCode || null,
+          detail:
+            "La extensión pudo haber sido aceptada por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
+            (refunded ? "Créditos compensados correctamente." : "Créditos no compensados automáticamente: avisa a soporte."),
+        });
       }
       return send(res, 200, { taskId });
     } catch (e) {
@@ -2607,11 +2629,101 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: false };
+      if (!isAdmin) {
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+      }
+
+      const userUuidStr = String(user.id || "").trim();
+      try {
+        console.log(
+          `[SUNO_CREATE_LIFETIME UPLOAD_COVER] ` +
+          `event=provider_task_id_ok ` +
+          `taskId=${taskId} ` +
+          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
+          `user_id_len=${userUuidStr.length} ` +
+          `kind=upload-cover ` +
+          `cost=${cost} ` +
+          `model=${model} ` +
+          `note=STATUS_COLUMN_NOT_EXIST_IN_SCHEMA_REAL_PGRST204_SO_NOT_SENT`
+        );
+      } catch {}
+
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-      if (ins1?.error && isMissingColumnError(ins1.error)) {
-        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true };
+      let insertOk = false;
+      let insertLastError = "";
+      let insertLastPgCode = "";
+      let insertLastPgDetail = "";
+      try {
+        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+        if (ins1?.error) {
+          insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
+          insertLastPgCode = String(ins1.error?.code || "").slice(0, 16);
+          insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
+          if (isMissingColumnError(ins1.error)) {
+            const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
+            if (ins2?.error) {
+              insertLastError = String(ins2.error?.message || ins2.error || "").slice(0, 500);
+              insertLastPgCode = String(ins2.error?.code || "").slice(0, 16);
+              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
+              if (isMissingColumnError(ins2.error)) {
+                const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
+                if (ins3?.error) {
+                  insertLastError = String(ins3.error?.message || ins3.error || "").slice(0, 500);
+                  insertLastPgCode = String(ins3.error?.code || "").slice(0, 16);
+                  insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
+                } else {
+                  insertOk = true;
+                }
+              }
+            } else {
+              insertOk = true;
+            }
+          }
+        } else {
+          insertOk = true;
+        }
+      } catch (e: any) {
+        insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
+        insertLastPgCode = String((e as any)?.code || "").slice(0, 16);
+      }
+      try {
+        console.log(
+          `[SUNO_CREATE_LIFETIME UPLOAD_COVER] ` +
+          `event=insert_suno_tasks_end ` +
+          `taskId=${taskId} ` +
+          `insert_ok=${insertOk} ` +
+          `insert_error=${insertLastError || "(none)"} ` +
+          `pg_code=${insertLastPgCode || "(none)"} ` +
+          `pg_detail=${insertLastPgDetail || "(none)"}`
+        );
+      } catch {}
+
+      if (!insertOk) {
+        let refunded = false;
+        let refundError = "";
+        if (!isAdmin) {
+          try { await adjustUserCredits(auth.admin, user.id, cost); refunded = true; }
+          catch (e: any) { refundError = (e instanceof Error ? (e.message || String(e)) : String(e)).slice(0, 300); }
+        }
+        try {
+          console.error(
+            `[CRITICAL SUNO_CREATE_LIFETIME UPLOAD_COVER TASK_PERSIST_FAILED] ` +
+            `taskId=${taskId} pg_code=${insertLastPgCode || "(none)"} supabase_error=${insertLastError || "(unknown)"} refunded=${refunded} refund_error=${refundError || "(none)"}`
+          );
+        } catch {}
+        return send(res, 500, {
+          error: "Error interno guardando la tarea de Suno en la base de datos.",
+          code: "TASK_PERSIST_FAILED",
+          taskId,
+          refunded,
+          pg_code: insertLastPgCode || null,
+          detail:
+            "El cover pudo haber sido aceptado por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
+            (refunded ? "Créditos compensados correctamente." : "Créditos no compensados automáticamente: avisa a soporte."),
+        });
       }
       return send(res, 200, { taskId });
     } catch (e) {
