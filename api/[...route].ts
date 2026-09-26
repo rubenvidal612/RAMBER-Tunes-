@@ -2785,6 +2785,73 @@ const sunoHandler = (() => {
     const taskId = (pickQuery(req, "taskId") || "").trim();
     if (!taskId) return send(res, 400, { error: "Falta taskId" });
     const kind = (pickQuery(req, "kind") || "").trim().toLowerCase() || "generate";
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const userIdStr = String((user && user.id) || "").trim();
+
+    if (!isAdmin && userIdStr.length > 0) {
+      let ownerOk = false;
+      let sunoTasksRow: any = null;
+      let libRow: any = null;
+      let taskDbUserId = "";
+      try {
+        const s1 = await auth.admin
+          .from("suno_tasks")
+          .select("id, task_id, user_id, kind, cost, consumed, created_at")
+          .eq("task_id", taskId)
+          .limit(5);
+        const tRows = Array.isArray(s1?.data) ? (s1.data as any[]) : [];
+        if (tRows.length > 0) {
+          const exact = tRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
+          if (exact) {
+            ownerOk = true;
+            sunoTasksRow = exact;
+            taskDbUserId = String(exact?.user_id || "");
+          } else {
+            const anyOwned = tRows.find((r: any) => String(r?.user_id || "").trim().length > 0);
+            if (anyOwned) {
+              taskDbUserId = String(anyOwned.user_id || "");
+              sunoTasksRow = anyOwned;
+            }
+          }
+        }
+      } catch (e: any) {
+        try { console.log(`[suno/task owner suno_tasks error] ${e?.message || String(e)}`); } catch {}
+      }
+
+      if (!ownerOk) {
+        try {
+          const s2 = await auth.admin
+            .from("library_items")
+            .select("id, user_id, suno_task_id, created_at")
+            .eq("suno_task_id", taskId)
+            .limit(5);
+          const lRows = Array.isArray(s2?.data) ? (s2.data as any[]) : [];
+          if (lRows.length > 0) {
+            const exactLib = lRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
+            if (exactLib) {
+              ownerOk = true;
+              libRow = exactLib;
+              if (!taskDbUserId) taskDbUserId = String(exactLib.user_id || "");
+            }
+          }
+        } catch (e: any) {
+          try { console.log(`[suno/task owner library_items error] ${e?.message || String(e)}`); } catch {}
+        }
+      }
+
+      if (!ownerOk) {
+        try {
+          console.log(`[suno/task OWNERSHIP MISMATCH STOP] taskId=${taskId} kind=${kind} jwt_user_id=${userIdStr} suno_tasks_user_id=${taskDbUserId || "(no hubo match ni en suno_tasks ni library_items)"} suno_tasks_exists=${!!sunoTasksRow} library_item_with_suno_task_id_exists=${!!libRow}`);
+        } catch {}
+        return send(res, 403, {
+          error: "forbidden",
+          code: "SUNO_TASK_NOT_OWNER",
+          message: "No autorizado. Este taskId de Suno no pertenece a tu cuenta. Si crees que es un error, intenta cerrar sesión y volver a entrar.",
+          _debug: { has_suno_tasks_match: !!sunoTasksRow, has_library_items_match: !!libRow, task_id_len: taskId.length, user_id_len: userIdStr.length },
+        });
+      }
+    }
 
     try {
       const enc = encodeURIComponent(taskId);
@@ -2853,8 +2920,6 @@ const sunoHandler = (() => {
               return String(statusRaw || "").toUpperCase();
             })()
           : String(statusRaw || "").toUpperCase();
-      const user = auth.user;
-      const isAdmin = isAdminEmail(user.email);
 
       if (
         status === "FAILED" ||
@@ -20598,15 +20663,69 @@ const gptHandler = (() => {
     if (!taskId) return oauthGptSendJson(res, 400, { error: "invalid_request", message: "Falta el parámetro taskId en la query." });
 
     const isAdmin = isAdminEmail(auth.user.email);
+    const userIdStr = String((auth.user && auth.user.id) || "").trim();
+    if (!isAdmin && userIdStr.length > 0) {
+      let ownerOk = false;
+      let sunoTasksRow: any = null;
+      let libRow: any = null;
+      let taskDbUserId = "";
+      try {
+        const s1 = await auth.admin
+          .from("suno_tasks")
+          .select("id, task_id, user_id, kind, cost, consumed, created_at")
+          .eq("task_id", taskId)
+          .limit(5);
+        const tRows = Array.isArray(s1?.data) ? (s1.data as any[]) : [];
+        if (tRows.length > 0) {
+          const exact = tRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
+          if (exact) {
+            ownerOk = true;
+            sunoTasksRow = exact;
+            taskDbUserId = String(exact?.user_id || "");
+          } else {
+            const anyOwned = tRows.find((r: any) => String(r?.user_id || "").trim().length > 0);
+            if (anyOwned) {
+              taskDbUserId = String(anyOwned.user_id || "");
+              sunoTasksRow = anyOwned;
+            }
+          }
+        }
+      } catch {}
+      if (!ownerOk) {
+        try {
+          const s2 = await auth.admin
+            .from("library_items")
+            .select("id, user_id, suno_task_id, created_at")
+            .eq("suno_task_id", taskId)
+            .limit(5);
+          const lRows = Array.isArray(s2?.data) ? (s2.data as any[]) : [];
+          if (lRows.length > 0) {
+            const exactLib = lRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
+            if (exactLib) {
+              ownerOk = true;
+              libRow = exactLib;
+              if (!taskDbUserId) taskDbUserId = String(exactLib.user_id || "");
+            }
+          }
+        } catch {}
+      }
+      if (!ownerOk) {
+        try {
+          console.log(`[gpt/status OWNERSHIP MISMATCH STOP] taskId=${taskId} jwt_user_id=${userIdStr} suno_tasks_user_id=${taskDbUserId || "(ninguno)"} suno_tasks_exists=${!!sunoTasksRow} library_item_with_suno_task_id_exists=${!!libRow}`);
+        } catch {}
+        return oauthGptSendJson(res, 403, {
+          error: "forbidden",
+          code: "SUNO_TASK_NOT_OWNER",
+          message: "Este taskId de Suno no pertenece a tu cuenta de LucIAna Music.",
+        });
+      }
+    }
     try {
       const rowsRaw = await auth.admin.from("suno_tasks").select("user_id, kind, cost, consumed, created_at").eq("task_id", taskId).limit(1);
       const row = Array.isArray(rowsRaw?.data) ? rowsRaw.data[0] : null;
       if (!isAdmin) {
         if (!row || String((row as any)?.user_id || "") !== String(auth.user.id || "")) {
-          return oauthGptSendJson(res, 403, {
-            error: "forbidden",
-            message: "Este taskId no pertenece a tu cuenta de LucIAna Music.",
-          });
+          /* ownership check arriba ya tomó decision; aquí es guard rail de library_items path: nada */
         }
       }
     } catch {}
