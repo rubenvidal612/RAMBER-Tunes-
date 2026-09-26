@@ -4297,48 +4297,111 @@ export default function App() {
     );
   }
 
+  function UpdateAvailableBlockers() {
+    useEffect(() => {
+      if (typeof window === 'undefined') return;
+      const onKey = (e: KeyboardEvent) => {
+        if (!e) return;
+        const key = (e.key || '').toLowerCase();
+        if (key === 'escape' || key === 'esc') {
+          try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch {}
+          return false;
+        }
+        if (key === 'w' && (e.ctrlKey || e.metaKey)) return;
+      };
+      const onPopStateForce = () => {
+        try {
+          window.history.pushState({}, '', window.location.href);
+        } catch {}
+      };
+      const onClickWindow = (e: Event) => {
+        try {
+          if (!e) return;
+          const target = (e.target || e.currentTarget) as HTMLElement | null;
+          const modalRoot = (target && typeof target.closest === 'function') ? target.closest('[data-update-modal-root]') : null;
+          if (target && (target as any).className && typeof (target as any).className === 'string' && (target as any).className.includes('z-[999]') && !modalRoot) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        } catch {}
+      };
+      const onHashChange = () => { try { window.history.replaceState({}, '', window.location.href.split('#')[0] || '/'); } catch {}; };
+      window.addEventListener('keydown', onKey, true);
+      window.addEventListener('keyup', onKey, true);
+      window.addEventListener('popstate', onPopStateForce, true);
+      window.addEventListener('hashchange', onHashChange, true);
+      try { window.history.pushState({}, '', window.location.href); } catch {}
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+      const _prevOnBeforeUnload = window.onbeforeunload;
+      window.onbeforeunload = function (ev) {
+        try {
+          const e = ev || (window.event as any);
+          const msg = 'Hay una actualización obligatoria pendiente. Actualiza antes de salir.';
+          if (e) e.returnValue = msg;
+          return msg;
+        } catch { return; }
+      };
+      return () => {
+        window.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('keyup', onKey, true);
+        window.removeEventListener('popstate', onPopStateForce, true);
+        window.removeEventListener('hashchange', onHashChange, true);
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+        window.onbeforeunload = _prevOnBeforeUnload || null;
+      };
+    }, []);
+    return null;
+  }
+
   return (
     <div ref={appRootRef} className="h-[100dvh] w-full text-white flex flex-col font-sans overflow-hidden relative">
       {updateAvailable && !(typeof window !== 'undefined' && isLocalNetworkHost(window.location.hostname)) ? (
-        <div className="absolute inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5">
-          <div className="w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
-            <div className="text-white font-extrabold text-lg">Actualización disponible</div>
-            <div className="mt-2 text-sm text-slate-300">
-              {updateNote || 'Para evitar pantalla negra, actualiza la app ahora.'}
-            </div>
-            <div className="mt-5 flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setUpdateNote('Actualizando…');
-                  window.setTimeout(() => {
-                    try {
-                      window.location.reload();
-                    } catch {}
-                  }, 5000);
-                  hardRefreshNow(updateVersion || latestVersionRef.current || null).catch(() => {});
-                }}
-                className="flex-1 h-[44px] rounded-full font-extrabold text-sm bg-gradient-to-r from-cyan-500 to-indigo-500 shadow-[0_10px_30px_rgba(56,189,248,0.35)]"
-                style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
-                aria-label="Actualizar aplicación"
-              >
-                <span className="inline-block text-white" style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}>
-                  ACTUALIZAR
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUpdateAvailable(false);
-                  setUpdateNote('');
-                }}
-                className="flex-1 bg-white/5 border border-white/10 text-white h-[44px] rounded-full font-extrabold text-sm"
-              >
-                Más tarde
-              </button>
+        <>
+          <UpdateAvailableBlockers />
+          <div
+            className="absolute inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5"
+            onClick={(e) => {
+              try { e.preventDefault(); e.stopPropagation(); } catch {}
+            }}
+            onMouseDown={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
+            onTouchStart={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
+          >
+            <div
+              className="w-full max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-3xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.6)]"
+              onClick={(e) => { try { e.stopPropagation(); } catch {} }}
+              onMouseDown={(e) => { try { e.stopPropagation(); } catch {} }}
+              onTouchStart={(e) => { try { e.stopPropagation(); } catch {} }}
+            >
+              <div className="text-white font-extrabold text-lg">Actualización disponible</div>
+              <div className="mt-2 text-sm text-slate-300">
+                {updateNote || 'Para evitar pantalla negra, actualiza la app ahora.'}
+              </div>
+              <div className="mt-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUpdateNote('Actualizando…');
+                    window.setTimeout(() => {
+                      try {
+                        window.location.reload();
+                      } catch {}
+                    }, 5000);
+                    hardRefreshNow(updateVersion || latestVersionRef.current || null).catch(() => {});
+                  }}
+                  className="w-full h-[48px] rounded-full font-extrabold text-base bg-gradient-to-r from-cyan-500 to-indigo-500 shadow-[0_10px_30px_rgba(56,189,248,0.35)]"
+                  style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}
+                  aria-label="Actualizar aplicación"
+                >
+                  <span className="inline-block text-white" style={{ color: '#ffffff', WebkitTextFillColor: '#ffffff' }}>
+                    ACTUALIZAR
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       ) : null}
       {showIosHelp ? (
         <div className="absolute inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-5">
