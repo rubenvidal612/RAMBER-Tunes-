@@ -23,7 +23,6 @@ interface MiniPack {
 }
 
 const FALLBACK_MINI_PACKS: MiniPack[] = [
-  { id: 1, pack_key: 'mini_3', name: 'Mini', songs: 6, credits_amount: 36, price_mxn: 25, validity_days: 30, sort_order: 1 },
   { id: 5, pack_key: 'inicio_50', name: 'Inicio', songs: 12, credits_amount: 72, price_mxn: 50, validity_days: 30, sort_order: 2 },
   { id: 2, pack_key: 'chico_10', name: 'Chico', songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 3 },
   { id: 3, pack_key: 'mediano_30', name: 'Mediano', songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 4 },

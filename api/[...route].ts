@@ -1608,7 +1608,7 @@ const CANONICAL_CREDIT_PACKS = [
     validity_days: 30,
     sort_order: 1,
     description: "Hasta 6 canciones estándar (36 créditos) · pago único · Solo una vez por cuenta",
-    is_active: true,
+    is_active: false,
   },
   {
     id: 5,
