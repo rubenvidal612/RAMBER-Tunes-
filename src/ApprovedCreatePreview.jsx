@@ -1024,7 +1024,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           sourceAudio: file,
           audioDuration: duration,
           start: 0,
-          end: Math.min(10, duration),
+          // Start with the complete upload selected. The user can still narrow
+          // the range manually with the two timeline controls.
+          end: duration,
         }));
         try { URL.revokeObjectURL(objectUrl); } catch {}
         uploadWizardAudio(file, "source").catch(() => {});
@@ -1035,7 +1037,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       "error",
       () => {
         try { URL.revokeObjectURL(objectUrl); } catch {}
-        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
+        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 420 }));
         uploadWizardAudio(file, "source").catch(() => {});
       },
       { once: true },
@@ -1384,7 +1386,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           sourceAudio: file,
           audioDuration: duration,
           start: 0,
-          end: Math.min(10, duration),
+          // Start with the complete upload selected. The user can still narrow
+          // the range manually with the two timeline controls.
+          end: duration,
         }));
         try { URL.revokeObjectURL(objectUrl); } catch {}
         uploadWizardAudio(file, "source").catch(() => {});
@@ -1395,7 +1399,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       "error",
       () => {
         try { URL.revokeObjectURL(objectUrl); } catch {}
-        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 10 }));
+        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 420 }));
         uploadWizardAudio(file, "source").catch(() => {});
       },
       { once: true },
