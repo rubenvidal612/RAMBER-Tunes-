@@ -2128,9 +2128,59 @@ const sunoHandler = (() => {
           `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
           `insert_ok=${insertOk} ` +
           `insert_error=${insertLastError || "(none)"} ` +
-          `next_step=frontend_llama_fetch_/api/suno/task?taskId=${taskId}_con_Authorization_Bearer`
+          `next_step=${insertOk ? "frontend_llama_fetch_/api/suno/task?taskId=" + taskId + "_con_Authorization_Bearer" : "refund_credits_stop_return_500_TASK_PERSIST_FAILED"}`
         );
       } catch {}
+
+      if (!insertOk) {
+        try {
+          console.error(
+            `[CRITICAL SUNO_CREATE_LIFETIME GENERATE TASK_PERSIST_FAILED] ` +
+            `taskId=${taskId} ` +
+            `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
+            `kind=generate ` +
+            `cost=${cost} ` +
+            `compensation_refund_issued=false_pending_below ` +
+            `supabase_error=${insertLastError || "(unknown)"} ` +
+            `action=NO_HTTP_200_WILL_RETURN_500_AND_REFUND_CREDITS_BEST_EFFORT`
+          );
+        } catch {}
+
+        let refunded = false;
+        let refundError = "";
+        if (!isAdmin) {
+          try {
+            await adjustUserCredits(auth.admin, user.id, cost);
+            refunded = true;
+          } catch (e: any) {
+            refundError = (e instanceof Error ? (e.message || String(e)) : String(e)).slice(0, 300);
+          }
+        }
+        try {
+          console.error(
+            `[CRITICAL SUNO_CREATE_LIFETIME GENERATE TASK_PERSIST_FAILED COMPENSATION] ` +
+            `taskId=${taskId} ` +
+            `refund_credit_cost=${cost} ` +
+            `is_admin_refund_skipped=${isAdmin} ` +
+            `refunded_ok=${refunded} ` +
+            `refund_error=${refundError || "(none)"}`
+          );
+        } catch {}
+
+        return send(res, 500, {
+          error: "Error interno guardando la tarea de Suno en la base de datos.",
+          code: "TASK_PERSIST_FAILED",
+          taskId: taskId,
+          refunded: refunded,
+          detail:
+            "La generación pudo haber sido aceptada por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
+            (refunded
+              ? "Créditos compensados correctamente."
+              : refundError
+              ? `No se pudo compensar los créditos automáticamente (${refundError.slice(0, 60)}). Avisa a soporte con este taskId y código.`
+              : "Espera unos segundos y si no se refleja el reembolso avisa a soporte con este taskId y código."),
+        });
+      }
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
