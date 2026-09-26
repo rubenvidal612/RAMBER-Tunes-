@@ -23378,52 +23378,23 @@ const murekaHandler = (() => {
         : null;
 
       const token = getAuthToken(req);
-      let auth = token ? await requireAnyUserFromToken(token).catch(function () { return { ok: false }; }) : { ok: false };
-      if (auth && auth.ok && auth.admin) {
-        // Auth ok por token
-      } else {
-        // Fallback permisivo: NO devolver 401. Buscar taskId directamente en suno_tasks / library_items
-        // para confirmar que es una tarea legítima generada por este sistema, y extraer su user_id.
-        auth = { ok: true };
-        let fallbackUserId = "";
-        let fallbackTaskRow = null;
-        if (adminGlob) {
-          try {
-            const qTask = await adminGlob.from("suno_tasks")
-              .select("task_id, user_id, kind, extra, status")
-              .eq("task_id", taskIdFromPath).limit(1).maybeSingle();
-            if (qTask && qTask.data && String(qTask.data.user_id || "").length > 0) {
-              fallbackUserId = String(qTask.data.user_id);
-              fallbackTaskRow = qTask.data;
-            }
-          } catch (_) {}
-          if (!fallbackUserId) {
-            try {
-              const qLib = await adminGlob.from("library_items")
-                .select("id, user_id, mureka_task_id")
-                .eq("mureka_task_id", taskIdFromPath).limit(1).maybeSingle();
-              if (qLib && qLib.data && String(qLib.data.user_id || "").length > 0) {
-                fallbackUserId = String(qLib.data.user_id);
-              }
-            } catch (_) {}
-          }
-        }
-        if (!fallbackUserId) {
-          // TaskId no existe en el sistema → no tenemos forma de asignarlo a un usuario.
-          return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
-        }
-        auth.user = { id: fallbackUserId };
-        auth.admin = adminGlob;
+      const authByToken = token ? await requireAnyUserFromToken(token).catch(function () { return { ok: false }; }) : { ok: false };
+
+      if (!(authByToken && authByToken.ok && authByToken.user && String(authByToken.user.id || "").length > 0)) {
+        // AUTENTICACIÓN ESTRICTA: NO permitimos acceso permisivo solo por taskId.
+        // El usuario debe estar logueado con token Supabase válido.
+        return send(res, 401, { ok:false, status:"error", code:"AUTH_REQUIRED", message:"No autorizado. Inicia sesión para consultar tu tarea Mureka." });
       }
 
-      const userId = String(auth.user && auth.user.id ? auth.user.id : "");
-      const admin = auth.admin || adminGlob;
-      if (!userId || !admin) return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
+      const userId = String(authByToken.user.id || "");
+      const admin = (authByToken && (authByToken as any).admin) ? (authByToken as any).admin : adminGlob;
+      if (!admin) return send(res, 500, { ok:false, status:"error", message:"No disponible." });
 
+      // VALIDACIÓN DE PROPIEDAD ESTRICTA: el taskId debe pertenecer a ESTE userId autenticado.
       let ownerOk = false;
       let taskRow = null;
       try {
-        const q = await admin.from("suno_tasks").select("task_id, user_id, kind, extra, status")
+        const q = await admin.from("suno_tasks").select("task_id, user_id, kind, extra, status, cost")
           .eq("task_id", taskIdFromPath).limit(1).maybeSingle();
         taskRow = (q && q.data) || null;
         if (taskRow && String(taskRow.user_id || "") === userId) ownerOk = true;
@@ -23440,9 +23411,7 @@ const murekaHandler = (() => {
         } catch (_) {}
       }
       if (!ownerOk) {
-        // Si llegamos aquí tenemos userId (por token o por taskId fallback) pero no coincide.
-        // Evitamos 403: retornamos running para que el frontend siga intentando sin crash.
-        return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
+        return send(res, 403, { ok:false, status:"error", code:"NOT_OWNER", message:"No autorizado. Este taskId no pertenece a tu cuenta." });
       }
 
       try {
@@ -23455,9 +23424,12 @@ const murekaHandler = (() => {
           existingQ = { data: [] };
         }
         if (existingQ && Array.isArray(existingQ.data) && existingQ.data.length > 0) {
+          const firstRow = existingQ.data[0] || {};
           return send(res, 200, {
             ok:true, status:"succeeded", provider:"mureka",
-            library_item_ids: existingQ.data.map(function (r) { return String(r.id); }),
+            taskId: taskIdFromPath,
+            audioUrl: String((firstRow as any).audio_url || ""),
+            library_item_ids: existingQ.data.map(function (r) { return String((r as any).id); }),
             tracks: existingQ.data
           });
         }
@@ -23471,16 +23443,21 @@ const murekaHandler = (() => {
       if (!qRes.ok || !qRes.json) {
         console.error("[murekaHandler.query] Mureka GET query fail userId=", userId, "taskId=", taskIdFromPath,
           "status=", qRes.status, "text=", String(qRes.text || "").slice(0, 800));
-        return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
+        return send(res, 200, { ok:true, status:"processing", message:"Procesando..." });
       }
 
       const statusMureka = pickMurekaStatus(qRes.json);
+      const topKeys = Object.keys(qRes.json || {});
+      const dataKeys = (qRes.json && qRes.json.data && typeof qRes.json.data === "object" && !Array.isArray(qRes.json.data))
+        ? Object.keys(qRes.json.data) : "";
       try {
-        console.log("[Mureka Query Raw Response] taskId=", taskIdFromPath,
-          "statusMureka=", statusMureka,
-          "keys=", Object.keys(qRes.json || {}),
-          "dataKeys=", (qRes.json && qRes.json.data && typeof qRes.json.data === "object") ? Object.keys(qRes.json.data) : "",
-          "json=", JSON.stringify(qRes.json || {}).slice(0, 3500));
+        console.log("[Mureka Query Raw Response]", {
+          taskId: taskIdFromPath,
+          statusMureka: statusMureka,
+          topKeys: topKeys,
+          dataKeys: dataKeys,
+          jsonSnippet: JSON.stringify(qRes.json || {}).slice(0, 3500),
+        });
       } catch (_) {}
 
       // Determinar el costo original de la tarea para hacer refunds correctos
@@ -23517,7 +23494,7 @@ const murekaHandler = (() => {
         } catch (_) {}
         console.error("[murekaHandler.query] Mureka status=failed taskId=", taskIdFromPath,
           "payload=", JSON.stringify(qRes.json || {}).slice(0, 1200));
-        return send(res, 200, { ok:false, status:"failed", message:"No se pudo generar la canción con Mureka. Créditos devueltos." });
+        return send(res, 200, { ok:false, status:"failed", code:"MUREKA_RESPONSE_FAILED", message:"No se pudo generar la canción con Mureka. Créditos devueltos." });
       }
 
       if (statusMureka === "queued" || statusMureka === "preparing" || statusMureka === "running" || statusMureka === "processing") {
@@ -23525,54 +23502,178 @@ const murekaHandler = (() => {
         const d = qRes.json && qRes.json.data ? qRes.json.data : (qRes.json || {});
         if (typeof d.progress === "number") progress = d.progress;
         else if (typeof d.percentage === "number") progress = d.percentage;
-        return send(res, 200, { ok:true, status:statusMureka, progress: progress, message:"Generando canción con Mureka..." });
+        return send(res, 200, { ok:true, status:"processing", progress: progress, message:"Generando canción con Mureka..." });
       }
 
-      if (statusMureka === "succeeded" || statusMureka === "success" || statusMureka === "done" || statusMureka === "completed" ||
+      const isSuccessMureka = (statusMureka === "succeeded" || statusMureka === "success" || statusMureka === "done" || statusMureka === "completed" ||
           statusMureka === "finished" || statusMureka === "finish" || statusMureka === "complete" ||
-          statusMureka === "successed" || statusMureka === "ok" || statusMureka === "ready" || statusMureka === "200") {
-        let tracks = [];
+          statusMureka === "successed" || statusMureka === "ok" || statusMureka === "ready" || statusMureka === "200");
+
+      if (!isSuccessMureka) {
+        // Status desconocido: asume processing para no bloquear
+        return send(res, 200, { ok:true, status:"processing", message:"Procesando..." });
+      }
+
+      // ==========================================================
+      //  STATUS SUCCESS: Extraer URL audio, guardar library_items, responder succeeded.
+      //  R2: best-effort ASÍNCRONO (no bloquea respuesta)
+      // ==========================================================
+      let tracks: any[] = [];
+      try {
+        tracks = extractMurekaTracks(qRes.json) || [];
+      } catch (exErr) {
+        console.error("[murekaHandler.query] extractMurekaTracks throw. fallback empty. err=", exErr && exErr.message);
+        tracks = [];
+      }
+
+      // Second pass: extracción directa adicional para capturar URLs que el extractor perdió
+      if (Array.isArray(tracks) && tracks.length === 0) {
         try {
-          tracks = extractMurekaTracks(qRes.json) || [];
-        } catch (exErr) {
-          console.error("[murekaHandler.query] extractMurekaTracks throw. fallback empty. err=", exErr && exErr.message);
-          tracks = [];
-        }
-        try {
-          console.log("[Mureka Query Succeeded Tracks] taskId=", taskIdFromPath,
-            "tracks.length=", tracks.length,
-            "tracks=", JSON.stringify(tracks || []).slice(0, 3000));
-        } catch (_) {}
-        let modelCode = "mureka-9.5";
-        if (taskRow && taskRow.extra) {
-          try {
-            const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
-            if (ex && typeof ex.model === "string") modelCode = ex.model;
-          } catch (_) {}
-        }
-        let genderFromExtra = null;
-        let titleDefault = "Canción Mureka";
-        if (taskRow && taskRow.extra) {
-          try {
-            const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
-            if (ex) {
-              if (ex.gender) genderFromExtra = ex.gender;
-              if (typeof ex.title === "string" && ex.title.trim().length > 0) titleDefault = ex.title;
+          const findUrlDeep = (obj: any, depth: number): string | null => {
+            if (!obj || depth < 0) return null;
+            if (typeof obj === "string" && /^https?:\/\//i.test(obj) && (/audio|song|track|download|mp3|cdn|storage/i.test(obj) || obj.endsWith(".mp3") || obj.length > 40)) {
+              return obj;
             }
-          } catch (_) {}
+            if (Array.isArray(obj)) {
+              for (const it of obj) {
+                const u = findUrlDeep(it, depth - 1);
+                if (u) return u;
+              }
+              return null;
+            }
+            if (typeof obj === "object") {
+              for (const k of Object.keys(obj)) {
+                const keyLower = String(k).toLowerCase();
+                const v = (obj as any)[k];
+                const isAudioKey = /audio|song|track|download|stream|output|result|mp3|file|url/.test(keyLower);
+                if (typeof v === "string" && /^https?:\/\//i.test(v) && (isAudioKey || v.endsWith(".mp3") || v.length > 60)) return v;
+                const u = findUrlDeep(v, depth - 1);
+                if (u) return u;
+              }
+            }
+            return null;
+          };
+          const deepUrl = findUrlDeep(qRes.json, 5);
+          if (deepUrl) {
+            const findCoverDeep = (obj: any, depth: number): string | null => {
+              if (!obj || depth < 0) return null;
+              if (typeof obj === "string" && /^https?:\/\//i.test(obj) && /cover|image|art|avatar|thumb|pic/.test(obj)) return obj;
+              if (Array.isArray(obj)) {
+                for (const it of obj) {
+                  const u = findCoverDeep(it, depth - 1); if (u) return u;
+                } return null;
+              }
+              if (typeof obj === "object") {
+                for (const k of Object.keys(obj)) {
+                  const keyLower = String(k).toLowerCase();
+                  const v = (obj as any)[k];
+                  if (typeof v === "string" && /^https?:\/\//i.test(v) && /cover|image|art|avatar|thumb|pic/i.test(keyLower)) return v;
+                  const u = findCoverDeep(v, depth - 1); if (u) return u;
+                }
+              }
+              return null;
+            };
+            const findTextDeep = (obj: any, keyPattern: RegExp, depth: number): string | null => {
+              if (!obj || depth < 0) return null;
+              if (Array.isArray(obj)) {
+                for (const it of obj) { const r = findTextDeep(it, keyPattern, depth - 1); if (r) return r; }
+                return null;
+              }
+              if (typeof obj === "object") {
+                for (const k of Object.keys(obj)) {
+                  if (keyPattern.test(String(k).toLowerCase())) {
+                    const v = (obj as any)[k];
+                    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+                  }
+                  const r = findTextDeep((obj as any)[k], keyPattern, depth - 1); if (r) return r;
+                }
+              }
+              return null;
+            };
+            const coverUrl = findCoverDeep(qRes.json, 4) || "";
+            const titleT = findTextDeep(qRes.json, /title|name|song_title|nombre|titulo/i, 4) || "";
+            const lyricsT = findTextDeep(qRes.json, /lyrics|lyric|text|content|letra/i, 4) || "";
+            tracks = [{ audio_url: deepUrl, cover_url: coverUrl || "", title: titleT || "", lyrics: lyricsT || "" }];
+          }
+        } catch (dp) {
+          console.error("[murekaHandler.query] findUrlDeep exception:", dp && dp.message);
         }
+      }
 
-        const finalIds = [];
-        const finalTracks = [];
-        let atLeastOneInserted = false;
-        let loopError = null;
-        let insertedUsingDirectUrl = false;
+      try {
+        console.log("[Mureka Query Succeeded Tracks]", {
+          taskId: taskIdFromPath,
+          tracksLength: tracks.length,
+          extractionPaths: (tracks || []).map(function (x, i) {
+            return { idx: i, hasAudioUrl: Boolean(x && x.audio_url), audioUrlLen: (x && typeof x.audio_url === "string") ? x.audio_url.length : 0,
+              audioUrlPrefix: (x && typeof x.audio_url === "string") ? x.audio_url.slice(0, 80) : "" };
+          }),
+          tracksSnippet: JSON.stringify(tracks || []).slice(0, 3000),
+        });
+      } catch (_) {}
 
-        for (let idx = 0; idx < (tracks.length || 0); idx++) {
-          const tr = tracks[idx];
-          if (!tr || !tr.audio_url) continue;
+      // 🔴 CHECK OBLIGATORIO: Si no hay URL audio → failed inmediatamente, NO dejes 95%
+      const hasAnyValidAudioUrl = Array.isArray(tracks) && tracks.some(function (t) {
+        return t && typeof t.audio_url === "string" && /^https?:\/\//i.test(t.audio_url);
+      });
+      if (!hasAnyValidAudioUrl) {
+        // Refundar créditos por URL no encontrada
+        try {
+          await adjustUserCredits(admin, userId, taskCost);
+        } catch (e) {
+          console.error("[murekaHandler.query] refund on URL_NOT_FOUND taskId=", taskIdFromPath, "err=", e && e.message);
+        }
+        try {
+          if (taskRow) {
+            try {
+              await admin.from("suno_tasks").update({ status: "failed", consumed: false }).eq("task_id", taskIdFromPath);
+            } catch (_) {
+              try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskIdFromPath); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        console.error("[murekaHandler.query] MUREKA_AUDIO_URL_NOT_FOUND taskId=", taskIdFromPath,
+          "topKeys=", topKeys.join(","), "dataKeys=", String(dataKeys || ""),
+          "jsonSnippet=", JSON.stringify(qRes.json || {}).slice(0, 1500));
+        return send(res, 200, { ok:false, status:"failed", code:"MUREKA_AUDIO_URL_NOT_FOUND",
+          message:"No pude extraer la URL del audio de Mureka (status success sin URLs). Créditos devueltos. Intenta de nuevo en unos minutos." });
+      }
 
-          try {
+      let modelCode = "mureka-9.5";
+      if (taskRow && taskRow.extra) {
+        try {
+          const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
+          if (ex && typeof ex.model === "string") modelCode = ex.model;
+        } catch (_) {}
+      }
+      let genderFromExtra = null;
+      let titleDefault = "Canción Mureka";
+      if (taskRow && taskRow.extra) {
+        try {
+          const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
+          if (ex) {
+            if (ex.gender) genderFromExtra = ex.gender;
+            if (typeof ex.title === "string" && ex.title.trim().length > 0) titleDefault = ex.title;
+          }
+        } catch (_) {}
+      }
+
+      const finalIds: string[] = [];
+      const finalTracks: any[] = [];
+      let atLeastOneInserted = false;
+      let loopError: any = null;
+      let insertedUsingDirectUrl = false;
+      let firstAudioUrlReturn = "";
+
+      // 🔴 Insertar en library_items INMEDIATAMENTE con URL DIRECTA de Mureka,
+      // SIN esperar a R2. R2 se hace de fondo, sin bloquear.
+      const validTracks = (tracks || []).filter(function (t) {
+        return t && typeof t.audio_url === "string" && /^https?:\/\//i.test(t.audio_url);
+      });
+
+      for (let idx = 0; idx < validTracks.length; idx++) {
+        const tr = validTracks[idx];
+        try {
           let dedupeSkipped = false;
           try {
             let dedupeQ = null;
@@ -23583,58 +23684,17 @@ const murekaHandler = (() => {
             if (dedupeQ && Array.isArray(dedupeQ.data) && dedupeQ.data.length >= (idx + 1)) {
               const row = dedupeQ.data[idx] || null;
               if (row) {
-                finalIds.push(String(row.id));
-                finalTracks.push({ id: String(row.id), audio_url: row.audio_url });
+                finalIds.push(String((row as any).id));
+                finalTracks.push({ id: String((row as any).id), audio_url: (row as any).audio_url });
+                if (!firstAudioUrlReturn) firstAudioUrlReturn = String((row as any).audio_url || "");
                 dedupeSkipped = true;
               }
             }
           } catch (_) {}
           if (dedupeSkipped) continue;
 
-          let finalAudioUrl = tr.audio_url;
-          let usedDirect = false;
-          try {
-            if (!/\.r2\.cloudflarestorage\.com/i.test(tr.audio_url) && typeof uploadToR2 === "function") {
-              try {
-                const ctrl2 = typeof AbortController === "function" ? new AbortController() : null;
-                let tim = null;
-                if (ctrl2) tim = setTimeout(function () { try { ctrl2.abort(); } catch (_) {} }, 90000);
-                try {
-                  const resp2 = await fetch(tr.audio_url, { signal: ctrl2 ? ctrl2.signal : undefined });
-                  if (resp2 && resp2.ok) {
-                    const ab = await resp2.arrayBuffer();
-                    const buf = Buffer.from(ab);
-                    const ts = Date.now();
-                    const r2Path = "imports/" + userId + "/" + ts + "_mureka_" + taskIdFromPath + "_" + idx + ".mp3";
-                    try {
-                      const r2Url = await uploadToR2(r2Path, buf, "audio/mpeg");
-                      if (r2Url && typeof r2Url === "string" && /^https?:\/\//i.test(r2Url)) {
-                        finalAudioUrl = r2Url;
-                      } else {
-                        usedDirect = true;
-                      }
-                    } catch (upErr) {
-                      usedDirect = true;
-                      console.error("[murekaHandler.query] uploadToR2 FAIL, usamos URL directa Mureka. err=", upErr && upErr.message);
-                    }
-                  } else {
-                    usedDirect = true;
-                    console.warn("[murekaHandler.query] audio fetch HTTP !ok, usamos URL directa. status=", resp2 && resp2.status);
-                  }
-                } finally {
-                  if (tim) clearTimeout(tim);
-                }
-              } catch (fErr) {
-                usedDirect = true;
-                console.error("[murekaHandler.query] audio fetch FAIL, usamos URL directa Mureka. err=", fErr && fErr.message);
-              }
-            }
-          } catch (bigErr) {
-            usedDirect = true;
-            console.error("[murekaHandler.query] R2 block completo FAIL, fallback URL Mureka directa. err=", bigErr && bigErr.message);
-          }
-          if (usedDirect) insertedUsingDirectUrl = true;
-
+          const directAudioUrl = String(tr.audio_url);
+          const coverFinal = String(tr.cover_url || "");
           const metaObj = {
             stem_provider: "mureka",
             stem_endpoint_hint: "/v1/song/stem-separation",
@@ -23644,19 +23704,19 @@ const murekaHandler = (() => {
           };
           const songTitle = (typeof tr.title === "string" && tr.title.trim().length > 0) ? tr.title.slice(0, 140) : (titleDefault + " " + (idx + 1));
           const songLyrics = (typeof tr.lyrics === "string" && tr.lyrics.trim().length > 0) ? tr.lyrics : "";
-          const coverFinal = tr.cover_url || "";
 
           let rowId = null;
           try {
-            const toInsert = {
+            const toInsert: any = {
               user_id: userId,
               type: "song",
               title: songTitle,
               description: null,
               lyrics: songLyrics,
               gender: genderFromExtra,
-              audio_url: finalAudioUrl,
+              audio_url: directAudioUrl,
               cover_url: coverFinal,
+              status: "completed",
               suno_task_id: null,
               suno_audio_id: null,
               suno_model: null,
@@ -23668,118 +23728,166 @@ const murekaHandler = (() => {
             };
             const insRes = await tryInsertLibraryItemsFallback(admin, toInsert);
             if (insRes.ok && insRes.data) {
-              rowId = String(insRes.data.id);
+              rowId = String((insRes.data as any).id);
               atLeastOneInserted = true;
+              insertedUsingDirectUrl = true;
               finalIds.push(rowId);
+              if (!firstAudioUrlReturn) firstAudioUrlReturn = directAudioUrl;
               finalTracks.push({
                 id: rowId,
-                title: insRes.data.title,
-                audio_url: insRes.data.audio_url,
-                cover_url: insRes.data.cover_url,
-                lyrics: insRes.data.lyrics
+                title: (insRes.data as any).title,
+                audio_url: directAudioUrl,
+                cover_url: coverFinal,
+                lyrics: songLyrics,
               });
             } else {
               console.error("[murekaHandler.query] INSERT tryInsertLibraryItemsFallback NO ok idx=", idx,
-                "toInsert.audio_url.len=", finalAudioUrl.length,
-                "err=", (insRes && insRes.error && (insRes.error.message || String(insRes.error))).slice(0, 1000));
+                "audioUrlLen=", directAudioUrl.length,
+                "err=", (insRes && insRes.error && ((insRes.error as any).message || String(insRes.error))).slice(0, 1000));
             }
           } catch (insErr) {
             loopError = insErr;
             console.error("[murekaHandler.query] INSERT library_items exception. idx=", idx,
-              "err=", insErr && insErr.message,
-              "details=", (insErr && insErr.details ? String(insErr.details).slice(0, 1000) : ""),
-              "hint=", (insErr && insErr.hint ? String(insErr.hint) : ""));
+              "err=", insErr && (insErr as any).message,
+              "details=", (insErr && (insErr as any).details ? String((insErr as any).details).slice(0, 1000) : ""),
+              "hint=", (insErr && (insErr as any).hint ? String((insErr as any).hint) : ""));
           }
-          } catch (trackErr) {
-            loopError = trackErr;
-            console.error("[murekaHandler.query] EXCEPTION general track loop idx=", idx,
-              "err=", trackErr && trackErr.message);
-          }
+        } catch (trackErr) {
+          loopError = trackErr;
+          console.error("[murekaHandler.query] EXCEPTION general track loop idx=", idx,
+            "err=", trackErr && (trackErr as any).message);
         }
+      }
 
+      // Fallback último: 0 insertados con metadatos, intentamos fila MÍNIMA
+      if (finalIds.length === 0) {
         try {
-          if (taskRow) {
-            try {
-              await admin.from("suno_tasks").update({ status: "completed", consumed: atLeastOneInserted }).eq("task_id", taskIdFromPath);
-            } catch (_) {
-              try { await admin.from("suno_tasks").update({ consumed: atLeastOneInserted }).eq("task_id", taskIdFromPath); } catch (_) {}
-            }
-          }
-        } catch (_) {}
-
-        try {
-          console.log("[Mureka Query Final Result] taskId=", taskIdFromPath,
-            "finalIds.len=", finalIds.length,
-            "insertedUsingDirectUrl=", insertedUsingDirectUrl,
-            "atLeastOneInserted=", atLeastOneInserted,
-            "loopError=", loopError && (loopError.message || String(loopError)).slice(0, 500));
-        } catch (_) {}
-
-        if (finalIds.length === 0) {
-          // Fallback DE ÚLTIMA INSTANCIA: aunque fallara el upload R2 y el insert directo con metadata,
-          // intentamos insertar una fila MÍNIMA sin campos nuevos que posiblemente fallen.
-          // Al menos la canción aparece al usuario inmediatamente con la URL directa de Mureka.
-          try {
-            console.warn("[murekaHandler.query] 0 insertados: intentando fallback MIN insert sin metadata/gender.");
-            for (let idxF = 0; idxF < (tracks.length || 0); idxF++) {
-              const trF = tracks[idxF];
-              if (!trF || !trF.audio_url) continue;
-              const minRow = {
-                user_id: userId,
-                type: "song",
-                title: (typeof trF.title === "string" && trF.title.trim().length > 0)
-                  ? trF.title.slice(0, 140) : (titleDefault + " " + (idxF + 1)),
+          console.warn("[murekaHandler.query] 0 insertados: intentando fallback MIN insert sin metadata/gender.");
+          for (let idxF = 0; idxF < validTracks.length; idxF++) {
+            const trF = validTracks[idxF];
+            if (!trF || !trF.audio_url) continue;
+            const minRow: any = {
+              user_id: userId,
+              type: "song",
+              status: "completed",
+              title: (typeof trF.title === "string" && trF.title.trim().length > 0)
+                ? trF.title.slice(0, 140) : (titleDefault + " " + (idxF + 1)),
+              audio_url: String(trF.audio_url),
+              cover_url: String(trF.cover_url || ""),
+              lyrics: String(trF.lyrics || ""),
+              suno_task_id: null,
+              suno_audio_id: null,
+              suno_model: null,
+              provider: "mureka",
+              model_version: modelCode,
+              mureka_task_id: taskIdFromPath,
+              is_cover: false
+            };
+            const rF = await tryInsertLibraryItemsFallback(admin, minRow);
+            if (rF.ok && rF.data) {
+              finalIds.push(String((rF.data as any).id));
+              if (!firstAudioUrlReturn) firstAudioUrlReturn = String(trF.audio_url);
+              finalTracks.push({
+                id: String((rF.data as any).id),
+                title: (rF.data as any).title,
                 audio_url: String(trF.audio_url),
                 cover_url: String(trF.cover_url || ""),
                 lyrics: String(trF.lyrics || ""),
-                suno_task_id: null,
-                suno_audio_id: null,
-                suno_model: null,
-                provider: "mureka",
-                model_version: modelCode,
-                mureka_task_id: taskIdFromPath,
-                is_cover: false
-              };
-              const rF = await tryInsertLibraryItemsFallback(admin, minRow);
-              if (rF.ok && rF.data) {
-                finalIds.push(String(rF.data.id));
-                finalTracks.push({
-                  id: String(rF.data.id),
-                  title: rF.data.title,
-                  audio_url: rF.data.audio_url,
-                  cover_url: rF.data.cover_url,
-                  lyrics: rF.data.lyrics
-                });
-                insertedUsingDirectUrl = true;
-                atLeastOneInserted = true;
-                break;
-              } else {
-                console.error("[murekaHandler.query] fallback MIN insert TAMBIÉN falló. idxF=", idxF,
-                  "err=", rF && rF.error && (rF.error.message || String(rF.error)).slice(0, 1000));
-              }
+              });
+              insertedUsingDirectUrl = true;
+              atLeastOneInserted = true;
+              break;
+            } else {
+              console.error("[murekaHandler.query] fallback MIN insert TAMBIÉN falló. idxF=", idxF,
+                "err=", rF && rF.error && ((rF.error as any).message || String(rF.error)).slice(0, 1000));
             }
-          } catch (fallbackErr) {
-            console.error("[murekaHandler.query] fallback MIN insert exception. err=", fallbackErr && fallbackErr.message);
           }
+        } catch (fallbackErr) {
+          console.error("[murekaHandler.query] fallback MIN insert exception. err=", fallbackErr && (fallbackErr as any).message);
         }
-
-        if (finalIds.length === 0) {
-          console.error("[murekaHandler.query] SUCCEEDED pero 0 canciones guardadas (incluso después fallback). userId=", userId, "taskId=", taskIdFromPath,
-            "tracksRaw=", JSON.stringify(tracks).slice(0, 1000));
-          return send(res, 200, { ok:false, status:"failed", message:"No se pudo finalizar la canción con Mureka. Revisa Mis canciones en unos minutos." });
-        }
-
-        return send(res, 200, {
-          ok:true,
-          status:"succeeded",
-          provider:"mureka",
-          library_item_ids: finalIds,
-          tracks: finalTracks,
-          used_direct_url: insertedUsingDirectUrl
-        });
       }
 
-      return send(res, 200, { ok:true, status:"running", message:"Procesando..." });
+      try {
+        if (taskRow) {
+          try {
+            await admin.from("suno_tasks").update({ status: "completed", consumed: atLeastOneInserted }).eq("task_id", taskIdFromPath);
+          } catch (_) {
+            try { await admin.from("suno_tasks").update({ consumed: atLeastOneInserted }).eq("task_id", taskIdFromPath); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      // ☁️ R2: BEST EFFORT ASÍNCRONO (NO BLOQUEA RESPUESTA AL CLIENTE)
+      // Si por alguna razón falla download o upload, la canción ya está insertada con la URL Mureka directa.
+      (async function backgroundR2Upload() {
+        try {
+          if (typeof uploadToR2 !== "function") return;
+          for (let iR2 = 0; iR2 < finalTracks.length; iR2++) {
+            try {
+              const tr = finalTracks[iR2];
+              if (!tr || !tr.audio_url || !tr.id) continue;
+              if (/r2\.cloudflarestorage\.com/i.test(tr.audio_url)) continue;
+              const r2ItemId = String(tr.id);
+              const r2AudioUrlIn = String(tr.audio_url);
+              const ctrl2 = typeof AbortController === "function" ? new AbortController() : null;
+              let tim: any = null;
+              if (ctrl2) tim = setTimeout(function () { try { ctrl2.abort(); } catch (_) {} }, 90000);
+              try {
+                const resp2 = await fetch(r2AudioUrlIn, { signal: ctrl2 ? ctrl2.signal : undefined });
+                if (resp2 && resp2.ok) {
+                  const ab = await resp2.arrayBuffer();
+                  const buf = Buffer.from(ab);
+                  const ts = Date.now();
+                  const r2Path = "mureka/" + userId + "/" + ts + "_" + taskIdFromPath + "_" + iR2 + ".mp3";
+                  try {
+                    const r2Url = await uploadToR2(r2Path, buf, "audio/mpeg");
+                    if (r2Url && typeof r2Url === "string" && /^https?:\/\//i.test(r2Url)) {
+                      await admin.from("library_items").update({ audio_url: r2Url }).eq("id", r2ItemId);
+                    }
+                  } catch (_) { /* swallow r2 upload errors */ }
+                }
+              } finally {
+                if (tim) clearTimeout(tim);
+              }
+            } catch (_) { /* ignore individual */ }
+          }
+        } catch (_) { /* swallow async R2 wrapper */ }
+      })().catch(function () { /* ignore unhandled */ });
+
+      try {
+        console.log("[Mureka Query Final Result]", {
+          taskId: taskIdFromPath,
+          finalIdsLength: finalIds.length,
+          insertedUsingDirectUrl: insertedUsingDirectUrl,
+          atLeastOneInserted: atLeastOneInserted,
+          loopError: loopError && ((loopError as any).message || String(loopError)).slice(0, 500),
+          firstAudioUrlLen: firstAudioUrlReturn.length,
+        });
+      } catch (_) {}
+
+      if (finalIds.length === 0) {
+        try {
+          await adjustUserCredits(admin, userId, taskCost);
+        } catch (e) {
+          console.error("[murekaHandler.query] refund on ZERO INSERT taskId=", taskIdFromPath, "err=", e && (e as any).message);
+        }
+        console.error("[murekaHandler.query] SUCCEEDED pero 0 canciones guardadas (incluso después fallback). userId=", userId, "taskId=", taskIdFromPath,
+          "tracksRaw=", JSON.stringify(validTracks).slice(0, 1000));
+        return send(res, 200, { ok:false, status:"failed", code:"LIBRARY_INSERT_FAILED",
+          message:"No pude guardar la canción en tu biblioteca. Revisa Mis canciones en unos minutos. Créditos devueltos." });
+      }
+
+      return send(res, 200, {
+        ok:true,
+        status:"succeeded",
+        provider:"mureka",
+        taskId: taskIdFromPath,
+        audioUrl: firstAudioUrlReturn,
+        library_item_ids: finalIds,
+        tracks: finalTracks,
+        used_direct_url: insertedUsingDirectUrl,
+        r2_upload_in_background: true,
+      });
     }
 
     return send(res, 404, { ok:false, message:"Endpoint Mureka no encontrado." });

@@ -3374,25 +3374,87 @@ export default function App() {
             lastError: '', failCount: 0, lastErrorAt: null,
           });
 
-          // STATUS: SUCCEEDED / SUCCESS / DONE / COMPLETED → guardar canciones
-          if (statusLower === 'succeeded' || statusLower === 'success' || statusLower === 'done' || statusLower === 'completed') {
+          // STATUS: FAILED / ERROR / CANCELLED / códigos específicos → error y ELIMINAR de pending, detener polling
+          if (
+            statusLower === 'failed' || statusLower === 'error' || statusLower === 'cancelled' || statusLower === 'canceled'
+          ) {
+            let finalErrorMsg = String(outM?.message || outM?.error || 'Error en la generación').trim();
+            try {
+              const codeStr = String(outM?.code || '').trim();
+              if (codeStr) {
+                if (codeStr === 'MUREKA_AUDIO_URL_NOT_FOUND') {
+                  finalErrorMsg = finalErrorMsg || 'Mureka finalizó pero no se recibió URL del audio. Créditos devueltos.';
+                } else if (codeStr === 'LIBRARY_INSERT_FAILED') {
+                  finalErrorMsg = finalErrorMsg || 'No se guardó la canción en tu biblioteca.';
+                } else if (codeStr === 'AUTH_REQUIRED' || codeStr === 'NOT_OWNER') {
+                  finalErrorMsg = finalErrorMsg || 'No autorizado para consultar esta tarea.';
+                } else {
+                  finalErrorMsg = finalErrorMsg || `Error en la generación con Mureka (${codeStr}).`;
+                }
+              }
+            } catch (_) {}
+            try {
+              console.log('[tick MUREKA] status FAILED → stop polling.', {
+                taskId: pending.taskId,
+                statusRaw,
+                code: String(outM?.code || ''),
+                msg: finalErrorMsg,
+                response: outM,
+              });
+            } catch (_) {}
+            patchTask(pending.taskId, { providerStatus: 'FAILED', progressPct: 0, lastError: finalErrorMsg, lastErrorAt: Date.now() });
+            const list = migrateLegacyIfNeeded();
+            const rest = Array.isArray(list) ? list.slice(1) : [];
+            writeList(rest);
+            showToast(finalErrorMsg || 'Error en la generación con Mureka.');
+            return;
+          }
+
+          // STATUS: SUCCEEDED / SUCCESS / DONE / COMPLETED → progreso 100%, guardar canciones, activar reproductor
+          if (
+            statusLower === 'succeeded' || statusLower === 'success' || statusLower === 'done' || statusLower === 'completed'
+            || statusLower === 'finished' || statusLower === 'finish' || statusLower === 'complete'
+            || statusLower === 'ok' || statusLower === 'ready'
+          ) {
+            patchTask(pending.taskId, { providerStatus: 'SUCCEEDED', progressPct: 100, lastError: '', failCount: 0, lastErrorAt: null });
             const kind = (pending.kind || 'generate').toLowerCase();
-            const rawTracks: any[] = Array.isArray(outM?.tracks) ? outM.tracks : (Array.isArray(outM?.data?.tracks) ? outM.data.tracks : []);
+            const directAudioUrl: string = String(outM?.audioUrl || outM?.audio_url || '').trim();
+            const rawTracks: any[] = Array.isArray(outM?.tracks)
+              ? outM.tracks
+              : (Array.isArray(outM?.data?.tracks) ? outM.data.tracks : []);
             const cleanStr = (v: any) => (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
-            const tracksM = rawTracks
+            let tracksM = rawTracks
               .map((x: any) => ({
                 audioUrl: cleanStr(x?.audio_url || x?.audioUrl || x?.url || ''),
                 title: cleanStr(x?.title || ''),
                 coverUrl: cleanStr(x?.cover_url || x?.coverUrl || x?.image_url || ''),
                 lyrics: cleanStr(x?.lyrics || x?.lyric || ''),
                 id: cleanStr(x?.id || ''),
-              }))
-              .filter((x: any) => x.audioUrl.startsWith('http'));
+              }));
+            if (tracksM.length === 0 && directAudioUrl && directAudioUrl.startsWith('http')) {
+              tracksM = [{
+                audioUrl: directAudioUrl,
+                title: cleanStr(outM?.title || pending?.draft?.title || 'Canción Mureka'),
+                coverUrl: cleanStr(outM?.cover_url || outM?.coverUrl || (pending as any)?.draft?.coverUrl || ''),
+                lyrics: cleanStr(outM?.lyrics || (pending as any)?.draft?.lyrics || ''),
+                id: String(outM?.taskId || pending.taskId || ''),
+              }];
+            }
+            tracksM = tracksM.filter((x: any) => x && x.audioUrl && x.audioUrl.startsWith('http'));
+
+            try {
+              console.log('[tick MUREKA] status SUCCEEDED → guardar y abrir reproductor.', {
+                taskId: pending.taskId,
+                tracksMLen: tracksM.length,
+                directAudioUrlLen: directAudioUrl.length,
+                libIdsLen: Array.isArray(outM?.library_item_ids) ? outM.library_item_ids.length : 0,
+              });
+            } catch (_) {}
 
             if (tracksM.length === 0 && Array.isArray(outM?.library_item_ids) && outM.library_item_ids.length > 0) {
               try {
                 await refreshLibrary();
-              } catch {}
+              } catch { /* ignore */ }
               const list = migrateLegacyIfNeeded();
               const rest = Array.isArray(list) ? list.slice(1) : [];
               writeList(rest);
@@ -3401,6 +3463,14 @@ export default function App() {
             }
 
             if (tracksM.length === 0) {
+              // Succeeded pero sin tracks ni library_ids: forzamos refresh y salimos para no encolar 95%.
+              try {
+                await refreshLibrary();
+              } catch { /* ignore */ }
+              const list = migrateLegacyIfNeeded();
+              const rest = Array.isArray(list) ? list.slice(1) : [];
+              writeList(rest);
+              showToast('Listo: revisa tu Biblioteca en unos segundos.');
               return;
             }
 
@@ -3410,12 +3480,13 @@ export default function App() {
             const draftPrompt = typeof draft?.prompt === 'string' && draft.prompt.trim() ? String(draft.prompt) : '';
             const draftDescription = typeof draft?.description === 'string' && draft.description.trim() ? String(draft.description) : '';
             const draftModel = typeof draft?.model === 'string' && draft.model.trim() ? String(draft.model).trim() : '';
+            let firstPlayed = false;
             for (let i = 0; i < tracksM.length; i++) {
               const track = tracksM[i];
               const suffix =
                 tracksM.length === 2 ? (i === 0 ? 'A' : i === 1 ? 'B' : String(i + 1)) : tracksM.length > 1 ? String(i + 1) : '';
               const finalTitle = (() => {
-                const providerTitle = track.title;
+                const providerTitle = (track.title || '').toString().trim();
                 const chosen = providerTitle || baseTitle;
                 if (!suffix) return chosen;
                 const hasSuffix = new RegExp(`\\s${suffix}$`, 'i').test(chosen);
@@ -3435,21 +3506,17 @@ export default function App() {
                 sunoAudioId: track.id || null,
                 isCover: Boolean(draft?.isCover),
               });
+              if (!firstPlayed && track.audioUrl && typeof (window as any)?.playSongsImmediately === 'function') {
+                try {
+                  (window as any).playSongsImmediately([{ audioUrl: track.audioUrl, title: finalTitle }], { autoPlay: true, startIndex: 0 });
+                  firstPlayed = true;
+                } catch { /* ignore play */ }
+              }
             }
             const list = migrateLegacyIfNeeded();
             const rest = Array.isArray(list) ? list.slice(1) : [];
             writeList(rest);
             showToast(tracksM.length > 1 ? `Listo: se guardaron ${tracksM.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
-            return;
-          }
-
-          // STATUS: FAILED / ERROR / CANCELLED → error y eliminar
-          if (statusLower === 'failed' || statusLower === 'error' || statusLower === 'cancelled' || statusLower === 'canceled') {
-            const msgM = String(outM?.message || outM?.error || 'Error en la generación').trim();
-            const list = migrateLegacyIfNeeded();
-            const rest = Array.isArray(list) ? list.slice(1) : [];
-            writeList(rest);
-            showToast(msgM || 'Error en la generación con Mureka.');
             return;
           }
 
