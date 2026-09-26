@@ -2088,6 +2088,66 @@ const sunoHandler = (() => {
         );
       } catch {}
 
+      let supabaseServiceKeyLen = 0;
+      try { supabaseServiceKeyLen = String(auth?.supabaseService || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim().length; } catch {}
+      let effectiveRole = "";
+      let effectiveAuthUid = "";
+      let effectiveRoleError = "";
+      try {
+        const { data: effRow, error: effErr } = await auth.admin
+          .rpc("effective_role_and_auth_uid_suno_diag", {})
+          .limit(1)
+          .maybeSingle();
+        if (effErr) {
+          const { rows, error: rawErr }: any = await auth.admin.raw(
+            "SELECT current_user AS cu, current_setting('role', true) AS cr, current_setting('request.jwt.claim.sub', true) AS sub"
+          );
+          if (rawErr) effectiveRoleError = String(rawErr.message || rawErr || "").slice(0, 200);
+          else if (Array.isArray(rows) && rows[0]) {
+            effectiveRole = String((rows[0].cr || rows[0].cu) || "").slice(0, 40);
+            effectiveAuthUid = String(rows[0].sub || "").slice(0, 8) + "..." + String(rows[0].sub || "").slice(-4);
+          }
+        } else if (effRow) {
+          effectiveRole = String((effRow as any).role || (effRow as any).cr || "").slice(0, 40);
+          effectiveAuthUid = String((effRow as any).auth_uid || (effRow as any).sub || "").slice(0, 8) + "..." + String((effRow as any).auth_uid || "").slice(-4);
+        }
+      } catch (e: any) {
+        try {
+          const { rows, error: rawErr }: any = await auth.admin.raw(
+            "SELECT current_user AS cu, current_setting('role', true) AS cr, current_setting('request.jwt.claim.sub', true) AS sub"
+          );
+          if (rawErr) effectiveRoleError = String(rawErr.message || rawErr || "").slice(0, 200);
+          else if (Array.isArray(rows) && rows[0]) {
+            effectiveRole = String((rows[0].cr || rows[0].cu) || "").slice(0, 40);
+            effectiveAuthUid = String(rows[0].sub || "").slice(0, 8) + "..." + String(rows[0].sub || "").slice(-4);
+          }
+        } catch (e2: any) {
+          effectiveRoleError = (e2 instanceof Error ? e2.message : String(e2)).slice(0, 200);
+        }
+      }
+      try {
+        const uuidEq = (() => {
+          try {
+            if (!effectiveAuthUid || effectiveAuthUid.length < 6) return "no_jwt_sub";
+            return (userUuidStr.slice(0, 8) === effectiveAuthUid.slice(0, 8) && userUuidStr.slice(-4) === effectiveAuthUid.slice(-4))
+              ? "match_truncated"
+              : "mismatch_truncated";
+          } catch { return "compare_error"; }
+        })();
+        console.log(
+          `[SUNO_CREATE_LIFETIME GENERATE] ` +
+          `event=pre_insert_effective_role ` +
+          `taskId=${taskId} ` +
+          `service_key_len=${supabaseServiceKeyLen} ` +
+          `pg_effective_role=${effectiveRole || "(unknown)"} ` +
+          `pg_auth_uid=${effectiveAuthUid || "(null)"} ` +
+          `insert_row_user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(null)"} ` +
+          `auth_uid_vs_insert_user_id=${uuidEq} ` +
+          `role_error=${effectiveRoleError || "(none)"} ` +
+          `rls_policy_suno_tasks_insert_own_expected=IF_role_IS_SERVICE_ROLE_THEN_RLS_IGNORED__ELSE_auth_uid_MUST_EQUAL_insert_row_user_id`
+        );
+      } catch {}
+
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true, status: "queued" };
       const withModel = { ...baseTaskRow, requested_model: model };
       const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
