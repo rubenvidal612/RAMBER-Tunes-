@@ -2093,32 +2093,56 @@ const sunoHandler = (() => {
       const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
       let insertOk = false;
       let insertLastError = "";
+      let insertLastPgCode = "";
+      let insertLastPgDetail = "";
+      let ins1ErrMsg = "";
+      let ins1ErrCode = "";
+      let ins2ErrMsg = "";
+      let ins2ErrCode = "";
+      let ins3ErrMsg = "";
+      let ins3ErrCode = "";
       try {
         const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
         if (ins1?.error) {
-          insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
+          ins1ErrMsg = String(ins1.error?.message || ins1.error || "").slice(0, 400);
+          ins1ErrCode = String(ins1.error?.code || "").slice(0, 16);
+          insertLastError = ins1ErrMsg;
+          insertLastPgCode = ins1ErrCode;
+          insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
           if (isMissingColumnError(ins1.error)) {
             const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
             if (ins2?.error && isMissingColumnError(ins2.error)) {
+              ins2ErrMsg = String(ins2.error?.message || ins2.error || "").slice(0, 400);
+              ins2ErrCode = String(ins2.error?.code || "").slice(0, 16);
+              insertLastError = ins2ErrMsg;
+              insertLastPgCode = ins2ErrCode;
+              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
               const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
               if (ins3?.error) {
-                insertLastError = String(ins3.error?.message || ins3.error || "").slice(0, 500);
+                ins3ErrMsg = String(ins3.error?.message || ins3.error || "").slice(0, 400);
+                ins3ErrCode = String(ins3.error?.code || "").slice(0, 16);
+                insertLastError = ins3ErrMsg;
+                insertLastPgCode = ins3ErrCode;
+                insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
               } else {
                 insertOk = true;
               }
             } else if (ins2?.error) {
-              insertLastError = String(ins2.error?.message || ins2.error || "").slice(0, 500);
+              ins2ErrMsg = String(ins2.error?.message || ins2.error || "").slice(0, 400);
+              ins2ErrCode = String(ins2.error?.code || "").slice(0, 16);
+              insertLastError = ins2ErrMsg;
+              insertLastPgCode = ins2ErrCode;
+              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
             } else {
               insertOk = true;
             }
-          } else {
-            insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
           }
         } else {
           insertOk = true;
         }
       } catch (e: any) {
         insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
+        insertLastPgCode = String((e as any)?.code || "").slice(0, 16);
       }
       try {
         console.log(
@@ -2128,6 +2152,14 @@ const sunoHandler = (() => {
           `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
           `insert_ok=${insertOk} ` +
           `insert_error=${insertLastError || "(none)"} ` +
+          `pg_code=${insertLastPgCode || "(none)"} ` +
+          `pg_detail=${insertLastPgDetail || "(none)"} ` +
+          `ins1_err_msg=${ins1ErrMsg || "(none)"} ` +
+          `ins1_err_code=${ins1ErrCode || "(none)"} ` +
+          `ins2_err_msg=${ins2ErrMsg || "(none)"} ` +
+          `ins2_err_code=${ins2ErrCode || "(none)"} ` +
+          `ins3_err_msg=${ins3ErrMsg || "(none)"} ` +
+          `ins3_err_code=${ins3ErrCode || "(none)"} ` +
           `next_step=${insertOk ? "frontend_llama_fetch_/api/suno/task?taskId=" + taskId + "_con_Authorization_Bearer" : "refund_credits_stop_return_500_TASK_PERSIST_FAILED"}`
         );
       } catch {}
@@ -2141,7 +2173,12 @@ const sunoHandler = (() => {
             `kind=generate ` +
             `cost=${cost} ` +
             `compensation_refund_issued=false_pending_below ` +
+            `pg_code=${insertLastPgCode || "(none)"} ` +
+            `pg_detail=${insertLastPgDetail || "(none)"} ` +
             `supabase_error=${insertLastError || "(unknown)"} ` +
+            `ins1_code=${ins1ErrCode || "(none)"} ` +
+            `ins2_code=${ins2ErrCode || "(none)"} ` +
+            `ins3_code=${ins3ErrCode || "(none)"} ` +
             `action=NO_HTTP_200_WILL_RETURN_500_AND_REFUND_CREDITS_BEST_EFFORT`
           );
         } catch {}
@@ -2167,13 +2204,25 @@ const sunoHandler = (() => {
           );
         } catch {}
 
+        const pgCodeHint = (() => {
+          const c = insertLastPgCode || "";
+          if (c === "23502") return " [NOT NULL sin default: falta columna que no enviamos]";
+          if (c === "23503") return " [Foreign Key: user_id no existe en tabla referenciada profiles/auth.users]";
+          if (c === "23505") return " [Unique violation: task_id duplicado o PK repetida]";
+          if (c === "42501" || c === "42503") return " [Privilegios insuficientes / RLS policy bloquea insert]";
+          if (c === "42703") return " [Columna desconocida: campo que enviamos no existe]";
+          return "";
+        })();
+
         return send(res, 500, {
           error: "Error interno guardando la tarea de Suno en la base de datos.",
           code: "TASK_PERSIST_FAILED",
           taskId: taskId,
           refunded: refunded,
+          pg_code: insertLastPgCode || null,
           detail:
             "La generación pudo haber sido aceptada por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
+            `Código error BD: ${insertLastPgCode || "(desconocido)"}${pgCodeHint} | Detalle: ${(insertLastPgDetail || insertLastError || "(sin detalle)").slice(0, 200)}. ` +
             (refunded
               ? "Créditos compensados correctamente."
               : refundError
