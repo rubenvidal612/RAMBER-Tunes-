@@ -20,18 +20,12 @@ const MODEL_LABEL_TO_CODE: Record<string, string> = {
   'Suno V6 · Calidad total y clonar voz': 'V6',
   'Suno V6 Wild · Más creativo': 'V6_WILD',
   'Suno V6 Mini · Rápido y ligero': 'V6_MINI',
-  'Mureka V9.5 (Recomendado)': 'mureka-9.5',
-  'Mureka Auto': 'auto',
-  'Mureka V9': 'mureka-9',
 };
 
 const MODEL_CODE_TO_PROVIDER: Record<string, string> = {
   'V6': 'suno',
   'V6_WILD': 'suno',
   'V6_MINI': 'suno',
-  'mureka-9.5': 'mureka',
-  'auto': 'mureka',
-  'mureka-9': 'mureka',
 };
 
 function creditsCostForModelCode(modelCode: string): 12 | 24 {

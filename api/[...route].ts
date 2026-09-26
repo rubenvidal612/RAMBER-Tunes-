@@ -22930,6 +22930,8 @@ const lucianaVoiceHandler = (() => {
 })();
 
 // #region Mureka
+const MUREKA_DISABLED = true;
+const MUREKA_DISABLED_MSG = "Mureka está temporalmente deshabilitado. Por favor usa Suno por ahora.";
 const murekaHandler = (() => {
   function send(res, status, body) {
     res.statusCode = status;
@@ -23141,6 +23143,12 @@ const murekaHandler = (() => {
     const userFriendlyGenerateFail = "No pudimos iniciar la generación con Mureka. Créditos devueltos.";
 
     if (method === "POST" && sub === "generate") {
+      if (MUREKA_DISABLED) {
+        return send(res, 503, {
+          ok:false, status:"error", code:"MUREKA_DISABLED",
+          message: MUREKA_DISABLED_MSG
+        });
+      }
       const token = getAuthToken(req);
       const auth = token ? await requireAnyUserFromToken(token) : { ok: false };
       if (!auth || !auth.ok) return send(res, 401, { ok:false, message:"No autorizado." });
@@ -23369,6 +23377,12 @@ const murekaHandler = (() => {
     }
 
     if (method === "GET" && sub === "query") {
+      if (MUREKA_DISABLED) {
+        return send(res, 503, {
+          ok:false, status:"error", code:"MUREKA_DISABLED",
+          message: MUREKA_DISABLED_MSG
+        });
+      }
       const taskIdFromPath = String(subsub || "").trim();
       if (!taskIdFromPath) return send(res, 400, { ok:false, message:"Falta task_id." });
 

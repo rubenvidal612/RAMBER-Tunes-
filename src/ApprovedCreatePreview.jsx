@@ -249,9 +249,6 @@ const models = [
   ["Suno V6", "Calidad total · Ideal para clonar voz"],
   ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
   ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
-  ["Mureka V9.5 (Recomendado)", "Mejor calidad Mureka · Equilibrado"],
-  ["Mureka Auto", "Mureka elige la versión óptima"],
-  ["Mureka V9", "Versión estable anterior"],
 ];
 const VALID_MODEL_NAMES = new Set(models.map(([name]) => name));
 const normalizeModelName = (m) => VALID_MODEL_NAMES.has(m) ? m : "Suno V6";
@@ -259,17 +256,11 @@ const MODEL_TO_PROVIDER = {
   'Suno V6': 'suno',
   'Suno V6 Wild': 'suno',
   'Suno V6 Mini': 'suno',
-  'Mureka V9.5 (Recomendado)': 'mureka',
-  'Mureka Auto': 'mureka',
-  'Mureka V9': 'mureka',
 };
 const MODEL_PROVIDER_CODE = {
   'Suno V6': { provider: 'suno', model: 'V6' },
   'Suno V6 Wild': { provider: 'suno', model: 'V6_WILD' },
   'Suno V6 Mini': { provider: 'suno', model: 'V6_MINI' },
-  'Mureka V9.5 (Recomendado)': { provider: 'mureka', model: 'mureka-9.5' },
-  'Mureka Auto': { provider: 'mureka', model: 'auto' },
-  'Mureka V9': { provider: 'mureka', model: 'mureka-9' },
 };
 /**
  * Devuelve el costo en créditos según el modelo seleccionado.
@@ -3762,8 +3753,6 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
           {modelOpen && <div className="model-menu">
             <div className="model-group-label">Suno</div>
             {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'suno').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
-            <div className="model-group-label" style={{ marginTop: 8 }}>Mureka</div>
-            {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'mureka').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
             <p><Info size={16} /> Más motores próximamente</p>
           </div>}
         </div>
