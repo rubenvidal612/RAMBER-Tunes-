@@ -161,6 +161,12 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         const filtered = list.filter((p) => {
           if ((p as any).is_active === false) return false;
           const k = String(p.pack_key || '').toLowerCase();
+          const price = Number((p as any).price_mxn || 0);
+
+          // OCULTAR TEMPORALMENTE pack Mini $25 MXN (capa frontend adicional a filtro backend)
+          if (k === 'mini_3') return false;
+          if (price === 25) return false;
+
           if (k === 'grande_80' && false) return false;
           if (k === 'grande_80' && Number(p.credits_amount || 0) < 600 && Number(p.price_mxn || 0) < 200) return false;
           if (Number(p.price_mxn || 0) === 350 && Number(p.songs || 0) === 200) return false;

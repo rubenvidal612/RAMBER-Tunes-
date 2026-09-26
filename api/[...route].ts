@@ -1711,7 +1711,17 @@ async function listActiveCreditPacks(admin: any): Promise<any[]> {
     byKey.set(key, merged);
   }
   const list = Array.from(byKey.values())
-    .filter((p: any) => (p as any).is_active !== false && Number((p as any).price_mxn || 0) > 0)
+    .filter((p: any) => {
+      if ((p as any).is_active === false) return false;
+      const price = Number((p as any).price_mxn || 0);
+      if (!(price > 0)) return false;
+      const key = String((p as any).pack_key || "").trim().toLowerCase();
+      // OCULTAR TEMPORALMENTE pack Mini $25 MXN.
+      // Incluso si la tabla credit_packs lo tiene is_active=true, lo bloqueamos aquí en backend.
+      if (key === "mini_3") return false;
+      if (price === 25) return false;
+      return true;
+    })
     .sort((a: any, b: any) => {
       const s = Number((a as any).sort_order || 0) - Number((b as any).sort_order || 0);
       if (s !== 0) return s;
