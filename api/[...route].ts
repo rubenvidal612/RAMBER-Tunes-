@@ -1915,71 +1915,24 @@ const sunoHandler = (() => {
   }
 
   async function requireUser(req: any) {
-    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
-    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
-    const supabaseServiceRaw = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
-    const supabaseService = supabaseServiceRaw;
-
-    // Validación ESTRICTA de SUPABASE_SERVICE_ROLE_KEY.
-    // Si no es claramente una key service_role: NO avanzamos NADA.
-    const serviceKeyMissing = !supabaseService;
-    const serviceKeyTooShort = supabaseService.length < 200;
-    const serviceKeySameAsAnon = Boolean(supabaseAnon && supabaseService && supabaseAnon === supabaseService);
-    const serviceKeyLooksAnonLike = (() => {
-      const s = supabaseService;
-      if (!s) return false;
-      if (s.includes("InJ9yb2xlIjoiYW5vbiI")) return true;
-      if (s.includes("InJvbGUiOiJhdXRoZW50aWNhdGVk")) return true;
-      if (s.includes("eyJyb2xlIjoiYW5vbiI")) return true;
-      if (s.includes("eyJyb2xlIjoiYXV0aGVudGljYXRlZC")) return true;
-      if (/^sbp_[ab]_/i.test(s)) return true;
-      return false;
-    })();
-    const serviceRoleKeyValid =
-      !serviceKeyMissing && !serviceKeyTooShort && !serviceKeySameAsAnon && !serviceKeyLooksAnonLike;
-
-    if (!supabaseUrl || !supabaseAnon || serviceKeyMissing) {
-      return {
-        ok: false as const,
-        status: 500,
-        error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY). Configúralas en Vercel Environment Variables.",
-        serviceRoleKeyValid: false as const,
-        serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-      };
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
     }
 
     const token = getAuthToken(req);
-    if (!token) return {
-      ok: false as const,
-      status: 401,
-      error: "No autorizado",
-      serviceRoleKeyValid,
-      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-    };
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
 
     const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
-    if (userErr || !user) return {
-      ok: false as const,
-      status: 401,
-      error: "No autorizado",
-      serviceRoleKeyValid,
-      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-    };
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return {
-      ok: true as const,
-      user,
-      admin,
-      supabaseUrl,
-      supabaseAnon,
-      supabaseService,
-      serviceRoleKeyValid,
-      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-    };
+    return { ok: true as const, user, admin, supabaseUrl, supabaseAnon, supabaseService };
   }
 
   function normalizeModel(mvOrModel: string) {
@@ -2016,47 +1969,6 @@ const sunoHandler = (() => {
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    // ================================================
-    // GUARDRAIL ESTRICTO: SUPABASE_SERVICE_ROLE_KEY VALID
-    // Si la key no pasa validación (anón por accidente, etc.)
-    //  → NO cobramos créditos.
-    //  → NO llamamos a Suno.
-    //  → Respuesta 500 code=SUPABASE_SERVICE_ROLE_KEY_INVALID
-    //    para que el usuario reporte el problema a soporte.
-    // ================================================
-    const serviceRoleValid = Boolean(auth.serviceRoleKeyValid);
-    const diag: any = auth.serviceRoleDiagnostic || {};
-    if (!serviceRoleValid) {
-      const reason = (() => {
-        if (diag.serviceKeyMissing) return "SUPABASE_SERVICE_ROLE_KEY no está configurada en Vercel Environment Variables.";
-        if (diag.serviceKeySameAsAnon) return "SUPABASE_SERVICE_ROLE_KEY es IGUAL que SUPABASE_ANON_KEY. Debes poner la key service_role (NO la anónima).";
-        if (diag.serviceKeyTooShort) return `SUPABASE_SERVICE_ROLE_KEY es demasiado corta (len=${diag.serviceKeyLen || 0}). La key service_role real es ~220 caracteres.`;
-        if (diag.serviceKeyLooksAnonLike) return "SUPABASE_SERVICE_ROLE_KEY parece ser la key anónima (tiene claim role=anon/authenticated). Debes reemplazarla por la key service_role de Supabase.";
-        return "SUPABASE_SERVICE_ROLE_KEY no es válida.";
-      })();
-      try {
-        console.error(
-          `[CRITICAL CONFIG SUNO handleGenerate SUPABASE_SERVICE_ROLE_KEY_INVALID] ` +
-          `reason=${reason} ` +
-          `service_key_missing=${diag.serviceKeyMissing} ` +
-          `service_key_too_short=${diag.serviceKeyTooShort} ` +
-          `service_key_same_as_anon=${diag.serviceKeySameAsAnon} ` +
-          `service_key_looks_anon_like=${diag.serviceKeyLooksAnonLike} ` +
-          `service_key_len=${diag.serviceKeyLen || 0} ` +
-          `anon_key_len=${diag.anonKeyLen || 0} ` +
-          `action=NO_CONSUME_CREDITS_NO_CALL_PROVIDER_RETURN_500`
-        );
-      } catch {}
-      return send(res, 500, {
-        error:
-          "Error de configuración interna: no se pudo preparar la base de datos para guardar el seguimiento de tu canción. " +
-          "No se han cobrado créditos. Avisa a soporte citando este código.",
-        code: "SUPABASE_SERVICE_ROLE_KEY_INVALID",
-        detail: reason,
-        refunded: true,
-      });
-    }
 
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
@@ -2160,160 +2072,11 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      const userUuidStr = String(user.id || "").trim();
-      try {
-        console.log(
-          `[SUNO_CREATE_LIFETIME GENERATE] ` +
-          `event=provider_task_id_ok ` +
-          `taskId=${taskId} ` +
-          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
-          `user_id_len=${userUuidStr.length} ` +
-          `kind=generate ` +
-          `cost=${cost} ` +
-          `model=${model} ` +
-          `provider_code=${Number(data?.code || 0)} ` +
-          `requested_model_in_insert=true ` +
-          `note=STATUS_COLUMN_NOT_EXIST_IN_SCHEMA_REAL_PGRST204_SO_NOT_SENT`
-        );
-      } catch {}
-
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
-      let insertOk = false;
-      let insertLastError = "";
-      let insertLastPgCode = "";
-      let insertLastPgDetail = "";
-      let ins1ErrMsg = "";
-      let ins1ErrCode = "";
-      let ins2ErrMsg = "";
-      let ins2ErrCode = "";
-      let ins3ErrMsg = "";
-      let ins3ErrCode = "";
-      try {
-        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-        if (ins1?.error) {
-          ins1ErrMsg = String(ins1.error?.message || ins1.error || "").slice(0, 400);
-          ins1ErrCode = String(ins1.error?.code || "").slice(0, 16);
-          insertLastError = ins1ErrMsg;
-          insertLastPgCode = ins1ErrCode;
-          insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
-          if (isMissingColumnError(ins1.error)) {
-            const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
-            if (ins2?.error) {
-              ins2ErrMsg = String(ins2.error?.message || ins2.error || "").slice(0, 400);
-              ins2ErrCode = String(ins2.error?.code || "").slice(0, 16);
-              insertLastError = ins2ErrMsg;
-              insertLastPgCode = ins2ErrCode;
-              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
-              if (isMissingColumnError(ins2.error)) {
-                const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
-                if (ins3?.error) {
-                  ins3ErrMsg = String(ins3.error?.message || ins3.error || "").slice(0, 400);
-                  ins3ErrCode = String(ins3.error?.code || "").slice(0, 16);
-                  insertLastError = ins3ErrMsg;
-                  insertLastPgCode = ins3ErrCode;
-                  insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
-                } else {
-                  insertOk = true;
-                }
-              }
-            } else {
-              insertOk = true;
-            }
-          }
-        } else {
-          insertOk = true;
-        }
-      } catch (e: any) {
-        insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
-        insertLastPgCode = String((e as any)?.code || "").slice(0, 16);
-      }
-      try {
-        console.log(
-          `[SUNO_CREATE_LIFETIME GENERATE] ` +
-          `event=insert_suno_tasks_end ` +
-          `taskId=${taskId} ` +
-          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
-          `insert_ok=${insertOk} ` +
-          `insert_error=${insertLastError || "(none)"} ` +
-          `pg_code=${insertLastPgCode || "(none)"} ` +
-          `pg_detail=${insertLastPgDetail || "(none)"} ` +
-          `ins1_err_msg=${ins1ErrMsg || "(none)"} ` +
-          `ins1_err_code=${ins1ErrCode || "(none)"} ` +
-          `ins2_err_msg=${ins2ErrMsg || "(none)"} ` +
-          `ins2_err_code=${ins2ErrCode || "(none)"} ` +
-          `ins3_err_msg=${ins3ErrMsg || "(none)"} ` +
-          `ins3_err_code=${ins3ErrCode || "(none)"} ` +
-          `next_step=${insertOk ? "frontend_llama_fetch_/api/suno/task?taskId=" + taskId + "_con_Authorization_Bearer" : "refund_credits_stop_return_500_TASK_PERSIST_FAILED"}`
-        );
-      } catch {}
-
-      if (!insertOk) {
-        try {
-          console.error(
-            `[CRITICAL SUNO_CREATE_LIFETIME GENERATE TASK_PERSIST_FAILED] ` +
-            `taskId=${taskId} ` +
-            `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
-            `kind=generate ` +
-            `cost=${cost} ` +
-            `compensation_refund_issued=false_pending_below ` +
-            `pg_code=${insertLastPgCode || "(none)"} ` +
-            `pg_detail=${insertLastPgDetail || "(none)"} ` +
-            `supabase_error=${insertLastError || "(unknown)"} ` +
-            `ins1_code=${ins1ErrCode || "(none)"} ` +
-            `ins2_code=${ins2ErrCode || "(none)"} ` +
-            `ins3_code=${ins3ErrCode || "(none)"} ` +
-            `action=NO_HTTP_200_WILL_RETURN_500_AND_REFUND_CREDITS_BEST_EFFORT`
-          );
-        } catch {}
-
-        let refunded = false;
-        let refundError = "";
-        if (!isAdmin) {
-          try {
-            await adjustUserCredits(auth.admin, user.id, cost);
-            refunded = true;
-          } catch (e: any) {
-            refundError = (e instanceof Error ? (e.message || String(e)) : String(e)).slice(0, 300);
-          }
-        }
-        try {
-          console.error(
-            `[CRITICAL SUNO_CREATE_LIFETIME GENERATE TASK_PERSIST_FAILED COMPENSATION] ` +
-            `taskId=${taskId} ` +
-            `refund_credit_cost=${cost} ` +
-            `is_admin_refund_skipped=${isAdmin} ` +
-            `refunded_ok=${refunded} ` +
-            `refund_error=${refundError || "(none)"}`
-          );
-        } catch {}
-
-        const pgCodeHint = (() => {
-          const c = insertLastPgCode || "";
-          if (c === "23502") return " [NOT NULL sin default: falta columna que no enviamos]";
-          if (c === "23503") return " [Foreign Key: user_id no existe en tabla referenciada profiles/auth.users]";
-          if (c === "23505") return " [Unique violation: task_id duplicado o PK repetida]";
-          if (c === "42501" || c === "42503") return " [Privilegios insuficientes / RLS policy bloquea insert]";
-          if (c === "42703") return " [Columna desconocida: campo que enviamos no existe]";
-          return "";
-        })();
-
-        return send(res, 500, {
-          error: "Error interno guardando la tarea de Suno en la base de datos.",
-          code: "TASK_PERSIST_FAILED",
-          taskId: taskId,
-          refunded: refunded,
-          pg_code: insertLastPgCode || null,
-          detail:
-            "La generación pudo haber sido aceptada por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
-            `Código error BD: ${insertLastPgCode || "(desconocido)"}${pgCodeHint} | Detalle: ${(insertLastPgDetail || insertLastError || "(sin detalle)").slice(0, 200)}. ` +
-            (refunded
-              ? "Créditos compensados correctamente."
-              : refundError
-              ? `No se pudo compensar los créditos automáticamente (${refundError.slice(0, 60)}). Avisa a soporte con este taskId y código.`
-              : "Espera unos segundos y si no se refleja el reembolso avisa a soporte con este taskId y código."),
-        });
+      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+      if (ins1?.error && isMissingColumnError(ins1.error)) {
+        await auth.admin.from("suno_tasks").insert(baseTaskRow);
       }
       return send(res, 200, { taskId });
     } catch (e) {
@@ -2419,96 +2182,11 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      const userUuidStr = String(user.id || "").trim();
-      try {
-        console.log(
-          `[SUNO_CREATE_LIFETIME EXTEND] ` +
-          `event=provider_task_id_ok ` +
-          `taskId=${taskId} ` +
-          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
-          `user_id_len=${userUuidStr.length} ` +
-          `kind=extend ` +
-          `cost=${cost} ` +
-          `model=${model} ` +
-          `note=STATUS_COLUMN_NOT_EXIST_IN_SCHEMA_REAL_PGRST204_SO_NOT_SENT`
-        );
-      } catch {}
-
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "extend", cost, consumed: true };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "extend", cost, consumed: true };
-      let insertOk = false;
-      let insertLastError = "";
-      let insertLastPgCode = "";
-      let insertLastPgDetail = "";
-      try {
-        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-        if (ins1?.error) {
-          insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
-          insertLastPgCode = String(ins1.error?.code || "").slice(0, 16);
-          insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
-          if (isMissingColumnError(ins1.error)) {
-            const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
-            if (ins2?.error) {
-              insertLastError = String(ins2.error?.message || ins2.error || "").slice(0, 500);
-              insertLastPgCode = String(ins2.error?.code || "").slice(0, 16);
-              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
-              if (isMissingColumnError(ins2.error)) {
-                const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
-                if (ins3?.error) {
-                  insertLastError = String(ins3.error?.message || ins3.error || "").slice(0, 500);
-                  insertLastPgCode = String(ins3.error?.code || "").slice(0, 16);
-                  insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
-                } else {
-                  insertOk = true;
-                }
-              }
-            } else {
-              insertOk = true;
-            }
-          }
-        } else {
-          insertOk = true;
-        }
-      } catch (e: any) {
-        insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
-        insertLastPgCode = String((e as any)?.code || "").slice(0, 16);
-      }
-      try {
-        console.log(
-          `[SUNO_CREATE_LIFETIME EXTEND] ` +
-          `event=insert_suno_tasks_end ` +
-          `taskId=${taskId} ` +
-          `insert_ok=${insertOk} ` +
-          `insert_error=${insertLastError || "(none)"} ` +
-          `pg_code=${insertLastPgCode || "(none)"} ` +
-          `pg_detail=${insertLastPgDetail || "(none)"}`
-        );
-      } catch {}
-
-      if (!insertOk) {
-        let refunded = false;
-        let refundError = "";
-        if (!isAdmin) {
-          try { await adjustUserCredits(auth.admin, user.id, cost); refunded = true; }
-          catch (e: any) { refundError = (e instanceof Error ? (e.message || String(e)) : String(e)).slice(0, 300); }
-        }
-        try {
-          console.error(
-            `[CRITICAL SUNO_CREATE_LIFETIME EXTEND TASK_PERSIST_FAILED] ` +
-            `taskId=${taskId} pg_code=${insertLastPgCode || "(none)"} supabase_error=${insertLastError || "(unknown)"} refunded=${refunded} refund_error=${refundError || "(none)"}`
-          );
-        } catch {}
-        return send(res, 500, {
-          error: "Error interno guardando la tarea de Suno en la base de datos.",
-          code: "TASK_PERSIST_FAILED",
-          taskId,
-          refunded,
-          pg_code: insertLastPgCode || null,
-          detail:
-            "La extensión pudo haber sido aceptada por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
-            (refunded ? "Créditos compensados correctamente." : "Créditos no compensados automáticamente: avisa a soporte."),
-        });
+      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+      if (ins1?.error && isMissingColumnError(ins1.error)) {
+        await auth.admin.from("suno_tasks").insert(baseTaskRow);
       }
       return send(res, 200, { taskId });
     } catch (e) {
@@ -2629,101 +2307,11 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      if (!isAdmin) {
-        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
-      }
-
-      const userUuidStr = String(user.id || "").trim();
-      try {
-        console.log(
-          `[SUNO_CREATE_LIFETIME UPLOAD_COVER] ` +
-          `event=provider_task_id_ok ` +
-          `taskId=${taskId} ` +
-          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
-          `user_id_len=${userUuidStr.length} ` +
-          `kind=upload-cover ` +
-          `cost=${cost} ` +
-          `model=${model} ` +
-          `note=STATUS_COLUMN_NOT_EXIST_IN_SCHEMA_REAL_PGRST204_SO_NOT_SENT`
-        );
-      } catch {}
-
-      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true };
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: false };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true };
-      let insertOk = false;
-      let insertLastError = "";
-      let insertLastPgCode = "";
-      let insertLastPgDetail = "";
-      try {
-        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-        if (ins1?.error) {
-          insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
-          insertLastPgCode = String(ins1.error?.code || "").slice(0, 16);
-          insertLastPgDetail = String(ins1.error?.details || "").slice(0, 200);
-          if (isMissingColumnError(ins1.error)) {
-            const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
-            if (ins2?.error) {
-              insertLastError = String(ins2.error?.message || ins2.error || "").slice(0, 500);
-              insertLastPgCode = String(ins2.error?.code || "").slice(0, 16);
-              insertLastPgDetail = String(ins2.error?.details || "").slice(0, 200);
-              if (isMissingColumnError(ins2.error)) {
-                const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
-                if (ins3?.error) {
-                  insertLastError = String(ins3.error?.message || ins3.error || "").slice(0, 500);
-                  insertLastPgCode = String(ins3.error?.code || "").slice(0, 16);
-                  insertLastPgDetail = String(ins3.error?.details || "").slice(0, 200);
-                } else {
-                  insertOk = true;
-                }
-              }
-            } else {
-              insertOk = true;
-            }
-          }
-        } else {
-          insertOk = true;
-        }
-      } catch (e: any) {
-        insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
-        insertLastPgCode = String((e as any)?.code || "").slice(0, 16);
-      }
-      try {
-        console.log(
-          `[SUNO_CREATE_LIFETIME UPLOAD_COVER] ` +
-          `event=insert_suno_tasks_end ` +
-          `taskId=${taskId} ` +
-          `insert_ok=${insertOk} ` +
-          `insert_error=${insertLastError || "(none)"} ` +
-          `pg_code=${insertLastPgCode || "(none)"} ` +
-          `pg_detail=${insertLastPgDetail || "(none)"}`
-        );
-      } catch {}
-
-      if (!insertOk) {
-        let refunded = false;
-        let refundError = "";
-        if (!isAdmin) {
-          try { await adjustUserCredits(auth.admin, user.id, cost); refunded = true; }
-          catch (e: any) { refundError = (e instanceof Error ? (e.message || String(e)) : String(e)).slice(0, 300); }
-        }
-        try {
-          console.error(
-            `[CRITICAL SUNO_CREATE_LIFETIME UPLOAD_COVER TASK_PERSIST_FAILED] ` +
-            `taskId=${taskId} pg_code=${insertLastPgCode || "(none)"} supabase_error=${insertLastError || "(unknown)"} refunded=${refunded} refund_error=${refundError || "(none)"}`
-          );
-        } catch {}
-        return send(res, 500, {
-          error: "Error interno guardando la tarea de Suno en la base de datos.",
-          code: "TASK_PERSIST_FAILED",
-          taskId,
-          refunded,
-          pg_code: insertLastPgCode || null,
-          detail:
-            "El cover pudo haber sido aceptado por Suno pero no pudimos registrar el seguimiento en LuciAna Music. " +
-            (refunded ? "Créditos compensados correctamente." : "Créditos no compensados automáticamente: avisa a soporte."),
-        });
+      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+      if (ins1?.error && isMissingColumnError(ins1.error)) {
+        await auth.admin.from("suno_tasks").insert(baseTaskRow);
       }
       return send(res, 200, { taskId });
     } catch (e) {
@@ -3197,119 +2785,6 @@ const sunoHandler = (() => {
     const taskId = (pickQuery(req, "taskId") || "").trim();
     if (!taskId) return send(res, 400, { error: "Falta taskId" });
     const kind = (pickQuery(req, "kind") || "").trim().toLowerCase() || "generate";
-    const user = auth.user;
-    const isAdmin = isAdminEmail(user.email);
-    const userIdStr = String((user && user.id) || "").trim();
-    const haveAuthHeader =
-      typeof (req.headers && (req.headers.authorization || req.headers.Authorization)) === "string" &&
-      (req.headers.authorization || req.headers.Authorization || "").toString().toLowerCase().startsWith("bearer ");
-
-    if (!isAdmin && userIdStr.length > 0) {
-      let ownerOk = false;
-      let sunoTasksRow: any = null;
-      let libRow: any = null;
-      let taskDbUserId = "";
-      let sunoTaskExists = false;
-      let sunoTaskUserIdIsNull = false;
-      let sunoTaskStatus: any = null;
-      let sunoTaskCreatedAt: any = null;
-      let sunoTaskKind = "";
-      let sunoTaskConsumed: any = null;
-      try {
-        const s1 = await auth.admin
-          .from("suno_tasks")
-          .select("id, task_id, user_id, kind, cost, consumed, created_at, status")
-          .eq("task_id", taskId)
-          .limit(5);
-        const tRows = Array.isArray(s1?.data) ? (s1.data as any[]) : [];
-        if (tRows.length > 0) {
-          sunoTaskExists = true;
-          const anyRow = tRows[0];
-          sunoTasksRow = anyRow;
-          taskDbUserId = String(anyRow?.user_id || "").trim();
-          sunoTaskUserIdIsNull = taskDbUserId.length === 0;
-          sunoTaskStatus = anyRow?.status ?? null;
-          sunoTaskCreatedAt = anyRow?.created_at ?? null;
-          sunoTaskKind = String(anyRow?.kind || "").trim();
-          sunoTaskConsumed = anyRow?.consumed ?? null;
-          const exact = tRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
-          if (exact) {
-            ownerOk = true;
-            sunoTasksRow = exact;
-            taskDbUserId = String(exact?.user_id || "");
-          }
-        }
-      } catch (e: any) {
-        try { console.log(`[suno/task owner suno_tasks error] ${e?.message || String(e)}`); } catch {}
-      }
-
-      if (!ownerOk) {
-        try {
-          const s2 = await auth.admin
-            .from("library_items")
-            .select("id, user_id, suno_task_id, created_at")
-            .eq("suno_task_id", taskId)
-            .limit(5);
-          const lRows = Array.isArray(s2?.data) ? (s2.data as any[]) : [];
-          if (lRows.length > 0) {
-            const exactLib = lRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
-            if (exactLib) {
-              ownerOk = true;
-              libRow = exactLib;
-              if (!taskDbUserId) taskDbUserId = String(exactLib.user_id || "");
-            }
-          }
-        } catch (e: any) {
-          try { console.log(`[suno/task owner library_items error] ${e?.message || String(e)}`); } catch {}
-        }
-      }
-
-      try {
-        console.log(
-          `[suno/task POLLING VERBOSE] ` +
-          `taskId=${taskId} ` +
-          `kind=${kind} ` +
-          `jwt_user_id=${userIdStr.slice(0, 8)}...${userIdStr.slice(-4)} ` +
-          `jwt_user_id_len=${userIdStr.length} ` +
-          `header_bearer_present=${haveAuthHeader} ` +
-          `suno_task_exists=${sunoTaskExists} ` +
-          `suno_tasks_user_id=${taskDbUserId ? (taskDbUserId.slice(0, 8) + "..." + taskDbUserId.slice(-4)) : "(NONE_OR_NULL)"} ` +
-          `suno_tasks_user_id_is_null=${sunoTaskUserIdIsNull} ` +
-          `suno_tasks_status=${String(sunoTaskStatus ?? "").slice(0, 30)} ` +
-          `suno_tasks_kind=${sunoTaskKind} ` +
-          `suno_tasks_consumed=${String(sunoTaskConsumed ?? "")} ` +
-          `suno_tasks_created_at=${String(sunoTaskCreatedAt ?? "")} ` +
-          `library_item_with_suno_task_id_found=${!!libRow} ` +
-          `owner_ok_result=${ownerOk} ` +
-          `http_403_emitted=${!ownerOk} ` +
-          `classification_case=${
-            !ownerOk
-              ? (!sunoTaskExists
-                  ? "D) suno_tasks fila NO EXISTE (ni library_items evidencia)"
-                  : sunoTaskUserIdIsNull
-                  ? "B) suno_tasks.user_id ES NULL y no hay library_items evidencia HISTÓRICA del mismo usuario"
-                  : "C) suno_tasks.user_id PERTENECE A OTRA CUENTA (no coincide user_id del JWT)")
-              : "A) user_id COINCIDE (o library_items suno_task_id evidencia coincide) OK"
-          }`
-        );
-      } catch {}
-
-      if (!ownerOk) {
-        return send(res, 403, {
-          error: "forbidden",
-          code: "SUNO_TASK_NOT_OWNER",
-          message: "No autorizado. Este taskId de Suno no pertenece a tu cuenta. Si crees que es un error, intenta cerrar sesión y volver a entrar.",
-          stop_polling: true,
-          _debug: {
-            has_suno_tasks_match: !!sunoTasksRow,
-            has_library_items_match: !!libRow,
-            suno_tasks_user_id_is_null: sunoTaskUserIdIsNull,
-            task_id_len: taskId.length,
-            user_id_len: userIdStr.length,
-          },
-        });
-      }
-    }
 
     try {
       const enc = encodeURIComponent(taskId);
@@ -3378,6 +2853,8 @@ const sunoHandler = (() => {
               return String(statusRaw || "").toUpperCase();
             })()
           : String(statusRaw || "").toUpperCase();
+      const user = auth.user;
+      const isAdmin = isAdminEmail(user.email);
 
       if (
         status === "FAILED" ||
@@ -6421,71 +5898,24 @@ const mercadoPagoHandler = (() => {
   }
 
   async function requireUser(req: any) {
-    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
-    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
-    const supabaseServiceRaw = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
-    const supabaseService = supabaseServiceRaw;
-
-    // Validación ESTRICTA de SUPABASE_SERVICE_ROLE_KEY.
-    // Si no es claramente una key service_role: NO avanzamos NADA.
-    const serviceKeyMissing = !supabaseService;
-    const serviceKeyTooShort = supabaseService.length < 200;
-    const serviceKeySameAsAnon = Boolean(supabaseAnon && supabaseService && supabaseAnon === supabaseService);
-    const serviceKeyLooksAnonLike = (() => {
-      const s = supabaseService;
-      if (!s) return false;
-      if (s.includes("InJ9yb2xlIjoiYW5vbiI")) return true;
-      if (s.includes("InJvbGUiOiJhdXRoZW50aWNhdGVk")) return true;
-      if (s.includes("eyJyb2xlIjoiYW5vbiI")) return true;
-      if (s.includes("eyJyb2xlIjoiYXV0aGVudGljYXRlZC")) return true;
-      if (/^sbp_[ab]_/i.test(s)) return true;
-      return false;
-    })();
-    const serviceRoleKeyValid =
-      !serviceKeyMissing && !serviceKeyTooShort && !serviceKeySameAsAnon && !serviceKeyLooksAnonLike;
-
-    if (!supabaseUrl || !supabaseAnon || serviceKeyMissing) {
-      return {
-        ok: false as const,
-        status: 500,
-        error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY). Configúralas en Vercel Environment Variables.",
-        serviceRoleKeyValid: false as const,
-        serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-      };
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
     }
 
     const token = getAuthToken(req);
-    if (!token) return {
-      ok: false as const,
-      status: 401,
-      error: "No autorizado",
-      serviceRoleKeyValid,
-      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-    };
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
 
     const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
-    if (userErr || !user) return {
-      ok: false as const,
-      status: 401,
-      error: "No autorizado",
-      serviceRoleKeyValid,
-      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-    };
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return {
-      ok: true as const,
-      user,
-      admin,
-      supabaseUrl,
-      supabaseAnon,
-      supabaseService,
-      serviceRoleKeyValid,
-      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
-    };
+    return { ok: true as const, user, admin, supabaseUrl, supabaseAnon, supabaseService };
   }
 
   type PackKey = "inicio" | "productor" | "masterizar";
@@ -21168,98 +20598,15 @@ const gptHandler = (() => {
     if (!taskId) return oauthGptSendJson(res, 400, { error: "invalid_request", message: "Falta el parámetro taskId en la query." });
 
     const isAdmin = isAdminEmail(auth.user.email);
-    const userIdStr = String((auth.user && auth.user.id) || "").trim();
-    const haveAuthHeader =
-      typeof (req.headers && (req.headers.authorization || req.headers.Authorization)) === "string" &&
-      (req.headers.authorization || req.headers.Authorization || "").toString().toLowerCase().startsWith("bearer ");
-
-    if (!isAdmin && userIdStr.length > 0) {
-      let ownerOk = false;
-      let sunoTasksRow: any = null;
-      let libRow: any = null;
-      let taskDbUserId = "";
-      let sunoTaskExists = false;
-      let sunoTaskUserIdIsNull = false;
-      try {
-        const s1 = await auth.admin
-          .from("suno_tasks")
-          .select("id, task_id, user_id, kind, cost, consumed, created_at, status")
-          .eq("task_id", taskId)
-          .limit(5);
-        const tRows = Array.isArray(s1?.data) ? (s1.data as any[]) : [];
-        if (tRows.length > 0) {
-          sunoTaskExists = true;
-          const anyRow = tRows[0];
-          sunoTasksRow = anyRow;
-          taskDbUserId = String(anyRow?.user_id || "").trim();
-          sunoTaskUserIdIsNull = taskDbUserId.length === 0;
-          const exact = tRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
-          if (exact) {
-            ownerOk = true;
-            sunoTasksRow = exact;
-            taskDbUserId = String(exact?.user_id || "");
-          }
-        }
-      } catch {}
-      if (!ownerOk) {
-        try {
-          const s2 = await auth.admin
-            .from("library_items")
-            .select("id, user_id, suno_task_id, created_at")
-            .eq("suno_task_id", taskId)
-            .limit(5);
-          const lRows = Array.isArray(s2?.data) ? (s2.data as any[]) : [];
-          if (lRows.length > 0) {
-            const exactLib = lRows.find((r: any) => String(r?.user_id || "").trim() === userIdStr);
-            if (exactLib) {
-              ownerOk = true;
-              libRow = exactLib;
-              if (!taskDbUserId) taskDbUserId = String(exactLib.user_id || "");
-            }
-          }
-        } catch {}
-      }
-
-      try {
-        console.log(
-          `[gpt/status POLLING VERBOSE] ` +
-          `taskId=${taskId} ` +
-          `jwt_user_id=${userIdStr.slice(0, 8)}...${userIdStr.slice(-4)} ` +
-          `jwt_user_id_len=${userIdStr.length} ` +
-          `header_bearer_present=${haveAuthHeader} ` +
-          `suno_task_exists=${sunoTaskExists} ` +
-          `suno_tasks_user_id=${taskDbUserId ? (taskDbUserId.slice(0, 8) + "..." + taskDbUserId.slice(-4)) : "(NONE_OR_NULL)"} ` +
-          `suno_tasks_user_id_is_null=${sunoTaskUserIdIsNull} ` +
-          `library_item_with_suno_task_id_found=${!!libRow} ` +
-          `owner_ok_result=${ownerOk} ` +
-          `http_403_emitted=${!ownerOk} ` +
-          `classification_case=${
-            !ownerOk
-              ? (!sunoTaskExists
-                  ? "D) suno_tasks fila NO EXISTE (ni library_items evidencia)"
-                  : sunoTaskUserIdIsNull
-                  ? "B) suno_tasks.user_id ES NULL y no hay library_items evidencia HISTÓRICA del mismo usuario"
-                  : "C) suno_tasks.user_id PERTENECE A OTRA CUENTA (no coincide user_id del JWT)")
-              : "A) user_id COINCIDE (o library_items suno_task_id evidencia coincide) OK"
-          }`
-        );
-      } catch {}
-
-      if (!ownerOk) {
-        return oauthGptSendJson(res, 403, {
-          error: "forbidden",
-          code: "SUNO_TASK_NOT_OWNER",
-          stop_polling: true,
-          message: "Este taskId de Suno no pertenece a tu cuenta de LucIAna Music.",
-        });
-      }
-    }
     try {
       const rowsRaw = await auth.admin.from("suno_tasks").select("user_id, kind, cost, consumed, created_at").eq("task_id", taskId).limit(1);
       const row = Array.isArray(rowsRaw?.data) ? rowsRaw.data[0] : null;
       if (!isAdmin) {
         if (!row || String((row as any)?.user_id || "") !== String(auth.user.id || "")) {
-          /* ownership check arriba ya tomó decision; aquí es guard rail de library_items path: nada */
+          return oauthGptSendJson(res, 403, {
+            error: "forbidden",
+            message: "Este taskId no pertenece a tu cuenta de LucIAna Music.",
+          });
         }
       }
     } catch {}
@@ -24004,7 +23351,9 @@ const murekaHandler = (() => {
       try {
         const extraJson = JSON.stringify({ provider:"mureka", model:model, title:titleIn, gender:genderIn, cost_credits: costCredits });
         try {
-          const baseRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: costCredits, consumed: false, status: "queued", extra: extraJson };
+          // `suno_tasks` has no `status` column. Keep the Mureka task row
+          // limited to the shared schema so polling can reliably find it.
+          const baseRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: costCredits, consumed: false, extra: extraJson };
           const minimalRow = { task_id: taskId, user_id: userId, kind: "generate:mureka", cost: costCredits, consumed: false };
           const q1 = await admin.from("suno_tasks").insert([baseRow]);
           if (q1 && q1.error) {

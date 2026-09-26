@@ -3079,17 +3079,15 @@ export default function App() {
       }
     };
 
-    const bumpTaskError = (taskId: string, errorMsg: string, opts?: { stopPollingNow?: boolean; httpStatus?: number }) => {
+    const bumpTaskError = (taskId: string, errorMsg: string, httpStatus = 0) => {
       try {
         const list = migrateLegacyIfNeeded();
-        let failCountIncremented = 1;
         const next = Array.isArray(list)
           ? list.map((x: any) => {
               const id = typeof x?.taskId === 'string' ? x.taskId.trim() : '';
               if (!id || id !== taskId) return x;
               const prevFail = Number.isFinite(Number(x?.failCount)) ? Number(x.failCount) : 0;
               const failCount = Math.min(999, prevFail + 1);
-              failCountIncremented = failCount;
               const lastError = (errorMsg || '').toString().trim().slice(0, 500);
               const lastErrorAt = Date.now();
               return { ...x, failCount, lastError, lastErrorAt };
@@ -3098,43 +3096,23 @@ export default function App() {
         writeList(next);
         const it = Array.isArray(next) ? next.find((x: any) => String(x?.taskId || '').trim() === taskId) : null;
         const failCount = Number.isFinite(Number(it?.failCount)) ? Number(it.failCount) : 1;
-        const startedAt = Number.isFinite(Number(it?.startedAt)) ? Number(it.startedAt) : 0;
-        const ageHours = startedAt > 0 ? Math.max(0, (Date.now() - startedAt) / 3_600_000) : 0;
-        const httpStatus = typeof (opts as any)?.httpStatus === 'number' ? Number((opts as any).httpStatus) : 0;
-        const isHardStop =
-          Boolean((opts as any)?.stopPollingNow) === true ||
-          httpStatus === 401 ||
-          httpStatus === 403 ||
-          failCount >= 15 ||
-          ageHours >= 5;
-
-        if (failCount === 1 || failCount === 4 || isHardStop) {
-          const prefixMsg = (errorMsg || '').toString().trim();
-          let msg = prefixMsg
-            ? `No pude actualizar tu canción.\n\nDetalle: ${prefixMsg.slice(0, 140)}\n\nTip: toca “Actualizar” otra vez o cierra y abre la app.`
-            : 'No pude actualizar tu canción. Toca “Actualizar” otra vez o cierra y abre la app.';
-          if (httpStatus === 401) msg = `Sesión cerrada. Inicia sesión otra vez para ver el estado de tus canciones.\n\n${prefixMsg.slice(0, 120)}`;
-          else if (httpStatus === 403) msg = `Esta tarea no coincide con tu cuenta actual.\n\n${prefixMsg.slice(0, 120)}`;
-          else if (failCount >= 15) msg = `Demasiados errores. Se detuvo la consulta automática.\n\nÚltimo error: ${prefixMsg.slice(0, 120)}`;
-          else if (ageHours >= 5) msg = `Esta tarea lleva más de 5 horas y se detuvo la consulta automática.\n\nÚltimo error: ${prefixMsg.slice(0, 120)}`;
-          showToast(msg);
+        // Stop polling tasks that cannot belong to the active account, and
+        // cap transient failures so a stale local pending task cannot loop forever.
+        const shouldStop = httpStatus === 401 || httpStatus === 403 || failCount >= 15;
+        if (failCount === 1 || failCount === 4 || shouldStop) {
+          const msg = (errorMsg || '').toString().trim();
+          showToast(
+            httpStatus === 401
+              ? 'Tu sesión expiró. Inicia sesión de nuevo para actualizar tus canciones.'
+              : httpStatus === 403
+                ? 'Esta tarea no coincide con tu cuenta actual. Se dejó de consultar.'
+                : msg
+              ? `No pude actualizar tu canción.\n\nDetalle: ${msg.slice(0, 140)}\n\nTip: toca “Actualizar” otra vez o cierra y abre la app.`
+              : 'No pude actualizar tu canción. Toca “Actualizar” otra vez o cierra y abre la app.',
+          );
         }
-
-        if (isHardStop) {
-          try {
-            console.log('[polling] HARD STOP eliminando tarea pending.', {
-              taskId,
-              httpStatus,
-              failCount,
-              ageHours,
-              stopPollingNow: Boolean((opts as any)?.stopPollingNow),
-            });
-          } catch { /* ignore */ }
-          const idx = Array.isArray(next) ? next.findIndex((x: any) => String(x?.taskId || '').trim() === taskId) : -1;
-          if (idx >= 0) {
-            const rest = next.slice(0, idx).concat(next.slice(idx + 1));
-            writeList(rest);
-          }
+        if (shouldStop) {
+          writeList(next.filter((x: any) => String(x?.taskId || '').trim() !== taskId));
         }
       } catch {
       }
@@ -3383,7 +3361,7 @@ export default function App() {
           const outM = await rm.json().catch(() => ({}));
           if (!rm.ok) {
             const msgM = (outM?.detail || outM?.error || outM?.message || `HTTP ${Number(rm.status || 0)}`).toString();
-            bumpTaskError(pending.taskId, msgM, { httpStatus: Number(rm.status || 0), stopPollingNow: rm.status === 401 || rm.status === 403 });
+            bumpTaskError(pending.taskId, msgM, Number(rm.status || 0));
             return;
           }
           const statusRaw = String(outM?.status || '').trim();
@@ -3567,7 +3545,7 @@ export default function App() {
         const out = await r.json().catch(() => ({}));
         if (!r.ok) {
           const msg = (out?.detail || out?.error || out?.message || `HTTP ${Number(r.status || 0)}`).toString();
-          bumpTaskError(pending.taskId, msg, { httpStatus: Number(r.status || 0), stopPollingNow: r.status === 401 || r.status === 403 });
+          bumpTaskError(pending.taskId, msg, Number(r.status || 0));
           return;
         }
         const data = out?.data || out?.data?.data || out?.data;
