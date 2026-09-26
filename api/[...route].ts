@@ -3418,6 +3418,213 @@ const sunoHandler = (() => {
     }
   }
 
+  async function handleDiagnose(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const taskId = (pickQuery(req, "taskId") || pickQuery(req, "task_id") || "").trim();
+    if (!taskId) return send(res, 400, { error: "Falta ?taskId=XXX en la URL" });
+    const user = auth.user;
+    const isAdmin = isAdminEmail(user.email);
+    const jwtUserId = String(user.id || "").trim();
+    if (!jwtUserId && !isAdmin) return send(res, 401, { error: "JWT sin user.id" });
+
+    let sunoRow: any = null;
+    let sunoRows: any[] = [];
+    let taskUserRaw = "";
+    let taskCreatedAt: any = null;
+    let taskKind = "";
+    let taskConsumed: any = null;
+    let taskCost: any = null;
+    let taskStatus: any = null;
+    let libRows: any[] = [];
+    let libOwnedByMe: any[] = [];
+    let ownerEvidence: string[] = [];
+    let ownerOk = false;
+
+    try {
+      const q1 = await auth.admin
+        .from("suno_tasks")
+        .select("task_id, user_id, status, created_at, kind, cost, consumed")
+        .eq("task_id", taskId)
+        .limit(10);
+      sunoRows = Array.isArray(q1?.data) ? (q1.data as any[]) : [];
+      sunoRow = sunoRows[0] || null;
+      if (sunoRow) {
+        taskUserRaw = String(sunoRow.user_id || "").trim();
+        taskCreatedAt = sunoRow.created_at ?? null;
+        taskKind = String(sunoRow.kind || "").trim();
+        taskStatus = sunoRow.status ?? null;
+        taskCost = sunoRow.cost ?? null;
+        taskConsumed = sunoRow.consumed ?? null;
+        if (taskUserRaw && jwtUserId && taskUserRaw === jwtUserId) {
+          ownerOk = true;
+          ownerEvidence.push("suno_tasks.user_id === auth.user.id (match exacto)");
+        }
+      }
+    } catch (e: any) {
+      try { console.log(`[suno/diagnose suno_tasks select error] ${e?.message || String(e)}`); } catch {}
+    }
+
+    try {
+      const q2 = await auth.admin
+        .from("library_items")
+        .select("id, user_id, suno_task_id, created_at, status, audio_url, deleted_at")
+        .eq("suno_task_id", taskId)
+        .limit(10);
+      libRows = Array.isArray(q2?.data) ? (q2.data as any[]) : [];
+      libOwnedByMe = libRows.filter((x: any) => String(x?.user_id || "").trim() === jwtUserId && !(x as any)?.deleted_at);
+      if (libOwnedByMe.length > 0 && !ownerOk) {
+        ownerOk = true;
+        ownerEvidence.push(`library_items.suno_task_id coincide y ${libOwnedByMe.length} fila(s) user_id === auth.user.id (evidencia histórica)`);
+      }
+    } catch (e: any) {
+      try { console.log(`[suno/diagnose library_items error] ${e?.message || String(e)}`); } catch {}
+    }
+
+    if (!ownerOk && !isAdmin) {
+      try {
+        console.log(`[suno/diagnose OWNERSHIP 403 STOP] taskId=${taskId} jwt_user_id=${jwtUserId} suno_tasks_user_id=${taskUserRaw || "(ninguno - fila no existe o NULL)"} suno_rows_count=${sunoRows.length} library_items_with_this_task_id_count=${libRows.length} library_items_owned_by_me_count=${libOwnedByMe.length}`);
+      } catch {}
+      return send(res, 403, {
+        ok: false,
+        error: "forbidden",
+        code: "SUNO_TASK_NOT_OWNER",
+        stop_polling: true,
+        message: "No autorizado. Este taskId de Suno no pertenece a tu cuenta actual. Detén el polling.",
+        diagnosis: {
+          task_id: taskId,
+          task_id_exists_in_suno_tasks: sunoRows.length > 0,
+          suno_tasks_user_id: taskUserRaw || null,
+          suno_tasks_user_id_is_null: !!sunoRow && taskUserRaw.length === 0,
+          library_items_with_suno_task_id_count: libRows.length,
+          library_items_owned_by_current_user_count: libOwnedByMe.length,
+          evidence_checked: [
+            "suno_tasks.user_id === jwt user.id",
+            "library_items.suno_task_id coincide AND library_items.user_id === jwt user.id",
+          ],
+        },
+      });
+    }
+
+    let providerFetch: any = null;
+    let providerStatusNormalized = "";
+    let providerHttpStatus = 0;
+    const kind = taskKind || (pickQuery(req, "kind") || "").trim().toLowerCase() || "generate";
+    try {
+      const enc = encodeURIComponent(taskId);
+      const paths =
+        kind === "lyrics"
+          ? [`/api/v1/lyrics/record-info?taskId=${enc}`, `/api/v1/suno/lyrics/record-info?taskId=${enc}`]
+          : kind === "midi"
+          ? [`/api/v1/midi/record-info?taskId=${enc}`, `/api/v1/suno/midi/record-info?taskId=${enc}`]
+          : kind === "mp4" || kind === "video" || kind === "music-video"
+          ? [`/api/v1/mp4/record-info?taskId=${enc}`, `/api/v1/suno/mp4/record-info?taskId=${enc}`]
+          : kind === "vocal-removal" || kind === "separate" || kind === "separate_vocal" || kind === "split_stem"
+          ? [`/api/v1/vocal-removal/record-info?taskId=${enc}`, `/api/v1/suno/vocal-removal/record-info?taskId=${enc}`]
+          : kind === "wav"
+          ? [`/api/v1/wav/record-info?taskId=${enc}`, `/api/v1/suno/wav/record-info?taskId=${enc}`]
+          : [
+              `/api/v1/generate/record-info?taskId=${enc}`,
+              `/api/v1/suno/generate/record-info?taskId=${enc}`,
+              `/api/v1/task/${enc}`,
+              `/api/v1/suno/task/${enc}`,
+            ];
+      let lastF: any = null;
+      for (const p of paths) {
+        const rr = await sunoFetchJson(p, { method: "GET" });
+        lastF = rr;
+        if (rr.res.status !== 404) break;
+      }
+      const rp = lastF || { res: null, data: null, text: "" };
+      providerHttpStatus = Number(rp?.res?.status || 0);
+      const data = rp.data;
+      const statusRaw = data?.data?.status ?? data?.data?.successFlag ?? data?.data?.data?.status ?? data?.data?.data?.successFlag ?? "";
+      providerStatusNormalized =
+        kind === "midi" || kind === "wav"
+          ? (() => {
+              const n = typeof statusRaw === "number" ? statusRaw : Number(String(statusRaw || "").trim());
+              if (n === 0) return "PENDING";
+              if (n === 1) return "SUCCESS";
+              if (n === 2) return "CREATE_TASK_FAILED";
+              if (n === 3) return kind === "wav" ? "GENERATE_WAV_FAILED" : "GENERATE_MIDI_FAILED";
+              return String(statusRaw || "").toUpperCase();
+            })()
+          : String(statusRaw || "").toUpperCase();
+      providerFetch = {
+        provider_http: providerHttpStatus,
+        provider_ok: !!rp?.res?.ok,
+        code: Number(data?.code || 0),
+        status_raw: typeof statusRaw === "number" || typeof statusRaw === "string" ? String(statusRaw) : "",
+        status_normalized: providerStatusNormalized,
+        data_keys: data && typeof data === "object" && !Array.isArray(data) ? Object.keys(data).slice(0, 20) : null,
+        response_truncated: typeof rp?.text === "string" ? String(rp.text).slice(0, 1200) : null,
+      };
+    } catch (e: any) {
+      providerFetch = { provider_error: e instanceof Error ? (e.message || String(e)) : String(e), provider_http: 0, provider_ok: false, status_normalized: "PROVIDER_FETCH_FAILED" };
+      providerStatusNormalized = "PROVIDER_FETCH_FAILED";
+    }
+
+    return send(res, 200, {
+      ok: true,
+      task_id: taskId,
+      jwt_user_id: jwtUserId,
+      suno_tasks: sunoRow ? {
+        task_id: String(sunoRow.task_id || taskId),
+        user_id: taskUserRaw || null,
+        user_id_is_null: taskUserRaw.length === 0,
+        status: taskStatus,
+        created_at: taskCreatedAt,
+        kind: taskKind,
+        cost: taskCost,
+        consumed: taskConsumed,
+      } : null,
+      suno_tasks_matching_same_task_id_count: sunoRows.length,
+      library_items_with_suno_task_id: {
+        total_count: libRows.length,
+        owned_by_me_count: libOwnedByMe.length,
+        owned_sample_ids: libOwnedByMe.slice(0, 5).map((x: any) => String(x.id || "")).filter(Boolean),
+      },
+      ownership: {
+        owner_ok: ownerOk || isAdmin,
+        admin_bypass_used: isAdmin && !ownerOk,
+        evidence: ownerEvidence.slice(0, 5),
+      },
+      provider_status: {
+        http_status: providerHttpStatus,
+        kind_used: kind,
+        normalized: providerStatusNormalized,
+        is_terminal_success: providerStatusNormalized === "SUCCESS",
+        is_terminal_failed:
+          providerStatusNormalized === "FAILED" ||
+          providerStatusNormalized === "CREATE_TASK_FAILED" ||
+          providerStatusNormalized === "GENERATE_AUDIO_FAILED" ||
+          providerStatusNormalized === "GENERATE_LYRICS_FAILED" ||
+          providerStatusNormalized === "CALLBACK_EXCEPTION" ||
+          providerStatusNormalized === "SENSITIVE_WORD_ERROR" ||
+          (providerStatusNormalized.startsWith("GENERATE_") && providerStatusNormalized.endsWith("_FAILED")) ||
+          providerStatusNormalized === "PROVIDER_FETCH_FAILED",
+      },
+      provider_debug: providerFetch,
+      actions: {
+        what_to_do:
+          providerStatusNormalized === "SUCCESS"
+            ? "El proveedor YA TERMINÓ. Refresca tu biblioteca o espera el próximo tick."
+            : providerStatusNormalized.startsWith("GENERATE_") && providerStatusNormalized.endsWith("_FAILED")
+            ? "El proveedor marcó ERROR (ver provider_debug). Refund pendiente de suno_tasks.consumed."
+            : providerStatusNormalized === "PROVIDER_FETCH_FAILED"
+            ? "Error de red al consultar Suno. Revisa SUNO_API_KEY y SUNO_API_BASE_URL."
+            : providerStatusNormalized
+            ? `Estado intermedio del proveedor: ${providerStatusNormalized}. Espera o reintenta en 10s.`
+            : "Sin status del proveedor. Revisa provider_debug.",
+        if_user_id_null_migration:
+          !!sunoRow && taskUserRaw.length === 0
+            ? "suno_tasks.user_id es NULL. Aplica la migración SQL reparar_suno_tasks_user_id_null.sql entregada en el chat para rellenar la columna con library_items.user_id cuando haya evidencia. Si no hay evidencia, permanece bloqueada (403)."
+            : null,
+      },
+    });
+  }
+
   async function handleVoiceValidate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -5458,6 +5665,7 @@ notify pgrst, 'reload schema';`;
       if (a === "generate-persona") return handleGeneratePersona(req, res);
       if (a === "mp4") return handleMp4(req, res);
       if (a === "task") return handleTask(req, res);
+      if (a === "diagnose") return handleDiagnose(req, res);
       if (a === "timestamped-lyrics") return handleTimestampedLyrics(req, res);
       if (a === "lyrics") return handleLyrics(req, res);
       if (a === "wav") return handleWav(req, res);
