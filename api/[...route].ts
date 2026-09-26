@@ -1915,24 +1915,71 @@ const sunoHandler = (() => {
   }
 
   async function requireUser(req: any) {
-    const supabaseUrl = process.env.SUPABASE_URL || "";
-    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
-    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
-      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+    const supabaseServiceRaw = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+    const supabaseService = supabaseServiceRaw;
+
+    // Validación ESTRICTA de SUPABASE_SERVICE_ROLE_KEY.
+    // Si no es claramente una key service_role: NO avanzamos NADA.
+    const serviceKeyMissing = !supabaseService;
+    const serviceKeyTooShort = supabaseService.length < 200;
+    const serviceKeySameAsAnon = Boolean(supabaseAnon && supabaseService && supabaseAnon === supabaseService);
+    const serviceKeyLooksAnonLike = (() => {
+      const s = supabaseService;
+      if (!s) return false;
+      if (s.includes("InJ9yb2xlIjoiYW5vbiI")) return true;
+      if (s.includes("InJvbGUiOiJhdXRoZW50aWNhdGVk")) return true;
+      if (s.includes("eyJyb2xlIjoiYW5vbiI")) return true;
+      if (s.includes("eyJyb2xlIjoiYXV0aGVudGljYXRlZC")) return true;
+      if (/^sbp_[ab]_/i.test(s)) return true;
+      return false;
+    })();
+    const serviceRoleKeyValid =
+      !serviceKeyMissing && !serviceKeyTooShort && !serviceKeySameAsAnon && !serviceKeyLooksAnonLike;
+
+    if (!supabaseUrl || !supabaseAnon || serviceKeyMissing) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY). Configúralas en Vercel Environment Variables.",
+        serviceRoleKeyValid: false as const,
+        serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+      };
     }
 
     const token = getAuthToken(req);
-    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (!token) return {
+      ok: false as const,
+      status: 401,
+      error: "No autorizado",
+      serviceRoleKeyValid,
+      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+    };
 
     const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
-    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (userErr || !user) return {
+      ok: false as const,
+      status: 401,
+      error: "No autorizado",
+      serviceRoleKeyValid,
+      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+    };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return { ok: true as const, user, admin, supabaseUrl, supabaseAnon, supabaseService };
+    return {
+      ok: true as const,
+      user,
+      admin,
+      supabaseUrl,
+      supabaseAnon,
+      supabaseService,
+      serviceRoleKeyValid,
+      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+    };
   }
 
   function normalizeModel(mvOrModel: string) {
@@ -1969,6 +2016,47 @@ const sunoHandler = (() => {
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    // ================================================
+    // GUARDRAIL ESTRICTO: SUPABASE_SERVICE_ROLE_KEY VALID
+    // Si la key no pasa validación (anón por accidente, etc.)
+    //  → NO cobramos créditos.
+    //  → NO llamamos a Suno.
+    //  → Respuesta 500 code=SUPABASE_SERVICE_ROLE_KEY_INVALID
+    //    para que el usuario reporte el problema a soporte.
+    // ================================================
+    const serviceRoleValid = Boolean(auth.serviceRoleKeyValid);
+    const diag: any = auth.serviceRoleDiagnostic || {};
+    if (!serviceRoleValid) {
+      const reason = (() => {
+        if (diag.serviceKeyMissing) return "SUPABASE_SERVICE_ROLE_KEY no está configurada en Vercel Environment Variables.";
+        if (diag.serviceKeySameAsAnon) return "SUPABASE_SERVICE_ROLE_KEY es IGUAL que SUPABASE_ANON_KEY. Debes poner la key service_role (NO la anónima).";
+        if (diag.serviceKeyTooShort) return `SUPABASE_SERVICE_ROLE_KEY es demasiado corta (len=${diag.serviceKeyLen || 0}). La key service_role real es ~220 caracteres.`;
+        if (diag.serviceKeyLooksAnonLike) return "SUPABASE_SERVICE_ROLE_KEY parece ser la key anónima (tiene claim role=anon/authenticated). Debes reemplazarla por la key service_role de Supabase.";
+        return "SUPABASE_SERVICE_ROLE_KEY no es válida.";
+      })();
+      try {
+        console.error(
+          `[CRITICAL CONFIG SUNO handleGenerate SUPABASE_SERVICE_ROLE_KEY_INVALID] ` +
+          `reason=${reason} ` +
+          `service_key_missing=${diag.serviceKeyMissing} ` +
+          `service_key_too_short=${diag.serviceKeyTooShort} ` +
+          `service_key_same_as_anon=${diag.serviceKeySameAsAnon} ` +
+          `service_key_looks_anon_like=${diag.serviceKeyLooksAnonLike} ` +
+          `service_key_len=${diag.serviceKeyLen || 0} ` +
+          `anon_key_len=${diag.anonKeyLen || 0} ` +
+          `action=NO_CONSUME_CREDITS_NO_CALL_PROVIDER_RETURN_500`
+        );
+      } catch {}
+      return send(res, 500, {
+        error:
+          "Error de configuración interna: no se pudo preparar la base de datos para guardar el seguimiento de tu canción. " +
+          "No se han cobrado créditos. Avisa a soporte citando este código.",
+        code: "SUPABASE_SERVICE_ROLE_KEY_INVALID",
+        detail: reason,
+        refunded: true,
+      });
+    }
 
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
@@ -6221,24 +6309,71 @@ const mercadoPagoHandler = (() => {
   }
 
   async function requireUser(req: any) {
-    const supabaseUrl = process.env.SUPABASE_URL || "";
-    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
-    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
-      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    const supabaseUrl = (process.env.SUPABASE_URL || "").toString().trim();
+    const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
+    const supabaseServiceRaw = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
+    const supabaseService = supabaseServiceRaw;
+
+    // Validación ESTRICTA de SUPABASE_SERVICE_ROLE_KEY.
+    // Si no es claramente una key service_role: NO avanzamos NADA.
+    const serviceKeyMissing = !supabaseService;
+    const serviceKeyTooShort = supabaseService.length < 200;
+    const serviceKeySameAsAnon = Boolean(supabaseAnon && supabaseService && supabaseAnon === supabaseService);
+    const serviceKeyLooksAnonLike = (() => {
+      const s = supabaseService;
+      if (!s) return false;
+      if (s.includes("InJ9yb2xlIjoiYW5vbiI")) return true;
+      if (s.includes("InJvbGUiOiJhdXRoZW50aWNhdGVk")) return true;
+      if (s.includes("eyJyb2xlIjoiYW5vbiI")) return true;
+      if (s.includes("eyJyb2xlIjoiYXV0aGVudGljYXRlZC")) return true;
+      if (/^sbp_[ab]_/i.test(s)) return true;
+      return false;
+    })();
+    const serviceRoleKeyValid =
+      !serviceKeyMissing && !serviceKeyTooShort && !serviceKeySameAsAnon && !serviceKeyLooksAnonLike;
+
+    if (!supabaseUrl || !supabaseAnon || serviceKeyMissing) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY). Configúralas en Vercel Environment Variables.",
+        serviceRoleKeyValid: false as const,
+        serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+      };
     }
 
     const token = getAuthToken(req);
-    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (!token) return {
+      ok: false as const,
+      status: 401,
+      error: "No autorizado",
+      serviceRoleKeyValid,
+      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+    };
 
     const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     const user = userData?.user;
-    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+    if (userErr || !user) return {
+      ok: false as const,
+      status: 401,
+      error: "No autorizado",
+      serviceRoleKeyValid,
+      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+    };
 
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-    return { ok: true as const, user, admin, supabaseUrl, supabaseAnon, supabaseService };
+    return {
+      ok: true as const,
+      user,
+      admin,
+      supabaseUrl,
+      supabaseAnon,
+      supabaseService,
+      serviceRoleKeyValid,
+      serviceRoleDiagnostic: { serviceKeyMissing, serviceKeyTooShort, serviceKeySameAsAnon, serviceKeyLooksAnonLike, serviceKeyLen: supabaseService.length, anonKeyLen: supabaseAnon.length, urlLen: supabaseUrl.length },
+    };
   }
 
   type PackKey = "inicio" | "productor" | "masterizar";
