@@ -2072,12 +2072,65 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
+      const userUuidStr = String(user.id || "").trim();
+      try {
+        console.log(
+          `[SUNO_CREATE_LIFETIME GENERATE] ` +
+          `event=provider_task_id_ok ` +
+          `taskId=${taskId} ` +
+          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
+          `user_id_len=${userUuidStr.length} ` +
+          `kind=generate ` +
+          `cost=${cost} ` +
+          `model=${model} ` +
+          `provider_code=${Number(data?.code || 0)} ` +
+          `requested_model_in_insert=true`
+        );
+      } catch {}
+
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true, status: "queued" };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-      if (ins1?.error && isMissingColumnError(ins1.error)) {
-        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      const withStatusOnly = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
+      let insertOk = false;
+      let insertLastError = "";
+      try {
+        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+        if (ins1?.error) {
+          insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
+          if (isMissingColumnError(ins1.error)) {
+            const ins2 = await auth.admin.from("suno_tasks").insert(baseTaskRow);
+            if (ins2?.error && isMissingColumnError(ins2.error)) {
+              const ins3 = await auth.admin.from("suno_tasks").insert(withStatusOnly);
+              if (ins3?.error) {
+                insertLastError = String(ins3.error?.message || ins3.error || "").slice(0, 500);
+              } else {
+                insertOk = true;
+              }
+            } else if (ins2?.error) {
+              insertLastError = String(ins2.error?.message || ins2.error || "").slice(0, 500);
+            } else {
+              insertOk = true;
+            }
+          } else {
+            insertLastError = String(ins1.error?.message || ins1.error || "").slice(0, 500);
+          }
+        } else {
+          insertOk = true;
+        }
+      } catch (e: any) {
+        insertLastError = e instanceof Error ? (e.message || String(e)).slice(0, 500) : String(e).slice(0, 500);
       }
+      try {
+        console.log(
+          `[SUNO_CREATE_LIFETIME GENERATE] ` +
+          `event=insert_suno_tasks_end ` +
+          `taskId=${taskId} ` +
+          `user_id=${userUuidStr ? (userUuidStr.slice(0, 8) + "..." + userUuidStr.slice(-4)) : "(MISSING)"} ` +
+          `insert_ok=${insertOk} ` +
+          `insert_error=${insertLastError || "(none)"} ` +
+          `next_step=frontend_llama_fetch_/api/suno/task?taskId=${taskId}_con_Authorization_Bearer`
+        );
+      } catch {}
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
