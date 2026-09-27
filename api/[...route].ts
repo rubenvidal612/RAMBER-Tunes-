@@ -6208,6 +6208,7 @@ const mercadoPagoHandler = (() => {
     }
 
     // ==== IDEMPOTENTE: 1 SOLA LLAMADA A RPC. Fin del race condition. ====
+    // (SIN fallback a flujo vulnerable. Si la migración SQL no está aplicada → falla clean.)
     const rpcNote = `Compra Mercado Pago ${paymentId}`;
     const rpcCall = await auth.admin.rpc("mp_claim_payment_transaction", {
       p_payment_id: paymentId,
@@ -6216,88 +6217,31 @@ const mercadoPagoHandler = (() => {
       p_pack_key: packKey || "unknown",
       p_pack_id: packId || 0,
       p_amount_mxn: amountMxn || 0,
-      p_credits: credits || 0,
+      p_credits_param: credits || 0,
       p_validity_days: validityDays || 30,
       p_note: rpcNote,
     });
+    const rpcErr = (rpcCall as any)?.error;
+    if (rpcErr) {
+      const msg = String(rpcErr?.message || rpcErr || "");
+      // Si la migración SQL NO está en Supabase AÚN → explicación clara.
+      if (/function.*does not exist/i.test(msg)) {
+        return send(res, 500, {
+          error: "Falta aplicar la migración SQL mp_claim_payment_transaction en Supabase SQL Editor. No se acreditó nada. Nada se duplicó. Ve al reporte del commit y ejecuta el SQL primero.",
+          rpc_missing: true,
+          rpc_error: msg,
+        });
+      }
+      return send(res, 500, { error: `RPC falló: ${msg}` });
+    }
     const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
     const rpcOut: any = rpcRows[0] || {};
-    // Si falló la RPC (p. ej. NO la has ejecutado en SQL Editor aún → función no existe)
-    // → fallback a flujo antiguo SOLO si error = function does not exist. Sino fail.
-    let claimSuccess = Boolean(rpcOut?.success);
-    let already = Boolean(rpcOut?.already_processed);
-    if ((!rpcRows || rpcRows.length <= 0) && (rpcCall as any)?.error) {
-      const errMsg = String(((rpcCall as any)?.error?.message || (rpcCall as any)?.error || "")).toLowerCase();
-      if (errMsg.includes("function") && errMsg.includes("does not exist")) {
-        // FLUJO FALLBACK ANTIGUO (solo cuando la migración SQL NO está aplicada todavía)
-        const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-        if (Array.isArray(exists) && exists.length > 0) {
-          already = true;
-          claimSuccess = true;
-        } else if (Number.isFinite(credits) && credits > 0) {
-          if (isMiniPack) {
-            await ensureProfileExists(auth.admin, auth.user.id);
-            const { data: profile } = await auth.admin.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
-            const profileEmail = String((profile as any)?.email || auth.user.email || "").trim().toLowerCase();
-            const unlimited = isAdminEmail(profileEmail);
-            const profileCredits = creditsFromProfile(profile);
-            const batchCredits = await getActiveBatchCredits(auth.admin, auth.user.id);
-            const totalBefore = round2(profileCredits + batchCredits);
-            const cap = round2(MAX_ACCUMULATED_CREDITS);
-            const allowed = unlimited ? round2(credits) : round2(Math.max(0, Math.min(round2(credits), cap - totalBefore)));
-            const expiresIso = addDaysIso(60);
-            await auth.admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", auth.user.id);
-            if (allowed > 0) {
-              const effectiveDays = 60;
-              const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
-              const batchResult = await insertCreditBatch(auth.admin, {
-                userId: auth.user.id,
-                packId: packId || undefined,
-                packKey: packKey || undefined,
-                paymentId,
-                credits: allowed,
-                validityDays: effectiveDays,
-                amountMxn,
-                note: batchNote,
-              });
-              if (!batchResult.ok) {
-                const upd = await adjustUserCredits(auth.admin, auth.user.id, allowed);
-                if (!upd.ok) return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
-              }
-            }
-          } else if (isPlanRenewal) {
-            const upd = await applyCreditRolloverWithCap(auth.admin, {
-              userId: auth.user.id,
-              monthlyCredits: credits,
-              subscriptionActive: true,
-              renewalPaidSuccessfully: paymentStatus === "approved",
-              isUnlimitedAccount: isAdminEmail(auth.user.email),
-            });
-            if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-          } else {
-            const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
-            if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-          }
-        }
-        if (!already) {
-          await auth.admin.from("mp_transactions").insert({
-            user_id: auth.user.id,
-            kind: txKind,
-            pack_key: packKey || "unknown",
-            amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
-            payment_id: paymentId,
-          }).catch(() => { already = true; });
-        }
-        claimSuccess = true;
-      } else {
-        return send(res, 500, { error: (rpcCall as any)?.error?.message || String((rpcCall as any)?.error || "No pude reclamar payment_id") });
-      }
-    }
+    const claimSuccess = Boolean(rpcOut?.success);
+    const already = Boolean(rpcOut?.already_processed);
     if (!claimSuccess && !already) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
     if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
 
-    // Los planes GRANDES (inicio / productor) usan rollover (mes a mes) → handler lo aplica DESPUÉS del claim atómico.
-    // Mini pack y directos YA fueron acreditados dentro de la RPC.
+    // Planes grandes (inicio / productor) → rollover mes a mes (lo hace handler JS DESPUÉS del claim atómico).
     if (isPlanRenewal && Number.isFinite(credits) && credits > 0) {
       const upd = await applyCreditRolloverWithCap(auth.admin, {
         userId: auth.user.id,
@@ -6317,6 +6261,7 @@ const mercadoPagoHandler = (() => {
       credited: true,
       granted: Number(rpcOut?.credits_granted || 0) || credits || 0,
       batch_id: Number(rpcOut?.batch_id || 0) || undefined,
+      used_pack_key: rpcOut?.used_pack_key || packKey || null,
       rpc_message: rpcOut?.message || null,
     });
   }
@@ -6398,7 +6343,7 @@ const mercadoPagoHandler = (() => {
         p_pack_key: productType || "unknown",
         p_pack_id: 0,
         p_amount_mxn: Number.isFinite(unlockPrice) ? unlockPrice : 250,
-        p_credits: 0,
+        p_credits_param: 0,
         p_validity_days: 0,
         p_note: `Share unlock Mercado Pago ${paymentId}`,
         p_share_id: shareId,
@@ -6408,71 +6353,20 @@ const mercadoPagoHandler = (() => {
         p_empleado_commission: empleadoCommission || 0,
       };
       const rpcCall = await admin.rpc("mp_claim_payment_transaction", rpcParams);
+      const rpcErr = (rpcCall as any)?.error;
+      if (rpcErr) {
+        const msg = String(rpcErr?.message || rpcErr || "");
+        if (/function.*does not exist/i.test(msg)) {
+          console.error("[MP Webhook share_unlock] RPC faltante (migración SQL sin aplicar):", msg);
+          return send(res, 200, { ok: true, status: paymentStatus, skipped: true, rpc_missing: true });
+        }
+        console.error("[MP Webhook share_unlock] RPC falló:", rpcErr);
+        return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
+      }
       const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
       const rpcOut: any = rpcRows[0] || {};
-      let already = Boolean(rpcOut?.already_processed);
-      let claimSuccess = Boolean(rpcOut?.success);
-      if ((!rpcRows || rpcRows.length <= 0) && (rpcCall as any)?.error) {
-        const errMsg = String(((rpcCall as any)?.error?.message || (rpcCall as any)?.error || "")).toLowerCase();
-        if (errMsg.includes("function") && errMsg.includes("does not exist")) {
-          // Fallback antiguo (solo si migración SQL NO está aplicada aún)
-          const { data: existsTx } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-          if (Array.isArray(existsTx) && existsTx.length > 0) {
-            already = true;
-            claimSuccess = true;
-          } else {
-            const { data: share, error: shareError } = await admin
-              .from("preview_shares")
-              .select("id, song_id, created_by, is_paid")
-              .eq("id", shareId)
-              .maybeSingle();
-            if (shareError || !share) return send(res, 500, { error: "No pude encontrar el preview share" });
-            if (share.is_paid) {
-              already = true;
-              claimSuccess = true;
-            } else {
-              const paidAt = new Date().toISOString();
-              await admin
-                .from("preview_shares")
-                .update({ is_paid: true, paid_at: paidAt })
-                .eq("id", shareId);
-              const { data: vendorSettings } = await admin
-                .from("vendor_settings")
-                .select("role")
-                .eq("user_id", share.created_by)
-                .maybeSingle();
-              const role = (vendorSettings as any)?.role || "vendor";
-              const { data: pricing } = await admin
-                .from("product_pricing")
-                .select("unlock_price_mxn, empleado_commission_mxn")
-                .eq("product_type", productType)
-                .maybeSingle();
-              const unlockPriceFb = Number((pricing as any)?.unlock_price_mxn) || 250;
-              const empleadoCommissionFb = Number((pricing as any)?.empleado_commission_mxn) || 50;
-              if (role === "empleado") {
-                await admin.from("share_commissions").insert({
-                  share_id: shareId,
-                  seller_user_id: share.created_by,
-                  role_at_time: role,
-                  product_type: productType,
-                  amount_mxn: empleadoCommissionFb,
-                  status: "pending",
-                }).catch(() => {});
-              }
-              await admin.from("mp_transactions").insert({
-                user_id: null,
-                kind: "share_unlock",
-                pack_key: productType,
-                amount_mxn: unlockPriceFb,
-                payment_id: paymentId,
-              }).catch(() => { already = true; });
-              claimSuccess = true;
-            }
-          }
-        } else {
-          return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
-        }
-      }
+      const already = Boolean(rpcOut?.already_processed);
+      const claimSuccess = Boolean(rpcOut?.success);
       if (already) return send(res, 200, { ok: true, status: paymentStatus, already: true });
       return send(res, 200, { ok: true, status: paymentStatus, shareUnlocked: claimSuccess || true });
     }
@@ -6561,109 +6455,29 @@ const mercadoPagoHandler = (() => {
       p_pack_key: fixedPackKey || "unknown",
       p_pack_id: Number(fixedPackId) || 0,
       p_amount_mxn: Number(fixedAmountMxn) || 0,
-      p_credits: Number(fixedCredits) || 0,
+      p_credits_param: Number(fixedCredits) || 0,
       p_validity_days: Number(fixedValidity) || 30,
       p_note: rpcNote,
     });
+    const rpcErr = (rpcCall as any)?.error;
+    if (rpcErr) {
+      const msg = String(rpcErr?.message || rpcErr || "");
+      if (/function.*does not exist/i.test(msg)) {
+        console.error("[MP Webhook claim] RPC faltante (migración SQL sin aplicar):", msg);
+        return send(res, 500, {
+          error: "Falta aplicar la migración SQL mp_claim_payment_transaction en Supabase SQL Editor. No se acreditó nada. Nada se duplicó. Ve al reporte del commit y ejecuta el SQL primero.",
+          rpc_missing: true,
+        });
+      }
+      console.error("[MP Webhook claim] RPC falló (no function-not-exist):", rpcErr);
+      return send(res, 500, { error: msg });
+    }
     const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
     const rpcOut: any = rpcRows[0] || {};
-    let claimSuccess = Boolean(rpcOut?.success);
-    let already = Boolean(rpcOut?.already_processed);
-    let amountMxn = fixedAmountMxn || 0;
-    let credits = fixedCredits || 0;
-
-    if ((!rpcRows || rpcRows.length <= 0) && (rpcCall as any)?.error) {
-      const errMsg = String(((rpcCall as any)?.error?.message || (rpcCall as any)?.error || "")).toLowerCase();
-      if (errMsg.includes("function") && errMsg.includes("does not exist")) {
-        // ======== FALLBACK: FLUJO ANTIGUO (solo si la migración SQL NO está aplicada) ========
-        const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-        if (Array.isArray(exists) && exists.length > 0) {
-          already = true;
-          claimSuccess = true;
-        } else {
-          if (isMiniPack) {
-            const fbCredits = Number((finalMiniPack as any)?.credits || 0);
-            const fbPackKey = String((finalMiniPack as any)?.pack_key || packKey || "mini_pack");
-            const fbPackId = Number((finalMiniPack as any)?.pack_id || packId || 0) || packId || null;
-            const fbAmount = Number((finalMiniPack as any)?.amount_mxn || metaAmountMxn || transactionAmountMxn || 0);
-            amountMxn = fbAmount; credits = fbCredits;
-            if (Number.isFinite(fbCredits) && fbCredits > 0) {
-              await ensureProfileExists(admin, userId);
-              const { data: profile } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
-              const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
-              const unlimited = isAdminEmail(profileEmail);
-              const profileCredits = creditsFromProfile(profile);
-              const batchCredits = await getActiveBatchCredits(admin, userId);
-              const totalBefore = round2(profileCredits + batchCredits);
-              const cap = round2(MAX_ACCUMULATED_CREDITS);
-              const allowed = unlimited ? round2(fbCredits) : round2(Math.max(0, Math.min(round2(fbCredits), cap - totalBefore)));
-              const expiresIso = addDaysIso(60);
-              await admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", userId);
-              if (allowed > 0) {
-                const effectiveDays = 60;
-                const batchNote = allowed < fbCredits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
-                const batchResult = await insertCreditBatch(admin, {
-                  userId,
-                  packId: fbPackId || undefined,
-                  packKey: fbPackKey || undefined,
-                  paymentId,
-                  credits: allowed,
-                  validityDays: effectiveDays,
-                  amountMxn: fbAmount,
-                  note: batchNote,
-                });
-                if (!batchResult.ok) {
-                  const upd = await adjustUserCredits(admin, userId, allowed);
-                  if (!upd.ok) {
-                    console.error("[MP Webhook] mini_pack fallback - créditos falló:", batchResult.error || upd.error);
-                    return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
-                  }
-                }
-              }
-            }
-          }
-          if (isMasterizarSubscription) {
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + 30);
-            const { error: updateError } = await admin
-              .from("profiles")
-              .update({
-                mastering_subscription_active: true,
-                mastering_subscription_expires_at: expiresAt.toISOString(),
-              })
-              .eq("id", userId);
-            if (updateError) {
-              console.error("Error suscripción masterización fallback:", updateError);
-              return send(res, 500, { error: "No pude activar la suscripción" });
-            }
-          } else if (Number.isFinite(credits) && credits > 0) {
-            if (isPlanRenewal) {
-              const upd = await applyCreditRolloverWithCap(admin, {
-                userId,
-                monthlyCredits: credits,
-                subscriptionActive: true,
-                renewalPaidSuccessfully: paymentStatus === "approved",
-              });
-              if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-            } else if (!isMiniPack) {
-              const upd = await adjustUserCredits(admin, userId, credits);
-              if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-            }
-          }
-          await admin.from("mp_transactions").insert({
-            user_id: userId,
-            kind: txKind,
-            pack_key: packKey || "unknown",
-            amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
-            payment_id: paymentId,
-          }).catch(() => { already = true; });
-          claimSuccess = true;
-        }
-      } else {
-        console.error("[MP Webhook] RPC falló (no function-not-exist):", (rpcCall as any)?.error);
-        return send(res, 500, { error: (rpcCall as any)?.error?.message || String((rpcCall as any)?.error || "No pude procesar pago") });
-      }
-    }
+    const claimSuccess = Boolean(rpcOut?.success);
+    const already = Boolean(rpcOut?.already_processed);
+    const amountMxn = Number(rpcOut?.used_amount_mxn) || fixedAmountMxn || 0;
+    const credits = Number(rpcOut?.credits_granted) || fixedCredits || 0;
 
     if (already) return send(res, 200, { ok: true, status: paymentStatus, already: true });
     if (!claimSuccess) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
