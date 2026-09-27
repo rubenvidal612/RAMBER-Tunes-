@@ -6116,7 +6116,9 @@ const mercadoPagoHandler = (() => {
 
   async function handleCreatePreference(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-
+    if (MP_CHECKOUTS_DISABLED) {
+      return send(res, 503, { ok: false, status: "error", code: "MP_CHECKOUTS_DISABLED", message: MP_CHECKOUTS_DISABLED_MSG });
+    }
     const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
     if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
 
@@ -6584,7 +6586,9 @@ const mercadoPagoHandler = (() => {
    */
   async function handleCreateMiniPackPreference(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-
+    if (MP_CHECKOUTS_DISABLED) {
+      return send(res, 503, { ok: false, status: "error", code: "MP_CHECKOUTS_DISABLED", message: MP_CHECKOUTS_DISABLED_MSG });
+    }
     const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
     if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
 
@@ -10928,6 +10932,10 @@ const song = sr.data as any;
   }
 
   async function handleCreatePayment(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (MP_CHECKOUTS_DISABLED) {
+      return send(res, 503, { ok: false, status: "error", code: "MP_CHECKOUTS_DISABLED", message: MP_CHECKOUTS_DISABLED_MSG });
+    }
     const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
     if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
 
@@ -22932,6 +22940,11 @@ const lucianaVoiceHandler = (() => {
 // #region Mureka
 const MUREKA_DISABLED = true;
 const MUREKA_DISABLED_MSG = "Mureka está temporalmente deshabilitado. Por favor usa Suno por ahora.";
+
+// Bandera global para pausar NUEVOS checkouts Mercado Pago (solo nuevos pagos, no webhook/confirm)
+const MP_CHECKOUTS_DISABLED = true;
+const MP_CHECKOUTS_DISABLED_MSG = "Compras temporalmente no disponibles. Intenta más tarde.";
+
 const murekaHandler = (() => {
   function send(res, status, body) {
     res.statusCode = status;
