@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRACIÓN (CORREGIDA v3): Protección idempotente Mercado Pago
+-- MIGRACIÓN (CORREGIDA v4): Protección idempotente Mercado Pago
 -- 1 payment_id = SOLAMENTE 1 acreditación (mutex atómico DB-level)
 -- Tabla nueva mp_payment_claims. SIN TOCAR histórico.
 -- ============================================================
@@ -25,6 +25,31 @@ CREATE INDEX IF NOT EXISTS idx_mp_payment_claims_user ON mp_payment_claims(user_
 CREATE INDEX IF NOT EXISTS idx_mp_payment_claims_pack ON mp_payment_claims(pack_key);
 
 ALTER TABLE mp_payment_claims ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- PASO 1b: PRECARGAR mp_payment_claims CON payment_id HISTÓRICOS
+--   de mp_transactions (INSERT ... SELECT DISTINCT ON (payment_id))
+--   ON CONFLICT DO NOTHING.
+--   SIN modificar ni borrar mp_transactions.
+-- ============================================================
+INSERT INTO mp_payment_claims (
+  payment_id, user_id, kind, pack_key, pack_id, amount_mxn, credits_granted, batch_id, claimed_at
+)
+SELECT DISTINCT ON (tx.payment_id)
+  tx.payment_id,
+  tx.user_id,
+  COALESCE(NULLIF(trim(tx.kind), ''), 'songs'),
+  tx.pack_key,
+  NULL,
+  COALESCE(tx.amount_mxn, 0),
+  0,
+  NULL,
+  COALESCE(tx.created_at, NOW())
+FROM mp_transactions tx
+WHERE tx.payment_id IS NOT NULL
+  AND char_length(trim(tx.payment_id)) > 0
+ORDER BY tx.payment_id, tx.id ASC
+ON CONFLICT (payment_id) DO NOTHING;
 
 -- ============================================================
 -- PASO 2: RPC transaccional mp_claim_payment_transaction
@@ -138,7 +163,7 @@ BEGIN
   END IF;
 
   -------------------------------------------------------------------
-  -- VALIDACIÓN 3: Importe mínimo razonable (para songs/mini_pack/share_unlock)
+  -- VALIDACIÓN 3: Importe mínimo razonable.
   -------------------------------------------------------------------
   IF p_kind = 'share_unlock' THEN
     IF COALESCE(p_unlock_price, COALESCE(p_amount_mxn, 0)) <= 0 THEN
@@ -158,21 +183,19 @@ BEGIN
   -- CASO: songs o mini_pack → user_id no NULL (validado arriba)
   -------------------------------------------------------------------
   IF p_kind <> 'share_unlock' THEN
-    -- Ensure profile ON CONFLICT DO NOTHING.
-    -- SIN referencias estáticas a profiles.credits ni song_balance (nunca existieron como columnas writeable driver usuario).
     INSERT INTO profiles (id, ramber_credits, zingy_credits, credits_expires_at)
     VALUES (p_user_id, 0, 0, NULL)
     ON CONFLICT (id) DO NOTHING;
 
-    -- Admin bypass: emails fijos
     SELECT email INTO v_profile_email FROM auth.users WHERE id = p_user_id;
     v_is_admin := COALESCE(v_profile_email IN (v_admin_1, v_admin_2), FALSE);
   END IF;
 
   -------------------------------------------------------------------
-  -- VALIDACIÓN 4: mini_pack → PACK DEBE EXISTIR EN credit_packs.
-  -- NO FALLBACK. SIN EXCEPTION WHEN OTHERS.
-  -- Si el pack no existe → error. No se reclama nada. No se duplica.
+  -- VALIDACIÓN 4: mini_pack → PACK DEBE EXISTIR EN credit_packs
+  --               Y p_amount_mxn DEBE COINCIDIR CON price_mxn.
+  -- SIN FALLBACK. SIN EXCEPTION WHEN OTHERS.
+  -- SIN reemplazar el precio de la tabla con cualquier importe.
   -------------------------------------------------------------------
   IF p_kind = 'mini_pack' THEN
     v_pack_key      := COALESCE(trim(p_pack_key), '');
@@ -197,10 +220,16 @@ BEGIN
       RETURN;
     END IF;
 
-    -- Importe real pagado p_amount_mxn gana sobre credit_packs.price_mxn
-    IF COALESCE(p_amount_mxn, 0) > 0 THEN
-      v_amount_mxn := p_amount_mxn;
+    -- CORRECCIÓN 3 DRIVER: p_amount_mxn DEBE COINCIDIR con price_mxn
+    -- (tolerancia 0.01 pesos por redondeos Mercado Pago)
+    IF ABS(COALESCE(p_amount_mxn, 0) - COALESCE(v_amount_mxn, 0)) > 0.01 THEN
+      message := 'mini_pack: p_amount_mxn (' || COALESCE(p_amount_mxn, 0)::text || ') no coincide con credit_packs.price_mxn (' || COALESCE(v_amount_mxn, 0)::text || ')';
+      RETURN NEXT;
+      RETURN;
     END IF;
+
+    -- v_amount_mxn = el precio REAL de la tabla.
+    -- (NO se reemplaza con p_amount_mxn aunque sea positivo.)
 
     -- Validez: p_validity_days > 0 gana sobre la tabla
     IF COALESCE(p_validity_days, 0) > 0 THEN
@@ -216,7 +245,6 @@ BEGIN
     v_credits       := COALESCE(p_credits_param, 0);
     v_validity_days := CASE WHEN COALESCE(p_validity_days, 0) > 0 THEN p_validity_days ELSE 60 END;
 
-    -- Si trae pack, intentamos leer de credit_packs (no obligatorio, pero si existe gana)
     IF char_length(v_pack_key) > 0 OR COALESCE(v_pack_id, 0) > 0 THEN
       DECLARE
         v_pack_row RECORD;
@@ -242,8 +270,7 @@ BEGIN
   used_validity_days := COALESCE(v_validity_days, used_validity_days);
 
   -------------------------------------------------------------------
-  -- Saldo writeable REAL (solo ramber_credits y zingy_credits)
-  -- SIN referencias estáticas a credits ni song_balance.
+  -- Saldo REAL: SOLO ramber_credits y zingy_credits.
   -------------------------------------------------------------------
   IF p_kind <> 'share_unlock' THEN
     SELECT
@@ -258,8 +285,7 @@ BEGIN
   END IF;
 
   -------------------------------------------------------------------
-  -- RECLAMAR PAYMENT_ID (MUTEX ATÓMICO)
-  -- Si ya existe → already_processed. NUNCA se ejecuta lo de abajo.
+  -- RECLAMAR PAYMENT_ID (MUTEX ATÓMICO) — DESPUÉS de validaciones.
   -------------------------------------------------------------------
   BEGIN
     INSERT INTO mp_payment_claims (payment_id, user_id, kind, pack_key, pack_id, amount_mxn)
@@ -280,7 +306,7 @@ BEGIN
   END;
 
   -------------------------------------------------------------------
-  -- CASO 1: share_unlock (no créditos)
+  -- CASO 1: share_unlock
   -------------------------------------------------------------------
   IF p_kind = 'share_unlock' THEN
     UPDATE preview_shares
@@ -307,10 +333,11 @@ BEGIN
     INSERT INTO mp_transactions (user_id, kind, pack_key, amount_mxn, payment_id)
     VALUES (NULL, 'share_unlock', COALESCE(p_pack_key, 'unknown'), COALESCE(p_unlock_price, p_amount_mxn, 0), trim(p_payment_id));
 
-    UPDATE mp_payment_claims SET
-      share_id   = p_share_id,
-      claimed_at = NOW()
-    WHERE payment_id = trim(p_payment_id);
+    -- CORRECCIÓN 2 DRIVER: alias mpc + sin ambigüedad columnas
+    UPDATE mp_payment_claims AS mpc
+       SET share_id   = p_share_id,
+           claimed_at = NOW()
+     WHERE mpc.payment_id = trim(p_payment_id);
 
     success := TRUE;
     message := 'share_unlock procesado';
@@ -319,11 +346,7 @@ BEGIN
   END IF;
 
   -------------------------------------------------------------------
-  -- CASO 2: mini_pack
-  --   CORRECCIÓN #1 DRIVER: NO aumentamos ramber_credits.
-  --   ÚNICAMENTE creamos credit_batch.
-  --   El consumo ya suma perfil + lotes vía creditsFromProfile / getActiveBatchCredits.
-  --   CAP global 2000cr respetado (admins sin cap).
+  -- CASO 2: mini_pack → SÓLO credit_batch. SIN UPDATE ramber_credits.
   -------------------------------------------------------------------
   IF p_kind = 'mini_pack' THEN
     SELECT COALESCE(SUM(remaining_credits), 0)
@@ -340,7 +363,6 @@ BEGIN
       ELSE GREATEST(0, LEAST(COALESCE(v_credits, 0), GREATEST(0, v_max_cap - v_total_before)))
     END;
 
-    -- NO actualizamos profiles. Solo actualizamos la expiración.
     UPDATE profiles
        SET credits_expires_at = NOW() + '60 days'::interval
      WHERE id = p_user_id;
@@ -375,14 +397,15 @@ BEGIN
     INSERT INTO mp_transactions (user_id, kind, pack_key, amount_mxn, payment_id)
     VALUES (p_user_id, 'mini_pack', COALESCE(v_pack_key, 'unknown'), COALESCE(v_amount_mxn, 0), trim(p_payment_id));
 
-    UPDATE mp_payment_claims SET
-      pack_key        = COALESCE(v_pack_key, pack_key),
-      pack_id         = CASE WHEN COALESCE(v_pack_id, 0) > 0 THEN v_pack_id ELSE pack_id END,
-      amount_mxn      = COALESCE(v_amount_mxn, amount_mxn),
-      credits_granted = COALESCE(v_allowed, credits_granted),
-      batch_id        = v_batch_id,
-      claimed_at      = NOW()
-    WHERE payment_id = trim(p_payment_id);
+    -- CORRECCIÓN 2 DRIVER: alias mpc. credits_granted = v_allowed (directo)
+    UPDATE mp_payment_claims AS mpc
+       SET pack_key        = COALESCE(v_pack_key, mpc.pack_key),
+           pack_id         = CASE WHEN COALESCE(v_pack_id, 0) > 0 THEN v_pack_id ELSE mpc.pack_id END,
+           amount_mxn      = COALESCE(v_amount_mxn, mpc.amount_mxn),
+           credits_granted = v_allowed,
+           batch_id        = v_batch_id,
+           claimed_at      = NOW()
+     WHERE mpc.payment_id = trim(p_payment_id);
 
     success := TRUE;
     message := 'mini_pack procesado (solo credit_batch)';
@@ -391,9 +414,7 @@ BEGIN
   END IF;
 
   -------------------------------------------------------------------
-  -- CASO 3: songs (inicio / productor / masterizar / ajuste directo)
-  --   CORRECCIÓN #2 DRIVER: SOLO actualizamos ramber_credits.
-  --   NO creamos credit_batch.
+  -- CASO 3: songs → SÓLO ramber_credits. SIN credit_batch.
   -------------------------------------------------------------------
   IF p_kind = 'songs' THEN
     IF COALESCE(v_credits, 0) > 0 THEN
@@ -408,9 +429,8 @@ BEGIN
          WHERE id = p_user_id;
       END;
       credited        := TRUE;
-      credits_granted := COALESCE(v_credits, 0);
+      credits_granted := v_credits;
     ELSE
-      -- Aún sin créditos, actualizamos expiración (planes grandes lo usan)
       UPDATE profiles
          SET credits_expires_at = NOW() + (GREATEST(COALESCE(v_validity_days, 60), 1) || ' days')::interval
        WHERE id = p_user_id;
@@ -419,13 +439,14 @@ BEGIN
     INSERT INTO mp_transactions (user_id, kind, pack_key, amount_mxn, payment_id)
     VALUES (p_user_id, 'songs', COALESCE(v_pack_key, 'unknown'), COALESCE(v_amount_mxn, 0), trim(p_payment_id));
 
-    UPDATE mp_payment_claims SET
-      pack_key        = COALESCE(v_pack_key, pack_key),
-      pack_id         = CASE WHEN COALESCE(v_pack_id, 0) > 0 THEN v_pack_id ELSE pack_id END,
-      amount_mxn      = COALESCE(v_amount_mxn, amount_mxn),
-      credits_granted = COALESCE(credits_granted, 0),
-      claimed_at      = NOW()
-    WHERE payment_id = trim(p_payment_id);
+    -- CORRECCIÓN 2 DRIVER: alias mpc. credits_granted = v_credits (directo)
+    UPDATE mp_payment_claims AS mpc
+       SET pack_key        = COALESCE(v_pack_key, mpc.pack_key),
+           pack_id         = CASE WHEN COALESCE(v_pack_id, 0) > 0 THEN v_pack_id ELSE mpc.pack_id END,
+           amount_mxn      = COALESCE(v_amount_mxn, mpc.amount_mxn),
+           credits_granted = v_credits,
+           claimed_at      = NOW()
+     WHERE mpc.payment_id = trim(p_payment_id);
 
     success := TRUE;
     message := 'songs / plan procesado (solo ramber_credits, sin lote)';
@@ -440,10 +461,7 @@ END;
 $$;
 
 -- ============================================================
--- PASO 3: PRIVACIDAD (SERVICE ROLE ÚNICAMENTE)
---   - REVOKE nombre COMPLETO con TODOS los tipos.
---   - SOLO service_role tiene EXECUTE. (postgres REMOVIDO como lo pediste)
---   - Tabla mp_payment_claims: SOLO service_role accede.
+-- PASO 3: PRIVACIDAD (FIRMA COMPLETA — SOLO service_role)
 -- ============================================================
 REVOKE ALL ON FUNCTION mp_claim_payment_transaction(
   TEXT,UUID,TEXT,TEXT,INT,NUMERIC,NUMERIC,INT,TEXT,TEXT,UUID,TEXT,NUMERIC,NUMERIC
