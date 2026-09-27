@@ -414,42 +414,67 @@ BEGIN
   END IF;
 
   -------------------------------------------------------------------
-  -- CASO 3: songs → SÓLO ramber_credits. SIN credit_batch.
+  -- CASO 3: songs (dos subcasos: plan con créditos vs masterización)
   -------------------------------------------------------------------
   IF p_kind = 'songs' THEN
-    IF COALESCE(v_credits, 0) > 0 THEN
-      DECLARE
-        v_saldo_actual NUMERIC := COALESCE(v_profile_credits, 0);
-        v_saldo_nuevo  NUMERIC := GREATEST(0, v_saldo_actual + COALESCE(v_credits, 0));
-      BEGIN
-        UPDATE profiles
-           SET credits_expires_at = NOW() + (GREATEST(COALESCE(v_validity_days, 60), 1) || ' days')::interval,
-               ramber_credits     = CASE WHEN ramber_credits IS NOT NULL THEN v_saldo_nuevo ELSE ramber_credits END,
-               zingy_credits      = CASE WHEN ramber_credits IS NULL AND zingy_credits IS NOT NULL THEN v_saldo_nuevo ELSE zingy_credits END
-         WHERE id = p_user_id;
-      END;
-      credited        := TRUE;
-      credits_granted := v_credits;
-    ELSE
+    -- DETECTAR MASTERIZACIÓN (pack_key = 'masterizar')
+    IF COALESCE(v_pack_key, '') = 'masterizar' THEN
+      -- MASTERIZAR: NO OTORGAR CRÉDITOS. ACTIVAR SUSCRIPCIÓN 30 DÍAS.
       UPDATE profiles
-         SET credits_expires_at = NOW() + (GREATEST(COALESCE(v_validity_days, 60), 1) || ' days')::interval
+         SET mastering_subscription_active    = TRUE,
+             mastering_subscription_expires_at = NOW() + '30 days'::interval,
+             credits_expires_at                = NOW() + (GREATEST(COALESCE(v_validity_days, 30), 1) || ' days')::interval
        WHERE id = p_user_id;
+
+      credited        := FALSE;
+      credits_granted := 0;
+      message         := 'masterización: suscripción activada (sin créditos)';
+    ELSE
+      -- INICIO / PRODUCTOR / OTROS PLANES CON CRÉDITOS.
+      -- ACREDITAR 1 SOLA VEZ DENTRO DE LA RPC, RESPETANDO CAP 2000.
+      -- (NO HABRÁ rollover en el handler después; si hay, sería duplicado.)
+      v_total_before := v_profile_credits;
+      v_allowed := CASE
+        WHEN v_is_admin THEN GREATEST(0, COALESCE(v_credits, 0))
+        ELSE GREATEST(0, LEAST(COALESCE(v_credits, 0), GREATEST(0, v_max_cap - v_total_before)))
+      END;
+
+      IF v_allowed > 0 THEN
+        DECLARE
+          v_saldo_actual NUMERIC := COALESCE(v_profile_credits, 0);
+          v_saldo_nuevo  NUMERIC := GREATEST(0, v_saldo_actual + v_allowed);
+        BEGIN
+          UPDATE profiles
+             SET credits_expires_at = NOW() + (GREATEST(COALESCE(v_validity_days, 60), 1) || ' days')::interval,
+                 ramber_credits     = CASE WHEN ramber_credits IS NOT NULL THEN v_saldo_nuevo ELSE ramber_credits END,
+                 zingy_credits      = CASE WHEN ramber_credits IS NULL AND zingy_credits IS NOT NULL THEN v_saldo_nuevo ELSE zingy_credits END
+           WHERE id = p_user_id;
+        END;
+        credited        := TRUE;
+        credits_granted := v_allowed;
+        message         := 'songs / plan procesado (solo ramber_credits, cap 2000, sin lote)';
+      ELSE
+        UPDATE profiles
+           SET credits_expires_at = NOW() + (GREATEST(COALESCE(v_validity_days, 60), 1) || ' days')::interval
+         WHERE id = p_user_id;
+        credits_granted := 0;
+        message         := 'songs / plan procesado (sin créditos otorgados, cap alcanzado o 0)';
+      END IF;
     END IF;
 
     INSERT INTO mp_transactions (user_id, kind, pack_key, amount_mxn, payment_id)
     VALUES (p_user_id, 'songs', COALESCE(v_pack_key, 'unknown'), COALESCE(v_amount_mxn, 0), trim(p_payment_id));
 
-    -- CORRECCIÓN 2 DRIVER: alias mpc. credits_granted = v_credits (directo)
+    -- Alias mpc. credits_granted = variable calculada según subcaso.
     UPDATE mp_payment_claims AS mpc
        SET pack_key        = COALESCE(v_pack_key, mpc.pack_key),
            pack_id         = CASE WHEN COALESCE(v_pack_id, 0) > 0 THEN v_pack_id ELSE mpc.pack_id END,
            amount_mxn      = COALESCE(v_amount_mxn, mpc.amount_mxn),
-           credits_granted = v_credits,
+           credits_granted = COALESCE(credits_granted, 0),
            claimed_at      = NOW()
      WHERE mpc.payment_id = trim(p_payment_id);
 
     success := TRUE;
-    message := 'songs / plan procesado (solo ramber_credits, sin lote)';
     RETURN NEXT;
     RETURN;
   END IF;

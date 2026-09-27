@@ -6241,17 +6241,9 @@ const mercadoPagoHandler = (() => {
     if (!claimSuccess && !already) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
     if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
 
-    // Planes grandes (inicio / productor) → rollover mes a mes (lo hace handler JS DESPUÉS del claim atómico).
-    if (isPlanRenewal && Number.isFinite(credits) && credits > 0) {
-      const upd = await applyCreditRolloverWithCap(auth.admin, {
-        userId: auth.user.id,
-        monthlyCredits: credits,
-        subscriptionActive: true,
-        renewalPaidSuccessfully: paymentStatus === "approved",
-        isUnlimitedAccount: isAdminEmail(auth.user.email),
-      });
-      if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-    }
+    // IMPORTANTE: NO SE HACE NINGÚN AJUSTE DE CRÉDITOS NI ACTIVACIÓN DE MASTERIZACIÓN AQUÍ.
+    // TODO (créditos inicio/productor y suscripción masterización) YA fue realizado 1 SOLA VEZ
+    // DENTRO DE LA RPC mp_claim_payment_transaction. Hacerlo otra vez duplicaría.
 
     await tryPayAffiliateCommission(auth.admin, mpToken, paymentId, auth.user.id, packKey || "", amountMxn);
 
@@ -6482,33 +6474,10 @@ const mercadoPagoHandler = (() => {
     if (already) return send(res, 200, { ok: true, status: paymentStatus, already: true });
     if (!claimSuccess) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
 
-    // Planes grandes (inicio / productor) y masterización: handler aplica update después del claim atómico.
-    // (Mini packs y directos YA fueron acreditados por la RPC.)
-    if (isMasterizarSubscription) {
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30);
-      const { error: updateError } = await admin
-        .from('profiles')
-        .update({
-          mastering_subscription_active: true,
-          mastering_subscription_expires_at: expiresAt.toISOString(),
-        })
-        .eq('id', userId);
-      if (updateError) {
-        console.error('Error al activar suscripción de masterización:', updateError);
-      }
-    } else if (isPlanRenewal && Number.isFinite(credits) && credits > 0) {
-      const upd = await applyCreditRolloverWithCap(admin, {
-        userId,
-        monthlyCredits: credits,
-        subscriptionActive: true,
-        renewalPaidSuccessfully: paymentStatus === "approved",
-      });
-      if (!upd.ok) {
-        console.error("[MP Webhook] applyCreditRolloverWithCap falló después de claim:", upd.error);
-        return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-      }
-    }
+    // IMPORTANTE: NO SE HACE NINGÚN AJUSTE DE CRÉDITOS NI ACTIVACIÓN DE MASTERIZACIÓN AQUÍ.
+    // TODO (suscripción masterización y créditos inicio/productor) YA fue realizado 1 SOLA VEZ
+    // DENTRO DE LA RPC mp_claim_payment_transaction.
+    // Cualquier applyCreditRolloverWithCap, adjustUserCredits o UPDATE mastering aquí DUPLICARÍA.
 
     if (!isMiniPack) {
       await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
