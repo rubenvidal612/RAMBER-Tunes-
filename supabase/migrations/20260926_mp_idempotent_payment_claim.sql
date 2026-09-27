@@ -417,6 +417,15 @@ BEGIN
   -- CASO 3: songs (dos subcasos: plan con créditos vs masterización)
   -------------------------------------------------------------------
   IF p_kind = 'songs' THEN
+    -- PRECALCULAR v_batch_credits para INCLUIRLOS en el CAP (tanto planes como master usan esta info)
+    SELECT COALESCE(SUM(remaining_credits), 0)
+      INTO v_batch_credits
+      FROM credit_batches
+     WHERE user_id = p_user_id
+       AND NOT is_expired
+       AND remaining_credits > 0
+       AND (expires_at IS NULL OR expires_at > NOW());
+
     -- DETECTAR MASTERIZACIÓN (pack_key = 'masterizar')
     IF COALESCE(v_pack_key, '') = 'masterizar' THEN
       -- MASTERIZAR: NO OTORGAR CRÉDITOS. ACTIVAR SUSCRIPCIÓN 30 DÍAS.
@@ -432,8 +441,8 @@ BEGIN
     ELSE
       -- INICIO / PRODUCTOR / OTROS PLANES CON CRÉDITOS.
       -- ACREDITAR 1 SOLA VEZ DENTRO DE LA RPC, RESPETANDO CAP 2000.
-      -- (NO HABRÁ rollover en el handler después; si hay, sería duplicado.)
-      v_total_before := v_profile_credits;
+      -- CAP INCLUYE: ramber_credits del perfil + SUM(remaining_credits de lotes activos)
+      v_total_before := v_profile_credits + v_batch_credits;
       v_allowed := CASE
         WHEN v_is_admin THEN GREATEST(0, COALESCE(v_credits, 0))
         ELSE GREATEST(0, LEAST(COALESCE(v_credits, 0), GREATEST(0, v_max_cap - v_total_before)))
@@ -452,12 +461,13 @@ BEGIN
         END;
         credited        := TRUE;
         credits_granted := v_allowed;
-        message         := 'songs / plan procesado (solo ramber_credits, cap 2000, sin lote)';
+        message         := 'songs / plan procesado (solo ramber_credits, cap 2000 incluye lotes activos, sin lote)';
       ELSE
         UPDATE profiles
            SET credits_expires_at = NOW() + (GREATEST(COALESCE(v_validity_days, 60), 1) || ' days')::interval
          WHERE id = p_user_id;
         credits_granted := 0;
+        v_allowed       := 0;
         message         := 'songs / plan procesado (sin créditos otorgados, cap alcanzado o 0)';
       END IF;
     END IF;
@@ -465,12 +475,16 @@ BEGIN
     INSERT INTO mp_transactions (user_id, kind, pack_key, amount_mxn, payment_id)
     VALUES (p_user_id, 'songs', COALESCE(v_pack_key, 'unknown'), COALESCE(v_amount_mxn, 0), trim(p_payment_id));
 
-    -- Alias mpc. credits_granted = variable calculada según subcaso.
+    -- CORRECCIÓN 1 DRIVER v5→v6: Sin COALESCE ambiguo.
+    --   masterizar → 0; inicio/productor → v_allowed (exacto, sin default).
     UPDATE mp_payment_claims AS mpc
        SET pack_key        = COALESCE(v_pack_key, mpc.pack_key),
            pack_id         = CASE WHEN COALESCE(v_pack_id, 0) > 0 THEN v_pack_id ELSE mpc.pack_id END,
            amount_mxn      = COALESCE(v_amount_mxn, mpc.amount_mxn),
-           credits_granted = COALESCE(credits_granted, 0),
+           credits_granted = CASE
+             WHEN COALESCE(v_pack_key, '') = 'masterizar' THEN 0
+             ELSE v_allowed
+           END,
            claimed_at      = NOW()
      WHERE mpc.payment_id = trim(p_payment_id);
 
