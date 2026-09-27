@@ -6200,74 +6200,125 @@ const mercadoPagoHandler = (() => {
     const validityDaysRaw = Number(meta?.validity_days ?? meta?.validityDays);
     const validityDays = Number.isFinite(validityDaysRaw) && validityDaysRaw > 0 ? validityDaysRaw : 30;
 
-    const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-    if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
-
     const isPlanRenewal = txKind === "songs" && (packKey === "inicio" || packKey === "productor");
     const isMiniPack = txKind === "mini_pack";
     if (isMiniPack && String(packKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
       const already = await userHasApprovedPack(auth.admin, auth.user.id, TRIAL_PACK_KEY);
       if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: false, already: true, reason: "trial_already_used", message: TRIAL_ALREADY_USED_MESSAGE });
     }
-    if (Number.isFinite(credits) && credits > 0) {
-      if (isMiniPack) {
-        await ensureProfileExists(auth.admin, auth.user.id);
-        const { data: profile } = await auth.admin.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
-        const profileEmail = String((profile as any)?.email || auth.user.email || "").trim().toLowerCase();
-        const unlimited = isAdminEmail(profileEmail);
-        const profileCredits = creditsFromProfile(profile);
-        const batchCredits = await getActiveBatchCredits(auth.admin, auth.user.id);
-        const totalBefore = round2(profileCredits + batchCredits);
-        const cap = round2(MAX_ACCUMULATED_CREDITS);
-        const allowed = unlimited ? round2(credits) : round2(Math.max(0, Math.min(round2(credits), cap - totalBefore)));
 
-        const expiresIso = addDaysIso(60);
-        await auth.admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", auth.user.id);
-
-        if (allowed > 0) {
-          const effectiveDays = 60;
-          const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
-          const batchResult = await insertCreditBatch(auth.admin, {
-            userId: auth.user.id,
-            packId: packId || undefined,
-            packKey: packKey || undefined,
-            paymentId,
-            credits: allowed,
-            validityDays: effectiveDays,
-            amountMxn,
-            note: batchNote,
-          });
-          if (!batchResult.ok) {
-            const upd = await adjustUserCredits(auth.admin, auth.user.id, allowed);
-            if (!upd.ok) return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
+    // ==== IDEMPOTENTE: 1 SOLA LLAMADA A RPC. Fin del race condition. ====
+    const rpcNote = `Compra Mercado Pago ${paymentId}`;
+    const rpcCall = await auth.admin.rpc("mp_claim_payment_transaction", {
+      p_payment_id: paymentId,
+      p_user_id: auth.user.id,
+      p_kind: txKind,
+      p_pack_key: packKey || "unknown",
+      p_pack_id: packId || 0,
+      p_amount_mxn: amountMxn || 0,
+      p_credits: credits || 0,
+      p_validity_days: validityDays || 30,
+      p_note: rpcNote,
+    });
+    const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
+    const rpcOut: any = rpcRows[0] || {};
+    // Si falló la RPC (p. ej. NO la has ejecutado en SQL Editor aún → función no existe)
+    // → fallback a flujo antiguo SOLO si error = function does not exist. Sino fail.
+    let claimSuccess = Boolean(rpcOut?.success);
+    let already = Boolean(rpcOut?.already_processed);
+    if ((!rpcRows || rpcRows.length <= 0) && (rpcCall as any)?.error) {
+      const errMsg = String(((rpcCall as any)?.error?.message || (rpcCall as any)?.error || "")).toLowerCase();
+      if (errMsg.includes("function") && errMsg.includes("does not exist")) {
+        // FLUJO FALLBACK ANTIGUO (solo cuando la migración SQL NO está aplicada todavía)
+        const { data: exists } = await auth.admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
+        if (Array.isArray(exists) && exists.length > 0) {
+          already = true;
+          claimSuccess = true;
+        } else if (Number.isFinite(credits) && credits > 0) {
+          if (isMiniPack) {
+            await ensureProfileExists(auth.admin, auth.user.id);
+            const { data: profile } = await auth.admin.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
+            const profileEmail = String((profile as any)?.email || auth.user.email || "").trim().toLowerCase();
+            const unlimited = isAdminEmail(profileEmail);
+            const profileCredits = creditsFromProfile(profile);
+            const batchCredits = await getActiveBatchCredits(auth.admin, auth.user.id);
+            const totalBefore = round2(profileCredits + batchCredits);
+            const cap = round2(MAX_ACCUMULATED_CREDITS);
+            const allowed = unlimited ? round2(credits) : round2(Math.max(0, Math.min(round2(credits), cap - totalBefore)));
+            const expiresIso = addDaysIso(60);
+            await auth.admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", auth.user.id);
+            if (allowed > 0) {
+              const effectiveDays = 60;
+              const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
+              const batchResult = await insertCreditBatch(auth.admin, {
+                userId: auth.user.id,
+                packId: packId || undefined,
+                packKey: packKey || undefined,
+                paymentId,
+                credits: allowed,
+                validityDays: effectiveDays,
+                amountMxn,
+                note: batchNote,
+              });
+              if (!batchResult.ok) {
+                const upd = await adjustUserCredits(auth.admin, auth.user.id, allowed);
+                if (!upd.ok) return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
+              }
+            }
+          } else if (isPlanRenewal) {
+            const upd = await applyCreditRolloverWithCap(auth.admin, {
+              userId: auth.user.id,
+              monthlyCredits: credits,
+              subscriptionActive: true,
+              renewalPaidSuccessfully: paymentStatus === "approved",
+              isUnlimitedAccount: isAdminEmail(auth.user.email),
+            });
+            if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+          } else {
+            const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
+            if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
           }
         }
-      } else if (isPlanRenewal) {
-        const upd = await applyCreditRolloverWithCap(auth.admin, {
-          userId: auth.user.id,
-          monthlyCredits: credits,
-          subscriptionActive: true,
-          renewalPaidSuccessfully: paymentStatus === "approved",
-          isUnlimitedAccount: isAdminEmail(auth.user.email),
-        });
-        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+        if (!already) {
+          await auth.admin.from("mp_transactions").insert({
+            user_id: auth.user.id,
+            kind: txKind,
+            pack_key: packKey || "unknown",
+            amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
+            payment_id: paymentId,
+          }).catch(() => { already = true; });
+        }
+        claimSuccess = true;
       } else {
-        const upd = await adjustUserCredits(auth.admin, auth.user.id, credits);
-        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+        return send(res, 500, { error: (rpcCall as any)?.error?.message || String((rpcCall as any)?.error || "No pude reclamar payment_id") });
       }
     }
+    if (!claimSuccess && !already) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
+    if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
 
-    await auth.admin.from("mp_transactions").insert({
-      user_id: auth.user.id,
-      kind: txKind,
-      pack_key: packKey || "unknown",
-      amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
-      payment_id: paymentId,
-    });
+    // Los planes GRANDES (inicio / productor) usan rollover (mes a mes) → handler lo aplica DESPUÉS del claim atómico.
+    // Mini pack y directos YA fueron acreditados dentro de la RPC.
+    if (isPlanRenewal && Number.isFinite(credits) && credits > 0) {
+      const upd = await applyCreditRolloverWithCap(auth.admin, {
+        userId: auth.user.id,
+        monthlyCredits: credits,
+        subscriptionActive: true,
+        renewalPaidSuccessfully: paymentStatus === "approved",
+        isUnlimitedAccount: isAdminEmail(auth.user.email),
+      });
+      if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+    }
 
     await tryPayAffiliateCommission(auth.admin, mpToken, paymentId, auth.user.id, packKey || "", amountMxn);
 
-    return send(res, 200, { ok: true, status: paymentStatus, credited: true });
+    return send(res, 200, {
+      ok: true,
+      status: paymentStatus,
+      credited: true,
+      granted: Number(rpcOut?.credits_granted || 0) || credits || 0,
+      batch_id: Number(rpcOut?.batch_id || 0) || undefined,
+      rpc_message: rpcOut?.message || null,
+    });
   }
 
   async function handleWebhook(req: any, res: any) {
@@ -6303,66 +6354,127 @@ const mercadoPagoHandler = (() => {
     if (txKind === "share_unlock") {
       const shareId = (meta?.share_id || "").toString();
       const productType = (meta?.product_type || "cancion_generada").toString();
-      
+      const transactionAmountMxn = Number(data?.transaction_amount ?? data?.transactionAmount ?? meta?.amount_mxn ?? meta?.amountMxn ?? 0);
+      const currencyId = String(data?.currency_id || data?.currencyId || "MXN").toUpperCase().trim();
+      if (currencyId && currencyId !== "MXN") return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "bad_currency" });
+
       if (!shareId) return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
 
-      const { data: existsTx } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-      if (Array.isArray(existsTx) && existsTx.length > 0) return send(res, 200, { ok: true, status: paymentStatus, already: true });
+      // Buscamos share y vendor ANTES (por compatibilidad con metadata antigua)
+      let vendorRole: string | null = null;
+      let vendorUserId: string | null = null;
+      let unlockPrice: number = Number.isFinite(transactionAmountMxn) && transactionAmountMxn > 0 ? transactionAmountMxn : 250;
+      let empleadoCommission: number = 50;
 
-      const { data: share, error: shareError } = await admin
-        .from("preview_shares")
-        .select("id, song_id, created_by, is_paid")
-        .eq("id", shareId)
-        .maybeSingle();
-      if (shareError || !share) return send(res, 500, { error: "No pude encontrar el preview share" });
-      if (share.is_paid) return send(res, 200, { ok: true, status: paymentStatus, already: true });
-
-      // Mark share as paid
-      const paidAt = new Date().toISOString();
-      await admin
-        .from("preview_shares")
-        .update({ is_paid: true, paid_at: paidAt })
-        .eq("id", shareId);
-
-      // Get vendor settings for created_by
-      const { data: vendorSettings } = await admin
-        .from("vendor_settings")
-        .select("role")
-        .eq("user_id", share.created_by)
-        .maybeSingle();
-      const role = (vendorSettings as any)?.role || "vendor";
-
-      // Get product pricing
-      const { data: pricing } = await admin
-        .from("product_pricing")
-        .select("unlock_price_mxn, empleado_commission_mxn")
-        .eq("product_type", productType)
-        .maybeSingle();
-      const unlockPrice = Number((pricing as any)?.unlock_price_mxn) || 250;
-      const empleadoCommission = Number((pricing as any)?.empleado_commission_mxn) || 50;
-
-      // Create share commission record if role is empleado
-      if (role === "empleado") {
-        await admin.from("share_commissions").insert({
-          share_id: shareId,
-          seller_user_id: share.created_by,
-          role_at_time: role,
-          product_type: productType,
-          amount_mxn: empleadoCommission,
-          status: "pending",
-        });
+      try {
+        const { data: share, error: shareError } = await admin
+          .from("preview_shares")
+          .select("id, created_by")
+          .eq("id", shareId)
+          .maybeSingle();
+        if (!shareError && share) {
+          vendorUserId = String(share.created_by || "").trim() || null;
+          const { data: vendorSettings } = await admin
+            .from("vendor_settings")
+            .select("role")
+            .eq("user_id", vendorUserId)
+            .maybeSingle();
+          vendorRole = String((vendorSettings as any)?.role || "vendor").trim().toLowerCase();
+          const { data: pricing } = await admin
+            .from("product_pricing")
+            .select("unlock_price_mxn, empleado_commission_mxn")
+            .eq("product_type", productType)
+            .maybeSingle();
+          unlockPrice = Number((pricing as any)?.unlock_price_mxn) || unlockPrice;
+          empleadoCommission = Number((pricing as any)?.empleado_commission_mxn) || empleadoCommission;
+        }
+      } catch {
       }
 
-      // Record transaction
-      await admin.from("mp_transactions").insert({
-        user_id: null,
-        kind: "share_unlock",
-        pack_key: productType,
-        amount_mxn: unlockPrice,
-        payment_id: paymentId,
-      });
-
-      return send(res, 200, { ok: true, status: paymentStatus, shareUnlocked: true });
+      const rpcParams: any = {
+        p_payment_id: paymentId,
+        p_user_id: null,
+        p_kind: "share_unlock",
+        p_pack_key: productType || "unknown",
+        p_pack_id: 0,
+        p_amount_mxn: Number.isFinite(unlockPrice) ? unlockPrice : 250,
+        p_credits: 0,
+        p_validity_days: 0,
+        p_note: `Share unlock Mercado Pago ${paymentId}`,
+        p_share_id: shareId,
+        p_share_created_by: vendorUserId,
+        p_vendor_role: vendorRole || "vendor",
+        p_unlock_price: unlockPrice || 0,
+        p_empleado_commission: empleadoCommission || 0,
+      };
+      const rpcCall = await admin.rpc("mp_claim_payment_transaction", rpcParams);
+      const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
+      const rpcOut: any = rpcRows[0] || {};
+      let already = Boolean(rpcOut?.already_processed);
+      let claimSuccess = Boolean(rpcOut?.success);
+      if ((!rpcRows || rpcRows.length <= 0) && (rpcCall as any)?.error) {
+        const errMsg = String(((rpcCall as any)?.error?.message || (rpcCall as any)?.error || "")).toLowerCase();
+        if (errMsg.includes("function") && errMsg.includes("does not exist")) {
+          // Fallback antiguo (solo si migración SQL NO está aplicada aún)
+          const { data: existsTx } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
+          if (Array.isArray(existsTx) && existsTx.length > 0) {
+            already = true;
+            claimSuccess = true;
+          } else {
+            const { data: share, error: shareError } = await admin
+              .from("preview_shares")
+              .select("id, song_id, created_by, is_paid")
+              .eq("id", shareId)
+              .maybeSingle();
+            if (shareError || !share) return send(res, 500, { error: "No pude encontrar el preview share" });
+            if (share.is_paid) {
+              already = true;
+              claimSuccess = true;
+            } else {
+              const paidAt = new Date().toISOString();
+              await admin
+                .from("preview_shares")
+                .update({ is_paid: true, paid_at: paidAt })
+                .eq("id", shareId);
+              const { data: vendorSettings } = await admin
+                .from("vendor_settings")
+                .select("role")
+                .eq("user_id", share.created_by)
+                .maybeSingle();
+              const role = (vendorSettings as any)?.role || "vendor";
+              const { data: pricing } = await admin
+                .from("product_pricing")
+                .select("unlock_price_mxn, empleado_commission_mxn")
+                .eq("product_type", productType)
+                .maybeSingle();
+              const unlockPriceFb = Number((pricing as any)?.unlock_price_mxn) || 250;
+              const empleadoCommissionFb = Number((pricing as any)?.empleado_commission_mxn) || 50;
+              if (role === "empleado") {
+                await admin.from("share_commissions").insert({
+                  share_id: shareId,
+                  seller_user_id: share.created_by,
+                  role_at_time: role,
+                  product_type: productType,
+                  amount_mxn: empleadoCommissionFb,
+                  status: "pending",
+                }).catch(() => {});
+              }
+              await admin.from("mp_transactions").insert({
+                user_id: null,
+                kind: "share_unlock",
+                pack_key: productType,
+                amount_mxn: unlockPriceFb,
+                payment_id: paymentId,
+              }).catch(() => { already = true; });
+              claimSuccess = true;
+            }
+          }
+        } else {
+          return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
+        }
+      }
+      if (already) return send(res, 200, { ok: true, status: paymentStatus, already: true });
+      return send(res, 200, { ok: true, status: paymentStatus, shareUnlocked: claimSuccess || true });
     }
 
     const userId = (meta?.user_id || meta?.userId || "").toString();
@@ -6376,9 +6488,6 @@ const mercadoPagoHandler = (() => {
     if (!Number.isFinite(transactionAmountMxn) || transactionAmountMxn <= 0) {
       return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "bad_amount" });
     }
-
-    const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
-    if (Array.isArray(exists) && exists.length > 0) return send(res, 200, { ok: true, status: paymentStatus, already: true });
 
     const packKeyRaw = (meta?.pack_key || meta?.packKey || "").toString();
     const packKey = String(packKeyRaw || "").trim().toLowerCase();
@@ -6408,63 +6517,23 @@ const mercadoPagoHandler = (() => {
       validity_days: Number((miniValidation as any).validity_days || validityDays || 30),
     } : null;
 
+    // Plan $25 trial único por cuenta (antes de RPC para no dar créditos si ya lo usó)
     if (isMiniPack) {
-      const credits = Number((finalMiniPack as any).credits || 0);
-      const fixedPackKey = String((finalMiniPack as any).pack_key || packKey || "mini_pack");
-      const fixedPackId = Number((finalMiniPack as any).pack_id || packId || 0) || null;
-      const amountMxn = Number((finalMiniPack as any).amount_mxn || metaAmountMxn || transactionAmountMxn || 0);
-      // Pack de prueba $25: una sola vez por cuenta. Registramos el claim ANTES de acreditar.
-      // La PK user_id en mini_3_claims garantiza atomicidad: dos intentos simultáneos no duplican crédito.
+      const fixedPackKey = String((finalMiniPack as any)?.pack_key || packKey || "mini_pack");
       if (String(fixedPackKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
-        const claim = await admin.from("mini_3_claims").insert({ user_id: userId, payment_id: paymentId });
-        if (claim.error) {
-          const code = String((claim.error as any)?.code || "");
-          const msg = String((claim.error as any)?.message || "");
+        const claim = await admin.from("mini_3_claims").insert({ user_id: userId, payment_id: paymentId }).catch((e) => ({ error: e }));
+        if ((claim as any)?.error) {
+          const code = String(((claim as any)?.error as any)?.code || "");
+          const msg = String(((claim as any)?.error as any)?.message || "");
           if (code === "23505" || msg.toLowerCase().includes("duplicate")) {
             return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "trial_already_used", message: TRIAL_ALREADY_USED_MESSAGE });
           }
-          return send(res, 500, { error: "No pude registrar la compra del Pack de prueba.", detail: msg || code });
         }
       }
-      // ========== MINI PAQUETE: crear LOTE independiente con su propia expiración ==========
-      if (!Number.isFinite(credits) || credits <= 0) {
-        return send(res, 200, { ok: true, status: paymentStatus, skipped: true, reason: "no_credits" });
-      }
-      await ensureProfileExists(admin, userId);
-      const { data: profile } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
-      const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
-      const unlimited = isAdminEmail(profileEmail);
-      const profileCredits = creditsFromProfile(profile);
-      const batchCredits = await getActiveBatchCredits(admin, userId);
-      const totalBefore = round2(profileCredits + batchCredits);
-      const cap = round2(MAX_ACCUMULATED_CREDITS);
-      const allowed = unlimited ? round2(credits) : round2(Math.max(0, Math.min(round2(credits), cap - totalBefore)));
+    }
 
-      const expiresIso = addDaysIso(60);
-      await admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", userId);
-
-      if (allowed > 0) {
-        const effectiveDays = 60;
-        const batchNote = allowed < credits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
-        const batchResult = await insertCreditBatch(admin, {
-          userId,
-          packId: fixedPackId || undefined,
-          packKey: fixedPackKey || undefined,
-          paymentId,
-          credits: allowed,
-          validityDays: effectiveDays,
-          amountMxn,
-          note: batchNote,
-        });
-        if (!batchResult.ok) {
-          const upd = await adjustUserCredits(admin, userId, allowed);
-          if (!upd.ok) {
-            console.error("[MP Webhook] mini_pack - crédito fallback falló:", batchResult.error || upd.error);
-            return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
-          }
-        }
-      }
-    } else if (isPlanRenewal) {
+    // Monto esperado para plan grande / masterizar
+    if (isPlanRenewal) {
       const planPack = (PACKS as any)[packKey];
       if (planPack && Number(planPack.amount_mxn)) {
         const expected = Number(planPack.amount_mxn);
@@ -6478,12 +6547,132 @@ const mercadoPagoHandler = (() => {
       }
     }
 
-    void packKeyRaw;
+    const fixedCredits = isMiniPack ? Number((finalMiniPack as any)?.credits || metaCredits || 0) : metaCredits;
+    const fixedPackKey = isMiniPack ? String((finalMiniPack as any)?.pack_key || packKey || "mini_pack") : packKey;
+    const fixedPackId = isMiniPack ? (Number((finalMiniPack as any)?.pack_id || packId || 0) || packId || 0) : (packId || 0);
+    const fixedAmountMxn = isMiniPack ? Number((finalMiniPack as any)?.amount_mxn || metaAmountMxn || transactionAmountMxn || 0) : (Number.isFinite(Number(metaAmountMxn)) && metaAmountMxn > 0 ? metaAmountMxn : transactionAmountMxn);
+    const fixedValidity = isMiniPack ? Number((finalMiniPack as any)?.validity_days || validityDays || 30) : (validityDays || 30);
+
+    const rpcNote = `Compra Mercado Pago ${paymentId} (${txKind} ${fixedPackKey || "unknown"})`;
+    const rpcCall = await admin.rpc("mp_claim_payment_transaction", {
+      p_payment_id: paymentId,
+      p_user_id: userId,
+      p_kind: txKind,
+      p_pack_key: fixedPackKey || "unknown",
+      p_pack_id: Number(fixedPackId) || 0,
+      p_amount_mxn: Number(fixedAmountMxn) || 0,
+      p_credits: Number(fixedCredits) || 0,
+      p_validity_days: Number(fixedValidity) || 30,
+      p_note: rpcNote,
+    });
+    const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
+    const rpcOut: any = rpcRows[0] || {};
+    let claimSuccess = Boolean(rpcOut?.success);
+    let already = Boolean(rpcOut?.already_processed);
+    let amountMxn = fixedAmountMxn || 0;
+    let credits = fixedCredits || 0;
+
+    if ((!rpcRows || rpcRows.length <= 0) && (rpcCall as any)?.error) {
+      const errMsg = String(((rpcCall as any)?.error?.message || (rpcCall as any)?.error || "")).toLowerCase();
+      if (errMsg.includes("function") && errMsg.includes("does not exist")) {
+        // ======== FALLBACK: FLUJO ANTIGUO (solo si la migración SQL NO está aplicada) ========
+        const { data: exists } = await admin.from("mp_transactions").select("id").eq("payment_id", paymentId).limit(1);
+        if (Array.isArray(exists) && exists.length > 0) {
+          already = true;
+          claimSuccess = true;
+        } else {
+          if (isMiniPack) {
+            const fbCredits = Number((finalMiniPack as any)?.credits || 0);
+            const fbPackKey = String((finalMiniPack as any)?.pack_key || packKey || "mini_pack");
+            const fbPackId = Number((finalMiniPack as any)?.pack_id || packId || 0) || packId || null;
+            const fbAmount = Number((finalMiniPack as any)?.amount_mxn || metaAmountMxn || transactionAmountMxn || 0);
+            amountMxn = fbAmount; credits = fbCredits;
+            if (Number.isFinite(fbCredits) && fbCredits > 0) {
+              await ensureProfileExists(admin, userId);
+              const { data: profile } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
+              const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
+              const unlimited = isAdminEmail(profileEmail);
+              const profileCredits = creditsFromProfile(profile);
+              const batchCredits = await getActiveBatchCredits(admin, userId);
+              const totalBefore = round2(profileCredits + batchCredits);
+              const cap = round2(MAX_ACCUMULATED_CREDITS);
+              const allowed = unlimited ? round2(fbCredits) : round2(Math.max(0, Math.min(round2(fbCredits), cap - totalBefore)));
+              const expiresIso = addDaysIso(60);
+              await admin.from("profiles").update({ credits_expires_at: expiresIso }).eq("id", userId);
+              if (allowed > 0) {
+                const effectiveDays = 60;
+                const batchNote = allowed < fbCredits ? `Compra Mercado Pago ${paymentId} (cap ${MAX_ACCUMULATED_CREDITS})` : `Compra Mercado Pago ${paymentId}`;
+                const batchResult = await insertCreditBatch(admin, {
+                  userId,
+                  packId: fbPackId || undefined,
+                  packKey: fbPackKey || undefined,
+                  paymentId,
+                  credits: allowed,
+                  validityDays: effectiveDays,
+                  amountMxn: fbAmount,
+                  note: batchNote,
+                });
+                if (!batchResult.ok) {
+                  const upd = await adjustUserCredits(admin, userId, allowed);
+                  if (!upd.ok) {
+                    console.error("[MP Webhook] mini_pack fallback - créditos falló:", batchResult.error || upd.error);
+                    return send(res, 500, { error: batchResult.error || upd.error || "No pude acreditar créditos" });
+                  }
+                }
+              }
+            }
+          }
+          if (isMasterizarSubscription) {
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 30);
+            const { error: updateError } = await admin
+              .from("profiles")
+              .update({
+                mastering_subscription_active: true,
+                mastering_subscription_expires_at: expiresAt.toISOString(),
+              })
+              .eq("id", userId);
+            if (updateError) {
+              console.error("Error suscripción masterización fallback:", updateError);
+              return send(res, 500, { error: "No pude activar la suscripción" });
+            }
+          } else if (Number.isFinite(credits) && credits > 0) {
+            if (isPlanRenewal) {
+              const upd = await applyCreditRolloverWithCap(admin, {
+                userId,
+                monthlyCredits: credits,
+                subscriptionActive: true,
+                renewalPaidSuccessfully: paymentStatus === "approved",
+              });
+              if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+            } else if (!isMiniPack) {
+              const upd = await adjustUserCredits(admin, userId, credits);
+              if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+            }
+          }
+          await admin.from("mp_transactions").insert({
+            user_id: userId,
+            kind: txKind,
+            pack_key: packKey || "unknown",
+            amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
+            payment_id: paymentId,
+          }).catch(() => { already = true; });
+          claimSuccess = true;
+        }
+      } else {
+        console.error("[MP Webhook] RPC falló (no function-not-exist):", (rpcCall as any)?.error);
+        return send(res, 500, { error: (rpcCall as any)?.error?.message || String((rpcCall as any)?.error || "No pude procesar pago") });
+      }
+    }
+
+    if (already) return send(res, 200, { ok: true, status: paymentStatus, already: true });
+    if (!claimSuccess) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
+
+    // Planes grandes (inicio / productor) y masterización: handler aplica update después del claim atómico.
+    // (Mini packs y directos YA fueron acreditados por la RPC.)
     if (isMasterizarSubscription) {
-      // Activar suscripción de masterización por 30 días
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30); // 30 días desde hoy
-      
+      expiresAt.setDate(expiresAt.getDate() + 30);
       const { error: updateError } = await admin
         .from('profiles')
         .update({
@@ -6491,45 +6680,35 @@ const mercadoPagoHandler = (() => {
           mastering_subscription_expires_at: expiresAt.toISOString(),
         })
         .eq('id', userId);
-      
       if (updateError) {
         console.error('Error al activar suscripción de masterización:', updateError);
-        return send(res, 500, { error: 'No pude activar la suscripción' });
       }
-    } else if (Number.isFinite(credits) && credits > 0) {
-      if (isPlanRenewal) {
-        const upd = await applyCreditRolloverWithCap(admin, {
-          userId,
-          monthlyCredits: credits,
-          subscriptionActive: true,
-          renewalPaidSuccessfully: paymentStatus === "approved",
-        });
-        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
-      } else {
-        const upd = await adjustUserCredits(admin, userId, credits);
-        if (!upd.ok) return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
+    } else if (isPlanRenewal && Number.isFinite(credits) && credits > 0) {
+      const upd = await applyCreditRolloverWithCap(admin, {
+        userId,
+        monthlyCredits: credits,
+        subscriptionActive: true,
+        renewalPaidSuccessfully: paymentStatus === "approved",
+      });
+      if (!upd.ok) {
+        console.error("[MP Webhook] applyCreditRolloverWithCap falló después de claim:", upd.error);
+        return send(res, 500, { error: upd.error || "No pude acreditar créditos" });
       }
     }
 
-    await admin.from("mp_transactions").insert({
-      user_id: userId,
-      kind: txKind,
-      pack_key: packKey || "unknown",
-      amount_mxn: Number.isFinite(amountMxn) ? amountMxn : 0,
-      payment_id: paymentId,
-    });
-
-    // Solo pagar comisión de afiliado para planes grandes, no mini paquetes
     if (!isMiniPack) {
       await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
     }
 
-    return send(res, 200, { 
-      ok: true, 
-      status: paymentStatus, 
+    return send(res, 200, {
+      ok: true,
+      status: paymentStatus,
       credited: true,
+      granted: Number(rpcOut?.credits_granted || 0) || credits || 0,
+      batch_id: Number(rpcOut?.batch_id || 0) || undefined,
       subscriptionActivated: isMasterizarSubscription,
-      mini_pack_created: isMiniPack
+      mini_pack_created: isMiniPack,
+      rpc_message: rpcOut?.message || null,
     });
   }
 
