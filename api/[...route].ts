@@ -22904,7 +22904,7 @@ const MUREKA_DISABLED = true;
 const MUREKA_DISABLED_MSG = "Mureka está temporalmente deshabilitado. Por favor usa Suno por ahora.";
 
 // Bandera global para pausar NUEVOS checkouts Mercado Pago (solo nuevos pagos, no webhook/confirm)
-const MP_CHECKOUTS_DISABLED = true;
+const MP_CHECKOUTS_DISABLED = false;
 const MP_CHECKOUTS_DISABLED_MSG = "Compras temporalmente no disponibles. Intenta más tarde.";
 
 const murekaHandler = (() => {
