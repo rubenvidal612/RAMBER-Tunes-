@@ -92,7 +92,6 @@ SET search_path = public
 AS $$
 DECLARE
   v_admin_1 CONSTANT TEXT := 'rubenfiverr612@gmail.com';
-  v_admin_2 CONSTANT TEXT := 'rubenvidal612@gmail.com';
   v_max_cap  CONSTANT NUMERIC := 2000;
 
   v_profile_email  TEXT;
@@ -188,7 +187,7 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
 
     SELECT email INTO v_profile_email FROM auth.users WHERE id = p_user_id;
-    v_is_admin := COALESCE(v_profile_email IN (v_admin_1, v_admin_2), FALSE);
+    v_is_admin := COALESCE(v_profile_email = v_admin_1, FALSE);
   END IF;
 
   -------------------------------------------------------------------

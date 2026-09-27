@@ -1174,7 +1174,7 @@ function isAdminEmail(email?: string | null) {
   const e = (email || "").trim().toLowerCase();
   if (!e) return false;
 
-  const hardcoded = ["rubenfiverr612@gmail.com", "rubenvidal612@gmail.com"];
+  const hardcoded = ["rubenfiverr612@gmail.com"];
 
   const raw = (typeof process !== "undefined" && (process as any)?.env && ((process as any).env.ADMIN_EMAILS || (process as any).env.ADMIN_EMAIL)) || "";
   const list = String(raw)
