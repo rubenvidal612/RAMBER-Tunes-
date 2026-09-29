@@ -3460,42 +3460,6 @@ const sunoHandler = (() => {
     }
   }
 
-  async function handleVoiceCloneAccess(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-
-    try {
-      const auth = await requireUser(req);
-      if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-      let internalAdmin = auth.admin;
-      try {
-        const supabaseUrl = process.env.SUPABASE_URL || "";
-        const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
-        if (supabaseUrl && supabaseService) {
-          const createClient = await getSupabaseCreateClient();
-          internalAdmin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
-        }
-      } catch {
-        // No cambiar cliente si falla la creación, usar el que viene de requireUser (también service_role)
-      }
-
-      const access = await userHasVoiceCloneAccess(internalAdmin, auth.user.id);
-      return send(res, 200, {
-        ok: true,
-        allowed: access.ok,
-        reason: access.reason,
-        message: !access.ok ? "La clonación de voz está incluida en el Pack Inicio de $350." : null,
-      });
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e || "");
-      return send(res, 500, {
-        ok: false,
-        error: "No pudimos verificar tu acceso al clonador.",
-        detail: detail.slice(0, 800),
-      });
-    }
-  }
-
   async function handleCredits(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
 
@@ -5583,7 +5547,6 @@ notify pgrst, 'reload schema';`;
       if (a === "midi") return handleMidi(req, res);
       if (a === "boost-style") return handleBoostStyle(req, res);
       if (a === "music-cover") return handleMusicCover(req, res);
-      if (a === "voice-clone-access") return handleVoiceCloneAccess(req, res);
       if (a === "credits") return handleCredits(req, res);
       if (a === "voice-validate") return handleVoiceValidate(req, res);
       if (a === "voice-validate-info") return handleVoiceValidateInfo(req, res);
