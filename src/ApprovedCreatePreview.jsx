@@ -3194,9 +3194,9 @@ function StartStep({ data, setData, setToast, handlers }) {
   const chooseFile = async (file, options = {}) => {
     if (!file) return false;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
-    const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || (file.type || '').toString().startsWith('audio/');
+    const isAudioOk = ext === 'mp3' || (file.type || '').toString().includes('mpeg');
     if (!isAudioOk) {
-      setToast("Ese archivo no es de audio. Usa MP3, WAV o M4A.");
+      setToast("Solo acepta archivos MP3. Convierte tu audio a MP3 y vuelve a intentar.");
       return false;
     }
     const nextInputMode = typeof options?.inputMode === 'string' ? options.inputMode : 'upload';
@@ -3250,7 +3250,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 · WAV · M4A"}</small></span>
+              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
               {hasSelectedAudio && audioChoiceMode === "upload" ? (
                 <button
                   type="button"
@@ -3269,7 +3269,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               <span className="radio" />
               <input
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a"
+                accept=".mp3,audio/mpeg,audio/mp3"
                 ref={uploadInputRef}
                 onClick={() => {
                   stopSingingCapture({ discardTake: true, preservePreview: false });
@@ -5813,8 +5813,123 @@ export function ApprovedCreatePreview(props) {
   );
 }
 
-function ApprovedCloneVoiceContent({ onClose }) {
+function ApprovedCloneVoiceContent({ onClose, onGoPlanes }) {
   const [toast, setToast] = useState("");
+  const [access, setAccess] = useState({ loading: true, allowed: false, reason: "no_plan" });
+
+  useEffect(() => {
+    let alive = true;
+    setAccess({ loading: true, allowed: false, reason: "no_plan" });
+    const token = (typeof window !== 'undefined' && getAccessToken && getAccessToken()) || "";
+    const base = (typeof window !== 'undefined' ? (window.location.origin || "") : "");
+    const url = `${base}/api/voice-clone-access?a=voice-clone-access`;
+    const fetchAccess = async () => {
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok && res.status === 401) {
+          try { await ensureAnonSession && ensureAnonSession(); } catch {}
+        }
+        const out = await res.json().catch(() => ({}));
+        if (!alive) return;
+        if (out && typeof out === "object") {
+          setAccess({
+            loading: false,
+            allowed: Boolean(out.allowed),
+            reason: String(out.reason || "no_plan"),
+          });
+        } else {
+          setAccess({ loading: false, allowed: false, reason: "no_plan" });
+        }
+      } catch {
+        if (alive) setAccess({ loading: false, allowed: false, reason: "no_plan" });
+      }
+    };
+    fetchAccess();
+    return () => { alive = false; };
+  }, []);
+
+  if (access.loading) {
+    return (
+      <div className="approved-clone-shell">
+        <div className="wizard-overlay"/>
+        <div className="flex h-full w-full items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+            <div className="text-sm text-slate-300">Preparando clonador…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!access.allowed) {
+    return (
+      <div className="approved-clone-shell">
+        <div className="wizard-overlay"/>
+        <div className="relative z-10 flex h-full w-full items-center justify-center overflow-auto px-5 py-10">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-gradient-to-b from-white/5 to-white/[0.02] p-7 shadow-[0_30px_80px_-30px_rgba(168,85,247,0.45)] backdrop-blur">
+            <div className="flex items-start justify-between">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-fuchsia-500/25 to-violet-500/25 text-fuchsia-200 ring-1 ring-white/10">
+                <Microphone className="h-6 w-6" />
+              </div>
+            </div>
+            <div className="mt-5">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-300/80">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400" />
+                CLONACIÓN DE VOZ
+              </div>
+              <h2 className="mt-2 text-2xl font-black leading-tight text-white">
+                Clona tu voz y conviértete en el cantante de tus propias canciones.
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                Sube una muestra, graba la frase de verificación y tendrás tu voz personal lista para usar en cualquier canción.
+              </p>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Disponible con</div>
+                  <div className="mt-1 text-lg font-extrabold text-white">PACK INICIO</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Precio</div>
+                  <div className="text-3xl font-black text-white leading-none">$350<span className="ml-1 text-sm font-semibold text-slate-400">MXN</span></div>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-sm text-slate-200">
+                  <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span>🎵 200 canciones</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-200">
+                  <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span>🎤 Clonación de Voz</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (typeof onGoPlanes === "function") onGoPlanes();
+                }}
+                className="mt-5 w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500 px-5 py-3.5 text-base font-extrabold text-white shadow-[0_10px_30px_-10px_rgba(217,70,239,0.7)] ring-1 ring-white/20 transition hover:brightness-110 active:scale-[0.99]"
+              >
+                Ver Planes
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="mt-4 text-xs leading-relaxed text-slate-400">
+              Al comprar el Pack Inicio accedes inmediatamente al clonador y a 200 canciones durante 30 días. Si necesitas más, puedes volver a comprarlo manualmente en cualquier momento.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return <div className="approved-clone-shell">
     <CloneVoiceWizard
       setToast={setToast}
@@ -5830,14 +5945,14 @@ const approvedCloneCss = approvedCss + `
 .approved-clone-shell .wizard-overlay{position:absolute}
 `;
 
-export function ApprovedCloneVoicePreview({ onClose }) {
+export function ApprovedCloneVoicePreview({ onClose, onGoPlanes }) {
   // In Android file pickers, this flow could crash during React cleanup when the
   // file input lived inside a portal mounted in a shadow root. Render it in the
   // regular tree to keep the DOM ownership stable while the picker opens/closes.
   return (
     <div style={{ height: "100%", minHeight: 0, width: "100%" }}>
       <style>{approvedCloneCss}</style>
-      <ApprovedCloneVoiceContent onClose={onClose} />
+      <ApprovedCloneVoiceContent onClose={onClose} onGoPlanes={onGoPlanes} />
     </div>
   );
 }
