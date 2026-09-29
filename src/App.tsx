@@ -4574,7 +4574,7 @@ export default function App() {
              </div>
            )}
            {currentTab === 'voces' && (
-            <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
+            <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} onGoPlanes={() => handleTabChange('planes')} />
            )}
            {currentTab === 'karaoke' && (
              <div className="flex-1 flex items-center justify-center px-6">
@@ -4676,7 +4676,7 @@ export default function App() {
                  currentTab === 'biblioteca' ? "overflow-y-auto" : ""
                )}>
                 {currentTab === 'voces' ? (
-                 <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
+                 <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} onGoPlanes={() => handleTabChange('planes')} />
                 ) : currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />
               ) : currentTab === 'karaoke' ? (
