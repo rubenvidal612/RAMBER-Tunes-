@@ -1253,106 +1253,6 @@ async function getUserPlan(admin: any, userId: string) {
   return buildUserPlanFromTransactions(Array.isArray(tx) ? tx : []);
 }
 
-async function userHasVoiceCloneAccess(
-  admin: any,
-  userId: string,
-  opts?: { withDetails?: boolean }
-): Promise<{
-  ok: boolean;
-  reason: "grandfather" | "override_admin" | "inicio_active" | "inicio_admin_active" | "no_plan" | "no_profile";
-  error?: string;
-  expiresAt?: string | null;
-  info?: any;
-}> {
-  try {
-    const { data: profileRows, error: profileErr } = await admin
-      .from("profiles")
-      .select("voice_clone_grandfathered, id")
-      .eq("id", userId)
-      .limit(1);
-    if (profileErr) {
-      return { ok: false, reason: "no_profile", error: profileErr?.message || String(profileErr) };
-    }
-    const profile: any = Array.isArray(profileRows) ? profileRows[0] : null;
-    if (!profile) {
-      return { ok: false, reason: "no_profile" };
-    }
-    // PRIORIDAD 1: Grandfather permanente
-    if (Boolean(profile.voice_clone_grandfathered) === true) {
-      return { ok: true, reason: "grandfather", expiresAt: null };
-    }
-
-    // PRIORIDAD 2: Override administrativo ilimitado (voice_clone_override_unlimited)
-    try {
-      const ov = await admin
-        .from("admin_plan_grants")
-        .select("id, granted_at, expires_at, revoked_at")
-        .eq("granted_to_user_id", userId)
-        .eq("grant_kind", "voice_clone_override_unlimited")
-        .is("revoked_at", null)
-        .order("granted_at", { ascending: false })
-        .limit(1);
-      const override = Array.isArray(ov?.data) ? ov.data[0] : null;
-      if (override) {
-        return { ok: true, reason: "override_admin", expiresAt: override.expires_at || null, info: { grantId: override.id } };
-      }
-    } catch (e) {
-      // Si la tabla todavía no existe en SQL migración pendiente, no romper todo.
-    }
-
-    // PRIORIDAD 3: Compra REAL Pack Inicio $350 en mp_payment_claims vigente (<30 días)
-    const { data: claimRows, error: claimErr } = await admin
-      .from("mp_payment_claims")
-      .select("claimed_at")
-      .eq("user_id", userId)
-      .eq("kind", "songs")
-      .eq("pack_key", "inicio")
-      .eq("amount_mxn", 350)
-      .not("claimed_at", "is", null)
-      .order("claimed_at", { ascending: false })
-      .limit(1);
-    if (claimErr) {
-      return { ok: false, reason: "no_plan", error: claimErr?.message || String(claimErr) };
-    }
-    const row: any = Array.isArray(claimRows) ? claimRows[0] : null;
-    if (row && row.claimed_at) {
-      const lastClaimMs = new Date(row.claimed_at).getTime();
-      if (Number.isFinite(lastClaimMs)) {
-        const expiresAt = lastClaimMs + 30 * 24 * 60 * 60 * 1000;
-        if (Date.now() < expiresAt) {
-          return { ok: true, reason: "inicio_active", expiresAt: new Date(expiresAt).toISOString() };
-        }
-      }
-    }
-
-    // PRIORIDAD 4: Grant administrativo inicio_350 NO revocado y expires_at >= NOW
-    try {
-      const gv = await admin
-        .from("admin_plan_grants")
-        .select("id, granted_at, expires_at, revoked_at")
-        .eq("granted_to_user_id", userId)
-        .eq("grant_kind", "inicio_350")
-        .is("revoked_at", null)
-        .order("granted_at", { ascending: false })
-        .limit(1);
-      const g = Array.isArray(gv?.data) ? gv.data[0] : null;
-      if (g) {
-        const hasExpire = !!g.expires_at;
-        const expireMs = hasExpire ? new Date(g.expires_at).getTime() : null;
-        if (!hasExpire || (expireMs && Date.now() < expireMs)) {
-          return { ok: true, reason: "inicio_admin_active", expiresAt: g.expires_at || null, info: { grantId: g.id } };
-        }
-      }
-    } catch (e) {
-      // tabla podría no existir todavía en migración pendiente
-    }
-
-    return { ok: false, reason: "no_plan" };
-  } catch (anyErr) {
-    return { ok: false, reason: "no_plan", error: anyErr instanceof Error ? anyErr.message : String(anyErr || "") };
-  }
-}
-
 async function randomHex(bytes: number) {
   try {
     const mod: any = await import("crypto");
@@ -1424,46 +1324,6 @@ async function tryAttachAffiliateReferral(admin: any, referredUserId: string, re
   });
   if (ins?.error) return { ok: false as const, error: String(ins.error?.message || "No pude guardar el referido") };
   return { ok: true as const, attached: true as const, affiliate_user_id: affiliateUserId };
-}
-
-// ==========================================================================
-// RECOMPENSAS DE AFILIADOS EN CRÉDITOS (NUEVO MODELO)
-// El modelo viejo pagaba $100 MXN en efectivo vía Mercado Pago (money_transfer).
-// Ahora las recompensas se entregan en un credit_batch separado y NUNCA en dinero.
-// ==========================================================================
-
-// Helper de tiers (solo para logs / diagnóstico en JS).
-// LA RPC EN LA BASE DE DATOS ES LA ÚNICA FUENTE DE VERDAD y re-valida TODO
-// internamente (kind + pack_key + amount_mxn reales de mp_payment_claims).
-function affiliateRewardCreditsForAmount(amountMxn) {
-  const amt = Number(amountMxn ?? 0);
-  if (!Number.isFinite(amt) || amt <= 0) return 0;
-  if (amt === 50 || amt === 70) return 12;
-  if (amt === 180) return 24;
-  if (amt === 250) return 36;
-  if (amt === 350) return 48;
-  return 0;
-}
-
-// Recompensa transaccional en créditos.
-// LA RPC LO HACE TODO (idempotencia, lookup referente, actividad, ban, tier por
-// kind+pack_key, bloqueo pg_advisory_xact_lock, cap 2000, credit_batch,
-// reward_credits/reward_batch_id en affiliate_commissions).
-// El JS SOLO envía el payment_id (no confía en nada más).
-async function grantAffiliateCreditReward(admin, paymentId) {
-  if (!paymentId) return;
-
-  const rpc = await admin.rpc("grant_affiliate_credit_reward", {
-    p_payment_id: String(paymentId),
-  });
-  if (rpc?.error) {
-    const msg = String(rpc?.error?.message || rpc?.error || "");
-    if (/function.*does not exist/i.test(msg)) {
-      console.error("[affiliate] grant_affiliate_credit_reward no existe: aplica la migración SQL en Supabase.");
-    } else {
-      console.error("[affiliate] grant_affiliate_credit_reward error:", msg);
-    }
-  }
 }
 
 async function getSupabaseCreateClient() {
@@ -2741,14 +2601,6 @@ const sunoHandler = (() => {
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const access = await userHasVoiceCloneAccess(auth.admin, auth.user.id);
-    if (!access.ok) {
-      return send(res, 403, {
-        error: "La clonación de voz está incluida en el Pack Inicio de $350.",
-        code: "VOICE_CLONE_PLAN_REQUIRED",
-      });
-    }
 
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
@@ -6141,24 +5993,125 @@ const mercadoPagoHandler = (() => {
     return { ok: r.ok, status: r.status, data };
   }
 
-  // Recompensa de afiliados en CRÉDITOS (NUEVO MODELO).
-  // Antes pagaba $100 MXN en efectivo vía Mercado Pago (money_transfer).
-  // Regla 1: queda NEUTRALIZADO el pago en efectivo, payout_email y Split.
-  // La acreditación ocurre DENTRO de una RPC transaccional privada.
-  //
-  // IMPORTANTE (regla 2 y 4 de correcciones):
-  //   - EL JS NO ENVÍA affiliate_user_id NI affiliate_active.
-  //   - LA RPC BUSCA TODO INTERNAMENTE:
-  //       * payment_id -> mp_payment_claims (user_id, kind, pack_key, amount_mxn).
-  //       * affiliate_referrals (afiliado por referred_user_id).
-  //       * auth.users (existencia, banned_until, last_sign_in_at).
-  //       * valida tier real (kind+pack_key+amount_mxn) NO solo amount.
-  //       * pg_advisory_xact_lock(affiliate_user_id) para cap 2000.
-  //   - El JS solo envía p_payment_id.
-  async function tryPayAffiliateCommission(admin: any, _mpToken: string, paymentId: string, _referredUserId: string, _packKey: string, _amountMxn: number) {
-    if (!paymentId) return;
-    // Sin dinero: solo recompensa en créditos, 1 sola vez por payment_id (DB UNIQUE).
-    await grantAffiliateCreditReward(admin, paymentId);
+  async function tryPayAffiliateCommission(admin: any, mpToken: string, paymentId: string, referredUserId: string, packKey: string, amountMxn: number) {
+    const amt = Number(amountMxn ?? 0);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    if (!referredUserId) return;
+    const commission = 100;
+
+    let affiliateUserId = "";
+    try {
+      const { data: refRows } = await admin.from("affiliate_referrals").select("affiliate_user_id").eq("referred_user_id", referredUserId).limit(1);
+      const ref = Array.isArray(refRows) ? refRows[0] : null;
+      affiliateUserId = String((ref as any)?.affiliate_user_id || "").trim();
+    } catch {
+      return;
+    }
+    if (!affiliateUserId) return;
+
+    try {
+      const { data: exists } = await admin.from("affiliate_commissions").select("id").eq("payment_id", paymentId).limit(1);
+      if (Array.isArray(exists) && exists.length > 0) return;
+    } catch {
+      return;
+    }
+
+    let affiliateActive = false;
+    try {
+      const u = await admin.auth.admin.getUserById(affiliateUserId);
+      const email = (u as any)?.data?.user?.email || "";
+      if (isAdminEmail(email)) {
+        affiliateActive = true;
+      } else {
+        const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
+        affiliateActive = Boolean((plan as any)?.plan_active);
+      }
+    } catch {
+      const plan = await getUserPlan(admin, affiliateUserId).catch(() => ({ plan_active: false }));
+      affiliateActive = Boolean((plan as any)?.plan_active);
+    }
+
+    let commissionId = "";
+    try {
+      const ins = await admin.from("affiliate_commissions").insert({
+        affiliate_user_id: affiliateUserId,
+        referred_user_id: referredUserId,
+        payment_id: paymentId,
+        pack_key: packKey || null,
+        amount_mxn: commission,
+        status: affiliateActive ? "pending" : "blocked",
+        detail: affiliateActive ? null : "affiliate_inactive",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      if (ins?.error) return;
+      const { data: rows } = await admin.from("affiliate_commissions").select("id").eq("payment_id", paymentId).limit(1);
+      commissionId = String((Array.isArray(rows) ? rows[0] : null)?.id || "").trim();
+    } catch {
+      return;
+    }
+
+    if (!affiliateActive) return;
+
+    let payoutEmail = "";
+    try {
+      const { data: accRows } = await admin.from("affiliate_accounts").select("payout_email").eq("user_id", affiliateUserId).limit(1);
+      payoutEmail = String((Array.isArray(accRows) ? accRows[0] : null)?.payout_email || "").trim();
+    } catch {}
+
+    if (!payoutEmail) {
+      if (commissionId) {
+        try {
+          await admin.from("affiliate_commissions").update({ status: "pending_destination", updated_at: new Date().toISOString() }).eq("id", commissionId);
+        } catch {}
+      }
+      return;
+    }
+
+    try {
+      const idem = `aff_${paymentId}_${await randomHex(6)}`;
+      const r = await fetch("https://api.mercadopago.com/v1/payments", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${mpToken}`,
+          "content-type": "application/json",
+          "x-idempotency-key": idem,
+        },
+        body: JSON.stringify({
+          transaction_amount: commission,
+          description: "Comisión Afiliados - LucIAna | Music",
+          payment_method_id: "account_money",
+          operation_type: "money_transfer",
+          external_reference: `ramber_aff:${paymentId}`,
+          payer: { email: payoutEmail },
+        }),
+      });
+      const out = await r.json().catch(() => ({}));
+      const payoutId = (out?.id || "").toString().trim();
+      if (r.ok) {
+        if (commissionId) {
+          await admin
+            .from("affiliate_commissions")
+            .update({ status: "paid", payout_payment_id: payoutId || null, updated_at: new Date().toISOString(), detail: null })
+            .eq("id", commissionId);
+        }
+        return;
+      }
+      const detail = (out?.message || out?.error || out?.status || `HTTP ${r.status}`).toString().slice(0, 800);
+      if (commissionId) {
+        await admin
+          .from("affiliate_commissions")
+          .update({ status: "failed", updated_at: new Date().toISOString(), detail })
+          .eq("id", commissionId);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (commissionId) {
+        try {
+          await admin.from("affiliate_commissions").update({ status: "failed", updated_at: new Date().toISOString(), detail: msg.slice(0, 800) }).eq("id", commissionId);
+        } catch {}
+      }
+    }
   }
 
   async function handleCreatePreference(req: any, res: any) {
@@ -6526,8 +6479,9 @@ const mercadoPagoHandler = (() => {
     // DENTRO DE LA RPC mp_claim_payment_transaction.
     // Cualquier applyCreditRolloverWithCap, adjustUserCredits o UPDATE mastering aquí DUPLICARÍA.
 
-    // Recompensa al referente (incluye mini_pack). El pago en efectivo ya no existe.
-    await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
+    if (!isMiniPack) {
+      await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
+    }
 
     return send(res, 200, {
       ok: true,
@@ -14590,499 +14544,6 @@ const adminHandler = (() => {
     return send(res, 200, { ok: true, mode: "execute", days, attempted: did.length, deleted, failed, failed_emails: failedEmails.slice(0, 20) });
   }
 
-  async function readTotalCreditsReal(admin: any, userId: string): Promise<{ profile_credits: number; batch_credits: number; total: number; profile: any; credits_expires_at: string | null }> {
-    const { data: profile, error } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
-    if (error) {
-      return { profile_credits: 0, batch_credits: 0, total: 0, profile: null, credits_expires_at: null };
-    }
-    const profileCredits = round2(creditsFromProfile(profile));
-    let batch = 0;
-    try {
-      batch = await getActiveBatchCredits(admin, userId);
-    } catch {
-      batch = 0;
-    }
-    return {
-      profile_credits: profileCredits,
-      batch_credits: round2(batch),
-      total: round2(profileCredits + round2(batch)),
-      profile,
-      credits_expires_at: (profile as any)?.credits_expires_at ?? null,
-    };
-  }
-
-  async function handleAdminUserDetailV2(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const u = new URL(req.url, "http://localhost");
-    const emailRaw = String((u.searchParams.get("email") || u.searchParams.get("user_email") || "")).trim().toLowerCase();
-    const userIdRaw = String((u.searchParams.get("user_id") || "")).trim();
-
-    if (!emailRaw && !userIdRaw) return send(res, 400, { error: "Falta email o user_id" });
-
-    const found = emailRaw
-      ? await findUserIdByEmail(auth, emailRaw)
-      : { ok: true as const, userId: userIdRaw };
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const uid = (found as any).userId as string;
-    if (!uid) return send(res, 404, { error: "Usuario no encontrado" });
-
-    const admin = (auth as any).admin;
-
-    // Evitar ver admin desde el admin por privacidad
-    try {
-      const { data: profile, error: profErr } = await admin.from("profiles").select("email").eq("id", uid).maybeSingle();
-      if (!profErr && profile && isAdminEmail(String((profile as any)?.email || "").trim().toLowerCase())) {
-        return send(res, 403, { error: "No puedes ver este usuario (administrador)." });
-      }
-    } catch {}
-
-    const profileFull = await admin.from("profiles").select("*").eq("id", uid).maybeSingle();
-    const credits = await readTotalCreditsReal(admin, uid);
-    const plan = await getUserPlan(admin, uid).catch(() => ({ plan_key: "ninguno", plan_active: false, plan_expires_at: null, downloads_allowed: false }));
-    const voiceAccess = await userHasVoiceCloneAccess(admin, uid);
-
-    let lastAdminGrant: any = null;
-    try {
-      const lg = await admin
-        .from("admin_plan_grants")
-        .select("id, grant_kind, pack_key, amount_mxn, credits_granted, validity_days, granted_at, expires_at, revoked_at, reason")
-        .eq("granted_to_user_id", uid)
-        .order("granted_at", { ascending: false })
-        .limit(1);
-      lastAdminGrant = Array.isArray(lg?.data) ? lg.data[0] : null;
-    } catch {}
-
-    return send(res, 200, {
-      ok: true,
-      user: {
-        id: uid,
-        profile: profileFull.error ? null : profileFull.data || null,
-      },
-      credits,
-      plan: {
-        plan_key: String((plan as any)?.plan_key || "ninguno"),
-        plan_active: Boolean((plan as any)?.plan_active),
-        plan_expires_at: (plan as any)?.plan_expires_at ?? null,
-        downloads_allowed: Boolean((plan as any)?.downloads_allowed),
-      },
-      voice_access: voiceAccess,
-      last_admin_grant: lastAdminGrant,
-    });
-  }
-
-  async function handleAdminListAssignablePackages(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const u = new URL(req.url, "http://localhost");
-    const emailRaw = String((u.searchParams.get("email") || "")).trim().toLowerCase();
-    if (!emailRaw) return send(res, 400, { error: "Falta email" });
-
-    const found = await findUserIdByEmail(auth, emailRaw);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const uid = (found as any).userId as string;
-
-    const admin = (auth as any).admin;
-    const credits = await readTotalCreditsReal(admin, uid);
-    const profile = credits.profile;
-    const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
-    const isTargetUnlimited = isAdminEmail(profileEmail);
-
-    const cap = round2(MAX_ACCUMULATED_CREDITS);
-
-    // Mini packs (CANONICAL activos)
-    const miniList: any[] = [];
-    try {
-      const act = await listActiveCreditPacks(admin);
-      const arr = Array.isArray(act) ? act : [];
-      for (const mp of arr) {
-        const nominal = round2(Number((mp as any).credits_amount ?? 0));
-        const capRoomForMini = round2(Math.max(0, cap - credits.total));
-        const allowed = isTargetUnlimited ? nominal : round2(Math.min(nominal, capRoomForMini));
-        miniList.push({
-          id: `mini:${(mp as any).pack_key}`,
-          kind: "mini_pack",
-          pack_key: (mp as any).pack_key,
-          label: String((mp as any).name || ""),
-          price_mxn: Number((mp as any).price_mxn ?? 0),
-          songs: Number((mp as any).songs ?? 0),
-          credits_nominal: nominal,
-          credits_actual_add: allowed,
-          credits_after_estimated: round2(credits.total + allowed),
-          validity_days_credits: 60,
-          validity_days_plan: null,
-          batch_expires_days: 60,
-          current_cap: cap,
-          current_credits_total: credits.total,
-          notes: "Lote credit_batches con 60 días de vigencia + credits_expires_at = 60d (igual que compra real MP).",
-        });
-      }
-    } catch (e) {
-      // no-op
-    }
-
-    // Planes grandes + servicios (PACKS hardcodeados L6035)
-    const plansList: any[] = [];
-    try {
-      const P: any = [
-        { id: "plan:inicio", grant_kind: "inicio_350", pack_key: "inicio", label: "Pack Inicio", price_mxn: 350, songs: 200, credits: 1200, validity_plan_days: 30, voice_access: true },
-        { id: "plan:productor", grant_kind: "productor_545", pack_key: "productor", label: "Pack Productor", price_mxn: 545, songs: 166, credits: 2000, validity_plan_days: 30, voice_access: false },
-        { id: "service:masterizar", grant_kind: "masterizar_150", pack_key: "masterizar", label: "Masterizar Ilimitado", price_mxn: 150, songs: 0, credits: 0, validity_plan_days: 30, voice_access: false },
-      ];
-      for (const p of P) {
-        const nominal = round2(p.credits || 0);
-        let allowed = nominal;
-        let capRoom = round2(Math.max(0, cap - credits.total));
-        if (!isTargetUnlimited) {
-          allowed = round2(Math.min(nominal, capRoom));
-        }
-        plansList.push({
-          id: p.id,
-          kind: p.id.startsWith("service:") ? "service" : "plan_songs",
-          grant_kind: p.grant_kind,
-          pack_key: p.pack_key,
-          label: p.label,
-          price_mxn: p.price_mxn,
-          songs: p.songs,
-          credits_nominal: nominal,
-          credits_actual_add: allowed,
-          credits_after_estimated: round2(credits.total + allowed),
-          validity_days_credits: nominal > 0 ? 60 : null,
-          validity_days_plan: p.validity_plan_days || null,
-          batch_expires_days: null,
-          current_cap: cap,
-          current_credits_total: credits.total,
-          voice_access: Boolean(p.voice_access),
-          notes: p.id === "service:masterizar" ? "Masterizar Ilimitado 30 días." : "Suma ramber_credits directo con CAP incluyendo batches (igual que compra real MP).",
-        });
-      }
-    } catch {}
-
-    return send(res, 200, {
-      ok: true,
-      user: { id: uid, email: emailRaw, current_cap: cap, current_credits_total: credits.total, current_profile_credits: credits.profile_credits, current_batch_credits: credits.batch_credits, credits_expires_at: credits.credits_expires_at },
-      mini_packs: miniList,
-      plans: plansList,
-    });
-  }
-
-  async function handleAdminAssignPackage(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const adminByUserId = String((auth as any)?.user?.id || "").trim();
-    if (!adminByUserId) return send(res, 403, { error: "Sesión inválida" });
-    const adminByEmail = String((auth as any)?.user?.email || "").trim().toLowerCase();
-    if (!isAdminEmail(adminByEmail)) return send(res, 403, { error: "No autorizado" });
-
-    const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
-    const emailRaw = String(body?.email || "").trim().toLowerCase();
-    const packageId = String(body?.package_id || "").trim();
-    const reason = typeof body?.reason === "string" ? String(body.reason).slice(0, 480) : null;
-    if (!emailRaw || !packageId) return send(res, 400, { error: "Faltan email o package_id" });
-
-    const found = await findUserIdByEmail(auth, emailRaw);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const targetUserId = (found as any).userId as string;
-
-    // No asignar a admin mismo
-    try {
-      const pf = await (auth as any).admin.from("profiles").select("email").eq("id", targetUserId).maybeSingle();
-      if (!pf.error && pf.data && isAdminEmail(String((pf.data as any).email || "").trim().toLowerCase())) {
-        return send(res, 403, { error: "No puedes asignar paquetes a este usuario (administrador)." });
-      }
-    } catch {}
-
-    const adminClient = (auth as any).admin;
-    const before = await readTotalCreditsReal(adminClient, targetUserId);
-
-    let grantKind: string | null = null;
-    let packKey: string | null = null;
-    let amountMxn: number = 0;
-    let creditsGranted: number = 0;
-    let validityDays: number | null = null;
-    let result: any = null;
-
-    // =============================================
-    // MINI PACK (ej: mini:inicio_50)
-    // =============================================
-    if (packageId.startsWith("mini:")) {
-      const pk = packageId.slice(5);
-      const pack = canonicalCreditPackByKey(pk);
-      if (!pack) return send(res, 404, { error: "Mini pack no encontrado" });
-      if (!Boolean((pack as any).is_active) && pk !== "mini_3") {
-        // ok
-      }
-      // Bloquear mini_3 ($25) inactivo
-      if (pk === "mini_3") return send(res, 400, { error: "Mini pack $25 inactivo." });
-
-      packKey = pk;
-      grantKind = "mini_pack";
-      amountMxn = Number((pack as any).price_mxn ?? 0);
-      const nominalCredits = round2(Number((pack as any).credits_amount ?? 0));
-      validityDays = 30; // validity del pack (plan), pero batch/expires = 60
-
-      // Igual que RPC compra real mini: credit_expires 60 días en profiles + batch expires 60 días
-      // Aplicar CAP 2000 (incluyendo actual + batches). Si sobrepasa, otorgar lo que falte hasta cap.
-      const cap = round2(MAX_ACCUMULATED_CREDITS);
-      const profEmail = String((before.profile as any)?.email || "").trim().toLowerCase();
-      const unlimited = isAdminEmail(profEmail);
-      const capRoom = unlimited ? nominalCredits : round2(Math.max(0, cap - before.total));
-      const allowed = round2(Math.min(nominalCredits, capRoom));
-
-      // Insert batch con GREATEST(validity, 60) = 60 días (igual que compra real)
-      const batchRes = await insertCreditBatch(adminClient, targetUserId, pk, allowed, Math.max(Number((pack as any).validity_days ?? 0), 60), `admin_assign_mini:${pk}:${Date.now()}`);
-      creditsGranted = allowed;
-
-      // Setear credits_expires_at en profiles = 60 días (igual que RPC real)
-      try {
-        await adminClient.from("profiles").update({ credits_expires_at: addDaysIso(60) }).eq("id", targetUserId);
-      } catch {}
-
-      // Insertar admin_plan_grants
-      try {
-        const expiresAt = addDaysIso(30); // vigencia 30 días de referencia
-        const g = await adminClient.from("admin_plan_grants").insert({
-          granted_by_user_id: adminByUserId,
-          granted_to_user_id: targetUserId,
-          grant_kind: grantKind,
-          pack_key: packKey,
-          amount_mxn: amountMxn,
-          credits_granted: creditsGranted,
-          validity_days: 30,
-          expires_at: expiresAt,
-          reason: reason || null,
-        }).select("*").maybeSingle();
-        result = { batch: batchRes, grant: g?.data || null };
-      } catch (e) {
-        // ok, puede que tabla no exista mientras migración no se ejecute
-      }
-    }
-    // =============================================
-    // PLANES (ej: plan:inicio, plan:productor)
-    // =============================================
-    else if (packageId.startsWith("plan:")) {
-      const sub = packageId.slice(5);
-      if (sub !== "inicio" && sub !== "productor") return send(res, 404, { error: "Plan no encontrado" });
-      packKey = sub;
-      grantKind = sub === "inicio" ? "inicio_350" : "productor_545";
-      amountMxn = sub === "inicio" ? 350 : 545;
-      const nominal = sub === "inicio" ? 1200 : 2000;
-      validityDays = 30;
-
-      // applyCreditRolloverWithCap ya hace:
-      // - previous = profile + batches; cap = 2000; maxProfileAllowed = cap - batchCredits
-      // - guarda en ramber_credits += allowed; credits_expires_at = +60d
-      const roll = await applyCreditRolloverWithCap(adminClient, {
-        userId: targetUserId,
-        monthlyCredits: nominal,
-        subscriptionActive: true,
-        renewalPaidSuccessfully: true,
-      });
-      if (!roll.ok) return send(res, 500, { error: roll.error });
-      creditsGranted = round2(roll.added || 0);
-
-      // Insert mp_transactions kind=songs para que buildUserPlanFromTransactions lo vea
-      // payment_id con prefijo admin_assign (NO false de MP)
-      try {
-        await adminClient.from("mp_transactions").insert({
-          user_id: targetUserId,
-          kind: "songs",
-          pack_key: packKey,
-          amount_mxn: amountMxn,
-          payment_id: `admin_assign:${packKey}:${targetUserId}:${Date.now()}`,
-        });
-      } catch {}
-
-      // Insertar admin_plan_grants con expires_at = granted_at + 30 días (voz + plan downloads)
-      try {
-        const expiresAt = addDaysIso(30);
-        const g = await adminClient.from("admin_plan_grants").insert({
-          granted_by_user_id: adminByUserId,
-          granted_to_user_id: targetUserId,
-          grant_kind: grantKind,
-          pack_key: packKey,
-          amount_mxn: amountMxn,
-          credits_granted: creditsGranted,
-          validity_days: 30,
-          expires_at: expiresAt,
-          reason: reason || null,
-        }).select("*").maybeSingle();
-        result = { roll, grant: g?.data || null };
-      } catch (e) {
-        result = { roll, grant: null };
-      }
-    }
-    // =============================================
-    // SERVICIO Masterizar
-    // =============================================
-    else if (packageId === "service:masterizar") {
-      packKey = "masterizar";
-      grantKind = "masterizar_150";
-      amountMxn = 150;
-      validityDays = 30;
-
-      const expiresIso = addDaysIso(30);
-      try {
-        await adminClient
-          .from("profiles")
-          .update({
-            mastering_subscription_active: true,
-            mastering_subscription_expires_at: expiresIso,
-          })
-          .eq("id", targetUserId);
-      } catch (e) {
-        return send(res, 500, { error: "No pude activar masterizar", detail: (e as any)?.message || String(e || "") });
-      }
-
-      try {
-        await adminClient.from("mp_transactions").insert({
-          user_id: targetUserId,
-          kind: "songs",
-          pack_key: "masterizar",
-          amount_mxn: 150,
-          payment_id: `admin_assign:masterizar:${targetUserId}:${Date.now()}`,
-        });
-      } catch {}
-
-      try {
-        const g = await adminClient.from("admin_plan_grants").insert({
-          granted_by_user_id: adminByUserId,
-          granted_to_user_id: targetUserId,
-          grant_kind: grantKind,
-          pack_key: packKey,
-          amount_mxn: amountMxn,
-          credits_granted: 0,
-          validity_days: 30,
-          expires_at: expiresIso,
-          reason: reason || null,
-        }).select("*").maybeSingle();
-        result = { grant: g?.data || null };
-      } catch (e) {
-        result = { grant: null };
-      }
-    } else {
-      return send(res, 400, { error: "package_id desconocido" });
-    }
-
-    const after = await readTotalCreditsReal(adminClient, targetUserId);
-    const voiceAfter = await userHasVoiceCloneAccess(adminClient, targetUserId);
-    const planAfter = await getUserPlan(adminClient, targetUserId).catch(() => null);
-
-    return send(res, 200, {
-      ok: true,
-      package_id: packageId,
-      grant_kind: grantKind,
-      pack_key: packKey,
-      amount_mxn: amountMxn,
-      validity_days: validityDays,
-      credits_before: before.total,
-      profile_credits_before: before.profile_credits,
-      batch_credits_before: before.batch_credits,
-      credits_added_real: round2(after.total - before.total),
-      credits_granted_nominal: creditsGranted,
-      cap_applied: round2(MAX_ACCUMULATED_CREDITS),
-      credits_after_real: after.total,
-      profile_credits_after: after.profile_credits,
-      batch_credits_after: after.batch_credits,
-      credits_expires_at_new: after.credits_expires_at,
-      voice_access_after: voiceAfter,
-      plan_after: planAfter,
-      result,
-    });
-  }
-
-  async function handleAdminToggleVoiceCloneOverride(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    const auth = await requireAdmin(req);
-    if (!auth.ok) return send(res, auth.status, { error: auth.error });
-
-    const adminByUserId = String((auth as any)?.user?.id || "").trim();
-    const adminByEmail = String((auth as any)?.user?.email || "").trim().toLowerCase();
-    if (!adminByUserId || !isAdminEmail(adminByEmail)) return send(res, 403, { error: "No autorizado" });
-
-    const body = parseJsonBody(req) || {};
-    const emailRaw = String(body?.email || "").trim().toLowerCase();
-    const action = String(body?.action || "").trim().toLowerCase(); // enable | disable
-    const reason = typeof body?.reason === "string" ? String(body.reason).slice(0, 480) : null;
-    if (!emailRaw) return send(res, 400, { error: "Falta email" });
-    if (action !== "enable" && action !== "disable") return send(res, 400, { error: "action debe ser enable o disable" });
-
-    const found = await findUserIdByEmail(auth, emailRaw);
-    if (!found.ok) return send(res, found.status, { error: found.error, detail: (found as any)?.detail || null });
-    const targetUserId = (found as any).userId as string;
-
-    const adminClient = (auth as any).admin;
-
-    // Comprobar: ¿es grandfathered? Si enable -> no hacemos nada si ya es grandfather.
-    // Si disable -> NO debemos quitar grandfathered. Devolver error si no hay override y sí grandfather.
-    const pr = await adminClient.from("profiles").select("voice_clone_grandfathered, email").eq("id", targetUserId).maybeSingle();
-    if (pr.error) return send(res, 500, { error: pr.error.message });
-    const grand = Boolean((pr.data as any)?.voice_clone_grandfathered) === true;
-    const targetEmail = String((pr.data as any)?.email || "").trim().toLowerCase();
-    if (isAdminEmail(targetEmail)) return send(res, 403, { error: "No puedes modificar este usuario (administrador)." });
-
-    if (action === "enable" && grand) {
-      return send(res, 409, { error: "Cliente anterior (grandfather) ya tiene acceso permanente; no es necesario un override." });
-    }
-    if (action === "disable" && grand) {
-      return send(res, 409, { error: "No puedes quitar el acceso permanente a un cliente anterior desde esta herramienta." });
-    }
-
-    if (action === "enable") {
-      // Si ya hay un override activo NO revocado, no crear duplicado (devolverlo)
-      const exist = await adminClient
-        .from("admin_plan_grants")
-        .select("id, granted_at, expires_at, revoked_at")
-        .eq("granted_to_user_id", targetUserId)
-        .eq("grant_kind", "voice_clone_override_unlimited")
-        .is("revoked_at", null)
-        .order("granted_at", { ascending: false })
-        .limit(1);
-      const existing = Array.isArray(exist?.data) ? exist.data[0] : null;
-      if (existing) {
-        return send(res, 200, { ok: true, action: "noop_already_enabled", grant: existing });
-      }
-      const created = await adminClient.from("admin_plan_grants").insert({
-        granted_by_user_id: adminByUserId,
-        granted_to_user_id: targetUserId,
-        grant_kind: "voice_clone_override_unlimited",
-        pack_key: null,
-        amount_mxn: 0,
-        credits_granted: 0,
-        validity_days: null,
-        expires_at: null, // ilimitado hasta que se revoque
-        reason: reason || null,
-      }).select("*").maybeSingle();
-      const voice = await userHasVoiceCloneAccess(adminClient, targetUserId);
-      return send(res, 200, { ok: true, action: "enabled", grant: created?.data || null, voice_access: voice });
-    }
-
-    // disable: revocar ÚNICAMENTE el override activo; NO borrar row. Usar revoked_at=NOW().
-    const find = await adminClient
-      .from("admin_plan_grants")
-      .select("id, granted_at, expires_at, revoked_at")
-      .eq("granted_to_user_id", targetUserId)
-      .eq("grant_kind", "voice_clone_override_unlimited")
-      .is("revoked_at", null)
-      .order("granted_at", { ascending: false })
-      .limit(1);
-    const toRevoke = Array.isArray(find?.data) ? find.data[0] : null;
-    if (!toRevoke) {
-      return send(res, 404, { error: "No hay un desbloqueo manual activo para este usuario." });
-    }
-    const now = new Date().toISOString();
-    await adminClient.from("admin_plan_grants").update({ revoked_at: now }).eq("id", toRevoke.id);
-    const voice = await userHasVoiceCloneAccess(adminClient, targetUserId);
-    return send(res, 200, { ok: true, action: "revoked", grant: { ...toRevoke, revoked_at: now }, voice_access: voice });
-  }
-
   return async function handler(req: any, res: any) {
     const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
     const fallback = (() => {
@@ -15103,10 +14564,7 @@ const adminHandler = (() => {
     if (a === "feedback") return handleFeedback(req, res);
     if (a === "feedback-mark-read") return handleFeedbackMarkRead(req, res);
     if (a === "users") return handleUsers(req, res);
-    if (a === "user-detail") return handleAdminUserDetailV2(req, res);
-    if (a === "assignable-packages") return handleAdminListAssignablePackages(req, res);
-    if (a === "assign-package") return handleAdminAssignPackage(req, res);
-    if (a === "voice-clone-override") return handleAdminToggleVoiceCloneOverride(req, res);
+    if (a === "user-detail") return handleUserDetail(req, res);
     if (a === "collaborators") return handleGetCollaborators(req, res);
     if (a === "assign" || a === "collaborators/assign") return handleAssignCollaborator(req, res);
     if (a === "commissions-report") return handleCommissionsReport(req, res);
@@ -18385,16 +17843,27 @@ notify pgrst, 'reload schema';`;
     }
   }
 
-  // NEUTRALIZADO (regla 1): ya no se guardan payout_email ni hay pagos en efectivo.
-  // La recompensa ahora se entrega en créditos. Se conserva la ruta por compatibilidad,
-  // pero no hace nada.
   async function handlePayoutEmail(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
-    return send(res, 200, {
-      ok: false,
-      disabled: true,
-      error: "El pago de comisiones en efectivo está deshabilitado. Las recompensas ahora se entregan en créditos dentro de tu saldo.",
-    });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const payoutEmail = (typeof body?.payoutEmail === "string" ? body.payoutEmail : "").toString().trim().slice(0, 160);
+    if (!payoutEmail) return send(res, 400, { error: "Falta correo de Mercado Pago" });
+
+    try {
+      const ensured = await ensureAffiliateAccount(auth.admin, auth.user.id);
+      if (!ensured.ok) return send(res, 500, { error: ensured.error || "No pude preparar tu cuenta" });
+      const upd = await auth.admin
+        .from("affiliate_accounts")
+        .update({ payout_email: payoutEmail, updated_at: new Date().toISOString() })
+        .eq("user_id", auth.user.id);
+      if (upd?.error) return send(res, 500, { error: "No pude guardar", detail: upd.error.message });
+      return send(res, 200, { ok: true });
+    } catch (e) {
+      return send(res, 500, { error: "No pude guardar", detail: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   return async function handler(req: any, res: any) {
@@ -23203,14 +22672,6 @@ const lucianaVoiceHandler = (() => {
         if (!profile.last_verify_r2_path) return send(res, 400, { error: "Graba la frase de verificación." });
         const name = String(profile.name || "").trim().slice(0, 50);
         if (!name) return send(res, 400, { error: "Ponle nombre al personaje." });
-
-        const voiceAccess = await userHasVoiceCloneAccess(auth.admin, auth.user.id);
-        if (!voiceAccess.ok) {
-          return send(res, 403, {
-            error: "La clonación de voz está incluida en el Pack Inicio de $350.",
-            code: "VOICE_CLONE_PLAN_REQUIRED",
-          });
-        }
 
         // Obtener activación activa o última
         const { active, latest } = await getProfileActiveActivation(auth, profile.id);

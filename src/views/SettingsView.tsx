@@ -51,15 +51,6 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [adminUnreadFeedback, setAdminUnreadFeedback] = useState(0);
   const [planEmail, setPlanEmail] = useState('');
-  const [planSearchBusy, setPlanSearchBusy] = useState(false);
-  const [planSearchError, setPlanSearchError] = useState('');
-  const [planUserDetail, setPlanUserDetail] = useState<any>(null);
-  const [planAssignables, setPlanAssignables] = useState<any>({ mini_packs: [], plans: [] });
-  const [planAssignablesLoading, setPlanAssignablesLoading] = useState(false);
-  const [planAssignPackageId, setPlanAssignPackageId] = useState('');
-  const [planAssignBusy, setPlanAssignBusy] = useState(false);
-  const [planAssignResult, setPlanAssignResult] = useState<any>(null);
-  const [planOverrideBusy, setPlanOverrideBusy] = useState(false);
   const [planKey, setPlanKey] = useState<'ninguno' | 'inicio' | 'productor'>('inicio');
   const [planCreditsMode, setPlanCreditsMode] = useState<'none' | 'default' | 'set'>('none');
   const [planCreditsManual, setPlanCreditsManual] = useState('0');
@@ -599,80 +590,109 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
     }
   };
 
-  const fmtDate = (raw: any): string => {
-    if (!raw) return '—';
-    const d = new Date(raw);
-    const n = d.getTime();
-    if (!Number.isFinite(n)) return String(raw);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  };
-
-  const officePlanesFetchUserDetail = async (email: string): Promise<boolean> => {
-    if (!supabaseBrowser) return false;
-    const e = (email || '').toString().trim().toLowerCase();
-    if (!e) return false;
-    setPlanSearchError('');
-    setPlanSearchBusy(true);
-    try {
-      const { data } = await supabaseBrowser.auth.getSession();
-      const token = data?.session?.access_token;
-      if (!token) {
-        setPlanSearchError('Sesión expirada. Cierra sesión y vuelve a entrar.');
-        return false;
-      }
-      const r = await fetch(`/api/admin/user-detail?email=${encodeURIComponent(e)}`, { headers: { authorization: `Bearer ${token}` } });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setPlanSearchError((out?.error || 'No pude buscar el usuario').toString());
-        setPlanUserDetail(null);
-        return false;
-      }
-      setPlanUserDetail(out || null);
-      setPlanAssignResult(null);
-      // cargar assignables
+  useEffect(() => {
+    if (!officePlanesOpen) return;
+    let alive = true;
+    (async () => {
       try {
-        setPlanAssignablesLoading(true);
-        const r2 = await fetch(`/api/admin/assignable-packages?email=${encodeURIComponent(e)}`, { headers: { authorization: `Bearer ${token}` } });
-        const out2 = await r2.json().catch(() => ({}));
-        if (r2.ok) {
-          setPlanAssignables({
-            mini_packs: Array.isArray(out2?.mini_packs) ? out2.mini_packs : [],
-            plans: Array.isArray(out2?.plans) ? out2.plans : [],
-          });
-          const firstMini = (out2?.mini_packs || [])[0];
-          const firstPlan = (out2?.plans || [])[0];
-          setPlanAssignPackageId(firstMini?.id || firstPlan?.id || '');
-        }
+        setOfficeMiniPackError('');
+        const r = await fetch('/api/mercadopago/packs');
+        const out = await r.json().catch(() => ({}));
+        const list = Array.isArray(out?.packs) ? out.packs : Array.isArray(out) ? out : [];
+        const filtered = list
+          .filter((p: any) => String(p?.pack_key || '').trim())
+          .filter((p: any) => String(p?.pack_key || '').toLowerCase() !== 'grande_80')
+          .filter((p: any) => (p as any).is_active !== false);
+        if (!alive) return;
+        setOfficeMiniPacks(filtered);
+        const nextKey = String(filtered?.[0]?.pack_key || '').trim();
+        if (nextKey && !officeMiniPackKey) setOfficeMiniPackKey(nextKey);
       } catch {
-      } finally {
-        setPlanAssignablesLoading(false);
+        if (!alive) return;
+        setOfficeMiniPacks([]);
+        setOfficeMiniPackError('No pude cargar los mini paquetes.');
       }
-      return true;
-    } finally {
-      setPlanSearchBusy(false);
-    }
-  };
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [officePlanesOpen]);
 
-  const searchPlanUser = async () => {
-    await officePlanesFetchUserDetail(planEmail);
-  };
-
-  const assignPlanPackage = async () => {
+  const grantMiniPack = async () => {
     if (!supabaseBrowser) return;
     const email = planEmail.trim().toLowerCase();
     if (!email) {
-      notify({ title: 'Falta el correo', message: 'Primero busca un usuario por correo.', tone: 'warning' });
+      notify({ title: 'Falta el correo', message: 'Pon el correo del usuario en el campo “correo@gmail.com”.', tone: 'warning' });
       return;
     }
-    if (!planAssignPackageId) {
-      notify({ title: 'Selecciona un paquete', message: 'Elige un paquete en el selector “Asignar paquete”.', tone: 'warning' });
+    const packKey = (officeMiniPackKey || '').toString().trim();
+    if (!packKey) {
+      notify({ title: 'Selecciona un paquete', message: 'Elige un mini paquete en el recuadro antes de recargar.', tone: 'warning' });
       return;
     }
-    setPlanAssignBusy(true);
-    setPlanAssignResult(null);
+    setOfficeMiniPackBusy(true);
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data?.session?.access_token;
+      const sessionEmail = String(data?.session?.user?.email || '').trim().toLowerCase();
+      if (!token) {
+        notify({ title: 'Sesión expirada', message: 'Cierra sesión y vuelve a entrar con tu cuenta de administrador.', tone: 'error' });
+        return;
+      }
+      const r = await fetch('/api/admin/grant-mini-pack', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, packKey }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = (out?.error || 'No pude recargar el mini paquete.').toString();
+        const detail = (out?.detail || '').toString();
+        const id = (out?.error_id || '').toString();
+        const lines: string[] = [
+          `Correo: ${email}`,
+          `Paquete: ${packKey}`,
+          msg,
+        ];
+        if (detail) lines.push(`Detalle: ${detail}`);
+        if (id) lines.push(`Código: ${id}`);
+        lines.push('');
+        lines.push('Si dice “No encontré ese usuario por correo”:');
+        lines.push('1) Asegúrate de que el usuario haya iniciado sesión al menos una vez.');
+        lines.push('2) Revisa que el correo no tenga espacios ni puntos de más.');
+        lines.push('3) Si no está dado de alta, dile que abra la app y entre con Google.');
+        notify({
+          title: 'No se pudo recargar',
+          message: lines.join('\n'),
+          tone: 'error',
+        });
+        return;
+      }
+      notify({
+        title: 'Listo',
+        message: `Se agregó el mini paquete ${packKey} a ${email} como lote (30 días).`,
+        tone: 'success',
+      });
+      openOffice().catch(() => {});
+      if (sessionEmail && sessionEmail === email) refreshCredits?.();
+    } finally {
+      setOfficeMiniPackBusy(false);
+    }
+  };
+
+  const setPlan = async () => {
+    if (!supabaseBrowser) return;
+    const email = planEmail.trim().toLowerCase();
+    if (!email) {
+      notify({ title: 'Falta el correo', message: 'Pon el correo del usuario en el campo “correo@gmail.com”.', tone: 'warning' });
+      return;
+    }
+    const manual = Number(planCreditsManual);
+    if (planCreditsMode === 'set' && (!Number.isFinite(manual) || manual < 0)) {
+      notify({ title: 'Créditos inválidos', message: 'Pon un número de créditos válido (mayor o igual que 0).', tone: 'warning' });
+      return;
+    }
+    setPlanBusy(true);
     try {
       const { data } = await supabaseBrowser.auth.getSession();
       const token = data?.session?.access_token;
@@ -680,64 +700,47 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
         notify({ title: 'Sesión expirada', message: 'Cierra sesión y vuelve a entrar con tu cuenta de administrador.', tone: 'error' });
         return;
       }
-      const r = await fetch('/api/admin/assign-package', {
+      const r = await fetch('/api/admin/set-plan', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email, package_id: planAssignPackageId }),
+        body: JSON.stringify({
+          email,
+          plan_key: planKey,
+          credits_mode: planCreditsMode,
+          credits: planCreditsMode === 'set' ? manual : undefined,
+        }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
+        const msg = (out?.error || 'No pude cambiar el plan.').toString();
+        const detail = (out?.detail || '').toString();
+        const id = (out?.error_id || '').toString();
+        const lines: string[] = [
+          `Correo: ${email}`,
+          msg,
+        ];
+        if (detail) lines.push(`Detalle: ${detail}`);
+        if (id) lines.push(`Código: ${id}`);
+        lines.push('');
+        lines.push('Si dice “No encontré ese usuario por correo”:');
+        lines.push('1) Asegúrate de que el usuario haya iniciado sesión al menos una vez.');
+        lines.push('2) Revisa que el correo no tenga espacios ni puntos de más.');
+        lines.push('3) Si no está dado de alta, dile que abra la app y entre con Google.');
         notify({
-          title: 'No se pudo asignar el paquete',
-          message: (out?.error || 'Error desconocido').toString() + (out?.detail ? `\n\nDetalle: ${out.detail}` : ''),
-          tone: 'error',
-        });
-        return;
-      }
-      setPlanAssignResult(out || null);
-      notify({
-        title: 'Paquete asignado',
-        message: `Se asignó correctamente. Saldo nuevo real: ${Number(out?.credits_after_real ?? 0).toFixed(2)} créditos.`,
-        tone: 'success',
-      });
-      // Actualizar detalle
-      await officePlanesFetchUserDetail(email);
-    } finally {
-      setPlanAssignBusy(false);
-    }
-  };
-
-  const toggleVoiceCloneOverride = async (action: 'enable' | 'disable') => {
-    if (!supabaseBrowser) return;
-    const email = planEmail.trim().toLowerCase();
-    if (!email) return;
-    setPlanOverrideBusy(true);
-    try {
-      const { data } = await supabaseBrowser.auth.getSession();
-      const token = data?.session?.access_token;
-      if (!token) return;
-      const r = await fetch('/api/admin/voice-clone-override', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email, action }),
-      });
-      const out = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        notify({
-          title: action === 'enable' ? 'No se pudo desbloquear' : 'No se pudo quitar el desbloqueo',
-          message: (out?.error || 'Error desconocido').toString(),
+          title: 'No se pudo guardar el plan',
+          message: lines.join('\n'),
           tone: 'error',
         });
         return;
       }
       notify({
-        title: action === 'enable' ? 'Clonador desbloqueado' : 'Desbloqueo revocado',
-        message: action === 'enable' ? 'El usuario ya puede crear voces sin límite.' : 'Se quitó el desbloqueo manual. Ahora el usuario requiere Pack Inicio vigente para crear voces.',
+        title: 'Listo',
+        message: `Se actualizó el plan de ${email} (${planKey} · modo créditos: ${planCreditsMode}).`,
         tone: 'success',
       });
-      await officePlanesFetchUserDetail(email);
+      openOffice().catch(() => {});
     } finally {
-      setPlanOverrideBusy(false);
+      setPlanBusy(false);
     }
   };
 
@@ -1560,8 +1563,8 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
           <div className="bg-gradient-to-r from-indigo-500/10 via-white/5 to-transparent border border-indigo-400/15 rounded-3xl p-5">
             <button onClick={() => setOfficePlanesOpen((v) => !v)} className="w-full flex items-center justify-between">
               <div className="min-w-0">
-                <div className="text-white font-extrabold">Planes / Créditos / Clonador</div>
-                <div className="text-[11px] text-slate-400 mt-1">Buscar usuario, asignar paquetes y gestionar el clonador</div>
+                <div className="text-white font-extrabold">Planes</div>
+                <div className="text-[11px] text-slate-400 mt-1">Cambiar plan y créditos del plan</div>
               </div>
               <div className="bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full px-4 py-2 text-xs font-extrabold text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 hover:opacity-90 transition-opacity border border-white/10">
                 {officePlanesOpen ? 'Ocultar' : 'Ver'}
@@ -1570,339 +1573,99 @@ export function SettingsView({ onClose, onOpenPricing, onOpenUpdates, initialOff
 
             {officePlanesOpen ? (
               <>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <input
-                    value={planEmail}
-                    onChange={(e) => setPlanEmail(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') void searchPlanUser();
-                    }}
-                    placeholder="correo@ejemplo.com"
-                    className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 md:col-span-3"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                value={planEmail}
+                onChange={(e) => setPlanEmail(e.target.value)}
+                placeholder="correo@gmail.com"
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20 md:col-span-2"
+              />
+              <select
+                value={planKey}
+                onChange={(e) => setPlanKey(e.target.value as any)}
+                style={{ colorScheme: 'dark' }}
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              >
+                <option value="ninguno" className="bg-[#0b0f16] text-slate-200">Sin plan</option>
+                <option value="inicio" className="bg-[#0b0f16] text-slate-200">Inicio</option>
+              </select>
+              <select
+                value={planCreditsMode}
+                onChange={(e) => setPlanCreditsMode(e.target.value as any)}
+                style={{ colorScheme: 'dark' }}
+                className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              >
+                <option value="none" className="bg-[#0b0f16] text-slate-200">No tocar créditos</option>
+                <option value="default" className="bg-[#0b0f16] text-slate-200">Créditos del plan</option>
+                <option value="set" className="bg-[#0b0f16] text-slate-200">Créditos manuales</option>
+              </select>
+                </div>
+                {planCreditsMode === 'set' ? (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input
+                      value={planCreditsManual}
+                      onChange={(e) => setPlanCreditsManual(e.target.value)}
+                      placeholder="Créditos (ej: 500)"
+                      className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none focus:border-white/20"
+                    />
                     <button
-                      onClick={() => searchPlanUser().catch(() => {})}
-                      disabled={planSearchBusy}
-                      className="bg-indigo-500 hover:bg-indigo-400 text-white rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)]"
+                      onClick={() => setPlan().catch(() => {})}
+                      disabled={planBusy}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 md:col-span-2"
                     >
-                      {planSearchBusy ? '…' : 'Buscar'}
+                      {planBusy ? 'Guardando…' : 'Guardar'}
                     </button>
-                    <button
-                      onClick={() => planEmail ? officePlanesFetchUserDetail(planEmail).catch(() => {}) : null}
-                      disabled={planSearchBusy || !planEmail}
-                      className="bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 border border-white/10"
-                      title="Volver a consultar datos desde Supabase/backend"
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setPlan().catch(() => {})}
+                    disabled={planBusy}
+                    className="mt-3 w-full bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                  >
+                    {planBusy ? 'Guardando…' : 'Guardar'}
+                  </button>
+                )}
+                <div className="mt-3 text-[11px] text-slate-400">
+                  Esto cambia el plan sin obligar a regalar créditos extra (si eliges “No tocar créditos”). Si eliges “Créditos del plan”, se suman los créditos del paquete.
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-white font-extrabold">Recarga (mini paquetes)</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Esto agrega un lote con vencimiento (como compra única).</div>
+                  {officeMiniPackError ? (
+                    <div className="mt-2 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{officeMiniPackError}</div>
+                  ) : null}
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <select
+                      value={officeMiniPackKey}
+                      onChange={(e) => setOfficeMiniPackKey(e.target.value)}
+                      style={{ colorScheme: 'dark' }}
+                      className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20 md:col-span-2"
                     >
-                      Actualizar
+                      {(officeMiniPacks.length > 0 ? officeMiniPacks : []).map((p: any) => {
+                        const key = String(p?.pack_key || '').trim();
+                        const name = String(p?.name || key).trim() || key;
+                        const price = Number(p?.price_mxn ?? 0) || 0;
+                        const creditsAmount = Number(p?.credits_amount ?? 0) || 0;
+                        return (
+                          <option key={key} value={key} className="bg-[#0b0f16] text-slate-200">
+                            {name} — ${price.toFixed(0)} — {creditsAmount} créditos
+                          </option>
+                        );
+                      })}
+                      {officeMiniPacks.length === 0 ? (
+                        <option value="" className="bg-[#0b0f16] text-slate-200">No hay mini paquetes</option>
+                      ) : null}
+                    </select>
+                    <button
+                      onClick={() => grantMiniPack().catch(() => {})}
+                      disabled={officeMiniPackBusy || !officeMiniPackKey}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60"
+                    >
+                      {officeMiniPackBusy ? 'Recargando…' : 'Recargar'}
                     </button>
                   </div>
                 </div>
-                {planSearchError ? (
-                  <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 text-sm text-red-200">{planSearchError}</div>
-                ) : null}
-
-                {planUserDetail ? (
-                  <>
-                    {/* Tarjeta resumen */}
-                    <div className="mt-4 rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-5">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-400 font-extrabold">Correo</div>
-                          <div className="text-white font-extrabold mt-2 break-words">
-                            {String(planUserDetail?.user?.profile?.email ?? planEmail)}
-                          </div>
-                        </div>
-                        <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-400 font-extrabold">Plan actual</div>
-                          <div className="mt-2">
-                            <div className="text-white font-extrabold">
-                              {String(planUserDetail?.plan?.plan_key ?? 'ninguno')}
-                            </div>
-                            <div className="text-[11px] text-slate-400 mt-1">
-                              {planUserDetail?.plan?.plan_active ? (
-                                <>🟢 Activo hasta {fmtDate(planUserDetail?.plan?.plan_expires_at)}</>
-                              ) : planUserDetail?.plan?.plan_expires_at ? (
-                                <>🔴 Vence: {fmtDate(planUserDetail?.plan?.plan_expires_at)}</>
-                              ) : (
-                                <>—</>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-400 font-extrabold">Créditos disponibles (REAL)</div>
-                          <div className="mt-2 flex items-baseline gap-2 flex-wrap">
-                            <div className="text-white font-extrabold text-xl">
-                              {Number(planUserDetail?.credits?.total ?? 0).toFixed(2)}
-                            </div>
-                            <div className="text-[11px] text-slate-400">
-                              perfil {Number(planUserDetail?.credits?.profile_credits ?? 0).toFixed(0)} + lotes {Number(planUserDetail?.credits?.batch_credits ?? 0).toFixed(0)}
-                            </div>
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-1">Vence: {fmtDate(planUserDetail?.credits?.credits_expires_at)}</div>
-                        </div>
-                        <div className="bg-black/20 border border-white/10 rounded-2xl p-4">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-400 font-extrabold">Estado clonador de voz</div>
-                          <div className="mt-2">
-                            {planUserDetail?.voice_access?.ok ? (
-                              <>
-                                {planUserDetail?.voice_access?.reason === 'grandfather' ? (
-                                  <div className="text-emerald-300 font-extrabold">🟢 Acceso permanente — Cliente anterior</div>
-                                ) : planUserDetail?.voice_access?.reason === 'override_admin' ? (
-                                  <div className="text-emerald-300 font-extrabold">🟢 Desbloqueado manualmente (admin)</div>
-                                ) : planUserDetail?.voice_access?.reason === 'inicio_active' || planUserDetail?.voice_access?.reason === 'inicio_admin_active' ? (
-                                  <div className="text-emerald-300 font-extrabold">
-                                    🟢 Acceso por Pack Inicio — vence {fmtDate(planUserDetail?.voice_access?.expiresAt)}
-                                  </div>
-                                ) : (
-                                  <div className="text-emerald-300 font-extrabold">🟢 Acceso habilitado</div>
-                                )}
-                              </>
-                            ) : (
-                              <div className="text-red-300 font-extrabold">🔴 Sin acceso al clonador</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Última asignación administrativa */}
-                      {planUserDetail?.last_admin_grant ? (
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-400 font-extrabold">Última asignación administrativa</div>
-                          <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                            <div>
-                              <div className="text-[11px] text-slate-400">Grant kind</div>
-                              <div className="text-white font-extrabold">{String(planUserDetail.last_admin_grant.grant_kind || '')}</div>
-                            </div>
-                            <div>
-                              <div className="text-[11px] text-slate-400">Créditos otorgados</div>
-                              <div className="text-white font-extrabold">{Number(planUserDetail.last_admin_grant.credits_granted ?? 0).toFixed(0)}</div>
-                            </div>
-                            <div>
-                              <div className="text-[11px] text-slate-400">Fecha</div>
-                              <div className="text-white font-extrabold">{fmtDate(planUserDetail.last_admin_grant.granted_at)}</div>
-                            </div>
-                            <div>
-                              <div className="text-[11px] text-slate-400">Estado</div>
-                              <div className="text-white font-extrabold">
-                                {planUserDetail.last_admin_grant.revoked_at
-                                  ? `Revocado ${fmtDate(planUserDetail.last_admin_grant.revoked_at)}`
-                                  : planUserDetail.last_admin_grant.expires_at
-                                    ? `Vence ${fmtDate(planUserDetail.last_admin_grant.expires_at)}`
-                                    : 'Activo'}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {/* Asignar paquete */}
-                    <div className="mt-4 rounded-3xl border border-white/10 bg-gradient-to-br from-emerald-500/5 to-transparent p-5">
-                      <div className="text-white font-extrabold">Asignar paquete</div>
-                      <div className="text-[11px] text-slate-400 mt-1">
-                        Información desde las fuentes canónicas del backend (PACKS + CANONICAL_CREDIT_PACKS).
-                      </div>
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="md:col-span-2">
-                          {planAssignablesLoading ? (
-                            <div className="bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-400">Cargando paquetes…</div>
-                          ) : (
-                            <select
-                              value={planAssignPackageId}
-                              onChange={(e) => setPlanAssignPackageId(e.target.value)}
-                              style={{ colorScheme: 'dark' }}
-                              className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-white/20"
-                            >
-                              {(() => {
-                                const mini = (planAssignables?.mini_packs || []).map((p: any) => (
-                                  <optgroup key="mini" label="MINI PACKS">
-                                    {(planAssignables?.mini_packs || []).map((mp: any) => (
-                                      <option key={mp.id} value={mp.id} className="bg-[#0b0f16] text-slate-200">
-                                        📦 MINI {mp.label} — ${Number(mp.price_mxn ?? 0).toFixed(0)} — {Number(mp.songs ?? 0)} canciones — {Number(mp.credits_nominal ?? 0)} créditos
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )) as any;
-                                const plans = (planAssignables?.plans || []).map((p: any) => (
-                                  <option key={p.id} value={p.id} className="bg-[#0b0f16] text-slate-200">
-                                    {p.kind === 'service' ? '⭐ SERVICIO' : '💎 PLAN'} {p.label} — ${Number(p.price_mxn ?? 0).toFixed(0)}{p.songs ? ` — ${Number(p.songs)} canciones` : ''}{p.credits_nominal ? ` — ${Number(p.credits_nominal)} créditos` : ''}
-                                  </option>
-                                ));
-                                return [plans].flat();
-                              })()}
-                            </select>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => assignPlanPackage().catch(() => {})}
-                          disabled={planAssignBusy || !planAssignPackageId || planAssignablesLoading}
-                          className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)]"
-                        >
-                          {planAssignBusy ? 'Asignando…' : 'Asignar paquete'}
-                        </button>
-                      </div>
-
-                      {/* Preview del paquete seleccionado */}
-                      {(() => {
-                        const mp = (planAssignables?.mini_packs || []).find((p: any) => p.id === planAssignPackageId);
-                        const pl = (planAssignables?.plans || []).find((p: any) => p.id === planAssignPackageId);
-                        const pkg = mp || pl;
-                        if (!pkg) return null;
-                        return (
-                          <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-                            <div className="flex items-center justify-between gap-3 flex-wrap">
-                              <div>
-                                <div className="text-white font-extrabold text-lg">
-                                  {pkg.kind === 'service' ? 'Servicio ·' : pkg.kind === 'mini_pack' ? 'Mini pack ·' : 'Plan ·'} {pkg.label}
-                                </div>
-                                <div className="text-[11px] text-slate-400 mt-1">{pkg.notes || ''}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-slate-400 text-[11px]">Precio</div>
-                                <div className="text-white font-extrabold text-xl">${Number(pkg.price_mxn ?? 0).toFixed(0)}</div>
-                              </div>
-                            </div>
-                            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                              <div className="bg-black/30 border border-white/10 rounded-2xl p-3">
-                                <div className="text-[11px] text-slate-400">Canciones</div>
-                                <div className="text-white font-extrabold text-lg">{Number(pkg.songs ?? 0)}</div>
-                              </div>
-                              <div className="bg-black/30 border border-white/10 rounded-2xl p-3">
-                                <div className="text-[11px] text-slate-400">Créditos nominales</div>
-                                <div className="text-white font-extrabold text-lg">{Number(pkg.credits_nominal ?? 0).toFixed(0)}</div>
-                              </div>
-                              <div className="bg-black/30 border border-white/10 rounded-2xl p-3">
-                                <div className="text-[11px] text-slate-400">Créditos REALMENTE agregados</div>
-                                <div className="text-emerald-300 font-extrabold text-lg">
-                                  +{Number(pkg.credits_actual_add ?? 0).toFixed(2)}
-                                  {Number(pkg.credits_actual_add ?? 0) < Number(pkg.credits_nominal ?? 0) ? (
-                                    <div className="text-[10px] text-amber-300 mt-1">CAP {Number(pkg.current_cap ?? 0)} aplicado</div>
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div className="bg-black/30 border border-white/10 rounded-2xl p-3">
-                                <div className="text-[11px] text-slate-400">Saldo actual</div>
-                                <div className="text-white font-extrabold text-lg">{Number(pkg.current_credits_total ?? 0).toFixed(2)}</div>
-                              </div>
-                              <div className="bg-black/30 border border-white/10 rounded-2xl p-3">
-                                <div className="text-[11px] text-slate-400">Saldo después (estimado)</div>
-                                <div className="text-emerald-300 font-extrabold text-lg">{Number(pkg.credits_after_estimated ?? 0).toFixed(2)}</div>
-                              </div>
-                            </div>
-                            {(pkg.validity_days_credits || pkg.validity_days_plan) ? (
-                              <div className="mt-3 text-[11px] text-slate-400 flex items-center gap-3 flex-wrap">
-                                {pkg.validity_days_plan ? <span>📅 Plan activo: {Number(pkg.validity_days_plan)} días</span> : null}
-                                {pkg.validity_days_credits ? <span>⏳ Créditos: {Number(pkg.validity_days_credits)} días</span> : null}
-                                {pkg.batch_expires_days ? <span>📦 Expiración del lote: {Number(pkg.batch_expires_days)} días</span> : null}
-                                {pkg.voice_access ? <span className="text-emerald-300 font-extrabold">🎤 Incluye acceso clonador de voz (30 días)</span> : null}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Resultado después de asignar */}
-                      {planAssignResult ? (
-                        <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div className="text-emerald-300 font-extrabold">✅ Resultado de la asignación (desde backend)</div>
-                            <button
-                              onClick={() => planEmail ? officePlanesFetchUserDetail(planEmail).catch(() => {}) : null}
-                              className="bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl px-4 py-2 font-extrabold text-xs border border-white/10"
-                            >
-                              [ Actualizar ]
-                            </button>
-                          </div>
-                          <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-                            <div className="bg-black/20 border border-white/10 rounded-2xl p-3">
-                              <div className="text-[11px] text-slate-400">Saldo ANTERIOR</div>
-                              <div className="text-white font-extrabold text-lg">{Number(planAssignResult.credits_before ?? 0).toFixed(2)}</div>
-                            </div>
-                            <div className="bg-black/20 border border-white/10 rounded-2xl p-3">
-                              <div className="text-[11px] text-slate-400">Créditos agregados (real)</div>
-                              <div className="text-emerald-300 font-extrabold text-lg">+{Number(planAssignResult.credits_added_real ?? 0).toFixed(2)}</div>
-                              <div className="text-[10px] text-slate-500 mt-1">nominal: {Number(planAssignResult.credits_granted_nominal ?? 0).toFixed(0)}</div>
-                            </div>
-                            <div className="bg-black/20 border border-white/10 rounded-2xl p-3">
-                              <div className="text-[11px] text-slate-400">CAP aplicado</div>
-                              <div className="text-white font-extrabold text-lg">{Number(planAssignResult.cap_applied ?? 0).toFixed(0)}</div>
-                            </div>
-                            <div className="bg-black/20 border border-white/10 rounded-2xl p-3">
-                              <div className="text-[11px] text-slate-400">Saldo NUEVO (REAL)</div>
-                              <div className="text-emerald-300 font-extrabold text-lg">{Number(planAssignResult.credits_after_real ?? 0).toFixed(2)}</div>
-                              <div className="text-[10px] text-slate-500 mt-1">Vence: {fmtDate(planAssignResult.credits_expires_at_new)}</div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {/* Override manual del clonador */}
-                    <div className="mt-4 rounded-3xl border border-white/10 bg-gradient-to-br from-amber-500/5 to-transparent p-5">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div>
-                          <div className="text-white font-extrabold">🎤 Acceso manual al Clonador</div>
-                          <div className="text-[11px] text-slate-400 mt-1">
-                            Desbloqueo administrativo separado del paquete $350 y de clientes anteriores. No modifica <code className="bg-black/30 px-1 rounded">voice_clone_grandfathered</code>.
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="bg-black/20 border border-white/10 rounded-2xl p-4 md:col-span-1">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-400 font-extrabold">Estado actual (desde backend)</div>
-                          <div className="mt-2">
-                            {planUserDetail?.voice_access?.ok ? (
-                              <>
-                                {planUserDetail?.voice_access?.reason === 'grandfather' ? (
-                                  <div className="text-emerald-300 font-extrabold">🟢 Acceso permanente — Cliente anterior</div>
-                                ) : planUserDetail?.voice_access?.reason === 'override_admin' ? (
-                                  <div className="text-emerald-300 font-extrabold">🟢 Desbloqueado manualmente</div>
-                                ) : planUserDetail?.voice_access?.reason === 'inicio_active' || planUserDetail?.voice_access?.reason === 'inicio_admin_active' ? (
-                                  <div className="text-emerald-300 font-extrabold">
-                                    🟢 Pack Inicio vigente hasta {fmtDate(planUserDetail?.voice_access?.expiresAt)}
-                                  </div>
-                                ) : (
-                                  <div className="text-emerald-300 font-extrabold">🟢 Acceso habilitado</div>
-                                )}
-                              </>
-                            ) : (
-                              <div className="text-red-300 font-extrabold">🔴 Sin acceso al clonador</div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="bg-black/20 border border-white/10 rounded-2xl p-4 md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <button
-                            onClick={() => toggleVoiceCloneOverride('enable').catch(() => {})}
-                            disabled={planOverrideBusy || planUserDetail?.voice_access?.reason === 'grandfather'}
-                            title={planUserDetail?.voice_access?.reason === 'grandfather' ? 'Cliente anterior ya tiene acceso permanente' : 'Desbloquear clonador de manera ilimitada (sin fecha)'}
-                            className="bg-emerald-500 hover:bg-emerald-400 text-gray-900 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] disabled:grayscale"
-                          >
-                            {planOverrideBusy ? '…' : 'DESBLOQUEAR CLONADOR'}
-                          </button>
-                          <button
-                            onClick={() => toggleVoiceCloneOverride('disable').catch(() => {})}
-                            disabled={planOverrideBusy || planUserDetail?.voice_access?.reason === 'grandfather' || planUserDetail?.voice_access?.reason !== 'override_admin'}
-                            title={planUserDetail?.voice_access?.reason === 'grandfather' ? 'No puedes quitar acceso permanente de cliente anterior desde aquí' : planUserDetail?.voice_access?.reason !== 'override_admin' ? 'No hay un desbloqueo manual activo' : 'Revocar el desbloqueo manual actual (no borra historial)'}
-                            className="bg-red-500 hover:bg-red-400 text-gray-900 rounded-2xl px-4 py-3 font-extrabold text-sm disabled:opacity-60 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] disabled:grayscale"
-                          >
-                            {planOverrideBusy ? '…' : 'QUITAR DESBLOQUEO'}
-                          </button>
-                        </div>
-                      </div>
-                      {planUserDetail?.voice_access?.reason === 'grandfather' ? (
-                        <div className="mt-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 text-xs text-amber-200">
-                          ℹ️ Este usuario es un cliente anterior (<code>voice_clone_grandfathered = TRUE</code>). Su acceso es permanente y no debe ser modificado desde esta herramienta.
-                        </div>
-                      ) : null}
-                    </div>
-                  </>
-                ) : (
-                  !planSearchBusy && !planSearchError ? (
-                    <div className="mt-4 text-sm text-slate-400">Introduce un correo y haz clic en Buscar.</div>
-                  ) : null
-                )}
               </>
             ) : null}
           </div>

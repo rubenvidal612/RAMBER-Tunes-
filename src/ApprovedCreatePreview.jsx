@@ -719,7 +719,6 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const regenPhraseLockRef = useRef({ running: false, clientAttemptId: "" });
   const verifyAttemptIdRef = useRef("");
   const pendingAutoRecoverRef = useRef({ nonce: 0, requested: false });
-  const voicePollTimerRef = useRef(0);
   const wizardSteps = ["Perfil", "Audio original", "Frase", "Verificación", "Listo"];
   const sourceReady = Boolean(profile.sourceAudio);
   const verificationReady = Boolean(profile.verifyAudio);
@@ -2193,40 +2192,6 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     }
   }, [wizardStep, voiceGen.voiceId]);
 
-  // Consulta voice-check-voice de forma razonable hasta que la voz quede disponible.
-  useEffect(() => {
-    const voiceId = String(voiceGen.voiceId || "").trim();
-    const taskId = String(voiceGen.taskId || "").trim();
-    window.clearTimeout(voicePollTimerRef.current);
-    if (!voiceId || voiceGen.isAvailable === true) return undefined;
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const t = await getAccessToken();
-        if (!t.ok) return;
-        const target = String(taskId || voiceId).trim();
-        if (!target) return;
-        const r = await fetch("/api/suno/voice-check-voice", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-          body: JSON.stringify({ task_id: target }),
-        });
-        const out = await r.json().catch(() => ({}));
-        if (r.ok && Boolean(out?.isAvailable)) {
-          setVoiceGen((current) => ({ ...current, isAvailable: true }));
-          return;
-        }
-      } catch {}
-      voicePollTimerRef.current = window.setTimeout(poll, 5000);
-    };
-    voicePollTimerRef.current = window.setTimeout(poll, 4000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(voicePollTimerRef.current);
-    };
-  }, [voiceGen.voiceId, voiceGen.taskId, voiceGen.isAvailable]);
-
   const saveToSunoVoices = async () => {
     const voiceId = String(voiceGen.voiceId || "").trim();
     const taskId = String(voiceGen.taskId || "").trim();
@@ -2655,7 +2620,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             </div>
           )}
           {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
-          {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Completa los pasos anteriores para crear tu perfil de voz."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false || voiceGen.isAvailable === null ? <div className="wizard-info"><Info size={19}/><span>Tu voz se está preparando. Espera un momento para poder utilizarla.</span></div> : null}</div>}
+          {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Completa los pasos anteriores para crear tu perfil de voz."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false ? <div className="wizard-info"><Info size={19}/><span>Tu voz aún no aparece como disponible. Puedes guardarla y estará lista en unos minutos.</span></div> : null}</div>}
         </div>
         <div className="wizard-footer">
           <button
@@ -2718,7 +2683,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           ) : (
             <button
               className="wizard-next"
-              disabled={!voiceGen.voiceId || voiceGen.isAvailable !== true || saving || voiceGen.loading}
+              disabled={!voiceGen.voiceId || saving || voiceGen.loading}
               onClick={async () => {
                 const ok = await saveToSunoVoices();
                 if (!ok) return;
@@ -3229,9 +3194,9 @@ function StartStep({ data, setData, setToast, handlers }) {
   const chooseFile = async (file, options = {}) => {
     if (!file) return false;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
-    const isAudioOk = ext === 'mp3' || (file.type || '').toString().includes('mpeg');
+    const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || (file.type || '').toString().startsWith('audio/');
     if (!isAudioOk) {
-      setToast("Solo acepta archivos MP3. Convierte tu audio a MP3 y vuelve a intentar.");
+      setToast("Ese archivo no es de audio. Usa MP3, WAV o M4A.");
       return false;
     }
     const nextInputMode = typeof options?.inputMode === 'string' ? options.inputMode : 'upload';
@@ -3285,7 +3250,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
+              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 · WAV · M4A"}</small></span>
               {hasSelectedAudio && audioChoiceMode === "upload" ? (
                 <button
                   type="button"
@@ -3304,7 +3269,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               <span className="radio" />
               <input
                 type="file"
-                accept=".mp3,audio/mpeg,audio/mp3"
+                accept="audio/*,.mp3,.wav,.m4a"
                 ref={uploadInputRef}
                 onClick={() => {
                   stopSingingCapture({ discardTake: true, preservePreview: false });
