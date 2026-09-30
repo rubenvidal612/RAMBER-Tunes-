@@ -14915,6 +14915,102 @@ const aiHandler = (() => {
     return { ok: true, lyrics: text, status: 200, interaction_keys: interactionKeys, output_length: outLen };
   }
 
+  // Transcripción de audio a letras con OpenAI Speech-to-Text.
+  // Conservada la función de Gemini (transcribeLyricsWithGeminiTranscribe) intacta
+  // para poder regresar fácilmente si fuera necesario.
+  async function transcribeLyricsWithOpenAI(audioBuf: ArrayBuffer, timeoutMs: number) {
+    const apiKey = String(process.env.OPENAI_TRANSCRIBE_API_KEY || "").trim();
+    if (!apiKey) {
+      return {
+        ok: false,
+        error: "missing_transcribe_key",
+        status: 0,
+      };
+    }
+
+    let OpenAI: any;
+    try {
+      const mod = await import("openai");
+      OpenAI = mod?.OpenAI || mod?.default;
+    } catch (e) {
+      return {
+        ok: false,
+        error: "No pude cargar OpenAI SDK",
+        status: 0,
+        interaction_keys: "",
+        output_length: 0,
+      };
+    }
+    if (!OpenAI) return { ok: false, error: "No pude cargar OpenAI SDK", status: 0, interaction_keys: "", output_length: 0 };
+
+    const client = new OpenAI({ apiKey });
+
+    const withTimeout = async (p: any, ms: number) => {
+      const m = Math.max(1, Number(ms) || 1);
+      return await Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), m))]);
+    };
+
+    const extractRetryAfter = (e: any, fallback: number = 0) => {
+      try {
+        const fb = Number(fallback) || 0;
+        if (e && typeof e === 'object') {
+          if (typeof (e as any).status === 'number' && Number((e as any).status) === 429) return fb || 15;
+          try {
+            const objStr = JSON.stringify(e);
+            const m = /retry[_\s-]?after["' \n\t:=]*(\d+)/i.exec(objStr);
+            if (m) return Number(m[1]) || fb;
+          } catch {}
+        }
+        return fb;
+      } catch { return fallback; }
+    };
+
+    const remaining = Math.max(1000, Number(timeoutMs) || 1000);
+
+    try {
+      // File a partir del ArrayBuffer; el SDK de OpenAI requiere un File/Blob con nombre para el upload multipart.
+      const file = new File([audioBuf], "audio.mp3", { type: "audio/mpeg" });
+      const interaction = await withTimeout(
+        client.audio.transcriptions.create({
+          model: "gpt-4o-mini-transcribe",
+          file,
+          language: "es",
+          response_format: "text",
+        }),
+        remaining
+      );
+
+      const interactionKeys = interaction && typeof interaction === "object" ? Object.keys(interaction).slice(0, 40).join(",") : "";
+      let text = "";
+      // Con response_format: "text" el SDK de OpenAI puede devolver el texto directamente como string.
+      if (typeof interaction === "string") {
+        text = interaction;
+      } else if (interaction && typeof interaction === "object") {
+        if (typeof interaction.text === "string") text = interaction.text;
+        if (!text && typeof interaction.output_text === "string") text = interaction.output_text;
+      }
+      text = String(text || "").replace(/\r\n/g, "\n").trim();
+      const outLen = text ? text.length : 0;
+      if (!text) return { ok: false, error: "empty_transcription", status: 200, interaction_keys: interactionKeys, output_length: outLen };
+
+      return { ok: true, lyrics: text, status: 200, interaction_keys: interactionKeys, output_length: outLen };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const status = e && typeof e === "object" && typeof (e as any).status === "number" ? (e as any).status : null;
+      const keys = e && typeof e === "object" ? Object.keys(e).slice(0, 40).join(",") : "";
+      const statusFb = typeof status === "number" ? status : 0;
+      const realStatus = statusFb || ((/429|rate.?limit|quota|resource exhausted/i.test(msg || "")) ? 429 : 0);
+      return {
+        ok: false,
+        error: msg,
+        status: realStatus || 0,
+        interaction_keys: keys,
+        output_length: 0,
+        retry_after: extractRetryAfter(e, realStatus === 429 ? 15 : 0),
+      };
+    }
+  }
+
   async function generateLyricsWithGemini(topic: string, gender: string, style: string) {
     const apiKey = String(
       process.env.GEMINI_TRANSCRIBE_API_KEY ||
@@ -15418,10 +15514,10 @@ const aiHandler = (() => {
         let fallbackErrorName = "";
         let fallbackErrorMessage = "";
 
-        let modelUsed = "gemini-3.5-transcribe";
+        let modelUsed = "openai/gpt-4o-mini-transcribe";
         let primary429RetryAfter = 0;
         try {
-          const out = await transcribeLyricsWithGeminiTranscribe(ab, primaryBudget);
+          const out = await transcribeLyricsWithOpenAI(ab, primaryBudget);
           primaryStatus = safeNum(out && out.status);
           primaryKeys = out && typeof out.interaction_keys === "string" ? out.interaction_keys : "";
           primaryOutputLength = safeNum(out && out.output_length);
@@ -15451,7 +15547,7 @@ const aiHandler = (() => {
         }
 
         fallbackAttempted = false;
-        modelUsed = "gemini-3.5-transcribe";
+        modelUsed = "openai/gpt-4o-mini-transcribe";
         const ms = Date.now() - startedAt;
         const isPrimaryTimeout = /timeout/i.test(primaryErrorMessage || "");
         const errLower = String(primaryErrorMessage || "").toLowerCase();
