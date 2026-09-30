@@ -3220,6 +3220,41 @@ function StartStep({ data, setData, setToast, handlers }) {
   return (
     <section className="start-step">
       <div className="section-title"><span className="eyebrow">PASO 1 DE 4</span><h1>¿Cómo quieres comenzar?</h1><p>Primero elige la voz/personaje y después decide si tienes un audio.</p></div>
+      <div className="tutorial-cards">
+        {[
+          {
+            id: 'Ubmiel-wR60',
+            url: 'https://youtu.be/Ubmiel-wR60',
+            title: 'Tutorial de Cómo hacer una Canción',
+          },
+          {
+            id: 'CP9EbzczY3o',
+            url: 'https://youtu.be/CP9EbzczY3o',
+            title: 'Cómo Clonar Mi Voz',
+          },
+        ].map((t) => (
+          <a key={t.id} href={t.url} target="_blank" rel="noopener noreferrer" className="tutorial-card">
+            <div className="tutorial-thumb">
+              <img
+                src={`https://i.ytimg.com/vi/${t.id}/maxresdefault.jpg`}
+                alt={t.title}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.src.includes('/maxresdefault.jpg')) {
+                    el.src = `https://i.ytimg.com/vi/${t.id}/hqdefault.jpg`;
+                  }
+                }}
+              />
+              <span className="tutorial-play">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72L19 12 8 5.14z" /></svg>
+              </span>
+            </div>
+            <span className="tutorial-title">{t.title}</span>
+          </a>
+        ))}
+      </div>
       <div className="start-grid">
         <div className="decision-group">
           <div className="decision-heading"><span>1</span><div><h2>¿Qué voz quieres usar?</h2><p>Podrás cambiar esta elección antes de generar.</p></div></div>
