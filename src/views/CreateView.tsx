@@ -3964,6 +3964,58 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         <h1 className="mt-1 text-2xl font-black text-white">Crear tu canción</h1>
         <p className="mt-1 text-sm text-slate-400">Completa cada sección de arriba hacia abajo.</p>
       </div>
+      {/* Tutoriales de ayuda */}
+      <div className="px-4 mt-4 mb-4">
+        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 mb-2">Tutoriales en video</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            {
+              id: 'Ubmiel-wR60',
+              url: 'https://youtu.be/Ubmiel-wR60',
+              title: 'Tutorial de Cómo hacer una Canción',
+            },
+            {
+              id: 'CP9EbzczY3o',
+              url: 'https://youtu.be/CP9EbzczY3o',
+              title: 'Cómo Clonar Mi Voz',
+            },
+          ].map((t) => (
+            <a
+              key={t.id}
+              href={t.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-3 rounded-2xl bg-[#0b0f16] border border-white/10 p-2.5 hover:border-white/25 hover:bg-white/5 transition-colors"
+            >
+              <div className="relative w-28 sm:w-32 shrink-0 aspect-video rounded-lg overflow-hidden bg-black">
+                <img
+                  src={`https://i.ytimg.com/vi/${t.id}/maxresdefault.jpg`}
+                  alt={t.title}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    if (el.src.includes('/maxresdefault.jpg')) {
+                      el.src = `https://i.ytimg.com/vi/${t.id}/hqdefault.jpg`;
+                    }
+                  }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <span className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-[2px] flex items-center justify-center group-hover:bg-black/70 transition-colors">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white ml-0.5" aria-hidden="true">
+                      <path d="M8 5.14v13.72L19 12 8 5.14z" />
+                    </svg>
+                  </span>
+                </span>
+              </div>
+              <span className="text-sm font-bold text-white leading-snug group-hover:text-purple-300 transition-colors">
+                {t.title}
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
       {/* Top Header Tabs */}
       <div className="flex items-center justify-between px-4 mt-4 mb-4">
         <div className="hidden bg-white/5 rounded-full p-1 border border-white/5">
