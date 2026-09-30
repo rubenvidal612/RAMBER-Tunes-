@@ -3422,6 +3422,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onStartCover={() => onStartCover?.(menuSong)}
           onToast={onToast}
           onOpenLists={() => setActiveTab('listas')}
+          onOpenVideos={() => {
+            setActiveTab('video');
+            loadVideos().catch(() => {});
+          }}
           onMoveToFolder={() => {
             setMoveFolderSong(menuSong);
             setMenuSong(null);
@@ -3949,6 +3953,7 @@ function SongOptionsSheet({
   onStartCover,
   onToast,
   onOpenLists,
+  onOpenVideos,
   onMoveToFolder,
   onShare,
   onRestore,
@@ -3966,6 +3971,7 @@ function SongOptionsSheet({
   onStartCover?: () => void;
   onToast?: (message: string) => void;
   onOpenLists?: () => void;
+  onOpenVideos?: () => void;
   onMoveToFolder?: () => void;
   onShare?: () => void;
   onRestore: () => void;
@@ -5231,8 +5237,7 @@ function SongOptionsSheet({
         alert(`Listo. El video se está generando en la pestaña "Video".\n\nTaskId:\n${mp4TaskId}`);
       }
 
-      setActiveTab('video');
-      loadVideos().catch(() => {});
+      onOpenVideos?.();
       setIsBusy(false); // Release UI lock while polling in background
 
       const startedAt = Date.now();
