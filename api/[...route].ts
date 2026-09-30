@@ -15132,6 +15132,69 @@ const aiHandler = (() => {
     };
   }
 
+  async function generateLyricsWithOpenAI(topic: string, gender: string, style: string) {
+    const apiKey = String(process.env.OPENAI_TRANSCRIBE_API_KEY || "").trim();
+    if (!apiKey) {
+      return { ok: false as const, error: "Falta OPENAI_TRANSCRIBE_API_KEY", userMessage: "La generación de letras no está disponible (proveedor)." };
+    }
+
+    let OpenAIClient: any;
+    try {
+      const mod = await import("openai");
+      OpenAIClient = mod?.OpenAI || mod?.default;
+    } catch (e) {
+      return { ok: false as const, error: "No pude cargar OpenAI SDK", userMessage: "La generación de letras no está disponible." };
+    }
+    if (!OpenAIClient) return { ok: false as const, error: "No pude cargar OpenAI SDK", userMessage: "La generación de letras no está disponible." };
+
+    const client = new OpenAIClient({ apiKey });
+
+    const systemInstruction =
+      "Eres un compositor profesional. " +
+      "Genera letras totalmente originales (no copies canciones existentes). " +
+      "Entrega solo la letra, sin explicación.";
+    const userPrompt =
+      "Genera una letra para una canción en español con estructura clara. " +
+      "Regla obligatoria: Todas las etiquetas de estructura, indicaciones musicales, efectos, voces, instrumentos y direcciones de interpretación deben escribirse exclusivamente entre corchetes [ ]. Nunca deben escribirse entre paréntesis ( ). " +
+      "Usa etiquetas como: [Intro], [Verso], [Coro], [Puente], [Outro]. " +
+      "Tema: " +
+      topic +
+      "\nGénero vocal: " +
+      gender +
+      "\nEstilo musical: " +
+      style +
+      "\nEntrega solo la letra. No uses comillas ni markdown.";
+
+    try {
+      const r: any = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemInstruction },
+          { role: "user", content: userPrompt },
+        ],
+      });
+      const text = String(r?.choices?.[0]?.message?.content || "").trim();
+      if (!text) return { ok: false as const, error: "OpenAI no devolvió texto", userMessage: "La IA no devolvió letra. Intenta con otro tema o espera unos minutos." };
+      const cleaned = text.replaceAll("```", "").trim();
+      return { ok: true as const, lyrics: cleaned };
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e || "");
+      const lower = msg.toLowerCase();
+      const is404 = lower.includes("404") || lower.includes("not found");
+      const is401 = lower.includes("401") || lower.includes("unauthorized");
+      const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
+      const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
+      const userMessage = is429
+        ? "La generación está saturada. Intenta de nuevo en unos minutos."
+        : is401 || is403
+          ? "La generación no está disponible por permisos (API Key). Revisa tu OPENAI_TRANSCRIBE_API_KEY en Vercel."
+          : is404
+            ? "El modelo no está disponible. Intenta de nuevo."
+            : "No pude generar letras en este momento. Intenta de nuevo.";
+      return { ok: false as const, error: msg, userMessage };
+    }
+  }
+
   async function generateLyricsWithSuno(topic: string, gender: string, style: string, req: any) {
     const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
     const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
@@ -15280,6 +15343,14 @@ const aiHandler = (() => {
           out = await generateLyricsWithGemini(topic, gender, style);
         } catch (e: any) {
           console.error("[handleGenerateLyrics] gemini error:", e?.message || String(e));
+          out = null;
+        }
+      }
+      if (!out || !out.ok) {
+        try {
+          out = await generateLyricsWithOpenAI(topic, gender, style);
+        } catch (e: any) {
+          console.error("[handleGenerateLyrics] openai error:", e?.message || String(e));
           out = null;
         }
       }

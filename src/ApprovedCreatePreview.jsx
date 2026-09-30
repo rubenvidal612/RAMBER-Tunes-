@@ -2479,6 +2479,30 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                   </div>
                 </div>
               ) : null}
+
+              {validation.error ? (
+                <div className="wizard-state-card warning">
+                  <h4>No pudimos preparar tu frase</h4>
+                  <p>{String(validation.error || "Intenta nuevamente.").trim() || "Intenta nuevamente."}</p>
+                  <div className="sample-actions">
+                    <button
+                      type="button"
+                      disabled={validation.loading || regenPhraseBusy || phraseCountdown.active}
+                      onClick={() => {
+                        const taskId = String(validation.taskId || "").trim();
+                        if (taskId) {
+                          setValidation((current) => ({ ...current, loading: true, error: "", phrase: "" }));
+                          pollValidateInfo(taskId, validation.clientAttemptId).catch(() => {});
+                          return;
+                        }
+                        startValidate().catch(() => {});
+                      }}
+                    >
+                      Intentar nuevamente
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
           {wizardStep === 2 && (
