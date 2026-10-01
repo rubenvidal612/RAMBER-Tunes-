@@ -1620,7 +1620,7 @@ const CANONICAL_CREDIT_PACKS = [
     validity_days: 30,
     sort_order: 2,
     description: "Hasta 12 canciones estándar (72 créditos) · pago único · Agente Bot 24/7",
-    is_active: true,
+    is_active: false,
   },
   {
     id: 2,
@@ -1632,7 +1632,7 @@ const CANONICAL_CREDIT_PACKS = [
     validity_days: 30,
     sort_order: 2,
     description: "Hasta 20 canciones estándar (120 créditos) · pago único",
-    is_active: true,
+    is_active: false,
   },
   {
     id: 3,
@@ -1644,18 +1644,30 @@ const CANONICAL_CREDIT_PACKS = [
     validity_days: 30,
     sort_order: 3,
     description: "Hasta 60 canciones estándar (360 créditos) · pago único",
-    is_active: true,
+    is_active: false,
   },
   {
     id: 4,
     pack_key: "pack_grande_250",
-    name: "Grande",
+    name: "Pro",
     songs: 100,
     credits_amount: 600,
     price_mxn: 250,
     validity_days: 30,
     sort_order: 4,
-    description: "Hasta 100 canciones estándar (600 créditos) · pago único · Agente Bot 24/7",
+    description: "Hasta 100 canciones estándar (600 créditos) · pago único",
+    is_active: true,
+  },
+  {
+    id: 6,
+    pack_key: "basico_100",
+    name: "Básico",
+    songs: 20,
+    credits_amount: 120,
+    price_mxn: 100,
+    validity_days: 30,
+    sort_order: 2,
+    description: "Hasta 20 canciones estándar (120 créditos) · pago único",
     is_active: true,
   },
 ];
@@ -5921,7 +5933,7 @@ const mercadoPagoHandler = (() => {
   type PackKey = "inicio" | "productor" | "masterizar";
 
   const PACKS: Record<PackKey, { title: string; amount_mxn: number; credits: number; songs: number }> = {
-    inicio: { title: "Pack Inicio (mensual)", amount_mxn: 350, credits: 1200, songs: 200 },
+    inicio: { title: "Pack Inicio", amount_mxn: 350, credits: 1200, songs: 200 },
     productor: { title: "Pack Productor", amount_mxn: 545, credits: 2000, songs: 166 },
     masterizar: { title: "Masterizar Ilimitado", amount_mxn: 150, credits: 0, songs: 0 },
   };

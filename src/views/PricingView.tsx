@@ -23,10 +23,8 @@ interface MiniPack {
 }
 
 const FALLBACK_MINI_PACKS: MiniPack[] = [
-  { id: 5, pack_key: 'inicio_50', name: 'Inicio', songs: 12, credits_amount: 72, price_mxn: 50, validity_days: 30, sort_order: 2 },
-  { id: 2, pack_key: 'chico_10', name: 'Chico', songs: 20, credits_amount: 120, price_mxn: 70, validity_days: 30, sort_order: 3 },
-  { id: 3, pack_key: 'mediano_30', name: 'Mediano', songs: 60, credits_amount: 360, price_mxn: 180, validity_days: 30, sort_order: 4 },
-  { id: 4, pack_key: 'pack_grande_250', name: 'Grande', songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 5 },
+  { id: 6, pack_key: 'basico_100', name: 'Básico', songs: 20, credits_amount: 120, price_mxn: 100, validity_days: 30, sort_order: 2 },
+  { id: 4, pack_key: 'pack_grande_250', name: 'Pro', songs: 100, credits_amount: 600, price_mxn: 250, validity_days: 30, sort_order: 5 },
 ];
 
 const TRIAL_ALREADY_USED_TEXT = 'Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.';
@@ -35,39 +33,30 @@ const miniPackStyle = (pack: MiniPack) => {
   const key = String(pack.pack_key || '').toLowerCase();
   const indexMap: Record<string, number> = {
     mini_3: 0,
-    chico_10: 1,
-    mediano_30: 2,
-    pack_grande_250: 3,
-    inicio_50: 4,
+    basico_100: 0,
+    pack_grande_250: 1,
   };
   const idx = indexMap[key] ?? 0;
-  const icons = [Gift, Zap, Package, Crown, Zap];
+  const icons = [Gift, Crown];
   const colors = [
-    { bg: 'from-rose-500/20 to-pink-500/20', border: 'border-rose-500/30', text: 'text-rose-300', btn: 'bg-rose-500 hover:bg-rose-400', tag: 'bg-rose-500 text-white', ring: 'ring-rose-400/30' },
-    { bg: 'from-amber-500/20 to-yellow-500/20', border: 'border-amber-500/30', text: 'text-amber-300', btn: 'bg-amber-500 hover:bg-amber-400', tag: 'bg-amber-500 text-gray-900 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.05)] ring-1 ring-inset ring-black/10', ring: 'ring-amber-400/30' },
-    { bg: 'from-orange-500/20 to-red-500/20', border: 'border-orange-500/30', text: 'text-orange-300', btn: 'bg-orange-500 hover:bg-orange-400', tag: 'bg-orange-500 text-white', ring: 'ring-orange-400/30' },
-    { bg: 'from-fuchsia-500/20 to-purple-500/20', border: 'border-fuchsia-500/30', text: 'text-fuchsia-300', btn: 'bg-fuchsia-500 hover:bg-fuchsia-400', tag: 'bg-fuchsia-500 text-white', ring: 'ring-fuchsia-400/30' },
     { bg: 'from-violet-500/20 to-indigo-500/20', border: 'border-violet-500/30', text: 'text-violet-300', btn: 'bg-violet-500 hover:bg-violet-400', tag: 'bg-violet-500 text-white', ring: 'ring-violet-400/30' },
+    { bg: 'from-fuchsia-500/20 to-purple-500/20', border: 'border-fuchsia-500/30', text: 'text-fuchsia-300', btn: 'bg-fuchsia-500 hover:bg-fuchsia-400', tag: 'bg-fuchsia-500 text-white', ring: 'ring-fuchsia-400/30' },
   ];
   const labelMap: Record<string, string> = {
     mini_3: 'Pack de prueba',
-    chico_10: 'Pack Chico',
-    mediano_30: 'Pack Mediano',
-    pack_grande_250: 'Pack Grande',
-    inicio_50: 'Pack Inicio',
+    basico_100: 'Pack Básico',
+    pack_grande_250: 'Pack Pro',
   };
   const accentMap: Record<string, string> = {
-    mini_3: 'rose',
-    chico_10: 'amber',
-    mediano_30: 'orange',
+    mini_3: 'violet',
+    basico_100: 'violet',
     pack_grande_250: 'fuchsia',
-    inicio_50: 'violet',
   };
   return {
     Icon: icons[idx],
     label: labelMap[key] || String(pack.name || 'Pack'),
-    accent: accentMap[key] || 'rose',
-    showsVideos: key === 'mediano_30' || key === 'pack_grande_250',
+    accent: accentMap[key] || 'violet',
+    showsVideos: key === 'pack_grande_250',
     isTrial: key === 'mini_3',
     popular: key === 'pack_grande_250',
     ...colors[idx],
@@ -166,6 +155,9 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
           // OCULTAR TEMPORALMENTE pack Mini $25 MXN (capa frontend adicional a filtro backend)
           if (k === 'mini_3') return false;
           if (price === 25) return false;
+
+          // Paquetes eliminados de la oferta (refuerzo frontend a filtro backend)
+          if (['inicio_50', 'chico_10', 'mediano_30'].includes(k)) return false;
 
           if (k === 'grande_80' && false) return false;
           if (k === 'grande_80' && Number(p.credits_amount || 0) < 600 && Number(p.price_mxn || 0) < 200) return false;
@@ -322,7 +314,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
           <span><span className="block text-sm font-bold">Tarjeta internacional</span><span className="block text-[10px] text-slate-400">Stripe Checkout · Precios en $ USD</span></span>
         </button>
       </div>
-      <p className="mt-2 text-[10px] text-slate-500">El Pack Inicio mensual se cobra con Mercado Pago (suscripción). Al seleccionar Tarjeta internacional verás el equivalente aproximado en USD.</p>
+      <p className="mt-2 text-[10px] text-slate-500">El Pack Inicio se cobra con un pago único. Al seleccionar Tarjeta internacional verás el equivalente aproximado en USD.</p>
     </div>
   );
 
@@ -352,7 +344,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
         <div className="mx-auto w-full max-w-[1420px] space-y-5 px-5 py-6 pb-28 sm:px-8 lg:px-10">
           <div className="flex items-start gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/[0.07] p-4 text-sm text-slate-300">
             <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
-            <div className="flex-1"><span className="block">Los <b className="text-blue-300">Mini Packs</b> son compras únicas con vigencia de 30 días.</span><span className="block">El <b className="text-blue-300">Pack Inicio</b> es un plan mensual con renovación automática.</span></div>
+            <div className="flex-1"><span className="block">Los <b className="text-blue-300">Mini Packs</b> son compras únicas con vigencia de 30 días.</span><span className="block">El <b className="text-blue-300">Pack Inicio</b> es un pago único con beneficios por 30 días.</span></div>
             <Info className="h-4 w-4 shrink-0 text-slate-400" />
           </div>
           {paymentMethodPicker}
@@ -360,7 +352,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
           {loadingMini ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[0,1,2,3].map((item) => <div key={item} className="h-[500px] animate-pulse rounded-3xl border border-white/10 bg-white/5" />)}</div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {planCards.map((card) => {
                 const isInicio = card.type === 'inicio';
                 const pack = card.type === 'mini' ? card.pack : null;
@@ -373,15 +365,15 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const accent = accentClasses[card.accent];
                 const isTrialUsed = !isInicio && card.isTrial && trialUsed;
                 const features = isInicio
-                  ? ['Hasta 200 canciones estándar', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Saldo mensual acumulable si renuevas a tiempo']
-                  : [`Hasta ${songsCount} canciones estándar`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', ...(card.showsVideos ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
+                  ? ['Hasta 200 canciones estándar', 'Total 1200 créditos', 'Agente Bot 24/7 para ayudarte a generar canciones', 'Clonación de voz', 'Videos musicales', 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Pago único · Beneficios por 30 días']
+                  : [`Hasta ${songsCount} canciones estándar`, `Total ${creditsCount} créditos`, 'Agente Bot 24/7 para ayudarte a generar canciones', ...(card.showsVideos ? ['Videos musicales'] : []), 'Audio karaoke', 'Eliminar voz / STEMS', 'Descargas activas', 'Cada compra es un lote independiente'];
                 const inicioButtonLabel = () => {
                   if (!isInicio) return '';
                   const mxnView = displayPrice(350, { forStripe: false });
                   if (paymentProvider === 'stripe') {
-                    return `Plan mensual ${priceView.symbol}${priceView.amount} ${priceView.code} / mes aprox`;
+                    return `Pago único ${priceView.symbol}${priceView.amount} ${priceView.code} aprox`;
                   }
-                  return `${priceView.symbol}${priceView.amount} ${priceView.code} / mes`;
+                  return `${priceView.symbol}${priceView.amount} ${priceView.code} · pago único`;
                 };
                 return (
                   <article key={isInicio ? 'inicio' : pack!.pack_key} className={`relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border ${accent.border} bg-gradient-to-b from-white/[0.055] via-[#090b11] to-[#07080c] p-5 shadow-2xl ${accent.glow}`}>
@@ -390,16 +382,16 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                     <div className="relative">
                       <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black text-white ${accent.badge}`}>{card.label}</span>
                       <Icon className={`mt-5 h-9 w-9 ${accent.text}`} />
-                      <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Plan mensual' : `Hasta ${songsCount} canciones estándar`}</div>
+                      <div className="mt-4 text-lg font-extrabold">{isInicio ? 'Pago único' : `Hasta ${songsCount} canciones estándar`}</div>
                       <div className="mt-2 flex flex-col">
                         {isInicio && inicioStrikeMeta ? (
                           <span className="text-xs font-bold text-slate-400 line-through mb-1">{inicioStrikeMeta.symbol}{inicioStrikeMeta.amount} {inicioStrikeMeta.code}</span>
                         ) : null}
-                        <div className="flex items-end gap-2"><span className="text-4xl font-black">{priceView.symbol}{priceView.amount}</span><span className="pb-1 text-xs font-bold text-slate-300">{priceView.code}{isInicio ? ' / mes' : ''}</span></div>
+                        <div className="flex items-end gap-2"><span className="text-4xl font-black">{priceView.symbol}{priceView.amount}</span><span className="pb-1 text-xs font-bold text-slate-300">{priceView.code}</span></div>
                       </div>
                       <div className="mt-1 text-[10px] text-slate-400">
                         {isInicio
-                          ? (paymentProvider === 'stripe' ? `Equivale $350 MXN / mes · Plan recurrente · Pago con Mercado Pago` : 'Plan recurrente')
+                          ? (paymentProvider === 'stripe' ? `Equivale $350 MXN · Pago único · Mercado Pago` : 'Pago único · Beneficios por 30 días')
                           : `Pago único · Vigencia ${Number(pack?.validity_days || 30)} días`}
                       </div>
                       {card.isTrial ? <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-rose-500/10 border border-rose-500/30 px-2 py-1 text-[10px] font-bold text-rose-300">{isTrialUsed ? TRIAL_ALREADY_USED_TEXT : 'Disponible una sola vez por cuenta'}</div> : null}
@@ -462,7 +454,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
             </div>
           </div>
           <p className="text-center text-slate-400 text-sm mt-3 mb-4">
-            👉 Elige la opción que necesites. Los mini paquetes son pago único (30 días). El Pack Inicio es mensual.
+            👉 Elige la opción que necesites. Los mini paquetes son pago único (30 días). El Pack Inicio es un pago único.
           </p>
 
           {loadingMini ? (
@@ -513,9 +505,6 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Agente Bot 24/7 para ayudarte a generar canciones
                       </div>
-                      <div className="flex items-center gap-2 text-slate-200">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
-                      </div>
                       {showsVideos ? (
                         <div className="flex items-center gap-2 text-slate-200">
                           <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
@@ -559,9 +548,9 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const btnInicio = (() => {
                   if (isBusy) return 'Abriendo…';
                   if (paymentProvider === 'stripe') {
-                    return `Plan mensual ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes aprox`;
+                    return `Pago único ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} aprox`;
                   }
-                  return `Comprar ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes`;
+                  return `Comprar ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} · pago único`;
                 })();
                 return (
                   <div key="inicio-fallback" className="relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-b from-blue-900/30 to-transparent p-5 ring-1 ring-blue-400/30 hover:scale-[1.02] transition-transform duration-200">
@@ -580,7 +569,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                           <span className="text-5xl font-black text-white drop-shadow">{inicioPriceView.symbol}{inicioPriceView.amount}</span>
                           <span className="text-slate-200 font-semibold text-sm">{inicioPriceView.code}</span>
                         </div>
-                        <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente{paymentProvider === 'stripe' ? ' · Pago con Mercado Pago ($350 MXN)' : ''}</span>
+                        <span className="text-slate-300 text-xs mt-1 font-medium">Pago único · Beneficios por 30 días{paymentProvider === 'stripe' ? ' · Mercado Pago ($350 MXN)' : ''}</span>
                       </div>
                     </div>
                     <div className="space-y-2 mb-5 text-sm relative">
@@ -610,7 +599,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       </div>
                       <div className="flex items-start gap-2 text-slate-200">
                         <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                        <span>Saldo mensual acumulable si renuevas a tiempo</span>
+                        <span>Pago único · Beneficios por 30 días</span>
                       </div>
                     </div>
                     <button
@@ -676,9 +665,6 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       <div className="flex items-center gap-2 text-slate-200">
                         <Check className={`w-5 h-5 ${text} shrink-0`} /> Agente Bot 24/7 para ayudarte a generar canciones
                       </div>
-                      <div className="flex items-center gap-2 text-slate-200">
-                        <Check className={`w-5 h-5 ${text} shrink-0`} /> Clonación de voz
-                      </div>
                       {showsVideos ? (
                         <div className="flex items-center gap-2 text-slate-200">
                           <Check className={`w-5 h-5 ${text} shrink-0`} /> Videos musicales
@@ -724,9 +710,9 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                 const btnInicio = (() => {
                   if (isBusy) return 'Abriendo…';
                   if (paymentProvider === 'stripe') {
-                    return `Plan mensual ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes aprox`;
+                    return `Pago único ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} aprox`;
                   }
-                  return `Comprar ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} / mes`;
+                  return `Comprar ${inicioPriceView.symbol}${inicioPriceView.amount} ${inicioPriceView.code} · pago único`;
                 })();
                 return (
                   <div key="inicio-normal" className="relative overflow-hidden rounded-3xl border border-blue-500/30 bg-gradient-to-b from-blue-900/30 to-transparent p-5 ring-1 ring-blue-400/30 hover:scale-[1.02] transition-transform duration-200">
@@ -747,7 +733,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                           <span className="text-5xl font-black text-white drop-shadow">{inicioPriceView.symbol}{inicioPriceView.amount}</span>
                           <span className="text-slate-200 font-semibold text-sm">{inicioPriceView.code}</span>
                         </div>
-                        <span className="text-slate-300 text-xs mt-1 font-medium">/ mes · Plan recurrente{paymentProvider === 'stripe' ? ' · Pago con Mercado Pago ($350 MXN)' : ''}</span>
+                        <span className="text-slate-300 text-xs mt-1 font-medium">Pago único · Beneficios por 30 días{paymentProvider === 'stripe' ? ' · Mercado Pago ($350 MXN)' : ''}</span>
                       </div>
                     </div>
 
@@ -778,7 +764,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
                       </div>
                       <div className="flex items-start gap-2 text-slate-200">
                         <Check className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                        <span>Saldo mensual acumulable si renuevas a tiempo</span>
+                        <span>Pago único · Beneficios por 30 días</span>
                       </div>
                     </div>
 
@@ -816,7 +802,7 @@ export function PricingView({ onClose, pageMode = false }: PricingViewProps) {
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-slate-300 space-y-2">
           <p className="font-semibold text-white">Importante sobre los planes</p>
-          <p>Los precios son mensuales (excepto mini paquetes, que son pago único por 30 días).</p>
+          <p>Los mini paquetes y el Pack Inicio son de pago único con vigencia de 30 días.</p>
           <p>Si no gastas todo tu saldo, en tu siguiente pago se suma al nuevo saldo.</p>
           <p>El saldo dura hasta 2 meses. Si en 2 meses no se recibe tu pago, el saldo acumulado se elimina.</p>
           <p>El saldo acumulado tiene un tope de 2,000 créditos.</p>
