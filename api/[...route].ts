@@ -1597,6 +1597,170 @@ async function wipeOverdueFrozenCredits(admin: any): Promise<{ ok: boolean; wipe
   }
 }
 
+/**
+ * LIMPIEZA AUTOMÁTICA DE AUDIOS TEMPORALES (uploads/audio).
+ * Independiente de la lógica de Mercado Pago. Se invoca desde el cron diario
+ * (handleExpireBatches) pero en una función separada.
+ *
+ * Elimina únicamente objetos del bucket "ramber-tunes" bajo "uploads/audio/"
+ * con más de 14 días de antigüedad, respetando estas protecciones:
+ *  - nombres que contengan "masterizada"
+ *  - nombres que empiecen por "rvc_mix_" o "rvc_vocals_"
+ *  - referencias vigentes en library_items.audio_url
+ *  - original_audio_url de rvc_covers aún en status "processing"
+ *  - sample_url / output.sample_url de kits_voices (clonador actual, se reproducen)
+ *
+ * El borrado se hace ÚNICAMENTE mediante la API oficial de Supabase Storage
+ * (admin.storage.from(bucket).remove), NUNCA con DELETE directo sobre storage.objects.
+ * Se procesa en lotes de máximo 50 y, si un lote falla, se detiene y reporta.
+ */
+function normalizeStorageKey(raw: string): string {
+  const s = (raw || "").toString().trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const path = (new URL(s).pathname || "").replace(/^\/+/, "");
+      const marker = "/storage/v1/object/public/";
+      const idx = (new URL(s).pathname || "").indexOf(marker);
+      if (idx >= 0) {
+        // Después del marker viene {bucket}/uploads/audio/{uid}/{file} -> quitar el bucket
+        const afterBucket = (new URL(s).pathname || "").slice(idx + marker.length).split("/").slice(1).join("/");
+        return decodeURIComponent(afterBucket);
+      }
+      if (path.startsWith("uploads/audio/")) return decodeURIComponent(path);
+      return "";
+    } catch {
+      return "";
+    }
+  }
+  if (s.startsWith("uploads/audio/")) return s;
+  return "";
+}
+
+async function cleanupUploadsAudio(
+  admin: any,
+  _supabaseUrl: string
+): Promise<{
+  ok: boolean;
+  aplicables: number;
+  borrados: number;
+  protegidos: number;
+  bytesLiberados: number;
+  restantes: number;
+  error?: string;
+}> {
+  const BUCKET = "ramber-tunes";
+  const EDAD_MS = 14 * 24 * 60 * 60 * 1000;
+  const LOTE = 50;
+  const base = { aplicables: 0, borrados: 0, protegidos: 0, bytesLiberados: 0, restantes: 0 };
+
+  try {
+    // 1) Leer candidatos desde storage.objects (solo lectura por PostgREST con service_role)
+    const { data: objs, error: listErr } = await admin
+      .schema("storage")
+      .from("objects")
+      .select("name, created_at, metadata")
+      .eq("bucket_id", BUCKET)
+      .like("name", "uploads/audio/%");
+    if (listErr) {
+      return { ok: true, ...base, error: String(listErr?.message || listErr || "Error listando storage.objects") };
+    }
+
+    const nowMs = Date.now();
+    const objetos = Array.isArray(objs) ? objs : [];
+
+    const candidatos = objetos.filter((o: any) => {
+      const name = String(o?.name || "");
+      if (!name.startsWith("uploads/audio/")) return false;
+      const created = new Date(o?.created_at).getTime();
+      if (!Number.isFinite(created)) return false;
+      if (created >= nowMs - EDAD_MS) return false; // deben ser MÁS de 14 días
+      const n = name.toLowerCase();
+      if (n.includes("masterizada")) return false;
+      if (n.startsWith("rvc_mix_")) return false;
+      if (n.startsWith("rvc_vocals_")) return false;
+      return true;
+    });
+
+    // 2) Referencias vigentes en library_items.audio_url
+    const libSet = new Set<string>();
+    const { data: libRefs } = await admin.from("library_items").select("audio_url");
+    for (const r of Array.isArray(libRefs) ? libRefs : []) {
+      const k = normalizeStorageKey(String((r as any)?.audio_url || ""));
+      if (k) libSet.add(k);
+    }
+
+    // 3) rvc_covers en curso (status processing) -> proteger original_audio_url
+    const covSet = new Set<string>();
+    const { data: covRefs } = await admin.from("rvc_covers").select("original_audio_url, status");
+    for (const r of Array.isArray(covRefs) ? covRefs : []) {
+      const st = String((r as any)?.status || "").toLowerCase();
+      if (st !== "processing") continue; // terminados/failed liberan su audio
+      const k = normalizeStorageKey(String((r as any)?.original_audio_url || ""));
+      if (k) covSet.add(k);
+    }
+
+    // 4) kits_voices (clonador actual) -> proteger sample_url reproducidos
+    const kitSet = new Set<string>();
+    const { data: kitRefs } = await admin.from("kits_voices").select("sample_url, output");
+    for (const r of Array.isArray(kitRefs) ? kitRefs : []) {
+      const vals = [
+        String((r as any)?.sample_url || ""),
+        String((r as any)?.output?.sample_url || ""),
+      ];
+      for (const v of vals) {
+        const k = normalizeStorageKey(v);
+        if (k) kitSet.add(k);
+      }
+    }
+
+    const protegidos = candidatos.filter((o: any) => {
+      const name = String(o?.name || "");
+      return libSet.has(name) || covSet.has(name) || kitSet.has(name);
+    });
+    const aBorrar = candidatos.filter((o: any) => {
+      const name = String(o?.name || "");
+      return !libSet.has(name) && !covSet.has(name) && !kitSet.has(name);
+    });
+
+    // 5) Borrar en lotes de hasta 50, solo con la API oficial de Storage
+    let borrados = 0;
+    let bytesLiberados = 0;
+    for (let i = 0; i < aBorrar.length; i += LOTE) {
+      const loteObjs = aBorrar.slice(i, i + LOTE);
+      const loteNombres = loteObjs.map((o: any) => String(o?.name || ""));
+      const { error: rmErr } = await admin.storage.from(BUCKET).remove(loteNombres);
+      if (rmErr) {
+        return {
+          ok: false,
+          aplicables: aBorrar.length,
+          borrados,
+          protegidos: protegidos.length,
+          bytesLiberados,
+          restantes: objetos.length - borrados,
+          error: `Lote falló en el borrado (${borrados} ya borrados): ${rmErr?.message || rmErr}`,
+        };
+      }
+      for (const oObj of loteObjs) {
+        const size = Number(oObj?.metadata?.size ?? 0);
+        if (Number.isFinite(size)) bytesLiberados += size;
+      }
+      borrados += loteObjs.length;
+    }
+
+    return {
+      ok: true,
+      aplicables: aBorrar.length,
+      borrados,
+      protegidos: protegidos.length,
+      bytesLiberados,
+      restantes: objetos.length - borrados,
+    };
+  } catch (e) {
+    return { ok: false, ...base, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 const CANONICAL_CREDIT_PACKS = [
   {
     id: 1,
@@ -6686,10 +6850,22 @@ const mercadoPagoHandler = (() => {
       if (!resultBatches.ok) return send(res, 500, { error: resultBatches.error || "No pude expirar lotes." });
       const resultWipe = await wipeOverdueFrozenCredits(admin);
       if (!resultWipe.ok) return send(res, 500, { error: resultWipe.error || "No pude borrar saldos vencidos." });
+
+      // Limpieza de audios temporales (uploads/audio, >14 días).
+      // Independiente de la lógica de pagos: si falla, se reporta en la respuesta
+      // pero NO se bloquea el resultado del job diario de Mercado Pago.
+      let cleanup: any = null;
+      try {
+        cleanup = await cleanupUploadsAudio(admin, supabaseUrl);
+      } catch (ce) {
+        cleanup = { ok: false, error: ce instanceof Error ? ce.message : String(ce) };
+      }
+
       return send(res, 200, {
         ok: true,
         expired_batches: resultBatches.expired,
         wiped_profiles: resultWipe.wiped,
+        cleanup_uploads_audio: cleanup,
         at: new Date().toISOString(),
       });
     } catch (e) {
