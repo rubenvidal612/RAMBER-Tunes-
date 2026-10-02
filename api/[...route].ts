@@ -2925,17 +2925,40 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Error creando video", detail: "No pude contactar al proveedor" });
       }
 
-      if (!r.ok) {
-        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error creando video", code: r.status, detail: String(msg).slice(0, 1200) });
-      }
+      const rawMsgCombined =
+        (typeof text === "string" ? text : "") +
+        " " +
+        sunoErrorMessage(data, "") +
+        " " +
+        (typeof data?.detail === "string" ? data.detail : "") +
+        " " +
+        (typeof data?.message === "string" ? data.message : "") +
+        " " +
+        (typeof data?.error === "string" ? data.error : "");
+      const existsHint = /record\s+already|already\s+exists|ya\s+existe/i.test(rawMsgCombined);
 
-      const code = Number(data?.code);
-      if (code && code !== 200) {
-        const msg = sunoErrorMessage(data, "Error del proveedor");
+      if (!r.ok || (Number(data?.code) && Number(data?.code) !== 200)) {
+        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        if (existsHint) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          let existingId = "";
+          try {
+            const q = await auth.admin
+              .from("suno_tasks")
+              .select("task_id")
+              .eq("user_id", user.id)
+              .eq("kind", "mp4")
+              .order("created_at", { ascending: false })
+              .limit(5);
+            const rows = Array.isArray(q?.data) ? q.data : [];
+            if (rows.length > 0) existingId = String(rows[0].task_id || "").trim();
+          } catch (_) { existingId = ""; }
+          if (existingId) {
+            return send(res, 200, { taskId: existingId, reused: true });
+          }
+        }
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error creando video", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error creando video", code: r.status || Number(data?.code) || 0, detail: String(msg).slice(0, 1200) });
       }
 
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
@@ -13209,45 +13232,76 @@ const videosHandler = (() => {
     if (head !== "videos") return send(res, 404, { error: "Ruta no encontrada" });
 
     const action = (next || "").toString().trim().toLowerCase();
-    if (action !== "list") return send(res, 404, { error: "Ruta no encontrada" });
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
-
+    const method = (req.method || "").toUpperCase();
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
-    const limitRaw = Number(pickQuery(req, "limit") || 50);
-    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
+    if (action === "list") {
+      if (method !== "GET") return send(res, 405, { error: "Método no permitido" });
 
-    try {
+      const limitRaw = Number(pickQuery(req, "limit") || 50);
+      const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
+
+      try {
+        const userId = String(auth.user.id || "").trim();
+        const admin = auth.admin;
+        let rows: any[] = [];
+        const r1 = await admin
+          .from("suno_tasks")
+          .select("task_id, kind, created_at")
+          .eq("user_id", userId)
+          .eq("kind", "mp4")
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (!r1.error) {
+          rows = Array.isArray(r1.data) ? r1.data : [];
+        } else {
+          const r2 = await admin.from("suno_tasks").select("task_id, kind").eq("user_id", userId).eq("kind", "mp4").limit(limit);
+          if (r2.error) return send(res, 500, { error: "No pude listar videos", detail: r2.error.message });
+          rows = Array.isArray(r2.data) ? r2.data : [];
+        }
+
+        const items = rows
+          .map((x: any) => ({
+            taskId: String(x?.task_id || "").trim(),
+            created_at: typeof x?.created_at === "string" ? x.created_at : "",
+          }))
+          .filter((x: any) => x.taskId);
+
+        return send(res, 200, { ok: true, items });
+      } catch (e) {
+        return send(res, 500, { error: "No pude listar videos", detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (action && action !== "list") {
+      if (method !== "DELETE") return send(res, 405, { error: "Método no permitido" });
+      const taskId = String((next || "").toString() || "").trim();
+      if (!taskId) return send(res, 400, { error: "Falta taskId del video." });
       const userId = String(auth.user.id || "").trim();
       const admin = auth.admin;
-      let rows: any[] = [];
-      const r1 = await admin
-        .from("suno_tasks")
-        .select("task_id, kind, created_at")
-        .eq("user_id", userId)
-        .eq("kind", "mp4")
-        .order("created_at", { ascending: false })
-        .limit(limit);
-      if (!r1.error) {
-        rows = Array.isArray(r1.data) ? r1.data : [];
-      } else {
-        const r2 = await admin.from("suno_tasks").select("task_id, kind").eq("user_id", userId).eq("kind", "mp4").limit(limit);
-        if (r2.error) return send(res, 500, { error: "No pude listar videos", detail: r2.error.message });
-        rows = Array.isArray(r2.data) ? r2.data : [];
+
+      try {
+        const check = await admin
+          .from("suno_tasks")
+          .select("task_id, user_id")
+          .eq("task_id", taskId)
+          .eq("kind", "mp4")
+          .limit(1)
+          .maybeSingle();
+        const row = (check && check.data) || null;
+        if (!row || String(row.user_id || "") !== userId) {
+          return send(res, 403, { ok: false, error: "No autorizado." });
+        }
+        const del = await admin.from("suno_tasks").delete().eq("task_id", taskId).eq("user_id", userId).eq("kind", "mp4");
+        if (del && del.error) return send(res, 500, { ok: false, error: "No pude eliminar el video.", detail: del.error.message });
+        return send(res, 200, { ok: true, deleted: true });
+      } catch (e) {
+        return send(res, 500, { error: "No pude eliminar el video", detail: e instanceof Error ? e.message : String(e) });
       }
-
-      const items = rows
-        .map((x: any) => ({
-          taskId: String(x?.task_id || "").trim(),
-          created_at: typeof x?.created_at === "string" ? x.created_at : "",
-        }))
-        .filter((x: any) => x.taskId);
-
-      return send(res, 200, { ok: true, items });
-    } catch (e) {
-      return send(res, 500, { error: "No pude listar videos", detail: e instanceof Error ? e.message : String(e) });
     }
+
+    return send(res, 404, { error: "Ruta no encontrada" });
   };
 })();
 

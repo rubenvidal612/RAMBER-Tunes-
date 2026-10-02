@@ -2166,6 +2166,38 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                               <Download className="w-4 h-4" />
                               Descargar
                             </button>
+                            <div className="border-t border-white/5 my-1"></div>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const ok = window.confirm('¿Estás seguro de eliminar este video de tu lista? La eliminación solo borra el registro en tu biblioteca (el archivo de Suno no se puede borrar).');
+                                if (!ok) return;
+                                setOpenVideoMenuId(null);
+                                try {
+                                  const t = await getAccessToken();
+                                  if (!t.ok) {
+                                    alert(t.error || 'No se pudo iniciar sesión.');
+                                    return;
+                                  }
+                                  const r = await fetch(`/api/videos/${encodeURIComponent(v.taskId)}`, {
+                                    method: 'DELETE',
+                                    headers: { authorization: `Bearer ${t.token}` },
+                                  });
+                                  const out = await r.json().catch(() => ({}));
+                                  if (!r.ok) {
+                                    alert((out?.error || out?.detail || 'No pude eliminar el video.').toString());
+                                    return;
+                                  }
+                                  await loadVideos().catch(() => {});
+                                } catch (e2) {
+                                  alert('Error: ' + (e2 instanceof Error ? e2.message : 'Desconocido'));
+                                }
+                              }}
+                              className="w-full px-4 py-3 text-left text-sm text-red-300 hover:bg-red-500/10 flex items-center gap-2"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Eliminar
+                            </button>
                           </div>
                         )}
                       </div>
