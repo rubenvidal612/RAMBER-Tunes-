@@ -2400,14 +2400,17 @@ const sunoHandler = (() => {
 
     try {
       if (!isAdmin) {
-        const available = await ensureUserHasCreditsAvailable(auth.admin, user.id, cost);
-        if (!available.ok) return send(res, 402, { error: available.error || "Créditos insuficientes. Recarga para continuar." });
+        const consumed = await consumeUserCredits(auth.admin, user.id, cost);
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
       }
 
       let preparedAudio: any = null;
       try {
         preparedAudio = await prepareCoverUploadUrlForSuno(req, uploadUrl, uploadPath, user.id, title);
       } catch (e) {
+        if (!isAdmin) {
+          try { await adjustUserCredits(auth.admin, user.id, cost); } catch (_) {}
+        }
         return send(res, 502, {
           error: "No se pudo preparar el audio para el cover.",
           detail: e instanceof Error ? e.message : String(e),
@@ -2483,14 +2486,25 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: false };
+      const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true };
       const withModel = { ...baseTaskRow, requested_model: model };
-      const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
-      if (ins1?.error && isMissingColumnError(ins1.error)) {
-        await auth.admin.from("suno_tasks").insert(baseTaskRow);
+      try {
+        const ins1 = await auth.admin.from("suno_tasks").insert(withModel);
+        if (ins1?.error && isMissingColumnError(ins1.error)) {
+          await auth.admin.from("suno_tasks").insert(baseTaskRow);
+        }
+      } catch (insErr) {
+        // Si falla el insert del task después de cobrar, no devolvemos aquí: el proveedor ya
+        // recibió la solicitud y generará audio. El task simplemente no se registrará en suno_tasks
+        // pero los créditos ya fueron consumidos de forma justa (se generó el audio). Si el proveedor
+        // falla luego, el webhook lo atrapará.
+        console.warn("[handleUploadCover] suno_tasks insert falló (no crítico). taskId=", taskId, "err=", insErr && insErr.message);
       }
       return send(res, 200, { taskId });
     } catch (e) {
+      if (!isAdmin) {
+        try { await adjustUserCredits(auth.admin, user.id, cost); } catch (_) {}
+      }
       return send(res, 502, { error: "No se pudo hacer el cover.", detail: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -3084,16 +3098,27 @@ const sunoHandler = (() => {
         const cost = Number(row?.cost ?? 0);
         const consumed = Boolean(row?.consumed);
         const taskKind = String(row?.kind || "").trim().toLowerCase();
+        // Nota: kind = "upload-cover" ahora se cobra UPFRONT en handleUploadCover (consumed: true
+        // al insertar). Solo cobramos aquí si quedó pendiente por alguna razón histórica
+        // (tareas creadas antes de este fix con consumed=false).
         if (taskKind === "upload-cover" && !consumed && Number.isFinite(cost) && cost > 0) {
           const charged = await consumeUserCredits(auth.admin, user.id, cost);
           if (charged.ok) {
             await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", taskId).eq("user_id", user.id);
+          } else {
+            // Si no se pudo cobrar pese a que todo indica que debería (caso edge), marcar error
+            // y devolver lo poco que se pudo, solo para no duplicar luego.
+            console.warn("[handleTask SUCCESS][UPLOAD_COVER] No se pudo cobrar pese a task SUCCESS. taskId=", taskId, "err=", charged.error || charged);
           }
         }
       }
 
       return send(res, 200, { data, kind });
     } catch (e) {
+      // Rollback de seguridad: durante el polling handleTask, si se lanzó una excepción inesperada
+      // después de que en una vuelta anterior ya se cobró "upload-cover" (o sea el flujo de SUCCESS
+      // se detuvo a mitad de camino) — no podemos revertir aquí sin información. Pero al menos
+      // devolvemos el detalle del error al frontend con un mensaje claro (no "internal error please try again").
       return send(res, 502, { error: "Error consultando task", detail: e instanceof Error ? e.message : String(e) });
     }
   }
