@@ -2759,24 +2759,78 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Error separando", detail: "No pude contactar al proveedor" });
       }
 
+      const doesNotExistRe = /record.*does.*not.*exist|does.*not.*exist|no.*existe/i;
+
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
         const msgText = String(msg || "").slice(0, 2000);
         const msgLower = msgText.toLowerCase();
         const isAlreadyExists = /already\s*exists|record\s*already|duplicado|ya\s*existe/.test(msgLower);
+        const isDoesNotExist = doesNotExistRe.test(msgLower);
 
-        // Si el proveedor dice que la separación ya existe, buscamos en suno_tasks una
-        // vocal-removal del mismo tipo y user asociada al mismo taskId/audioId original.
-        // Devolvemos ese taskId existente y reembolsamos este intento para no cobrar 2 veces.
+        async function verifyTaskExistsSuno(tid: string): Promise<boolean> {
+          try {
+            const e2 = encodeURIComponent(tid);
+            const p2 = [
+              `/api/v1/vocal-removal/record-info?taskId=${e2}`,
+              `/api/v1/suno/vocal-removal/record-info?taskId=${e2}`,
+            ];
+            let last2: any = null;
+            for (const p of p2) {
+              const rr = await sunoFetchJson(p, { method: "GET" });
+              last2 = rr;
+              if (rr.res.status !== 404) break;
+            }
+            const { res: rr, data: dd, text: tt } = last2 || {};
+            if (!rr || !rr.ok) return false;
+            const cc = Number(dd?.code);
+            if (cc && cc !== 200) {
+              const m2 = sunoErrorMessage(dd, tt || "").toLowerCase();
+              return !doesNotExistRe.test(m2);
+            }
+            const st = String(dd?.data?.status ?? dd?.data?.data?.status ?? "").toUpperCase();
+            if (!st) return false;
+            if (doesNotExistRe.test(String(tt || "").toLowerCase()) || doesNotExistRe.test(String(dd?.message || dd?.msg || "").toLowerCase())) return false;
+            return st === "SUCCESS" || st === "PENDING" || st === "QUEUED" || st === "PROCESSING" || st === "RUNNING";
+          } catch {
+            return false;
+          }
+        }
+
+        async function retryGenerateWithoutTaskId(): Promise<{ ok: boolean; taskId: string; err?: string }> {
+          try {
+            const altBody: any = { audioId, type, callBackUrl, skipCache: 1, nonce: String(Date.now()) };
+            const p3 = [
+              "/api/v1/vocal-removal/generate",
+              "/api/v1/suno/vocal-removal/generate",
+              "/api/v1/separate",
+              "/api/v1/suno/separate",
+            ];
+            let last3: any = null;
+            for (const p of p3) {
+              const rr = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(altBody) });
+              last3 = rr;
+              if (rr.res.status !== 404) break;
+            }
+            const { res: rr, data: dd } = last3 || {};
+            if (!rr || !rr.ok) return { ok: false, taskId: "" };
+            const cc = Number(dd?.code);
+            if (cc && cc !== 200) return { ok: false, taskId: "" };
+            const t = typeof dd?.data?.taskId === "string" ? dd.data.taskId.trim() : "";
+            if (!t) return { ok: false, taskId: "" };
+            return { ok: true, taskId: t };
+          } catch {
+            return { ok: false, taskId: "" };
+          }
+        }
+
         if (isAlreadyExists) {
           if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
           try {
             let reuseTaskId = "";
             try {
-              // Caso 1: el propio error incluye un taskId/data.taskId (algunas APIs lo retornan)
               const idFromPayload = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : (typeof data?.taskId === "string" ? data.taskId.trim() : "");
               if (idFromPayload) reuseTaskId = idFromPayload;
-              // Caso 2: buscar en suno_tasks por el último vocal-removal del usuario del mismo tipo
               if (!reuseTaskId) {
                 const prev = await auth.admin
                   .from("suno_tasks")
@@ -2793,18 +2847,45 @@ const sunoHandler = (() => {
             } catch (_) {}
 
             if (reuseTaskId) {
-              try {
-                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
-                const q = await auth.admin.from("suno_tasks").insert([dup]);
-                if (q?.error) {
-                  try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+              const stillAlive = await verifyTaskExistsSuno(reuseTaskId);
+              if (stillAlive) {
+                try {
+                  const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
+                  const q = await auth.admin.from("suno_tasks").insert([dup]);
+                  if (q?.error) {
+                    try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+                  }
+                } catch (_) {}
+                return send(res, 200, { taskId: reuseTaskId, reused: true });
+              } else {
+                const retry = await retryGenerateWithoutTaskId();
+                if (retry.ok && retry.taskId) {
+                  try {
+                    await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                  } catch (_) {}
+                  return send(res, 200, { taskId: retry.taskId, retried: true });
                 }
-              } catch (_) {}
-              return send(res, 200, { taskId: reuseTaskId, reused: true });
+              }
+            } else {
+              const retry = await retryGenerateWithoutTaskId();
+              if (retry.ok && retry.taskId) {
+                try {
+                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                } catch (_) {}
+                return send(res, 200, { taskId: retry.taskId, retried: true });
+              }
             }
-            // No pudimos encontrar taskId anterior; devolvemos el error del proveedor pero
-            // ya reembolsamos los créditos arriba.
           } catch (_) {}
+        } else if (isDoesNotExist) {
+          const retry = await retryGenerateWithoutTaskId();
+          if (retry.ok && retry.taskId) {
+            try {
+              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+            } catch (_) {}
+            return send(res, 200, { taskId: retry.taskId, retried: true });
+          }
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          return send(res, 502, { error: "Error separando", code: r.status, detail: msgText });
         } else if (!isAdmin) {
           await adjustUserCredits(auth.admin, user.id, cost);
         }
@@ -2817,6 +2898,63 @@ const sunoHandler = (() => {
         const msgText = String(msg || "").slice(0, 2000);
         const msgLower = msgText.toLowerCase();
         const isAlreadyExists = /already\s*exists|record\s*already|duplicado|ya\s*existe/.test(msgLower);
+        const isDoesNotExist = doesNotExistRe.test(msgLower);
+
+        async function verifyTaskExistsSuno2(tid: string): Promise<boolean> {
+          try {
+            const e2 = encodeURIComponent(tid);
+            const p2 = [
+              `/api/v1/vocal-removal/record-info?taskId=${e2}`,
+              `/api/v1/suno/vocal-removal/record-info?taskId=${e2}`,
+            ];
+            let last2: any = null;
+            for (const p of p2) {
+              const rr = await sunoFetchJson(p, { method: "GET" });
+              last2 = rr;
+              if (rr.res.status !== 404) break;
+            }
+            const { res: rr, data: dd, text: tt } = last2 || {};
+            if (!rr || !rr.ok) return false;
+            const cc = Number(dd?.code);
+            if (cc && cc !== 200) {
+              const m2 = sunoErrorMessage(dd, tt || "").toLowerCase();
+              return !doesNotExistRe.test(m2);
+            }
+            const st = String(dd?.data?.status ?? dd?.data?.data?.status ?? "").toUpperCase();
+            if (!st) return false;
+            if (doesNotExistRe.test(String(tt || "").toLowerCase()) || doesNotExistRe.test(String(dd?.message || dd?.msg || "").toLowerCase())) return false;
+            return st === "SUCCESS" || st === "PENDING" || st === "QUEUED" || st === "PROCESSING" || st === "RUNNING";
+          } catch {
+            return false;
+          }
+        }
+
+        async function retryGenerateWithoutTaskId2(): Promise<{ ok: boolean; taskId: string }> {
+          try {
+            const altBody: any = { audioId, type, callBackUrl, skipCache: 1, nonce: String(Date.now()) };
+            const p3 = [
+              "/api/v1/vocal-removal/generate",
+              "/api/v1/suno/vocal-removal/generate",
+              "/api/v1/separate",
+              "/api/v1/suno/separate",
+            ];
+            let last3: any = null;
+            for (const p of p3) {
+              const rr = await sunoFetchJson(p, { method: "POST", body: JSON.stringify(altBody) });
+              last3 = rr;
+              if (rr.res.status !== 404) break;
+            }
+            const { res: rr, data: dd } = last3 || {};
+            if (!rr || !rr.ok) return { ok: false, taskId: "" };
+            const cc = Number(dd?.code);
+            if (cc && cc !== 200) return { ok: false, taskId: "" };
+            const t = typeof dd?.data?.taskId === "string" ? dd.data.taskId.trim() : "";
+            if (!t) return { ok: false, taskId: "" };
+            return { ok: true, taskId: t };
+          } catch {
+            return { ok: false, taskId: "" };
+          }
+        }
 
         if (isAlreadyExists) {
           if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -2839,15 +2977,44 @@ const sunoHandler = (() => {
             }
           } catch (_) {}
           if (reuseTaskId) {
-            try {
-              const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
-              const q = await auth.admin.from("suno_tasks").insert([dup]);
-              if (q?.error) {
-                try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+            const alive = await verifyTaskExistsSuno2(reuseTaskId);
+            if (alive) {
+              try {
+                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
+                const q = await auth.admin.from("suno_tasks").insert([dup]);
+                if (q?.error) {
+                  try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+                }
+              } catch (_) {}
+              return send(res, 200, { taskId: reuseTaskId, reused: true });
+            } else {
+              const retry = await retryGenerateWithoutTaskId2();
+              if (retry.ok && retry.taskId) {
+                try {
+                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                } catch (_) {}
+                return send(res, 200, { taskId: retry.taskId, retried: true });
               }
-            } catch (_) {}
-            return send(res, 200, { taskId: reuseTaskId, reused: true });
+            }
+          } else {
+            const retry = await retryGenerateWithoutTaskId2();
+            if (retry.ok && retry.taskId) {
+              try {
+                await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+              } catch (_) {}
+              return send(res, 200, { taskId: retry.taskId, retried: true });
+            }
           }
+        } else if (isDoesNotExist) {
+          const retry = await retryGenerateWithoutTaskId2();
+          if (retry.ok && retry.taskId) {
+            try {
+              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+            } catch (_) {}
+            return send(res, 200, { taskId: retry.taskId, retried: true });
+          }
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          return send(res, 502, { error: "Error separando", code, detail: msgText });
         } else if (!isAdmin) {
           await adjustUserCredits(auth.admin, user.id, cost);
         }
@@ -3131,14 +3298,49 @@ const sunoHandler = (() => {
       const { res: r, data, text } = last || {};
       if (!r) return send(res, 502, { error: "Error consultando task", detail: "No pude contactar al proveedor" });
 
+      const dnr = /record.*does.*not.*exist|does.*not.*exist|no.*existe/i;
+      const tolerantKind =
+        kind === "vocal-removal" ||
+        kind === "separate" ||
+        kind === "separate_vocal" ||
+        kind === "split_stem" ||
+        kind === "mp4" ||
+        kind === "video" ||
+        kind === "music-video";
+
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        const msgLower = String(msg || "").toLowerCase();
+        if (tolerantKind && dnr.test(msgLower)) {
+          const fakeData: any = {
+            code: 200,
+            data: {
+              status: "PENDING",
+              taskId,
+              progress: 0,
+            },
+          };
+          return send(res, 200, { data: fakeData, kind });
+        }
         return send(res, 502, { error: "Error consultando task", code: r.status, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
+        const msgLower = String(msg || "").toLowerCase();
+        const fullLower = (String(text || "") + " " + String(data?.message || "") + " " + String(data?.msg || "")).toLowerCase();
+        if (tolerantKind && (dnr.test(msgLower) || dnr.test(fullLower))) {
+          const fakeData: any = {
+            code: 200,
+            data: {
+              status: "PENDING",
+              taskId,
+              progress: 0,
+            },
+          };
+          return send(res, 200, { data: fakeData, kind });
+        }
         return send(res, 502, { error: "Error consultando task", code, detail: String(msg).slice(0, 1200) });
       }
 
