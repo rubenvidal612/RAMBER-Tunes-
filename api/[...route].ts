@@ -3138,6 +3138,11 @@ const sunoHandler = (() => {
       }
       const { res: r, data, text } = last || {};
 
+      if (!r) {
+        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+        return send(res, 502, { error: "Error creando letras", detail: "No pude contactar al proveedor" });
+      }
+
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -20921,6 +20926,9 @@ const gptHandler = (() => {
       const out = await r.json().catch(() => ({}));
       started = { ok: r.ok, status: r.status, out };
     } catch (e) {
+      // Fallback de seguridad: si falló la conexión al internal, garantizamos
+      // que no hubo cobro aquí, pero si lo hubiera habría sido en el internal;
+      // no podemos reembolsar aquí ya que no cobramos.
       return oauthGptSendJson(res, 502, {
         error: "generate_error",
         message: e instanceof Error ? e.message : "No pude conectar con el generador.",
@@ -20934,6 +20942,14 @@ const gptHandler = (() => {
         (typeof started?.out?.message === "string" && started.out.message) ||
         (typeof started?.out?.detail === "string" && started.out.detail) ||
         `Error HTTP ${errCode || 502}`;
+      // Si el internal respondió error distinto a 402 (créditos insuficientes), puede que haya
+      // cobrado y no devuelto por algún fallo de DB/proveedor. Devolvemos por seguridad
+      // garantizar (ajuste positivo idempotente: si no existía cobro, queda igual, se a 0).
+      if (!isAdmin && errCode !== 402 && errCode !== 401) {
+        try {
+          await adjustUserCredits(auth.admin, auth.user.id, cost);
+        } catch (_) {}
+      }
       return oauthGptSendJson(res, errCode >= 400 ? errCode : 502, {
         error: errCode === 402 ? "insufficient_credits" : "generate_error",
         message: msg,
@@ -21489,6 +21505,13 @@ const gptHandler = (() => {
         (typeof started?.out?.message === "string" && started.out.message) ||
         (typeof started?.out?.detail === "string" && started.out.detail) ||
         `Error HTTP ${errCode || 502}`;
+      // Por seguridad: si el internal devolvió 500/502/etc != 402, devuelve créditos
+      // en esta capa por si el internal hubiera cobrado antes de fallar.
+      if (!isAdmin && errCode !== 402 && errCode !== 401) {
+        try {
+          await adjustUserCredits(auth.admin, auth.user.id, cost);
+        } catch (_) {}
+      }
       return oauthGptSendJson(res, errCode >= 400 ? errCode : 502, {
         error: errCode === 402 ? "insufficient_credits" : "cover_error",
         message: msg,
@@ -23715,6 +23738,29 @@ const murekaHandler = (() => {
         try { await adjustUserCredits(admin, userId, costCredits); } catch (e) {
           console.error("[murekaHandler.generate] refund FAIL userId=", userId, "cost=", costCredits, "err=", e && e.message);
         }
+        // Si el cobro fue por BYPASS (profile.credits directo), también restauramos
+        // la columna profiles.credits para que el usuario recupere saldo visible en el navbar.
+        if (consumedByBypass) {
+          try {
+            const p = await admin.from("profiles").select("credits,total_credits,credits_total,zingy_credits,ramber_credits").eq("id", userId).limit(1).maybeSingle();
+            const row = (p && p.data) || null;
+            const currentRaw = Number(
+              (row && typeof row.credits === "number") ? row.credits :
+              (row && typeof row.total_credits === "number") ? row.total_credits :
+              (row && typeof row.credits_total === "number") ? row.credits_total :
+              creditsFromProfile(row)
+            ) || 0;
+            const nextRaw = Math.max(0, Number(currentRaw + costCredits));
+            const upd = await updateCreditsAnyColumn(admin, userId, nextRaw);
+            if (!(upd && upd.ok)) {
+              try {
+                await admin.from("profiles").update({ credits: nextRaw, updated_at: new Date().toISOString() }).eq("id", userId);
+              } catch (_) {}
+            }
+          } catch (e2) {
+            console.error("[murekaHandler.generate] refund BYPASS restore FAIL userId=", userId, "err=", e2 && e2.message);
+          }
+        }
       }
 
       const payloadMureka = {
@@ -23741,7 +23787,8 @@ const murekaHandler = (() => {
       }
 
       try {
-        const extraJson = JSON.stringify({ provider:"mureka", model:model, title:titleIn, gender:genderIn, cost_credits: costCredits });
+        const bypassTag = consumedByBypass ? 1 : 0;
+        const extraJson = JSON.stringify({ provider:"mureka", model:model, title:titleIn, gender:genderIn, cost_credits: costCredits, bypass: bypassTag });
         try {
           // `suno_tasks` has no `status` column. Keep the Mureka task row
           // limited to the shared schema so polling can reliably find it.
@@ -23883,6 +23930,32 @@ const murekaHandler = (() => {
         } catch (e) {
           console.error("[murekaHandler.query] refund on FAIL taskId=", taskIdFromPath, "taskCost=", taskCost, "err=", e && e.message);
         }
+        // Restaurar profile.credits si la tarea original fue cobrada por bypass.
+        try {
+          const extraRaw = (taskRow && typeof (taskRow as any).extra === "string") ? (taskRow as any).extra : null;
+          const cobroBypass = Boolean(
+            extraRaw && typeof extraRaw === "string" && extraRaw.indexOf("\"bypass\"") >= 0
+          );
+          if (cobroBypass) {
+            try {
+              const p = await admin.from("profiles").select("credits,total_credits,credits_total,zingy_credits,ramber_credits").eq("id", userId).limit(1).maybeSingle();
+              const row = (p && p.data) || null;
+              const currentRaw = Number(
+                (row && typeof row.credits === "number") ? row.credits :
+                (row && typeof row.total_credits === "number") ? row.total_credits :
+                (row && typeof row.credits_total === "number") ? row.credits_total :
+                creditsFromProfile(row)
+              ) || 0;
+              const nextRaw = Math.max(0, Number(currentRaw + taskCost));
+              const upd = await updateCreditsAnyColumn(admin, userId, nextRaw);
+              if (!(upd && upd.ok)) {
+                try {
+                  await admin.from("profiles").update({ credits: nextRaw, updated_at: new Date().toISOString() }).eq("id", userId);
+                } catch (_) {}
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
         try {
           if (taskRow) {
             try {
