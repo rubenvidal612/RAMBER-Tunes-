@@ -2761,15 +2761,97 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error separando", code: r.status, detail: String(msg).slice(0, 1200) });
+        const msgText = String(msg || "").slice(0, 2000);
+        const msgLower = msgText.toLowerCase();
+        const isAlreadyExists = /already\s*exists|record\s*already|duplicado|ya\s*existe/.test(msgLower);
+
+        // Si el proveedor dice que la separación ya existe, buscamos en suno_tasks una
+        // vocal-removal del mismo tipo y user asociada al mismo taskId/audioId original.
+        // Devolvemos ese taskId existente y reembolsamos este intento para no cobrar 2 veces.
+        if (isAlreadyExists) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          try {
+            let reuseTaskId = "";
+            try {
+              // Caso 1: el propio error incluye un taskId/data.taskId (algunas APIs lo retornan)
+              const idFromPayload = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : (typeof data?.taskId === "string" ? data.taskId.trim() : "");
+              if (idFromPayload) reuseTaskId = idFromPayload;
+              // Caso 2: buscar en suno_tasks por el último vocal-removal del usuario del mismo tipo
+              if (!reuseTaskId) {
+                const prev = await auth.admin
+                  .from("suno_tasks")
+                  .select("task_id")
+                  .eq("user_id", user.id)
+                  .eq("kind", `vocal-removal:${type}`)
+                  .order("task_id", { ascending: false })
+                  .limit(1);
+                const rows = Array.isArray(prev?.data) ? prev.data : [];
+                if (rows[0] && typeof (rows[0] as any).task_id === "string") {
+                  reuseTaskId = (rows[0] as any).task_id.trim();
+                }
+              }
+            } catch (_) {}
+
+            if (reuseTaskId) {
+              try {
+                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
+                const q = await auth.admin.from("suno_tasks").insert([dup]);
+                if (q?.error) {
+                  try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+                }
+              } catch (_) {}
+              return send(res, 200, { taskId: reuseTaskId, reused: true });
+            }
+            // No pudimos encontrar taskId anterior; devolvemos el error del proveedor pero
+            // ya reembolsamos los créditos arriba.
+          } catch (_) {}
+        } else if (!isAdmin) {
+          await adjustUserCredits(auth.admin, user.id, cost);
+        }
+        return send(res, 502, { error: "Error separando", code: r.status, detail: msgText });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
-        if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error separando", code, detail: String(msg).slice(0, 1200) });
+        const msgText = String(msg || "").slice(0, 2000);
+        const msgLower = msgText.toLowerCase();
+        const isAlreadyExists = /already\s*exists|record\s*already|duplicado|ya\s*existe/.test(msgLower);
+
+        if (isAlreadyExists) {
+          if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
+          let reuseTaskId = "";
+          try {
+            const idFromPayload = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : (typeof data?.taskId === "string" ? data.taskId.trim() : "");
+            if (idFromPayload) reuseTaskId = idFromPayload;
+            if (!reuseTaskId) {
+              const prev = await auth.admin
+                .from("suno_tasks")
+                .select("task_id")
+                .eq("user_id", user.id)
+                .eq("kind", `vocal-removal:${type}`)
+                .order("task_id", { ascending: false })
+                .limit(1);
+              const rows = Array.isArray(prev?.data) ? prev.data : [];
+              if (rows[0] && typeof (rows[0] as any).task_id === "string") {
+                reuseTaskId = (rows[0] as any).task_id.trim();
+              }
+            }
+          } catch (_) {}
+          if (reuseTaskId) {
+            try {
+              const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
+              const q = await auth.admin.from("suno_tasks").insert([dup]);
+              if (q?.error) {
+                try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+              }
+            } catch (_) {}
+            return send(res, 200, { taskId: reuseTaskId, reused: true });
+          }
+        } else if (!isAdmin) {
+          await adjustUserCredits(auth.admin, user.id, cost);
+        }
+        return send(res, 502, { error: "Error separando", code, detail: msgText });
       }
 
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
@@ -2778,7 +2860,13 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+      try {
+        await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+      } catch (insErr) {
+        // Si falla el insert (ej: PK duplicate por retry), continuar; el usuario al menos
+        // tiene el taskId para polling. Los créditos se marcan como consumidos en polling SUCCESS.
+        console.warn("[handleSeparate] suno_tasks insert fallback. taskId=", outTaskId, "err=", insErr && insErr.message);
+      }
       return send(res, 200, { taskId: outTaskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -3078,7 +3166,13 @@ const sunoHandler = (() => {
         status === "GENERATE_MP4_FAILED" ||
         status === "GENERATE_WAV_FAILED" ||
         status === "CALLBACK_EXCEPTION" ||
-        status === "SENSITIVE_WORD_ERROR"
+        status === "SENSITIVE_WORD_ERROR" ||
+        status === "VOCAL_REMOVAL_FAILED" ||
+        status === "VOKAL_REMOVAL_FAILED" ||
+        status === "GENERATE_VOCAL_REMOVAL_FAILED" ||
+        status === "SEPARATE_FAILED" ||
+        status === "STEM_FAILED" ||
+        status === "SPLIT_STEM_FAILED"
       ) {
         if (!isAdmin) {
           const { data: rows } = await auth.admin.from("suno_tasks").select("cost, consumed").eq("task_id", taskId).limit(1);
@@ -3098,6 +3192,23 @@ const sunoHandler = (() => {
         const cost = Number(row?.cost ?? 0);
         const consumed = Boolean(row?.consumed);
         const taskKind = String(row?.kind || "").trim().toLowerCase();
+
+        // Vocal removal se cobra DESPUES de exito (no upfront) para no cobrar si falla.
+        // handleSeparate inserta consumed=false. Marcamos true solo aqui cuando hay exito.
+        const isVocalRemoval =
+          taskKind.startsWith("vocal-removal") ||
+          taskKind === "separate_vocal" ||
+          taskKind === "split_stem";
+
+        if (isVocalRemoval && !consumed && Number.isFinite(cost) && cost > 0) {
+          const charged = await consumeUserCredits(auth.admin, user.id, cost);
+          if (charged.ok) {
+            try { await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", taskId).eq("user_id", user.id); } catch (_) {}
+          } else {
+              console.warn("[handleTask SUCCESS][VOCAL_REMOVAL] No se pudo cobrar pese a task SUCCESS. taskId=", taskId, "err=", charged.error || charged);
+          }
+        }
+
         // Nota: kind = "upload-cover" ahora se cobra UPFRONT en handleUploadCover (consumed: true
         // al insertar). Solo cobramos aquí si quedó pendiente por alguna razón histórica
         // (tareas creadas antes de este fix con consumed=false).
@@ -3106,8 +3217,6 @@ const sunoHandler = (() => {
           if (charged.ok) {
             await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", taskId).eq("user_id", user.id);
           } else {
-            // Si no se pudo cobrar pese a que todo indica que debería (caso edge), marcar error
-            // y devolver lo poco que se pudo, solo para no duplicar luego.
             console.warn("[handleTask SUCCESS][UPLOAD_COVER] No se pudo cobrar pese a task SUCCESS. taskId=", taskId, "err=", charged.error || charged);
           }
         }
@@ -10355,6 +10464,30 @@ const sunoWebhookHandler = (() => {
         const isMusicCover = kind.startsWith("music-cover:");
         const isWav = kind.startsWith("wav:");
         const isVoiceTask = kind === "voice-validate" || kind === "voice-regenerate" || kind === "voice-generate";
+        const isVocalRemoval = kind.startsWith("vocal-removal") || kind === "separate_vocal" || kind === "split_stem";
+
+        if (isVocalRemoval && userId) {
+          if (callbackType === "error" || (Number.isFinite(code) && code !== 200)) {
+            const cost = Number(taskRow?.cost ?? 0);
+            const consumed = Boolean(taskRow?.consumed);
+            if (consumed && Number.isFinite(cost) && cost > 0) {
+              try { await adjustUserCredits(admin, userId, cost); } catch (_) {}
+              try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId); } catch (_) {}
+            } else if (!consumed && Number.isFinite(cost) && cost > 0) {
+              // Solo marcar consumed=false para no cobrar luego en polling
+              try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId); } catch (_) {}
+            }
+          } else if (Number.isFinite(code) && code === 200 && (callbackType === "complete" || callbackType === "first")) {
+            const cost = Number(taskRow?.cost ?? 0);
+            const consumed = Boolean(taskRow?.consumed);
+            if (!consumed && Number.isFinite(cost) && cost > 0) {
+              // Cobrar y marcar consumed=true. Si el cobro falla, no marcar como consumido.
+              // Nota: los créditos de vocal-removal se cobran DESPUES del exito en el polling handleTask.
+              // Aquí solo aseguramos que el task no vuelva a ser cobrado 2 veces.
+              try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId); } catch (_) {}
+            }
+          }
+        }
 
         if (isVoiceTask && userId) {
           const status = String(data?.status || "").trim();
