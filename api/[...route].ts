@@ -11439,30 +11439,37 @@ const song = sr.data as any;
       const rr = await admin
         .from("preview_shares")
         .select("id, watermarked_audio_key")
-        .not("watermarked_audio_key", "is", null)
         .lte("expires_at", nowIso)
         .limit(200);
       if (rr.error) return send(res, 500, { error: "No pude buscar previews expirados", detail: rr.error.message });
 
       const rows = Array.isArray(rr.data) ? rr.data : [];
       const ids = rows.map((row: any) => String(row?.id || "").trim()).filter(Boolean);
-      const keys = rows.map((row: any) => String(row?.watermarked_audio_key || "").trim()).filter(Boolean);
+      const keys = rows
+        .map((row: any) => String(row?.watermarked_audio_key || "").trim())
+        .filter(Boolean);
       let deletedFromR2 = 0;
       if (keys.length > 0) {
         deletedFromR2 = await deleteFromR2(keys).catch(() => 0);
       }
+      let deletedDbRows = 0;
       if (ids.length > 0) {
-        await admin
+        const dr = await admin
           .from("preview_shares")
-          .update({ watermarked_audio_key: null })
+          .delete()
           .in("id", ids);
+        if (dr.error) {
+          console.warn("[cleanup-expired] fallo borrado DB:", dr.error.message);
+        } else {
+          deletedDbRows = ids.length;
+        }
       }
 
       return send(res, 200, {
         ok: true,
         found: rows.length,
         deletedFromR2,
-        cleanedRows: ids.length,
+        cleanedRows: deletedDbRows,
       });
     } catch (e) {
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
