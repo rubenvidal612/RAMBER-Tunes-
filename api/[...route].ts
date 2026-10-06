@@ -23316,6 +23316,7 @@ const lucianaVoiceHandler = (() => {
               voice_profile_id: profile.id,
               status: action === "regenerate-phrase" ? "processing" : "pending",
               is_active: true,
+              expires_at: addHoursISO(24),
               created_at: nowISO(),
               updated_at: nowISO(),
             })
@@ -23620,7 +23621,15 @@ const lucianaVoiceHandler = (() => {
             .eq("voice_profile_id", profile.id).eq("user_id", auth.user.id).eq("is_active", true);
         } catch { /* unique protege */ }
         const { data: arows } = await auth.admin.from("voice_activations")
-          .insert({ user_id: auth.user.id, voice_profile_id: profile.id, status: "pending", is_active: true, created_at: nowISO(), updated_at: nowISO() })
+          .insert({
+            user_id: auth.user.id,
+            voice_profile_id: profile.id,
+            status: "pending",
+            is_active: true,
+            expires_at: addHoursISO(24),
+            created_at: nowISO(),
+            updated_at: nowISO(),
+          })
           .select("id").limit(1);
         const activationId = (arows as any[])?.[0]?.id;
 
