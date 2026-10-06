@@ -23338,40 +23338,89 @@ const lucianaVoiceHandler = (() => {
         let taskId = "";
         let phrase = "";
         try {
+          async function retryWithPaths(
+            paths: string[],
+            method: "GET" | "POST",
+            buildBody: () => any,
+          ): Promise<{ ok: boolean; status: number; data: any; text?: string; usedPath?: string }> {
+            let last: any = null;
+            for (const p of paths) {
+              const attempts = method === "POST" ? [0, 1600, 3400] : [0, 900];
+              for (let i = 0; i < attempts.length; i++) {
+                if (attempts[i] > 0) await new Promise((r) => setTimeout(r, attempts[i]));
+                try {
+                  const body = method === "POST" ? JSON.stringify(buildBody()) : undefined;
+                  const one = await sunoFetchJson(p, body ? { method, body } : { method });
+                  last = one;
+                  if (one?.res?.status === 404) continue;
+                  const cc = Number(one?.data?.code);
+                  if (!one?.res?.ok) {
+                    const s = Number(one?.res?.status || 0);
+                    if (s === 429 || s === 502 || s === 503 || s === 500 || s === 504) continue;
+                    if (cc && cc !== 200) {
+                      const m = sunoErrorMessage(one?.data, one?.text || "").toLowerCase();
+                      if (/rate.*limit|too.*many|quota|unavailable|temporarily|maintenance/.test(m)) continue;
+                    }
+                  }
+                  return { ok: Boolean(one?.res?.ok), status: Number(one?.res?.status || 0), data: one?.data, text: one?.text, usedPath: p };
+                } catch (_) {
+                  last = null;
+                }
+              }
+            }
+            return { ok: Boolean(last?.res?.ok), status: Number(last?.res?.status || 0), data: last?.data ?? null, text: last?.text, usedPath: undefined };
+          }
+
           if (action === "request-phrase") {
             const callback = absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined;
-            const { data, ok, status } = await fetchJSON(auth, "POST", "/api/v1/voice/validate", {
+            const paths = [
+              "/api/v1/voice/validate",
+              "/api/v1/suno/voice/validate",
+              "/api/v1/validate",
+            ];
+            const r = await retryWithPaths(paths, "POST", () => ({
               sampleUrl: sampleSigned,
               language,
               callBackUrl: callback,
-            });
-            taskId = String(data?.data?.taskId || "").trim();
-            if (!ok || !taskId) {
+              nonce: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 6),
+            }));
+            taskId = String(r.data?.data?.taskId || r.data?.taskId || "").trim();
+            if (!r.ok || !taskId) {
               const eid = genErrorId();
-              serverLog(eid, action, { step: "voice/validate", ok, status, data });
-              return clientError(502, "El proveedor no respondió la validación.", eid);
+              serverLog(eid, action, { step: "voice/validate (retry)", ok: r.ok, status: r.status, data: r.data });
+              const rawMsg = sunoErrorMessage(r.data, (r.text || "").slice(0, 800) || `HTTP ${r.status || 0}`);
+              const friendly = /rate.*limit|too.*many|demasiadas|429/.test(String(rawMsg || "").toLowerCase())
+                ? "Hay mucha gente creando voces ahora. Espera 1 minuto y vuelve a intentarlo (Error 429 Suno)."
+                : "El proveedor tardó en responder la validación. Vuelve a intentarlo en 30 segundos.";
+              return clientError(502, friendly, eid);
             }
           } else {
             // regenerate-phrase
             let prevTaskId = String(payload?.taskId || "").trim();
             if (!prevTaskId) {
-              // Fallback: buscar el taskId de la última activación del perfil
-              const prev = (await getProfileActiveActivation(auth, profile.id));
+              const prev = await getProfileActiveActivation(auth, profile.id);
               prevTaskId = String(prev.active?.validate_task_id || prev.latest?.validate_task_id || "").trim();
             }
             if (!prevTaskId) {
               const eid = genErrorId();
               return clientError(400, "Falta identificación para regenerar la frase.", eid);
             }
-            const { data, ok, status } = await fetchJSON(auth, "POST", "/api/v1/voice/regenerate", {
+            const paths = [
+              "/api/v1/voice/regenerate",
+              "/api/v1/suno/voice/regenerate",
+            ];
+            const callbackUrl = absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined;
+            const r = await retryWithPaths(paths, "POST", () => ({
               taskId: prevTaskId,
-              calBackUrl: absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined,
-            });
-            taskId = String(data?.data?.taskId || "").trim();
-            if (!ok || !taskId) {
+              callBackUrl: callbackUrl,
+              calBackUrl: callbackUrl,
+              nonce: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 6),
+            }));
+            taskId = String(r.data?.data?.taskId || r.data?.taskId || "").trim();
+            if (!r.ok || !taskId) {
               const eid = genErrorId();
-              serverLog(eid, action, { step: "voice/regenerate", ok, status, data });
-              return clientError(502, "No pude generar otra frase.", eid);
+              serverLog(eid, action, { step: "voice/regenerate (retry)", ok: r.ok, status: r.status, data: r.data });
+              return clientError(502, "No pude generar otra frase. Intenta en 30 segundos.", eid);
             }
           }
           // Guardar taskId en activación
@@ -23383,12 +23432,22 @@ const lucianaVoiceHandler = (() => {
             .catch((e) => { const eid = genErrorId(); serverLog(eid, action, { step: "update.validate_task_id", err: e }); });
 
           // 5. Consultar frase
-          const tries = [0, 1100, 2300];
-          for (let i = 0; i < tries.length; i++) {
-            if (i > 0) await new Promise((r) => setTimeout(r, tries[i]));
-            const { data: vinfo, ok } = await fetchJSON(auth, "GET", `/api/v1/voice/validate-info?taskId=${encodeURIComponent(taskId)}`);
-            const status = String(vinfo?.data?.status || "").toLowerCase();
-            const validateInfo = String(vinfo?.data?.validateInfo || "").trim();
+          const infoPaths = [
+            "/api/v1/voice/validate-info",
+            "/api/v1/suno/voice/validate-info",
+          ];
+          const pollDelays = [0, 1100, 2400, 4200, 6800];
+          for (let i = 0; i < pollDelays.length; i++) {
+            if (pollDelays[i] > 0) await new Promise((r) => setTimeout(r, pollDelays[i]));
+            const e = encodeURIComponent(taskId);
+            const q = await retryWithPaths(
+              infoPaths.map((p) => `${p}?taskId=${e}`),
+              "GET",
+              () => ({}),
+            );
+            const vinfo = q.data;
+            const status = String(vinfo?.data?.status || vinfo?.status || "").toLowerCase();
+            const validateInfo = String(vinfo?.data?.validateInfo || vinfo?.validateInfo || "").trim();
             if (validateInfo) { phrase = validateInfo; break; }
             if (status === "wait_validating" && validateInfo) phrase = validateInfo;
             if (status === "failed" || status === "error") break;
