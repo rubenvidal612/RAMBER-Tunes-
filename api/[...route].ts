@@ -11853,10 +11853,12 @@ const vendorHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     try {
+      const nowIso = new Date().toISOString();
       const rr = await auth.admin
         .from("preview_shares")
         .select("id, song_id, client_label, has_countdown, expires_at, is_paid, paid_at, created_at")
         .eq("created_by", auth.user.id)
+        .or(`is_paid.eq.true,has_countdown.eq.false,expires_at.gt.${nowIso}`)
         .order("created_at", { ascending: false })
         .limit(200);
       if (rr.error) {

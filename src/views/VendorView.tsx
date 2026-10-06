@@ -34,9 +34,11 @@ function formatRemaining(expiresAt?: string | null) {
 export function VendorView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [error, setError] = useState('');
+  const [cleanMessage, setCleanMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [defaultValue, setDefaultValue] = useState('24');
   const [defaultUnit, setDefaultUnit] = useState<'hours' | 'days'>('hours');
   const [tick, setTick] = useState(0);
@@ -86,9 +88,49 @@ export function VendorView() {
         setError((out?.error || 'No pude cargar tus previews.').toString());
         return;
       }
-      setItems(Array.isArray(out?.items) ? out.items : []);
+      const now = Date.now();
+      const rows: PreviewItem[] = Array.isArray(out?.items) ? out.items : [];
+      const filtered = rows.filter((x) => {
+        if (x.isPaid) return true;
+        if (!x.hasCountdown) return true;
+        if (!x.expiresAt) return true;
+        return new Date(x.expiresAt).getTime() > now;
+      });
+      setItems(filtered);
     } finally {
       setItemsLoading(false);
+    }
+  };
+
+  const cleanExpired = async () => {
+    setCleaning(true);
+    setCleanMessage(null);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setCleanMessage({ type: 'err', text: t.error || 'No se pudo iniciar sesión.' });
+        return;
+      }
+      const r = await fetch('/api/share/preview/cleanup-expired', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${t.token}` },
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out?.ok === false) {
+        setCleanMessage({ type: 'err', text: (out?.error || 'No pude limpiar los expirados.').toString() });
+        return;
+      }
+      const found = Number(out?.found || 0);
+      const deletedRows = Number(out?.cleanedRows || 0);
+      const deletedR2 = Number(out?.deletedFromR2 || 0);
+      setCleanMessage({
+        type: 'ok',
+        text: `Listo: revisadas ${found} filas, eliminadas ${deletedRows} expiradas, ${deletedR2} archivos MP3 borrados del almacenamiento.`,
+      });
+      await loadItems();
+    } finally {
+      setCleaning(false);
+      setTimeout(() => setCleanMessage(null), 12000);
     }
   };
 
@@ -241,17 +283,40 @@ export function VendorView() {
       </div>
 
       <div className="glass-card rounded-3xl p-5 border border-white/10">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-white font-extrabold">Mis Cuentas Regresivas Activas</div>
-            <div className="text-slate-400 text-sm">Aquí puedes desbloquear manualmente un preview cuando el cliente ya pagó.</div>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-white font-extrabold">Mis Cuentas Regresivas Activas</div>
+              <div className="text-slate-400 text-sm">Aquí puedes desbloquear manualmente un preview cuando el cliente ya pagó.</div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => cleanExpired().catch(() => {})}
+                disabled={cleaning || loading || itemsLoading}
+                className="h-10 px-4 rounded-full bg-rose-500/15 border border-rose-400/20 text-rose-200 font-semibold text-xs disabled:opacity-50"
+              >
+                {cleaning ? 'Limpiando…' : 'Limpiar expiradas'}
+              </button>
+              <button
+                onClick={() => loadItems().catch(() => {})}
+                className="h-10 px-4 rounded-full bg-white/5 border border-white/10 text-slate-200 font-semibold text-sm"
+              >
+                Actualizar
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => loadItems().catch(() => {})}
-            className="h-10 px-4 rounded-full bg-white/5 border border-white/10 text-slate-200 font-semibold text-sm"
-          >
-            Actualizar
-          </button>
+
+          {cleanMessage ? (
+            <div
+              className={`text-sm rounded-2xl px-4 py-3 border ${
+                cleanMessage.type === 'ok'
+                  ? 'bg-emerald-500/10 border-emerald-400/20 text-emerald-200'
+                  : 'bg-rose-500/10 border-rose-400/20 text-rose-200'
+              }`}
+            >
+              {cleanMessage.text}
+            </div>
+          ) : null}
         </div>
 
         {loading || itemsLoading ? (
