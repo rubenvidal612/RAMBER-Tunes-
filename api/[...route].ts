@@ -12324,9 +12324,1234 @@ const shareSongCoverHandler = (() => {
     const text = await res.text();
     let data: any = null;
     try {
-      data = text 
-... 53917 bytes omitted ...
- if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    return { res, data, text };
+  }
+
+  async function resolveFreshCoverFromSuno(taskId: string, title: string) {
+    const enc = encodeURIComponent(taskId);
+    const paths = [
+      `/api/v1/generate/record-info?taskId=${enc}`,
+      `/api/v1/suno/generate/record-info?taskId=${enc}`,
+      `/api/v1/task/${enc}`,
+      `/api/v1/suno/task/${enc}`,
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      const r = await sunoFetchJsonPublic(p, { method: "GET" });
+      last = r;
+      if (r?.res?.status !== 404) break;
+    }
+    const { res: r, data, text } = last || {};
+    if (!r) return { ok: false as const, error: "No pude contactar al proveedor" };
+    if (!r.ok) {
+      const msg = sunoErrorMessagePublic(data, text || `HTTP ${r.status}`);
+      return { ok: false as const, error: String(msg).slice(0, 1200) };
+    }
+    const code = Number(data?.code);
+    if (code && code !== 200) {
+      const msg = sunoErrorMessagePublic(data, "Error del proveedor");
+      return { ok: false as const, error: String(msg).slice(0, 1200) };
+    }
+    const coverUrl = normalizeHttpUrl(extractBestCover(data, title || ""));
+    return { ok: true as const, coverUrl };
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return sendJson(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return sendJson(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return sendJson(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+      const { data, error } = await admin
+        .from("library_items")
+        .select("id, title, cover_url, deleted_at, type, suno_task_id")
+        .eq("id", id.slice(0, 200))
+        .eq("type", "song")
+        .maybeSingle();
+      if (error) return sendJson(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (!data || (data as any).deleted_at) return sendJson(res, 404, { error: "No encontrada" });
+
+      const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
+      let coverUrl = typeof (data as any).cover_url === "string" ? (data as any).cover_url.trim() : "";
+      const sunoTaskId = typeof (data as any).suno_task_id === "string" ? (data as any).suno_task_id.trim() : "";
+
+      const shouldRefresh = !coverUrl || looksExpiringUrl(coverUrl) || /^http:\/\//i.test(coverUrl);
+      if (shouldRefresh && sunoTaskId) {
+        const fresh = await resolveFreshCoverFromSuno(sunoTaskId, title || "");
+        if (fresh.ok && fresh.coverUrl) {
+          coverUrl = fresh.coverUrl;
+          await admin
+            .from("library_items")
+            .update({ cover_url: coverUrl.slice(0, 2000) })
+            .eq("id", id.slice(0, 200))
+            .eq("type", "song");
+        }
+      }
+
+      coverUrl = normalizeHttpUrl(coverUrl);
+      if (!coverUrl || !/^https?:\/\//i.test(coverUrl)) return sendJson(res, 404, { error: "No hay portada para compartir" });
+
+      res.statusCode = 302;
+      res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+      res.setHeader("location", coverUrl);
+      res.end();
+    } catch (e) {
+      return sendJson(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const shareProfileHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function looksLikeUuid(s: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || "").trim());
+  }
+
+  async function findUserIdByUsername(admin: any, usernameRaw: string) {
+    const target = (usernameRaw || "").toString().trim().toLowerCase();
+    if (!target) return "";
+    const listUsers = (admin?.auth as any)?.admin?.listUsers;
+    if (typeof listUsers !== "function") return "";
+    for (let page = 1; page <= 20; page++) {
+      const out = await listUsers.call((admin.auth as any).admin, { page, perPage: 200 });
+      const users = Array.isArray(out?.data?.users) ? out.data.users : [];
+      for (const u of users) {
+        const meta: any = (u as any)?.user_metadata ?? (u as any)?.raw_user_meta_data ?? {};
+        const uname = String(meta?.username || "").trim().toLowerCase();
+        if (uname && uname === target) return String((u as any)?.id || "").trim();
+      }
+      if (users.length < 200) break;
+    }
+    return "";
+  }
+
+  return async function handler(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const id = pickQuery(req, "id").trim();
+    if (!id) return send(res, 400, { error: "Falta id" });
+
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) {
+      return send(res, 500, { error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
+    }
+
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+      const userId = looksLikeUuid(id) ? id : await findUserIdByUsername(admin, id);
+      if (!userId) return send(res, 404, { error: "No encontrado" });
+
+      const getUserById = (admin?.auth as any)?.admin?.getUserById;
+      if (typeof getUserById !== "function") return send(res, 500, { error: "No pude leer el perfil" });
+      const uout = await getUserById.call((admin.auth as any).admin, userId);
+      const user = uout?.data?.user || null;
+      if (!user) return send(res, 404, { error: "No encontrado" });
+
+      const meta: any = (user as any)?.user_metadata ?? (user as any)?.raw_user_meta_data ?? {};
+      const fullName = String(meta?.full_name || meta?.name || meta?.display_name || "").trim();
+      const username = String(meta?.username || "").trim();
+      const avatarUrl = String(meta?.avatar_url || "").trim();
+      const coverUrl = String(meta?.cover_url || "").trim();
+      const bio = String(meta?.bio || "").trim();
+      const country = String(meta?.country || "").trim();
+      const city = String(meta?.city || "").trim();
+      const contactEmail = String(meta?.contact_email || "").trim();
+      const contactPhone = String(meta?.contact_phone || "").trim();
+
+      const { data: pins, error: pinsErr } = await admin
+        .from("profile_pins")
+        .select("song_id, added_at")
+        .eq("user_id", userId)
+        .order("added_at", { ascending: false })
+        .limit(200);
+      if (pinsErr) {
+        const msg = String(pinsErr.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) {
+          return send(res, 500, {
+            error: "Falta configurar el perfil público",
+            hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+          });
+        }
+        return send(res, 500, { error: "No pude leer las canciones del perfil", detail: pinsErr.message });
+      }
+      const rows = Array.isArray(pins) ? pins : [];
+      const songIds = rows.map((r: any) => String(r?.song_id || "").trim()).filter(Boolean);
+
+      let songs: any[] = [];
+      if (songIds.length > 0) {
+        const { data: items, error: itemsErr } = await admin
+          .from("library_items")
+          .select("id, title, audio_url, cover_url, deleted_at, type, user_id")
+          .eq("user_id", userId)
+          .eq("type", "song")
+          .is("deleted_at", null)
+          .in("id", songIds.map((x) => x.slice(0, 200)));
+        if (itemsErr) return send(res, 500, { error: "No pude leer las canciones del perfil", detail: itemsErr.message });
+        const list = Array.isArray(items) ? items : [];
+        const byId = new Map(list.map((x: any) => [String(x?.id || ""), x]));
+        songs = songIds
+          .map((sid) => byId.get(sid))
+          .filter(Boolean)
+          .map((x: any) => ({
+            id: String(x?.id || ""),
+            title: String(x?.title || "Canción").trim(),
+            audioUrl: String(x?.audio_url || "").trim(),
+            coverUrl: String(x?.cover_url || "").trim() || null,
+          }))
+          .filter((x: any) => x.id && x.audioUrl);
+      }
+
+      return send(res, 200, {
+        ok: true,
+        profile: {
+          id: userId,
+          name: fullName || "Usuario",
+          username: username || null,
+          avatarUrl: avatarUrl || null,
+          coverUrl: coverUrl || null,
+          bio: bio || null,
+          country: country || null,
+          city: city || null,
+          contactEmail: contactEmail || null,
+          contactPhone: contactPhone || null,
+        },
+        songs,
+      });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+})();
+
+const profileHandler = (() => {
+  const PINS_TABLE = "profile_pins";
+  const LIB_TABLE = "library_items";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function handlePins(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const { data, error } = await auth.admin
+      .from(PINS_TABLE)
+      .select("song_id, added_at")
+      .eq("user_id", auth.user.id)
+      .order("added_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar el perfil",
+          hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude leer tu perfil", detail: error.message });
+    }
+    const list = Array.isArray(data) ? data : [];
+    return send(res, 200, { ok: true, items: list.map((x: any) => ({ songId: String(x?.song_id || ""), addedAt: String(x?.added_at || "") })) });
+  }
+
+  async function handlePinsFull(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const { data, error } = await auth.admin
+      .from(PINS_TABLE)
+      .select("song_id, added_at")
+      .eq("user_id", auth.user.id)
+      .order("added_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar el perfil",
+          hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude leer tu perfil", detail: error.message });
+    }
+    const pins = Array.isArray(data) ? data : [];
+    const songIds = pins.map((x: any) => String(x?.song_id || "").trim()).filter(Boolean);
+    if (songIds.length === 0) return send(res, 200, { ok: true, items: [] });
+
+    const { data: items, error: itemsErr } = await auth.admin
+      .from(LIB_TABLE)
+      .select("id, title, audio_url, cover_url, deleted_at, type, user_id")
+      .eq("user_id", auth.user.id)
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .in("id", songIds.map((x) => x.slice(0, 200)));
+    if (itemsErr) return send(res, 500, { error: "No pude leer tus canciones", detail: itemsErr.message });
+    const list = Array.isArray(items) ? items : [];
+    const byId = new Map(list.map((x: any) => [String(x?.id || ""), x]));
+    const out = songIds
+      .map((sid) => byId.get(sid))
+      .filter(Boolean)
+      .map((x: any) => ({
+        id: String(x?.id || ""),
+        title: String(x?.title || "Canción").trim(),
+        audioUrl: String(x?.audio_url || "").trim(),
+        coverUrl: String(x?.cover_url || "").trim(),
+      }))
+      .filter((x: any) => x.id && x.audioUrl);
+    return send(res, 200, { ok: true, items: out });
+  }
+
+  async function handlePin(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const pin = Boolean(body?.pin ?? body?.pinned ?? true);
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    const { data: song, error: songErr } = await auth.admin
+      .from(LIB_TABLE)
+      .select("id, user_id, deleted_at, type")
+      .eq("id", songId)
+      .eq("user_id", auth.user.id)
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
+    if (!song) return send(res, 404, { error: "No encontré esa canción" });
+
+    if (!pin) {
+      const { error } = await auth.admin.from(PINS_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", songId);
+      if (error) return send(res, 500, { error: "No pude quitarla del perfil", detail: error.message });
+      return send(res, 200, { ok: true, pinned: false });
+    }
+
+    const row: any = { user_id: auth.user.id, song_id: songId, added_at: new Date().toISOString() };
+    const { error } = await auth.admin.from(PINS_TABLE).upsert(row, { onConflict: "user_id,song_id" });
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar el perfil",
+          hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude guardarla en tu perfil", detail: error.message });
+    }
+    return send(res, 200, { ok: true, pinned: true });
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const next = isApi ? parts[2] : parts[1];
+    if (next === "pins") return handlePins(req, res);
+    if (next === "pins-full") return handlePinsFull(req, res);
+    if (next === "pin") return handlePin(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
+const likesHandler = (() => {
+  const LIKES_TABLE = "song_likes";
+  const LIB_TABLE = "library_items";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function handleLikes(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const { data, error } = await auth.admin
+      .from(LIKES_TABLE)
+      .select("song_id, liked_at")
+      .eq("user_id", auth.user.id)
+      .order("liked_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar la tabla de likes",
+          hint: "Crea la tabla 'song_likes' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude leer tus likes", detail: error.message });
+    }
+    const list = Array.isArray(data) ? data : [];
+    return send(res, 200, { 
+      ok: true, 
+      items: list.map((x: any) => ({ 
+        songId: String(x?.song_id || ""), 
+        likedAt: String(x?.liked_at || "") 
+      })) 
+    });
+  }
+
+  async function handleLike(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const like = Boolean(body?.like ?? body?.liked ?? true);
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    const { data: song, error: songErr } = await auth.admin
+      .from(LIB_TABLE)
+      .select("id, user_id, deleted_at, type")
+      .eq("id", songId)
+      .eq("user_id", auth.user.id)
+      .eq("type", "song")
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
+    if (!song) return send(res, 404, { error: "No encontré esa canción" });
+
+    if (!like) {
+      const { error } = await auth.admin.from(LIKES_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", songId);
+      if (error) return send(res, 500, { error: "No pude quitar el like", detail: error.message });
+      return send(res, 200, { ok: true, liked: false });
+    }
+
+    const row: any = { user_id: auth.user.id, song_id: songId, liked_at: new Date().toISOString() };
+    const { error } = await auth.admin.from(LIKES_TABLE).upsert(row, { onConflict: "user_id,song_id" });
+    if (error) {
+      const msg = String(error.message || "").toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) {
+        return send(res, 500, {
+          error: "Falta configurar la tabla de likes",
+          hint: "Crea la tabla 'song_likes' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
+        });
+      }
+      return send(res, 500, { error: "No pude guardar el like", detail: error.message });
+    }
+    return send(res, 200, { ok: true, liked: true });
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const next = isApi ? parts[2] : parts[1];
+    if (next === "likes") return handleLikes(req, res);
+    if (next === "like") return handleLike(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
+const socialHandler = (() => {
+  const PUBLIC_TABLE = "public_songs";
+  const LIB_TABLE = "library_items";
+
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  async function getAdminOrError() {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return { ok: false as const, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" };
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, admin };
+  }
+
+  function computeDisplayName(user: any) {
+    const email = (user?.email || "").toString().trim();
+    const meta: any = user?.user_metadata || {};
+    const name = (meta?.display_name || meta?.full_name || meta?.name || "").toString().trim();
+    return (name || (email ? email.split("@")[0] : "") || "Usuario").slice(0, 60);
+  }
+
+  function computeAvatarUrl(user: any) {
+    const meta: any = user?.user_metadata || {};
+    const url = (meta?.avatar_url || meta?.avatarUrl || "").toString().trim();
+    return url.slice(0, 2000);
+  }
+
+  async function handlePublish(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    const publish = Boolean(body?.publish);
+    const genre = typeof body?.genre === "string" ? body.genre.trim().slice(0, 50) : "";
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+    if (publish && !genre) return send(res, 400, { error: "Falta género" });
+
+    try {
+      const { data: song, error: songErr } = await auth.admin
+        .from(LIB_TABLE)
+        .select("id, user_id, title, audio_url, cover_url, deleted_at, type")
+        .eq("id", songId)
+        .eq("user_id", auth.user.id)
+        .eq("type", "song")
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
+      if (!song) return send(res, 404, { error: "No encontré esa canción" });
+      const title = String((song as any).title || "Canción").trim().slice(0, 120);
+      const audioUrl = String((song as any).audio_url || "").trim().slice(0, 2000);
+      const coverUrl = String((song as any).cover_url || "").trim().slice(0, 2000);
+      if (!audioUrl) return send(res, 400, { error: "Esta canción no tiene audio" });
+
+      if (!publish) {
+        const { error } = await auth.admin.from(PUBLIC_TABLE).delete().eq("song_id", songId).eq("user_id", auth.user.id);
+        if (error) {
+          const msg = error.message || "No pude quitarla de público.";
+          return send(res, 500, { error: msg });
+        }
+        return send(res, 200, { ok: true, is_public: false });
+      }
+
+      const authorName = computeDisplayName(auth.user);
+      const authorAvatarUrl = computeAvatarUrl(auth.user);
+      const publishedAt = new Date().toISOString();
+      const row: any = {
+        song_id: songId,
+        user_id: auth.user.id,
+        title,
+        audio_url: audioUrl,
+        cover_url: coverUrl || null,
+        genre,
+        author_name: authorName,
+        author_avatar_url: authorAvatarUrl || null,
+        published_at: publishedAt,
+      };
+
+      const { error } = await auth.admin.from(PUBLIC_TABLE).upsert(row, { onConflict: "song_id" });
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) {
+          return send(res, 500, {
+            error: "Falta configurar la tabla pública",
+            hint:
+              "Crea la tabla 'public_songs' en Supabase (SQL Editor). Luego intenta de nuevo.\n" +
+              "Si quieres, te paso el SQL listo para pegar.",
+            detail: error.message,
+          });
+        }
+        return send(res, 500, { error: "No pude publicar la canción", detail: error.message });
+      }
+
+      return send(res, 200, { ok: true, is_public: true, public_genre: genre, published_at: publishedAt });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleRemoveFromFeed(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+
+    const isAdmin = isAdminEmail(auth.user.email);
+    if (!isAdmin) return send(res, 403, { error: "Solo un administrador puede quitar canciones del inicio" });
+
+    try {
+      const { error } = await auth.admin.from(PUBLIC_TABLE).delete().eq("song_id", songId);
+      if (error) {
+        return send(res, 500, { error: "No pude quitar la canción del inicio", detail: error.message });
+      }
+      return send(res, 200, { ok: true, removed_from_feed: true });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleSearchUsers(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const query = (pickQuery(req, "q") || "").toString().trim();
+    if (!query) return send(res, 400, { error: "Falta término de búsqueda" });
+
+    try {
+      const searchTerm = query.toLowerCase();
+      const filteredUsers: any[] = [];
+      
+      // Buscar usuarios página por página
+      for (let page = 1; page <= 10; page++) {
+        const { data: users, error } = await auth.admin.auth.admin.listUsers({
+          page,
+          perPage: 100
+        });
+
+        if (error) break;
+        
+        const usersArray = Array.isArray(users?.users) ? users.users : [];
+        if (!usersArray.length) break;
+        
+        for (const user of usersArray) {
+          const meta = user?.user_metadata || {};
+          const fullName = (meta?.full_name || "").toString().toLowerCase();
+          const lastName = (meta?.last_name || "").toString().toLowerCase();
+          const username = (meta?.username || "").toString().toLowerCase();
+          const email = (user?.email || "").toString().toLowerCase();
+          
+          if (
+            fullName.includes(searchTerm) ||
+            lastName.includes(searchTerm) ||
+            username.includes(searchTerm) ||
+            email.includes(searchTerm)
+          ) {
+            filteredUsers.push({
+              id: user.id,
+              full_name: meta?.full_name || "",
+              last_name: meta?.last_name || "",
+              username: meta?.username || "",
+              email: user.email,
+              avatar_url: meta?.avatar_url || ""
+            });
+            
+            // Limitar a 50 resultados
+            if (filteredUsers.length >= 50) break;
+          }
+        }
+        
+        if (filteredUsers.length >= 50) break;
+      }
+
+      return send(res, 200, { ok: true, users: filteredUsers });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFollowUser(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+    
+    const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId.trim() : "";
+    const follow = Boolean(body?.follow);
+    
+    if (!targetUserId) return send(res, 400, { error: "Falta targetUserId" });
+    if (targetUserId === auth.user.id) return send(res, 400, { error: "No puedes seguirte a ti mismo" });
+
+    try {
+      // Verificar si el usuario objetivo existe
+      const { data: targetUser, error: targetError } = await auth.admin.auth.admin.getUserById(targetUserId);
+      if (targetError || !targetUser) return send(res, 404, { error: "Usuario no encontrado" });
+
+      // Crear o eliminar la relación de seguimiento
+      if (follow) {
+        const { error } = await auth.admin
+          .from('user_follows')
+          .upsert({
+            follower_id: auth.user.id,
+            following_id: targetUserId,
+            created_at: new Date().toISOString()
+          }, { onConflict: 'follower_id,following_id' });
+        
+        if (error) {
+          const msg = (error.message || "").toLowerCase();
+          const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+          if (missing) {
+            return send(res, 500, {
+              error: "Falta configurar la tabla de seguimientos",
+              hint: "En Supabase: Database → SQL Editor → New query → pega el SQL → Run. Luego intenta de nuevo.",
+              sql:
+                "create table if not exists public.user_follows (\n" +
+                "  follower_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  following_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  created_at timestamptz not null default now(),\n" +
+                "  primary key (follower_id, following_id)\n" +
+                ");\n" +
+                "create index if not exists user_follows_follower_id_idx on public.user_follows (follower_id);\n" +
+                "create index if not exists user_follows_following_id_idx on public.user_follows (following_id);\n",
+              detail: error.message
+            });
+          }
+          return send(res, 500, { error: "No pude seguir al usuario", detail: error.message });
+        }
+      } else {
+        const { error } = await auth.admin
+          .from('user_follows')
+          .delete()
+          .eq('follower_id', auth.user.id)
+          .eq('following_id', targetUserId);
+        
+        if (error) {
+          const msg = (error.message || "").toLowerCase();
+          const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+          if (missing) {
+            return send(res, 500, {
+              error: "Falta configurar la tabla de seguimientos",
+              hint: "En Supabase: Database → SQL Editor → New query → pega el SQL → Run. Luego intenta de nuevo.",
+              sql:
+                "create table if not exists public.user_follows (\n" +
+                "  follower_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  following_id uuid not null references auth.users(id) on delete cascade,\n" +
+                "  created_at timestamptz not null default now(),\n" +
+                "  primary key (follower_id, following_id)\n" +
+                ");\n" +
+                "create index if not exists user_follows_follower_id_idx on public.user_follows (follower_id);\n" +
+                "create index if not exists user_follows_following_id_idx on public.user_follows (following_id);\n",
+              detail: error.message
+            });
+          }
+          return send(res, 500, { error: "No pude dejar de seguir al usuario", detail: error.message });
+        }
+      }
+
+      return send(res, 200, { ok: true, following: follow });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleUserProfile(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const userId = (pickQuery(req, "id") || pickQuery(req, "userId") || "").toString().trim();
+    if (!userId) return send(res, 400, { error: "Falta id" });
+
+    try {
+      const { data: targetUser, error: targetError } = await auth.admin.auth.admin.getUserById(userId);
+      if (targetError || !targetUser?.user) return send(res, 404, { error: "Usuario no encontrado" });
+
+      const u = targetUser.user;
+      const meta: any = u?.user_metadata || {};
+
+      const user = {
+        id: String(u?.id || ""),
+        full_name: String(meta?.full_name || ""),
+        last_name: String(meta?.last_name || ""),
+        username: String(meta?.username || ""),
+        avatar_url: String(meta?.avatar_url || ""),
+        cover_url: String(meta?.cover_url || ""),
+        country: String(meta?.country || ""),
+        city: String(meta?.city || ""),
+        contact_email: String(meta?.contact_email || ""),
+        contact_phone: String(meta?.contact_phone || ""),
+        bio: String(meta?.bio || ""),
+      };
+
+      const { data: songsData, error: songsError } = await auth.admin
+        .from(PUBLIC_TABLE)
+        .select("*")
+        .eq("user_id", userId)
+        .order("published_at", { ascending: false })
+        .limit(100);
+      if (songsError) {
+        const msg = (songsError.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) return send(res, 200, { ok: true, user, songs: [] });
+        return send(res, 500, { error: "No pude cargar canciones públicas", detail: songsError.message });
+      }
+
+      const songs = (Array.isArray(songsData) ? songsData : [])
+        .map((r: any) => ({
+          id: String(r?.song_id || "").trim(),
+          title: String(r?.title || "Canción").trim(),
+          audioUrl: String(r?.audio_url || "").trim(),
+          coverUrl: String(r?.cover_url || "").trim() || undefined,
+          genre: typeof r?.genre === "string" ? r.genre : "",
+          authorName: typeof r?.author_name === "string" ? r.author_name : "Usuario",
+          authorAvatarUrl: typeof r?.author_avatar_url === "string" ? r.author_avatar_url : "",
+          publishedAt: typeof r?.published_at === "string" ? r.published_at : undefined,
+        }))
+        .filter((x: any) => x.id && x.audioUrl);
+
+      return send(res, 200, { ok: true, user, songs });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFollowStatus(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const userId = (pickQuery(req, "userId") || pickQuery(req, "id") || "").toString().trim();
+    if (!userId) return send(res, 400, { error: "Falta userId" });
+
+    try {
+      let isFollowing = false;
+      let followersCount = 0;
+      let followingCount = 0;
+
+      if (userId !== auth.user.id) {
+        const rel = await auth.admin
+          .from("user_follows")
+          .select("follower_id")
+          .eq("follower_id", auth.user.id)
+          .eq("following_id", userId)
+          .maybeSingle();
+        if (!rel.error && rel.data) isFollowing = true;
+      }
+
+      const followers = await auth.admin
+        .from("user_follows")
+        .select("follower_id", { count: "exact", head: true })
+        .eq("following_id", userId);
+      if (typeof followers.count === "number") followersCount = followers.count;
+
+      const following = await auth.admin
+        .from("user_follows")
+        .select("following_id", { count: "exact", head: true })
+        .eq("follower_id", userId);
+      if (typeof following.count === "number") followingCount = following.count;
+
+      return send(res, 200, { ok: true, is_following: isFollowing, followers_count: followersCount, following_count: followingCount });
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+      const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+      if (missing) return send(res, 200, { ok: true, is_following: false, followers_count: 0, following_count: 0 });
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleFeed(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const a = await getAdminOrError();
+    if (!a.ok) return send(res, 500, { error: a.error });
+    const admin = a.admin;
+
+    const limitRaw = Number(pickQuery(req, "limit") || 30);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(60, Math.floor(limitRaw))) : 30;
+    const genre = (pickQuery(req, "genre") || "").toString().trim().slice(0, 50);
+    const cursor = (pickQuery(req, "cursor") || "").toString().trim();
+
+    try {
+      const cutoffMs = Date.now() - 15 * 24 * 60 * 60 * 1000;
+      const cutoffIso = new Date(cutoffMs).toISOString();
+      try {
+        await admin.from(PUBLIC_TABLE).delete().lt("published_at", cutoffIso);
+      } catch {
+      }
+
+      const q = admin.from(PUBLIC_TABLE).select("*").order("published_at", { ascending: false }).limit(limit).gte("published_at", cutoffIso);
+      if (genre) q.eq("genre", genre);
+      if (cursor) q.lt("published_at", cursor);
+      const { data, error } = await q;
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) return send(res, 200, { ok: true, items: [] });
+        return send(res, 500, { error: "No pude cargar el inicio", detail: error.message });
+      }
+
+      const items = (Array.isArray(data) ? data : [])
+        .map((r: any) => ({
+          id: String(r?.song_id || "").trim(),
+          title: String(r?.title || "Canción").trim(),
+          audioUrl: String(r?.audio_url || "").trim(),
+          coverUrl: String(r?.cover_url || "").trim(),
+          publicGenre: typeof r?.genre === "string" ? r.genre : null,
+          publishedAt: typeof r?.published_at === "string" ? r.published_at : null,
+          authorName: typeof r?.author_name === "string" ? r.author_name : "Usuario",
+          authorAvatarUrl: typeof r?.author_avatar_url === "string" ? r.author_avatar_url : "",
+        }))
+        .filter((x: any) => x.id && x.audioUrl);
+
+      const nextCursor = items.length ? (items[items.length - 1].publishedAt || null) : null;
+      return send(res, 200, { ok: true, items, next_cursor: nextCursor });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function handleGenres(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    const a = await getAdminOrError();
+    if (!a.ok) return send(res, 500, { error: a.error });
+    const admin = a.admin;
+
+    try {
+      const cutoffMs = Date.now() - 15 * 24 * 60 * 60 * 1000;
+      const cutoffIso = new Date(cutoffMs).toISOString();
+      const { data, error } = await admin.from(PUBLIC_TABLE).select("genre, cover_url").order("published_at", { ascending: false }).limit(200).gte("published_at", cutoffIso);
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
+        if (missing) return send(res, 200, { ok: true, items: [] });
+        return send(res, 500, { error: "No pude cargar géneros", detail: error.message });
+      }
+
+      const map = new Map<string, { genre: string; count: number; coverUrl: string }>();
+      for (const r of Array.isArray(data) ? data : []) {
+        const g = typeof (r as any)?.genre === "string" ? (r as any).genre.trim() : "";
+        if (!g) continue;
+        const cover = typeof (r as any)?.cover_url === "string" ? (r as any).cover_url.trim() : "";
+        const prev = map.get(g);
+        if (!prev) {
+          map.set(g, { genre: g, count: 1, coverUrl: cover });
+        } else {
+          prev.count += 1;
+          if (!prev.coverUrl && cover) prev.coverUrl = cover;
+        }
+      }
+      const items = Array.from(map.values()).sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
+      return send(res, 200, { ok: true, items });
+    } catch (e) {
+      return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "social") return send(res, 404, { error: "Ruta no encontrada" });
+
+    let action = "";
+    try {
+      action = (new URL(req.url, "http://localhost").searchParams.get("action") || "").toString();
+    } catch {
+      action = "";
+    }
+    action = action.trim().toLowerCase();
+    const a = action || (next || "").toLowerCase();
+    if (a === "feed") return handleFeed(req, res);
+    if (a === "genres") return handleGenres(req, res);
+    if (a === "publish") return handlePublish(req, res);
+    if (a === "remove") return handleRemoveFromFeed(req, res);
+    if (a === "search") return handleSearchUsers(req, res);
+    if (a === "follow") return handleFollowUser(req, res);
+    if (a === "user") return handleUserProfile(req, res);
+    if (a === "follow-status") return handleFollowStatus(req, res);
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
+const videosHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  async function requireUser(req: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const token = getAuthToken(req);
+    if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const createClient = await getSupabaseCreateClient();
+    const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const user = userData?.user;
+    if (userErr || !user) return { ok: false as const, status: 401, error: "No autorizado" };
+
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    return { ok: true as const, user, admin };
+  }
+
+  function pickQuery(req: any, key: string) {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(key) || "";
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "videos") return send(res, 404, { error: "Ruta no encontrada" });
+
+    const action = (next || "").toString().trim().toLowerCase();
+    const method = (req.method || "").toUpperCase();
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    if (action === "list") {
+      if (method !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+      const limitRaw = Number(pickQuery(req, "limit") || 50);
+      const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
+
+      try {
+        const userId = String(auth.user.id || "").trim();
+        const admin = auth.admin;
+        let rows: any[] = [];
+        const r1 = await admin
+          .from("suno_tasks")
+          .select("task_id, kind, created_at")
+          .eq("user_id", userId)
+          .eq("kind", "mp4")
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (!r1.error) {
+          rows = Array.isArray(r1.data) ? r1.data : [];
+        } else {
+          const r2 = await admin.from("suno_tasks").select("task_id, kind").eq("user_id", userId).eq("kind", "mp4").limit(limit);
+          if (r2.error) return send(res, 500, { error: "No pude listar videos", detail: r2.error.message });
+          rows = Array.isArray(r2.data) ? r2.data : [];
+        }
+
+        const items = rows
+          .map((x: any) => ({
+            taskId: String(x?.task_id || "").trim(),
+            created_at: typeof x?.created_at === "string" ? x.created_at : "",
+          }))
+          .filter((x: any) => x.taskId);
+
+        return send(res, 200, { ok: true, items });
+      } catch (e) {
+        return send(res, 500, { error: "No pude listar videos", detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (action && action !== "list") {
+      if (method !== "DELETE") return send(res, 405, { error: "Método no permitido" });
+      const taskId = String((next || "").toString() || "").trim();
+      if (!taskId) return send(res, 400, { error: "Falta taskId del video." });
+      const userId = String(auth.user.id || "").trim();
+      const admin = auth.admin;
+
+      try {
+        const check = await admin
+          .from("suno_tasks")
+          .select("task_id, user_id")
+          .eq("task_id", taskId)
+          .eq("kind", "mp4")
+          .limit(1)
+          .maybeSingle();
+        const row = (check && check.data) || null;
+        if (!row || String(row.user_id || "") !== userId) {
+          return send(res, 403, { ok: false, error: "No autorizado." });
+        }
+        const del = await admin.from("suno_tasks").delete().eq("task_id", taskId).eq("user_id", userId).eq("kind", "mp4");
+        if (del && del.error) return send(res, 500, { ok: false, error: "No pude eliminar el video.", detail: del.error.message });
+        return send(res, 200, { ok: true, deleted: true });
+      } catch (e) {
+        return send(res, 500, { error: "No pude eliminar el video", detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    return send(res, 404, { error: "Ruta no encontrada" });
+  };
+})();
+
+const supportHandler = (() => {
+  function send(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(body));
+  }
+
+  function parseJsonBody(req: any) {
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return null;
+      }
+    }
+    return req.body ?? null;
+  }
+
+  function getAuthToken(req: any) {
+    const authHeader = (req.headers.authorization || "").toString();
+    return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  }
+
+  return async function handler(req: any, res: any) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const isApi = parts[0] === "api";
+    const head = isApi ? parts[1] : parts[0];
+    const next = isApi ? parts[2] : parts[1];
+    if (head !== "support" || next !== "feedback") return send(res, 404, { error: "Ruta no encontrada" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
