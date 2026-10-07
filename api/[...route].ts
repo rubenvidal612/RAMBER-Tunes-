@@ -1,3 +1,4 @@
+import { isVoiceAvailable } from "../src/lib/voiceAvailability.js";
 import { authorizeAudioCleanup, cleanupTemporaryAudio } from "../src/lib/temporaryAudioCleanup.js";
 
 const CREDIT_COSTS = {
@@ -4183,7 +4184,7 @@ const sunoHandler = (() => {
       }
 
       const d = data?.data ?? {};
-      const isAvailable = Boolean(d?.isAvailable);
+      const isAvailable = isVoiceAvailable(d?.isAvailable);
       return send(res, 200, { ok: true, taskId, isAvailable, data: d });
     } catch (e) {
       return send(res, 502, { error: "Error consultando disponibilidad de voz", detail: e instanceof Error ? e.message : String(e) });
@@ -5283,6 +5284,20 @@ notify pgrst, 'reload schema';`;
       if (!sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId" });
 
       try {
+        // A client-supplied "ready" flag is not evidence that the provider can
+        // use the voice. Verify the task and its resulting voice ID first.
+        if (status === "ready") {
+          if (!taskId) return send(res, 409, { error: "Falta confirmar la disponibilidad de la voz." });
+          const record = await sunoFetchJson(`/api/v1/voice/record-info?taskId=${encodeURIComponent(taskId)}`, { method: "GET" });
+          const info = record.data?.data;
+          if (!record.res.ok || Number(record.data?.code) !== 200 || info?.status !== "success" || info?.voiceId !== sunoVoiceId) {
+            return send(res, 409, { error: "El proveedor no confirmó la creación de esta voz." });
+          }
+          const check = await sunoFetchJson("/api/v1/voice/check-voice", { method: "POST", body: JSON.stringify({ task_id: taskId }) });
+          if (!check.res.ok || Number(check.data?.code) !== 200 || !isVoiceAvailable(check.data?.data?.isAvailable)) {
+            return send(res, 409, { error: "El proveedor todavía no confirmó que la voz esté disponible." });
+          }
+        }
         const row: any = {
           user_id: auth.user.id,
           suno_voice_id: sunoVoiceId.slice(0, 200),
