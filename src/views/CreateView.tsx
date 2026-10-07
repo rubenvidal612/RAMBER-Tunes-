@@ -1,3 +1,4 @@
+import { isVoiceAvailable, requireVoiceAvailable } from '@/lib/voiceAvailability';
 import { useEffect, useRef, useState } from 'react';
 import { Dices, RefreshCw, Plus, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -1181,8 +1182,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     meta?: any
   ) => {
     const t = await getAccessToken();
-    if (!t.ok) return;
-    await fetch('/api/suno/voices', {
+    if (!t.ok) throw new Error('No se pudo guardar la voz. Inicia sesión de nuevo.');
+    const response = await fetch('/api/suno/voices', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
       body: JSON.stringify({
@@ -1192,10 +1193,12 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         taskId: v.taskId || null,
         meta: meta || undefined,
       }),
-    }).catch(() => {});
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result?.error || 'No se pudo guardar y confirmar la voz.');
   };
 
-  const upsertLocalVoice = (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }) => {
+  const upsertLocalVoice = (v: { voiceId: string; name: string; createdAt: string; taskId?: string; status?: string }, persist = true) => {
     try {
       const raw = localStorage.getItem('ramber.suno_voices_v1');
       const parsed = raw ? JSON.parse(raw) : null;
@@ -1217,7 +1220,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       setVoices(clean);
     } catch {
     }
-    saveSunoVoiceToDb(v).catch(() => {});
+    if (persist) saveSunoVoiceToDb(v).catch(() => {});
   };
 
   const openSunoVoiceDetails = (v: {
@@ -1980,6 +1983,21 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     }
   };
 
+  const confirmSelectedVoice = async (token: string) => {
+    if (!selectedVoice?.voiceId) return;
+    const saved = voices.find((v) => v.voiceId === selectedVoice.voiceId);
+    const taskId = saved?.taskId;
+    if (!taskId) throw new Error('No se puede comprobar esta voz. Abre el Clonador de voz y repite su validación antes de generar.');
+    const response = await fetch('/api/suno/voice-check-voice', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ task_id: taskId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error('No se pudo comprobar la disponibilidad de la voz. Intenta más tarde.');
+    requireVoiceAvailable(result?.isAvailable);
+  };
+
   const generateCustomVoice = async (verifyFileArg?: File) => {
     if (voiceGenerateLockRef.current) return;
     voiceGenerateLockRef.current = true;
@@ -2084,14 +2102,17 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         });
         const aout = await ar.json().catch(() => ({}));
         if (ar.ok) {
-          available = Boolean(aout?.isAvailable);
+          available = isVoiceAvailable(aout?.isAvailable);
           if (available) break;
         }
         await new Promise((r) => setTimeout(r, 2500));
       }
       setVoiceIsAvailable(available);
+      requireVoiceAvailable(available);
 
-      upsertLocalVoice({ voiceId: finalVoiceId, name, createdAt: new Date().toISOString(), taskId: genTaskId, status: available ? 'ready' : 'processing' });
+      const confirmedVoice = { voiceId: finalVoiceId, name, createdAt: new Date().toISOString(), taskId: genTaskId, status: 'ready' };
+      await saveSunoVoiceToDb(confirmedVoice);
+      upsertLocalVoice(confirmedVoice, false);
       setSelectedVoice({ voiceId: finalVoiceId, name });
       setVoiceDetailsName(name);
       setVoiceDetailsTags('');
@@ -3291,6 +3312,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         payload.style = [payload.style, `Voz deseada: ${gender}.`].filter(Boolean).join('\n');
       }
       if (hasSelectedVoice) {
+        await confirmSelectedVoice(t.token);
         payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
         payload.personaModel = 'voice_persona';
       }
@@ -3737,6 +3759,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         }
       }
       if (hasSelectedVoice) {
+        await confirmSelectedVoice(t.token);
         payload.personaId = (selectedVoice?.voiceId || '').toString().trim();
         payload.personaModel = 'voice_persona';
       }
@@ -4553,7 +4576,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                         <button
                           key={v.voiceId}
                           type="button"
+                          disabled={v.status !== 'ready'}
                           onClick={() => {
+                            if (v.status !== 'ready') return;
                             setSelectedVoice({ voiceId: v.voiceId, name: v.name });
                             setIsVoicesPickerOpen(false);
                           }}
