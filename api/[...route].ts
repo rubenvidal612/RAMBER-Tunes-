@@ -979,7 +979,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     const key = String((plan as any)?.plan_key || "").toLowerCase();
     const exp = (plan as any)?.plan_expires_at;
     const active = Boolean((plan as any)?.plan_active);
-    if ((key === "inicio" || key === "productor") && exp && !active) {
+    if (isDownloadPlanKey(key) && exp && !active) {
       planRejection = { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
     }
   } catch {
@@ -1164,7 +1164,7 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
     const key = String((plan as any)?.plan_key || "").toLowerCase();
     const exp = (plan as any)?.plan_expires_at;
     const active = Boolean((plan as any)?.plan_active);
-    if ((key === "inicio" || key === "productor") && exp && !active) {
+    if (isDownloadPlanKey(key) && exp && !active) {
       return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
     }
   } catch {
@@ -1191,12 +1191,17 @@ function isAdminEmail(email?: string | null) {
   return list.includes(e) || hardcoded.includes(e);
 }
 
+function isDownloadPlanKey(raw: any) {
+  const k = String(raw || "").trim().toLowerCase();
+  return k === "inicio" || k === "productor" || k === "basico_100" || k === "pack_grande_250";
+}
+
 function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
   const list = Array.isArray(rows) ? rows : [];
 
   const pickPlanKey = (raw: any) => {
     const k = String(raw || "").trim().toLowerCase();
-    return k === "inicio" || k === "productor" || k === "ninguno" ? k : "";
+    return isDownloadPlanKey(k) || k === "ninguno" ? k : "";
   };
 
   const latestPlanEvent =
@@ -1206,12 +1211,12 @@ function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
       const paymentId = String(t?.payment_id || "").trim();
       if (paymentId.startsWith("claim:")) return false;
       if (paymentId.startsWith("admin_plan:")) return true;
-      return planKey === "inicio" || planKey === "productor";
+      return isDownloadPlanKey(planKey);
     }) || null;
 
   const plan_key = pickPlanKey(latestPlanEvent?.pack_key) || "ninguno";
   const planStartIso =
-    plan_key === "inicio" || plan_key === "productor"
+    isDownloadPlanKey(plan_key)
       ? String(latestPlanEvent?.created_at || "").trim() || null
       : null;
 
@@ -1229,11 +1234,11 @@ function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
     return nowMs < t;
   })();
 
-  const downloads_allowed = plan_active && (plan_key === "inicio" || plan_key === "productor");
+  const downloads_allowed = plan_active && isDownloadPlanKey(plan_key);
   const hasProductor = list.some((t: any) => String(t?.pack_key || "").trim().toLowerCase() === "productor");
   const has_paid_ever = list.some((t: any) => {
     const pk = String(t?.pack_key || "").trim().toLowerCase();
-    if (!(pk === "inicio" || pk === "productor")) return false;
+    if (!isDownloadPlanKey(pk)) return false;
     const paymentId = String(t?.payment_id || "").trim();
     if (paymentId.startsWith("claim:")) return false;
     const amt = Number(t?.amount_mxn);
@@ -9590,7 +9595,7 @@ const balanceHandler = (() => {
     const plan_key = String((plan as any)?.plan_key || "ninguno");
     const plan_expires_at = (plan as any)?.plan_expires_at ?? null;
     const plan_active = is_admin ? true : Boolean((plan as any)?.plan_active);
-    const downloads_allowed = is_admin ? true : Boolean((plan as any)?.downloads_allowed || (plan as any)?.has_paid_ever);
+    const downloads_allowed = is_admin ? true : Boolean((plan as any)?.downloads_allowed);
     const free_claimed = false;
     const show_free_claim_popup = false;
 
