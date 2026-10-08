@@ -1,3 +1,4 @@
+import { readSunoTaskState, fetchPendingTaskJson, removePendingTask } from './lib/pendingTask';
 import { Component, useState, useEffect, useMemo, useRef } from 'react';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
@@ -2993,6 +2994,8 @@ export default function App() {
   useEffect(() => {
     if (!isAuthed) return;
     let busy = false;
+    let forceQueued = false;
+    let disposed = false;
     const readList = () => {
       try {
         const raw = window.localStorage.getItem(pendingListKey);
@@ -3098,7 +3101,8 @@ export default function App() {
         const failCount = Number.isFinite(Number(it?.failCount)) ? Number(it.failCount) : 1;
         // Stop polling tasks that cannot belong to the active account, and
         // cap transient failures so a stale local pending task cannot loop forever.
-        const shouldStop = httpStatus === 401 || httpStatus === 403 || failCount >= 15;
+        const shouldStop = httpStatus === 401 || httpStatus === 403;
+        const shouldPause = failCount >= 15;
         if (failCount === 1 || failCount === 4 || shouldStop) {
           const msg = (errorMsg || '').toString().trim();
           showToast(
@@ -3113,6 +3117,8 @@ export default function App() {
         }
         if (shouldStop) {
           writeList(next.filter((x: any) => String(x?.taskId || '').trim() !== taskId));
+        } else if (shouldPause) {
+          writeList(next.map((x: any) => x.taskId === taskId ? { ...x, retryPaused: true } : x));
         }
       } catch {
       }
@@ -3120,7 +3126,7 @@ export default function App() {
 
     const readNextPending = () => {
       const list = migrateLegacyIfNeeded();
-      const item = Array.isArray(list) && list.length > 0 ? list[0] : null;
+      const item = Array.isArray(list) ? list.find((x: any) => !x.retryPaused) : null;
       if (!item) return null;
       const taskId = typeof item?.taskId === 'string' ? item.taskId.trim() : '';
       if (!taskId) return null;
@@ -3342,6 +3348,7 @@ export default function App() {
       const pending = readNextPending();
       if (!pending) return;
       busy = true;
+      window.dispatchEvent(new CustomEvent('ramber:pendingSyncState', { detail: { busy: true } }));
       try {
         const t = await getAccessToken();
         const hasToken = Boolean(t && t.ok && typeof (t as any).token === 'string' && (t as any).token.length > 20);
@@ -3414,7 +3421,7 @@ export default function App() {
             } catch (_) {}
             patchTask(pending.taskId, { providerStatus: 'FAILED', progressPct: 0, lastError: finalErrorMsg, lastErrorAt: Date.now() });
             const list = migrateLegacyIfNeeded();
-            const rest = Array.isArray(list) ? list.slice(1) : [];
+            const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
             writeList(rest);
             showToast(finalErrorMsg || 'Error en la generación con Mureka.');
             return;
@@ -3466,7 +3473,7 @@ export default function App() {
                 await refreshLibrary();
               } catch { /* ignore */ }
               const list = migrateLegacyIfNeeded();
-              const rest = Array.isArray(list) ? list.slice(1) : [];
+              const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
               writeList(rest);
               showToast(`Listo: se guardaron ${outM.library_item_ids.length} canciones en tu Biblioteca.`);
               return;
@@ -3478,7 +3485,7 @@ export default function App() {
                 await refreshLibrary();
               } catch { /* ignore */ }
               const list = migrateLegacyIfNeeded();
-              const rest = Array.isArray(list) ? list.slice(1) : [];
+              const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
               writeList(rest);
               showToast('Listo: revisa tu Biblioteca en unos segundos.');
               return;
@@ -3524,7 +3531,7 @@ export default function App() {
               }
             }
             const list = migrateLegacyIfNeeded();
-            const rest = Array.isArray(list) ? list.slice(1) : [];
+            const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
             writeList(rest);
             showToast(tracksM.length > 1 ? `Listo: se guardaron ${tracksM.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
             return;
@@ -3539,17 +3546,10 @@ export default function App() {
         // =========================================================
         const headersS: Record<string, string> = {};
         if (hasToken) headersS['Authorization'] = `Bearer ${tokenStr}`;
-        const r = await fetch(`/api/suno/task?taskId=${encodeURIComponent(pending.taskId)}&kind=${encodeURIComponent(pending.kind || "generate")}`, {
-          headers: headersS,
-        });
-        const out = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          const msg = (out?.detail || out?.error || out?.message || `HTTP ${Number(r.status || 0)}`).toString();
-          bumpTaskError(pending.taskId, msg, Number(r.status || 0));
-          return;
-        }
-        const data = out?.data || out?.data?.data || out?.data;
-        const status = String(data?.data?.status || data?.data?.successFlag || data?.status || data?.successFlag || '').toUpperCase();
+        const out = await fetchPendingTaskJson(`/api/suno/task?taskId=${encodeURIComponent(pending.taskId)}&kind=${encodeURIComponent(pending.kind || "generate")}`, headersS);
+        const data = out?.data;
+        const taskState = readSunoTaskState(data);
+        const status = taskState.status;
 
         if (status) {
           const pct =
@@ -3608,7 +3608,7 @@ export default function App() {
               await refreshLibrary();
             }
             const list = migrateLegacyIfNeeded();
-            const rest = Array.isArray(list) ? list.slice(1) : [];
+            const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
             writeList(rest);
             showToast(toImport.length > 0 ? `Listo: se guardaron ${toImport.length} pistas en tu Biblioteca.` : kind === 'split_stem' ? 'Listo: Stems listos para descargar.' : 'Listo: Karaoke listo para descargar.');
             return;
@@ -3616,6 +3616,7 @@ export default function App() {
 
           const tracks = extractTracks(data).filter((x) => x && x.audioUrl);
           if (tracks.length === 0) {
+            bumpTaskError(pending.taskId, 'El proveedor marcó la tarea como terminada, pero no entregó los audios. La solicitud sigue guardada para recuperarla.');
             return;
           }
           const draft = pending.draft ?? {};
@@ -3657,17 +3658,17 @@ export default function App() {
             });
           }
           const list2 = migrateLegacyIfNeeded();
-          const rest2 = Array.isArray(list2) ? list2.slice(1) : [];
+          const rest2 = Array.isArray(list2) ? removePendingTask(list2, pending.taskId) : [];
           writeList(rest2);
           showToast(tracks.length > 1 ? `Listo: se guardaron ${tracks.length} canciones en tu Biblioteca.` : 'Listo: se guardó en tu Biblioteca.');
           return;
         }
 
-        if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_AUDIO_FAILED' || status === 'CALLBACK_EXCEPTION' || status === 'SENSITIVE_WORD_ERROR') {
+        if (taskState.failed) {
           const msg =
-            (data?.data?.errorMessage || data?.data?.error_message || data?.errorMessage || data?.error_message || 'Error en la generación').toString();
+            taskState.error;
           const list = migrateLegacyIfNeeded();
-          const rest = Array.isArray(list) ? list.slice(1) : [];
+          const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
           writeList(rest);
           const raw = String(msg || '').trim();
           const lower = raw.toLowerCase();
@@ -3685,8 +3686,18 @@ export default function App() {
           }
           return;
         }
+      } catch (error) {
+        const message = error instanceof Error && error.name === 'TimeoutError'
+          ? 'La consulta tardó demasiado. Tu solicitud sigue guardada; puedes volver a actualizar.'
+          : error instanceof Error ? error.message : String(error);
+        bumpTaskError(pending.taskId, message, Number((error as any)?.httpStatus || 0));
       } finally {
         busy = false;
+        window.dispatchEvent(new CustomEvent('ramber:pendingSyncState', { detail: { busy: false } }));
+        if (forceQueued && !disposed) {
+          forceQueued = false;
+          void tick();
+        }
       }
     };
 
@@ -3694,10 +3705,15 @@ export default function App() {
       tick().catch(() => {});
     }, 4000);
     tick().catch(() => {});
-    const onForce = () => tick().catch(() => {});
+    const onForce = () => {
+      writeList(migrateLegacyIfNeeded().map((x: any) => ({ ...x, retryPaused: false, failCount: 0 })));
+      if (busy) { forceQueued = true; return; }
+      void tick();
+    };
     window.addEventListener('ramber:forcePendingSync', onForce as any);
     return () => {
       window.clearInterval(id);
+      disposed = true;
       window.removeEventListener('ramber:forcePendingSync', onForce as any);
     };
   }, [isAuthed]);
