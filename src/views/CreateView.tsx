@@ -3333,56 +3333,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
         const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
         if (hasSelectedVoice && looksLikeVoiceExpired) {
-          setSelectedVoice(null);
-          const retryPayload: any = { ...payload };
-          delete retryPayload.personaId;
-          delete retryPayload.personaModel;
-          retryPayload.model = model;
-          const rr = await fetch('/api/suno/upload-cover', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              authorization: `Bearer ${t.token}`,
-            },
-            body: JSON.stringify(retryPayload),
-          });
-          const out2 = await rr.json().catch(() => ({}));
-          if (!rr.ok) {
-            alert(toUserFriendlySunoError(out2, 'No se pudo hacer el cover.'));
-            return;
-          }
-          const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
-          if (!taskId2) {
-            alert('No recibí taskId del servidor.');
-            return;
-          }
-          try {
-            const rawPending = window.localStorage.getItem(pendingListKey);
-            const arrPending = rawPending ? JSON.parse(rawPending) : [];
-            const listPending = Array.isArray(arrPending) ? arrPending : [];
-            listPending.push({
-              taskId: taskId2,
-              kind: 'upload-cover',
-              startedAt: Date.now(),
-              draft: {
-                title: (title || 'Cover').toString(),
-                description: (instructions || 'Cover').toString(),
-                lyrics: promptRaw ? promptRaw : null,
-                prompt: promptRaw ? promptRaw : null,
-                model,
-                genre: gender,
-                isCover: true,
-              },
-            });
-            window.localStorage.setItem(pendingListKey, JSON.stringify(listPending));
-            try {
-              window.localStorage.removeItem(pendingLegacyKey);
-            } catch {
-            }
-          } catch {
-          }
-          alert('La voz que elegiste expiró. Se generará el cover sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
-          onGoLibrary?.();
+          alert('La voz que elegiste expiró. No se generó el cover. Ve al Clonador para repetir la validación de esa voz o elige otra voz.');
           return;
         }
         alert(msg);
@@ -3798,72 +3749,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         }
         const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
         if (hasSelectedVoice && looksLikeVoiceExpired) {
-          setSelectedVoice(null);
-          const retryWantsCustomMode = mode === 'personalizado';
-          const retryPayload: any = {
-            prompt,
-            instrumental,
-            customMode: retryWantsCustomMode,
-            model,
-            vocalGender: gender === 'Femenino' ? 'f' : gender === 'Masculino' ? 'm' : undefined,
-          };
-          if (retryWantsCustomMode) {
-            retryPayload.style = [
-              (instructions || 'General').trim() || 'General',
-              !instrumental ? `Voz deseada: ${gender}.` : '',
-            ].filter(Boolean).join('\n').slice(0, 1000);
-            retryPayload.title = normalizedSongTitle;
-            retryPayload.weirdnessConstraint = weirdness / 100;
-            retryPayload.styleWeight = styleInfluence / 100;
-            retryPayload.audioWeight = audioInfluence / 100;
-          }
-          const rr = await fetch('/api/suno/generate', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              authorization: `Bearer ${t.token}`,
-            },
-            body: JSON.stringify(retryPayload),
-          });
-          const out2 = await rr.json().catch(() => ({}));
-          if (!rr.ok) {
-            alert(toUserFriendlySunoError(out2, 'No se pudo crear la canción.'));
-            return false;
-          }
-          const taskId2 = typeof out2?.taskId === 'string' ? out2.taskId : '';
-          if (!taskId2) {
-            alert('No recibí taskId del servidor.');
-            return false;
-          }
-          try {
-            const rawPending = window.localStorage.getItem(pendingListKey);
-            const arrPending = rawPending ? JSON.parse(rawPending) : [];
-            const listPending = Array.isArray(arrPending) ? arrPending : [];
-            listPending.push({
-              taskId: taskId2,
-              kind: 'generate',
-              provider: 'suno',
-              startedAt: Date.now(),
-              draft: {
-                title: normalizedSongTitle,
-                description: (mode === 'simple' ? description : instructions).toString(),
-                lyrics: (baseLyrics || '').toString().trim() ? (baseLyrics || '').toString() : null,
-                prompt: prompt,
-                model,
-                genre: gender,
-                isCover: Boolean(audioFile || audioUploadUrl),
-              },
-            });
-            window.localStorage.setItem(pendingListKey, JSON.stringify(listPending));
-            try {
-              window.localStorage.removeItem(pendingLegacyKey);
-            } catch {
-            }
-          } catch {
-          }
-          alert('La voz que elegiste expiró. Se generará la canción sin esa voz. Si quieres una voz, elige otra en “Clonador”.');
-          onGoLibrary?.();
-          return true;
+          alert('La voz que elegiste expiró. No se generó la canción. Ve al Clonador para repetir la validación de esa voz o elige otra voz.');
+          return false;
         }
         alert(msg);
         return false;

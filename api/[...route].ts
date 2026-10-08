@@ -3958,6 +3958,16 @@ const sunoHandler = (() => {
           cost: 0,
           consumed: false,
           client_attempt_id: cleanAttemptId || null,
+          extra: JSON.stringify({
+            phases: {
+              "voice-validate": {
+                taskId,
+                callback: callBackUrl || "",
+                created_at: new Date().toISOString(),
+              },
+            },
+            validate_task_id: taskId,
+          }),
         };
         const ins1 = await auth.admin.from("suno_tasks").insert(row);
         if (ins1?.error) {
@@ -4086,7 +4096,31 @@ const sunoHandler = (() => {
       if (!outTaskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
 
       try {
-        await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: auth.user.id, kind: "voice-regenerate", cost: 0, consumed: false });
+        const regenExtra = JSON.stringify({
+          phases: {
+            "voice-regenerate": {
+              taskId: outTaskId,
+              created_at: new Date().toISOString(),
+            },
+          },
+          regenerate_task_id: outTaskId,
+        });
+        const ins = await auth.admin.from("suno_tasks").insert({
+          task_id: outTaskId,
+          user_id: auth.user.id,
+          kind: "voice-regenerate",
+          cost: 0,
+          consumed: false,
+          extra: regenExtra,
+        });
+        if (ins?.error) {
+          if (String(ins.error.code || "") === "23505") {
+            // Suno reutilizó el mismo taskId: conservar la fase en la fila existente.
+            await auth.admin.from("suno_tasks").update({ extra: regenExtra }).eq("task_id", outTaskId).eq("user_id", auth.user.id);
+          } else if (isMissingColumnError(ins.error)) {
+            await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: auth.user.id, kind: "voice-regenerate", cost: 0, consumed: false });
+          }
+        }
       } catch {
       }
 
@@ -4147,7 +4181,34 @@ const sunoHandler = (() => {
       if (!taskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
 
       try {
-        await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-generate", cost: 0, consumed: false });
+        const createExtra = JSON.stringify({
+          phases: {
+            "voice-generate": {
+              taskId,
+              validationTaskId,
+              created_at: new Date().toISOString(),
+            },
+          },
+          validation_task_id: validationTaskId,
+          create_task_id: taskId,
+        });
+        const ins = await auth.admin.from("suno_tasks").insert({
+          task_id: taskId,
+          user_id: auth.user.id,
+          kind: "voice-generate",
+          cost: 0,
+          consumed: false,
+          extra: createExtra,
+        });
+        if (ins?.error) {
+          if (String(ins.error.code || "") === "23505") {
+            // Suno reutilizó el mismo taskId entre validación y creación:
+            // conservar ambas fases en la fila existente (no perder la fase de creación).
+            await auth.admin.from("suno_tasks").update({ extra: createExtra }).eq("task_id", taskId).eq("user_id", auth.user.id);
+          } else if (isMissingColumnError(ins.error)) {
+            await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-generate", cost: 0, consumed: false });
+          }
+        }
       } catch {
       }
 
@@ -4182,6 +4243,29 @@ const sunoHandler = (() => {
       }
 
       const d = data?.data ?? {};
+
+      // Trazabilidad: guardar el resultado de record-info en suno_tasks.extra.
+      try {
+        const { data: curRows } = await auth.admin.from("suno_tasks").select("extra").eq("task_id", taskId).eq("user_id", auth.user.id).limit(1);
+        const curRow = Array.isArray(curRows) ? curRows[0] : null;
+        let curExtra: any = {};
+        if (curRow && (curRow as any)?.extra) {
+          try { curExtra = typeof (curRow as any).extra === "string" ? JSON.parse((curRow as any).extra) : (curRow as any).extra; } catch { curExtra = {}; }
+        }
+        if (!curExtra || typeof curExtra !== "object" || Array.isArray(curExtra)) curExtra = {};
+        const recInfo = {
+          voiceId: typeof d?.voiceId === "string" ? d.voiceId : "",
+          status: typeof d?.status === "string" ? d.status : "",
+          errorCode: Number.isFinite(Number(d?.errorCode)) ? Number(d.errorCode) : null,
+          errorMessage: typeof d?.errorMessage === "string" ? d.errorMessage : "",
+          checked_at: new Date().toISOString(),
+        };
+        const merged: any = { ...curExtra, record_info: recInfo };
+        if (recInfo.voiceId) merged.voiceId = recInfo.voiceId;
+        await auth.admin.from("suno_tasks").update({ extra: JSON.stringify(merged) }).eq("task_id", taskId).eq("user_id", auth.user.id);
+      } catch {
+      }
+
       return send(res, 200, {
         ok: true,
         taskId: String(d?.taskId || taskId).trim() || taskId,
@@ -4214,6 +4298,21 @@ const sunoHandler = (() => {
         .update({ status: state.status, updated_at: state.checkedAt })
         .eq('user_id', auth.user.id).eq('last_task_id', taskId);
       if (error) throw error;
+
+      // Trazabilidad: guardar el resultado de check-voice en suno_tasks.extra.
+      try {
+        const { data: curRows } = await auth.admin.from("suno_tasks").select("extra").eq("task_id", taskId).eq("user_id", auth.user.id).limit(1);
+        const curRow = Array.isArray(curRows) ? curRows[0] : null;
+        let curExtra: any = {};
+        if (curRow && (curRow as any)?.extra) {
+          try { curExtra = typeof (curRow as any).extra === "string" ? JSON.parse((curRow as any).extra) : (curRow as any).extra; } catch { curExtra = {}; }
+        }
+        if (!curExtra || typeof curExtra !== "object" || Array.isArray(curExtra)) curExtra = {};
+        const merged: any = { ...curExtra, check_voice: { status: state.status, isAvailable: state.isAvailable, reason: state.reason, checked_at: state.checkedAt } };
+        await auth.admin.from("suno_tasks").update({ extra: JSON.stringify(merged) }).eq("task_id", taskId).eq("user_id", auth.user.id);
+      } catch {
+      }
+
       return send(res, 200, { ok: true, taskId, ...state });
     } catch (e) {
       return send(res, 502, { error: "Error consultando disponibilidad de voz", detail: e instanceof Error ? e.message : String(e) });
@@ -10574,31 +10673,76 @@ const sunoWebhookHandler = (() => {
           const errorCode = Number.isFinite(Number(data?.errorCode)) ? Number(data.errorCode) : null;
           const errorMessage = typeof data?.errorMessage === "string" ? data.errorMessage : "";
 
-          const snapshot = {
+          const receivedAt = new Date().toISOString();
+          const callback = {
+            callbackType,
             code: Number.isFinite(code) ? code : null,
             msg: msg ? msg.slice(0, 500) : "",
-            data: {
-              taskId,
-              status,
-              validateInfo,
-              voiceId,
-              errorCode,
-              errorMessage,
-            },
-            raw: body,
+            status,
+            validateInfo,
+            voiceId,
+            errorCode,
+            errorMessage,
+            receivedAt,
           };
 
           try {
-            const out = JSON.stringify(snapshot);
+            // Leer `extra` actual para conservar las fases previas (validación + creación).
+            const { data: curRows } = await admin
+              .from("suno_tasks")
+              .select("extra")
+              .eq("task_id", taskId)
+              .eq("user_id", userId)
+              .limit(1);
+            const curRow = Array.isArray(curRows) ? curRows[0] : null;
+            let curExtra: any = {};
+            if (curRow && (curRow as any)?.extra) {
+              try {
+                curExtra = typeof (curRow as any).extra === "string" ? JSON.parse((curRow as any).extra) : (curRow as any).extra;
+              } catch {
+                curExtra = {};
+              }
+            }
+            if (!curExtra || typeof curExtra !== "object" || Array.isArray(curExtra)) curExtra = {};
+
+            // Conservar ambas fases cuando Suno reutiliza el mismo taskId entre validación y creación.
+            const phases = curExtra.phases && typeof curExtra.phases === "object" && !Array.isArray(curExtra.phases) ? curExtra.phases : {};
+            phases[kind] = {
+              taskId,
+              voiceId: voiceId || (phases[kind] && phases[kind].voiceId) || "",
+              status,
+              errorCode,
+              errorMessage,
+              receivedAt,
+            };
+
+            const merged: any = { ...curExtra, phases, last_callback: callback };
+            if (voiceId) merged.voiceId = voiceId;
+            if (validateInfo) merged.validateInfo = validateInfo;
+
             const { error } = await admin
               .from("suno_tasks")
-              .update({ output: out })
+              .update({ extra: JSON.stringify(merged) })
               .eq("task_id", taskId)
               .eq("user_id", userId);
             if (error && !isMissingColumnError(error)) {
-              throw error;
+              // No es un fallo de columna: registrar para trazabilidad sin romper el webhook.
+              try {
+                console.error("[sunoWebhook] guardar trazabilidad de voz falló", {
+                  taskId,
+                  kind,
+                  err: error?.message || String(error),
+                });
+              } catch {}
             }
-          } catch {
+          } catch (e) {
+            try {
+              console.error("[sunoWebhook] excepción guardando trazabilidad de voz", {
+                taskId,
+                kind,
+                err: (e as any)?.message || String(e),
+              });
+            } catch {}
           }
         }
 
