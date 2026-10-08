@@ -2024,6 +2024,62 @@ const sunoHandler = (() => {
     }
   }
 
+  // Lee el objeto de trazabilidad existente de un task de voz, conserva todas
+  // sus fases y agrega la nueva, guardando el resultado como objeto jsonb
+  // (nunca como string JSON).
+  async function mergeTaskExtra(auth: any, taskId: string, phaseKey: string, phase: any, topLevel: any) {
+    const { data: curRows } = await auth.admin
+      .from("suno_tasks")
+      .select("extra")
+      .eq("task_id", taskId)
+      .eq("user_id", auth.user.id)
+      .limit(1);
+    const curRow = Array.isArray(curRows) ? curRows[0] : null;
+    let existing: any = {};
+    if (curRow && (curRow as any)?.extra) {
+      try {
+        existing = typeof (curRow as any).extra === "string" ? JSON.parse((curRow as any).extra) : (curRow as any).extra;
+      } catch {
+        existing = {};
+      }
+    }
+    if (!existing || typeof existing !== "object" || Array.isArray(existing)) existing = {};
+    const existingPhases =
+      existing.phases && typeof existing.phases === "object" && !Array.isArray(existing.phases)
+        ? existing.phases
+        : {};
+    const merged: any = {
+      ...existing,
+      ...topLevel,
+      phases: { ...existingPhases, [phaseKey]: phase },
+    };
+    await auth.admin
+      .from("suno_tasks")
+      .update({ extra: merged })
+      .eq("task_id", taskId)
+      .eq("user_id", auth.user.id);
+  }
+
+  // Indica si el payload referencia una voz clonada (guardada en suno_voices o
+  // etiquetada explícitamente como voice_persona). Nunca lanza error.
+  async function isSelectedClonedVoice(auth: any, payload: any) {
+    const voiceId = firstString(payload, ['personaId', 'persona_id']);
+    if (!voiceId) return false;
+    if (firstString(payload, ['personaModel', 'persona_model']) === 'voice_persona') return true;
+    try {
+      const { data: voice, error } = await auth.admin
+        .from('suno_voices')
+        .select('suno_voice_id')
+        .eq('user_id', auth.user.id)
+        .eq('suno_voice_id', voiceId)
+        .maybeSingle();
+      if (error) return false;
+      return Boolean(voice);
+    } catch {
+      return false;
+    }
+  }
+
   async function handleGenerate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -2049,6 +2105,13 @@ const sunoHandler = (() => {
     const wantsCustomMode = typeof payload?.customMode === "boolean" ? payload.customMode : null;
     const customMode = wantsCustomMode ?? (Boolean(style) || Boolean(title));
     body.customMode = customMode;
+
+    // Una voz clonada solo puede aplicarse en modo Personalizado. En modo Simple
+    // los campos de persona se descartarían y la canción se generaría sin la voz
+    // elegida, así que se rechaza antes de cobrar.
+    if (!customMode && (await isSelectedClonedVoice(auth, payload))) {
+      return send(res, 400, { error: 'Selecciona el modo Personalizado para usar una voz clonada.', code: 'VOICE_REQUIRES_CUSTOM_MODE' });
+    }
 
     if (!customMode) {
       if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt máximo es 500 caracteres." });
@@ -2172,6 +2235,13 @@ const sunoHandler = (() => {
     const wantsCustomMode = typeof payload?.customMode === "boolean" ? payload.customMode : null;
     const customMode = wantsCustomMode ?? (Boolean(style) || Boolean(title));
     body.customMode = customMode;
+
+    // Una voz clonada solo puede aplicarse en modo Personalizado. En modo Simple
+    // los campos de persona se descartarían y la canción se generaría sin la voz
+    // elegida, así que se rechaza antes de cobrar.
+    if (!customMode && (await isSelectedClonedVoice(auth, payload))) {
+      return send(res, 400, { error: 'Selecciona el modo Personalizado para usar una voz clonada.', code: 'VOICE_REQUIRES_CUSTOM_MODE' });
+    }
 
     if (!customMode) {
       if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt máximo es 500 caracteres." });
@@ -4101,13 +4171,12 @@ const sunoHandler = (() => {
       if (!outTaskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
 
       try {
+        const regenPhase = {
+          taskId: outTaskId,
+          created_at: new Date().toISOString(),
+        };
         const regenExtra = JSON.stringify({
-          phases: {
-            "voice-regenerate": {
-              taskId: outTaskId,
-              created_at: new Date().toISOString(),
-            },
-          },
+          phases: { "voice-regenerate": regenPhase },
           regenerate_task_id: outTaskId,
         });
         const ins = await auth.admin.from("suno_tasks").insert({
@@ -4120,8 +4189,8 @@ const sunoHandler = (() => {
         });
         if (ins?.error) {
           if (String(ins.error.code || "") === "23505") {
-            // Suno reutilizó el mismo taskId: conservar la fase en la fila existente.
-            await auth.admin.from("suno_tasks").update({ extra: regenExtra }).eq("task_id", outTaskId).eq("user_id", auth.user.id);
+            // Suno reutilizó el mismo taskId: conservar las fases existentes y añadir la de regeneración.
+            await mergeTaskExtra(auth, outTaskId, "voice-regenerate", regenPhase, { regenerate_task_id: outTaskId });
           } else if (isMissingColumnError(ins.error)) {
             await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: auth.user.id, kind: "voice-regenerate", cost: 0, consumed: false });
           }
@@ -4186,14 +4255,13 @@ const sunoHandler = (() => {
       if (!taskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
 
       try {
+        const createPhase = {
+          taskId,
+          validationTaskId,
+          created_at: new Date().toISOString(),
+        };
         const createExtra = JSON.stringify({
-          phases: {
-            "voice-generate": {
-              taskId,
-              validationTaskId,
-              created_at: new Date().toISOString(),
-            },
-          },
+          phases: { "voice-generate": createPhase },
           validation_task_id: validationTaskId,
           create_task_id: taskId,
         });
@@ -4209,7 +4277,10 @@ const sunoHandler = (() => {
           if (String(ins.error.code || "") === "23505") {
             // Suno reutilizó el mismo taskId entre validación y creación:
             // conservar ambas fases en la fila existente (no perder la fase de creación).
-            await auth.admin.from("suno_tasks").update({ extra: createExtra }).eq("task_id", taskId).eq("user_id", auth.user.id);
+            await mergeTaskExtra(auth, taskId, "voice-generate", createPhase, {
+              validation_task_id: validationTaskId,
+              create_task_id: taskId,
+            });
           } else if (isMissingColumnError(ins.error)) {
             await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-generate", cost: 0, consumed: false });
           }

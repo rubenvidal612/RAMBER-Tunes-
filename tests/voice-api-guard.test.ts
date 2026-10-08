@@ -139,3 +139,138 @@ test('an ordinary style persona that is not a saved clone is not blocked', async
   assert.equal(calls.includes('GET /api/v1/voice/record-info'), false, 'an ordinary persona must not trigger the clone readiness check');
   assert.equal(calls.includes('POST /api/v1/voice/check-voice'), false, 'an ordinary persona must not trigger the clone readiness check');
 });
+
+test('voice-generate 23505 preserves voice-validate and writes extra as a jsonb object', async (t) => {
+  const env = { ...process.env };
+  Object.assign(process.env, { SUPABASE_URL: 'https://voice-test.supabase.co', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test', SUNO_API_KEY: 'test', SUNO_API_BASE_URL: 'https://voice-provider.test', ADMIN_EMAILS: 'admin@example.test' });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; process.env = env; });
+
+  let patchBody: any = null;
+  const existingExtra = JSON.stringify({
+    phases: { 'voice-validate': { taskId: 'validate-task-999', callback: '', created_at: '2026-10-08T00:00:00.000Z' } },
+    validate_task_id: 'validate-task-999',
+  });
+
+  globalThis.fetch = async (input: any, init: any = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    const method = init.method || 'GET';
+    const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/auth/v1/user') return json({ id: 'owner', email: 'admin@example.test' });
+    if (url.pathname === '/api/v1/voice/generate') return json({ code: 200, data: { taskId: 'gen-task-123' } });
+    if (url.pathname === '/rest/v1/suno_tasks') {
+      if (method === 'POST') return json({ code: '23505', message: 'duplicate key value violates unique constraint' }, 409);
+      if (method === 'GET') return json([{ extra: existingExtra }]);
+      if (method === 'PATCH') { patchBody = JSON.parse(init.body); return json(null); }
+    }
+    throw new Error(`Unexpected request ${method} ${url.pathname}`);
+  };
+
+  const req = { method: 'POST', url: '/api/suno/voice-generate', headers: { authorization: 'Bearer test', host: 'localhost' }, body: { taskId: 'validate-task-999', verifyUrl: 'https://verify.test/ok' } };
+  const res = { statusCode: 0, body: null as any, setHeader() {}, end(value: string) { this.body = JSON.parse(value); } };
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.taskId, 'gen-task-123');
+  assert.ok(patchBody, 'expected a PATCH to merge the conflict');
+  assert.equal(typeof patchBody.extra, 'object', 'extra must be written as a jsonb object, not a string');
+  assert.equal(Array.isArray(patchBody.extra), false);
+  assert.equal(patchBody.extra.phases['voice-validate'].taskId, 'validate-task-999', 'existing voice-validate phase must be preserved');
+  assert.equal(patchBody.extra.phases['voice-generate'].taskId, 'gen-task-123', 'voice-generate phase must be added');
+  assert.equal(patchBody.extra.validation_task_id, 'validate-task-999');
+  assert.equal(patchBody.extra.create_task_id, 'gen-task-123');
+});
+
+test('voice-regenerate 23505 merges phases and writes extra as a jsonb object', async (t) => {
+  const env = { ...process.env };
+  Object.assign(process.env, { SUPABASE_URL: 'https://voice-test.supabase.co', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test', SUNO_API_KEY: 'test', SUNO_API_BASE_URL: 'https://voice-provider.test', ADMIN_EMAILS: 'admin@example.test' });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; process.env = env; });
+
+  let patchBody: any = null;
+  const existingExtra = JSON.stringify({
+    phases: { 'voice-validate': { taskId: 'validate-task-999', callback: '', created_at: '2026-10-08T00:00:00.000Z' } },
+    validate_task_id: 'validate-task-999',
+  });
+
+  globalThis.fetch = async (input: any, init: any = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    const method = init.method || 'GET';
+    const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/auth/v1/user') return json({ id: 'owner', email: 'admin@example.test' });
+    if (url.pathname === '/api/v1/voice/regenerate') return json({ code: 200, data: { taskId: 'regen-task-456' } });
+    if (url.pathname === '/rest/v1/suno_tasks') {
+      if (method === 'POST') return json({ code: '23505', message: 'duplicate key value violates unique constraint' }, 409);
+      if (method === 'GET') return json([{ extra: existingExtra }]);
+      if (method === 'PATCH') { patchBody = JSON.parse(init.body); return json(null); }
+    }
+    throw new Error(`Unexpected request ${method} ${url.pathname}`);
+  };
+
+  const req = { method: 'POST', url: '/api/suno/voice-regenerate', headers: { authorization: 'Bearer test', host: 'localhost' }, body: { taskId: 'validate-task-999' } };
+  const res = { statusCode: 0, body: null as any, setHeader() {}, end(value: string) { this.body = JSON.parse(value); } };
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.taskId, 'regen-task-456');
+  assert.ok(patchBody, 'expected a PATCH to merge the conflict');
+  assert.equal(typeof patchBody.extra, 'object', 'extra must be written as a jsonb object, not a string');
+  assert.equal(patchBody.extra.phases['voice-validate'].taskId, 'validate-task-999', 'existing phase must be preserved');
+  assert.equal(patchBody.extra.phases['voice-regenerate'].taskId, 'regen-task-456', 'voice-regenerate phase must be added');
+});
+
+test('a selected clone with customMode=false is rejected before charging', async (t) => {
+  const env = { ...process.env };
+  Object.assign(process.env, { SUPABASE_URL: 'https://voice-test.supabase.co', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test', SUNO_API_KEY: 'test', SUNO_API_BASE_URL: 'https://voice-provider.test', ADMIN_EMAILS: 'admin@example.test' });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; process.env = env; });
+
+  const calls: string[] = [];
+  globalThis.fetch = async (input: any, init: any = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    calls.push(`${init.method || 'GET'} ${url.pathname}`);
+    const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/auth/v1/user') return json({ id: 'owner', email: 'admin@example.test' });
+    if (url.pathname === '/rest/v1/suno_voices') return json({ id: 'saved', user_id: 'owner', suno_voice_id: 'voice', last_task_id: 'task', status: 'ready' });
+    throw new Error(`Unexpected request ${url.pathname}`);
+  };
+
+  const req = { method: 'POST', url: '/api/suno/generate', headers: { authorization: 'Bearer test', host: 'localhost' }, body: { customMode: false, prompt: 'Test lyrics', personaId: 'voice' } };
+  const res = { statusCode: 0, body: null as any, setHeader() {}, end(value: string) { this.body = JSON.parse(value); } };
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'VOICE_REQUIRES_CUSTOM_MODE');
+  assert.equal(calls.includes('POST /api/v1/generate'), false, 'must not send a generation request without the voice');
+  assert.equal(calls.includes('POST /rest/v1/suno_tasks'), false, 'must not insert a task before charging');
+});
+
+test('voice-generate returns the create (generate) taskId, not the validate taskId', async (t) => {
+  const env = { ...process.env };
+  Object.assign(process.env, { SUPABASE_URL: 'https://voice-test.supabase.co', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test', SUNO_API_KEY: 'test', SUNO_API_BASE_URL: 'https://voice-provider.test', ADMIN_EMAILS: 'admin@example.test' });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; process.env = env; });
+
+  let inserted: any = null;
+  globalThis.fetch = async (input: any, init: any = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    const method = init.method || 'GET';
+    const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/auth/v1/user') return json({ id: 'owner', email: 'admin@example.test' });
+    if (url.pathname === '/api/v1/voice/generate') return json({ code: 200, data: { taskId: 'gen-task-123' } });
+    if (url.pathname === '/rest/v1/suno_tasks' && method === 'POST') { inserted = JSON.parse(init.body); return json(null); }
+    throw new Error(`Unexpected request ${method} ${url.pathname}`);
+  };
+
+  const req = { method: 'POST', url: '/api/suno/voice-generate', headers: { authorization: 'Bearer test', host: 'localhost' }, body: { taskId: 'validate-task-999', verifyUrl: 'https://verify.test/ok' } };
+  const res = { statusCode: 0, body: null as any, setHeader() {}, end(value: string) { this.body = JSON.parse(value); } };
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.taskId, 'gen-task-123', 'the create taskId (used for suno_voices.last_task_id) must come from voice/generate');
+  assert.ok(inserted, 'expected the voice task to be persisted');
+  assert.equal(inserted.task_id, 'gen-task-123');
+  const insertedExtra = typeof inserted.extra === 'string' ? JSON.parse(inserted.extra) : inserted.extra;
+  assert.equal(insertedExtra.create_task_id, 'gen-task-123');
+  assert.equal(insertedExtra.validation_task_id, 'validate-task-999');
+});
