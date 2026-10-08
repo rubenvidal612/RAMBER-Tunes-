@@ -1995,6 +1995,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error('No se pudo comprobar la disponibilidad de la voz. Intenta más tarde.');
+    if (result?.status === 'expired' || result?.status === 'failed') throw new Error(result?.reason || 'Suno rechazó esta voz. Repite la validación.');
     requireVoiceAvailable(result?.isAvailable);
   };
 
@@ -2081,7 +2082,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
           setVoiceGeneratedVoiceId(voiceId);
           break;
         }
-        if (status === 'processing_validate_fail' || status === 'fail') {
+        if (status === 'processing_validate_fail' || status === 'fail' || status === 'expired') {
           throw new Error(String(qout?.errorMessage || qout?.detail || qout?.error || 'La creación de voz falló.').trim() || 'La creación de voz falló.');
         }
       }
@@ -2102,6 +2103,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         });
         const aout = await ar.json().catch(() => ({}));
         if (ar.ok) {
+          if (aout?.status === 'expired' || aout?.status === 'failed') throw new Error(aout?.reason || 'Suno rechazó esta voz. Repite la validación.');
           available = isVoiceAvailable(aout?.isAvailable);
           if (available) break;
         }

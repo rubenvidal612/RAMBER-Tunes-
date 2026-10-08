@@ -17,6 +17,7 @@ import approvedDesignCss from "./approved-create/design-v2.css?raw";
 import approvedPlayerCss from "./approved-create/player-options.css?raw";
 import { ensureAnonSession, getAccessToken } from "./lib/supabaseBrowser";
 import { formatLyricsForEditing } from "./lib/lyricsFormatting.js";
+import { isVoiceAvailable } from "./lib/voiceAvailability";
 
 const pendingListKey = 'ramber.pendingSunoTasks_v1';
 const pendingLegacyKey = 'ramber.pendingSunoTask';
@@ -1595,9 +1596,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const status = String(out?.status || "").trim();
       const voiceId = String(out?.voiceId || "").trim();
       setVoiceGen((current) => ({ ...current, status }));
+      if (status === 'expired' || (Number(out?.errorCode) >= 400 && out?.errorMessage)) {
+        throw new Error(out?.errorMessage || 'Suno informa que esta voz expiró. Repite la validación.');
+      }
       if (status === "success" && voiceId) {
-        setVoiceGen((current) => ({ ...current, loading: false, error: "", voiceId, status }));
-        return;
+        setVoiceGen((current) => ({ ...current, error: "", status }));
+        return voiceId;
       }
       if (status === "processing_validate_fail" || status === "fail") {
         const reqId = postRejectValidateReqRef.current + 1;
@@ -1671,7 +1675,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       });
       const out = await r.json().catch(() => ({}));
       if (r.ok) {
-        const available = Boolean(out?.isAvailable);
+        if (out?.status === 'expired' || out?.status === 'failed') throw new Error(out?.reason || 'Suno rechazó esta voz. Repite la validación.');
+        const available = isVoiceAvailable(out?.isAvailable);
         if (available) return true;
       }
       await new Promise((r2) => setTimeout(r2, 2500));
@@ -1728,7 +1733,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     const voiceId = String(out?.voiceId || "").trim();
     if (status) setVoiceGen((current) => ({ ...current, status }));
     if (normalizeStatus(status) === "success" && voiceId) {
-      setVoiceGen((current) => ({ ...current, loading: false, error: "", voiceId, status }));
+      const taskId = String(out?.taskId || validationTaskId).trim();
+      const available = await checkAvailability(taskId);
+      if (!available) return false;
+      setVoiceGen((current) => ({ ...current, taskId, loading: false, error: "", voiceId, status, isAvailable: true }));
       setWizardStep(4);
       return true;
     }
@@ -2042,9 +2050,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return false;
       }
       setVoiceGen((current) => ({ ...current, taskId, loading: true, error: "" }));
-      await pollVoiceRecordInfo(taskId);
+      const finalVoiceId = await pollVoiceRecordInfo(taskId);
+      if (!finalVoiceId) return false;
       const available = await checkAvailability(taskId);
       setVoiceGen((current) => ({ ...current, isAvailable: available }));
+      if (!available) throw new Error('Suno aún no permite usar esta voz. No se guardó como lista. Vuelve a verificarla.');
+      setVoiceGen((current) => ({ ...current, voiceId: finalVoiceId, loading: false, error: '', isAvailable: true }));
       return true;
     } catch (e) {
       setVoiceGen((current) => ({ ...current, loading: false, error: e instanceof Error ? e.message : "No se pudo crear la voz." }));
@@ -2187,15 +2198,18 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   }, [wizardStep, validation.taskId, profile.verifyAudio]);
 
   useEffect(() => {
-    if (wizardStep === 3 && voiceGen.voiceId) {
+    if (wizardStep === 3 && voiceGen.voiceId && isVoiceAvailable(voiceGen.isAvailable)) {
       setWizardStep(4);
     }
-  }, [wizardStep, voiceGen.voiceId]);
+  }, [wizardStep, voiceGen.voiceId, voiceGen.isAvailable]);
 
   const saveToSunoVoices = async () => {
     const voiceId = String(voiceGen.voiceId || "").trim();
     const taskId = String(voiceGen.taskId || "").trim();
-    if (!voiceId) return false;
+    if (!voiceId || !isVoiceAvailable(voiceGen.isAvailable)) {
+      setSaveError('Suno no confirmó que esta voz esté disponible. Repite la validación antes de guardarla y usarla.');
+      return false;
+    }
     setSaving(true);
     setSaveError("");
     try {
@@ -2644,7 +2658,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             </div>
           )}
           {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
-          {wizardStep === 4 && <div className="wizard-section ready-section"><div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : <Check size={34} weight="bold"/>}</div><h3>{voiceGen.loading ? "Creando tu personaje…" : voiceGen.voiceId ? "Personaje creado" : "Listo"}</h3><p>{voiceGen.loading ? "Estamos esperando el ID final." : voiceGen.voiceId ? "Tu personaje de voz ya tiene un ID válido." : "Completa los pasos anteriores para crear tu perfil de voz."}</p><div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{voiceGen.voiceId ? `voiceId: ${voiceGen.voiceId}` : voiceGen.status || "Procesando"}</strong></div>{voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}{saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}{voiceGen.isAvailable === false ? <div className="wizard-info"><Info size={19}/><span>Tu voz aún no aparece como disponible. Puedes guardarla y estará lista en unos minutos.</span></div> : null}</div>}
+          {wizardStep === 4 && <div className="wizard-section ready-section">
+            <div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : isVoiceAvailable(voiceGen.isAvailable) ? <Check size={34} weight="bold"/> : <Info size={34}/>}</div>
+            <h3>{voiceGen.loading ? "Comprobando tu personaje…" : isVoiceAvailable(voiceGen.isAvailable) ? "Personaje confirmado por Suno" : "Voz sin confirmar"}</h3>
+            <p>{isVoiceAvailable(voiceGen.isAvailable) ? "Suno confirmó su disponibilidad en esta comprobación. Volveremos a comprobarla antes de cada canción." : "Completa la validación y espera la confirmación de Suno antes de usar este perfil."}</p>
+            <div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{isVoiceAvailable(voiceGen.isAvailable) ? 'Disponible en Suno' : voiceGen.status || "Procesando"}</strong></div>
+            {voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}
+            {saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}
+          </div>}
         </div>
         <div className="wizard-footer">
           <button
@@ -2707,7 +2728,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           ) : (
             <button
               className="wizard-next"
-              disabled={!voiceGen.voiceId || saving || voiceGen.loading}
+              disabled={!voiceGen.voiceId || !isVoiceAvailable(voiceGen.isAvailable) || saving || voiceGen.loading}
               onClick={async () => {
                 const ok = await saveToSunoVoices();
                 if (!ok) return;
@@ -2793,6 +2814,7 @@ function StartStep({ data, setData, setToast, handlers }) {
       name: String(raw?.name || raw?.voice_name || 'Voz').trim(),
       createdAt: String(raw?.created_at || raw?.createdAt || new Date().toISOString()).trim() || new Date().toISOString(),
       status: String(raw?.status || '').trim() || undefined,
+      availabilityReason: String(raw?.availability?.reason || '').trim(),
       taskId: String(raw?.last_task_id || raw?.task_id || raw?.taskId || '').trim() || undefined,
       profileImageUrl: meta && typeof meta?.profileImageUrl === 'string' ? String(meta.profileImageUrl).trim() : typeof raw?.profileImageUrl === 'string' ? String(raw.profileImageUrl).trim() : undefined,
       description: meta && typeof meta?.description === 'string' ? String(meta.description) : typeof raw?.description === 'string' ? String(raw.description) : undefined,
@@ -2826,7 +2848,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     try {
       const raw = window.localStorage.getItem(sunoVoicesCacheKey);
       const parsed = raw ? JSON.parse(raw) : null;
-      return applyPersonas(Array.isArray(parsed) ? parsed : []);
+      return applyPersonas((Array.isArray(parsed) ? parsed : []).map((v) => ({ ...v, status: 'unconfirmed' })));
     } catch {
       setPersonas([]);
       return [];
@@ -2836,7 +2858,7 @@ function StartStep({ data, setData, setToast, handlers }) {
   const loadPersonasFromDb = async () => {
     const t = await getAccessToken();
     if (!t.ok) return loadPersonasFromLocalCache();
-    const r = await fetch('/api/suno/voices', { headers: { authorization: `Bearer ${t.token}` } });
+    const r = await fetch('/api/suno/voices?refresh=1', { headers: { authorization: `Bearer ${t.token}` } });
     const out = await r.json().catch(() => ({}));
     if (!r.ok) return loadPersonasFromLocalCache();
     return applyPersonas(Array.isArray(out?.voices) ? out.voices : []);
@@ -3561,6 +3583,8 @@ function StartStep({ data, setData, setToast, handlers }) {
                       <button
                         type="button"
                         className="persona-card-select"
+                        disabled={p.status !== 'ready'}
+                        title={p.availabilityReason || (p.status !== 'ready' ? 'Suno no confirmó esta voz. Repite la validación en el Clonador.' : '')}
                         onClick={() => {
                           updateSelectedPersona({
                             voiceId: p.voiceId,
@@ -3568,6 +3592,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                             profileImageUrl: p.profileImageUrl,
                             description: p.description,
                             singerSkillLevel: p.singerSkillLevel,
+                            taskId: p.taskId,
                           });
                           closeClonePicker({ keepSelection: true });
                           setToast("Personaje seleccionado para la canción.");
@@ -3578,7 +3603,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                         </span>
                         <span className="persona-card-text">
                           <strong>{p.name}</strong>
-                          <small>{p.singerSkillLevel || p.description || `ID: ${p.voiceId.slice(0, 8)}`}</small>
+                          <small>{p.status === 'ready' ? 'Disponible · comprobada con Suno' : p.status === 'expired' ? 'Suno informa: expirada · repetir validación' : p.status === 'unconfirmed' ? 'Sin confirmar · reabre el selector para comprobar' : 'No disponible en Suno · repetir validación'}</small>
                         </span>
                       </button>
                       <button

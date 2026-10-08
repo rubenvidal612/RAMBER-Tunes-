@@ -1,4 +1,4 @@
-import { isVoiceAvailable } from "../src/lib/voiceAvailability.js";
+import { isVoiceAvailable, inspectVoiceReadiness, requireVoiceReady, voiceRecordError } from "../src/lib/voiceAvailability.js";
 import { authorizeAudioCleanup, cleanupTemporaryAudio } from "../src/lib/temporaryAudioCleanup.js";
 
 const CREDIT_COSTS = {
@@ -1832,7 +1832,7 @@ const sunoHandler = (() => {
     return NaN;
   }
 
-  async function sunoFetchJson(path: string, init?: RequestInit) {
+  async function sunoFetchJson(path: string, init?: RequestInit, timeoutMs = 45_000) {
     const baseEnv = process.env.SUNO_API_BASE_URL || process.env.SUNO_BASE_URL || "";
     const base = normalizeSunoBaseUrl(baseEnv) || "https://api.sunoapi.org";
 
@@ -1846,7 +1846,6 @@ const sunoHandler = (() => {
 
     const url = new URL(path, base).toString();
     const ctrl = new AbortController();
-    const timeoutMs = 45_000;
     const timer = setTimeout(() => ctrl.abort(new Error("SUNO_FETCH_TIMEOUT")), timeoutMs);
     let res: Response;
     try {
@@ -1979,6 +1978,47 @@ const sunoHandler = (() => {
     return "";
   }
 
+  const fetchVoiceStatus = (path: string, init?: RequestInit) => sunoFetchJson(path, init, 8_000);
+
+  async function refreshSavedVoice(auth: any, voice: any) {
+    const state = await inspectVoiceReadiness(String(voice.last_task_id || ''), voice.suno_voice_id, fetchVoiceStatus);
+    if (voice.status !== state.status) {
+      const { error } = await auth.admin.from('suno_voices')
+        .update({ status: state.status, updated_at: state.checkedAt })
+        .eq('id', voice.id).eq('user_id', auth.user.id);
+      if (error) throw error;
+    }
+    return { ...voice, status: state.status, availability: state };
+  }
+
+  // This is deliberately before charging or preparing/uploading cover audio.
+  // Checking only in the browser leaves the live UI and API clients unprotected.
+  async function guardSelectedVoice(auth: any, payload: any, res: any) {
+    const voiceId = firstString(payload, ['personaId', 'persona_id']);
+    if (!voiceId) return true;
+    const personaModel = firstString(payload, ['personaModel', 'persona_model']);
+    if (personaModel && personaModel !== 'voice_persona') return true;
+    try {
+      const { data: voice, error } = await auth.admin.from('suno_voices').select('*')
+        .eq('user_id', auth.user.id).eq('suno_voice_id', voiceId).maybeSingle();
+      if (error) throw error;
+      if (!voice && personaModel !== 'voice_persona') return true; // ordinary music persona
+      if (!voice) {
+        send(res, 409, { error: 'Esta voz no está guardada en tu cuenta. Abre el Clonador y selecciona un perfil confirmado.', code: 'VOICE_UNCONFIRMED' });
+        return false;
+      }
+      const refreshed = await refreshSavedVoice(auth, voice);
+      requireVoiceReady(refreshed.availability);
+      return true;
+    } catch (e: any) {
+      send(res, e?.httpStatus === 409 ? 409 : 503, {
+        error: e?.httpStatus === 409 ? e.message : 'No se pudo comprobar la voz con Suno. No se generó ni se cobró la canción. Intenta más tarde.',
+        code: e?.code || 'VOICE_CHECK_FAILED',
+      });
+      return false;
+    }
+  }
+
   async function handleGenerate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -2049,6 +2089,7 @@ const sunoHandler = (() => {
     const isAdmin = isAdminEmail(user.email);
     const cost = CREDIT_COSTS.generate_music;
 
+    if (!(await guardSelectedVoice(auth, payload, res))) return;
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
@@ -2167,6 +2208,7 @@ const sunoHandler = (() => {
     const isAdmin = isAdminEmail(user.email);
     const cost = CREDIT_COSTS.extend_music;
 
+    if (!(await guardSelectedVoice(auth, payload, res))) return;
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
@@ -2237,6 +2279,7 @@ const sunoHandler = (() => {
     const isAdmin = isAdminEmail(user.email);
     const cost = CREDIT_COSTS.upload_and_cover;
 
+    if (!(await guardSelectedVoice(auth, payload, res))) return;
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
@@ -3995,7 +4038,7 @@ const sunoHandler = (() => {
         ok: true,
         taskId: String(d?.taskId || taskId).trim() || taskId,
         validateInfo: typeof d?.validateInfo === "string" ? d.validateInfo : "",
-        status: typeof d?.status === "string" ? d.status : "",
+        status: voiceRecordError(d) ? (/expir/i.test(voiceRecordError(d)) ? "expired" : "fail") : typeof d?.status === "string" ? d.status : "",
         errorCode: Number.isFinite(Number(d?.errorCode)) ? Number(d.errorCode) : null,
         errorMessage: typeof d?.errorMessage === "string" ? d.errorMessage : "",
         data: d,
@@ -4166,26 +4209,12 @@ const sunoHandler = (() => {
     if (!taskId) return send(res, 400, { error: "Falta task_id" });
 
     try {
-      const body: any = { task_id: taskId };
-      const { res: r, data, text } = await sunoFetchJson("/api/v1/voice/check-voice", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-
-      if (!r.ok) {
-        const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        return send(res, 502, { error: "Error consultando disponibilidad de voz", code: r.status, detail: String(msg).slice(0, 1200) });
-      }
-
-      const code = Number(data?.code);
-      if (code && code !== 200) {
-        const msg = sunoErrorMessage(data, "Error del proveedor");
-        return send(res, 502, { error: "Error consultando disponibilidad de voz", code, detail: String(msg).slice(0, 1200) });
-      }
-
-      const d = data?.data ?? {};
-      const isAvailable = isVoiceAvailable(d?.isAvailable);
-      return send(res, 200, { ok: true, taskId, isAvailable, data: d });
+      const state = await inspectVoiceReadiness(taskId, undefined, fetchVoiceStatus);
+      const { error } = await auth.admin.from('suno_voices')
+        .update({ status: state.status, updated_at: state.checkedAt })
+        .eq('user_id', auth.user.id).eq('last_task_id', taskId);
+      if (error) throw error;
+      return send(res, 200, { ok: true, taskId, ...state });
     } catch (e) {
       return send(res, 502, { error: "Error consultando disponibilidad de voz", detail: e instanceof Error ? e.message : String(e) });
     }
@@ -5141,7 +5170,19 @@ notify pgrst, 'reload schema';`;
 
         if (error) throw error;
 
-        return send(res, 200, { voices: voices || [] });
+        const refreshed = [...(voices || [])];
+        if (pickQuery(req, 'refresh') === '1') {
+          // Bound concurrency and work per request. Transient provider failures
+          // disable selection for this response, without marking a profile expired.
+          for (let i = 0; i < Math.min(refreshed.length, 50); i += 4) {
+            await Promise.all(refreshed.slice(i, Math.min(i + 4, 50)).map(async (voice, offset) => {
+              try { refreshed[i + offset] = await refreshSavedVoice(auth, voice); }
+              catch { refreshed[i + offset] = { ...voice, status: 'unconfirmed', availability: { reason: 'No se pudo comprobar con Suno. Reabre el selector para reintentar.' } }; }
+            }));
+          }
+          for (let i = 50; i < refreshed.length; i++) refreshed[i] = { ...refreshed[i], status: 'unconfirmed' };
+        }
+        return send(res, 200, { voices: refreshed });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         const lower = detail.toLowerCase();
@@ -5288,15 +5329,8 @@ notify pgrst, 'reload schema';`;
         // use the voice. Verify the task and its resulting voice ID first.
         if (status === "ready") {
           if (!taskId) return send(res, 409, { error: "Falta confirmar la disponibilidad de la voz." });
-          const record = await sunoFetchJson(`/api/v1/voice/record-info?taskId=${encodeURIComponent(taskId)}`, { method: "GET" });
-          const info = record.data?.data;
-          if (!record.res.ok || Number(record.data?.code) !== 200 || info?.status !== "success" || info?.voiceId !== sunoVoiceId) {
-            return send(res, 409, { error: "El proveedor no confirmó la creación de esta voz." });
-          }
-          const check = await sunoFetchJson("/api/v1/voice/check-voice", { method: "POST", body: JSON.stringify({ task_id: taskId }) });
-          if (!check.res.ok || Number(check.data?.code) !== 200 || !isVoiceAvailable(check.data?.data?.isAvailable)) {
-            return send(res, 409, { error: "El proveedor todavía no confirmó que la voz esté disponible." });
-          }
+          const state = await inspectVoiceReadiness(taskId, sunoVoiceId, fetchVoiceStatus);
+          if (!state.isAvailable) return send(res, 409, { error: state.status === 'expired' ? 'Suno informa que esta voz expiró. Repite la validación; no se guardó como lista.' : state.reason, code: `VOICE_${state.status.toUpperCase()}` });
         }
         const row: any = {
           user_id: auth.user.id,
