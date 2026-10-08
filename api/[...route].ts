@@ -1997,18 +1997,23 @@ const sunoHandler = (() => {
     const voiceId = firstString(payload, ['personaId', 'persona_id']);
     if (!voiceId) return true;
     const personaModel = firstString(payload, ['personaModel', 'persona_model']);
-    if (personaModel && personaModel !== 'voice_persona') return true;
     try {
       const { data: voice, error } = await auth.admin.from('suno_voices').select('*')
         .eq('user_id', auth.user.id).eq('suno_voice_id', voiceId).maybeSingle();
       if (error) throw error;
-      if (!voice && personaModel !== 'voice_persona') return true; // ordinary music persona
-      if (!voice) {
+      // A saved cloned voice is always validated, even when personaModel is
+      // missing or mislabeled as an ordinary persona.
+      if (voice) {
+        const refreshed = await refreshSavedVoice(auth, voice);
+        requireVoiceReady(refreshed.availability);
+        return true;
+      }
+      // No saved voice: only block when the client explicitly claims a cloned voice.
+      if (personaModel === 'voice_persona') {
         send(res, 409, { error: 'Esta voz no está guardada en tu cuenta. Abre el Clonador y selecciona un perfil confirmado.', code: 'VOICE_UNCONFIRMED' });
         return false;
       }
-      const refreshed = await refreshSavedVoice(auth, voice);
-      requireVoiceReady(refreshed.availability);
+      // Ordinary style persona (or no model hint): nothing to guard.
       return true;
     } catch (e: any) {
       send(res, e?.httpStatus === 409 ? 409 : 503, {
