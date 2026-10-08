@@ -37,7 +37,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const mobileHeaderMenuBtnRef = useRef<HTMLButtonElement>(null);
   const mobileHeaderMenuRef = useRef<HTMLDivElement>(null);
   const [mobileFilterSortOpen, setMobileFilterSortOpen] = useState(false);
-  const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number }>>([]);
+  const [pendingTasks, setPendingTasks] = useState<Array<{ taskId: string; kind: string; startedAt: number; providerStatus?: string; progressPct?: number; retryPaused?: boolean }>>([]);
+  const [pendingSyncBusy, setPendingSyncBusy] = useState(false);
+  useEffect(() => {
+    const onSync = (event: Event) => setPendingSyncBusy(Boolean((event as CustomEvent).detail?.busy));
+    window.addEventListener('ramber:pendingSyncState', onSync);
+    return () => window.removeEventListener('ramber:pendingSyncState', onSync);
+  }, []);
   const [pendingRvcCovers, setPendingRvcCovers] = useState<Array<{ predictionId: string; startedAt: number; songId?: string; voiceId?: string }>>([]);
   const [pendingRvcCoverUi, setPendingRvcCoverUi] = useState<{
     status: string;
@@ -361,6 +367,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
               kind: typeof x?.kind === 'string' ? x.kind.trim() : 'generate',
               startedAt: Number.isFinite(Number(x?.startedAt || 0)) ? Number(x.startedAt || 0) : 0,
               providerStatus: typeof x?.providerStatus === 'string' ? x.providerStatus.trim() : undefined,
+              retryPaused: x?.retryPaused === true,
               progressPct: Number.isFinite(Number(x?.progressPct)) ? Number(x.progressPct) : undefined,
               failCount: Number.isFinite(Number(x?.failCount)) ? Number(x.failCount) : 0,
               lastError: typeof x?.lastError === 'string' ? x.lastError.trim() : '',
@@ -2322,7 +2329,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         }}
                         className="bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                       >
-                        Actualizar
+                        {pendingSyncBusy ? 'Consultando…' : 'Actualizar'}
                       </button>
                       <button
                         onClick={() => {
@@ -2363,11 +2370,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                       <div key={k} className="flex items-start gap-4 p-2 rounded-xl hover:bg-white/5 transition-colors">
                         <div className="w-16 h-16 rounded-full p-[3px] shrink-0" style={{ background: ring(pct) }}>
                           <div className="w-full h-full rounded-full bg-[#0b0f16] border border-white/10 flex items-center justify-center">
-                            <div className="text-sm font-extrabold text-slate-100">{pct}%</div>
+                            <div className="text-sm font-extrabold text-slate-100">{pendingSyncBusy ? '…' : 'En cola'}</div>
                           </div>
                         </div>
                         <div className="flex-1 min-w-0 pt-1">
-                          <div className="h-3 w-[70%] bg-white/10 rounded-full animate-pulse" />
+                          <div className="text-sm text-slate-200" role="status">
+                            {pendingSyncBusy ? 'Consultando el estado con el proveedor…' : first?.retryPaused ? 'Consulta pausada por errores. Pulsa Actualizar para reintentar.' : first?.providerStatus === 'SUCCESS' ? 'Recuperando los audios…' : 'Esperando resultado del proveedor…'}
+                          </div>
+                          {now - base >= 10 * 60 * 1000 && !showErr ? <div className="mt-2 text-xs text-amber-200">Está tardando más de lo habitual. Actualizar consulta esta misma solicitud; no genera ni cobra otra canción.</div> : null}
                           <div className="h-3 w-[90%] bg-white/10 rounded-full mt-3 animate-pulse" />
                           {k === 0 && showErr ? (
                             <div className="mt-3 text-[11px] text-red-200 break-words">{showErr}</div>
