@@ -31,6 +31,7 @@ test('live API routes reject expired clones before any credit or generation requ
         return json(voice);
       }
       if (url.pathname === '/api/v1/voice/record-info') return json({ code: 200, data: { status: 'success', voiceId: 'voice', errorCode: 400, errorMessage: 'The voice has expired' } });
+      if (url.pathname === '/rest/v1/suno_tasks') return json(null);
       throw new Error(`Unexpected request before rejecting expired voice: ${url.pathname}`);
     };
     const req = {
@@ -43,6 +44,80 @@ test('live API routes reject expired clones before any credit or generation requ
     assert.equal(res.body.code, 'VOICE_EXPIRED');
     assert.equal(calls.some(c => /profiles|credits|generate$|cover$|storage/.test(c.url.pathname)), false);
   }
+});
+
+test('guard with an unavailable voice persists check_voice with context=guard', async (t) => {
+  const env = { ...process.env };
+  Object.assign(process.env, { SUPABASE_URL: 'https://voice-test.supabase.co', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test', SUNO_API_KEY: 'test', SUNO_API_BASE_URL: 'https://voice-provider.test', ADMIN_EMAILS: 'admin@example.test' });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; process.env = env; });
+
+  let tasksPatchBody: any = null;
+  globalThis.fetch = async (input: any, init: any = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    const method = init.method || 'GET';
+    const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/auth/v1/user') return json({ id: 'owner', email: 'admin@example.test' });
+    if (url.pathname === '/rest/v1/suno_voices') {
+      if (method === 'PATCH') { assert.equal(JSON.parse(init.body).status, 'unavailable'); return json(null); }
+      return json({ id: 'saved', user_id: 'owner', suno_voice_id: 'voice', last_task_id: 'task', status: 'ready' });
+    }
+    if (url.pathname === '/api/v1/voice/record-info') return json({ code: 200, data: { status: 'success', voiceId: 'voice' } });
+    if (url.pathname === '/api/v1/voice/check-voice') return json({ code: 200, data: { isAvailable: false } });
+    if (url.pathname === '/rest/v1/suno_tasks') {
+      if (method === 'PATCH') { tasksPatchBody = JSON.parse(init.body); return json(null); }
+      return json(null);
+    }
+    throw new Error(`Unexpected request ${method} ${url.pathname}`);
+  };
+
+  const req = { method: 'POST', url: '/api/suno/generate', headers: { authorization: 'Bearer test', host: 'localhost' }, body: { customMode: true, prompt: 'lyrics', title: 'Test', style: 'Pop', model: 'V6', personaId: 'voice', personaModel: 'voice_persona' } };
+  const res = { statusCode: 0, body: null as any, setHeader() {}, end(value: string) { this.body = JSON.parse(value); } };
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'VOICE_UNAVAILABLE');
+  assert.ok(tasksPatchBody, 'expected a PATCH to suno_tasks.extra');
+  assert.equal(typeof tasksPatchBody.extra, 'object', 'extra must be written as an object, not a string');
+  assert.equal(tasksPatchBody.extra.check_voice.context, 'guard');
+  assert.equal(tasksPatchBody.extra.check_voice.isAvailable, false);
+  assert.equal(tasksPatchBody.extra.check_voice.status, 'unavailable');
+});
+
+test('check-voice reads legacy string extra and writes it back as an object', async (t) => {
+  const env = { ...process.env };
+  Object.assign(process.env, { SUPABASE_URL: 'https://voice-test.supabase.co', SUPABASE_ANON_KEY: 'test', SUPABASE_SERVICE_ROLE_KEY: 'test', SUNO_API_KEY: 'test', SUNO_API_BASE_URL: 'https://voice-provider.test', ADMIN_EMAILS: 'admin@example.test' });
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; process.env = env; });
+
+  let patchBody: any = null;
+  const existingExtra = JSON.stringify({ create_task_id: 'gen-task-123', check_voice: { status: 'ready', isAvailable: true } });
+  globalThis.fetch = async (input: any, init: any = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    const method = init.method || 'GET';
+    const json = (data: any, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/auth/v1/user') return json({ id: 'owner', email: 'admin@example.test' });
+    if (url.pathname === '/api/v1/voice/record-info') return json({ code: 200, data: { status: 'success', voiceId: 'voice' } });
+    if (url.pathname === '/api/v1/voice/check-voice') return json({ code: 200, data: { isAvailable: false } });
+    if (url.pathname === '/rest/v1/suno_voices') return json(null);
+    if (url.pathname === '/rest/v1/suno_tasks') {
+      if (method === 'GET') return json([{ extra: existingExtra }]);
+      if (method === 'PATCH') { patchBody = JSON.parse(init.body); return json(null); }
+    }
+    throw new Error(`Unexpected request ${method} ${url.pathname}`);
+  };
+
+  const req = { method: 'POST', url: '/api/suno/voice-check-voice', headers: { authorization: 'Bearer test', host: 'localhost' }, body: { task_id: 'gen-task-123' } };
+  const res = { statusCode: 0, body: null as any, setHeader() {}, end(value: string) { this.body = JSON.parse(value); } };
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.ok(patchBody, 'expected a PATCH to suno_tasks.extra');
+  assert.equal(typeof patchBody.extra, 'object', 'legacy string extra must be rewritten as an object');
+  assert.equal(patchBody.extra.create_task_id, 'gen-task-123', 'legacy fields must be preserved');
+  assert.equal(patchBody.extra.check_voice.context, 'endpoint');
+  assert.equal(Array.isArray(patchBody.extra.check_voice_history), true);
+  assert.equal(patchBody.extra.check_voice_history.length, 1);
 });
 
 test('confirmed clone reaches generation unchanged; provider outage does not expire or charge it', async (t) => {
@@ -270,7 +345,7 @@ test('voice-generate returns the create (generate) taskId, not the validate task
   assert.equal(res.body.taskId, 'gen-task-123', 'the create taskId (used for suno_voices.last_task_id) must come from voice/generate');
   assert.ok(inserted, 'expected the voice task to be persisted');
   assert.equal(inserted.task_id, 'gen-task-123');
-  const insertedExtra = typeof inserted.extra === 'string' ? JSON.parse(inserted.extra) : inserted.extra;
-  assert.equal(insertedExtra.create_task_id, 'gen-task-123');
-  assert.equal(insertedExtra.validation_task_id, 'validate-task-999');
+  assert.equal(typeof inserted.extra, 'object', 'extra must be written as an object, not a string');
+  assert.equal(inserted.extra.create_task_id, 'gen-task-123');
+  assert.equal(inserted.extra.validation_task_id, 'validate-task-999');
 });

@@ -2006,6 +2006,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       return false;
     }
     const verifyUrl = String(verifyUrlOverride || verifyUpload.url || "").trim();
+    const verifyPath = String(verifyUpload.key || "").trim();
     if (!verifyUrl) {
       setVoiceGen((current) => ({ ...current, error: "Primero sube el audio de verificación para obtener una URL válida." }));
       return false;
@@ -2021,6 +2022,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const body = {
         taskId: validationTaskId,
         verifyUrl,
+        verifyPath,
         voiceName: profile.name,
         description: profile.description,
         style: profile.style,
@@ -2224,6 +2226,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         profileImageUrl: "",
         style: profile.style,
         language,
+        verify_url: verifyUpload ? String(verifyUpload.url || "") : "",
+        verify_path: verifyUpload ? String(verifyUpload.key || "") : "",
       };
       const r = await fetch("/api/suno/voices", {
         method: "POST",

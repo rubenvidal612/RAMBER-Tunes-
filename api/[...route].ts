@@ -574,7 +574,7 @@ async function ensureProfileExists(admin: any, userId: string) {
   return { ok: false, error: String(r.error?.message || "No pude crear el perfil.") };
 }
 
-async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: number) {
+async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: number, extendExpiry = false) {
   const next = round2(Math.max(0, Number(nextCredits)));
   if (!Number.isFinite(next)) return { ok: false, error: "Créditos inválidos" };
 
@@ -589,6 +589,9 @@ async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: n
     const patch: any = {};
     if (col === "song_balance") patch[col] = toCounts(next).songs;
     else patch[col] = next;
+    if (extendExpiry && next > 0) {
+      patch.credits_expires_at = addDaysIso(60);
+    }
     const { error } = await admin.from("profiles").update(patch).eq("id", userId);
     if (!error) return { ok: true as const, credits: next, col };
     if (isMissingColumnError(error)) continue;
@@ -1982,6 +1985,7 @@ const sunoHandler = (() => {
 
   async function refreshSavedVoice(auth: any, voice: any) {
     const state = await inspectVoiceReadiness(String(voice.last_task_id || ''), voice.suno_voice_id, fetchVoiceStatus);
+    await persistVoiceCheckExtra(auth, String(voice.last_task_id || ''), state, 'guard');
     if (voice.status !== state.status) {
       const { error } = await auth.admin.from('suno_voices')
         .update({ status: state.status, updated_at: state.checkedAt })
@@ -2058,6 +2062,40 @@ const sunoHandler = (() => {
       .update({ extra: merged })
       .eq("task_id", taskId)
       .eq("user_id", auth.user.id);
+  }
+
+  // Persiste el resultado de check-voice en suno_tasks.extra sin duplicar lógica.
+  // Guarda el objeto como jsonb (nunca string) y conserva un historial de las
+  // últimas comprobaciones para poder ver transiciones ready -> unavailable.
+  async function persistVoiceCheckExtra(auth: any, taskId: string, state: any, context: string) {
+    if (!taskId) return;
+    try {
+      const { data: curRows } = await auth.admin.from("suno_tasks").select("extra")
+        .eq("task_id", taskId).eq("user_id", auth.user.id).limit(1);
+      const curRow = Array.isArray(curRows) ? curRows[0] : null;
+      let curExtra: any = {};
+      if (curRow && (curRow as any)?.extra) {
+        try { curExtra = typeof (curRow as any).extra === "string" ? JSON.parse((curRow as any).extra) : (curRow as any).extra; }
+        catch { curExtra = {}; }
+      }
+      if (!curExtra || typeof curExtra !== "object" || Array.isArray(curExtra)) curExtra = {};
+      const merged = {
+        ...curExtra,
+        check_voice: {
+          status: state.status,
+          isAvailable: state.isAvailable,
+          reason: state.reason,
+          checked_at: state.checkedAt,
+          context,
+        },
+        check_voice_history: [
+          ...(Array.isArray(curExtra.check_voice_history) ? curExtra.check_voice_history : []),
+          { status: state.status, isAvailable: state.isAvailable, checked_at: state.checkedAt, context },
+        ].slice(-20),
+      };
+      await auth.admin.from("suno_tasks").update({ extra: merged })
+        .eq("task_id", taskId).eq("user_id", auth.user.id);
+    } catch { /* no romper el flujo por trazabilidad */ }
   }
 
   // Indica si el payload referencia una voz clonada (guardada en suno_voices o
@@ -4033,7 +4071,7 @@ const sunoHandler = (() => {
           cost: 0,
           consumed: false,
           client_attempt_id: cleanAttemptId || null,
-          extra: JSON.stringify({
+          extra: {
             phases: {
               "voice-validate": {
                 taskId,
@@ -4042,7 +4080,7 @@ const sunoHandler = (() => {
               },
             },
             validate_task_id: taskId,
-          }),
+          },
         };
         const ins1 = await auth.admin.from("suno_tasks").insert(row);
         if (ins1?.error) {
@@ -4175,10 +4213,10 @@ const sunoHandler = (() => {
           taskId: outTaskId,
           created_at: new Date().toISOString(),
         };
-        const regenExtra = JSON.stringify({
+        const regenExtra = {
           phases: { "voice-regenerate": regenPhase },
           regenerate_task_id: outTaskId,
-        });
+        };
         const ins = await auth.admin.from("suno_tasks").insert({
           task_id: outTaskId,
           user_id: auth.user.id,
@@ -4215,6 +4253,7 @@ const sunoHandler = (() => {
 
     const validationTaskId = firstString(payload, ["taskId", "task_id"]);
     const verifyUrl = firstString(payload, ["verifyUrl", "verify_url"]);
+    const verifyPath = firstString(payload, ["verifyPath", "verify_path", "storageKey", "storage_key", "key"]);
     const voiceName = firstString(payload, ["voiceName", "voice_name"]);
     const description = firstString(payload, ["description"]);
     const style = firstString(payload, ["style"]);
@@ -4258,13 +4297,17 @@ const sunoHandler = (() => {
         const createPhase = {
           taskId,
           validationTaskId,
+          verifyUrl,
+          verifyPath,
           created_at: new Date().toISOString(),
         };
-        const createExtra = JSON.stringify({
+        const createExtra: any = {
           phases: { "voice-generate": createPhase },
           validation_task_id: validationTaskId,
           create_task_id: taskId,
-        });
+        };
+        if (verifyUrl) createExtra.verify_url = verifyUrl;
+        if (verifyPath) createExtra.verify_path = verifyPath;
         const ins = await auth.admin.from("suno_tasks").insert({
           task_id: taskId,
           user_id: auth.user.id,
@@ -4275,11 +4318,11 @@ const sunoHandler = (() => {
         });
         if (ins?.error) {
           if (String(ins.error.code || "") === "23505") {
-            // Suno reutilizó el mismo taskId entre validación y creación:
-            // conservar ambas fases en la fila existente (no perder la fase de creación).
             await mergeTaskExtra(auth, taskId, "voice-generate", createPhase, {
               validation_task_id: validationTaskId,
               create_task_id: taskId,
+              ...(verifyUrl ? { verify_url: verifyUrl } : null),
+              ...(verifyPath ? { verify_path: verifyPath } : null),
             });
           } else if (isMissingColumnError(ins.error)) {
             await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: auth.user.id, kind: "voice-generate", cost: 0, consumed: false });
@@ -4338,7 +4381,7 @@ const sunoHandler = (() => {
         };
         const merged: any = { ...curExtra, record_info: recInfo };
         if (recInfo.voiceId) merged.voiceId = recInfo.voiceId;
-        await auth.admin.from("suno_tasks").update({ extra: JSON.stringify(merged) }).eq("task_id", taskId).eq("user_id", auth.user.id);
+        await auth.admin.from("suno_tasks").update({ extra: merged }).eq("task_id", taskId).eq("user_id", auth.user.id);
       } catch {
       }
 
@@ -4376,18 +4419,7 @@ const sunoHandler = (() => {
       if (error) throw error;
 
       // Trazabilidad: guardar el resultado de check-voice en suno_tasks.extra.
-      try {
-        const { data: curRows } = await auth.admin.from("suno_tasks").select("extra").eq("task_id", taskId).eq("user_id", auth.user.id).limit(1);
-        const curRow = Array.isArray(curRows) ? curRows[0] : null;
-        let curExtra: any = {};
-        if (curRow && (curRow as any)?.extra) {
-          try { curExtra = typeof (curRow as any).extra === "string" ? JSON.parse((curRow as any).extra) : (curRow as any).extra; } catch { curExtra = {}; }
-        }
-        if (!curExtra || typeof curExtra !== "object" || Array.isArray(curExtra)) curExtra = {};
-        const merged: any = { ...curExtra, check_voice: { status: state.status, isAvailable: state.isAvailable, reason: state.reason, checked_at: state.checkedAt } };
-        await auth.admin.from("suno_tasks").update({ extra: JSON.stringify(merged) }).eq("task_id", taskId).eq("user_id", auth.user.id);
-      } catch {
-      }
+      await persistVoiceCheckExtra(auth, taskId, state, 'endpoint');
 
       return send(res, 200, { ok: true, taskId, ...state });
     } catch (e) {
@@ -5436,8 +5468,15 @@ create table if not exists public.suno_voices (
   last_task_id text,
   meta jsonb,
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  status_checked_at timestamptz
 );
+
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'suno_voices' and column_name = 'status_checked_at') then
+    alter table public.suno_voices add column if not exists status_checked_at timestamptz;
+  end if;
+end $$;
 
 create unique index if not exists suno_voices_user_suno_voice_id_key
 on public.suno_voices (user_id, suno_voice_id);
@@ -5495,18 +5534,50 @@ notify pgrst, 'reload schema';`;
       const name = firstString(payload, ["name", "voiceName", "voice_name"]) || "Voz";
       const status = firstString(payload, ["status"]) || "";
       const taskId = firstString(payload, ["taskId", "task_id"]) || "";
-      const meta = typeof payload?.meta === "object" && payload?.meta && !Array.isArray(payload.meta) ? payload.meta : null;
+      const verifyUrlIn = firstString(payload, ["verifyUrl", "verify_url"]);
+      const verifyPathIn = firstString(payload, ["verifyPath", "verify_path", "storageKey", "storage_key"]);
+      let meta: any = typeof payload?.meta === "object" && payload?.meta && !Array.isArray(payload.meta) ? { ...payload.meta } : null;
 
       if (!sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId" });
 
       try {
-        // A client-supplied "ready" flag is not evidence that the provider can
-        // use the voice. Verify the task and its resulting voice ID first.
         if (status === "ready") {
           if (!taskId) return send(res, 409, { error: "Falta confirmar la disponibilidad de la voz." });
           const state = await inspectVoiceReadiness(taskId, sunoVoiceId, fetchVoiceStatus);
           if (!state.isAvailable) return send(res, 409, { error: state.status === 'expired' ? 'Suno informa que esta voz expiró. Repite la validación; no se guardó como lista.' : state.reason, code: `VOICE_${state.status.toUpperCase()}` });
         }
+
+        let verifyFromTask: any = null;
+        if (taskId && (!verifyUrlIn || !verifyPathIn)) {
+          try {
+            const { data: taskRow } = await auth.admin
+              .from("suno_tasks")
+              .select("extra")
+              .eq("task_id", taskId)
+              .eq("user_id", auth.user.id)
+              .limit(1)
+              .maybeSingle();
+            if (taskRow && (taskRow as any)?.extra) {
+              const raw: any =
+                typeof (taskRow as any).extra === "string" ? JSON.parse((taskRow as any).extra) : (taskRow as any).extra;
+              if (raw && typeof raw === "object" && !Array.isArray(raw)) verifyFromTask = raw;
+            }
+          } catch {
+          }
+        }
+
+        const finalVerifyUrl = verifyUrlIn || (verifyFromTask?.verify_url as string | undefined) || "";
+        const finalVerifyPath = verifyPathIn || (verifyFromTask?.verify_path as string | undefined) || "";
+
+        if (!meta) meta = {};
+        if (!meta.verify_url && finalVerifyUrl) meta.verify_url = finalVerifyUrl;
+        if (!meta.verify_path && finalVerifyPath) meta.verify_path = finalVerifyPath;
+        if (verifyFromTask?.phases?.["voice-generate"]?.verifyUrl && !meta.phase_verify_url) meta.phase_verify_url = String(verifyFromTask.phases["voice-generate"].verifyUrl);
+        if (verifyFromTask?.phases?.["voice-generate"]?.verifyPath && !meta.phase_verify_path) meta.phase_verify_path = String(verifyFromTask.phases["voice-generate"].verifyPath);
+        if (!meta.created_at) meta.created_at = new Date().toISOString();
+
+        const hasMeta = Object.keys(meta).length > 0;
+
         const row: any = {
           user_id: auth.user.id,
           suno_voice_id: sunoVoiceId.slice(0, 200),
@@ -5515,7 +5586,7 @@ notify pgrst, 'reload schema';`;
         };
         if (status) row.status = status.slice(0, 60);
         if (taskId) row.last_task_id = taskId.slice(0, 200);
-        if (meta) row.meta = meta;
+        if (hasMeta) row.meta = meta;
 
         const { data: saved, error } = await auth.admin
           .from("suno_voices")
@@ -5595,6 +5666,140 @@ notify pgrst, 'reload schema';`;
     }
 
     return send(res, 405, { error: "Método no permitido" });
+  }
+
+  async function handleSunoVoicesRefresh(req: any, res: any, opts: any = null) {
+    const method = (req.method || "").toUpperCase();
+    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
+
+    const isAdmin = opts && opts.isAdmin === true;
+    let auth: any = null;
+    if (isAdmin) {
+      const adminAuth = await requireServiceRoleAdmin();
+      if (!adminAuth.ok) return send(res, adminAuth.status, { error: adminAuth.error });
+      auth = adminAuth;
+    } else {
+      auth = await requireUser(req);
+      if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    }
+
+    try {
+      const payload = method === "POST" ? parseJsonBody(req) || {} : {};
+      const maxPerUser = Math.min(10, Math.max(1, Number(payload?.limit ?? payload?.max ?? 10) || 10));
+      const maxGlobal = isAdmin ? Math.min(100, Math.max(1, Number(payload?.maxGlobal ?? 50) || 50)) : maxPerUser;
+      const concurrency = Math.min(4, Math.max(1, Number(payload?.concurrency ?? 2) || 2));
+
+      let rows: any[] = [];
+      if (isAdmin) {
+        const { data, error } = await auth.admin
+          .from("suno_voices")
+          .select("*")
+          .order("updated_at", { ascending: true })
+          .limit(maxGlobal);
+        if (error) throw error;
+        rows = Array.isArray(data) ? data.slice(0, maxGlobal) : [];
+      } else {
+        const { data, error } = await auth.admin
+          .from("suno_voices")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .order("updated_at", { ascending: true })
+          .limit(maxPerUser);
+        if (error) throw error;
+        rows = Array.isArray(data) ? data.slice(0, maxPerUser) : [];
+      }
+
+      const priority = (s: string) => (String(s || "").toLowerCase() === "ready" ? 0 : 1);
+      const checkedAtValue = (r: any) => r?.status_checked_at ? new Date(String(r.status_checked_at)).getTime() : -1;
+      const list = (rows as any[]).slice().sort((a: any, b: any) => {
+        const pa = priority(a?.status);
+        const pb = priority(b?.status);
+        if (pa !== pb) return pa - pb;
+        const ca = checkedAtValue(a);
+        const cb = checkedAtValue(b);
+        if (ca !== cb) return ca - cb;
+        const ua = a?.updated_at ? new Date(String(a.updated_at)).getTime() : 0;
+        const ub = b?.updated_at ? new Date(String(b.updated_at)).getTime() : 0;
+        return ua - ub;
+      }).slice(0, isAdmin ? maxGlobal : maxPerUser);
+
+      const results: any[] = [];
+      let idx = 0;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (true) {
+          const pos = idx++;
+          if (pos >= list.length) return;
+          const row = list[pos] as any;
+          const taskId = String(row?.last_task_id || "").trim();
+          const voiceId = String(row?.suno_voice_id || "").trim();
+          const userId = String(row?.user_id || "").trim();
+          let newStatus: string | null = null;
+          let checkedAt: string | null = null;
+          let ok = false;
+          let providerOk = false;
+          let err: string | null = null;
+          let state: any = null;
+          try {
+            if (!taskId || !voiceId) throw new Error("missing taskId or suno_voice_id");
+            state = await inspectVoiceReadiness(taskId, voiceId, fetchVoiceStatus);
+            providerOk = true;
+            newStatus = String(state.status || row?.status || "processing");
+            checkedAt = String(state.checkedAt || new Date().toISOString());
+            ok = true;
+            try {
+              await persistVoiceCheckExtra(auth, taskId, state, 'refresh');
+            } catch {
+            }
+          } catch (e) {
+            err = e instanceof Error ? e.message : String(e);
+            newStatus = String(row?.status || "processing");
+          }
+          try {
+            const patch: any = { updated_at: new Date().toISOString() };
+            if (providerOk && checkedAt) patch.status_checked_at = checkedAt;
+            if (providerOk && newStatus && newStatus !== String(row?.status || "")) patch.status = newStatus;
+            await auth.admin
+              .from("suno_voices")
+              .update(patch)
+              .eq("user_id", userId || auth?.user?.id || "")
+              .eq("suno_voice_id", voiceId || String(row?.suno_voice_id || ""));
+          } catch {
+          }
+          results.push({
+            user_id: userId || null,
+            suno_voice_id: voiceId || String(row?.suno_voice_id || ""),
+            name: String(row?.name || ""),
+            previous_status: String(row?.status || ""),
+            status: newStatus,
+            ok,
+            provider_ok: providerOk,
+            error: err,
+            status_checked_at: providerOk ? checkedAt : row?.status_checked_at ? String(row.status_checked_at) : null,
+          });
+        }
+      });
+      await Promise.all(workers);
+      return send(res, 200, {
+        ok: true,
+        checked: results.length,
+        concurrency,
+        admin: isAdmin,
+        results,
+      });
+    } catch (e) {
+      return send(res, 500, {
+        error: "Error refrescando voces",
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  async function handleSunoVoicesRenew(req: any, res: any) {
+    return send(res, 501, {
+      ok: false,
+      error: "NO_ACTIVADO",
+      detail: "El reenvío de verificación (renew) está diseñado pero deshabilitado. No se activará hasta que se verifique cuánto tiempo vive el validation_task en Suno.",
+    });
   }
 
   // ------------------------------------------------------------------
@@ -5977,11 +6182,14 @@ notify pgrst, 'reload schema';`;
   return async function handler(req: any, res: any) {
     try {
       const action = (pickQuery(req, "action") || "").trim().toLowerCase() || "";
+      let voicesSub: string = "";
       const fallback = (() => {
         const pathname = new URL(req.url, "http://localhost").pathname;
         const parts = pathname.split("/").filter(Boolean);
         const i = parts.findIndex((p) => p === "suno");
         const next = i >= 0 ? parts[i + 1] : "";
+        const afterNext = i >= 0 ? parts[i + 2] : "";
+        voicesSub = afterNext ? String(afterNext).toLowerCase() : "";
         return (next || "").toLowerCase();
       })();
       const a = action || fallback;
@@ -6008,7 +6216,11 @@ notify pgrst, 'reload schema';`;
       if (a === "voice-generate") return handleVoiceGenerate(req, res);
       if (a === "voice-record-info") return handleVoiceRecordInfo(req, res);
       if (a === "voice-check-voice") return handleVoiceCheckVoice(req, res);
-      if (a === "voices") return handleSunoVoices(req, res);
+      if (a === "voices") {
+        if (voicesSub === "refresh") return handleSunoVoicesRefresh(req, res);
+        if (voicesSub === "renew") return handleSunoVoicesRenew(req, res);
+        return handleSunoVoices(req, res);
+      }
       if (a === "clone-voice") return handleCloneVoice(req, res);
       if (a === "kits-voices") return handleKitsVoices(req, res);
       if (a === "create-cover") return handleCreateCover(req, res);
@@ -6023,6 +6235,8 @@ notify pgrst, 'reload schema';`;
       return send(res, 500, { error: "Error interno", detail: e instanceof Error ? e.message : String(e) });
     }
   };
+  (handler as any).cronRefreshSunoVoices = handleCronRefreshSunoVoices;
+  return handler;
 })();
 
 const karaokeHandler = (() => {
@@ -7253,14 +7467,21 @@ const mercadoPagoHandler = (() => {
    * o bien un token de admin con rol service en Supabase.
    */
   async function handleExpireBatches(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    // Vercel Cron invoca con GET; aceptamos GET y POST.
+    const method = (req.method || "").toUpperCase();
+    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
 
-    const secretFromEnv = (process.env.CRON_JOB_SECRET || process.env.CRON_SECRET || "").toString().trim();
-    const providedSecret = (req.headers["x-cron-secret"] || req.headers["x-cron-token"] || "").toString().trim();
-
-    // Seguridad básica: si hay secret configurado, debe coincidir.
-    if (secretFromEnv && providedSecret !== secretFromEnv) {
-      return send(res, 403, { error: "No autorizado." });
+    // Acepta el header estandar de Vercel Cron (Authorization: Bearer <CRON_SECRET>)
+    // y, por compatibilidad, el header legacy x-cron-secret / x-cron-token.
+    // Falla CERRADO: si no hay secreto configurado, no ejecuta nada.
+    const expected = (process.env.CRON_JOB_SECRET || process.env.CRON_SECRET || "").toString().trim();
+    if (!expected) return send(res, 503, { error: "CRON_SECRET no configurado" });
+    const authz = String(req.headers["authorization"] || "").trim();
+    const bearer = authz.toLowerCase().startsWith("bearer ") ? authz.slice(7).trim() : "";
+    const legacy = String(req.headers["x-cron-secret"] || req.headers["x-cron-token"] || "").trim();
+    const providedSecret = bearer || legacy;
+    if (!providedSecret || providedSecret !== expected) {
+      return send(res, 401, { error: "No autorizado." });
     }
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -10798,7 +11019,7 @@ const sunoWebhookHandler = (() => {
 
             const { error } = await admin
               .from("suno_tasks")
-              .update({ extra: JSON.stringify(merged) })
+              .update({ extra: merged })
               .eq("task_id", taskId)
               .eq("user_id", userId);
             if (error && !isMissingColumnError(error)) {
@@ -13905,6 +14126,40 @@ const adminHandler = (() => {
     return send(res, httpStatus, payload);
   }
 
+  async function requireServiceRoleAdmin(reqOpt?: any) {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
+    if (!supabaseUrl || !supabaseAnon || !supabaseService) {
+      return { ok: false as const, status: 500, error: "Faltan variables de Supabase (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)" };
+    }
+
+    const expected = String(process.env.CRON_SECRET || "").trim();
+    if (!expected) {
+      return { ok: false as const, status: 503, error: "CRON_SECRET no configurado" };
+    }
+    const authz = String((reqOpt?.headers && reqOpt.headers["authorization"]) || "").trim();
+    const provided = authz.toLowerCase().startsWith("bearer ") ? authz.slice(7).trim() : "";
+    if (!provided || provided !== expected) {
+      return { ok: false as const, status: 401, error: "No autorizado" };
+    }
+
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+    const systemUser = { id: "cron-system", email: "cron@system.local" };
+    return { ok: true as const, user: systemUser, admin, supabaseUrl, supabaseService, system: true };
+  }
+
+  async function handleCronRefreshSunoVoices(req: any, res: any) {
+    const method = (req.method || "").toUpperCase();
+    if (method !== "GET" && method !== "POST") return send(res, 405, { error: "Método no permitido" });
+
+    const auth = await requireServiceRoleAdmin(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    return handleSunoVoicesRefresh(req, res, { isAdmin: true });
+  }
+
   async function requireAdmin(req: any) {
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
@@ -14830,7 +15085,7 @@ const adminHandler = (() => {
         if (!created.ok) return { ok: false as const, error: created.error };
         continue;
       }
-      const upd = await updateCreditsAnyColumn(admin, userId, next);
+      const upd = await updateCreditsAnyColumn(admin, userId, next, next > 0);
       if (upd.ok) return { ok: true as const, credits: next };
       return { ok: false as const, error: upd.error };
     }
@@ -24949,6 +25204,8 @@ export default async function handler(req: any, res: any) {
       console.log(JSON.stringify({ kind: "TEMPORARY_AUDIO_CLEANUP", ...result }));
       return respond(result.ok ? 200 : 500, result);
     }
+
+    if (head === "cron" && next === "refresh-suno-voices") return (sunoHandler as any).cronRefreshSunoVoices(req, res);
 
     if (head === "karaoke") return karaokeHandler(req, res);
     if (head === "suno") return sunoHandler(req, res);

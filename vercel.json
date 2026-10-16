@@ -17,6 +17,10 @@
     {
       "path": "/api/storage/cleanup-audio",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-suno-voices",
+      "schedule": "30 4 * * *"
     }
   ],
   "headers": [

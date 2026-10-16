@@ -1,6 +1,6 @@
 import { isVoiceAvailable, requireVoiceAvailable } from '@/lib/voiceAvailability';
 import { useEffect, useRef, useState } from 'react';
-import { Dices, RefreshCw, Plus, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause, Heart } from 'lucide-react';
+import { Dices, RefreshCw, Plus, Music, Maximize2, List, X, ChevronDown, User, AudioLines, Pencil, Library, Trash2, RotateCcw, Search, Mic, Upload, BadgeCheck, ShieldCheck, Sparkles, Loader2, Play, Pause, Heart, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type CreateMode, type SongItem } from '@/types';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
@@ -2048,12 +2048,14 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       const uploadedVerify = await uploadAudioForVoice(t.token, verifyFile);
       const verifyUrlForSuno = await getPublicAudioUrlForSuno(t.token, uploadedVerify);
       const cleanVerifyUrl = sanitizeExternalUrl(verifyUrlForSuno || uploadedVerify.url);
+      const cleanVerifyPath = (uploadedVerify?.key || '').toString().trim();
       const r = await fetch('/api/suno/voice-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
         body: JSON.stringify({
           taskId: validationTaskId,
           verifyUrl: cleanVerifyUrl,
+          verifyPath: cleanVerifyPath,
           voiceName: name,
           clientAttemptId,
         }),
@@ -2113,8 +2115,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
       requireVoiceAvailable(available);
 
       const confirmedVoice = { voiceId: finalVoiceId, name, createdAt: new Date().toISOString(), taskId: genTaskId, status: 'ready' };
-      await saveSunoVoiceToDb(confirmedVoice);
-      upsertLocalVoice(confirmedVoice, false);
+      const voiceMeta: any = { verify_url: cleanVerifyUrl || null, verify_path: cleanVerifyPath || null };
+      await saveSunoVoiceToDb(confirmedVoice, voiceMeta);
+      upsertLocalVoice({ ...confirmedVoice, profileImageUrl: undefined, ...(voiceMeta ? { meta: voiceMeta } : {}) }, false);
       setSelectedVoice({ voiceId: finalVoiceId, name });
       setVoiceDetailsName(name);
       setVoiceDetailsTags('');
@@ -4461,17 +4464,40 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   }
                   return (
                     <div className="mt-5 grid grid-cols-2 gap-4">
-                      {list.slice(0, 20).map((v) => (
+                      {list.slice(0, 20).map((v) => {
+                        const isReady = v.status === 'ready';
+                        const statusLabel =
+                          v.status === 'processing'
+                            ? 'Procesando'
+                            : v.status === 'unavailable'
+                            ? 'No disponible'
+                            : v.status === 'expired'
+                            ? 'Expirada'
+                            : v.status === 'failed'
+                            ? 'Falló'
+                            : v.status === 'unconfirmed'
+                            ? 'Sin confirmar'
+                            : isReady
+                            ? 'Lista'
+                            : v.status
+                            ? String(v.status)
+                            : 'Cargando';
+                        const statusBadgeColor = isReady
+                          ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/30'
+                          : v.status === 'expired' || v.status === 'failed' || v.status === 'unavailable'
+                          ? 'bg-red-500/20 text-red-200 border-red-500/30'
+                          : 'bg-amber-500/20 text-amber-200 border-amber-500/30';
+                        return (
                         <button
                           key={v.voiceId}
                           type="button"
-                          disabled={v.status !== 'ready'}
+                          disabled={!isReady}
                           onClick={() => {
-                            if (v.status !== 'ready') return;
+                            if (!isReady) return;
                             setSelectedVoice({ voiceId: v.voiceId, name: v.name });
                             setIsVoicesPickerOpen(false);
                           }}
-                          className="group text-left"
+                          className={cn("group text-left", !isReady && "opacity-60 grayscale-[0.35] cursor-not-allowed")}
                         >
                           <div className="relative aspect-square rounded-[28px] bg-white/5 border border-white/10 overflow-hidden">
                             <img
@@ -4479,6 +4505,13 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               alt=""
                               className="w-full h-full object-cover opacity-95 group-hover:opacity-100 transition-opacity"
                             />
+                            <div className="absolute top-2 left-2 px-2 py-1 rounded-full border text-[10px] font-extrabold uppercase tracking-wide pointer-events-none whitespace-nowrap overflow-hidden text-ellipsis max-w-[calc(100%-24px)]"
+                              title={statusLabel}
+                            >
+                              <span className={cn(statusBadgeColor, "px-2 py-0.5 rounded-full inline-block border")}>
+                                {statusLabel}
+                              </span>
+                            </div>
                             <div className="absolute top-2 right-2 flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                               <button
                                 type="button"
@@ -4509,7 +4542,8 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           <div className="mt-3 text-white font-extrabold text-sm truncate">{v.name || 'Voz'}</div>
                           <div className="text-slate-500 text-xs truncate">{v.description ? String(v.description) : v.status ? String(v.status) : 'Sin descripción.'}</div>
                         </button>
-                      ))}
+                      );
+                    })}
                     </div>
                   );
                 })()
@@ -6137,6 +6171,7 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
   const [easyStage, setEasyStage] = useState<'wizard' | 'writing_lyrics' | 'review_lyrics' | 'composing'>('wizard');
   const [isEditingReviewLyrics, setIsEditingReviewLyrics] = useState(false);
   const [showLyricsNotice, setShowLyricsNotice] = useState(false);
+  const [lyricsCopied, setLyricsCopied] = useState(false);
   
   // Notificar cambios en las selecciones
   useEffect(() => {
@@ -6164,6 +6199,66 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
       setEasyStage('wizard');
     }
   }, [lyricMode, lyricContent]);
+
+  useEffect(() => {
+    if (!lyricsCopied) return;
+    const timer = window.setTimeout(() => setLyricsCopied(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [lyricsCopied]);
+
+  async function handleCopyLyrics() {
+    const text = (finalLyrics || '').toString().trim();
+    if (!text) {
+      alert('Todavia no hay letra para copiar.');
+      return;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setLyricsCopied(true);
+    } catch {
+      alert('No pude copiar la letra. Intenta de nuevo.');
+    }
+  }
+
+  // Copia la letra tal como esta escrita en la caja de edicion (no la version final).
+  async function handleCopyLyricsBox() {
+    const text = (lyrics || '').toString().trim();
+    if (!text) {
+      alert('Todavia no hay letra para copiar.');
+      return;
+    }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', 'true');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setLyricsCopied(true);
+    } catch {
+      alert('No pude copiar la letra. Intenta de nuevo.');
+    }
+  }
   
   const steps = [
     { number: 1, title: 'Elige el estilo', description: '¿Qué tipo de música quieres?' },
@@ -6442,6 +6537,16 @@ function EasyModeWizard({ onGenerateSong, credits, onOpenBalance, onSelectionsCh
                   className="rounded-2xl border border-white/15 bg-white/5 px-5 py-4 text-base font-bold text-white transition-colors hover:bg-white/10"
                 >
                   {isEditingReviewLyrics ? 'Cerrar edición' : 'Editar letra'}
+                </button>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleCopyLyrics}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-white/10"
+                >
+                  {lyricsCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {lyricsCopied ? 'Letra copiada' : 'Copiar letra'}
                 </button>
               </div>
               <div className="rounded-[28px] border border-white/10 bg-[#f4efe5] p-5 text-[#111111] shadow-inner">
@@ -7299,6 +7404,15 @@ function CustomForm({
               <label className="font-bold text-white text-base">Letras</label>
               <button
                 type="button"
+                onClick={() => handleCopyLyricsBox()}
+                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
+                aria-label="Copiar letra"
+                title="Copiar letra"
+              >
+                {lyricsCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   if (!prevLyrics) return;
                   const current = (lyrics || '').toString();
@@ -7461,9 +7575,53 @@ function CustomForm({
               </button>
             </div>
             <div className="p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopyLyricsBox()}
+                  className="h-9 rounded-full bg-white/5 border border-white/10 px-3 text-xs font-bold text-slate-200 hover:bg-white/10 inline-flex items-center gap-2"
+                  title="Copiar letra"
+                >
+                  {lyricsCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {lyricsCopied ? 'Letra copiada' : 'Copiar letra'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = (lyrics || '').toString();
+                    if (!current.trim()) {
+                      setLyrics('');
+                      return;
+                    }
+                    if (!confirm('¿Seguro que quieres eliminar la letra?')) return;
+                    setPrevLyrics(current);
+                    setLyrics('');
+                  }}
+                  className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
+                  aria-label="Eliminar letra"
+                  title="Eliminar letra"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!prevLyrics}
+                  onClick={() => {
+                    if (!prevLyrics) return;
+                    const current = (lyrics || '').toString();
+                    setPrevLyrics(current);
+                    setLyrics(prevLyrics);
+                  }}
+                  className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 disabled:opacity-40"
+                  aria-label="Regresar letra"
+                  title="Regresar letra"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
               <textarea
                 value={lyrics}
-                onChange={(e) => setLyrics(e.target.value)}
+                onChange={(e) => setLyricsWithUndo(e.target.value)}
                 placeholder="Agrega tu propia letra (se guardará en tu Biblioteca)"
                 className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[15px] text-white placeholder:text-slate-500 outline-none min-h-[55vh] resize-none"
               />
