@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, ChevronRight, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, ChevronRight, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock, Copy } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
@@ -1732,12 +1732,29 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       { id: 'detalles', label: 'Detalles técnicos' },
       { id: 'estadisticas', label: 'Estadísticas' },
     ] as const;
+    const copyButtonClass = "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-slate-200 transition-colors hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40";
 
     const panelContent = (() => {
       if (selectedDetailTab === 'letra') {
         return (
           <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Letra completa</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Letra completa</div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await copyTextToClipboard(lyrics);
+                  onToast?.(ok ? 'Letra copiada.' : 'No pude copiar la letra.');
+                }}
+                disabled={!lyrics}
+                className={copyButtonClass}
+                aria-label="Copiar letra"
+                title="Copiar letra"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copiar
+              </button>
+            </div>
             <div className="mt-3 max-h-[320px] overflow-y-auto pr-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">
               {lyrics || 'Esta canción no tiene letra guardada todavía.'}
             </div>
@@ -1779,7 +1796,23 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             ))}
           </div>
           <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Prompt utilizado</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Prompt utilizado</div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await copyTextToClipboard(prompt);
+                  onToast?.(ok ? 'Prompt copiado.' : 'No pude copiar el prompt.');
+                }}
+                disabled={!prompt}
+                className={copyButtonClass}
+                aria-label="Copiar prompt"
+                title="Copiar prompt"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copiar
+              </button>
+            </div>
             <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">
               {prompt || 'Esta canción no tiene prompt o instrucción musical guardada.'}
             </div>

@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, Library as Books, BadgeCheck as Certificate,
   MessageCircle as ChatCircle, Check, Coins, Download as DownloadSimple,
+  Copy,
   FileText, Film as FilmStrip, Folder, FolderOpen, Home as House, Info, List,
   MoreHorizontal,
   WandSparkles as MagicWand, Mic as Microphone, Music2 as MusicNote, Pause,
   Pencil as PencilSimple, Play, ListMusic as Playlist, CircleHelp as Question,
+  RotateCcw,
   Scissors, Share2 as ShareNetwork, SlidersHorizontal, Sparkles as Sparkle,
   Languages as Translate, Upload as UploadSimple, User, Users, Bell,
   AudioWaveform as Waveform, Image as ImageIcon, Trash2 as Trash, X, Loader2,
@@ -3687,6 +3689,127 @@ function LyricsStep({ data, setData, setToast, handlers }) {
   const aiLoading = Boolean(handlers?.isGeneratingLyrics);
   const audioLyricsStatus = (handlers?.audioLyricsStatus || '').toString().trim();
   const isTranscribingAudioLyrics = Boolean(handlers?.isTranscribingAudioLyrics);
+  const lyricsHistoryRef = useRef([]);
+  const pushLyricsHistory = (value) => {
+    const snapshot = String(value || '');
+    const last = lyricsHistoryRef.current[lyricsHistoryRef.current.length - 1];
+    if (last === snapshot) return;
+    lyricsHistoryRef.current = [...lyricsHistoryRef.current.slice(-39), snapshot];
+  };
+  const copyText = async (value, successMessage, emptyMessage) => {
+    const text = String(value || '').trim();
+    if (!text) {
+      setToast(emptyMessage || 'No hay texto para copiar.');
+      return false;
+    }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', 'true');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setToast(successMessage || 'Texto copiado.');
+      return true;
+    } catch {
+      setToast('No pude copiar el texto. Intenta de nuevo.');
+      return false;
+    }
+  };
+  const updateLyrics = (nextValue) => {
+    const current = String(data.lyrics || '');
+    const next = String(nextValue || '');
+    if (next === current) return;
+    pushLyricsHistory(current);
+    setData({ ...data, lyrics: next });
+  };
+  const restorePreviousLyrics = () => {
+    if (!lyricsHistoryRef.current.length) {
+      setToast('No hay una versión anterior para restaurar.');
+      return;
+    }
+    const previous = lyricsHistoryRef.current[lyricsHistoryRef.current.length - 1];
+    lyricsHistoryRef.current = lyricsHistoryRef.current.slice(0, -1);
+    setData({ ...data, lyrics: previous });
+    setToast('Se restauró la versión anterior de la letra.');
+  };
+  const clearLyrics = () => {
+    const current = String(data.lyrics || '');
+    if (!current) {
+      setToast('La caja de letra ya está vacía.');
+      return;
+    }
+    pushLyricsHistory(current);
+    setData({ ...data, lyrics: '' });
+    setToast('La letra se eliminó. Usa la flecha para restaurarla si fue un error.');
+  };
+  const iconButtonStyle = (danger = false, disabled = false) => ({
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    border: `1px solid ${danger ? 'rgba(248,113,113,0.42)' : 'rgba(255,255,255,0.15)'}`,
+    background: danger ? 'rgba(127,29,29,0.34)' : 'rgba(255,255,255,0.06)',
+    color: danger ? '#fca5a5' : '#fff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: disabled ? 0.45 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  });
+  const actionRowStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  };
+  const renderLyricsActions = () => {
+    const hasLyrics = Boolean(String(data.lyrics || '').trim());
+    const canRestore = lyricsHistoryRef.current.length > 0;
+    return (
+      <div style={actionRowStyle}>
+        <button
+          type="button"
+          onClick={() => copyText(data.lyrics, 'Letra copiada.', 'Todavía no hay letra para copiar.')}
+          disabled={!hasLyrics}
+          style={iconButtonStyle(false, !hasLyrics)}
+          aria-label="Copiar letra"
+          title="Copiar letra"
+        >
+          <Copy size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={restorePreviousLyrics}
+          disabled={!canRestore}
+          style={iconButtonStyle(false, !canRestore)}
+          aria-label="Restaurar versión anterior"
+          title="Restaurar versión anterior"
+        >
+          <RotateCcw size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={clearLyrics}
+          disabled={!hasLyrics}
+          style={iconButtonStyle(true, !hasLyrics)}
+          aria-label="Eliminar toda la letra"
+          title="Eliminar toda la letra"
+        >
+          <Trash size={16} />
+        </button>
+      </div>
+    );
+  };
   const doGenerateAI = async () => {
     if (!handlers?.generateLyricsWithAI) {
       setToast("Generador de letras no disponible.");
@@ -3697,6 +3820,7 @@ function LyricsStep({ data, setData, setToast, handlers }) {
   };
   const switchToManual = () => {
     if (data.aiLyricsGenerated || data.lyrics.trim()) {
+      pushLyricsHistory(data.lyrics);
       setData({
         ...data,
         lyricsMode: "manual",
@@ -3709,6 +3833,7 @@ function LyricsStep({ data, setData, setToast, handlers }) {
     }
   };
   const discardGeneratedLyrics = () => {
+    pushLyricsHistory(data.lyrics);
     setData({
       ...data,
       lyricsMode: "manual",
@@ -3720,6 +3845,7 @@ function LyricsStep({ data, setData, setToast, handlers }) {
   const switchToAI = () => {
     let next = { ...data, lyricsMode: "ai" };
     if (!data.aiLyricsGenerated && data.lyrics.trim()) {
+      pushLyricsHistory(data.lyrics);
       next.lyrics = "";
       setToast("Letra manual descartada. Ahora describe la instrucción para que la IA la escriba.");
     }
@@ -3745,10 +3871,10 @@ function LyricsStep({ data, setData, setToast, handlers }) {
           </span>
           {Boolean(audioLyricsStatus) && /no pudimos transcribir este audio/i.test(String(audioLyricsStatus || '')) && !isTranscribingAudioLyrics ? (
             <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => transcribeLyricsFromAudio().catch(() => {})} style={{ padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800 }}>
+              <button type="button" onClick={() => handlers?.transcribeLyricsFromAudio?.().catch(() => {})} style={{ padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800 }}>
                 Reintentar
               </button>
-              <button type="button" onClick={() => { setAudioLyricsStatus(''); setToast('Pega la letra manualmente en el campo de abajo.'); }} style={{ padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800 }}>
+              <button type="button" onClick={() => { handlers?.clearAudioTranscriptionState?.(); setToast('Pega la letra manualmente en el campo de abajo.'); }} style={{ padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800 }}>
                 Escribir letra
               </button>
             </div>
@@ -3756,7 +3882,7 @@ function LyricsStep({ data, setData, setToast, handlers }) {
         </div>
       ) : null}
       {usingAI ? <>
-        <div className="ai-label-row"><label className="field-label">Instrucción para crear la letra <InfoTip title="¿Qué debo escribir?">Explica de qué tratará la canción, para quién es, qué historia debe contar y qué emoción quieres transmitir.</InfoTip></label><button className="example-button" onClick={() => setData({ ...data, lyricInstruction: aiExample })}><MagicWand size={16} /> Poner ejemplo</button></div>
+        <div className="ai-label-row"><label className="field-label">Instrucción para crear la letra <InfoTip title="¿Qué debo escribir?">Explica de qué tratará la canción, para quién es, qué historia debe contar y qué emoción quieres transmitir.</InfoTip></label><div style={actionRowStyle}><button className="example-button" onClick={() => setData({ ...data, lyricInstruction: aiExample })}><MagicWand size={16} /> Poner ejemplo</button><button type="button" onClick={() => copyText(data.lyricInstruction, 'Prompt copiado.', 'Todavía no hay prompt para copiar.')} disabled={!String(data.lyricInstruction || '').trim()} style={iconButtonStyle(false, !String(data.lyricInstruction || '').trim())} aria-label="Copiar prompt" title="Copiar prompt"><Copy size={16} /></button></div></div>
         <textarea className="lyrics-box ai-instruction-box" value={data.lyricInstruction} onChange={(e) => setData({ ...data, lyricInstruction: e.target.value })} placeholder="Ejemplo: Escribe una canción para una persona especial y cuenta la historia que quiero transmitir..." disabled={aiLoading} />
         <div className="field-footer"><span>Describe todos los detalles que quieras incluir</span><span>{data.lyricInstruction.length}/1,000</span></div>
         <div className="ai-explanation"><Info size={19} /><span>Con esta instrucción, la IA escribirá una letra completa que después podrás revisar y editar.</span></div>
@@ -3774,10 +3900,13 @@ function LyricsStep({ data, setData, setToast, handlers }) {
             </button>
           )}
         </div>
-        {data.aiLyricsGenerated && <div className="generated-lyrics"><div className="generated-heading"><span><Check size={18} weight="bold" /> Letra generada</span><small>Resultado editable · Si no te gusta, pulsa Cancelar arriba</small></div><textarea className="lyrics-box" value={data.lyrics} onChange={(e) => setData({ ...data, lyrics: e.target.value })} /><div className="field-footer"><span>Puedes cambiar cualquier parte de la letra</span><span>{data.lyrics.length}/5,000</span></div></div>}
+        {data.aiLyricsGenerated && <div className="generated-lyrics"><div className="generated-heading"><span><Check size={18} weight="bold" /> Letra generada</span><div style={actionRowStyle}><small>Resultado editable · Si no te gusta, pulsa Cancelar arriba</small>{renderLyricsActions()}</div></div><textarea className="lyrics-box" value={data.lyrics} onChange={(e) => updateLyrics(e.target.value)} /><div className="field-footer"><span>Puedes cambiar cualquier parte de la letra</span><span>{data.lyrics.length}/5,000</span></div></div>}
       </> : <>
-        <label className="field-label">Letra de la canción <InfoTip title="Cómo escribir la letra">Puedes usar secciones como [Verso], [Coro] y [Puente]. Si antes generaste una letra con IA, ya fue descartada para que escribas la tuya limpia.</InfoTip></label>
-        <textarea className="lyrics-box" value={data.lyrics} onChange={(e) => setData({ ...data, lyrics: e.target.value })} placeholder="Escribe o pega aquí la letra de tu canción..." />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <label className="field-label">Letra de la canción <InfoTip title="Cómo escribir la letra">Puedes usar secciones como [Verso], [Coro] y [Puente]. Si antes generaste una letra con IA, ya fue descartada para que escribas la tuya limpia.</InfoTip></label>
+          {renderLyricsActions()}
+        </div>
+        <textarea className="lyrics-box" value={data.lyrics} onChange={(e) => updateLyrics(e.target.value)} placeholder="Escribe o pega aquí la letra de tu canción..." />
         <div className="field-footer"><span>Admite hasta 5,000 caracteres</span><span>{data.lyrics.length}/5,000</span></div>
       </>}
     </section>
@@ -5681,6 +5810,7 @@ function ApprovedCreateContent(props) {
   const sharedHandlers = {
     uploadAudio,
     generateLyricsWithAI,
+    transcribeLyricsFromAudio,
     handleBoostStyle,
     handleTranslateStyle,
     handleSubmitGenerate,
