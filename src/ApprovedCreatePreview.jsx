@@ -27,6 +27,23 @@ const generationSessionKey = 'ramber.createGenerationSession_v1';
 const sunoVoicesCacheKey = 'ramber.suno_voices_v1';
 const returnToCreateVoicePickerKey = 'ramber.return_to_create_voice_picker_v1';
 const mp3ConverterUrl = 'https://online-audio-converter.com/sp/';
+const workspaceIdKey = 'ramber.createWorkspaceId_v1';
+
+// Cada ventana o pestaña del navegador tiene su propio espacio de trabajo, para que
+// dos ventanas no compartan ni se pisen el borrador de la canción en curso.
+// sessionStorage es por pestaña: sobrevive a recargar la página, pero no se comparte entre ventanas.
+function resolveWorkspaceId() {
+  if (typeof window === 'undefined') return '';
+  try {
+    const existing = (window.sessionStorage.getItem(workspaceIdKey) || '').trim();
+    if (/^w[a-z0-9]{6,40}$/i.test(existing)) return existing;
+    const created = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    window.sessionStorage.setItem(workspaceIdKey, created);
+    return created;
+  } catch {
+    return '';
+  }
+}
 
 function readPendingTasks() {
   try {
@@ -4875,7 +4892,11 @@ function ApprovedCreateContent(props) {
   });
 
   const safeUserId = (authUserId || '').toString().trim();
-  const draftKey = safeUserId ? `ramber.approved_create_draft_v1.uid_${safeUserId}` : '';
+  const workspaceId = useMemo(() => resolveWorkspaceId(), []);
+  const legacyDraftKey = safeUserId ? `ramber.approved_create_draft_v1.uid_${safeUserId}` : '';
+  const draftKey = safeUserId
+    ? `ramber.approved_create_draft_v1.uid_${safeUserId}${workspaceId ? `.ws_${workspaceId}` : ''}`
+    : '';
   const [step, setStep] = useState(0);
   const [creativity, setCreativity] = useState(50);
   const [instruction, setInstruction] = useState(50);
@@ -4895,6 +4916,7 @@ function ApprovedCreateContent(props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creditsGate, setCreditsGate] = useState(null);
   const [hasPendingTask, setHasPendingTask] = useState(false);
+  const [orphanDrafts, setOrphanDrafts] = useState([]);
   const [audioUploadError, setAudioUploadError] = useState("");
   const audioRequestVersionRef = useRef(0);
   const contentAreaRef = useRef(null);
@@ -4929,30 +4951,65 @@ function ApprovedCreateContent(props) {
     setCreditsGate(null);
   }, [safeUserId]);
 
+  const applyDraftPayload = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return;
+    if (typeof parsed.step === 'number' && parsed.step >= 0 && parsed.step <= 3) setStep(parsed.step);
+    if (typeof parsed.creativity === 'number') setCreativity(Math.max(0, Math.min(100, parsed.creativity)));
+    if (typeof parsed.instruction === 'number') setInstruction(Math.max(0, Math.min(100, parsed.instruction)));
+    if (typeof parsed.audioWeight === 'number') setAudioWeight(Math.max(0, Math.min(100, parsed.audioWeight)));
+    if (parsed.data && typeof parsed.data === 'object') {
+      const nextData = { ...parsed.data };
+      if (!VALID_MODEL_NAMES.has(nextData?.model)) {
+        nextData.model = "Suno V6";
+      }
+      const hadAudioRef = Boolean(parsed?.hadAudioReference);
+      setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef));
+      setData((prev) => ({ ...prev, ...nextData, file: null }));
+    }
+    setAudioUploadUrl('');
+    setAudioUploadPath('');
+    setUploadProgress(0);
+  };
+
   useEffect(() => {
     if (!draftKey) return;
     try {
-      const raw = window.localStorage.getItem(draftKey);
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed || typeof parsed !== 'object') return;
-      if (typeof parsed.step === 'number' && parsed.step >= 0 && parsed.step <= 3) setStep(parsed.step);
-      if (typeof parsed.creativity === 'number') setCreativity(Math.max(0, Math.min(100, parsed.creativity)));
-      if (typeof parsed.instruction === 'number') setInstruction(Math.max(0, Math.min(100, parsed.instruction)));
-      if (typeof parsed.audioWeight === 'number') setAudioWeight(Math.max(0, Math.min(100, parsed.audioWeight)));
-      if (parsed.data && typeof parsed.data === 'object') {
-        const nextData = { ...parsed.data };
-        if (!VALID_MODEL_NAMES.has(nextData?.model)) {
-          nextData.model = "Suno V6";
-        }
-        const hadAudioRef = Boolean(parsed?.hadAudioReference);
-        setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef));
-        setData((prev) => ({ ...prev, ...nextData, file: null }));
+      let raw = window.localStorage.getItem(draftKey);
+      if (!raw && legacyDraftKey && legacyDraftKey !== draftKey) {
+        // Migración: el formato anterior guardaba un solo borrador por usuario.
+        // La primera ventana que abra la app lo adopta, para no perder la canción en curso.
+        try {
+          const legacyRaw = window.localStorage.getItem(legacyDraftKey);
+          if (legacyRaw) {
+            raw = legacyRaw;
+            window.localStorage.setItem(draftKey, legacyRaw);
+            window.localStorage.removeItem(legacyDraftKey);
+          }
+        } catch {}
       }
-      setAudioUploadUrl('');
-      setAudioUploadPath('');
-      setUploadProgress(0);
+      const parsed = raw ? JSON.parse(raw) : null;
+      applyDraftPayload(parsed);
     } catch {}
-  }, [draftKey]);
+  }, [draftKey, legacyDraftKey]);
+
+  const recoverOrphanDraft = (key) => {
+    try {
+      if (!key || !draftKey) return;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) {
+        setToast('Ese borrador ya no está disponible.');
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      window.localStorage.setItem(draftKey, raw);
+      try { window.localStorage.removeItem(key); } catch {}
+      applyDraftPayload(parsed);
+      setOrphanDrafts((prev) => prev.filter((item) => item.key !== key));
+      setToast('Recuperé la canción que estaba en esa otra ventana.');
+    } catch {
+      setToast('No pude recuperar ese borrador.');
+    }
+  };
 
   const resetForNewSong = () => {
     audioRequestVersionRef.current += 1;
@@ -4997,12 +5054,42 @@ function ApprovedCreateContent(props) {
           audioWeight,
           data: safeData,
           hadAudioReference,
+          savedAt: Date.now(),
         };
         window.localStorage.setItem(draftKey, JSON.stringify(payload));
       } catch {}
     }, 350);
     return () => window.clearTimeout(id);
   }, [draftKey, step, creativity, instruction, audioWeight, data]);
+
+  // Borradores de otras ventanas o de una pestaña que se cerró. No se borra nada:
+  // solo se ofrecen para recuperarlos cuando esta ventana está vacía.
+  useEffect(() => {
+    if (!draftKey) { setOrphanDrafts([]); return; }
+    try {
+      const prefix = `ramber.approved_create_draft_v1.uid_${safeUserId}.ws_`;
+      const found = [];
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (!key || key === draftKey || key.indexOf(prefix) !== 0) continue;
+        try {
+          const parsed = JSON.parse(window.localStorage.getItem(key) || 'null');
+          const d = parsed?.data || {};
+          const meaningful = Number(parsed?.step || 0) > 0
+            || String(d.title || '').trim()
+            || String(d.lyrics || '').trim()
+            || String(d.style || '').trim()
+            || String(d.lyricInstruction || '').trim();
+          if (!meaningful) continue;
+          found.push({ key, savedAt: Number(parsed?.savedAt || 0) || 0 });
+        } catch {}
+      }
+      found.sort((a, b) => b.savedAt - a.savedAt);
+      setOrphanDrafts(found.slice(0, 5));
+    } catch {
+      setOrphanDrafts([]);
+    }
+  }, [draftKey, safeUserId]);
 
   useEffect(() => {
     const previousStep = previousStepRef.current;
@@ -5885,6 +5972,11 @@ function ApprovedCreateContent(props) {
         <div className="content-area" ref={contentAreaRef}>
           {content}
           <footer className="step-footer">
+            {!hasMeaningfulContent && orphanDrafts.length > 0 ? (
+              <button className="back-button" type="button" onClick={() => recoverOrphanDraft(orphanDrafts[0].key)}>
+                Recuperar canción anterior
+              </button>
+            ) : null}
             {hasMeaningfulContent ? (
               <button className="back-button reset-button" type="button" onClick={requestResetForNewSong}>
                 Crear otra canción
