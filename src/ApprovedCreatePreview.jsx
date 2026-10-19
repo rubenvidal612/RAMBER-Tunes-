@@ -2783,6 +2783,8 @@ function StartStep({ data, setData, setToast, handlers }) {
   const [editingPersona, setEditingPersona] = useState(null);
   const [editingName, setEditingName] = useState('');
   const [deletingPersona, setDeletingPersona] = useState(null);
+  const [sharingPersona, setSharingPersona] = useState(null);
+  const [shareEmail, setShareEmail] = useState('');
   const [personaActionLoading, setPersonaActionLoading] = useState(false);
   const previousVoiceRef = useRef(null);
   const fileName = data.file?.name;
@@ -2926,6 +2928,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     setPersonaMenuOpen('');
     setEditingPersona(null);
     setDeletingPersona(null);
+    setSharingPersona(null);
     if (keepSelection) return;
     const prev = previousVoiceRef.current;
     if (!prev) return;
@@ -2994,6 +2997,49 @@ function StartStep({ data, setData, setToast, handlers }) {
     setPersonaMenuOpen('');
     setEditingPersona(null);
     setDeletingPersona(persona);
+  };
+
+  const openSharePersona = (persona) => {
+    setPersonaMenuOpen('');
+    setEditingPersona(null);
+    setDeletingPersona(null);
+    setSharingPersona(persona);
+    setShareEmail('');
+  };
+
+  const sharePersona = async () => {
+    const persona = sharingPersona;
+    const email = String(shareEmail || '').trim().toLowerCase();
+    if (!persona) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setToast('Escribe un correo válido (ejemplo: nombre@gmail.com).');
+      return;
+    }
+    setPersonaActionLoading(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setToast(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/voices/share', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ sunoVoiceId: persona.voiceId, email }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setToast((out?.error || out?.detail || 'No se pudo enviar el personaje.').toString());
+        return;
+      }
+      setSharingPersona(null);
+      setShareEmail('');
+      setToast(out?.message ? String(out.message) : `Personaje enviado a ${email}.`);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudo enviar el personaje.');
+    } finally {
+      setPersonaActionLoading(false);
+    }
   };
 
   const savePersonaRename = async () => {
@@ -3647,6 +3693,10 @@ function StartStep({ data, setData, setToast, handlers }) {
                             <PencilSimple size={16} />
                             Editar nombre
                           </button>
+                          <button type="button" onClick={() => openSharePersona(p)}>
+                            <ShareNetwork size={16} />
+                            Enviar a un colaborador
+                          </button>
                           <button type="button" className="danger" onClick={() => openDeletePersona(p)}>
                             <Trash size={16} />
                             Eliminar personaje
@@ -3689,6 +3739,48 @@ function StartStep({ data, setData, setToast, handlers }) {
                   <button type="button" className="wizard-next danger" disabled={personaActionLoading} onClick={deletePersona}>
                     {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash size={18} />}
                     Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {sharingPersona ? (
+            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Enviar personaje a un colaborador">
+              <div className="persona-dialog">
+                <h3>Enviar a un colaborador</h3>
+                <p>
+                  Escribe el correo de Gmail de tu colaborador. El personaje aparecerá en su cuenta con su nombre,
+                  su foto y su voz. No compartes tu cuenta ni tu contraseña.
+                </p>
+                <div className="persona-delete-name">{sharingPersona.name}</div>
+                <label>
+                  Correo del colaborador
+                  <input
+                    value={shareEmail}
+                    onChange={(e) => setShareEmail(e.target.value)}
+                    placeholder="nombre@gmail.com"
+                    inputMode="email"
+                    autoComplete="email"
+                    maxLength={160}
+                  />
+                </label>
+                <div className="persona-dialog-actions">
+                  <button
+                    type="button"
+                    className="wizard-back"
+                    disabled={personaActionLoading}
+                    onClick={() => { setSharingPersona(null); setShareEmail(''); }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="wizard-next"
+                    disabled={personaActionLoading || !String(shareEmail || '').trim()}
+                    onClick={sharePersona}
+                  >
+                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <ShareNetwork size={18} />}
+                    Enviar
                   </button>
                 </div>
               </div>

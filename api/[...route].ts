@@ -5668,6 +5668,95 @@ notify pgrst, 'reload schema';`;
     return send(res, 405, { error: "Método no permitido" });
   }
 
+  async function findUserIdByEmail(admin: any, email: string) {
+    const exact = await admin.from("profiles").select("id, email").eq("email", email).maybeSingle();
+    if (!exact?.error && exact?.data?.id) return String(exact.data.id);
+    const loose = await admin.from("profiles").select("id, email").ilike("email", email).limit(5);
+    if (loose?.error) return "";
+    const rows = Array.isArray(loose?.data) ? loose.data : [];
+    const match = rows.find((r: any) => String(r?.email || "").trim().toLowerCase() === email);
+    return match?.id ? String(match.id) : "";
+  }
+
+  // Envía un perfil (personaje) de voz ya terminado a la cuenta del correo indicado.
+  // No comparte la cuenta ni la sesión: copia el perfil (nombre, foto, descripción y voiceId)
+  // a la otra cuenta, que es lo que la app necesita para dejarlo usar al generar.
+  async function handleSunoVoicesShare(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId"]);
+    const rawEmail = firstString(payload, ["email", "to", "recipientEmail"]);
+    if (!sunoVoiceId) return send(res, 400, { error: "Falta el personaje que quieres enviar" });
+    if (!rawEmail) return send(res, 400, { error: "Falta el correo del colaborador" });
+    const email = rawEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: "Ese correo no parece válido" });
+
+    try {
+      const { data: mine, error: mineErr } = await auth.admin
+        .from("suno_voices")
+        .select("*")
+        .eq("user_id", auth.user.id)
+        .eq("suno_voice_id", sunoVoiceId)
+        .maybeSingle();
+      if (mineErr) return send(res, 500, { error: "No pude leer tu personaje", detail: mineErr.message });
+      if (!mine) return send(res, 404, { error: "Ese personaje no está en tu cuenta" });
+
+      const targetId = await findUserIdByEmail(auth.admin, email);
+      if (!targetId) {
+        return send(res, 404, {
+          error: `La cuenta ${email} todavía no existe en Luciana. Pídele a tu colaborador que entre una vez con ese Gmail y vuelve a enviarlo.`,
+        });
+      }
+      if (targetId === String(auth.user.id)) {
+        return send(res, 400, { error: "Ese correo es el tuyo. Escribe el correo de tu colaborador." });
+      }
+
+      const senderEmail = String(auth.user.email || "").trim().toLowerCase();
+      const sourceMeta = mine.meta && typeof mine.meta === "object" ? mine.meta : {};
+      const meta = {
+        ...sourceMeta,
+        sharedByEmail: senderEmail || null,
+        sharedAt: new Date().toISOString(),
+        sharedFromVoiceId: String(mine.suno_voice_id || ""),
+      };
+
+      const { data: existing, error: existingErr } = await auth.admin
+        .from("suno_voices")
+        .select("id")
+        .eq("user_id", targetId)
+        .eq("suno_voice_id", sunoVoiceId)
+        .maybeSingle();
+      if (existingErr) return send(res, 500, { error: "No pude revisar la cuenta destino", detail: existingErr.message });
+
+      if (existing?.id) {
+        const { error } = await auth.admin
+          .from("suno_voices")
+          .update({ name: mine.name, status: mine.status, meta })
+          .eq("id", existing.id);
+        if (error) return send(res, 500, { error: "No pude actualizar el personaje", detail: error.message });
+        return send(res, 200, { ok: true, copied: false, email, message: `Ese personaje ya estaba en ${email}. Lo actualicé.` });
+      }
+
+      const { error: insErr } = await auth.admin.from("suno_voices").insert({
+        user_id: targetId,
+        suno_voice_id: sunoVoiceId,
+        name: mine.name,
+        status: mine.status,
+        last_task_id: mine.last_task_id || null,
+        meta,
+      });
+      if (insErr) return send(res, 500, { error: "No pude copiar el personaje", detail: insErr.message });
+      return send(res, 200, { ok: true, copied: true, email, message: `Personaje enviado a ${email}.` });
+    } catch (e) {
+      return send(res, 500, { error: "No pude enviar el personaje", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleSunoVoicesRefresh(req: any, res: any, opts: any = null) {
     const method = (req.method || "").toUpperCase();
     if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
@@ -6219,6 +6308,7 @@ notify pgrst, 'reload schema';`;
       if (a === "voices") {
         if (voicesSub === "refresh") return handleSunoVoicesRefresh(req, res);
         if (voicesSub === "renew") return handleSunoVoicesRenew(req, res);
+        if (voicesSub === "share") return handleSunoVoicesShare(req, res);
         return handleSunoVoices(req, res);
       }
       if (a === "clone-voice") return handleCloneVoice(req, res);
