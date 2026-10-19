@@ -2785,6 +2785,8 @@ function StartStep({ data, setData, setToast, handlers }) {
   const [deletingPersona, setDeletingPersona] = useState(null);
   const [sharingPersona, setSharingPersona] = useState(null);
   const [shareEmail, setShareEmail] = useState('');
+  const [selectAllPersonas, setSelectAllPersonas] = useState(false);
+  const [deletingAllPersonas, setDeletingAllPersonas] = useState(false);
   const [personaActionLoading, setPersonaActionLoading] = useState(false);
   const previousVoiceRef = useRef(null);
   const fileName = data.file?.name;
@@ -2929,6 +2931,8 @@ function StartStep({ data, setData, setToast, handlers }) {
     setEditingPersona(null);
     setDeletingPersona(null);
     setSharingPersona(null);
+    setSelectAllPersonas(false);
+    setDeletingAllPersonas(false);
     if (keepSelection) return;
     const prev = previousVoiceRef.current;
     if (!prev) return;
@@ -3123,6 +3127,43 @@ function StartStep({ data, setData, setToast, handlers }) {
       setToast('Personaje eliminado.');
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'No se pudo eliminar el personaje.');
+    } finally {
+      setPersonaActionLoading(false);
+    }
+  };
+
+  const clearAllSelectedPersona = () => {
+    setData((current) => ({ ...current, voice: 'standard', voiceProfile: null }));
+    if (previousVoiceRef.current) {
+      previousVoiceRef.current = { ...previousVoiceRef.current, voiceProfile: null };
+    }
+  };
+
+  const deleteAllPersonas = async () => {
+    setPersonaActionLoading(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) {
+        setToast(t.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+      const r = await fetch('/api/suno/voices', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ deleteAll: true }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setToast((out?.error || out?.detail || 'No se pudieron eliminar los personajes.').toString());
+        return;
+      }
+      applyPersonas([]);
+      clearAllSelectedPersona();
+      setDeletingAllPersonas(false);
+      setSelectAllPersonas(false);
+      setToast(`Se eliminaron ${Number(out?.deleted || 0)} personajes guardados.`);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'No se pudieron eliminar los personajes.');
     } finally {
       setPersonaActionLoading(false);
     }
@@ -3646,7 +3687,72 @@ function StartStep({ data, setData, setToast, handlers }) {
                   </button>
                 </div>
               ) : (
-                <div className="persona-grid">
+                <>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      padding: '10px 12px',
+                      marginBottom: 10,
+                      borderRadius: 14,
+                      border: '1px solid rgba(255,255,255,0.10)',
+                      background: 'rgba(255,255,255,0.04)',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: '#cbd5e1',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectAllPersonas}
+                        onChange={(e) => setSelectAllPersonas(e.target.checked)}
+                        style={{ width: 16, height: 16, accentColor: '#ef4444' }}
+                      />
+                      {`Seleccionar todos (${personas.length})`}
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!selectAllPersonas || personaActionLoading}
+                      onClick={() => {
+                        setPersonaMenuOpen('');
+                        setDeletingAllPersonas(true);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(248,113,113,0.45)',
+                        background: 'rgba(127,29,29,0.35)',
+                        color: '#fca5a5',
+                        fontWeight: 800,
+                        fontSize: 12,
+                        opacity: !selectAllPersonas || personaActionLoading ? 0.45 : 1,
+                        cursor: !selectAllPersonas || personaActionLoading ? 'not-allowed' : 'pointer',
+                      }}
+                      title={
+                        selectAllPersonas
+                          ? 'Eliminar todos los personajes guardados'
+                          : 'Marca "Seleccionar todos" para poder eliminar'
+                      }
+                      aria-label="Eliminar todos los personajes"
+                    >
+                      <Trash size={16} />
+                      Eliminar todos
+                    </button>
+                  </div>
+                  <div className="persona-grid">
                   {personas.map((p) => (
                     <div key={p.voiceId} className={data.voiceProfile?.voiceId === p.voiceId ? "persona-card is-selected" : "persona-card"}>
                       <button
@@ -3672,7 +3778,15 @@ function StartStep({ data, setData, setToast, handlers }) {
                         </span>
                         <span className="persona-card-text">
                           <strong>{p.name}</strong>
-                          <small>{p.status === 'ready' ? 'Disponible · comprobada con Suno' : p.status === 'expired' ? 'Suno informa: expirada · repetir validación' : p.status === 'unconfirmed' ? 'Sin confirmar · reabre el selector para comprobar' : 'No disponible en Suno · repetir validación'}</small>
+                          {p.status === 'ready' ? null : (
+                            <small>
+                              {p.status === 'expired'
+                                ? 'Suno informa: expirada · repetir validación'
+                                : p.status === 'unconfirmed'
+                                ? 'Sin confirmar · reabre el selector para comprobar'
+                                : 'No disponible en Suno · repetir validación'}
+                            </small>
+                          )}
                         </span>
                       </button>
                       <button
@@ -3705,7 +3819,8 @@ function StartStep({ data, setData, setToast, handlers }) {
                       ) : null}
                     </div>
                   ))}
-                </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -3781,6 +3896,35 @@ function StartStep({ data, setData, setToast, handlers }) {
                   >
                     {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <ShareNetwork size={18} />}
                     Enviar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {deletingAllPersonas ? (
+            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Eliminar todos los personajes">
+              <div className="persona-dialog">
+                <h3>¿Eliminar TODOS los personajes?</h3>
+                <p>
+                  Se van a borrar {personas.length} personajes guardados y sus registros. Esta acción no se puede deshacer.
+                </p>
+                <div className="persona-dialog-actions">
+                  <button
+                    type="button"
+                    className="wizard-back"
+                    disabled={personaActionLoading}
+                    onClick={() => setDeletingAllPersonas(false)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="wizard-next danger"
+                    disabled={personaActionLoading}
+                    onClick={deleteAllPersonas}
+                  >
+                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash size={18} />}
+                    Eliminar todos
                   </button>
                 </div>
               </div>

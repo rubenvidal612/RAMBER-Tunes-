@@ -5649,19 +5649,52 @@ notify pgrst, 'reload schema';`;
       const payload = parseJsonBody(req);
       if (!payload) return send(res, 400, { error: "Body inválido" });
 
+      const deleteAll = Boolean(payload?.deleteAll ?? payload?.delete_all);
       const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]);
-      if (!sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId" });
+      if (!deleteAll && !sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId o deleteAll" });
 
       try {
-        const { error } = await auth.admin
+        // Se leen primero los ids para poder limpiar los demas registros del personaje.
+        let readQuery = auth.admin
           .from("suno_voices")
-          .delete()
-          .eq("user_id", auth.user.id)
-          .eq("suno_voice_id", sunoVoiceId);
-        if (error) throw error;
-        return send(res, 200, { ok: true });
+          .select("suno_voice_id, meta")
+          .eq("user_id", auth.user.id);
+        if (!deleteAll) readQuery = readQuery.eq("suno_voice_id", sunoVoiceId);
+        const { data: targets, error: readErr } = await readQuery;
+        if (readErr) throw readErr;
+
+        const rows = Array.isArray(targets) ? targets : [];
+        if (!rows.length) return send(res, 200, { ok: true, deleted: 0 });
+
+        let delQuery = auth.admin.from("suno_voices").delete().eq("user_id", auth.user.id);
+        if (!deleteAll) delQuery = delQuery.eq("suno_voice_id", sunoVoiceId);
+        const { error: delErr } = await delQuery;
+        if (delErr) throw delErr;
+
+        // Limpieza de los otros registros del personaje para no dejar basura.
+        // No se toca el historial de canciones ni de tareas: eso es trazabilidad
+        // de canciones ya creadas, no basura.
+        const personaIds = Array.from(
+          new Set(
+            rows
+              .flatMap((r: any) => [r?.suno_voice_id, r?.meta?.sharedFromVoiceId])
+              .map((v: any) => String(v || "").trim())
+              .filter(Boolean),
+          ),
+        );
+        if (personaIds.length) {
+          try {
+            await auth.admin
+              .from("suno_personas")
+              .delete()
+              .eq("user_id", auth.user.id)
+              .in("persona_id", personaIds);
+          } catch { /* la limpieza extra nunca debe tumbar el borrado */ }
+        }
+
+        return send(res, 200, { ok: true, deleted: rows.length });
       } catch (e) {
-        return send(res, 500, { error: "Error eliminando voz de Suno", detail: e instanceof Error ? e.message : String(e) });
+        return send(res, 500, { error: "Error eliminando personajes de voz", detail: e instanceof Error ? e.message : String(e) });
       }
     }
 
