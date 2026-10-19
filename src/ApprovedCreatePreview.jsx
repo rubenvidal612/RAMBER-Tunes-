@@ -3899,16 +3899,22 @@ function StartStep({ data, setData, setToast, handlers }) {
             </div>
           ) : null}
           {deletingPersona ? (
-            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Eliminar personaje">
+            <div
+              className="persona-dialog-backdrop"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Confirmar eliminación del personaje"
+              style={{ zIndex: 400 }}
+            >
               <div className="persona-dialog">
-                <h3>¿Eliminar este personaje?</h3>
-                <p>Esta acción no se puede deshacer.</p>
+                <h3>Confirmar eliminación</h3>
+                <p>Vas a eliminar este personaje guardado y sus registros. Esta acción no se puede deshacer.</p>
                 <div className="persona-delete-name">{deletingPersona.name}</div>
                 <div className="persona-dialog-actions">
                   <button type="button" className="wizard-back" disabled={personaActionLoading} onClick={() => setDeletingPersona(null)}>Cancelar</button>
                   <button type="button" className="wizard-next danger" disabled={personaActionLoading} onClick={deletePersona}>
-                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash size={18} />}
-                    Eliminar
+                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} weight="bold" />}
+                    Aceptar
                   </button>
                 </div>
               </div>
@@ -3957,17 +3963,26 @@ function StartStep({ data, setData, setToast, handlers }) {
             </div>
           ) : null}
           {deletingSelectedPersonas ? (
-            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Eliminar los personajes marcados">
+            <div
+              className="persona-dialog-backdrop"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Confirmar eliminación de personajes"
+              style={{ zIndex: 400 }}
+            >
               <div className="persona-dialog">
-                <h3>
-                  {selectedPersonaIds.length === 1
-                    ? '¿Eliminar este personaje?'
-                    : `¿Eliminar ${selectedPersonaIds.length} personajes?`}
-                </h3>
+                <h3>Confirmar eliminación</h3>
                 <p>
-                  Se van a borrar {selectedPersonaIds.length} personajes guardados y sus registros. Los que no
-                  marques se conservan. Esta acción no se puede deshacer.
+                  Vas a eliminar{' '}
+                  {selectedPersonaIds.length === 1
+                    ? '1 personaje guardado'
+                    : `${selectedPersonaIds.length} personajes guardados`}{' '}
+                  y sus registros. Los personajes que no marcaste se conservan.
                 </p>
+                <div className="persona-delete-name">
+                  {selectedPersonaIds.length === 1 ? '1 personaje' : `${selectedPersonaIds.length} personajes`}
+                </div>
+                <p>Esta acción no se puede deshacer.</p>
                 <div className="persona-dialog-actions">
                   <button
                     type="button"
@@ -3983,8 +3998,8 @@ function StartStep({ data, setData, setToast, handlers }) {
                     disabled={personaActionLoading}
                     onClick={deleteSelectedPersonas}
                   >
-                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash size={18} />}
-                    {selectedPersonaIds.length > 1 ? `Eliminar ${selectedPersonaIds.length}` : 'Eliminar'}
+                    {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} weight="bold" />}
+                    Aceptar
                   </button>
                 </div>
               </div>
