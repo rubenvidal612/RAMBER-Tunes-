@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "server": "node server.js",
     "mastering-worker": "node scripts/mastering-worker.js"
   },
