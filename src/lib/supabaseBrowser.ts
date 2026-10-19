@@ -92,9 +92,12 @@ export async function signInWithGoogle() {
   const baseRaw = window.location.origin.toString().trim();
   const base = /^https?:\/\//i.test(baseRaw) ? baseRaw : `https://${baseRaw.replace(/^\/+/, "")}`;
   const redirectTo = base.endsWith("/") ? base : `${base}/`;
+  // prompt=select_account obliga a Google a mostrar el selector de cuentas.
+  // Sin esto, Google vuelve a entrar con la cuenta que ya tenga abierta en el navegador.
+  const queryParams = { prompt: "select_account" };
   const { data, error } = await supabaseBrowser.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo, skipBrowserRedirect: true },
+    options: { redirectTo, skipBrowserRedirect: true, queryParams },
   });
   if (error) return { ok: false as const, error: (error.message || "No pude iniciar sesión con Google").toString() };
   const url = (data as any)?.url ? String((data as any).url).trim() : "";
@@ -102,7 +105,7 @@ export async function signInWithGoogle() {
     window.location.href = url;
     return { ok: true as const };
   }
-  const r2 = await supabaseBrowser.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+  const r2 = await supabaseBrowser.auth.signInWithOAuth({ provider: "google", options: { redirectTo, queryParams } });
   if (r2.error) return { ok: false as const, error: (r2.error.message || "No pude iniciar sesión con Google").toString() };
   return { ok: true as const };
 }
