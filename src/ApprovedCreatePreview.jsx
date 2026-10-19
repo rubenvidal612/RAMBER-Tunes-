@@ -5273,12 +5273,14 @@ function ApprovedCreateContent(props) {
       if (!VALID_MODEL_NAMES.has(nextData?.model)) {
         nextData.model = "Suno V6";
       }
+      const restoredUploadUrlForFlag = typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '';
       const hadAudioRef = Boolean(parsed?.hadAudioReference);
-      setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef));
+      // El audio ya subido se recupera del borrador: el usuario no tiene que subirlo otra vez.
+      setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef && !restoredUploadUrlForFlag));
       setData((prev) => ({ ...prev, ...nextData, file: null }));
     }
-    setAudioUploadUrl('');
-    setAudioUploadPath('');
+    setAudioUploadUrl(typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '');
+    setAudioUploadPath(typeof parsed.audioUploadPath === 'string' ? parsed.audioUploadPath.trim() : '');
     setUploadProgress(0);
   };
 
@@ -5365,13 +5367,15 @@ function ApprovedCreateContent(props) {
           audioWeight,
           data: safeData,
           hadAudioReference,
+          audioUploadUrl,
+          audioUploadPath,
           savedAt: Date.now(),
         };
         window.localStorage.setItem(draftKey, JSON.stringify(payload));
       } catch {}
     }, 350);
     return () => window.clearTimeout(id);
-  }, [draftKey, step, creativity, instruction, audioWeight, data]);
+  }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath]);
 
   // Borradores de otras ventanas o de una pestaña que se cerró. No se borra nada:
   // solo se ofrecen para recuperarlos cuando esta ventana está vacía.
@@ -6026,7 +6030,7 @@ function ApprovedCreateContent(props) {
           }
         })();
         clearGenerationSession();
-        removeSelectedAudio({ nextAudioSource: 'none' });
+        // El audio cargado se conserva a proposito: solo lo quita el usuario a mano.
         setData((prev) => ({
           ...prev,
           title: '',
@@ -6037,8 +6041,6 @@ function ApprovedCreateContent(props) {
           styleOriginal: '',
           styleTranslated: false,
           negative: '',
-          audioSource: 'none',
-          file: null,
         }));
         setStep(0);
         if (onGoLibrary) onGoLibrary();
@@ -6180,7 +6182,7 @@ function ApprovedCreateContent(props) {
         try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
       } catch {}
       clearGenerationSession();
-      removeSelectedAudio({ nextAudioSource: 'none' });
+      // El audio cargado se conserva a proposito: solo lo quita el usuario a mano.
       setData((prev) => ({
         ...prev,
         title: '',
@@ -6191,8 +6193,6 @@ function ApprovedCreateContent(props) {
         styleOriginal: '',
         styleTranslated: false,
         negative: '',
-        audioSource: 'none',
-        file: null,
       }));
       setStep(0);
       if (onGoLibrary) onGoLibrary();
