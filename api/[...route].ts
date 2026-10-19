@@ -5650,8 +5650,13 @@ notify pgrst, 'reload schema';`;
       if (!payload) return send(res, 400, { error: "Body inválido" });
 
       const deleteAll = Boolean(payload?.deleteAll ?? payload?.delete_all);
-      const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]);
-      if (!deleteAll && !sunoVoiceId) return send(res, 400, { error: "Falta sunoVoiceId o deleteAll" });
+      const singleId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]);
+      const idList = Array.isArray(payload?.sunoVoiceIds)
+        ? Array.from(new Set(payload.sunoVoiceIds.map((v: any) => String(v || "").trim()).filter(Boolean)))
+        : [];
+      if (!deleteAll && !singleId && !idList.length) {
+        return send(res, 400, { error: "Falta sunoVoiceId, sunoVoiceIds o deleteAll" });
+      }
 
       try {
         // Se leen primero los ids para poder limpiar los demas registros del personaje.
@@ -5659,7 +5664,11 @@ notify pgrst, 'reload schema';`;
           .from("suno_voices")
           .select("suno_voice_id, meta")
           .eq("user_id", auth.user.id);
-        if (!deleteAll) readQuery = readQuery.eq("suno_voice_id", sunoVoiceId);
+        if (!deleteAll) {
+          readQuery = idList.length
+            ? readQuery.in("suno_voice_id", idList)
+            : readQuery.eq("suno_voice_id", singleId);
+        }
         const { data: targets, error: readErr } = await readQuery;
         if (readErr) throw readErr;
 
@@ -5667,7 +5676,11 @@ notify pgrst, 'reload schema';`;
         if (!rows.length) return send(res, 200, { ok: true, deleted: 0 });
 
         let delQuery = auth.admin.from("suno_voices").delete().eq("user_id", auth.user.id);
-        if (!deleteAll) delQuery = delQuery.eq("suno_voice_id", sunoVoiceId);
+        if (!deleteAll) {
+          delQuery = idList.length
+            ? delQuery.in("suno_voice_id", idList)
+            : delQuery.eq("suno_voice_id", singleId);
+        }
         const { error: delErr } = await delQuery;
         if (delErr) throw delErr;
 

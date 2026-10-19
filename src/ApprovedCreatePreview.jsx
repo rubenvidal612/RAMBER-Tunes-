@@ -2785,8 +2785,8 @@ function StartStep({ data, setData, setToast, handlers }) {
   const [deletingPersona, setDeletingPersona] = useState(null);
   const [sharingPersona, setSharingPersona] = useState(null);
   const [shareEmail, setShareEmail] = useState('');
-  const [selectAllPersonas, setSelectAllPersonas] = useState(false);
-  const [deletingAllPersonas, setDeletingAllPersonas] = useState(false);
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState([]);
+  const [deletingSelectedPersonas, setDeletingSelectedPersonas] = useState(false);
   const [personaActionLoading, setPersonaActionLoading] = useState(false);
   const previousVoiceRef = useRef(null);
   const fileName = data.file?.name;
@@ -2931,8 +2931,8 @@ function StartStep({ data, setData, setToast, handlers }) {
     setEditingPersona(null);
     setDeletingPersona(null);
     setSharingPersona(null);
-    setSelectAllPersonas(false);
-    setDeletingAllPersonas(false);
+    setSelectedPersonaIds([]);
+    setDeletingSelectedPersonas(false);
     if (keepSelection) return;
     const prev = previousVoiceRef.current;
     if (!prev) return;
@@ -3139,7 +3139,24 @@ function StartStep({ data, setData, setToast, handlers }) {
     }
   };
 
-  const deleteAllPersonas = async () => {
+  const togglePersonaSelected = (voiceId) => {
+    const id = String(voiceId || '').trim();
+    if (!id) return;
+    setSelectedPersonaIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  };
+
+  const toggleAllPersonas = (checked) => {
+    setSelectedPersonaIds(checked ? personas.map((p) => String(p.voiceId || '').trim()).filter(Boolean) : []);
+  };
+
+  const deleteSelectedPersonas = async () => {
+    const ids = selectedPersonaIds.slice();
+    if (!ids.length) {
+      setToast('Marca al menos un personaje para eliminar.');
+      return;
+    }
     setPersonaActionLoading(true);
     try {
       const t = await getAccessToken();
@@ -3150,18 +3167,24 @@ function StartStep({ data, setData, setToast, handlers }) {
       const r = await fetch('/api/suno/voices', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ deleteAll: true }),
+        body: JSON.stringify({ sunoVoiceIds: ids }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
         setToast((out?.error || out?.detail || 'No se pudieron eliminar los personajes.').toString());
         return;
       }
-      applyPersonas([]);
-      clearAllSelectedPersona();
-      setDeletingAllPersonas(false);
-      setSelectAllPersonas(false);
-      setToast(`Se eliminaron ${Number(out?.deleted || 0)} personajes guardados.`);
+      const remaining = personas.filter((p) => !ids.includes(String(p.voiceId || '').trim()));
+      applyPersonas(remaining);
+      const currentVoiceId = String(data?.voiceProfile?.voiceId || '').trim();
+      if (currentVoiceId && ids.includes(currentVoiceId)) clearAllSelectedPersona();
+      const previousVoiceId = String(previousVoiceRef.current?.voiceProfile?.voiceId || '').trim();
+      if (previousVoiceId && ids.includes(previousVoiceId)) {
+        previousVoiceRef.current = { ...previousVoiceRef.current, voiceProfile: null };
+      }
+      setSelectedPersonaIds([]);
+      setDeletingSelectedPersonas(false);
+      setToast(`Se eliminaron ${Number(out?.deleted || ids.length)} personajes guardados.`);
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'No se pudieron eliminar los personajes.');
     } finally {
@@ -3714,18 +3737,20 @@ function StartStep({ data, setData, setToast, handlers }) {
                     >
                       <input
                         type="checkbox"
-                        checked={selectAllPersonas}
-                        onChange={(e) => setSelectAllPersonas(e.target.checked)}
+                        checked={personas.length > 0 && selectedPersonaIds.length === personas.length}
+                        onChange={(e) => toggleAllPersonas(e.target.checked)}
                         style={{ width: 16, height: 16, accentColor: '#ef4444' }}
                       />
-                      {`Seleccionar todos (${personas.length})`}
+                      {selectedPersonaIds.length > 0 && selectedPersonaIds.length < personas.length
+                        ? `${selectedPersonaIds.length} de ${personas.length} marcados`
+                        : `Seleccionar todos (${personas.length})`}
                     </label>
                     <button
                       type="button"
-                      disabled={!selectAllPersonas || personaActionLoading}
+                      disabled={!selectedPersonaIds.length || personaActionLoading}
                       onClick={() => {
                         setPersonaMenuOpen('');
-                        setDeletingAllPersonas(true);
+                        setDeletingSelectedPersonas(true);
                       }}
                       style={{
                         display: 'inline-flex',
@@ -3738,26 +3763,55 @@ function StartStep({ data, setData, setToast, handlers }) {
                         color: '#fca5a5',
                         fontWeight: 800,
                         fontSize: 12,
-                        opacity: !selectAllPersonas || personaActionLoading ? 0.45 : 1,
-                        cursor: !selectAllPersonas || personaActionLoading ? 'not-allowed' : 'pointer',
+                        opacity: !selectedPersonaIds.length || personaActionLoading ? 0.45 : 1,
+                        cursor: !selectedPersonaIds.length || personaActionLoading ? 'not-allowed' : 'pointer',
                       }}
                       title={
-                        selectAllPersonas
-                          ? 'Eliminar todos los personajes guardados'
-                          : 'Marca "Seleccionar todos" para poder eliminar'
+                        selectedPersonaIds.length
+                          ? `Eliminar ${selectedPersonaIds.length} personajes marcados`
+                          : 'Marca al menos un personaje para poder eliminar'
                       }
-                      aria-label="Eliminar todos los personajes"
+                      aria-label="Eliminar los personajes marcados"
                     >
                       <Trash size={16} />
-                      Eliminar todos
+                      {selectedPersonaIds.length > 1 ? `Eliminar (${selectedPersonaIds.length})` : 'Eliminar'}
                     </button>
                   </div>
                   <div className="persona-grid">
-                  {personas.map((p) => (
+                  {personas.map((p) => {
+                    const isMarked = selectedPersonaIds.includes(String(p.voiceId || '').trim());
+                    return (
                     <div key={p.voiceId} className={data.voiceProfile?.voiceId === p.voiceId ? "persona-card is-selected" : "persona-card"}>
+                      <label
+                        title={isMarked ? 'Quitar de la selección' : 'Marcar para eliminar'}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: 'absolute',
+                          top: 9,
+                          left: 9,
+                          zIndex: 7,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 22,
+                          height: 22,
+                          borderRadius: 6,
+                          background: 'rgba(8,15,25,0.85)',
+                          border: isMarked ? '1px solid rgba(248,113,113,0.75)' : '1px solid rgba(255,255,255,0.18)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isMarked}
+                          onChange={() => togglePersonaSelected(p.voiceId)}
+                          style={{ width: 15, height: 15, accentColor: '#ef4444', cursor: 'pointer' }}
+                        />
+                      </label>
                       <button
                         type="button"
                         className="persona-card-select"
+                        style={{ paddingLeft: 38 }}
                         disabled={p.status !== 'ready'}
                         title={p.availabilityReason || (p.status !== 'ready' ? 'Suno no confirmó esta voz. Repite la validación en el Clonador.' : '')}
                         onClick={() => {
@@ -3818,7 +3872,8 @@ function StartStep({ data, setData, setToast, handlers }) {
                         </div>
                       ) : null}
                     </div>
-                  ))}
+                    );
+                  })}
                   </div>
                 </>
               )}
@@ -3901,19 +3956,24 @@ function StartStep({ data, setData, setToast, handlers }) {
               </div>
             </div>
           ) : null}
-          {deletingAllPersonas ? (
-            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Eliminar todos los personajes">
+          {deletingSelectedPersonas ? (
+            <div className="persona-dialog-backdrop" role="dialog" aria-modal="true" aria-label="Eliminar los personajes marcados">
               <div className="persona-dialog">
-                <h3>¿Eliminar TODOS los personajes?</h3>
+                <h3>
+                  {selectedPersonaIds.length === 1
+                    ? '¿Eliminar este personaje?'
+                    : `¿Eliminar ${selectedPersonaIds.length} personajes?`}
+                </h3>
                 <p>
-                  Se van a borrar {personas.length} personajes guardados y sus registros. Esta acción no se puede deshacer.
+                  Se van a borrar {selectedPersonaIds.length} personajes guardados y sus registros. Los que no
+                  marques se conservan. Esta acción no se puede deshacer.
                 </p>
                 <div className="persona-dialog-actions">
                   <button
                     type="button"
                     className="wizard-back"
                     disabled={personaActionLoading}
-                    onClick={() => setDeletingAllPersonas(false)}
+                    onClick={() => setDeletingSelectedPersonas(false)}
                   >
                     Cancelar
                   </button>
@@ -3921,10 +3981,10 @@ function StartStep({ data, setData, setToast, handlers }) {
                     type="button"
                     className="wizard-next danger"
                     disabled={personaActionLoading}
-                    onClick={deleteAllPersonas}
+                    onClick={deleteSelectedPersonas}
                   >
                     {personaActionLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash size={18} />}
-                    Eliminar todos
+                    {selectedPersonaIds.length > 1 ? `Eliminar ${selectedPersonaIds.length}` : 'Eliminar'}
                   </button>
                 </div>
               </div>
