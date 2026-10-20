@@ -4422,13 +4422,15 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
   const lyricsOk = data.lyricsMode === "ai"
     ? Boolean(data.aiLyricsGenerated && data.lyrics.trim())
     : Boolean(data.lyrics.trim());
+  const usingReferenceAudio = data.audioSource === "upload";
+  const hasUploadedReferenceAudio = Boolean(handlers?.hasUploadedAudio);
   const requirements = [
     ["Título de la canción", Boolean(data.title.trim())],
     ["Letra completa", lyricsOk],
     ["Instrucción o estilo musical", Boolean(data.style.trim())],
     ["Voz seleccionada", Boolean(data.voice)],
     ["Voz de hombre o de mujer", Boolean(data.vocalGender)],
-    ["Audio MP3 de referencia", data.audioSource !== "upload" || Boolean(handlers?.hasUploadedAudio)],
+    ...(usingReferenceAudio ? [["Audio MP3 de referencia", hasUploadedReferenceAudio]] : []),
     ["Perfil de voz clonado", data.voice !== "clone" || Boolean(data.voiceProfile)],
   ];
   const isReady = requirements.every(([, complete]) => complete);
@@ -4448,7 +4450,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
         <div className="review-card"><span>Letra · {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
         <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : normalizeModelName(data.model)}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
-        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (handlers?.hasUploadedAudio ? "Audio cargado" : "Sin archivo cargado")}</small></div>
+        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (hasUploadedReferenceAudio ? "Audio cargado" : usingReferenceAudio ? "Falta subir el audio" : "No estás usando audio")}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
@@ -5276,6 +5278,12 @@ function ApprovedCreateContent(props) {
         nextData.model = "Suno V6";
       }
       const restoredUploadUrlForFlag = typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '';
+      // Si el borrador guardo un audio subido, el modo debe ser "upload": si no, el
+      // resumen del paso 4 se contradecia (audio ausente pero requisito en verde).
+      if (restoredUploadUrlForFlag && (!nextData.audioSource || nextData.audioSource === 'none')) {
+        nextData.audioSource = 'upload';
+        nextData.audioInputMode = 'upload';
+      }
       const hadAudioRef = Boolean(parsed?.hadAudioReference);
       // El audio ya subido se recupera del borrador: el usuario no tiene que subirlo otra vez.
       setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef && !restoredUploadUrlForFlag));
