@@ -5220,6 +5220,9 @@ function ApprovedCreateContent(props) {
   const [data, setData] = useState(() => makeInitialData());
   const [audioUploadUrl, setAudioUploadUrl] = useState("");
   const [audioUploadPath, setAudioUploadPath] = useState("");
+  // task_id + audio_id de la cancion original cuando el cover sale de "Mis canciones".
+  // Con eso el servidor evita descargar y volver a subir el audio.
+  const [baseSongIds, setBaseSongIds] = useState({ taskId: '', audioId: '' });
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [audioReuploadNeeded, setAudioReuploadNeeded] = useState(false);
@@ -5291,6 +5294,10 @@ function ApprovedCreateContent(props) {
     }
     setAudioUploadUrl(typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '');
     setAudioUploadPath(typeof parsed.audioUploadPath === 'string' ? parsed.audioUploadPath.trim() : '');
+    setBaseSongIds({
+      taskId: typeof parsed.baseSongTaskId === 'string' ? parsed.baseSongTaskId : '',
+      audioId: typeof parsed.baseSongAudioId === 'string' ? parsed.baseSongAudioId : '',
+    });
     setUploadProgress(0);
   };
 
@@ -5339,6 +5346,7 @@ function ApprovedCreateContent(props) {
     if (draftKey) {
       try { window.localStorage.removeItem(draftKey); } catch {}
     }
+    setBaseSongIds({ taskId: '', audioId: '' });
     setStep(0);
     setCreativity(50);
     setInstruction(50);
@@ -5379,13 +5387,15 @@ function ApprovedCreateContent(props) {
           hadAudioReference,
           audioUploadUrl,
           audioUploadPath,
+          baseSongTaskId: baseSongIds.taskId,
+          baseSongAudioId: baseSongIds.audioId,
           savedAt: Date.now(),
         };
         window.localStorage.setItem(draftKey, JSON.stringify(payload));
       } catch {}
     }, 350);
     return () => window.clearTimeout(id);
-  }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath]);
+  }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds]);
 
   // Borradores de otras ventanas o de una pestaña que se cerró. No se borra nada:
   // solo se ofrecen para recuperarlos cuando esta ventana está vacía.
@@ -5494,6 +5504,10 @@ function ApprovedCreateContent(props) {
     setAudioUploadUrl(rawUrl);
     const nextAudioPath = ((song || {}).audioPath || '').toString().trim() || deriveAudioPath(rawUrl) || '';
     setAudioUploadPath(nextAudioPath);
+    setBaseSongIds({
+      taskId: ((song || {}).sunoTaskId || '').toString().trim(),
+      audioId: ((song || {}).sunoAudioId || '').toString().trim(),
+    });
     setIsUploadingAudio(false);
     setUploadProgress(100);
     setData((prev) => ({
@@ -5508,6 +5522,7 @@ function ApprovedCreateContent(props) {
 
   const removeSelectedAudio = (options) => {
     const nextAudioSource = typeof options?.nextAudioSource === 'string' ? options.nextAudioSource : 'upload';
+    setBaseSongIds({ taskId: '', audioId: '' });
     const nextAudioInputMode = typeof options?.nextAudioInputMode === 'string'
       ? options.nextAudioInputMode
       : (nextAudioSource === 'none' ? 'none' : 'upload');
@@ -5532,6 +5547,8 @@ function ApprovedCreateContent(props) {
 
   const uploadAudio = async (file) => {
     const requestVersion = audioRequestVersionRef.current + 1;
+    // Si el usuario sube otro archivo, ya no aplica el task_id de la cancion anterior.
+    setBaseSongIds({ taskId: '', audioId: '' });
     audioRequestVersionRef.current = requestVersion;
     setIsUploadingAudio(true);
     setAudioUploadUrl('');
@@ -6115,6 +6132,8 @@ function ApprovedCreateContent(props) {
             uploadUrl: audioUploadUrl,
             uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
             uploadPath: audioUploadPath || undefined,
+            baseTaskId: baseSongIds.taskId || undefined,
+            baseAudioId: baseSongIds.audioId || undefined,
             instrumental: false,
             prompt,
             style: payload.style || data.style.toString().trim() || 'General',

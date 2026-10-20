@@ -2376,6 +2376,11 @@ const sunoHandler = (() => {
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
+    // Via nueva de KIE: con el task_id + audio_id de la cancion original ya no hace
+    // falta descargar el audio y volver a subirlo para hacer el cover.
+    const baseTaskId = firstString(payload, ["baseTaskId", "base_task_id"]);
+    const baseAudioId = firstString(payload, ["baseAudioId", "base_audio_id"]);
+    const useSourceIds = Boolean(baseTaskId && baseAudioId);
     const instrumental = Boolean(payload?.instrumental);
     const prompt = firstString(payload, ["prompt", "lyrics", "text"]) || " ";
     const style = firstString(payload, ["style", "tags", "genre"]) || "General";
@@ -2384,7 +2389,7 @@ const sunoHandler = (() => {
     const modelRaw = firstString(payload, ["model"]);
     const personaModelHint = firstString(payload, ["personaModel", "persona_model"]);
     let model = normalizeModel(modelRaw || mv);
-    if (!uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
+    if (!useSourceIds && !uploadUrl && !uploadPath) return send(res, 400, { error: "Falta uploadUrl o uploadPath" });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
 
@@ -2400,22 +2405,26 @@ const sunoHandler = (() => {
       }
 
       let preparedAudio: any = null;
-      try {
-        preparedAudio = await prepareCoverUploadUrlForSuno(req, uploadUrl, uploadPath, user.id, title);
-      } catch (e) {
-        if (!isAdmin) {
-          try { await adjustUserCredits(auth.admin, user.id, cost); } catch (_) {}
+      if (!useSourceIds) {
+        try {
+          preparedAudio = await prepareCoverUploadUrlForSuno(req, uploadUrl, uploadPath, user.id, title);
+        } catch (e) {
+          if (!isAdmin) {
+            try { await adjustUserCredits(auth.admin, user.id, cost); } catch (_) {}
+          }
+          return send(res, 502, {
+            error: "No se pudo preparar el audio para el cover.",
+            detail: e instanceof Error ? e.message : String(e),
+          });
         }
-        return send(res, 502, {
-          error: "No se pudo preparar el audio para el cover.",
-          detail: e instanceof Error ? e.message : String(e),
-        });
       }
 
       const body: any = {
         model,
         callBackUrl,
-        uploadUrl: String(preparedAudio?.uploadUrl || "").trim(),
+        ...(useSourceIds
+          ? { taskId: baseTaskId, audioId: baseAudioId }
+          : { uploadUrl: String(preparedAudio?.uploadUrl || "").trim() }),
         prompt: (prompt || " ").slice(0, 5000),
         title: title.slice(0, 100),
         style: style.slice(0, 1000),
@@ -2456,6 +2465,28 @@ const sunoHandler = (() => {
         last = r;
         if (r.res.status !== 404) break;
       }
+
+      // Respaldo: si la via nueva (taskId/audioId) falla, se prepara el audio como antes
+      // y se reintenta con uploadUrl. Asi un cambio del proveedor no deja sin covers.
+      if (useSourceIds && last?.res && !last.res.ok) {
+        const st = Number(last.res.status || 0);
+        if (st === 400 || st === 404 || st === 422 || st === 500 || st === 502) {
+          try {
+            const prepared = await prepareCoverUploadUrlForSuno(req, uploadUrl, uploadPath, user.id, title);
+            const fallbackBody: any = { ...body, uploadUrl: String(prepared?.uploadUrl || "").trim() };
+            delete fallbackBody.taskId;
+            delete fallbackBody.audioId;
+            if (fallbackBody.uploadUrl) {
+              for (const p of paths) {
+                const r2 = await sunoFetchJsonWithRetry(p, { method: "POST", body: JSON.stringify(fallbackBody) });
+                last = r2;
+                if (r2.res.status !== 404) break;
+              }
+            }
+          } catch { /* si tampoco se puede, se conserva el error original */ }
+        }
+      }
+
       const { res: r, data, text } = last || {};
       if (!r) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
