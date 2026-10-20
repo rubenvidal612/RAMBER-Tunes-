@@ -3373,9 +3373,11 @@ function StartStep({ data, setData, setToast, handlers }) {
   const chooseFile = async (file, options = {}) => {
     if (!file) return false;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
-    const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || (file.type || '').toString().startsWith('audio/');
-    if (!isAudioOk) {
-      setToast("Ese archivo no es de audio. Usa MP3, WAV o M4A.");
+    // El flujo trabaja con MP3: otros formatos fallaban despues de subirlos, asi que
+    // se avisa desde el inicio en vez de dejar que falle mas adelante.
+    const isMp3 = ext === 'mp3' || (file.type || '').toString().toLowerCase() === 'audio/mpeg';
+    if (!isMp3) {
+      setToast('Solo se aceptan archivos MP3. Usa el botón "Convertir mi archivo a MP3" de abajo.');
       return false;
     }
     const nextInputMode = typeof options?.inputMode === 'string' ? options.inputMode : 'upload';
@@ -3464,7 +3466,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 · WAV · M4A"}</small></span>
+              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
               {hasSelectedAudio && audioChoiceMode === "upload" ? (
                 <button
                   type="button"
@@ -4446,7 +4448,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
         <div className="review-card"><span>Letra · {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
         <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : normalizeModelName(data.model)}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
-        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || "Sin archivo cargado"}</small></div>
+        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (handlers?.hasUploadedAudio ? "Audio cargado" : "Sin archivo cargado")}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
@@ -5845,9 +5847,16 @@ function ApprovedCreateContent(props) {
     }
   };
 
+  const autoTranscribedUrlRef = useRef('');
   useEffect(() => {
     if (!audioUploadUrl) return;
     setUploadProgress(100);
+    // La letra se pide sola UNA vez, para el audio recien subido y solo si aun no hay letra.
+    // Antes se pedia cada vez que cambiaba la URL (incluido al recuperar el borrador),
+    // y eso volvia a escribir la letra encima de la que ya tenias y gastaba creditos.
+    if (String(data?.lyrics || '').trim()) return;
+    if (autoTranscribedUrlRef.current === audioUploadUrl) return;
+    autoTranscribedUrlRef.current = audioUploadUrl;
     transcribeLyricsFromAudio().catch(() => {});
   }, [audioUploadUrl]);
 
@@ -6030,18 +6039,8 @@ function ApprovedCreateContent(props) {
           }
         })();
         clearGenerationSession();
-        // El audio cargado se conserva a proposito: solo lo quita el usuario a mano.
-        setData((prev) => ({
-          ...prev,
-          title: '',
-          lyrics: '',
-          lyricInstruction: '',
-          aiLyricsGenerated: false,
-          style: '',
-          styleOriginal: '',
-          styleTranslated: false,
-          negative: '',
-        }));
+        // No se limpia el formulario: el audio y la letra se conservan para poder
+        // generar otra version sin volver a subir el audio ni reescribir la letra.
         setStep(0);
         if (onGoLibrary) onGoLibrary();
         return true;
@@ -6182,18 +6181,8 @@ function ApprovedCreateContent(props) {
         try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
       } catch {}
       clearGenerationSession();
-      // El audio cargado se conserva a proposito: solo lo quita el usuario a mano.
-      setData((prev) => ({
-        ...prev,
-        title: '',
-        lyrics: '',
-        lyricInstruction: '',
-        aiLyricsGenerated: false,
-        style: '',
-        styleOriginal: '',
-        styleTranslated: false,
-        negative: '',
-      }));
+      // No se limpia el formulario: el audio y la letra se conservan para poder
+      // generar otra version sin volver a subir el audio ni reescribir la letra.
       setStep(0);
       if (onGoLibrary) onGoLibrary();
       return true;
@@ -6230,6 +6219,16 @@ function ApprovedCreateContent(props) {
     audioUploadUrl,
     audioUploadError,
     hasUploadedAudio: Boolean(audioUploadUrl),
+    uploadedAudioName: (() => {
+      const path = String(audioUploadPath || '').trim();
+      if (!path) return '';
+      const base = path.split('/').pop() || '';
+      try {
+        return decodeURIComponent(base);
+      } catch {
+        return base;
+      }
+    })(),
     onShowAlert,
     handleToggleNotifications,
     clearAudioTranscriptionState: () => setAudioLyricsStatus(''),
