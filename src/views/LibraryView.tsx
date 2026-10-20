@@ -4017,6 +4017,47 @@ function parseVocalRemovalItems(provider: any) {
     .sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
 }
 
+// Codificador MP3 (lamejs) a nivel de archivo, para poder usarlo desde cualquier
+// componente de esta pantalla (por ejemplo el recorte de canción).
+let trimLameFactoryPromise: Promise<any> | null = null;
+async function encodeTrimBufferToMp3(buffer: AudioBuffer, kbps = 192): Promise<Blob> {
+  if (!trimLameFactoryPromise) {
+    trimLameFactoryPromise = import('lamejs/lame.all.js?raw').then((mod: any) => {
+      const source = String(mod?.default || '').trim();
+      if (!source) throw new Error('No pude cargar el convertidor MP3.');
+      return new Function(`${source}; return lamejs;`)();
+    });
+  }
+  const lame: any = await trimLameFactoryPromise;
+  const Mp3Encoder = lame?.Mp3Encoder;
+  if (!Mp3Encoder) throw new Error('No pude cargar el convertidor MP3.');
+  const sr = Number(buffer.sampleRate || 44100) || 44100;
+  const channels = Math.min(2, Math.max(1, Number(buffer.numberOfChannels || 2) || 2));
+  const encoder = new Mp3Encoder(channels, sr, Math.max(64, Math.min(320, Math.floor(kbps))));
+  const getCh = (i: number) => buffer.getChannelData(Math.min(i, buffer.numberOfChannels - 1));
+  const left = getCh(0);
+  const right = channels > 1 ? getCh(1) : left;
+  const toInt16 = (f32: Float32Array) => {
+    const out = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i += 1) {
+      const s = Math.max(-1, Math.min(1, f32[i] || 0));
+      out[i] = s < 0 ? Math.floor(s * 32768) : Math.floor(s * 32767);
+    }
+    return out;
+  };
+  const frameSize = 1152;
+  const chunks: Uint8Array[] = [];
+  for (let i = 0; i < left.length; i += frameSize) {
+    const l = toInt16(left.subarray(i, i + frameSize));
+    const r = channels > 1 ? toInt16(right.subarray(i, i + frameSize)) : l;
+    const mp3buf = encoder.encodeBuffer(l as any, r as any);
+    if (mp3buf && mp3buf.length > 0) chunks.push(new Uint8Array(mp3buf));
+  }
+  const end = encoder.flush();
+  if (end && end.length > 0) chunks.push(new Uint8Array(end));
+  return new Blob(chunks, { type: 'audio/mpeg' });
+}
+
 function SongOptionsSheet({
   song,
   onClose,
@@ -4900,7 +4941,7 @@ function SongOptionsSheet({
     }
   };
 
-  const makeTrimWavBlob = async () => {
+  const makeTrimBlob = async (format: 'wav' | 'mp3' = 'mp3') => {
     const url = (trimAudioUrl || '').toString().trim();
     if (!url) throw new Error('No hay audio para recortar.');
     const start = clamp(Number(trimStartSec || 0), 0, Number.isFinite(trimDurationSec) && trimDurationSec > 0 ? trimDurationSec : 1e9);
@@ -4924,6 +4965,9 @@ function SongOptionsSheet({
         const dst = out.getChannelData(ch);
         dst.set(src.subarray(startFrame, startFrame + frames));
       }
+      // El recorte se entrega en MP3 (ligero y compatible). WAV queda disponible
+      // por si algun dia se necesita sin perdida.
+      if (format === 'mp3') return await encodeTrimBufferToMp3(out, 192);
       const wav = encodeWav(out);
       return new Blob([wav], { type: 'audio/wav' });
     } finally {
@@ -4939,8 +4983,8 @@ function SongOptionsSheet({
     setTrimError('');
     try {
       const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
-      const blob = await makeTrimWavBlob();
-      await downloadBlobToDevice(blob, `${base}_recorte_${fmtClock(trimStartSec)}-${fmtClock(trimEndSec)}.wav`);
+      const blob = await makeTrimBlob('mp3');
+      await downloadBlobToDevice(blob, `${base}_recorte_${fmtClock(trimStartSec)}-${fmtClock(trimEndSec)}.mp3`);
     } catch (e: any) {
       const msg = e instanceof Error ? e.message : 'No se pudo recortar.';
       setTrimError(msg);
@@ -4956,9 +5000,9 @@ function SongOptionsSheet({
     setTrimError('');
     try {
       const base = sanitizeDownloadName(song.title || 'Cancion') || 'Cancion';
-      const blob = await makeTrimWavBlob();
-      const fileName = `${base}_recorte_${fmtClock(trimStartSec)}-${fmtClock(trimEndSec)}.wav`;
-      const file = new File([blob], fileName, { type: 'audio/wav' });
+      const blob = await makeTrimBlob('mp3');
+      const fileName = `${base}_recorte_${fmtClock(trimStartSec)}-${fmtClock(trimEndSec)}.mp3`;
+      const file = new File([blob], fileName, { type: 'audio/mpeg' });
       const can =
         typeof (navigator as any).canShare === 'function' ? (navigator as any).canShare({ files: [file] }) : Boolean((navigator as any).share);
       if ((navigator as any).share && can) {
