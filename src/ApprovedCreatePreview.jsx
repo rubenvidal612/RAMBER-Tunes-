@@ -2351,7 +2351,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                     <UploadSimple size={35} />
                     <strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong>
                     <small>MP3, WAV, M4A u OGG (se convierte a MP3)</small>
-                    <input type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" onChange={(e) => acceptMp3(e.target.files[0], "sourceAudio")} />
+                    <input type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac" onChange={(e) => acceptMp3(e.target.files[0], "sourceAudio")} />
                   </label>
                   <div className="sample-actions">
                     <a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer">
@@ -3383,9 +3383,9 @@ function StartStep({ data, setData, setToast, handlers }) {
   const chooseFile = async (file, options = {}) => {
     if (!file) return false;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
-    const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || (file.type || '').toString().startsWith('audio/');
+    const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || ext === 'opus' || ext === 'flac' || (file.type || '').toString().startsWith('audio/');
     if (!isAudioOk) {
-      setToast('Ese archivo no es de audio. Usa MP3, WAV, M4A, OGG o AAC.');
+      setToast('Ese archivo no es de audio. Usa MP3, WAV, M4A, OGG, OPUS, FLAC o AAC.');
       return false;
     }
 
@@ -3512,7 +3512,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               <span className="radio" />
               <input
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a"
+                accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac"
                 ref={uploadInputRef}
                 onClick={() => {
                   stopSingingCapture({ discardTake: true, preservePreview: false });
@@ -4432,7 +4432,7 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
               </span>
               <input
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac"
+                accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac"
                 onChange={async (e) => {
                   const file = e.target.files[0];
                   if (!file) return;
