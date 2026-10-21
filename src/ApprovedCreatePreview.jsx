@@ -20,6 +20,7 @@ import approvedPlayerCss from "./approved-create/player-options.css?raw";
 import { ensureAnonSession, getAccessToken } from "./lib/supabaseBrowser";
 import { formatLyricsForEditing } from "./lib/lyricsFormatting.js";
 import { isVoiceAvailable } from "./lib/voiceAvailability";
+import { convertAudioFileToMp3, isAlreadyMp3 } from "./lib/audioToMp3";
 
 const pendingListKey = 'ramber.pendingSunoTasks_v1';
 const pendingLegacyKey = 'ramber.pendingSunoTask';
@@ -1369,11 +1370,18 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     }
   };
 
-  const acceptMp3 = (file, field) => {
+  const acceptMp3 = async (file, field) => {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".mp3")) {
-      setToast("Ese archivo no es MP3. Usa el convertidor gratuito.");
-      return;
+    if (!isAlreadyMp3(file)) {
+      // Suno solo acepta MP3: se convierte aqui mismo en vez de mandar a una pagina externa.
+      try {
+        setToast("Convirtiendo tu audio a MP3…");
+        const converted = await convertAudioFileToMp3(file);
+        return acceptMp3(converted, field);
+      } catch {
+        setToast("No pude convertir ese audio a MP3. Prueba con un MP3.");
+        return;
+      }
     }
     if (field !== "sourceAudio") {
       setProfile((current) => ({ ...current, [field]: file }));
@@ -2342,8 +2350,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                   <label className="wizard-upload">
                     <UploadSimple size={35} />
                     <strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong>
-                    <small>Solo archivos MP3</small>
-                    <input type="file" accept="audio/mpeg,.mp3" onChange={(e) => acceptMp3(e.target.files[0], "sourceAudio")} />
+                    <small>MP3, WAV, M4A u OGG (se convierte a MP3)</small>
+                    <input type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac" onChange={(e) => acceptMp3(e.target.files[0], "sourceAudio")} />
                   </label>
                   <div className="sample-actions">
                     <a href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer">
@@ -2796,6 +2804,8 @@ function StartStep({ data, setData, setToast, handlers }) {
   const hasSelectedAudio = Boolean(data.file || uploadedAudioUrl || uploading || uploadError);
   const needsAudioReupload = Boolean(handlers?.audioReuploadNeeded) && data.audioSource === 'upload' && !hasSelectedAudio;
   const [audioChoiceMode, setAudioChoiceMode] = useState(() => data.audioInputMode || (data.audioSource === 'upload' ? 'upload' : 'none'));
+  // Mientras el archivo elegido se convierte a MP3 en el dispositivo.
+  const [convertingAudio, setConvertingAudio] = useState(false);
   const [singCountdown, setSingCountdown] = useState({ active: false, value: '' });
   const [singRecording, setSingRecording] = useState({ recording: false, seconds: 0, error: '', url: '', mimeType: '' });
   const [singMeterStream, setSingMeterStream] = useState(null);
@@ -3373,19 +3383,36 @@ function StartStep({ data, setData, setToast, handlers }) {
   const chooseFile = async (file, options = {}) => {
     if (!file) return false;
     const ext = (file.name || '').toString().toLowerCase().split('.').pop() || '';
-    // El flujo trabaja con MP3: otros formatos fallaban despues de subirlos, asi que
-    // se avisa desde el inicio en vez de dejar que falle mas adelante.
-    const isMp3 = ext === 'mp3' || (file.type || '').toString().toLowerCase() === 'audio/mpeg';
-    if (!isMp3) {
-      setToast('Solo se aceptan archivos MP3. Usa el botón "Convertir mi archivo a MP3" de abajo.');
+    const isAudioOk = ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'aac' || ext === 'ogg' || ext === 'webm' || (file.type || '').toString().startsWith('audio/');
+    if (!isAudioOk) {
+      setToast('Ese archivo no es de audio. Usa MP3, WAV, M4A, OGG o AAC.');
       return false;
     }
+
+    // Suno solo acepta MP3, asi que cualquier otro formato se convierte aqui mismo,
+    // sin mandar al usuario a una pagina externa con anuncios.
+    let readyFile = file;
+    if (!isAlreadyMp3(file)) {
+      try {
+        setConvertingAudio(true);
+        setToast('Convirtiendo tu audio a MP3…');
+        readyFile = await convertAudioFileToMp3(file);
+        setToast('Audio convertido a MP3.');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'No pude convertir ese audio.';
+        setToast(`${msg} Prueba con un MP3 o usa el convertidor de abajo.`);
+        return false;
+      } finally {
+        setConvertingAudio(false);
+      }
+    }
+
     const nextInputMode = typeof options?.inputMode === 'string' ? options.inputMode : 'upload';
     setAudioChoiceMode(nextInputMode);
-    setData((current) => ({ ...current, audioInputMode: nextInputMode, audioSource: "upload", file }));
+    setData((current) => ({ ...current, audioInputMode: nextInputMode, audioSource: "upload", file: readyFile }));
     if (handlers?.uploadAudio) {
       try {
-        const ok = await handlers.uploadAudio(file);
+        const ok = await handlers.uploadAudio(readyFile);
         if (ok && options?.autoAdvance) handlers?.goToLyricsStep?.();
         return Boolean(ok);
       } catch {
@@ -3466,7 +3493,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-              <span><strong>{uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3"}</small></span>
+              <span><strong>{convertingAudio ? "Convirtiendo a MP3…" : uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{convertingAudio ? "Un momento, se convierte en tu dispositivo" : uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 · WAV · M4A · OGG"}</small></span>
               {hasSelectedAudio && audioChoiceMode === "upload" ? (
                 <button
                   type="button"
@@ -3493,7 +3520,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                   setData((current) => ({ ...current, audioInputMode: 'upload' }));
                 }}
                 onChange={(e) => chooseFile(e.target.files[0], { inputMode: 'upload' })}
-                disabled={uploading}
+                disabled={uploading || convertingAudio}
               />
             </label>
 
@@ -4386,6 +4413,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
 }
 
 function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToast }) {
+  const [convertingAudio, setConvertingAudio] = useState(false);
   const fileName = data.file?.name;
   return (
     <section className="two-columns voice-layout">
@@ -4396,9 +4424,38 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
           <button className={data.voice === "clone" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "clone", model: "Suno V6" })}><span className="choice-icon"><Users size={28} /></span><span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canción.</small></span><span className="radio" /></button>
           <div className={data.voice === "upload" ? "upload-card selected" : "upload-card"}>
             <button className="upload-choice" onClick={() => setData({ ...data, voice: "upload" })}><span className="choice-icon teal"><UploadSimple size={29} /></span><span><strong>Subir mi audio</strong><small>Usa un audio de referencia para guiar el resultado.</small></span><InfoTip title="¿Qué audio debo subir?">Usa un archivo MP3 claro. Puede ser tu voz o un audio de referencia.</InfoTip><span className="radio" /></button>
-            <label className="drop-zone"><UploadSimple size={30} /><span><strong>{fileName || "Sube tu audio en formato MP3"}</strong><small>{fileName ? "Archivo listo para esta vista previa" : "Solo se aceptan archivos .MP3"}</small></span><input type="file" accept="audio/mpeg,.mp3" onChange={(e) => { const file = e.target.files[0]; if (!file) return; if (!file.name.toLowerCase().endsWith(".mp3")) { setToast("Ese archivo no es MP3. Usa el convertidor gratuito."); return; } setData({ ...data, voice: "upload", file }); setToast("Audio MP3 agregado a la vista previa."); }} /></label>
-            <button className="converter-button" onClick={() => setToast("En la app, este botón abrirá el convertidor gratuito en otra página.")}><Waveform size={20} /> Convertir mi archivo a MP3 <ArrowRight size={18} /></button>
-            <p className="external-note">Abre un convertidor gratuito en otra página</p>
+            <label className="drop-zone">
+              <UploadSimple size={30} />
+              <span>
+                <strong>{fileName || (convertingAudio ? "Convirtiendo a MP3…" : "Sube tu audio")}</strong>
+                <small>{fileName ? "Archivo listo para esta vista previa" : "MP3, WAV, M4A u OGG (lo convertimos a MP3)"}</small>
+              </span>
+              <input
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac"
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  let ready = file;
+                  if (!isAlreadyMp3(file)) {
+                    try {
+                      setConvertingAudio(true);
+                      setToast("Convirtiendo tu audio a MP3…");
+                      ready = await convertAudioFileToMp3(file);
+                    } catch {
+                      setToast("No pude convertir ese audio a MP3. Prueba con un MP3.");
+                      setConvertingAudio(false);
+                      return;
+                    }
+                    setConvertingAudio(false);
+                  }
+                  setData({ ...data, voice: "upload", file: ready });
+                  setToast("Audio agregado a la vista previa.");
+                }}
+              />
+            </label>
+            <a className="converter-button" href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={20} /> Convertir en otra página <ArrowRight size={18} /></a>
+            <p className="external-note">Ayuda opcional: normalmente no hace falta, el audio se convierte solo</p>
           </div>
         </div>
       </div>
