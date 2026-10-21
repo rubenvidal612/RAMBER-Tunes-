@@ -10169,9 +10169,12 @@ const balanceHandler = (() => {
 
     const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
     let profile_credits = round2(creditsFromProfile(profile));
-    const batch_credits = globalExpired ? 0 : await getActiveBatchCredits(admin, user.id);
+    // Los lotes tienen su PROPIA fecha de vencimiento. Antes, si vencia el perfil se
+    // ponia batch_credits en 0 y el cliente veia saldo 0 aunque hubiera comprado
+    // creditos vigentes. Ahora solo se descarta el saldo viejo del perfil.
+    const batch_credits = await getActiveBatchCredits(admin, user.id);
     if (globalExpired) profile_credits = 0;
-    let internal_credits = globalExpired ? 0 : round2(profile_credits + batch_credits);
+    let internal_credits = round2(profile_credits + batch_credits);
     const cycle = await ensureMonthlyCreditsCycle(admin, user.id).catch(() => null as any);
     if (cycle?.did_reset) internal_credits = round2(batch_credits); // reset solo afecta perfil, no lotes
     let provider_credits: number | null = null;
