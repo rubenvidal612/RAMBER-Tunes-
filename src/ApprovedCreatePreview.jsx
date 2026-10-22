@@ -2815,6 +2815,7 @@ function CloneNeedsRecharge({ onClose, variant = 'overlay' }) {
         </p>
         <button
           type="button"
+          data-testid="clone-recharge-cta"
           onClick={() => {
             try { onClose?.(); } catch {}
             try { window.dispatchEvent(new Event('ramber:openPricing')); } catch {}
