@@ -59,6 +59,28 @@ export function isAlreadyMp3(file: File | null | undefined): boolean {
 }
 
 /**
+ * Contexto para decodificar. Se prefiere OfflineAudioContext porque:
+ *  - no depende del gesto del usuario (en Android el AudioContext puede quedar
+ *    suspendido y decodeAudioData falla),
+ *  - no cuenta contra el limite de contextos de audio abiertos (el Clonador y el
+ *    reproductor ya tienen los suyos).
+ */
+function createDecodeContext(): BaseAudioContext {
+  const Offline =
+    (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+  if (Offline) {
+    try {
+      return new Offline(1, 1, 44100);
+    } catch {
+      /* si falla, se intenta con AudioContext normal */
+    }
+  }
+  const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!Ctx) throw new Error('Tu navegador no puede convertir audio.');
+  return new Ctx();
+}
+
+/**
  * Convierte cualquier audio que el navegador sepa leer a un File MP3.
  * Si ya es MP3, devuelve el mismo archivo sin tocarlo.
  */
@@ -66,24 +88,32 @@ export async function convertAudioFileToMp3(file: File, kbps = 192): Promise<Fil
   if (!file) throw new Error('No hay archivo para convertir.');
   if (isAlreadyMp3(file)) return file;
 
-  const AudioCtx =
-    (window as any).AudioContext || (window as any).webkitAudioContext;
-  if (!AudioCtx) throw new Error('Tu navegador no puede convertir audio.');
-
   const raw = await file.arrayBuffer();
   if (!raw || raw.byteLength === 0) throw new Error('El archivo está vacío.');
 
-  const ctx = new AudioCtx();
+  const ctx = createDecodeContext();
   try {
-    const decoded = await ctx.decodeAudioData(raw.slice(0));
+    let decoded: AudioBuffer;
+    try {
+      decoded = await ctx.decodeAudioData(raw.slice(0));
+    } catch (decodeErr) {
+      const detail = decodeErr instanceof Error ? decodeErr.message : String(decodeErr || '');
+      throw new Error(
+        `Tu navegador no pudo leer este formato${detail ? ` (${detail})` : ''}.`,
+      );
+    }
     const blob = await encodeBufferToMp3(decoded, kbps);
     const base = String(file.name || 'audio').replace(/\.[^.]+$/, '').trim() || 'audio';
     return new File([blob], `${base}.mp3`, { type: 'audio/mpeg' });
   } finally {
-    try {
-      await ctx.close();
-    } catch {
-      /* cerrar el contexto no debe romper la conversión */
+    // OfflineAudioContext no necesita cerrarse; solo el AudioContext real.
+    const maybeClosable = ctx as any;
+    if (typeof maybeClosable.close === 'function' && typeof (window as any).OfflineAudioContext === 'undefined') {
+      try {
+        await maybeClosable.close();
+      } catch {
+        /* cerrar el contexto no debe romper la conversión */
+      }
     }
   }
 }

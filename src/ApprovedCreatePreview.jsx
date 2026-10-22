@@ -1378,8 +1378,16 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         setToast("Convirtiendo tu audio a MP3…");
         const converted = await convertAudioFileToMp3(file);
         return acceptMp3(converted, field);
-      } catch {
-        setToast("No pude convertir ese audio a MP3. Prueba con un MP3.");
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err || '');
+        try {
+          console.error('[clonador] no pude convertir el audio a MP3', err, {
+            name: file?.name,
+            type: file?.type,
+            size: file?.size,
+          });
+        } catch {}
+        setToast(`No pude convertir ese audio a MP3. ${detail}`.trim());
         return;
       }
     }
@@ -4442,8 +4450,16 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
                       setConvertingAudio(true);
                       setToast("Convirtiendo tu audio a MP3…");
                       ready = await convertAudioFileToMp3(file);
-                    } catch {
-                      setToast("No pude convertir ese audio a MP3. Prueba con un MP3.");
+                    } catch (err) {
+                      const detail = err instanceof Error ? err.message : String(err || '');
+                      try {
+                        console.error('[paso 3] no pude convertir el audio a MP3', err, {
+                          name: file?.name,
+                          type: file?.type,
+                          size: file?.size,
+                        });
+                      } catch {}
+                      setToast(`No pude convertir ese audio a MP3. ${detail}`.trim());
                       setConvertingAudio(false);
                       return;
                     }
