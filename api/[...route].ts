@@ -474,7 +474,11 @@ async function getSignedR2Url(key: string, expiresIn: number = 3600): Promise<st
 // Suno y otros proveedores externos pueden tardar bastante en entrar a la cola
 // antes de intentar descargar el archivo de origen. Para estos casos no usamos
 // la firma corta por defecto.
-const PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24;
+const PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
+// Vigencia de los enlaces firmados del audio que sube el usuario (referencia de la
+// cancion y grabacion de verificacion de la voz). Antes eran 2 horas, y el perfil
+// clonado podia quedar inservible al poco tiempo; ahora el enlace vive una semana.
+const UPLOADED_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 async function getSignedR2PutUrl(key: string, contentType: string, expiresIn: number = 600): Promise<string> {
   const env = getR2Env();
@@ -1986,11 +1990,25 @@ const sunoHandler = (() => {
   async function refreshSavedVoice(auth: any, voice: any) {
     const state = await inspectVoiceReadiness(String(voice.last_task_id || ''), voice.suno_voice_id, fetchVoiceStatus);
     await persistVoiceCheckExtra(auth, String(voice.last_task_id || ''), state, 'guard');
+    // Guardamos SIEMPRE cuando se comprobo (status_checked_at), y updated_at solo
+    // cuando cambia el estado. Asi se puede medir cuanto dura de verdad una voz
+    // sin ensuciar la fecha de cambio de estado.
     if (voice.status !== state.status) {
+      // Cambio de estado: se anota tambien cuando se comprobo y la fecha de cambio.
       const { error } = await auth.admin.from('suno_voices')
-        .update({ status: state.status, updated_at: state.checkedAt })
+        .update({ status: state.status, status_checked_at: state.checkedAt, updated_at: state.checkedAt })
         .eq('id', voice.id).eq('user_id', auth.user.id);
       if (error) throw error;
+    } else {
+      // Sin cambio de estado: solo se anota la comprobacion. Si falla no se bloquea
+      // la generacion, porque esto es informativo para medir la duracion real.
+      try {
+        await auth.admin.from('suno_voices')
+          .update({ status_checked_at: state.checkedAt })
+          .eq('id', voice.id).eq('user_id', auth.user.id);
+      } catch {
+        /* opcional */
+      }
     }
     return { ...voice, status: state.status, availability: state };
   }
@@ -19404,7 +19422,7 @@ const kitsVoicesHandler = (() => {
               key.startsWith("rvc_datasets/") ||
               key.startsWith("covers/");
             if (!okPrefix) return;
-            const refreshed = await getSignedR2Url(key, 60 * 60 * 2);
+            const refreshed = await getSignedR2Url(key, UPLOADED_AUDIO_URL_TTL_SECONDS);
             if (typeof refreshed === "string" && refreshed.trim()) row[field] = refreshed.trim();
           } catch {
           }
@@ -19580,7 +19598,7 @@ const uploadAudioHandler = (() => {
           const t0 = Date.now();
           await uploadToR2(key, inline, contentType);
           const dt = Date.now() - t0;
-          const url = await getSignedR2Url(key, 60 * 60 * 2);
+          const url = await getSignedR2Url(key, UPLOADED_AUDIO_URL_TTL_SECONDS);
           try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_r2_ok", key, sizeBytes: inlineSizeBytes, contentType, fname, durationMs: dt, via: "server_r2" })); } catch {}
           return send(res, 200, { ok: true, url, key, contentType, via: "server_r2" });
         } catch (r2Error) {
@@ -19590,7 +19608,7 @@ const uploadAudioHandler = (() => {
             const t0 = Date.now();
             const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true });
             if (up.error) throw up.error;
-            const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
+            const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, UPLOADED_AUDIO_URL_TTL_SECONDS);
             if (signed.error) throw signed.error;
             const raw = (signed.data as any)?.signedUrl || "";
             const url = /^https?:\/\//i.test(String(raw)) ? String(raw) : new URL(String(raw || ""), auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
@@ -19607,7 +19625,7 @@ const uploadAudioHandler = (() => {
 
       try {
         const uploadUrl = await getSignedR2PutUrl(key, contentType, 60 * 10);
-        const url = await getSignedR2Url(key, 60 * 60 * 2);
+        const url = await getSignedR2Url(key, UPLOADED_AUDIO_URL_TTL_SECONDS);
         try { console.log(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "direct_prep_ok", key, contentType, fname, via: "direct", signedPut: true })); } catch {}
         return send(res, 200, { ok: true, uploadUrl, url, key, contentType, via: "direct" });
       } catch (r2Error) {
@@ -19917,7 +19935,7 @@ const uploadAudioSupabaseHandler = (() => {
           const t0 = Date.now();
           const up = await auth.admin.storage.from(bucket).upload(key, inline, { contentType, upsert: true, cacheControl: "max-age=604800, immutable" });
           if (up.error) throw up.error;
-          const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, 60 * 60 * 2);
+          const signed = await auth.admin.storage.from(bucket).createSignedUrl(key, UPLOADED_AUDIO_URL_TTL_SECONDS);
           if (signed.error) throw signed.error;
           const raw = ((signed.data as any)?.signedUrl || "").toString().trim();
           const url = /^https?:\/\//i.test(raw) ? raw : new URL(raw || "", auth.supabaseUrl || process.env.SUPABASE_URL || "").toString();
@@ -23766,7 +23784,7 @@ const lucianaVoiceHandler = (() => {
         // 2. Firmar URL de la muestra para enviarla a Suno (URL FIRMADA TEMPORAL SOLAMENTE)
         //    - PRIVACIDAD CRÍTICA: audios biométricos NUNCA públicos.
         //    - No se usa ninguna URL pública ni fallback; si falla la firma, cortamos el flujo.
-        //    - TTL: PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS (24h por defecto L474)
+        //    - TTL: PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS (7 dias)
         //      para dar tiempo al proveedor de entrar en cola antes de descargar.
         const samplePath = String(profile.sample_original_r2_path || "").trim();
         let sampleSigned = "";

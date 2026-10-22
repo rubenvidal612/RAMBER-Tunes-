@@ -25,7 +25,7 @@ test('live API routes reject expired clones before any credit or generation requ
         assert.equal(url.searchParams.get('user_id'), 'eq.owner');
         if (method === 'PATCH') {
           assert.equal(body.status, 'expired');
-          assert.deepEqual(Object.keys(body).sort(), ['status', 'updated_at']);
+          assert.deepEqual(Object.keys(body).sort(), ['status', 'status_checked_at', 'updated_at']);
           return json(null);
         }
         return json(voice);
