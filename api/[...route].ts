@@ -10271,11 +10271,42 @@ const balanceHandler = (() => {
       credits_expires_at = new Date(next_batch_exp_ms).toISOString();
     }
 
+    // ¿La cuenta ya hizo al menos una RECARGA (cualquier paquete, incluido el mini)?
+    // Se usa para pedir recarga antes de clonar una voz. Los admin siempre pasan.
+    let has_paid = is_admin;
+    if (!has_paid) {
+      try {
+        const paidBatch = await admin
+          .from("credit_batches")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .gt("amount_mxn", 0);
+        has_paid = Number((paidBatch as any)?.count || 0) > 0;
+      } catch {
+        // Si falla la consulta no bloqueamos: mejor dejar pasar que molestar a quien ya pago.
+        has_paid = true;
+      }
+      if (!has_paid) {
+        try {
+          const paidTx = await admin
+            .from("mp_transactions")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .gt("amount_mxn", 0);
+          has_paid = Number((paidTx as any)?.count || 0) > 0;
+        } catch {
+          // Si falla la consulta no bloqueamos: mejor dejar pasar que molestar a quien ya pago.
+          has_paid = true;
+        }
+      }
+    }
+
     return send(res, 200, {
       credits,
       song_balance: counts.songs,
       counts,
       downloads_allowed,
+      has_paid,
       free_claimed,
       show_free_claim_popup,
       plan_key,

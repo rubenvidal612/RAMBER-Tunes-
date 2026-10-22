@@ -9,6 +9,7 @@ export function useUserCredits() {
   const [creditsExpiresAt, setCreditsExpiresAt] = useState<string | null>(null);
   const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [hasPaid, setHasPaid] = useState<boolean | null>(null);
   const [source, setSource] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -41,6 +42,7 @@ export function useUserCredits() {
       const pea = out?.plan_expires_at || null;
       setPlanExpiresAt(pea);
       setIsAdmin(Boolean(out?.is_admin));
+      setHasPaid(typeof out?.has_paid === 'boolean' ? out.has_paid : null);
       setSource(String(out?.source || ''));
       setError('');
       try {
@@ -53,6 +55,7 @@ export function useUserCredits() {
             credits_expires_at: cea,
             plan_expires_at: pea,
             is_admin: Boolean(out?.is_admin),
+            has_paid: typeof out?.has_paid === 'boolean' ? out.has_paid : null,
             source: String(out?.source || ''),
             saved_at: new Date().toISOString(),
           }),
@@ -94,6 +97,7 @@ export function useUserCredits() {
         const pea = cached?.plan_expires_at || null;
         setPlanExpiresAt(pea);
         setIsAdmin(Boolean(cached?.is_admin));
+        setHasPaid(typeof cached?.has_paid === 'boolean' ? cached.has_paid : null);
         setSource(String(cached?.source || ''));
       }
     } catch {
@@ -121,6 +125,7 @@ export function useUserCredits() {
     creditsExpiresAt,
     planExpiresAt,
     isAdmin,
+    hasPaid,
     source,
     loading,
     error,

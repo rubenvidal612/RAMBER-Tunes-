@@ -1846,7 +1846,7 @@ export default function App() {
   const lyricsWrapRef = useRef<HTMLDivElement | null>(null);
   const lyricLineRefs = useRef<Array<HTMLDivElement | null>>([]);
   const lastActiveLyricRef = useRef<number>(-1);
-  const { credits, internalCredits, isAdmin, refreshCredits, error: creditsError } = useUserCredits();
+  const { credits, internalCredits, isAdmin, hasPaid, refreshCredits, error: creditsError } = useUserCredits();
   const lastCreditsErrorRef = useRef<string>('');
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -2882,6 +2882,9 @@ export default function App() {
 
   const closePricingModal = () => {
     setIsPricingOpen(false);
+    // Si acaba de pagar, refrescamos saldo y estado de compra para que el aviso de
+    // "necesitas una recarga" desaparezca sin esperar al siguiente ciclo.
+    try { refreshCredits().catch(() => {}); } catch {}
     try {
       if (typeof window !== 'undefined') {
         const prev = pricingPrevUrlRef.current;
@@ -4584,13 +4587,14 @@ export default function App() {
                  onOpenBalance={() => handleTabChange('planes')}
                 onShowAlert={showStyledAlert}
                 authUserId={authUserId}
+                hasPaid={hasPaid}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
                />
              </div>
            )}
            {currentTab === 'voces' && (
-            <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
+            <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
            )}
            {currentTab === 'karaoke' && (
              <div className="flex-1 flex items-center justify-center px-6">
@@ -4673,6 +4677,7 @@ export default function App() {
                  onOpenBalance={() => handleTabChange('planes')}
                 onShowAlert={showStyledAlert}
                 authUserId={authUserId}
+                hasPaid={hasPaid}
                  prefill={studioPrefill || undefined}
                  prefillNonce={studioPrefillNonce}
                />
@@ -4692,7 +4697,7 @@ export default function App() {
                  currentTab === 'biblioteca' ? "overflow-y-auto" : ""
                )}>
                 {currentTab === 'voces' ? (
-                 <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} />
+                 <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
                 ) : currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />
               ) : currentTab === 'karaoke' ? (

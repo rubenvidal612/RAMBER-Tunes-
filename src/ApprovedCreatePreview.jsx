@@ -30,9 +30,9 @@ const returnToCreateVoicePickerKey = 'ramber.return_to_create_voice_picker_v1';
 const mp3ConverterUrl = 'https://online-audio-converter.com/sp/';
 const workspaceIdKey = 'ramber.createWorkspaceId_v1';
 
-// Cada ventana o pestaña del navegador tiene su propio espacio de trabajo, para que
-// dos ventanas no compartan ni se pisen el borrador de la canción en curso.
-// sessionStorage es por pestaña: sobrevive a recargar la página, pero no se comparte entre ventanas.
+// Cada ventana o pestaÃ±a del navegador tiene su propio espacio de trabajo, para que
+// dos ventanas no compartan ni se pisen el borrador de la canciÃ³n en curso.
+// sessionStorage es por pestaÃ±a: sobrevive a recargar la pÃ¡gina, pero no se comparte entre ventanas.
 function resolveWorkspaceId() {
   if (typeof window === 'undefined') return '';
   try {
@@ -91,15 +91,15 @@ function detectPromptLanguage(text) {
   if (!value) return 'es';
   const spanishHints = [
     ' el ', ' la ', ' los ', ' las ', ' de ', ' del ', ' para ', ' con ', ' sin ', ' una ', ' un ',
-    ' que ', ' y ', ' en ', ' por ', ' como ', ' canción', ' cancion', ' voz ', ' ritmo', ' piano',
-    ' románt', ' romant', ' suave', ' femenina', ' masculino', ' mujer', ' hombre',
+    ' que ', ' y ', ' en ', ' por ', ' como ', ' canciÃ³n', ' cancion', ' voz ', ' ritmo', ' piano',
+    ' romÃ¡nt', ' romant', ' suave', ' femenina', ' masculino', ' mujer', ' hombre',
   ];
   const englishHints = [
     ' the ', ' and ', ' with ', ' without ', ' for ', ' from ', ' into ', ' song', ' voice ',
     ' female', ' male', ' piano', ' soft', ' cinematic', ' dreamy', ' chorus', ' verse',
     ' bridge', ' mood', ' atmosphere', ' instrumental',
   ];
-  let esScore = /[áéíóúñ¿¡]/.test(value) ? 2 : 0;
+  let esScore = /[Ã¡Ã©Ã­Ã³ÃºÃ±Â¿Â¡]/.test(value) ? 2 : 0;
   let enScore = 0;
   for (const hint of spanishHints) if (` ${value} `.includes(hint)) esScore += 2;
   for (const hint of englishHints) if (` ${value} `.includes(hint)) enScore += 1;
@@ -220,7 +220,7 @@ function stripTitleFromLyrics(title, lyrics) {
   const firstLower = first.toLowerCase();
   if (!first) return lyrics;
   if (firstLower === t) return lines.slice(1).join('\n').trim();
-  if (firstLower === `titulo: ${t}` || firstLower === `título: ${t}`) return lines.slice(1).join('\n').trim();
+  if (firstLower === `titulo: ${t}` || firstLower === `tÃ­tulo: ${t}`) return lines.slice(1).join('\n').trim();
   if (firstLower.startsWith(`${t} -`) || firstLower.startsWith(`${t}:`)) return lines.slice(1).join('\n').trim();
   return lyrics;
 }
@@ -240,13 +240,13 @@ function toUserFriendlySunoError(out, fallback) {
     lower.includes('please try again later') || lower.includes('temporarily') ||
     lower.includes('rate limit');
   if (looksLikeVoiceExpired) {
-    return 'La voz seleccionada expiró.\n\nSolución: abre “Clonador” y selecciona otra voz (o vuelve a crearla).';
+    return 'La voz seleccionada expirÃ³.\n\nSoluciÃ³n: abre â€œClonadorâ€ y selecciona otra voz (o vuelve a crearla).';
   }
   if (looksLikeCopyright) {
-    return 'Error por Copyright.\n\nEse audio parece ser de una canción protegida. Sube un audio original o usa otro audio.';
+    return 'Error por Copyright.\n\nEse audio parece ser de una canciÃ³n protegida. Sube un audio original o usa otro audio.';
   }
   if (looksLikeTemporaryProviderIssue) {
-    return 'Ahorita el servidor que crea la música está fallando o saturado.\n\nSolución: inténtalo otra vez en 1–2 minutos. Si sigue igual, cambia un poco el texto o prueba con otro modelo.';
+    return 'Ahorita el servidor que crea la mÃºsica estÃ¡ fallando o saturado.\n\nSoluciÃ³n: intÃ©ntalo otra vez en 1â€“2 minutos. Si sigue igual, cambia un poco el texto o prueba con otro modelo.';
   }
   return raw || fallback;
 }
@@ -267,9 +267,9 @@ const formatTime = (seconds) => {
   return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
 };
 const models = [
-  ["Suno V6", "Calidad total · Ideal para clonar voz"],
-  ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
-  ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
+  ["Suno V6", "Calidad total Â· Ideal para clonar voz"],
+  ["Suno V6 Wild", "Estilos mÃ¡s creativos y arriesgados"],
+  ["Suno V6 Mini", "MÃ¡s rÃ¡pido Â· Bueno para pruebas rÃ¡pidas"],
 ];
 const VALID_MODEL_NAMES = new Set(models.map(([name]) => name));
 const normalizeModelName = (m) => VALID_MODEL_NAMES.has(m) ? m : "Suno V6";
@@ -284,11 +284,11 @@ const MODEL_PROVIDER_CODE = {
   'Suno V6 Mini': { provider: 'suno', model: 'V6_MINI' },
 };
 /**
- * Devuelve el costo en créditos según el modelo seleccionado.
- * - TODOS los modelos = 12 créditos estándar (Suno V6/V6 Wild/V6 Mini, Mureka V9.5/Auto/V9).
- *   Mureka entrega 1 canción por llamada a $0.15 USD → 12 créditos igual que Suno.
+ * Devuelve el costo en crÃ©ditos segÃºn el modelo seleccionado.
+ * - TODOS los modelos = 12 crÃ©ditos estÃ¡ndar (Suno V6/V6 Wild/V6 Mini, Mureka V9.5/Auto/V9).
+ *   Mureka entrega 1 canciÃ³n por llamada a $0.15 USD â†’ 12 crÃ©ditos igual que Suno.
  * @param {string} modelLabel Nombre visible del modelo.
- * @returns {number} Número entero de créditos a cobrar.
+ * @returns {number} NÃºmero entero de crÃ©ditos a cobrar.
  */
 function creditsCostForModel(modelLabel) {
   return 12;
@@ -301,7 +301,7 @@ const navItems = [
   [Sparkle, "Crear"],
   [Waveform, "Masterizar"],
   [Books, "Mis Canciones"],
-  [Coins, "Comprar créditos"],
+  [Coins, "Comprar crÃ©ditos"],
   [User, "Perfil"],
   [Coins, "Vendedor"],
 ];
@@ -463,8 +463,8 @@ function Sidebar({ activePage, onNavigate, mobileOpen, onClose }) {
   const navigate = (page) => { onNavigate(page); onClose(); };
   return (
     <aside className={mobileOpen ? "sidebar mobile-open" : "sidebar"}>
-      <div className="mobile-menu-heading"><strong>Menú principal</strong><button onClick={onClose} aria-label="Cerrar menú"><X size={22}/></button></div>
-      <p className="side-label">MENÚ</p>
+      <div className="mobile-menu-heading"><strong>MenÃº principal</strong><button onClick={onClose} aria-label="Cerrar menÃº"><X size={22}/></button></div>
+      <p className="side-label">MENÃš</p>
       <nav>
         {navItems.map(([Icon, label]) => (
           <button key={label} onClick={()=>navigate(label)} className={label === activePage ? "nav-item active" : "nav-item"}>
@@ -486,8 +486,8 @@ function Header({ onMenu, onCredits }) {
       <img className="brand-mark" src="/assets/luciana-logo-oficial.png?v=20260918-2" alt="Logo de LucIAna Music" />
       <strong className="brand">Luc<span>IA</span>na | Music</strong>
       <div className="header-actions">
-        <button className="credits" onClick={onCredits}><Coins size={22} weight="fill" /><span><small>Comprar créditos</small>2,292.4</span></button>
-        <button className="menu-button" onClick={onMenu} aria-label="Abrir menú"><List size={28} /></button>
+        <button className="credits" onClick={onCredits}><Coins size={22} weight="fill" /><span><small>Comprar crÃ©ditos</small>2,292.4</span></button>
+        <button className="menu-button" onClick={onMenu} aria-label="Abrir menÃº"><List size={28} /></button>
       </div>
     </header>
   );
@@ -587,7 +587,7 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
       };
       draw();
     } catch {
-      setError("Permite el acceso al micrófono para que la barra pueda detectar tu voz.");
+      setError("Permite el acceso al micrÃ³fono para que la barra pueda detectar tu voz.");
     }
   };
 
@@ -598,7 +598,7 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
       ownsStreamRef.current = true;
       await startListeningWithStream(nextStream);
     } catch {
-      setError("Permite el acceso al micrófono para que la barra pueda detectar tu voz.");
+      setError("Permite el acceso al micrÃ³fono para que la barra pueda detectar tu voz.");
     }
   };
 
@@ -620,7 +620,7 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
     <div className="voice-meter">
       <div className={`voice-meter-display ${listening ? "active" : ""}`}>
         <canvas ref={canvasRef} width="620" height="82" style={{ width: "100%", height: 82, display: "block" }} aria-label="Medidor de intensidad de voz" />
-        <span>{listening ? "Escuchando tu voz…" : "El medidor comenzará cuando actives el micrófono"}</span>
+        <span>{listening ? "Escuchando tu vozâ€¦" : "El medidor comenzarÃ¡ cuando actives el micrÃ³fono"}</span>
       </div>
       {error && <small className="voice-meter-error">{error}</small>}
       {mode !== "indicator" ? (
@@ -630,7 +630,7 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
           </button>
         ) : (
           <button className="wizard-next phrase-finish recording" onClick={finish}>
-            <Check size={19} weight="bold" /> Terminé de cantar
+            <Check size={19} weight="bold" /> TerminÃ© de cantar
           </button>
         )
       ) : null}
@@ -740,7 +740,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const regenPhraseLockRef = useRef({ running: false, clientAttemptId: "" });
   const verifyAttemptIdRef = useRef("");
   const pendingAutoRecoverRef = useRef({ nonce: 0, requested: false });
-  const wizardSteps = ["Perfil", "Audio original", "Frase", "Verificación", "Listo"];
+  const wizardSteps = ["Perfil", "Audio original", "Frase", "VerificaciÃ³n", "Listo"];
   const sourceReady = Boolean(profile.sourceAudio);
   const verificationReady = Boolean(profile.verifyAudio);
   const language = "es";
@@ -1060,7 +1060,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     if (sourceRecording.recording) return;
     setSourceRecording((current) => ({ ...current, error: "" }));
     if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opción Subir audio." });
+      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opciÃ³n Subir audio." });
       return;
     }
     try {
@@ -1110,8 +1110,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e || "");
       const msg = /denied|notallowed|permission/i.test(raw)
-        ? "No pudimos acceder al micrófono. Revisa los permisos del navegador e inténtalo de nuevo."
-        : "No se pudo iniciar la grabación. Intenta de nuevo.";
+        ? "No pudimos acceder al micrÃ³fono. Revisa los permisos del navegador e intÃ©ntalo de nuevo."
+        : "No se pudo iniciar la grabaciÃ³n. Intenta de nuevo.";
       setSourceRecording((current) => ({ ...current, error: msg }));
       showAlert({ tone: "error", message: msg });
     }
@@ -1218,7 +1218,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             setPhraseRecording((current) => ({
               ...current,
               recording: false,
-              error: "No pudimos guardar correctamente la grabación. Intenta grabarla otra vez.",
+              error: "No pudimos guardar correctamente la grabaciÃ³n. Intenta grabarla otra vez.",
             }));
             setProfile((current) => ({ ...current, verifyAudio: null }));
             return;
@@ -1265,7 +1265,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       phrasePreparedStreamRef.current = stream;
-      const steps = ["3", "2", "1", "¡Canta!"];
+      const steps = ["3", "2", "1", "Â¡Canta!"];
       setPhraseCountdown({ active: true, step: steps[0], error: "" });
       let index = 0;
       const tick = () => {
@@ -1290,8 +1290,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e || "");
       const msg = /denied|notallowed|permission/i.test(raw)
-        ? "No pudimos acceder al micrófono. Revisa los permisos del navegador e inténtalo de nuevo."
-        : "No se pudo iniciar la grabación. Intenta de nuevo.";
+        ? "No pudimos acceder al micrÃ³fono. Revisa los permisos del navegador e intÃ©ntalo de nuevo."
+        : "No se pudo iniciar la grabaciÃ³n. Intenta de nuevo.";
       cancelPhraseCountdown();
       setPhraseRecording((current) => ({ ...current, error: msg }));
       setToast(msg);
@@ -1331,7 +1331,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const t = await getAccessToken();
       if (!t.ok) {
         if (requestRef.current !== nextReq) return;
-        const msg = t.error || "No se pudo iniciar sesión.";
+        const msg = t.error || "No se pudo iniciar sesiÃ³n.";
         if (kind === "source") setSourceUpload({ url: "", key: "", loading: false, error: msg });
         if (kind === "verify") {
           const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
@@ -1345,20 +1345,20 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       if (requestRef.current !== nextReq) return;
       const url = (uploaded?.url || "").toString().trim();
       const key = (uploaded?.key || "").toString().trim();
-      if (!url) throw new Error("No recibí la URL final del audio.");
+      if (!url) throw new Error("No recibÃ­ la URL final del audio.");
       if (kind === "source") setSourceUpload({ url, key, loading: false, error: "" });
       if (kind === "verify") {
         const clientAttemptId = String(activeClientAttemptIdRef.current || validation.clientAttemptId || "").trim();
         setVerifyUpload({ clientAttemptId, url, key, loading: false, error: "" });
       }
-      setToast(kind === "source" ? "Audio original subido correctamente." : "Audio de verificación subido correctamente.");
+      setToast(kind === "source" ? "Audio original subido correctamente." : "Audio de verificaciÃ³n subido correctamente.");
       return { url, key };
     } catch (e) {
       if (requestRef.current !== nextReq) return;
       const raw = e instanceof Error ? e.message : String(e || "");
       const looksLikeNetwork = /failed to fetch|networkerror|network error|load failed|fetch failed|typeerror.*failed|abort|timeout|net::/i.test(raw) || !raw.trim();
       const msg = looksLikeNetwork
-        ? "No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e inténtalo de nuevo."
+        ? "No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e intÃ©ntalo de nuevo."
         : raw || "No se pudo subir el audio.";
       if (kind === "source") setSourceUpload({ url: "", key: "", loading: false, error: msg });
       if (kind === "verify") {
@@ -1375,7 +1375,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     if (!isAlreadyMp3(file)) {
       // Suno solo acepta MP3: se convierte aqui mismo en vez de mandar a una pagina externa.
       try {
-        setToast("Convirtiendo tu audio a MP3…");
+        setToast("Convirtiendo tu audio a MP3â€¦");
         const converted = await convertAudioFileToMp3(file);
         return acceptMp3(converted, field);
       } catch (err) {
@@ -1441,7 +1441,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       setValidation((current) =>
         current.clientAttemptId !== clientAttemptId || current.taskId !== taskId
           ? current
-          : { ...current, loading: false, error: t.error || "No se pudo iniciar sesión." },
+          : { ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." },
       );
       return null;
     }
@@ -1483,7 +1483,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     setValidation((current) =>
       current.clientAttemptId !== clientAttemptId || current.taskId !== taskId
         ? current
-        : { ...current, loading: false, error: "La frase está tardando demasiado. Intenta más tarde." },
+        : { ...current, loading: false, error: "La frase estÃ¡ tardando demasiado. Intenta mÃ¡s tarde." },
     );
     return null;
   };
@@ -1518,7 +1518,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const t = await getAccessToken();
       if (!t.ok) {
         setValidation((current) =>
-          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: t.error || "No se pudo iniciar sesión." },
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." },
         );
         return false;
       }
@@ -1527,7 +1527,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         setValidation((current) =>
           current.clientAttemptId !== clientAttemptId
             ? current
-            : { ...current, loading: false, error: "Primero sube el audio original para obtener una URL válida." },
+            : { ...current, loading: false, error: "Primero sube el audio original para obtener una URL vÃ¡lida." },
         );
         return false;
       }
@@ -1540,7 +1540,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = String(out?.detail?.msg || out?.detail || out?.error || "No se pudo iniciar la validación de voz.").trim();
+        const msg = String(out?.detail?.msg || out?.detail || out?.error || "No se pudo iniciar la validaciÃ³n de voz.").trim();
         setValidation((current) =>
           current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: msg },
         );
@@ -1549,7 +1549,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const taskId = String(out?.taskId || "").trim();
       if (!taskId) {
         setValidation((current) =>
-          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: "No recibí taskId de validación." },
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: "No recibÃ­ taskId de validaciÃ³n." },
         );
         return false;
       }
@@ -1563,7 +1563,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       setValidation((current) =>
         current.clientAttemptId !== clientAttemptId
           ? current
-          : { ...current, loading: false, error: e instanceof Error ? e.message : "Error iniciando validación de voz." },
+          : { ...current, loading: false, error: e instanceof Error ? e.message : "Error iniciando validaciÃ³n de voz." },
       );
       return false;
     } finally {
@@ -1586,7 +1586,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." }));
         return;
       }
       const r = await fetch("/api/suno/voice-regenerate", {
@@ -1602,7 +1602,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       }
       const nextTaskId = String(out?.taskId || "").trim();
       if (!nextTaskId) {
-        setValidation((current) => ({ ...current, loading: false, error: "No recibí taskId al regenerar la frase." }));
+        setValidation((current) => ({ ...current, loading: false, error: "No recibÃ­ taskId al regenerar la frase." }));
         return;
       }
       setValidation((current) => ({ ...current, clientAttemptId: nextClientAttemptId, taskId: nextTaskId, loading: true, error: "", phrase: "" }));
@@ -1617,7 +1617,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const pollVoiceRecordInfo = async (taskId) => {
     const t = await getAccessToken();
     if (!t.ok) {
-      setVoiceGen((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+      setVoiceGen((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." }));
       return;
     }
     const startedAt = Date.now();
@@ -1632,7 +1632,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const voiceId = String(out?.voiceId || "").trim();
       setVoiceGen((current) => ({ ...current, status }));
       if (status === 'expired' || (Number(out?.errorCode) >= 400 && out?.errorMessage)) {
-        throw new Error(out?.errorMessage || 'Suno informa que esta voz expiró. Repite la validación.');
+        throw new Error(out?.errorMessage || 'Suno informa que esta voz expirÃ³. Repite la validaciÃ³n.');
       }
       if (status === "success" && voiceId) {
         setVoiceGen((current) => ({ ...current, error: "", status }));
@@ -1648,7 +1648,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         if (!info.ok) {
           setWizardNotice({
             kind: "temp_error",
-            title: "No pudimos comprobar la verificación",
+            title: "No pudimos comprobar la verificaciÃ³n",
             message: "Intenta nuevamente.",
             actionLabel: "Intentar nuevamente",
           });
@@ -1672,7 +1672,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           setWizardNotice({
             kind: "needs_new_phrase",
             title: "Necesitamos preparar una frase nueva",
-            message: "La sesión anterior ya no está disponible. Generaremos una frase nueva para que puedas grabarla.",
+            message: "La sesiÃ³n anterior ya no estÃ¡ disponible. Generaremos una frase nueva para que puedas grabarla.",
             actionLabel: "",
           });
           clearRejectedVerification();
@@ -1686,7 +1686,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         setWizardNotice({
           kind: "needs_new_phrase",
           title: "Necesitamos preparar una frase nueva",
-          message: "La sesión anterior ya no está disponible. Generaremos una frase nueva para que puedas grabarla.",
+          message: "La sesiÃ³n anterior ya no estÃ¡ disponible. Generaremos una frase nueva para que puedas grabarla.",
           actionLabel: "",
         });
         clearRejectedVerification();
@@ -1695,7 +1695,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return;
       }
     }
-    setVoiceGen((current) => ({ ...current, loading: false, error: "La voz está tardando demasiado. Intenta más tarde." }));
+    setVoiceGen((current) => ({ ...current, loading: false, error: "La voz estÃ¡ tardando demasiado. Intenta mÃ¡s tarde." }));
   };
 
   const checkAvailability = async (taskId) => {
@@ -1710,7 +1710,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       });
       const out = await r.json().catch(() => ({}));
       if (r.ok) {
-        if (out?.status === 'expired' || out?.status === 'failed') throw new Error(out?.reason || 'Suno rechazó esta voz. Repite la validación.');
+        if (out?.status === 'expired' || out?.status === 'failed') throw new Error(out?.reason || 'Suno rechazÃ³ esta voz. Repite la validaciÃ³n.');
         const available = isVoiceAvailable(out?.isAvailable);
         if (available) return true;
       }
@@ -1741,13 +1741,13 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
   const getValidateInfoOnce = async (taskId) => {
     const t = await getAccessToken();
-    if (!t.ok) return { ok: false, error: t.error || "No se pudo iniciar sesión.", status: "", validateInfo: "", raw: null };
+    if (!t.ok) return { ok: false, error: t.error || "No se pudo iniciar sesiÃ³n.", status: "", validateInfo: "", raw: null };
     const qr = await fetch(`/api/suno/voice-validate-info?taskId=${encodeURIComponent(taskId)}`, {
       headers: { authorization: `Bearer ${t.token}` },
     });
     const out = await qr.json().catch(() => ({}));
     if (!qr.ok) {
-      const msg = String(out?.detail || out?.error || "No se pudo consultar el estado de validación.").trim();
+      const msg = String(out?.detail || out?.error || "No se pudo consultar el estado de validaciÃ³n.").trim();
       return { ok: false, error: msg, status: "", validateInfo: "", raw: out };
     }
     const status = String(out?.status || "").trim();
@@ -1782,12 +1782,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     if (verifyFlowRunRef.current !== runId) return;
     cancelVerificationFlow();
     verifyLastErrorRef.current = "needs_new_phrase";
-    const msg = "La sesión de verificación ya no está disponible. Prepararemos una frase nueva.";
+    const msg = "La sesiÃ³n de verificaciÃ³n ya no estÃ¡ disponible. Prepararemos una frase nueva.";
     setVoiceGen((current) => ({ ...current, loading: false, error: msg, status: "needs_new_phrase" }));
     setWizardNotice({
       kind: "needs_new_phrase",
       title: "Necesitamos preparar una frase nueva",
-      message: "La sesión anterior ya no está disponible. Generaremos una frase nueva para que puedas grabarla.",
+      message: "La sesiÃ³n anterior ya no estÃ¡ disponible. Generaremos una frase nueva para que puedas grabarla.",
       actionLabel: "",
     });
     cleanupPhraseRecording();
@@ -1846,7 +1846,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       const t = await getAccessToken();
       if (!t.ok) {
         setValidation((current) =>
-          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: t.error || "No se pudo iniciar sesión." },
+          current.clientAttemptId !== clientAttemptId ? current : { ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." },
         );
         return null;
       }
@@ -1855,7 +1855,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         setValidation((current) =>
           current.clientAttemptId !== clientAttemptId
             ? current
-            : { ...current, loading: false, error: "Tu audio original aún no tiene una URL válida. Vuelve a intentarlo." },
+            : { ...current, loading: false, error: "Tu audio original aÃºn no tiene una URL vÃ¡lida. Vuelve a intentarlo." },
         );
         return null;
       }
@@ -1933,7 +1933,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
       const t = await getAccessToken();
       if (!t.ok) {
-        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        setValidation((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." }));
         return;
       }
 
@@ -2037,13 +2037,13 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const startGenerateVoice = async (verifyUrlOverride) => {
     const validationTaskId = String(validation.taskId || "").trim();
     if (!validationTaskId) {
-      setVoiceGen((current) => ({ ...current, error: "Falta taskId de validación. Regresa y genera la frase primero." }));
+      setVoiceGen((current) => ({ ...current, error: "Falta taskId de validaciÃ³n. Regresa y genera la frase primero." }));
       return false;
     }
     const verifyUrl = String(verifyUrlOverride || verifyUpload.url || "").trim();
     const verifyPath = String(verifyUpload.key || "").trim();
     if (!verifyUrl) {
-      setVoiceGen((current) => ({ ...current, error: "Primero sube el audio de verificación para obtener una URL válida." }));
+      setVoiceGen((current) => ({ ...current, error: "Primero sube el audio de verificaciÃ³n para obtener una URL vÃ¡lida." }));
       return false;
     }
     setVoiceGen({ taskId: "", status: "", voiceId: "", loading: true, error: "", isAvailable: null });
@@ -2051,7 +2051,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setVoiceGen((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesión." }));
+        setVoiceGen((current) => ({ ...current, loading: false, error: t.error || "No se pudo iniciar sesiÃ³n." }));
         return false;
       }
       const body = {
@@ -2071,19 +2071,19 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const raw = String(out?.detail || out?.error || "No se pudo iniciar la creación de voz.").trim();
+        const raw = String(out?.detail || out?.error || "No se pudo iniciar la creaciÃ³n de voz.").trim();
         const looksInvalidStatus = /validate record is not in valid status/i.test(raw);
         if (looksInvalidStatus) {
-          setVoiceGen((current) => ({ ...current, loading: false, error: "La sesión de verificación ya no está disponible. Prepararemos una frase nueva." }));
+          setVoiceGen((current) => ({ ...current, loading: false, error: "La sesiÃ³n de verificaciÃ³n ya no estÃ¡ disponible. Prepararemos una frase nueva." }));
           return { ok: false, needsNewPhrase: true, raw };
         }
-        const msg = raw || "No se pudo iniciar la creación de voz.";
+        const msg = raw || "No se pudo iniciar la creaciÃ³n de voz.";
         setVoiceGen((current) => ({ ...current, loading: false, error: msg }));
         return false;
       }
       const taskId = String(out?.taskId || "").trim();
       if (!taskId) {
-        setVoiceGen((current) => ({ ...current, loading: false, error: "No recibí taskId de creación de voz." }));
+        setVoiceGen((current) => ({ ...current, loading: false, error: "No recibÃ­ taskId de creaciÃ³n de voz." }));
         return false;
       }
       setVoiceGen((current) => ({ ...current, taskId, loading: true, error: "" }));
@@ -2091,7 +2091,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       if (!finalVoiceId) return false;
       const available = await checkAvailability(taskId);
       setVoiceGen((current) => ({ ...current, isAvailable: available }));
-      if (!available) throw new Error('Suno aún no permite usar esta voz. No se guardó como lista. Vuelve a verificarla.');
+      if (!available) throw new Error('Suno aÃºn no permite usar esta voz. No se guardÃ³ como lista. Vuelve a verificarla.');
       setVoiceGen((current) => ({ ...current, voiceId: finalVoiceId, loading: false, error: '', isAvailable: true }));
       return true;
     } catch (e) {
@@ -2115,7 +2115,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       setVoiceGen((current) => ({
         ...current,
         loading: false,
-        error: "La grabación no corresponde a la frase actual. Prepararemos una frase nueva para que puedas grabarla.",
+        error: "La grabaciÃ³n no corresponde a la frase actual. Prepararemos una frase nueva para que puedas grabarla.",
         status: "needs_new_phrase",
       }));
       return;
@@ -2169,7 +2169,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         }
         if (!waited?.ok) {
           verifyAutoRef.current.running = false;
-          setVoiceGen((current2) => ({ ...current2, loading: false, error: "La verificación está tardando demasiado. Intenta nuevamente." }));
+          setVoiceGen((current2) => ({ ...current2, loading: false, error: "La verificaciÃ³n estÃ¡ tardando demasiado. Intenta nuevamente." }));
           verifyLastErrorRef.current = "unknown";
           return;
         }
@@ -2244,7 +2244,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     const voiceId = String(voiceGen.voiceId || "").trim();
     const taskId = String(voiceGen.taskId || "").trim();
     if (!voiceId || !isVoiceAvailable(voiceGen.isAvailable)) {
-      setSaveError('Suno no confirmó que esta voz esté disponible. Repite la validación antes de guardarla y usarla.');
+      setSaveError('Suno no confirmÃ³ que esta voz estÃ© disponible. Repite la validaciÃ³n antes de guardarla y usarla.');
       return false;
     }
     setSaving(true);
@@ -2252,7 +2252,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setSaveError(t.error || "No se pudo iniciar sesión.");
+        setSaveError(t.error || "No se pudo iniciar sesiÃ³n.");
         return false;
       }
       const meta = {
@@ -2303,14 +2303,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   return (
     <div className="wizard-overlay" data-step={wizardStep} role="dialog" aria-modal="true" aria-label="Crear perfil de voz">
       <div className="voice-wizard">
-        <div className="wizard-header"><div><span className="eyebrow">CLONACIÓN DE VOZ · PERFIL PERSONAL</span><h2>Crear perfil de voz</h2></div><button className="wizard-close" aria-label="Cerrar creación de perfil" onClick={() => { cancelVerificationFlow(); cleanupPhraseRecording(); cleanupSourcePlayer(); onClose(); }}><X size={23} /></button></div>
+        <div className="wizard-header"><div><span className="eyebrow">CLONACIÃ“N DE VOZ Â· PERFIL PERSONAL</span><h2>Crear perfil de voz</h2></div><button className="wizard-close" aria-label="Cerrar creaciÃ³n de perfil" onClick={() => { cancelVerificationFlow(); cleanupPhraseRecording(); cleanupSourcePlayer(); onClose(); }}><X size={23} /></button></div>
         <div className="wizard-progress">{wizardSteps.map((label,index)=><div key={label} className={index === wizardStep ? "active" : index < wizardStep ? "done" : ""}><span>{index < wizardStep ? <Check size={14} weight="bold" /> : index + 1}</span><small>{label}</small></div>)}</div>
         <div className="wizard-body" ref={wizardBodyRef}>
-          {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Estos datos te ayudarán a reconocer y reutilizar esta voz.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><label>Descripción<input value={profile.description} onChange={(e)=>setProfile({...profile,description:e.target.value})} placeholder="Ejemplo: Voz cálida para baladas" /></label><div className="wizard-fields"><label>Estilo vocal<select value={profile.style} onChange={(e)=>setProfile({...profile,style:e.target.value})}><option>Pop</option><option>Balada</option><option>Regional</option><option>Rock</option><option>Otro</option></select></label><label>Nivel del cantante<select value={profile.level} onChange={(e)=>setProfile({...profile,level:e.target.value})}><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option><option value="professional">Profesional</option></select></label></div><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
+          {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Estos datos te ayudarÃ¡n a reconocer y reutilizar esta voz.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><label>DescripciÃ³n<input value={profile.description} onChange={(e)=>setProfile({...profile,description:e.target.value})} placeholder="Ejemplo: Voz cÃ¡lida para baladas" /></label><div className="wizard-fields"><label>Estilo vocal<select value={profile.style} onChange={(e)=>setProfile({...profile,style:e.target.value})}><option>Pop</option><option>Balada</option><option>Regional</option><option>Rock</option><option>Otro</option></select></label><label>Nivel del cantante<select value={profile.level} onChange={(e)=>setProfile({...profile,level:e.target.value})}><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option><option value="professional">Profesional</option></select></label></div><div className="wizard-info"><Info size={19}/><span>DespuÃ©s subirÃ¡s dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
           {wizardStep === 1 && (
             <div className="wizard-section">
               <h3>Audio original</h3>
-              <p>¿Cómo quieres proporcionar tu voz?</p>
+              <p>Â¿CÃ³mo quieres proporcionar tu voz?</p>
 
               <div className="segmented" style={{ marginTop: 10 }}>
                 <button
@@ -2329,7 +2329,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                   type="button"
                   onClick={async () => {
                     if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
-                      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opción Subir audio." });
+                      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opciÃ³n Subir audio." });
                       return;
                     }
                     try {
@@ -2342,19 +2342,19 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                     } catch (e) {
                       const raw = e instanceof Error ? e.message : String(e || "");
                       const msg = /denied|notallowed|permission/i.test(raw)
-                        ? "Permiso de micrófono rechazado. Puedes usar Subir audio."
-                        : "No pudimos acceder al micrófono. Puedes usar Subir audio.";
+                        ? "Permiso de micrÃ³fono rechazado. Puedes usar Subir audio."
+                        : "No pudimos acceder al micrÃ³fono. Puedes usar Subir audio.";
                       showAlert({ tone: "error", message: msg });
                     }
                   }}
                 >
-                  Cantar aquí
+                  Cantar aquÃ­
                 </button>
               </div>
 
               {sourceInputMode === "upload" ? (
                 <>
-                  <p style={{ marginTop: 14 }}>Este es el audio que se utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p>
+                  <p style={{ marginTop: 14 }}>Este es el audio que se utilizarÃ¡ para crear el perfil. Busca una parte con voz clara y poco ruido.</p>
                   <label className="wizard-upload">
                     <UploadSimple size={35} />
                     <strong>{profile.sourceAudio?.name || "Subir audio para entrenar la voz"}</strong>
@@ -2369,7 +2369,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 </>
               ) : (
                 <>
-                  <p style={{ marginTop: 14 }}>Graba una muestra de tu voz. Cuando termines, podrás escucharla antes de usarla.</p>
+                  <p style={{ marginTop: 14 }}>Graba una muestra de tu voz. Cuando termines, podrÃ¡s escucharla antes de usarla.</p>
 
                   {sourceRecording.error ? (
                     <div className="wizard-info" style={{ marginTop: 10 }}>
@@ -2381,22 +2381,22 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                   <div className="sample-actions" style={{ marginTop: 12 }}>
                     {!sourceRecording.recording ? (
                       <button type="button" className="wizard-next phrase-finish" onClick={startSourceRecording}>
-                        <Microphone size={19} /> Comenzar grabación
+                        <Microphone size={19} /> Comenzar grabaciÃ³n
                       </button>
                     ) : (
                       <button type="button" className="wizard-next phrase-finish recording" onClick={stopSourceRecording}>
-                        <Check size={19} weight="bold" /> Detener grabación
+                        <Check size={19} weight="bold" /> Detener grabaciÃ³n
                       </button>
                     )}
                   </div>
 
                   {sourceRecording.recording && sourceMeterStream ? <VoiceMeter stream={sourceMeterStream} mode="indicator" /> : null}
-                  {sourceRecording.recording ? <small className="phrase-help">Grabando… {formatTime(sourceRecording.seconds)}</small> : null}
+                  {sourceRecording.recording ? <small className="phrase-help">Grabandoâ€¦ {formatTime(sourceRecording.seconds)}</small> : null}
 
                   {sourceRecordedFile && sourceRecording.url ? (
                     <div className="profile-preview" style={{ marginTop: 14 }}>
-                      <span>Grabación</span>
-                      <strong>{sourceRecordedFile?.name || "Grabación lista"}</strong>
+                      <span>GrabaciÃ³n</span>
+                      <strong>{sourceRecordedFile?.name || "GrabaciÃ³n lista"}</strong>
                       <small>{sourceRecording.mimeType || (sourceRecordedFile?.type || "")}</small>
                       <audio ref={sourceRecordedAudioRef} controls src={sourceRecording.url} style={{ width: "100%", marginTop: 10 }} />
                       <div className="sample-actions" style={{ marginTop: 12 }}>
@@ -2432,10 +2432,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                             setSourceInputMode("upload");
                           }}
                         >
-                          Usar esta grabación
+                          Usar esta grabaciÃ³n
                         </button>
                       </div>
-                      <small className="phrase-help">Al usarla, esta grabación entra al mismo flujo que “Subir audio”.</small>
+                      <small className="phrase-help">Al usarla, esta grabaciÃ³n entra al mismo flujo que â€œSubir audioâ€.</small>
                     </div>
                   ) : null}
                 </>
@@ -2443,7 +2443,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
               {sourceUpload.loading ? (
                 <div className="audio-upload-status" style={{ marginTop: 10 }}>
-                  <Loader2 size={18} className="animate-spin" /> Subiendo audio…
+                  <Loader2 size={18} className="animate-spin" /> Subiendo audioâ€¦
                 </div>
               ) : sourceUpload.error ? (
                 <div className="audio-upload-status error">{sourceUpload.error}</div>
@@ -2455,7 +2455,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 <div className="profile-preview" style={{ marginTop: 14 }}>
                   <span>Audio seleccionado</span>
                   <strong>{profile.sourceAudio?.name || "Audio"}</strong>
-                  <small>Duración: {formatTime(profile.audioDuration)}</small>
+                  <small>DuraciÃ³n: {formatTime(profile.audioDuration)}</small>
                   {sourcePlayerSrc ? (
                     <audio
                       controls
@@ -2484,8 +2484,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 <div className="segment-box">
                   <div>
                     <strong>Selecciona el fragmento vocal</strong>
-                    <InfoTip title="¿Qué fragmento elegir?">
-                      La línea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.
+                    <InfoTip title="Â¿QuÃ© fragmento elegir?">
+                      La lÃ­nea representa todo el audio. Mueve los controles para seleccionar una parte donde la voz se escuche claramente.
                     </InfoTip>
                   </div>
                   <div className="timeline-summary">
@@ -2560,7 +2560,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           )}
           {wizardStep === 2 && (
             <div className="wizard-section phrase-section">
-              <h3>Frase de verificación</h3>
+              <h3>Frase de verificaciÃ³n</h3>
 
               {wizardNotice ? (
                 <div className={`wizard-state-card ${wizardNotice.kind === "temp_error" ? "warning" : "error"}`}>
@@ -2587,17 +2587,17 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               ) : null}
 
               <p><strong>Canta la frase una sola vez</strong></p>
-              <p>Canta exactamente las palabras mostradas, con voz clara y sin ruido. Puedes usar la melodía que prefieras. Cuando termines, pulsa Detener grabación.</p>
-              <small className="phrase-help">Si quieres intentarlo otra vez, utiliza Repetir grabación.</small>
+              <p>Canta exactamente las palabras mostradas, con voz clara y sin ruido. Puedes usar la melodÃ­a que prefieras. Cuando termines, pulsa Detener grabaciÃ³n.</p>
+              <small className="phrase-help">Si quieres intentarlo otra vez, utiliza Repetir grabaciÃ³n.</small>
 
               {(validation.loading || (!validation.phrase && !validation.error)) ? (
                 <div className="wizard-loading-card" aria-live="polite">
                   <div className="wizard-loading-title">
                     <Loader2 size={22} className="luciana-spin" />
-                    <strong>Preparando tu frase…</strong>
+                    <strong>Preparando tu fraseâ€¦</strong>
                   </div>
-                  <p>Estamos creando una frase única para verificar tu voz.</p>
-                  {phraseLoadingSlow ? <small>Está tardando un poco más de lo esperado. Seguimos preparando tu frase.</small> : null}
+                  <p>Estamos creando una frase Ãºnica para verificar tu voz.</p>
+                  {phraseLoadingSlow ? <small>EstÃ¡ tardando un poco mÃ¡s de lo esperado. Seguimos preparando tu frase.</small> : null}
                 </div>
               ) : null}
 
@@ -2628,7 +2628,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               {(!validation.loading && validation.phrase) ? (
                 <div className="phrase-card">
                   <Microphone size={32} />
-                  <blockquote>“{validation.phrase}”</blockquote>
+                  <blockquote>â€œ{validation.phrase}â€</blockquote>
                 </div>
               ) : null}
 
@@ -2657,23 +2657,23 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 <div className="sample-actions">
                   {!phraseRecording.recording ? (
                     <button className="wizard-next phrase-finish" type="button" disabled={phraseCountdown.active} onClick={startPhraseRecording}>
-                      <Microphone size={19} /> Comenzar grabación
+                      <Microphone size={19} /> Comenzar grabaciÃ³n
                     </button>
                   ) : (
                     <button className="wizard-next phrase-finish recording" type="button" onClick={stopPhraseRecording}>
-                      <Check size={19} weight="bold" /> Detener grabación
+                      <Check size={19} weight="bold" /> Detener grabaciÃ³n
                     </button>
                   )}
                 </div>
               ) : null}
 
               {phraseRecording.recording && phraseMeterStream ? <VoiceMeter stream={phraseMeterStream} mode="indicator" /> : null}
-              {phraseRecording.recording ? <small className="phrase-help">Grabando… {formatTime(phraseRecording.seconds)}</small> : null}
+              {phraseRecording.recording ? <small className="phrase-help">Grabandoâ€¦ {formatTime(phraseRecording.seconds)}</small> : null}
 
               {verificationReady && phraseRecording.url ? (
                 <div className="profile-preview" style={{ marginTop: 14 }}>
-                  <span>Grabación</span>
-                  <strong>{profile.verifyAudio?.name || "Grabación lista"}</strong>
+                  <span>GrabaciÃ³n</span>
+                  <strong>{profile.verifyAudio?.name || "GrabaciÃ³n lista"}</strong>
                   <small>{phraseRecording.mimeType || (profile.verifyAudio?.type || "")}</small>
                   <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} />
                   <div className="sample-actions" style={{ marginTop: 12 }}>
@@ -2686,22 +2686,22 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                         startPhraseRecording().catch(() => {});
                       }}
                     >
-                      Repetir grabación
+                      Repetir grabaciÃ³n
                     </button>
                   </div>
-                  <small className="phrase-help">Esto reemplaza solo esta grabación. La frase seguirá siendo la misma.</small>
+                  <small className="phrase-help">Esto reemplaza solo esta grabaciÃ³n. La frase seguirÃ¡ siendo la misma.</small>
                 </div>
               ) : null}
 
-              <small className="phrase-help">Necesitas una grabación válida para continuar.</small>
+              <small className="phrase-help">Necesitas una grabaciÃ³n vÃ¡lida para continuar.</small>
             </div>
           )}
-          {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
+          {wizardStep === 3 && <div className="wizard-section"><h3>VerificaciÃ³n</h3><p>Estamos verificando tu voz con la grabaciÃ³n de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontrÃ© una grabaciÃ³n. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>GrabaciÃ³n</span><strong>{profile.verifyAudio?.name || "GrabaciÃ³n lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabaciÃ³nâ€¦" : voiceGen.status === "preparing_validation" ? "Preparando la verificaciÃ³nâ€¦" : "Verificando tu vozâ€¦"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
           {wizardStep === 4 && <div className="wizard-section ready-section">
             <div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : isVoiceAvailable(voiceGen.isAvailable) ? <Check size={34} weight="bold"/> : <Info size={34}/>}</div>
-            <h3>{voiceGen.loading ? "Comprobando tu personaje…" : isVoiceAvailable(voiceGen.isAvailable) ? "Personaje confirmado por Suno" : "Voz sin confirmar"}</h3>
-            <p>{isVoiceAvailable(voiceGen.isAvailable) ? "Suno confirmó su disponibilidad en esta comprobación. Volveremos a comprobarla antes de cada canción." : "Completa la validación y espera la confirmación de Suno antes de usar este perfil."}</p>
-            <div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{isVoiceAvailable(voiceGen.isAvailable) ? 'Disponible en Suno' : voiceGen.status || "Procesando"}</strong></div>
+            <h3>{voiceGen.loading ? "Comprobando tu personajeâ€¦" : isVoiceAvailable(voiceGen.isAvailable) ? "Personaje confirmado por Suno" : "Voz sin confirmar"}</h3>
+            <p>{isVoiceAvailable(voiceGen.isAvailable) ? "Suno confirmÃ³ su disponibilidad en esta comprobaciÃ³n. Volveremos a comprobarla antes de cada canciÃ³n." : "Completa la validaciÃ³n y espera la confirmaciÃ³n de Suno antes de usar este perfil."}</p>
+            <div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} Â· {profile.level}</small><span>Estado</span><strong>{isVoiceAvailable(voiceGen.isAvailable) ? 'Disponible en Suno' : voiceGen.status || "Procesando"}</strong></div>
             {voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}
             {saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}
           </div>}
@@ -2712,7 +2712,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             disabled={wizardStep === 0 || sourceContinueBusy || validation.loading || voiceGen.loading || saving || phraseRecording.recording || phraseCountdown.active}
             onClick={() => setWizardStep(Math.max(0, wizardStep - 1))}
           >
-            <ArrowLeft size={18} /> Atrás
+            <ArrowLeft size={18} /> AtrÃ¡s
           </button>
 
           {wizardStep < 4 ? (
@@ -2781,7 +2781,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
           {wizardStep === 1 && sourceContinueBusy ? (
             <small style={{ display: "block", margin: "10px auto 0", maxWidth: 420, textAlign: "center", color: "rgba(220,220,240,.86)", lineHeight: 1.25 }}>
-              Estamos preparando tu audio para crear la frase de verificación. Esto puede tardar unos segundos.
+              Estamos preparando tu audio para crear la frase de verificaciÃ³n. Esto puede tardar unos segundos.
             </small>
           ) : null}
         </div>
@@ -2790,8 +2790,76 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   );
 }
 
+// Aviso reutilizable: clonar voz requiere al menos una recarga de cualquier paquete.
+// Se usa tanto al pulsar "Clonar voz" en /crear como al entrar al Clonador desde el menu.
+function CloneNeedsRecharge({ onClose, variant = 'overlay' }) {
+  const card = (
+    <div className="persona-modal" style={{ maxWidth: 540, width: '100%' }}>
+      <div className="persona-modal-header">
+        <div>
+          <small>CLONAR VOZ</small>
+          <h2>Necesitas una recarga para clonar</h2>
+        </div>
+        {onClose ? (
+          <button type="button" className="wizard-close" aria-label="Cerrar" onClick={onClose}>
+            <X size={22} />
+          </button>
+        ) : null}
+      </div>
+      <div className="persona-modal-body">
+        <p style={{ margin: '0 0 12px', lineHeight: 1.55 }}>
+          Para clonar una voz necesitas tener al menos <strong>una recarga de cualquier paquete</strong>.
+        </p>
+        <p style={{ margin: '0 0 20px', lineHeight: 1.55, color: '#94a3b8' }}>
+          Al recargar activas el Clonador y ademÃ¡s te quedan crÃ©ditos para tus canciones.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            try { onClose?.(); } catch {}
+            try { window.dispatchEvent(new Event('ramber:openPricing')); } catch {}
+          }}
+          style={{
+            width: '100%',
+            padding: '15px 18px',
+            borderRadius: 14,
+            border: 'none',
+            cursor: 'pointer',
+            fontWeight: 900,
+            fontSize: 15,
+            letterSpacing: 0.2,
+            color: '#0b1020',
+            background: 'linear-gradient(135deg,#a855f7,#22d3ee)',
+            boxShadow: '0 10px 30px rgba(168,85,247,.28)',
+          }}
+        >
+          Hacer recarga
+        </button>
+      </div>
+    </div>
+  );
+
+  if (variant === 'page') {
+    return (
+      <div
+        className="approved-clone-shell"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+      >
+        {card}
+      </div>
+    );
+  }
+  return (
+    <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Recarga requerida para clonar voz">
+      {card}
+    </div>
+  );
+}
+
 function StartStep({ data, setData, setToast, handlers }) {
   const [clonePickerOpen, setClonePickerOpen] = useState(false);
+  // Aviso para cuentas que nunca han hecho una recarga: clonar voz lo requiere.
+  const [cloneGateOpen, setCloneGateOpen] = useState(false);
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personasError, setPersonasError] = useState('');
   const [personas, setPersonas] = useState([]);
@@ -2963,12 +3031,21 @@ function StartStep({ data, setData, setToast, handlers }) {
   };
 
   const openClonePicker = () => {
+    // Clonar voz pide al menos una recarga de cualquier paquete.
+    if (!handlers?.hasPaid) {
+      setCloneGateOpen(true);
+      return;
+    }
     previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
     setData((current) => ({ ...current, voice: 'clone', model: 'Suno V6', voiceProfile: null }));
     setClonePickerOpen(true);
   };
 
   const goCreatePersona = () => {
+    if (!handlers?.hasPaid) {
+      setCloneGateOpen(true);
+      return;
+    }
     try {
       window.localStorage.setItem(returnToCreateVoicePickerKey, '1');
     } catch {}
@@ -3034,14 +3111,14 @@ function StartStep({ data, setData, setToast, handlers }) {
     const email = String(shareEmail || '').trim().toLowerCase();
     if (!persona) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setToast('Escribe un correo válido (ejemplo: nombre@gmail.com).');
+      setToast('Escribe un correo vÃ¡lido (ejemplo: nombre@gmail.com).');
       return;
     }
     setPersonaActionLoading(true);
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return;
       }
       const r = await fetch('/api/suno/voices/share', {
@@ -3076,7 +3153,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return;
       }
       const r = await fetch('/api/suno/voices', {
@@ -3124,7 +3201,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return;
       }
       const r = await fetch('/api/suno/voices', {
@@ -3179,7 +3256,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return;
       }
       const r = await fetch('/api/suno/voices', {
@@ -3352,7 +3429,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     setSingRecording((current) => ({ ...current, error: '' }));
     window.setTimeout(scrollToSingStudio, 30);
     if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== 'function') {
-      setToast('Tu navegador no permite grabar audio aquí. Usa “Subir mi audio”.');
+      setToast('Tu navegador no permite grabar audio aquÃ­. Usa â€œSubir mi audioâ€.');
       return;
     }
     try {
@@ -3380,8 +3457,8 @@ function StartStep({ data, setData, setToast, handlers }) {
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e || '');
       const message = /denied|notallowed|permission/i.test(raw)
-        ? 'No se pudo acceder al micrófono. Revisa los permisos del navegador e inténtalo de nuevo.'
-        : 'No se pudo iniciar la grabación. Inténtalo otra vez.';
+        ? 'No se pudo acceder al micrÃ³fono. Revisa los permisos del navegador e intÃ©ntalo de nuevo.'
+        : 'No se pudo iniciar la grabaciÃ³n. IntÃ©ntalo otra vez.';
       stopSingingCapture({ discardTake: true, preservePreview: false });
       setSingRecording((current) => ({ ...current, error: message }));
       setToast(message);
@@ -3403,7 +3480,7 @@ function StartStep({ data, setData, setToast, handlers }) {
     if (!isAlreadyMp3(file)) {
       try {
         setConvertingAudio(true);
-        setToast('Convirtiendo tu audio a MP3…');
+        setToast('Convirtiendo tu audio a MP3â€¦');
         readyFile = await convertAudioFileToMp3(file);
         setToast('Audio convertido a MP3.');
       } catch (e) {
@@ -3427,7 +3504,7 @@ function StartStep({ data, setData, setToast, handlers }) {
         return false;
       }
     } else {
-      setToast("Audio recibido. En el paso 2 verás la letra detectada.");
+      setToast("Audio recibido. En el paso 2 verÃ¡s la letra detectada.");
       if (options?.autoAdvance) handlers?.goToLyricsStep?.();
       return true;
     }
@@ -3435,18 +3512,18 @@ function StartStep({ data, setData, setToast, handlers }) {
 
   return (
     <section className="start-step">
-      <div className="section-title"><span className="eyebrow">PASO 1 DE 4</span><h1>¿Cómo quieres comenzar?</h1><p>Primero elige la voz/personaje y después decide si tienes un audio.</p></div>
+      <div className="section-title"><span className="eyebrow">PASO 1 DE 4</span><h1>Â¿CÃ³mo quieres comenzar?</h1><p>Primero elige la voz/personaje y despuÃ©s decide si tienes un audio.</p></div>
       <div className="tutorial-cards">
         {[
           {
             id: 'Ubmiel-wR60',
             url: 'https://youtu.be/Ubmiel-wR60',
-            title: 'Tutorial de Cómo hacer una Canción',
+            title: 'Tutorial de CÃ³mo hacer una CanciÃ³n',
           },
           {
             id: 'CP9EbzczY3o',
             url: 'https://youtu.be/CP9EbzczY3o',
-            title: 'Cómo Clonar Mi Voz',
+            title: 'CÃ³mo Clonar Mi Voz',
           },
         ].map((t) => (
           <a key={t.id} href={t.url} target="_blank" rel="noopener noreferrer" className="tutorial-card">
@@ -3473,35 +3550,35 @@ function StartStep({ data, setData, setToast, handlers }) {
       </div>
       <div className="start-grid">
         <div className="decision-group">
-          <div className="decision-heading"><span>1</span><div><h2>¿Qué voz quieres usar?</h2><p>Podrás cambiar esta elección antes de generar.</p></div></div>
+          <div className="decision-heading"><span>1</span><div><h2>Â¿QuÃ© voz quieres usar?</h2><p>PodrÃ¡s cambiar esta elecciÃ³n antes de generar.</p></div></div>
           <button className={data.voice === "standard" ? "decision-card selected" : "decision-card"} onClick={handleSelectStandardVoice}>
             <span className="choice-icon"><Microphone size={28} /></span>
-            <span><strong>Voz estándar</strong><small>Una voz de alta calidad generada por IA</small></span>
-            <InfoTip title="Voz estándar">Elige esta opción si no necesitas usar una voz clonada.</InfoTip>
+            <span><strong>Voz estÃ¡ndar</strong><small>Una voz de alta calidad generada por IA</small></span>
+            <InfoTip title="Voz estÃ¡ndar">Elige esta opciÃ³n si no necesitas usar una voz clonada.</InfoTip>
             <span className="radio" />
           </button>
           <button className={data.voice === "clone" ? "decision-card selected" : "decision-card"} onClick={openClonePicker}>
             <span className="choice-icon"><Users size={28} /></span>
-            <span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canción</small></span>
-            <InfoTip title="Clonación de Voz">Compatible con Suno V6, V6 Wild y V6 Mini. Elige una voz que ya hayas clonado antes.</InfoTip>
+            <span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canciÃ³n</small></span>
+            <InfoTip title="ClonaciÃ³n de Voz">Compatible con Suno V6, V6 Wild y V6 Mini. Elige una voz que ya hayas clonado antes.</InfoTip>
             <span className="radio" />
           </button>
-          <div className="selection-summary"><Check size={18} weight="bold" /><span>{audioChoiceMode === "record" ? "Quiero cantarlo" : data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
+          <div className="selection-summary"><Check size={18} weight="bold" /><span>{audioChoiceMode === "record" ? "Quiero cantarlo" : data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} Â· {data.voice === "clone" ? "Clonar voz" : "Voz estÃ¡ndar"}</span></div>
           {data.voiceProfile && <div className="voice-profile-chip"><Users size={19}/><span><small>Personaje seleccionado</small><strong>{data.voiceProfile.name}</strong></span><button onClick={openClonePicker}>Cambiar</button></div>}
           {typeof handlers?.credits === 'number' && (
             <div className="selection-summary" style={{ marginTop: 12, padding: '10px 14px', borderRadius: 16, background: 'rgba(138,69,217,0.1)', border: '1px solid rgba(184,100,240,0.25)' }}>
               <Coins size={18} style={{ color: '#b864f0' }}/>
-              <span style={{ fontSize: 13 }}><strong style={{ color: '#fff' }}>{handlers.credits.toFixed ? handlers.credits.toFixed(1) : handlers.credits}</strong> créditos disponibles</span>
+              <span style={{ fontSize: 13 }}><strong style={{ color: '#fff' }}>{handlers.credits.toFixed ? handlers.credits.toFixed(1) : handlers.credits}</strong> crÃ©ditos disponibles</span>
             </div>
           )}
         </div>
 
         <div className="decision-group">
-          <div className="decision-heading"><span>2</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
+          <div className="decision-heading"><span>2</span><div><h2>Â¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
-              <span><strong>{convertingAudio ? "Convirtiendo a MP3…" : uploading ? "Subiendo audio…" : "Subir mi audio"}</strong><small>{convertingAudio ? "Un momento, se convierte en tu dispositivo" : uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 · WAV · M4A · OGG"}</small></span>
+              <span><strong>{convertingAudio ? "Convirtiendo a MP3â€¦" : uploading ? "Subiendo audioâ€¦" : "Subir mi audio"}</strong><small>{convertingAudio ? "Un momento, se convierte en tu dispositivo" : uploading ? `Progreso ${handlers?.uploadProgress || 0}%` : fileName || "MP3 Â· WAV Â· M4A Â· OGG"}</small></span>
               {hasSelectedAudio && audioChoiceMode === "upload" ? (
                 <button
                   type="button"
@@ -3538,7 +3615,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               disabled={uploading}
             >
               <span className="choice-icon"><Microphone size={27} /></span>
-              <span><strong>Quiero cantarlo</strong><small>Grábalo aquí con micrófono y úsalo como audio de referencia</small></span>
+              <span><strong>Quiero cantarlo</strong><small>GrÃ¡balo aquÃ­ con micrÃ³fono y Ãºsalo como audio de referencia</small></span>
               <span className="radio" />
             </button>
 
@@ -3552,7 +3629,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               disabled={uploading}
             >
               <span className="choice-icon"><MusicNote size={27} /></span>
-              <span><strong>No tengo audio</strong><small>Escribiré o crearé la letra en el paso 2</small></span>
+              <span><strong>No tengo audio</strong><small>EscribirÃ© o crearÃ© la letra en el paso 2</small></span>
               <span className="radio" />
             </button>
           </div>
@@ -3565,7 +3642,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               {data.audioSource === "upload" && uploadError ? (
                 <div className="audio-upload-status error">{uploadError}</div>
               ) : data.audioSource === "upload" && uploadedAudioUrl ? (
-                <div className="audio-upload-status success">Audio subido correctamente. Ya puedes escucharlo aquí y continuar.</div>
+                <div className="audio-upload-status success">Audio subido correctamente. Ya puedes escucharlo aquÃ­ y continuar.</div>
               ) : null}
               {hasSelectedAudio ? (
                 <button
@@ -3594,17 +3671,17 @@ function StartStep({ data, setData, setToast, handlers }) {
             <div className="sing-studio-card" ref={singStudioRef}>
               <div className="sing-studio-header">
                 <div>
-                  <strong>Estudio rápido</strong>
-                  <small>Grabaremos tu referencia y la enviaremos por el mismo flujo de “Subir mi audio”.</small>
+                  <strong>Estudio rÃ¡pido</strong>
+                  <small>Grabaremos tu referencia y la enviaremos por el mismo flujo de â€œSubir mi audioâ€.</small>
                 </div>
-                <span className="sing-studio-pill">Micrófono</span>
+                <span className="sing-studio-pill">MicrÃ³fono</span>
               </div>
 
               {singCountdown.active ? (
                 <div className="sing-countdown-panel">
-                  <small>Prepárate...</small>
+                  <small>PrepÃ¡rate...</small>
                   <div className="sing-countdown-number">{singCountdown.value}</div>
-                  <p>La grabación comenzará automáticamente al terminar la cuenta regresiva.</p>
+                  <p>La grabaciÃ³n comenzarÃ¡ automÃ¡ticamente al terminar la cuenta regresiva.</p>
                 </div>
               ) : null}
 
@@ -3664,12 +3741,12 @@ function StartStep({ data, setData, setToast, handlers }) {
                       onClick={async () => {
                         if (!recordedTake) return;
                         const ok = await chooseFile(recordedTake, { inputMode: 'record', autoAdvance: true });
-                        if (ok) setToast('Grabación usada correctamente. Pasamos al siguiente paso.');
+                        if (ok) setToast('GrabaciÃ³n usada correctamente. Pasamos al siguiente paso.');
                       }}
                       disabled={uploading}
                     >
                       {uploading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
-                      {uploading ? 'Subiendo grabación...' : 'Usar esta grabación'}
+                      {uploading ? 'Subiendo grabaciÃ³n...' : 'Usar esta grabaciÃ³n'}
                     </button>
                   </div>
                 </div>
@@ -3678,12 +3755,12 @@ function StartStep({ data, setData, setToast, handlers }) {
               {!singCountdown.active && !singRecording.recording && !singRecording.url ? (
                 <div className="sing-idle-panel">
                   <div className="sing-idle-copy">
-                    <strong>Graba tu idea aquí</strong>
-                    <small>Te pediremos permiso del micrófono, haremos una cuenta regresiva 3, 2, 1 y empezaremos a grabar automáticamente.</small>
+                    <strong>Graba tu idea aquÃ­</strong>
+                    <small>Te pediremos permiso del micrÃ³fono, haremos una cuenta regresiva 3, 2, 1 y empezaremos a grabar automÃ¡ticamente.</small>
                   </div>
                   <button className="record-action-button primary" onClick={openSingFlow} disabled={uploading}>
                     <Microphone size={18} />
-                    Comenzar grabación
+                    Comenzar grabaciÃ³n
                   </button>
                 </div>
               ) : null}
@@ -3695,12 +3772,13 @@ function StartStep({ data, setData, setToast, handlers }) {
           ) : null}
 
           {needsAudioReupload ? (
-            <div className="audio-upload-status error">Este borrador tenía un audio anterior. Vuelve a subirlo para continuar.</div>
+            <div className="audio-upload-status error">Este borrador tenÃ­a un audio anterior. Vuelve a subirlo para continuar.</div>
           ) : null}
           <a className="converter-button" href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={20} /> Convertir mi archivo a MP3 <ArrowRight size={18} /></a>
           <p className="external-note">Ayuda opcional: abre un convertidor gratuito externo</p>
         </div>
       </div>
+      {cloneGateOpen ? <CloneNeedsRecharge onClose={() => setCloneGateOpen(false)} /> : null}
       {clonePickerOpen ? (
         <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Elegir personaje de voz">
           <div className="persona-modal">
@@ -3716,12 +3794,12 @@ function StartStep({ data, setData, setToast, handlers }) {
 
             <div className="persona-modal-options">
               <div className="persona-option is-active">
-                <strong>Opción A</strong>
+                <strong>OpciÃ³n A</strong>
                 <span>Usar un personaje de voz guardado</span>
                 <small>Selecciona uno de tus personajes existentes.</small>
               </div>
               <button type="button" className="persona-option action" onClick={goCreatePersona}>
-                <strong>Opción B</strong>
+                <strong>OpciÃ³n B</strong>
                 <span>Crear personaje de voz nuevo</span>
                 <small>Te llevaremos al Clonador de voz.</small>
               </button>
@@ -3731,7 +3809,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               {personasLoading ? (
                 <div className="persona-state">
                   <Loader2 size={20} className="animate-spin" />
-                  <span>Cargando tus personajes…</span>
+                  <span>Cargando tus personajesâ€¦</span>
                 </div>
               ) : personasError ? (
                 <div className="persona-state error">
@@ -3740,7 +3818,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                 </div>
               ) : personas.length === 0 ? (
                 <div className="persona-empty">
-                  <div className="persona-empty-title">Aún no tienes personajes de voz creados.</div>
+                  <div className="persona-empty-title">AÃºn no tienes personajes de voz creados.</div>
                   <button type="button" className="wizard-next" onClick={goCreatePersona}>
                     <Users size={18} />
                     Crear mi primer personaje
@@ -3820,7 +3898,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                     return (
                     <div key={p.voiceId} className={data.voiceProfile?.voiceId === p.voiceId ? "persona-card is-selected" : "persona-card"}>
                       <label
-                        title={isMarked ? 'Quitar de la selección' : 'Marcar para eliminar'}
+                        title={isMarked ? 'Quitar de la selecciÃ³n' : 'Marcar para eliminar'}
                         onClick={(e) => e.stopPropagation()}
                         style={{
                           position: 'absolute',
@@ -3850,7 +3928,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                         className="persona-card-select"
                         style={{ paddingLeft: 38 }}
                         disabled={p.status !== 'ready'}
-                        title={p.availabilityReason || (p.status !== 'ready' ? 'Suno no confirmó esta voz. Repite la validación en el Clonador.' : '')}
+                        title={p.availabilityReason || (p.status !== 'ready' ? 'Suno no confirmÃ³ esta voz. Repite la validaciÃ³n en el Clonador.' : '')}
                         onClick={() => {
                           updateSelectedPersona({
                             voiceId: p.voiceId,
@@ -3861,7 +3939,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                             taskId: p.taskId,
                           });
                           closeClonePicker({ keepSelection: true });
-                          setToast("Personaje seleccionado para la canción.");
+                          setToast("Personaje seleccionado para la canciÃ³n.");
                         }}
                       >
                         <span className="persona-avatar">
@@ -3872,10 +3950,10 @@ function StartStep({ data, setData, setToast, handlers }) {
                           {p.status === 'ready' ? null : (
                             <small>
                               {p.status === 'expired'
-                                ? 'Suno informa: expirada · repetir validación'
+                                ? 'Suno informa: expirada Â· repetir validaciÃ³n'
                                 : p.status === 'unconfirmed'
-                                ? 'Sin confirmar · reabre el selector para comprobar'
-                                : 'No disponible en Suno · repetir validación'}
+                                ? 'Sin confirmar Â· reabre el selector para comprobar'
+                                : 'No disponible en Suno Â· repetir validaciÃ³n'}
                             </small>
                           )}
                         </span>
@@ -3940,12 +4018,12 @@ function StartStep({ data, setData, setToast, handlers }) {
               className="persona-dialog-backdrop"
               role="dialog"
               aria-modal="true"
-              aria-label="Confirmar eliminación del personaje"
+              aria-label="Confirmar eliminaciÃ³n del personaje"
               style={{ zIndex: 400 }}
             >
               <div className="persona-dialog">
-                <h3>Confirmar eliminación</h3>
-                <p>Vas a eliminar este personaje guardado y sus registros. Esta acción no se puede deshacer.</p>
+                <h3>Confirmar eliminaciÃ³n</h3>
+                <p>Vas a eliminar este personaje guardado y sus registros. Esta acciÃ³n no se puede deshacer.</p>
                 <div className="persona-delete-name">{deletingPersona.name}</div>
                 <div className="persona-dialog-actions">
                   <button type="button" className="wizard-back" disabled={personaActionLoading} onClick={() => setDeletingPersona(null)}>Cancelar</button>
@@ -3962,8 +4040,8 @@ function StartStep({ data, setData, setToast, handlers }) {
               <div className="persona-dialog">
                 <h3>Enviar a un colaborador</h3>
                 <p>
-                  Escribe el correo de Gmail de tu colaborador. El personaje aparecerá en su cuenta con su nombre,
-                  su foto y su voz. No compartes tu cuenta ni tu contraseña.
+                  Escribe el correo de Gmail de tu colaborador. El personaje aparecerÃ¡ en su cuenta con su nombre,
+                  su foto y su voz. No compartes tu cuenta ni tu contraseÃ±a.
                 </p>
                 <div className="persona-delete-name">{sharingPersona.name}</div>
                 <label>
@@ -4004,11 +4082,11 @@ function StartStep({ data, setData, setToast, handlers }) {
               className="persona-dialog-backdrop"
               role="dialog"
               aria-modal="true"
-              aria-label="Confirmar eliminación de personajes"
+              aria-label="Confirmar eliminaciÃ³n de personajes"
               style={{ zIndex: 400 }}
             >
               <div className="persona-dialog">
-                <h3>Confirmar eliminación</h3>
+                <h3>Confirmar eliminaciÃ³n</h3>
                 <p>
                   Vas a eliminar{' '}
                   {selectedPersonaIds.length === 1
@@ -4019,7 +4097,7 @@ function StartStep({ data, setData, setToast, handlers }) {
                 <div className="persona-delete-name">
                   {selectedPersonaIds.length === 1 ? '1 personaje' : `${selectedPersonaIds.length} personajes`}
                 </div>
-                <p>Esta acción no se puede deshacer.</p>
+                <p>Esta acciÃ³n no se puede deshacer.</p>
                 <div className="persona-dialog-actions">
                   <button
                     type="button"
@@ -4049,7 +4127,7 @@ function StartStep({ data, setData, setToast, handlers }) {
 }
 
 function LyricsStep({ data, setData, setToast, handlers }) {
-  const aiExample = "Escribe una canción romántica para mi esposa por nuestro aniversario. Que hable de todo lo que hemos superado juntos, tenga un tono emotivo y termine con un mensaje de amor para toda la vida.";
+  const aiExample = "Escribe una canciÃ³n romÃ¡ntica para mi esposa por nuestro aniversario. Que hable de todo lo que hemos superado juntos, tenga un tono emotivo y termine con un mensaje de amor para toda la vida.";
   const usingAI = data.lyricsMode === "ai";
   const aiLoading = Boolean(handlers?.isGeneratingLyrics);
   const audioLyricsStatus = (handlers?.audioLyricsStatus || '').toString().trim();
@@ -4100,23 +4178,23 @@ function LyricsStep({ data, setData, setToast, handlers }) {
   };
   const restorePreviousLyrics = () => {
     if (!lyricsHistoryRef.current.length) {
-      setToast('No hay una versión anterior para restaurar.');
+      setToast('No hay una versiÃ³n anterior para restaurar.');
       return;
     }
     const previous = lyricsHistoryRef.current[lyricsHistoryRef.current.length - 1];
     lyricsHistoryRef.current = lyricsHistoryRef.current.slice(0, -1);
     setData({ ...data, lyrics: previous });
-    setToast('Se restauró la versión anterior de la letra.');
+    setToast('Se restaurÃ³ la versiÃ³n anterior de la letra.');
   };
   const clearLyrics = () => {
     const current = String(data.lyrics || '');
     if (!current) {
-      setToast('La caja de letra ya está vacía.');
+      setToast('La caja de letra ya estÃ¡ vacÃ­a.');
       return;
     }
     pushLyricsHistory(current);
     setData({ ...data, lyrics: '' });
-    setToast('La letra se eliminó. Usa la flecha para restaurarla si fue un error.');
+    setToast('La letra se eliminÃ³. Usa la flecha para restaurarla si fue un error.');
   };
   const iconButtonStyle = (danger = false, disabled = false) => ({
     width: 36,
@@ -4144,7 +4222,7 @@ function LyricsStep({ data, setData, setToast, handlers }) {
       <div style={actionRowStyle}>
         <button
           type="button"
-          onClick={() => copyText(data.lyrics, 'Letra copiada.', 'Todavía no hay letra para copiar.')}
+          onClick={() => copyText(data.lyrics, 'Letra copiada.', 'TodavÃ­a no hay letra para copiar.')}
           disabled={!hasLyrics}
           style={iconButtonStyle(false, !hasLyrics)}
           aria-label="Copiar letra"
@@ -4157,8 +4235,8 @@ function LyricsStep({ data, setData, setToast, handlers }) {
           onClick={restorePreviousLyrics}
           disabled={!canRestore}
           style={iconButtonStyle(false, !canRestore)}
-          aria-label="Restaurar versión anterior"
-          title="Restaurar versión anterior"
+          aria-label="Restaurar versiÃ³n anterior"
+          title="Restaurar versiÃ³n anterior"
         >
           <RotateCcw size={16} />
         </button>
@@ -4205,21 +4283,21 @@ function LyricsStep({ data, setData, setToast, handlers }) {
       aiLyricsGenerated: false,
       lyrics: "",
     });
-    setToast("Letra de IA descartada. Ahora escribe la tuya en el cajón de arriba (Tengo mi letra).");
+    setToast("Letra de IA descartada. Ahora escribe la tuya en el cajÃ³n de arriba (Tengo mi letra).");
   };
   const switchToAI = () => {
     let next = { ...data, lyricsMode: "ai" };
     if (!data.aiLyricsGenerated && data.lyrics.trim()) {
       pushLyricsHistory(data.lyrics);
       next.lyrics = "";
-      setToast("Letra manual descartada. Ahora describe la instrucción para que la IA la escriba.");
+      setToast("Letra manual descartada. Ahora describe la instrucciÃ³n para que la IA la escriba.");
     }
     if (!next.lyricInstruction) next.lyricInstruction = aiExample;
     setData(next);
   };
   return (
     <section className="single-column">
-      <div className="section-title"><span className="eyebrow">PASO 2 DE 4</span><h1>{data.audioSource === "upload" ? "Revisa la letra de tu audio" : "Escribe o crea tu letra"}</h1><p>{data.audioSource === "upload" ? "La letra detectada aparece aquí para que puedas corregirla antes de continuar." : "Pega tu letra completa. La usaremos tal como está para crear la canción."}</p></div>
+      <div className="section-title"><span className="eyebrow">PASO 2 DE 4</span><h1>{data.audioSource === "upload" ? "Revisa la letra de tu audio" : "Escribe o crea tu letra"}</h1><p>{data.audioSource === "upload" ? "La letra detectada aparece aquÃ­ para que puedas corregirla antes de continuar." : "Pega tu letra completa. La usaremos tal como estÃ¡ para crear la canciÃ³n."}</p></div>
       <div className="segmented">
         <button className={!usingAI ? "selected" : ""} onClick={switchToManual}>Tengo mi letra</button>
         <button className={usingAI ? "selected" : ""} onClick={switchToAI}><MagicWand size={18} /> Crear con IA</button>
@@ -4229,10 +4307,10 @@ function LyricsStep({ data, setData, setToast, handlers }) {
           <Info size={18} />
           <span>
             {data.lyrics.trim()
-              ? 'Revisa que la letra sea correcta antes de continuar. La transcripción automática puede contener errores.'
+              ? 'Revisa que la letra sea correcta antes de continuar. La transcripciÃ³n automÃ¡tica puede contener errores.'
               : isTranscribingAudioLyrics
-                ? 'Estamos transcribiendo la letra de tu audio automáticamente.'
-                : audioLyricsStatus || 'Si la transcripción automática no detecta bien la letra, puedes escribirla manualmente aquí.'}
+                ? 'Estamos transcribiendo la letra de tu audio automÃ¡ticamente.'
+                : audioLyricsStatus || 'Si la transcripciÃ³n automÃ¡tica no detecta bien la letra, puedes escribirla manualmente aquÃ­.'}
           </span>
           {Boolean(audioLyricsStatus) && /no pudimos transcribir este audio/i.test(String(audioLyricsStatus || '')) && !isTranscribingAudioLyrics ? (
             <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -4247,15 +4325,15 @@ function LyricsStep({ data, setData, setToast, handlers }) {
         </div>
       ) : null}
       {usingAI ? <>
-        <div className="ai-label-row"><label className="field-label">Instrucción para crear la letra <InfoTip title="¿Qué debo escribir?">Explica de qué tratará la canción, para quién es, qué historia debe contar y qué emoción quieres transmitir.</InfoTip></label><div style={actionRowStyle}><button className="example-button" onClick={() => setData({ ...data, lyricInstruction: aiExample })}><MagicWand size={16} /> Poner ejemplo</button><button type="button" onClick={() => copyText(data.lyricInstruction, 'Prompt copiado.', 'Todavía no hay prompt para copiar.')} disabled={!String(data.lyricInstruction || '').trim()} style={iconButtonStyle(false, !String(data.lyricInstruction || '').trim())} aria-label="Copiar prompt" title="Copiar prompt"><Copy size={16} /></button></div></div>
-        <textarea className="lyrics-box ai-instruction-box" value={data.lyricInstruction} onChange={(e) => setData({ ...data, lyricInstruction: e.target.value })} placeholder="Ejemplo: Escribe una canción para una persona especial y cuenta la historia que quiero transmitir..." disabled={aiLoading} />
+        <div className="ai-label-row"><label className="field-label">InstrucciÃ³n para crear la letra <InfoTip title="Â¿QuÃ© debo escribir?">Explica de quÃ© tratarÃ¡ la canciÃ³n, para quiÃ©n es, quÃ© historia debe contar y quÃ© emociÃ³n quieres transmitir.</InfoTip></label><div style={actionRowStyle}><button className="example-button" onClick={() => setData({ ...data, lyricInstruction: aiExample })}><MagicWand size={16} /> Poner ejemplo</button><button type="button" onClick={() => copyText(data.lyricInstruction, 'Prompt copiado.', 'TodavÃ­a no hay prompt para copiar.')} disabled={!String(data.lyricInstruction || '').trim()} style={iconButtonStyle(false, !String(data.lyricInstruction || '').trim())} aria-label="Copiar prompt" title="Copiar prompt"><Copy size={16} /></button></div></div>
+        <textarea className="lyrics-box ai-instruction-box" value={data.lyricInstruction} onChange={(e) => setData({ ...data, lyricInstruction: e.target.value })} placeholder="Ejemplo: Escribe una canciÃ³n para una persona especial y cuenta la historia que quiero transmitir..." disabled={aiLoading} />
         <div className="field-footer"><span>Describe todos los detalles que quieras incluir</span><span>{data.lyricInstruction.length}/1,000</span></div>
-        <div className="ai-explanation"><Info size={19} /><span>Con esta instrucción, la IA escribirá una letra completa que después podrás revisar y editar.</span></div>
+        <div className="ai-explanation"><Info size={19} /><span>Con esta instrucciÃ³n, la IA escribirÃ¡ una letra completa que despuÃ©s podrÃ¡s revisar y editar.</span></div>
         <div className="ai-actions-row">
           <button className="generate-lyrics-button" disabled={!data.lyricInstruction.trim() || aiLoading} onClick={doGenerateAI}>
             {aiLoading ? <Loader2 size={20} className="animate-spin" /> : <MagicWand size={20} weight="fill" />}
             <span style={{ marginLeft: 8 }}>
-              {aiLoading ? "Escribiendo la letra…" : data.aiLyricsGenerated ? "Volver a generar la letra" : "Generar letra con IA"}
+              {aiLoading ? "Escribiendo la letraâ€¦" : data.aiLyricsGenerated ? "Volver a generar la letra" : "Generar letra con IA"}
             </span>
           </button>
           {data.aiLyricsGenerated && (
@@ -4265,13 +4343,13 @@ function LyricsStep({ data, setData, setToast, handlers }) {
             </button>
           )}
         </div>
-        {data.aiLyricsGenerated && <div className="generated-lyrics"><div className="generated-heading"><span><Check size={18} weight="bold" /> Letra generada</span><div style={actionRowStyle}><small>Resultado editable · Si no te gusta, pulsa Cancelar arriba</small>{renderLyricsActions()}</div></div><textarea className="lyrics-box" value={data.lyrics} onChange={(e) => updateLyrics(e.target.value)} /><div className="field-footer"><span>Puedes cambiar cualquier parte de la letra</span><span>{data.lyrics.length}/5,000</span></div></div>}
+        {data.aiLyricsGenerated && <div className="generated-lyrics"><div className="generated-heading"><span><Check size={18} weight="bold" /> Letra generada</span><div style={actionRowStyle}><small>Resultado editable Â· Si no te gusta, pulsa Cancelar arriba</small>{renderLyricsActions()}</div></div><textarea className="lyrics-box" value={data.lyrics} onChange={(e) => updateLyrics(e.target.value)} /><div className="field-footer"><span>Puedes cambiar cualquier parte de la letra</span><span>{data.lyrics.length}/5,000</span></div></div>}
       </> : <>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <label className="field-label">Letra de la canción <InfoTip title="Cómo escribir la letra">Puedes usar secciones como [Verso], [Coro] y [Puente]. Si antes generaste una letra con IA, ya fue descartada para que escribas la tuya limpia.</InfoTip></label>
+          <label className="field-label">Letra de la canciÃ³n <InfoTip title="CÃ³mo escribir la letra">Puedes usar secciones como [Verso], [Coro] y [Puente]. Si antes generaste una letra con IA, ya fue descartada para que escribas la tuya limpia.</InfoTip></label>
           {renderLyricsActions()}
         </div>
-        <textarea className="lyrics-box" value={data.lyrics} onChange={(e) => updateLyrics(e.target.value)} placeholder="Escribe o pega aquí la letra de tu canción..." />
+        <textarea className="lyrics-box" value={data.lyrics} onChange={(e) => updateLyrics(e.target.value)} placeholder="Escribe o pega aquÃ­ la letra de tu canciÃ³n..." />
         <div className="field-footer"><span>Admite hasta 5,000 caracteres</span><span>{data.lyrics.length}/5,000</span></div>
       </>}
     </section>
@@ -4294,59 +4372,59 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
   const openPrecisionHelp = () => {
     const text =
       "Rareza\n" +
-      "Controla qué tan tradicional o creativa puede ser la canción.\n\n" +
-      "- Un porcentaje bajo produce resultados más seguros, predecibles y convencionales.\n" +
-      "- Un porcentaje alto permite combinaciones más originales, inesperadas o experimentales.\n" +
+      "Controla quÃ© tan tradicional o creativa puede ser la canciÃ³n.\n\n" +
+      "- Un porcentaje bajo produce resultados mÃ¡s seguros, predecibles y convencionales.\n" +
+      "- Un porcentaje alto permite combinaciones mÃ¡s originales, inesperadas o experimentales.\n" +
       "- Se recomienda comenzar en 50%.\n" +
-      "- Bájalo si la canción sale desordenada, extraña o se aleja demasiado de lo solicitado.\n" +
-      "- Súbelo si las canciones se sienten demasiado parecidas, simples o predecibles.\n\n" +
+      "- BÃ¡jalo si la canciÃ³n sale desordenada, extraÃ±a o se aleja demasiado de lo solicitado.\n" +
+      "- SÃºbelo si las canciones se sienten demasiado parecidas, simples o predecibles.\n\n" +
       "Influencia del estilo\n" +
-      "Controla qué tanto debe respetarse la descripción escrita en el campo de estilo musical.\n\n" +
+      "Controla quÃ© tanto debe respetarse la descripciÃ³n escrita en el campo de estilo musical.\n\n" +
       "- Un porcentaje bajo da mayor libertad para interpretar el estilo.\n" +
-      "- Un porcentaje alto intenta seguir con más fuerza los géneros, instrumentos, ritmo y ambiente solicitados.\n" +
+      "- Un porcentaje alto intenta seguir con mÃ¡s fuerza los gÃ©neros, instrumentos, ritmo y ambiente solicitados.\n" +
       "- Se recomienda comenzar en 50%.\n" +
-      "- Bájalo si el resultado se siente rígido o poco natural.\n" +
-      "- Súbelo si no está respetando suficientemente el género, los instrumentos o el ambiente solicitado.\n\n" +
+      "- BÃ¡jalo si el resultado se siente rÃ­gido o poco natural.\n" +
+      "- SÃºbelo si no estÃ¡ respetando suficientemente el gÃ©nero, los instrumentos o el ambiente solicitado.\n\n" +
       "Influencia del audio\n" +
-      "Solo aparece cuando se utiliza un audio de referencia. Controla cuánto debe conservarse de su melodía, ritmo, estructura o interpretación.\n\n" +
-      "- Un porcentaje bajo permite crear una versión más diferente.\n" +
-      "- Un porcentaje alto intenta conservar más características del audio original.\n" +
+      "Solo aparece cuando se utiliza un audio de referencia. Controla cuÃ¡nto debe conservarse de su melodÃ­a, ritmo, estructura o interpretaciÃ³n.\n\n" +
+      "- Un porcentaje bajo permite crear una versiÃ³n mÃ¡s diferente.\n" +
+      "- Un porcentaje alto intenta conservar mÃ¡s caracterÃ­sticas del audio original.\n" +
       "- Se recomienda comenzar en 25%.\n" +
-      "- Bájalo si el resultado se parece demasiado al audio original.\n" +
-      "- Súbelo si se está perdiendo la melodía, el ritmo o la esencia de la referencia.\n" +
+      "- BÃ¡jalo si el resultado se parece demasiado al audio original.\n" +
+      "- SÃºbelo si se estÃ¡ perdiendo la melodÃ­a, el ritmo o la esencia de la referencia.\n" +
       "- Los valores altos pueden limitar la libertad creativa, por lo que conviene aumentarlo gradualmente.";
     if (handlers?.onShowAlert) {
-      handlers.onShowAlert({ title: 'Ajustes de precisión', message: text, tone: 'info' });
+      handlers.onShowAlert({ title: 'Ajustes de precisiÃ³n', message: text, tone: 'info' });
       return;
     }
     setToast(text);
   };
   const currentStyleLanguage = detectPromptLanguage(data.style);
-  const translateLabel = currentStyleLanguage === 'en' ? 'Traducir al español' : 'Traducir al inglés';
+  const translateLabel = currentStyleLanguage === 'en' ? 'Traducir al espaÃ±ol' : 'Traducir al inglÃ©s';
   const updateStyle = (value) => setData({ ...data, style: value, styleTranslated: false });
   const precisionControlsId = 'precision-controls';
   return (
     <section className="two-columns">
       <div>
-        <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Define el estilo de tu canción</h1><p>Elige el motor y describe cómo quieres que suene.</p></div>
-        <label className="field-label">Motor y versión <InfoTip title="Motor y versión">Cada versión ofrece una forma distinta de interpretar tu canción.</InfoTip></label>
+        <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Define el estilo de tu canciÃ³n</h1><p>Elige el motor y describe cÃ³mo quieres que suene.</p></div>
+        <label className="field-label">Motor y versiÃ³n <InfoTip title="Motor y versiÃ³n">Cada versiÃ³n ofrece una forma distinta de interpretar tu canciÃ³n.</InfoTip></label>
         <div className="select-wrap">
           <button className="select-button" onClick={() => setModelOpen(!modelOpen)}><span>{normalizeModelName(data.model)}</span><SlidersHorizontal size={20} /></button>
           {modelOpen && <div className="model-menu">
             <div className="model-group-label">Suno</div>
             {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'suno').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
-            <p><Info size={16} /> Más motores próximamente</p>
+            <p><Info size={16} /> MÃ¡s motores prÃ³ximamente</p>
           </div>}
         </div>
-        <label className="field-label top-gap">Nombre de la canción <InfoTip title="Nombre de la canción">Este nombre es obligatorio y se usará al generar la canción.</InfoTip></label>
-        <input className="title-input" value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} placeholder="Escribe el nombre de la canción" />
+        <label className="field-label top-gap">Nombre de la canciÃ³n <InfoTip title="Nombre de la canciÃ³n">Este nombre es obligatorio y se usarÃ¡ al generar la canciÃ³n.</InfoTip></label>
+        <input className="title-input" value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} placeholder="Escribe el nombre de la canciÃ³n" />
         <div className="field-footer"><span>Obligatorio para generar</span><span>{data.title.length}/100</span></div>
         <div className="style-label-row">
-          <label className="field-label top-gap">Estilo e instrucción <InfoTip title="Qué escribir aquí">Describe género, ritmo, instrumentos y ambiente.</InfoTip></label>
+          <label className="field-label top-gap">Estilo e instrucciÃ³n <InfoTip title="QuÃ© escribir aquÃ­">Describe gÃ©nero, ritmo, instrumentos y ambiente.</InfoTip></label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <button className="translate-button" disabled={!data.style.trim() || improving || translating} onClick={() => handlers?.handleBoostStyle?.()}>
               {improving ? <Loader2 size={18} className="animate-spin" /> : <MagicWand size={18} />}
-              {improving ? "Mejorando..." : "Mejorar instrucción"}
+              {improving ? "Mejorando..." : "Mejorar instrucciÃ³n"}
             </button>
             <button className="translate-button" disabled={!data.style.trim() || improving || translating} onClick={() => handlers?.handleTranslateStyle?.()}>
               {translating ? <Loader2 size={18} className="animate-spin" /> : <Translate size={18} />}
@@ -4354,11 +4432,11 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
             </button>
           </div>
         </div>
-        <textarea value={data.style} onChange={(e) => updateStyle(e.target.value)} placeholder="Ejemplo: Balada pop romántica, piano suave, voz emotiva..." />
-        {data.styleTranslated && <div className="translation-note"><Check size={17} weight="bold" /> Instrucción traducida. Puedes editarla antes de continuar.</div>}
+        <textarea value={data.style} onChange={(e) => updateStyle(e.target.value)} placeholder="Ejemplo: Balada pop romÃ¡ntica, piano suave, voz emotiva..." />
+        {data.styleTranslated && <div className="translation-note"><Check size={17} weight="bold" /> InstrucciÃ³n traducida. Puedes editarla antes de continuar.</div>}
         <label className="field-label top-gap">Evitar estilos o elementos</label>
-        <textarea className="short-area" value={data.negative} onChange={(e) => setData({ ...data, negative: e.target.value })} placeholder="Ejemplo: Sin batería fuerte, sin voz robótica..." />
-        <div className="gender-section"><div className="gender-heading"><div><strong>Tipo de voz</strong><p>Elige qué voz interpretará la canción.</p></div><InfoTip title="Tipo de voz">Esta opción indica a Suno si deseas una voz masculina o femenina.</InfoTip></div><div className="gender-buttons"><button className={data.vocalGender === "m" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"m"})}><User size={24}/><span><strong>Voz de hombre</strong><small>Voz masculina</small></span><span className="radio"/></button><button className={data.vocalGender === "f" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"f"})}><User size={24}/><span><strong>Voz de mujer</strong><small>Voz femenina</small></span><span className="radio"/></button></div></div>
+        <textarea className="short-area" value={data.negative} onChange={(e) => setData({ ...data, negative: e.target.value })} placeholder="Ejemplo: Sin baterÃ­a fuerte, sin voz robÃ³tica..." />
+        <div className="gender-section"><div className="gender-heading"><div><strong>Tipo de voz</strong><p>Elige quÃ© voz interpretarÃ¡ la canciÃ³n.</p></div><InfoTip title="Tipo de voz">Esta opciÃ³n indica a Suno si deseas una voz masculina o femenina.</InfoTip></div><div className="gender-buttons"><button className={data.vocalGender === "m" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"m"})}><User size={24}/><span><strong>Voz de hombre</strong><small>Voz masculina</small></span><span className="radio"/></button><button className={data.vocalGender === "f" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"f"})}><User size={24}/><span><strong>Voz de mujer</strong><small>Voz femenina</small></span><span className="radio"/></button></div></div>
       </div>
       <div className={isMobileLayout ? "settings-panel precision-collapsible" : "settings-panel"}>
         {isMobileLayout ? (
@@ -4370,39 +4448,39 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
               aria-controls={precisionControlsId}
               onClick={() => setPrecisionOpen((v) => !v)}
             >
-              <span className="precision-toggle-text">Ajustes de precisión</span>
-              <span className={precisionOpen ? "precision-toggle-icon open" : "precision-toggle-icon"} aria-hidden="true">▾</span>
+              <span className="precision-toggle-text">Ajustes de precisiÃ³n</span>
+              <span className={precisionOpen ? "precision-toggle-icon open" : "precision-toggle-icon"} aria-hidden="true">â–¾</span>
             </button>
             <div id={precisionControlsId} className="precision-collapsible-body" hidden={!precisionOpen}>
               <div className="precision-help-row">
-                <span className="precision-help-title">Ajustes de precisión</span>
-                <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisión" onClick={openPrecisionHelp}>
+                <span className="precision-help-title">Ajustes de precisiÃ³n</span>
+                <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisiÃ³n" onClick={openPrecisionHelp}>
                   <Info size={19} weight="bold" />
                 </button>
               </div>
-              <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-              {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
-              {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} scrollGuard />}
-              {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />}
+              <p className="panel-intro">Puedes moverlos o dejarlos como estÃ¡n.</p>
+              {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parÃ¡metros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
+              {!isMureka && <RangeSetting label="Rareza" help="QuÃ© tan tradicional o creativa puede ser la canciÃ³n" value={creativity} onChange={setCreativity} scrollGuard />}
+              {!isMureka && <RangeSetting label="Influencia del estilo" help="QuÃ© tanto respetarÃ¡ la descripciÃ³n del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />}
               {!isMureka && showAudioInfluence ? (
-                <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
+                <RangeSetting label="Influencia del audio" help="QuÃ© tanto conservarÃ¡ la melodÃ­a y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
               ) : null}
             </div>
           </>
         ) : (
           <>
             <div className="settings-panel-title">
-              <h2>Ajustes de precisión</h2>
-              <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisión" onClick={openPrecisionHelp}>
+              <h2>Ajustes de precisiÃ³n</h2>
+              <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisiÃ³n" onClick={openPrecisionHelp}>
                 <Info size={19} weight="bold" />
               </button>
             </div>
-            <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-            {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
-            {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} />}
-            {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} />}
+            <p className="panel-intro">Puedes moverlos o dejarlos como estÃ¡n.</p>
+            {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parÃ¡metros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
+            {!isMureka && <RangeSetting label="Rareza" help="QuÃ© tan tradicional o creativa puede ser la canciÃ³n" value={creativity} onChange={setCreativity} />}
+            {!isMureka && <RangeSetting label="Influencia del estilo" help="QuÃ© tanto respetarÃ¡ la descripciÃ³n del estilo musical" value={instruction} onChange={setInstruction} />}
             {!isMureka && showAudioInfluence ? (
-              <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} />
+              <RangeSetting label="Influencia del audio" help="QuÃ© tanto conservarÃ¡ la melodÃ­a y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} />
             ) : null}
           </>
         )}
@@ -4426,16 +4504,16 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
   return (
     <section className="two-columns voice-layout">
       <div>
-        <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Elige la voz y el audio</h1><p>Selecciona cómo quieres que suene tu canción.</p></div>
+        <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Elige la voz y el audio</h1><p>Selecciona cÃ³mo quieres que suene tu canciÃ³n.</p></div>
         <div className="choice-list">
-          <button className={data.voice === "standard" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "standard", model: (data.model === "Suno V6" || data.model === "Suno V6 Wild" || data.model === "Suno V6 Mini") ? data.model : "Suno V6" })}><span className="choice-icon"><Microphone size={28} /></span><span><strong>Voz estándar</strong><small>Elige una voz de alta calidad generada por IA.</small></span><span className="radio" /></button>
-          <button className={data.voice === "clone" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "clone", model: "Suno V6" })}><span className="choice-icon"><Users size={28} /></span><span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canción.</small></span><span className="radio" /></button>
+          <button className={data.voice === "standard" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "standard", model: (data.model === "Suno V6" || data.model === "Suno V6 Wild" || data.model === "Suno V6 Mini") ? data.model : "Suno V6" })}><span className="choice-icon"><Microphone size={28} /></span><span><strong>Voz estÃ¡ndar</strong><small>Elige una voz de alta calidad generada por IA.</small></span><span className="radio" /></button>
+          <button className={data.voice === "clone" ? "voice-choice selected" : "voice-choice"} onClick={() => setData({ ...data, voice: "clone", model: "Suno V6" })}><span className="choice-icon"><Users size={28} /></span><span><strong>Clonar voz <em>Suno V6</em></strong><small>Usa una voz clonada para tu canciÃ³n.</small></span><span className="radio" /></button>
           <div className={data.voice === "upload" ? "upload-card selected" : "upload-card"}>
-            <button className="upload-choice" onClick={() => setData({ ...data, voice: "upload" })}><span className="choice-icon teal"><UploadSimple size={29} /></span><span><strong>Subir mi audio</strong><small>Usa un audio de referencia para guiar el resultado.</small></span><InfoTip title="¿Qué audio debo subir?">Usa un archivo MP3 claro. Puede ser tu voz o un audio de referencia.</InfoTip><span className="radio" /></button>
+            <button className="upload-choice" onClick={() => setData({ ...data, voice: "upload" })}><span className="choice-icon teal"><UploadSimple size={29} /></span><span><strong>Subir mi audio</strong><small>Usa un audio de referencia para guiar el resultado.</small></span><InfoTip title="Â¿QuÃ© audio debo subir?">Usa un archivo MP3 claro. Puede ser tu voz o un audio de referencia.</InfoTip><span className="radio" /></button>
             <label className="drop-zone">
               <UploadSimple size={30} />
               <span>
-                <strong>{fileName || (convertingAudio ? "Convirtiendo a MP3…" : "Sube tu audio")}</strong>
+                <strong>{fileName || (convertingAudio ? "Convirtiendo a MP3â€¦" : "Sube tu audio")}</strong>
                 <small>{fileName ? "Archivo listo para esta vista previa" : "MP3, WAV, M4A u OGG (lo convertimos a MP3)"}</small>
               </span>
               <input
@@ -4448,7 +4526,7 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
                   if (!isAlreadyMp3(file)) {
                     try {
                       setConvertingAudio(true);
-                      setToast("Convirtiendo tu audio a MP3…");
+                      setToast("Convirtiendo tu audio a MP3â€¦");
                       ready = await convertAudioFileToMp3(file);
                     } catch (err) {
                       const detail = err instanceof Error ? err.message : String(err || '');
@@ -4470,17 +4548,17 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
                 }}
               />
             </label>
-            <a className="converter-button" href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={20} /> Convertir en otra página <ArrowRight size={18} /></a>
+            <a className="converter-button" href={mp3ConverterUrl} target="_blank" rel="noopener noreferrer"><Waveform size={20} /> Convertir en otra pÃ¡gina <ArrowRight size={18} /></a>
             <p className="external-note">Ayuda opcional: normalmente no hace falta, el audio se convierte solo</p>
           </div>
         </div>
       </div>
       <div className="settings-panel summary-panel">
         <h2>Tus ajustes</h2>
-        <RangeSummary label="Nivel de creatividad" value={creativity} help="Qué tan diferente puede ser el resultado" />
-        <RangeSummary label="Peso de la instrucción" value={instruction} help="Cuánto seguirá tus indicaciones" />
-        <RangeSummary label="Peso del audio original" value={audioWeight} help="Cuánto respetará el audio que subiste" />
-        <div className="engine-summary"><span>Motor seleccionado</span><strong>{data.voice === "clone" ? "Suno V6 · Clonar voz" : normalizeModelName(data.model)}</strong></div>
+        <RangeSummary label="Nivel de creatividad" value={creativity} help="QuÃ© tan diferente puede ser el resultado" />
+        <RangeSummary label="Peso de la instrucciÃ³n" value={instruction} help="CuÃ¡nto seguirÃ¡ tus indicaciones" />
+        <RangeSummary label="Peso del audio original" value={audioWeight} help="CuÃ¡nto respetarÃ¡ el audio que subiste" />
+        <div className="engine-summary"><span>Motor seleccionado</span><strong>{data.voice === "clone" ? "Suno V6 Â· Clonar voz" : normalizeModelName(data.model)}</strong></div>
       </div>
     </section>
   );
@@ -4498,9 +4576,9 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
   const usingReferenceAudio = data.audioSource === "upload";
   const hasUploadedReferenceAudio = Boolean(handlers?.hasUploadedAudio);
   const requirements = [
-    ["Título de la canción", Boolean(data.title.trim())],
+    ["TÃ­tulo de la canciÃ³n", Boolean(data.title.trim())],
     ["Letra completa", lyricsOk],
-    ["Instrucción o estilo musical", Boolean(data.style.trim())],
+    ["InstrucciÃ³n o estilo musical", Boolean(data.style.trim())],
     ["Voz seleccionada", Boolean(data.voice)],
     ["Voz de hombre o de mujer", Boolean(data.vocalGender)],
     ...(usingReferenceAudio ? [["Audio MP3 de referencia", hasUploadedReferenceAudio]] : []),
@@ -4510,33 +4588,33 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
   const submitting = Boolean(handlers?.isSubmitting);
   const usingAI = data.lyricsMode === "ai";
   const lyricsLabel = usingAI
-    ? (lyricsOk ? "Letra generada por IA" : "Sin letra generada todavía")
-    : (lyricsOk ? "Letra lista" : "Sin letra todavía");
+    ? (lyricsOk ? "Letra generada por IA" : "Sin letra generada todavÃ­a")
+    : (lyricsOk ? "Letra lista" : "Sin letra todavÃ­a");
   const lyricsSub = usingAI
-    ? (lyricsOk ? `${data.lyrics.length} caracteres · Puedes editarla en el Paso 2` : "Vuelve al Paso 2 y pulsa 'Generar letra con IA'")
+    ? (lyricsOk ? `${data.lyrics.length} caracteres Â· Puedes editarla en el Paso 2` : "Vuelve al Paso 2 y pulsa 'Generar letra con IA'")
     : (lyricsOk ? `${data.lyrics.length} caracteres` : "Vuelve al Paso 2 para escribirla");
   const costCredits = creditsCostForModel(data.model);
   return (
     <section className="review-wrap">
-      <div className="section-title"><span className="eyebrow">PASO 4 DE 4</span><h1>Revisa tu canción</h1><p>Comprueba toda la información antes de enviarla a generar.</p></div>
+      <div className="section-title"><span className="eyebrow">PASO 4 DE 4</span><h1>Revisa tu canciÃ³n</h1><p>Comprueba toda la informaciÃ³n antes de enviarla a generar.</p></div>
       <div className="review-grid">
-        <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
-        <div className="review-card"><span>Letra · {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
+        <div className="review-card"><span>Nombre de la canciÃ³n</span><strong>{data.title || "Sin nombre todavÃ­a"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
+        <div className="review-card"><span>Letra Â· {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
         <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Suno V6" : normalizeModelName(data.model)}</strong><small>{data.voice === "clone" ? "Clonar voz" : "Modelo seleccionado"}</small></div>
-        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (hasUploadedReferenceAudio ? "Audio cargado" : usingReferenceAudio ? "Falta subir el audio" : "No estás usando audio")}</small></div>
-        <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
-        <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
-        <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
+        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estÃ¡ndar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (hasUploadedReferenceAudio ? "Audio cargado" : usingReferenceAudio ? "Falta subir el audio" : "No estÃ¡s usando audio")}</small></div>
+        <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "SelecciÃ³n guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
+        <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` Â· ${audioWeight}% audio` : ''}</small></div>
+        <div className="review-card review-card-wide"><span>InstrucciÃ³n o estilo musical</span><strong>{data.style || "TodavÃ­a no escribiste una instrucciÃ³n"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
       </div>
       <div className="requirements-box">
-        <div><strong>Antes de generar</strong><span>{submitting ? (MODEL_TO_PROVIDER[data.model] === 'mureka' ? "Enviando a Mureka…" : "Enviando a Suno…") : isReady ? "Todo está completo" : "Completa los elementos pendientes"}</span></div>
+        <div><strong>Antes de generar</strong><span>{submitting ? (MODEL_TO_PROVIDER[data.model] === 'mureka' ? "Enviando a Murekaâ€¦" : "Enviando a Sunoâ€¦") : isReady ? "Todo estÃ¡ completo" : "Completa los elementos pendientes"}</span></div>
         <ul>{requirements.map(([label, complete]) => <li key={label} className={complete ? "complete" : "pending"}>{complete ? <Check size={18} weight="bold" /> : <X size={17} weight="bold" />}<span>{label}</span></li>)}</ul>
       </div>
       <button className="mock-generate" disabled={submitting || !isReady} onClick={() => handlers?.handleSubmitGenerate?.()}>
         {submitting ? <Loader2 size={22} className="animate-spin" /> : <MusicNote size={22} weight="fill" />}
-        <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generando…" : `Generar canción (${costCredits} créditos)`}</span>
+        <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generandoâ€¦" : `Generar canciÃ³n (${costCredits} crÃ©ditos)`}</span>
       </button>
-      <p className="safe-note"><Info size={18} /> El botón solo se habilita al completar todos los requisitos. Después de generar, irás a tu Biblioteca para ver el progreso.</p>
+      <p className="safe-note"><Info size={18} /> El botÃ³n solo se habilita al completar todos los requisitos. DespuÃ©s de generar, irÃ¡s a tu Biblioteca para ver el progreso.</p>
     </section>
   );
 }
@@ -4634,9 +4712,9 @@ function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibra
     <section className="generation-stage ready">
       <div className="generation-hero">
         <div className="generation-hero-icon"><Check size={28} /></div>
-        <h1>Tus 2 canciones ya están listas</h1>
-        <p className="generation-hero-subtitle">Ya puedes escucharlas aquí mismo.</p>
-        <p className="generation-hero-copy">{title ? `Canción: ${title}` : 'Listo. Puedes reproducirlas ahora.'}</p>
+        <h1>Tus 2 canciones ya estÃ¡n listas</h1>
+        <p className="generation-hero-subtitle">Ya puedes escucharlas aquÃ­ mismo.</p>
+        <p className="generation-hero-copy">{title ? `CanciÃ³n: ${title}` : 'Listo. Puedes reproducirlas ahora.'}</p>
       </div>
 
       <div className="generation-cards">
@@ -4645,8 +4723,8 @@ function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibra
             <div className="flex items-center gap-3">
               <Loader2 size={22} className="animate-spin" />
               <div>
-                <div className="font-extrabold">Cargando tus audios…</div>
-                <div className="text-xs text-slate-400">Ya se guardaron en “Mis Canciones”. Estamos trayéndolos para reproducirlos aquí.</div>
+                <div className="font-extrabold">Cargando tus audiosâ€¦</div>
+                <div className="text-xs text-slate-400">Ya se guardaron en â€œMis Cancionesâ€. Estamos trayÃ©ndolos para reproducirlos aquÃ­.</div>
               </div>
             </div>
           </div>
@@ -4655,11 +4733,11 @@ function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibra
             <div className="flex items-start gap-3">
               <AlertCircle size={22} className="text-amber-200 shrink-0" />
               <div className="min-w-0">
-                <div className="font-extrabold">Tus canciones ya terminaron, pero no pude cargarlas aquí</div>
+                <div className="font-extrabold">Tus canciones ya terminaron, pero no pude cargarlas aquÃ­</div>
                 <div className="text-xs text-slate-400 break-words">{error}</div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button type="button" className="generation-secondary-button" onClick={() => onRetry?.()}>
-                    Reintentar aquí
+                    Reintentar aquÃ­
                   </button>
                   <button type="button" className="generation-secondary-button" onClick={() => onGoLibrary?.()}>
                     Ver en Mis canciones
@@ -4679,8 +4757,8 @@ function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibra
                 <div className="generation-copy">
                   <div className="generation-title-row">
                     <div className="min-w-0">
-                      <h2 className="truncate">{String(song?.title || `Canción ${idx + 1}`)}</h2>
-                      <p>{idx === 0 ? 'Canción 1' : 'Canción 2'}</p>
+                      <h2 className="truncate">{String(song?.title || `CanciÃ³n ${idx + 1}`)}</h2>
+                      <p>{idx === 0 ? 'CanciÃ³n 1' : 'CanciÃ³n 2'}</p>
                     </div>
                     <span className={`generation-state-pill ${idx === 0 ? 'purple' : 'cyan'}`}>Lista</span>
                   </div>
@@ -4711,15 +4789,15 @@ function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibra
         <div className="audio-lyrics-notice info" style={{ marginTop: 16 }}>
           <Info size={18} />
           <div>
-            <div style={{ fontWeight: 900 }}>Tus canciones se guardarán durante 14 días en ‘Mis Canciones’.</div>
+            <div style={{ fontWeight: 900 }}>Tus canciones se guardarÃ¡n durante 14 dÃ­as en â€˜Mis Cancionesâ€™.</div>
           </div>
         </div>
       ) : null}
 
       <div className="generation-footer-banner">
         <div>
-          <strong>¿Qué quieres hacer ahora?</strong>
-          <span>Puedes escucharlas aquí o verlas en “Mis Canciones”.</span>
+          <strong>Â¿QuÃ© quieres hacer ahora?</strong>
+          <span>Puedes escucharlas aquÃ­ o verlas en â€œMis Cancionesâ€.</span>
         </div>
         <div className="generation-footer-actions">
           <button type="button" className="generation-link-button" onClick={() => onGoLibrary?.()}>
@@ -4727,10 +4805,10 @@ function CompletedSongsView({ title, songs, isLoading, error, onRetry, onGoLibra
             <ArrowRight size={18} />
           </button>
           <button type="button" className="generation-secondary-button" onClick={() => onRetry?.()}>
-            Reintentar cargar aquí
+            Reintentar cargar aquÃ­
           </button>
           <button type="button" className="generation-secondary-button" onClick={() => onCreateAnother?.()}>
-            Crear otra canción
+            Crear otra canciÃ³n
           </button>
         </div>
       </div>
@@ -4745,26 +4823,26 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
   const notificationPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
   const heroTitle =
     stage === 'failed'
-      ? 'No se pudo completar la generación'
+      ? 'No se pudo completar la generaciÃ³n'
       : stage === 'ready'
-        ? 'Tus 2 canciones ya están listas'
-        : '¡Se están generando tus 2 canciones!';
+        ? 'Tus 2 canciones ya estÃ¡n listas'
+        : 'Â¡Se estÃ¡n generando tus 2 canciones!';
   const heroSubtitle =
     stage === 'failed'
-      ? 'Ocurrió un error mientras LucIAna generaba tu canción.'
+      ? 'OcurriÃ³ un error mientras LucIAna generaba tu canciÃ³n.'
       : stage === 'ready'
         ? 'Ya puedes escucharlas en tu Biblioteca.'
         : 'Esto puede tardar unos minutos.';
   const heroMessage =
     stage === 'failed'
-      ? (session?.error || 'Intenta de nuevo o cambia un poco el audio / instrucción y vuelve a generar.')
+      ? (session?.error || 'Intenta de nuevo o cambia un poco el audio / instrucciÃ³n y vuelve a generar.')
       : stage === 'ready'
         ? 'Puedes abrir tu Biblioteca ahora mismo para escucharlas.'
-        : 'Puedes seguir usando LucIAna. Te avisaremos cuando estén listas.';
+        : 'Puedes seguir usando LucIAna. Te avisaremos cuando estÃ©n listas.';
   const providerPct = getProviderPct(pendingItem, session);
   const cards = [
-    { key: 'song-1', title: 'Canción 1', subtitle: 'Versión original', accent: 'purple' },
-    { key: 'song-2', title: 'Canción 2', subtitle: 'Segunda versión', accent: 'cyan' },
+    { key: 'song-1', title: 'CanciÃ³n 1', subtitle: 'VersiÃ³n original', accent: 'purple' },
+    { key: 'song-2', title: 'CanciÃ³n 2', subtitle: 'Segunda versiÃ³n', accent: 'cyan' },
   ];
 
   return (
@@ -4778,7 +4856,7 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
           <span className="generation-ai-chip"><MagicWand size={18} /></span>
           <div>
             <strong>Estamos usando IA avanzada de Suno</strong>
-            <span>para crear <em>dos versiones unicas</em> de tu canción.</span>
+            <span>para crear <em>dos versiones unicas</em> de tu canciÃ³n.</span>
           </div>
         </div>
       </div>
@@ -4788,13 +4866,13 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
           const cardStage = readyCount >= index + 1 ? 'ready' : stage;
           const done = cardStage === 'ready';
           const stageItems = getStageItems(cardStage);
-          const suffix = providerPct != null && cardStage !== 'ready' ? ` · ${Math.round(providerPct)}%` : '';
+          const suffix = providerPct != null && cardStage !== 'ready' ? ` Â· ${Math.round(providerPct)}%` : '';
           const pillLabel =
             cardStage === 'failed'
               ? 'Error'
               : cardStage === 'ready'
                 ? 'Lista'
-                : `${stageItems.find((x) => x.state === 'active')?.label || 'En generación'}${suffix}`;
+                : `${stageItems.find((x) => x.state === 'active')?.label || 'En generaciÃ³n'}${suffix}`;
           return (
             <article key={card.key} className={`generation-card ${card.accent} ${done ? 'done' : ''}`}>
               <div className="generation-card-main">
@@ -4817,10 +4895,10 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
                   </div>
                   <div className="generation-card-note">
                     {stage === 'failed'
-                      ? 'Ocurrió un error. No se hará redirección automática.'
+                      ? 'OcurriÃ³ un error. No se harÃ¡ redirecciÃ³n automÃ¡tica.'
                       : done
                         ? 'Audio real disponible en tu Biblioteca.'
-                        : 'LucIAna sigue consultando el estado real de la generación.'}
+                        : 'LucIAna sigue consultando el estado real de la generaciÃ³n.'}
                   </div>
                 </div>
               </div>
@@ -4852,7 +4930,7 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
           <div className="generation-tip-icon"><MusicNote size={20} /></div>
           <div className="generation-tip-copy">
             <strong>Consejo</strong>
-            <span>Puedes seguir usando la app mientras tanto. Te avisaremos cuando tus canciones estén listas.</span>
+            <span>Puedes seguir usando la app mientras tanto. Te avisaremos cuando tus canciones estÃ©n listas.</span>
           </div>
         </div>
 
@@ -4866,8 +4944,8 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
             <strong>Te notificaremos</strong>
             <span>
               {notificationPermission === 'denied'
-                ? 'Las notificaciones del navegador están bloqueadas. Seguiremos avisándote dentro de LucIAna.'
-                : 'Cuando estén listas'}
+                ? 'Las notificaciones del navegador estÃ¡n bloqueadas. Seguiremos avisÃ¡ndote dentro de LucIAna.'
+                : 'Cuando estÃ©n listas'}
             </span>
           </div>
           <span className={`notify-switch ${notificationsEnabled ? 'on' : ''}`} aria-hidden="true"><span /></span>
@@ -4876,8 +4954,8 @@ function GeneratingSongsView({ session, pendingItem, onGoLibrary, onToggleNotify
 
       <div className="generation-footer-banner">
         <div>
-          <strong>IA que crea. Tú que inspiras. LucIAna | Music</strong>
-          <span>{session?.title ? `Canción: ${session.title}` : 'Tu creatividad, potenciada por inteligencia artificial.'}</span>
+          <strong>IA que crea. TÃº que inspiras. LucIAna | Music</strong>
+          <span>{session?.title ? `CanciÃ³n: ${session.title}` : 'Tu creatividad, potenciada por inteligencia artificial.'}</span>
         </div>
         <div className="generation-footer-actions">
           <button type="button" className="generation-link-button" onClick={() => onGoLibrary?.()}>
@@ -5086,7 +5164,7 @@ const uploadAudioForVoice = async (token, file) => {
     const uploadUrl = (prepOut?.uploadUrl || '').toString().trim();
     const modo = String(prepOut?.via || '').toString().trim();
     if (modo === 'supabase_admin_inline' || !uploadUrl) {
-      if (!initialUrl) throw new Error('No recibí la URL final del audio en Supabase');
+      if (!initialUrl) throw new Error('No recibÃ­ la URL final del audio en Supabase');
       return { url: initialUrl, key };
     }
     const formData = new FormData();
@@ -5132,13 +5210,13 @@ const uploadAudioForVoice = async (token, file) => {
       }, timeoutPut);
     } catch (e) {
       if (isPutBlobDirect) throw e;
-      throw new Error('Fallo al subir el audio al bucket final. Revisa tu internet e inténtalo de nuevo.');
+      throw new Error('Fallo al subir el audio al bucket final. Revisa tu internet e intÃ©ntalo de nuevo.');
     }
     const putStatus = put ? put.status : 0;
     if (!put || putStatus < 200 || putStatus >= 300) {
       const textResp = put ? await put.text().catch(() => '') : '';
       const errOut = parseJsonSafe(textResp);
-      const msg = (errOut?.detail || errOut?.error || `No se completó la subida final (HTTP ${putStatus}).`).toString();
+      const msg = (errOut?.detail || errOut?.error || `No se completÃ³ la subida final (HTTP ${putStatus}).`).toString();
       throw new Error(msg);
     }
     let finalUrl = initialUrl;
@@ -5156,7 +5234,7 @@ const uploadAudioForVoice = async (token, file) => {
       }
       finalUrl = (signedOut?.url || '').toString().trim() || finalUrl;
     }
-    if (!finalUrl) throw new Error('No recibí la URL final del audio.');
+    if (!finalUrl) throw new Error('No recibÃ­ la URL final del audio.');
     return { url: finalUrl, key };
   } catch (e) {
     const msg = (e instanceof Error ? e.message : String(e || '')).toString();
@@ -5175,7 +5253,7 @@ const uploadAudioForVoice = async (token, file) => {
       const retryKey = (prepOut2?.key || '').toString().trim();
       const retryInitialUrl = (prepOut2?.url || '').toString().trim();
       if (!retryUploadUrl || !retryKey) {
-        throw new Error('No recibí la URL de subida final del audio.');
+        throw new Error('No recibÃ­ la URL de subida final del audio.');
       }
 
       const retryMethod = String(prepOut2?.uploadMethod || prepOut2?.via || 'POST_FORM').toUpperCase();
@@ -5221,7 +5299,7 @@ const uploadAudioForVoice = async (token, file) => {
       const retryPutText = await retryPut.text().catch(() => '');
       if (!retryPut.ok) {
         const retryErrOut = parseJsonSafe(retryPutText);
-        throw new Error((retryErrOut?.detail || retryErrOut?.error || `No se completó la subida final (HTTP ${retryPut.status}).`).toString());
+        throw new Error((retryErrOut?.detail || retryErrOut?.error || `No se completÃ³ la subida final (HTTP ${retryPut.status}).`).toString());
       }
 
       let retryFinalUrl = retryInitialUrl;
@@ -5240,7 +5318,7 @@ const uploadAudioForVoice = async (token, file) => {
         retryFinalUrl = (signedOut?.url || '').toString().trim() || retryFinalUrl;
       }
 
-      if (!retryFinalUrl) throw new Error('No recibí la URL final del audio.');
+      if (!retryFinalUrl) throw new Error('No recibÃ­ la URL final del audio.');
       return { url: retryFinalUrl, key: retryKey };
     }
     throw e;
@@ -5379,8 +5457,8 @@ function ApprovedCreateContent(props) {
     try {
       let raw = window.localStorage.getItem(draftKey);
       if (!raw && legacyDraftKey && legacyDraftKey !== draftKey) {
-        // Migración: el formato anterior guardaba un solo borrador por usuario.
-        // La primera ventana que abra la app lo adopta, para no perder la canción en curso.
+        // MigraciÃ³n: el formato anterior guardaba un solo borrador por usuario.
+        // La primera ventana que abra la app lo adopta, para no perder la canciÃ³n en curso.
         try {
           const legacyRaw = window.localStorage.getItem(legacyDraftKey);
           if (legacyRaw) {
@@ -5400,7 +5478,7 @@ function ApprovedCreateContent(props) {
       if (!key || !draftKey) return;
       const raw = window.localStorage.getItem(key);
       if (!raw) {
-        setToast('Ese borrador ya no está disponible.');
+        setToast('Ese borrador ya no estÃ¡ disponible.');
         return;
       }
       const parsed = JSON.parse(raw);
@@ -5408,7 +5486,7 @@ function ApprovedCreateContent(props) {
       try { window.localStorage.removeItem(key); } catch {}
       applyDraftPayload(parsed);
       setOrphanDrafts((prev) => prev.filter((item) => item.key !== key));
-      setToast('Recuperé la canción que estaba en esa otra ventana.');
+      setToast('RecuperÃ© la canciÃ³n que estaba en esa otra ventana.');
     } catch {
       setToast('No pude recuperar ese borrador.');
     }
@@ -5470,8 +5548,8 @@ function ApprovedCreateContent(props) {
     return () => window.clearTimeout(id);
   }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds]);
 
-  // Borradores de otras ventanas o de una pestaña que se cerró. No se borra nada:
-  // solo se ofrecen para recuperarlos cuando esta ventana está vacía.
+  // Borradores de otras ventanas o de una pestaÃ±a que se cerrÃ³. No se borra nada:
+  // solo se ofrecen para recuperarlos cuando esta ventana estÃ¡ vacÃ­a.
   useEffect(() => {
     if (!draftKey) { setOrphanDrafts([]); return; }
     try {
@@ -5633,8 +5711,8 @@ function ApprovedCreateContent(props) {
       const t = await getAccessToken();
       if (!t.ok) {
         if (requestVersion !== audioRequestVersionRef.current) return;
-        setAudioUploadError(t.error || 'No se pudo iniciar sesión.');
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setAudioUploadError(t.error || 'No se pudo iniciar sesiÃ³n.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return false;
       }
       if (requestVersion !== audioRequestVersionRef.current) return;
@@ -5653,7 +5731,7 @@ function ApprovedCreateContent(props) {
       const raw = e instanceof Error ? e.message : String(e || '');
       const looksLikeNetwork = /failed to fetch|networkerror|network error|load failed|fetch failed|typeerror.*failed|abort|timeout|net::/i.test(raw) || !raw.trim();
       const msg = looksLikeNetwork
-        ? 'No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e inténtalo de nuevo.'
+        ? 'No se pudo conectar con el servidor para subir tu audio. Revisa tu internet e intÃ©ntalo de nuevo.'
         : raw || 'No se pudo subir el audio.';
       setAudioUploadUrl('');
       setAudioUploadPath('');
@@ -5670,14 +5748,14 @@ function ApprovedCreateContent(props) {
     if (isGeneratingLyrics) return false;
     const topic = (forcedTopic || '').toString().trim() || data.lyricInstruction.trim() || data.style.trim() || data.lyrics.trim();
     if (!topic) {
-      setToast('Escribe primero en el cuadro de instrucción de qué quieres que trate la canción.');
+      setToast('Escribe primero en el cuadro de instrucciÃ³n de quÃ© quieres que trate la canciÃ³n.');
       return false;
     }
     setIsGeneratingLyrics(true);
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return false;
       }
       const response = await fetch('/api/ai/generate-lyrics', {
@@ -5690,7 +5768,7 @@ function ApprovedCreateContent(props) {
         }),
       });
       const result = await response.json().catch(() => ({}));
-      const userFriendly = 'No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.';
+      const userFriendly = 'No pudimos generar la letra automÃ¡ticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.';
       if (!response.ok || result?.ok === false) {
         const rawError = String(result?.error || result?.message || '').trim();
         console.warn('[generateLyricsWithAI] failed raw:', { ok: response.ok, status: response.status, result });
@@ -5712,7 +5790,7 @@ function ApprovedCreateContent(props) {
       return false;
     } catch (e) {
       console.error('[generateLyricsWithAI] exception:', e);
-      setToast('No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.');
+      setToast('No pudimos generar la letra automÃ¡ticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.');
       return false;
     } finally {
       setIsGeneratingLyrics(false);
@@ -5722,7 +5800,7 @@ function ApprovedCreateContent(props) {
   const handleBoostStyle = async () => {
     const content = (data.style || '').trim();
     if (!content) {
-      setToast('Escribe primero una instrucción musical para poder mejorarla.');
+      setToast('Escribe primero una instrucciÃ³n musical para poder mejorarla.');
       return false;
     }
     if (isBoostingStyle) return false;
@@ -5741,7 +5819,7 @@ function ApprovedCreateContent(props) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return false;
       }
       const r = await fetch('/api/suno/boost-style', {
@@ -5751,12 +5829,12 @@ function ApprovedCreateContent(props) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setToast((out?.detail || out?.error || 'No se pudo mejorar la instrucción.').toString());
+        setToast((out?.detail || out?.error || 'No se pudo mejorar la instrucciÃ³n.').toString());
         return false;
       }
       const result = (out?.result || out?.data?.result || '').toString().trim();
       if (!result) {
-        setToast('No recibí una instrucción mejorada.');
+        setToast('No recibÃ­ una instrucciÃ³n mejorada.');
         return false;
       }
       let finalResult = result;
@@ -5766,10 +5844,10 @@ function ApprovedCreateContent(props) {
         if (translatedBack) finalResult = translatedBack;
       }
       setData((prev) => ({ ...prev, style: finalResult, styleTranslated: false }));
-      setToast('Instrucción mejorada correctamente.');
+      setToast('InstrucciÃ³n mejorada correctamente.');
       return true;
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'No se pudo mejorar la instrucción.');
+      setToast(e instanceof Error ? e.message : 'No se pudo mejorar la instrucciÃ³n.');
       return false;
     } finally {
       setIsBoostingStyle(false);
@@ -5779,7 +5857,7 @@ function ApprovedCreateContent(props) {
   const handleTranslateStyle = async () => {
     const sourceText = (data.style || '').trim();
     if (!sourceText) {
-      setToast('Escribe primero una instrucción musical para poder traducirla.');
+      setToast('Escribe primero una instrucciÃ³n musical para poder traducirla.');
       return false;
     }
     if (isTranslatingStyle) return false;
@@ -5791,14 +5869,14 @@ function ApprovedCreateContent(props) {
       const result = await response.json().catch(() => ({}));
       const translatedText = (result?.responseData?.translatedText || '').toString().trim();
       if (!response.ok || !translatedText) {
-        setToast(targetLanguage === 'en' ? 'No se pudo traducir la instrucción al inglés.' : 'No se pudo traducir la instrucción al español.');
+        setToast(targetLanguage === 'en' ? 'No se pudo traducir la instrucciÃ³n al inglÃ©s.' : 'No se pudo traducir la instrucciÃ³n al espaÃ±ol.');
         return false;
       }
       setData((prev) => ({ ...prev, styleOriginal: sourceText, styleTranslated: true, style: translatedText }));
-      setToast(targetLanguage === 'en' ? 'Instrucción traducida al inglés.' : 'Instrucción traducida al español.');
+      setToast(targetLanguage === 'en' ? 'InstrucciÃ³n traducida al inglÃ©s.' : 'InstrucciÃ³n traducida al espaÃ±ol.');
       return true;
     } catch {
-      setToast(targetLanguage === 'en' ? 'No se pudo traducir la instrucción al inglés.' : 'No se pudo traducir la instrucción al español.');
+      setToast(targetLanguage === 'en' ? 'No se pudo traducir la instrucciÃ³n al inglÃ©s.' : 'No se pudo traducir la instrucciÃ³n al espaÃ±ol.');
       return false;
     } finally {
       setIsTranslatingStyle(false);
@@ -5821,7 +5899,7 @@ function ApprovedCreateContent(props) {
       }
     }
     const enabled = permission === 'granted';
-    if (enabled) setToast('Te notificaremos cuando estén listas.');
+    if (enabled) setToast('Te notificaremos cuando estÃ©n listas.');
     return enabled;
   };
 
@@ -5833,7 +5911,7 @@ function ApprovedCreateContent(props) {
     const prevLyrics = (data?.lyrics || '').toString();
 
     setIsTranscribingAudioLyrics(true);
-    setAudioLyricsStatus('Transcribiendo letra…');
+    setAudioLyricsStatus('Transcribiendo letraâ€¦');
 
     const markError = (msg, id) => {
       const next = [msg, id ? `(Error ${id})` : ''].filter(Boolean).join(' ').trim();
@@ -5894,7 +5972,7 @@ function ApprovedCreateContent(props) {
       const lyricsCandidate = (out?.lyrics || '').toString().trim();
 
       if (r.ok && out?.ok === true && lyricsCandidate.length > 0) {
-        // No sobrescribir si el usuario ya escribió manualmente y cambió desde antes
+        // No sobrescribir si el usuario ya escribiÃ³ manualmente y cambiÃ³ desde antes
         const currentLyrics = (data?.lyrics || '').toString();
         if (prevLyrics && prevLyrics.length > 0 && currentLyrics !== prevLyrics) {
           markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
@@ -5929,7 +6007,7 @@ function ApprovedCreateContent(props) {
       if (requestVersion !== audioRequestVersionRef.current) return;
       const isAbort = abortedByTimeout || (e instanceof DOMException && e.name === 'AbortError') || /abort|timeout|timed out/i.test(e instanceof Error ? e.message : String(e));
       if (abortedByTimeout || isAbort) {
-        markError('La transcripción tardó demasiado. Intenta de nuevo o escribe la letra manualmente.');
+        markError('La transcripciÃ³n tardÃ³ demasiado. Intenta de nuevo o escribe la letra manualmente.');
         return;
       }
       markError('No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.');
@@ -5960,7 +6038,7 @@ function ApprovedCreateContent(props) {
 
   const handleSubmitGenerate = async () => {
     if (isSubmitting) return false;
-    const normalizedSongTitle = (data.title || 'Nueva Canción').toString().trim().slice(0, 100) || 'Nueva Canción';
+    const normalizedSongTitle = (data.title || 'Nueva CanciÃ³n').toString().trim().slice(0, 100) || 'Nueva CanciÃ³n';
     const baseLyrics = data.lyrics.trim() ? normalizeLyricsTags(stripTitleFromLyrics(normalizedSongTitle, data.lyrics)) : '';
     const requiresUploadedAudio = data.audioSource === 'upload';
     const hasAudioCover = Boolean(audioUploadUrl);
@@ -5972,7 +6050,7 @@ function ApprovedCreateContent(props) {
       return false;
     }
     if (!hasAudioCover && !baseLyrics.trim() && !data.style.trim()) {
-      setToast('Necesitamos la letra o al menos una descripción del estilo para crear la canción.');
+      setToast('Necesitamos la letra o al menos una descripciÃ³n del estilo para crear la canciÃ³n.');
       return false;
     }
 
@@ -5990,16 +6068,16 @@ function ApprovedCreateContent(props) {
         userProfileCredits: (typeof window !== 'undefined' && window.__debugProfile && window.__debugProfile.credits) ? window.__debugProfile.credits : null,
       });
     } catch (_) {}
-    // GATE REMOVIDO: permitimos que SIEMPRE pase al handler de generación.
+    // GATE REMOVIDO: permitimos que SIEMPRE pase al handler de generaciÃ³n.
     // El backend (/api/mureka/generate, /api/suno/generate) es el juez final
-    // único del saldo real y descuenta los créditos formalmente en la DB.
+    // Ãºnico del saldo real y descuenta los crÃ©ditos formalmente en la DB.
     // Esto evita falsos positivos cuando el prop `credits` no llega sincronizado
-    // mientras el navbar sí muestra 1,322.
+    // mientras el navbar sÃ­ muestra 1,322.
     if (false && Number.isFinite(creditsNum) && creditsNum < costNum) {
       if (onOpenBalance) onOpenBalance();
       setCreditsGate({
-        title: 'Créditos insuficientes',
-        message: `Necesitas al menos ${costNum} créditos para generar una canción con el modelo seleccionado. Tu saldo actual es ${creditsNum.toFixed(1)}.`,
+        title: 'CrÃ©ditos insuficientes',
+        message: `Necesitas al menos ${costNum} crÃ©ditos para generar una canciÃ³n con el modelo seleccionado. Tu saldo actual es ${creditsNum.toFixed(1)}.`,
       });
       return false;
     }
@@ -6008,7 +6086,7 @@ function ApprovedCreateContent(props) {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
-        setToast(t.error || 'No se pudo iniciar sesión.');
+        setToast(t.error || 'No se pudo iniciar sesiÃ³n.');
         return false;
       }
 
@@ -6019,7 +6097,7 @@ function ApprovedCreateContent(props) {
         prompt = baseLyrics.trim() ? baseLyrics : (data.style.trim() || '');
       }
       if (!prompt) {
-        setToast('Escribe una descripción o letra para crear la canción.');
+        setToast('Escribe una descripciÃ³n o letra para crear la canciÃ³n.');
         return false;
       }
 
@@ -6033,21 +6111,21 @@ function ApprovedCreateContent(props) {
           ? (data.vocalGender === 'f' ? 'f' : data.vocalGender === 'm' ? 'm' : undefined)
           : undefined;
         if (hasAudioCover) {
-          setToast('Audio referencia no compatible con Mureka aún; solo se usará el estilo escrito.');
+          setToast('Audio referencia no compatible con Mureka aÃºn; solo se usarÃ¡ el estilo escrito.');
         }
         const mergedLower = `${data.style.toString().trim().toLowerCase()}\n${prompt.toLowerCase()}`;
         const genrePhrases = [
           'regional mexicano', 'corrido tumbado', 'corridos tumbados', 'corridos', 'corrido',
-          'banda', 'norteño', 'norteno', 'sierreño', 'mariachi', 'cumbia',
-          'reggaetón', 'reggaeton', 'salsa', 'bachata', 'merengue',
+          'banda', 'norteÃ±o', 'norteno', 'sierreÃ±o', 'mariachi', 'cumbia',
+          'reggaetÃ³n', 'reggaeton', 'salsa', 'bachata', 'merengue',
         ];
         const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
         const baseStyle = data.style.toString().trim();
         let finalStyle = baseStyle;
         if (!finalStyle) {
-          finalStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
+          finalStyle = inferredGenre ? `GÃ©nero: ${inferredGenre}` : 'General';
         } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
-          finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
+          finalStyle = `${baseStyle}\nGÃ©nero: ${inferredGenre}`;
         }
         const finalLyricsString = baseLyrics;
         const murekaPayload = {
@@ -6070,13 +6148,13 @@ function ApprovedCreateContent(props) {
         });
         const mOut = await mr.json().catch(() => ({}));
         if (!mr.ok) {
-          const msg = (mOut?.detail || mOut?.error || mOut?.message || 'No se pudo crear la canción con Mureka.').toString();
+          const msg = (mOut?.detail || mOut?.error || mOut?.message || 'No se pudo crear la canciÃ³n con Mureka.').toString();
           setToast(msg);
           return false;
         }
         const mTaskId = typeof mOut?.task_id === 'string' ? mOut.task_id : typeof mOut?.taskId === 'string' ? mOut.taskId : '';
         if (!mTaskId) {
-          setToast('No recibí taskId del servidor Mureka.');
+          setToast('No recibÃ­ taskId del servidor Mureka.');
           return false;
         }
         try {
@@ -6119,7 +6197,7 @@ function ApprovedCreateContent(props) {
               const qOut = await qr.json().catch(() => ({}));
               const status = String(qOut?.status || '').toLowerCase();
               if (status === 'failed') {
-                setToast(qOut?.message?.toString() || 'La generación con Mureka falló.');
+                setToast(qOut?.message?.toString() || 'La generaciÃ³n con Mureka fallÃ³.');
                 break;
               }
               if (status === 'succeeded') {
@@ -6133,7 +6211,7 @@ function ApprovedCreateContent(props) {
             }
           }
           if (attempt >= maxAttempts) {
-            setToast('La canción está tardando más de lo normal. Revísala en Mis canciones en unos minutos.');
+            setToast('La canciÃ³n estÃ¡ tardando mÃ¡s de lo normal. RevÃ­sala en Mis canciones en unos minutos.');
           }
         })();
         clearGenerationSession();
@@ -6167,17 +6245,17 @@ function ApprovedCreateContent(props) {
         const mergedLower = `${data.style.toString().trim().toLowerCase()}\n${prompt.toLowerCase()}`;
         const genrePhrases = [
           'regional mexicano', 'corrido tumbado', 'corridos tumbados', 'corridos', 'corrido',
-          'banda', 'norteño', 'norteno', 'sierreño', 'mariachi', 'cumbia',
-          'reggaetón', 'reggaeton', 'salsa', 'bachata', 'merengue',
+          'banda', 'norteÃ±o', 'norteno', 'sierreÃ±o', 'mariachi', 'cumbia',
+          'reggaetÃ³n', 'reggaeton', 'salsa', 'bachata', 'merengue',
         ];
         const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
         const baseStyle = data.style.toString().trim();
         const hasJazzMention = mergedLower.includes('jazz');
         let finalStyle = baseStyle;
         if (!finalStyle) {
-          finalStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
+          finalStyle = inferredGenre ? `GÃ©nero: ${inferredGenre}` : 'General';
         } else if (inferredGenre && !baseStyle.toLowerCase().includes(inferredGenre)) {
-          finalStyle = `${baseStyle}\nGénero: ${inferredGenre}`;
+          finalStyle = `${baseStyle}\nGÃ©nero: ${inferredGenre}`;
         }
         const styleWithGender = !hasSelectedVoice
           ? [finalStyle, requestedVocalGender ? `Voz deseada: ${requestedVocalGender === 'f' ? 'Femenino' : requestedVocalGender === 'm' ? 'Masculino' : 'Auto'}.` : ''].filter(Boolean).join('\n')
@@ -6232,20 +6310,20 @@ function ApprovedCreateContent(props) {
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = toUserFriendlySunoError(out, 'No se pudo crear la canción.');
+        const msg = toUserFriendlySunoError(out, 'No se pudo crear la canciÃ³n.');
         const raw = (out?.detail || out?.error || out?.message || '').toString().trim().toLowerCase();
-        const isPlanExpired = raw.includes('paquete vencio') || raw.includes('paquete venció') || (raw.includes('plan') && (raw.includes('vencio') || raw.includes('venció')));
-        const isCreditsExpired = raw.includes('creditos han vencido') || raw.includes('créditos han vencido') || raw.includes('tus creditos han vencido') || raw.includes('tus créditos han vencido');
+        const isPlanExpired = raw.includes('paquete vencio') || raw.includes('paquete venciÃ³') || (raw.includes('plan') && (raw.includes('vencio') || raw.includes('venciÃ³')));
+        const isCreditsExpired = raw.includes('creditos han vencido') || raw.includes('crÃ©ditos han vencido') || raw.includes('tus creditos han vencido') || raw.includes('tus crÃ©ditos han vencido');
         if (isPlanExpired || isCreditsExpired) {
           setCreditsGate({
-            title: isPlanExpired ? 'Plan vencido' : 'Créditos vencidos',
-            message: isPlanExpired ? 'Tu plan está vencido. Para seguir creando canciones, necesitas recargar.' : 'Tus créditos vencieron. Para seguir creando canciones, necesitas recargar.',
+            title: isPlanExpired ? 'Plan vencido' : 'CrÃ©ditos vencidos',
+            message: isPlanExpired ? 'Tu plan estÃ¡ vencido. Para seguir creando canciones, necesitas recargar.' : 'Tus crÃ©ditos vencieron. Para seguir creando canciones, necesitas recargar.',
           });
           return false;
         }
         const looksLikeVoiceExpired = raw.includes('voice has expired') || (raw.includes('voice') && raw.includes('expired')) || (raw.includes('persona') && raw.includes('expired'));
         if (hasSelectedVoice && looksLikeVoiceExpired) {
-          setToast('La voz que elegiste expiró. No se generó la canción. Ve al Clonador para repetir la validación de esa voz o elige otra voz.');
+          setToast('La voz que elegiste expirÃ³. No se generÃ³ la canciÃ³n. Ve al Clonador para repetir la validaciÃ³n de esa voz o elige otra voz.');
           return false;
         }
         setToast(msg);
@@ -6254,7 +6332,7 @@ function ApprovedCreateContent(props) {
 
       const taskId = typeof out?.taskId === 'string' ? out.taskId : '';
       if (!taskId) {
-        setToast('No recibí taskId del servidor.');
+        setToast('No recibÃ­ taskId del servidor.');
         return false;
       }
       try {
@@ -6287,7 +6365,7 @@ function ApprovedCreateContent(props) {
       if (onGoLibrary) onGoLibrary();
       return true;
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Error creando la canción');
+      setToast(e instanceof Error ? e.message : 'Error creando la canciÃ³n');
       return false;
     } finally {
       setIsSubmitting(false);
@@ -6315,6 +6393,9 @@ function ApprovedCreateContent(props) {
     onOpenBalance,
     onGoCloneVoice,
     credits,
+    // Clonar voz requiere al menos una recarga. El servidor manda si la cuenta
+    // alguna vez compro un paquete (cualquiera, incluido el mini).
+    hasPaid: props?.hasPaid !== false,
     hasPendingTask,
     audioUploadUrl,
     audioUploadError,
@@ -6362,12 +6443,12 @@ function ApprovedCreateContent(props) {
     if (!hasMeaningfulContent) return;
     if (typeof onShowAlert === 'function') {
       onShowAlert({
-        title: '¿Crear otra canción?',
-        message: 'Se eliminará el borrador actual y comenzarás una canción nueva. Esta acción no se puede deshacer.',
+        title: 'Â¿Crear otra canciÃ³n?',
+        message: 'Se eliminarÃ¡ el borrador actual y comenzarÃ¡s una canciÃ³n nueva. Esta acciÃ³n no se puede deshacer.',
         tone: 'warning',
         actions: [
           { label: 'Cancelar', kind: 'cancel' },
-          { label: 'Crear otra canción', kind: 'danger', onPress: resetForNewSong },
+          { label: 'Crear otra canciÃ³n', kind: 'danger', onPress: resetForNewSong },
         ],
       });
       return;
@@ -6384,12 +6465,12 @@ function ApprovedCreateContent(props) {
           <footer className="step-footer">
             {!hasMeaningfulContent && orphanDrafts.length > 0 ? (
               <button className="back-button" type="button" onClick={() => recoverOrphanDraft(orphanDrafts[0].key)}>
-                Recuperar canción anterior
+                Recuperar canciÃ³n anterior
               </button>
             ) : null}
             {hasMeaningfulContent ? (
               <button className="back-button reset-button" type="button" onClick={requestResetForNewSong}>
-                Crear otra canción
+                Crear otra canciÃ³n
               </button>
             ) : null}
             {step > 0 && (
@@ -6418,7 +6499,7 @@ function ApprovedCreateContent(props) {
           </div>
           {onOpenBalance && (
             <button onClick={() => { setCreditsGate(null); onOpenBalance(); }} style={{ padding: '10px 16px', borderRadius: 999, border: 0, cursor: 'pointer', fontWeight: 800, background: 'linear-gradient(to right, #fde047, #fb923c)', color: '#111' }}>
-              Obtener créditos
+              Obtener crÃ©ditos
             </button>
           )}
         </div>
@@ -6464,14 +6545,21 @@ const approvedCloneCss = approvedCss + `
 .approved-clone-shell .wizard-overlay{position:absolute}
 `;
 
-export function ApprovedCloneVoicePreview({ onClose }) {
+export function ApprovedCloneVoicePreview({ onClose, hasPaid = null }) {
+  // hasPaid === false => la cuenta nunca ha hecho una recarga: se muestra el aviso
+  // en lugar del Clonador. Si todavía no sabemos el dato (null) se deja pasar, para
+  // no molestar a quien ya pagó mientras carga el saldo.
   // In Android file pickers, this flow could crash during React cleanup when the
   // file input lived inside a portal mounted in a shadow root. Render it in the
   // regular tree to keep the DOM ownership stable while the picker opens/closes.
   return (
     <div style={{ height: "100%", minHeight: 0, width: "100%" }}>
       <style>{approvedCloneCss}</style>
-      <ApprovedCloneVoiceContent onClose={onClose} />
+      {hasPaid === false ? (
+        <CloneNeedsRecharge onClose={onClose} variant="page" />
+      ) : (
+        <ApprovedCloneVoiceContent onClose={onClose} />
+      )}
     </div>
   );
 }
