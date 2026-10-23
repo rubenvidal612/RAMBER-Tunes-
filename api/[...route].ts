@@ -19282,6 +19282,525 @@ const appHandler = (() => {
   };
 })();
 
+// =================== INTEGRACIONES (robot del CRM) ===================
+// API para el mini CRM: pide canciones cobrando a la cuenta del dueno, sin sesion
+// de usuario. Se autentica SOLO con LUCIANA_ROBOT_API_KEY (nunca con JWT de usuario).
+// Apagada por defecto: sin LUCIANA_ROBOT_ENABLED=1 responde 503 y no cobra nada.
+const ROBOT_TASK_KIND = "robot-cover";
+
+const integrationsHandler = (() => {
+  function sendJson(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.end(JSON.stringify(body));
+  }
+
+  function robotKey() {
+    return String(process.env.LUCIANA_ROBOT_API_KEY || "").trim();
+  }
+  function robotUserId() {
+    return String(process.env.LUCIANA_ROBOT_USER_ID || "").trim();
+  }
+  function robotEnabled() {
+    return String(process.env.LUCIANA_ROBOT_ENABLED || "").trim() === "1";
+  }
+  function intEnv(name: string, fallback: number) {
+    const n = Number(process.env[name]);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  }
+  const dailyCap = () => intEnv("LUCIANA_ROBOT_DAILY_CAP", 40);
+  const perMinuteCap = () => intEnv("LUCIANA_ROBOT_PER_MINUTE", 6);
+
+  function safeEqual(a: string, b: string) {
+    const x = String(a || "");
+    const y = String(b || "");
+    if (!x || !y || x.length !== y.length) return false;
+    let diff = 0;
+    for (let i = 0; i < x.length; i += 1) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+    return diff === 0;
+  }
+
+  function bearerToken(req: any) {
+    const raw = (req?.headers?.authorization || req?.headers?.Authorization || "").toString().trim();
+    return raw.toLowerCase().startsWith("bearer ") ? raw.slice(7).trim() : "";
+  }
+
+  function queryParam(req: any, key: string) {
+    try {
+      return (new URL(req.url, "http://localhost").searchParams.get(key) || "").toString();
+    } catch {
+      return "";
+    }
+  }
+
+  // Mexico ya no aplica horario de verano: medianoche local = 06:00 UTC.
+  function startOfTodayMexicoIso() {
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Mexico_City",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    return `${ymd}T06:00:00.000Z`;
+  }
+
+  function nextMidnightMexicoIso() {
+    const start = new Date(startOfTodayMexicoIso()).getTime();
+    return new Date(start + 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  async function readJsonBody(req: any): Promise<any | null> {
+    try {
+      const raw = (req as any).body;
+      if (raw == null) return {};
+      if (typeof raw === "string") {
+        const s = raw.trim();
+        return s ? JSON.parse(s) : {};
+      }
+      if (typeof Buffer !== "undefined" && Buffer.isBuffer(raw)) {
+        const s = raw.toString("utf8").trim();
+        return s ? JSON.parse(s) : {};
+      }
+      if (typeof raw === "object") return raw;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function getAdminClient() {
+    const createClient = await getSupabaseCreateClient();
+    const url = process.env.SUPABASE_URL || "";
+    const service = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!url || !service) return null;
+    return createClient(url, service, { auth: { persistSession: false } });
+  }
+
+  function normalizeProviderStatus(raw: any): string {
+    const s = String(raw || "").trim().toUpperCase();
+    if (!s) return "unknown";
+    if (s === "SUCCESS" || s === "COMPLETE" || s === "COMPLETED" || s === "FIRST_SUCCESS" || s === "AUDIO_READY") return "ready";
+    if (s.includes("FAIL") || s.includes("ERROR") || s === "SENSITIVE_WORD_ERROR") return "failed";
+    if (s.includes("GENERAT") || s.includes("TEXT_SUCCESS") || s.includes("RUNNING")) return "generating";
+    if (s.includes("PENDING") || s.includes("CREATE") || s.includes("SUBMIT") || s.includes("QUEUE")) return "pending";
+    return "unknown";
+  }
+
+  function extractTracks(provider: any) {
+    const clean = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+    const d = provider?.data || provider;
+    const candidates: any[] = [];
+    if (Array.isArray(d?.response?.data)) candidates.push(d.response.data);
+    if (Array.isArray(d?.response?.sunoData)) candidates.push(d.response.sunoData);
+    if (Array.isArray(d?.response)) candidates.push(d.response);
+    if (Array.isArray(d?.data)) candidates.push(d.data);
+    if (Array.isArray(d?.data?.data)) candidates.push(d.data.data);
+    if (Array.isArray(d?.sunoData)) candidates.push(d.sunoData);
+    const list: any[] = (candidates.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+    return list
+      .map((t: any, idx: number) => ({
+        idx,
+        title: clean(t?.title || ""),
+        audio_url: clean(
+          t?.audio_url || t?.audioUrl || t?.streamAudioUrl || t?.stream_audio_url || t?.stream_url || t?.url || t?.audio || "",
+        ),
+        duration: Number(t?.duration || 0) || null,
+        suno_audio_id: clean(t?.id || t?.audio_id || t?.audioId || ""),
+      }))
+      .filter((t) => Boolean(t.audio_url));
+  }
+
+  async function fetchProviderTask(taskId: string) {
+    const enc = encodeURIComponent(taskId);
+    const paths = [
+      `/api/v1/generate/record-info?taskId=${enc}`,
+      `/api/v1/suno/generate/record-info?taskId=${enc}`,
+      `/api/v1/task/${enc}`,
+      `/api/v1/suno/task/${enc}`,
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      try {
+        const r = await providerFetchJson(p, { method: "GET" });
+        last = r;
+        if (r?.res?.status !== 404) break;
+      } catch (e) {
+        return { res: null, data: null, text: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    return last;
+  }
+
+  async function handleGenerate(req: any, res: any) {
+    const body = await readJsonBody(req);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return sendJson(res, 400, { error: "invalid_body", message: "Body debe ser un objeto JSON." });
+    }
+
+    const requestId = String(body.request_id || "").trim();
+    if (!/^[A-Za-z0-9._-]{8,64}$/.test(requestId)) {
+      return sendJson(res, 400, {
+        error: "invalid_request_id",
+        field: "request_id",
+        message: "request_id es obligatorio: 8-64 caracteres [A-Za-z0-9._-].",
+      });
+    }
+
+    const audioUrl = String(body.audio_url || "").trim();
+    if (!audioUrl || !/^https:\/\//i.test(audioUrl)) {
+      return sendJson(res, 400, {
+        error: "invalid_audio_url",
+        field: "audio_url",
+        message: "audio_url es obligatorio y debe comenzar con https://",
+      });
+    }
+
+    const instrumental = Boolean(body.instrumental);
+    const lyrics = String(body.lyrics || "").trim();
+    if (!instrumental && !lyrics) {
+      return sendJson(res, 400, { error: "missing_lyrics", field: "lyrics", message: "Falta lyrics (o envía instrumental: true)." });
+    }
+    if (lyrics.length > 5000) {
+      return sendJson(res, 400, { error: "lyrics_too_long", field: "lyrics", message: "lyrics máximo 5.000 caracteres." });
+    }
+
+    const style = String(body.style || "").trim() || "General";
+    if (style.length > 1000) {
+      return sendJson(res, 400, { error: "style_too_long", field: "style", message: "style máximo 1.000 caracteres." });
+    }
+
+    const title = String(body.title || "").trim();
+    if (!title) return sendJson(res, 400, { error: "missing_title", field: "title", message: "title es obligatorio." });
+    if (title.length > 100) {
+      return sendJson(res, 400, { error: "title_too_long", field: "title", message: "title máximo 100 caracteres." });
+    }
+
+    const mode = String(body.mode || "review").trim().toLowerCase() === "auto" ? "auto" : "review";
+    const memberId = String(body.member_id || "").trim().slice(0, 120);
+    const clientId = String(body.client_id || "").trim().slice(0, 120);
+    const orderId = String(body.order_id || "").trim().slice(0, 120);
+    const personaId = String(body.persona_id || "").trim().slice(0, 200);
+    const model = String(body.model || "").trim().toUpperCase() || "V6";
+
+    const ownerId = robotUserId();
+    const admin = await getAdminClient();
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable", message: "Configuración de base de datos incompleta." });
+
+    // 1) Idempotencia: mismo request_id => mismo task_id, sin cobrar de nuevo.
+    try {
+      const existing = await admin
+        .from("suno_tasks")
+        .select("task_id, cost")
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_TASK_KIND)
+        .eq("client_attempt_id", requestId)
+        .limit(1);
+      const rowTask = String(existing?.data?.[0]?.task_id || "").trim();
+      if (!existing?.error && rowTask) {
+        const balance = await getUserAvailableCredits(admin, ownerId).catch(() => null);
+        return sendJson(res, 200, {
+          ok: true,
+          task_id: rowTask,
+          request_id: requestId,
+          mode,
+          credits_charged: Number(existing?.data?.[0]?.cost || 0),
+          balance_after: balance,
+          idempotent: true,
+        });
+      }
+    } catch {
+      /* si falla la consulta se sigue; el tope y el cobro aún protegen */
+    }
+
+    // 2) Topes: diario y por minuto.
+    try {
+      const dayRes = await admin
+        .from("suno_tasks")
+        .select("task_id", { count: "exact", head: true })
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_TASK_KIND)
+        .gte("created_at", startOfTodayMexicoIso());
+      const usedToday = Number((dayRes as any)?.count || 0);
+      if (usedToday >= dailyCap()) {
+        return sendJson(res, 429, {
+          error: "daily_cap_reached",
+          cap: dailyCap(),
+          used: usedToday,
+          retry_after: nextMidnightMexicoIso(),
+          message: "Se alcanzó el tope diario del robot.",
+        });
+      }
+      const minRes = await admin
+        .from("suno_tasks")
+        .select("task_id", { count: "exact", head: true })
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_TASK_KIND)
+        .gte("created_at", new Date(Date.now() - 60_000).toISOString());
+      if (Number((minRes as any)?.count || 0) >= perMinuteCap()) {
+        return sendJson(res, 429, {
+          error: "rate_limited",
+          per_minute: perMinuteCap(),
+          message: "Demasiadas peticiones por minuto.",
+        });
+      }
+    } catch {
+      /* si falla el conteo no se bloquea */
+    }
+
+    // 3) Cobro a la cuenta del dueño.
+    const cost = Number((CREDIT_COSTS as any).upload_and_cover || 12);
+    const consumed = await consumeUserCredits(admin, ownerId, cost);
+    if (!consumed.ok) {
+      const available = await getUserAvailableCredits(admin, ownerId).catch(() => 0);
+      return sendJson(res, 402, {
+        error: "insufficient_credits",
+        needed: cost,
+        available,
+        message: "La cuenta del robot no tiene créditos suficientes.",
+      });
+    }
+
+    const refund = async () => {
+      try {
+        await adjustUserCredits(admin, ownerId, cost);
+      } catch {
+        /* la devolución no debe tapar el error original */
+      }
+    };
+
+    // 4) Llamada al proveedor (mismo endpoint que el flujo de cover).
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const providerBody: any = {
+      model,
+      callBackUrl,
+      uploadUrl: audioUrl,
+      prompt: instrumental ? " " : lyrics.slice(0, 5000),
+      title: title.slice(0, 100),
+      style: style.slice(0, 1000),
+      tags: style.slice(0, 1000),
+      instrumental,
+      customMode: true,
+    };
+    if (personaId) {
+      providerBody.personaId = personaId;
+      providerBody.personaModel = "voice_persona";
+    }
+
+    const paths = [
+      "/api/v1/generate/upload-cover",
+      "/api/v1/upload-cover",
+      "/api/v1/suno/generate/upload-cover",
+      "/api/v1/suno/upload-cover",
+    ];
+    let last: any = null;
+    for (const p of paths) {
+      try {
+        const r = await providerFetchJson(p, { method: "POST", body: JSON.stringify(providerBody) });
+        last = r;
+        if (r?.res?.status !== 404) break;
+      } catch (e) {
+        last = { res: null, data: null, text: e instanceof Error ? e.message : String(e) };
+        break;
+      }
+    }
+
+    const provRes = last?.res;
+    if (!provRes || !provRes.ok) {
+      await refund();
+      return sendJson(res, 502, {
+        error: "provider_error",
+        status: provRes?.status || 0,
+        message: "El proveedor no aceptó la generación.",
+      });
+    }
+    const provCode = Number(last?.data?.code);
+    if (provCode && provCode !== 200) {
+      await refund();
+      return sendJson(res, 502, {
+        error: "provider_error",
+        code: provCode,
+        message: "El proveedor devolvió un error.",
+      });
+    }
+
+    const taskId = String(last?.data?.data?.taskId || "").trim();
+    if (!taskId) {
+      await refund();
+      return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+    }
+
+    // 5) Registro de la tarea con la trazabilidad del CRM.
+    const integration = {
+      request_id: requestId,
+      member_id: memberId,
+      client_id: clientId,
+      order_id: orderId,
+      mode,
+      source: "crm-robot",
+    };
+    const row: any = {
+      task_id: taskId,
+      user_id: ownerId,
+      kind: ROBOT_TASK_KIND,
+      cost,
+      consumed: true,
+      client_attempt_id: requestId,
+      extra: { integration, client_label: clientId || memberId || "" },
+    };
+    try {
+      const ins = await admin.from("suno_tasks").insert(row);
+      const err: any = (ins as any)?.error;
+      if (err) {
+        const code = String(err.code || "");
+        if (code === "23505") {
+          // Otra petición con el mismo request_id ganó: se devuelve esa y se devuelve el cobro.
+          const existing = await admin
+            .from("suno_tasks")
+            .select("task_id, cost")
+            .eq("user_id", ownerId)
+            .eq("kind", ROBOT_TASK_KIND)
+            .eq("client_attempt_id", requestId)
+            .limit(1);
+          const existingTask = String(existing?.data?.[0]?.task_id || "").trim();
+          await refund();
+          if (existingTask) {
+            const balance = await getUserAvailableCredits(admin, ownerId).catch(() => null);
+            return sendJson(res, 200, {
+              ok: true,
+              task_id: existingTask,
+              request_id: requestId,
+              mode,
+              credits_charged: Number(existing?.data?.[0]?.cost || 0),
+              balance_after: balance,
+              idempotent: true,
+            });
+          }
+        }
+      }
+    } catch {
+      /* si no se puede registrar, la generación ya está en marcha: se responde igual */
+    }
+
+    const balance = await getUserAvailableCredits(admin, ownerId).catch(() => null);
+    return sendJson(res, 200, {
+      ok: true,
+      task_id: taskId,
+      request_id: requestId,
+      mode,
+      credits_charged: cost,
+      balance_after: balance,
+      idempotent: false,
+    });
+  }
+
+  async function handleStatus(req: any, res: any) {
+    const taskId = queryParam(req, "task_id").trim() || queryParam(req, "taskId").trim();
+    if (!taskId) return sendJson(res, 400, { error: "missing_task_id", message: "Falta task_id." });
+
+    const ownerId = robotUserId();
+    const admin = await getAdminClient();
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable" });
+
+    let row: any = null;
+    try {
+      const q = await admin
+        .from("suno_tasks")
+        .select("task_id, cost, extra, created_at")
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_TASK_KIND)
+        .eq("task_id", taskId)
+        .limit(1);
+      row = (q?.data && q.data[0]) || null;
+    } catch {
+      row = null;
+    }
+    if (!row) return sendJson(res, 404, { error: "task_not_found", message: "No existe una tarea del robot con ese id." });
+
+    const extra = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const integration = (extra as any).integration && typeof (extra as any).integration === "object" ? (extra as any).integration : {};
+
+    const provider = await fetchProviderTask(taskId);
+    if (!provider?.res) {
+      return sendJson(res, 502, { error: "provider_unavailable", message: "No pude consultar el estado." });
+    }
+
+    const d = provider?.data?.data || {};
+    const rawStatus = d?.status ?? d?.successFlag ?? provider?.data?.status ?? "";
+    const tracks = extractTracks(provider?.data);
+    let status = normalizeProviderStatus(rawStatus);
+    if (status === "ready" && tracks.length === 0) status = "generating";
+
+    const songs = tracks.map((t, i) => ({
+      index: i + 1,
+      title: t.title || `${String(integration.client_id || "Canción")} (${i + 1})`,
+      audio_url: t.audio_url,
+      duration: t.duration,
+    }));
+
+    return sendJson(res, 200, {
+      ok: true,
+      task_id: taskId,
+      request_id: integration.request_id || null,
+      status,
+      mode: integration.mode || "review",
+      member_id: integration.member_id || null,
+      client_id: integration.client_id || null,
+      order_id: integration.order_id || null,
+      songs,
+    });
+  }
+
+  return async function handler(req: any, res: any) {
+    const method = (req.method || "GET").toUpperCase();
+    const action = (queryParam(req, "_action") || "").toLowerCase() ||
+      (() => {
+        try {
+          const parts = new URL(req.url, "http://localhost").pathname.split("/").filter(Boolean);
+          return (parts[parts.length - 1] || "").toLowerCase() === "generate"
+            ? "generate"
+            : (parts[parts.length - 1] || "").toLowerCase() === "status"
+            ? "status"
+            : "";
+        } catch {
+          return "";
+        }
+      })();
+
+    if (!robotKey() || !robotUserId()) {
+      return sendJson(res, 503, {
+        error: "robot_not_configured",
+        message: "Falta LUCIANA_ROBOT_API_KEY o LUCIANA_ROBOT_USER_ID en el servidor.",
+      });
+    }
+
+    if (!robotEnabled()) {
+      return sendJson(res, 503, {
+        error: "robot_disabled",
+        message: "El robot está apagado (LUCIANA_ROBOT_ENABLED != 1).",
+      });
+    }
+
+    const token = bearerToken(req);
+    if (!safeEqual(token, robotKey())) {
+      return sendJson(res, 401, { error: "unauthorized", message: "Llave inválida." });
+    }
+
+    if (action === "generate") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      return handleGenerate(req, res);
+    }
+    if (action === "status") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa GET." });
+      return handleStatus(req, res);
+    }
+    return sendJson(res, 404, {
+      error: "not_found",
+      message: "Rutas del robot: POST /api/integrations/generate y GET /api/integrations/status?task_id=...",
+    });
+  };
+})();
+
 const kitsVoicesHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -25506,6 +26025,7 @@ export default async function handler(req: any, res: any) {
 
       return sendJson(200, out);
     }
+    if (head === "integrations") return integrationsHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-voice-sample") return replicateVoiceSampleWebhookHandler(req, res);
