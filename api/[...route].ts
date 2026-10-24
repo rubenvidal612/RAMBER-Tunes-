@@ -19350,25 +19350,48 @@ const integrationsHandler = (() => {
     return new Date(start + 24 * 60 * 60 * 1000).toISOString();
   }
 
-  // Lee el cuerpo crudo sin depender de que el runtime lo haya pre-parseado.
-  // Si req.body ya trae algo se usa; si no, se lee el stream con un tope de tiempo
-  // para no colgar la peticion.
-  async function readRawBodyString(req: any): Promise<string> {
-    const body = (req as any).body;
-    if (body != null) {
-      if (typeof body === "string") return body;
-      if (typeof Buffer !== "undefined" && Buffer.isBuffer(body)) return body.toString("utf8");
-      if (body instanceof Uint8Array) return Buffer.from(body).toString("utf8");
-      if (typeof body === "object") {
-        try {
-          return JSON.stringify(body);
-        } catch {
-          return "";
-        }
+  // Lee el cuerpo crudo sin depender de Buffer ni de que el runtime lo haya
+  // pre-parseado. Usa TextDecoder (existe tanto en Node como en Edge).
+  let bodyReadDebug: any = null;
+
+  function bytesToString(raw: any): string {
+    if (raw == null) return "";
+    if (typeof raw === "string") return raw;
+    try {
+      if (raw instanceof Uint8Array) return new TextDecoder("utf-8").decode(raw);
+    } catch {
+      return "";
+    }
+    if (typeof raw === "object") {
+      try {
+        return JSON.stringify(raw);
+      } catch {
+        return "";
       }
     }
+    return "";
+  }
 
-    const chunks: any[] = [];
+  async function readRawBodyString(req: any): Promise<string> {
+    const body = (req as any).body;
+    bodyReadDebug = {
+      bodyType: body == null ? "null" : typeof body,
+      isBytes: (() => {
+        try {
+          return body instanceof Uint8Array;
+        } catch {
+          return false;
+        }
+      })(),
+      bodyLen: Number((body && (body.length ?? body.byteLength)) || 0),
+      hasOn: typeof (req as any)?.on === "function",
+    };
+    if (body != null) {
+      const direct = bytesToString(body);
+      if (direct) return direct;
+    }
+
+    const chunks: Uint8Array[] = [];
     const readPromise = new Promise<void>((resolve) => {
       let settled = false;
       const finish = () => {
@@ -19379,8 +19402,11 @@ const integrationsHandler = (() => {
       try {
         if (typeof (req as any).on !== "function") return finish();
         (req as any).on("data", (c: any) => {
-          if (!c) return;
-          chunks.push(typeof Buffer !== "undefined" && Buffer.isBuffer(c) ? c : Buffer.from(c));
+          try {
+            if (c instanceof Uint8Array) chunks.push(c);
+          } catch {
+            /* chunks ilegibles se ignoran */
+          }
         });
         (req as any).on("end", finish);
         (req as any).on("error", finish);
@@ -19389,11 +19415,18 @@ const integrationsHandler = (() => {
         finish();
       }
     });
-
-    // Nunca esperar mas de 2s: mejor responder con lo que haya que colgar la peticion.
     await Promise.race([readPromise, new Promise<void>((r) => setTimeout(r, 2000))]);
+    if (bodyReadDebug) bodyReadDebug.streamChunks = chunks.length;
+    if (!chunks.length) return "";
     try {
-      return chunks.length ? Buffer.concat(chunks as any).toString("utf8") : "";
+      const total = chunks.reduce((n, c) => n + c.length, 0);
+      const all = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) {
+        all.set(c, off);
+        off += c.length;
+      }
+      return new TextDecoder("utf-8").decode(all);
     } catch {
       return "";
     }
@@ -19402,6 +19435,7 @@ const integrationsHandler = (() => {
   async function readJsonBody(req: any): Promise<any | null> {
     try {
       const s = (await readRawBodyString(req)).trim();
+      if (bodyReadDebug) bodyReadDebug.sample = s.slice(0, 40);
       if (!s) return {};
       if (s.startsWith("{") || s.startsWith("[")) return JSON.parse(s);
       // Tolerancia: si llega como formulario, se convierte a objeto.
@@ -19414,7 +19448,8 @@ const integrationsHandler = (() => {
         return null;
       }
       return Object.keys(out).length ? out : null;
-    } catch {
+    } catch (e) {
+      if (bodyReadDebug) bodyReadDebug.parseError = e instanceof Error ? e.message : String(e);
       return null;
     }
   }
@@ -19485,7 +19520,11 @@ const integrationsHandler = (() => {
   async function handleGenerate(req: any, res: any) {
     const body = await readJsonBody(req);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return sendJson(res, 400, { error: "invalid_body", message: "Body debe ser un objeto JSON." });
+      return sendJson(res, 400, {
+        error: "invalid_body",
+        message: "Body debe ser un objeto JSON.",
+        debug: bodyReadDebug,
+      });
     }
 
     const requestId = String(body.request_id || "").trim();
