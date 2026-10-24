@@ -19564,20 +19564,14 @@ const integrationsHandler = (() => {
     }
 
     const audioUrl = String(body.audio_url || "").trim();
-    const personaIdEarly = String(body.persona_id || "").trim().slice(0, 200);
+    // Se puede generar de tres formas: con audio (cover), con voz clonada, o
+    // desde cero solo con letra y estilo. Antes se exigía audio o persona_id y
+    // eso bloqueaba las canciones nuevas, que no llevan muestra.
     if (audioUrl && !/^https:\/\//i.test(audioUrl)) {
       return sendJson(res, 400, {
         error: "invalid_audio_url",
         field: "audio_url",
         message: "audio_url debe comenzar con https://",
-      });
-    }
-    // Se puede generar con audio (cover), con voz clonada, o con las dos cosas.
-    if (!audioUrl && !personaIdEarly) {
-      return sendJson(res, 400, {
-        error: "missing_source",
-        field: "audio_url",
-        message: "Falta audio_url, o persona_id para generar solo con la voz clonada.",
       });
     }
 
@@ -19908,6 +19902,8 @@ const integrationsHandler = (() => {
       order_id: integration.order_id || null,
       paid: integration.paid === true,
       voice_id: integration.persona_id || null,
+      error_code: pickString(d, ["errorCode", "error_code"]) || null,
+      error_message: pickString(d, ["errorMessage", "error_message", "failReason", "fail_reason"]) || null,
       songs,
     });
   }
