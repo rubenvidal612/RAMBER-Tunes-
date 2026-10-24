@@ -19791,6 +19791,7 @@ const integrationsHandler = (() => {
       order_id: orderId,
       mode,
       paid: paidOrder,
+      persona_id: personaId || null,
       source: "crm-robot",
     };
     const row: any = {
@@ -19901,6 +19902,8 @@ const integrationsHandler = (() => {
       member_id: integration.member_id || null,
       client_id: integration.client_id || null,
       order_id: integration.order_id || null,
+      paid: integration.paid === true,
+      voice_id: integration.persona_id || null,
       songs,
     });
   }
