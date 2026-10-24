@@ -19635,9 +19635,12 @@ const integrationsHandler = (() => {
     }
 
     // 2) Topes: intentos por pedido, diario y por minuto.
-    //    El cobro es por cancion generada, asi que el tope por pedido es el que
-    //    evita que un cliente gaste de mas por equivocacion.
-    const maxAttempts = intEnv("LUCIANA_ROBOT_MAX_ATTEMPTS", 2);
+    //    El cobro es por cancion generada. Antes de pagar solo hay 2 intentos;
+    //    cuando el CRM confirma el pago (paid: true) no hay limite por pedido.
+    const paidOrder = body.paid === true || String(body.paid || "").toLowerCase() === "true";
+    const maxAttempts = paidOrder
+      ? intEnv("LUCIANA_ROBOT_MAX_ATTEMPTS_PAID", 0) // 0 = sin limite
+      : intEnv("LUCIANA_ROBOT_MAX_ATTEMPTS_UNPAID", 2);
     if (orderId && maxAttempts > 0) {
       try {
         const att = await admin
@@ -19787,6 +19790,7 @@ const integrationsHandler = (() => {
       client_id: clientId,
       order_id: orderId,
       mode,
+      paid: paidOrder,
       source: "crm-robot",
     };
     const row: any = {
