@@ -19287,6 +19287,8 @@ const appHandler = (() => {
 // de usuario. Se autentica SOLO con LUCIANA_ROBOT_API_KEY (nunca con JWT de usuario).
 // Apagada por defecto: sin LUCIANA_ROBOT_ENABLED=1 responde 503 y no cobra nada.
 const ROBOT_TASK_KIND = "robot-cover";
+const ROBOT_VOICE_VALIDATE_KIND = "robot-voice-validate";
+const ROBOT_VOICE_GENERATE_KIND = "robot-voice-generate";
 
 const integrationsHandler = (() => {
   function sendJson(res: any, status: number, body: any) {
@@ -19558,11 +19560,20 @@ const integrationsHandler = (() => {
     }
 
     const audioUrl = String(body.audio_url || "").trim();
-    if (!audioUrl || !/^https:\/\//i.test(audioUrl)) {
+    const personaIdEarly = String(body.persona_id || "").trim().slice(0, 200);
+    if (audioUrl && !/^https:\/\//i.test(audioUrl)) {
       return sendJson(res, 400, {
         error: "invalid_audio_url",
         field: "audio_url",
-        message: "audio_url es obligatorio y debe comenzar con https://",
+        message: "audio_url debe comenzar con https://",
+      });
+    }
+    // Se puede generar con audio (cover), con voz clonada, o con las dos cosas.
+    if (!audioUrl && !personaIdEarly) {
+      return sendJson(res, 400, {
+        error: "missing_source",
+        field: "audio_url",
+        message: "Falta audio_url, o persona_id para generar solo con la voz clonada.",
       });
     }
 
@@ -19684,7 +19695,6 @@ const integrationsHandler = (() => {
     const providerBody: any = {
       model,
       callBackUrl,
-      uploadUrl: audioUrl,
       prompt: instrumental ? " " : lyrics.slice(0, 5000),
       title: title.slice(0, 100),
       style: style.slice(0, 1000),
@@ -19692,17 +19702,21 @@ const integrationsHandler = (() => {
       instrumental,
       customMode: true,
     };
+    // El audio solo va cuando existe: con voz clonada y sin audio se genera directo.
+    if (audioUrl) providerBody.uploadUrl = audioUrl;
     if (personaId) {
       providerBody.personaId = personaId;
       providerBody.personaModel = "voice_persona";
     }
 
-    const paths = [
-      "/api/v1/generate/upload-cover",
-      "/api/v1/upload-cover",
-      "/api/v1/suno/generate/upload-cover",
-      "/api/v1/suno/upload-cover",
-    ];
+    const paths = audioUrl
+      ? [
+          "/api/v1/generate/upload-cover",
+          "/api/v1/upload-cover",
+          "/api/v1/suno/generate/upload-cover",
+          "/api/v1/suno/upload-cover",
+        ]
+      : ["/api/v1/generate", "/api/v1/suno/generate"];
     let last: any = null;
     for (const p of paths) {
       try {
@@ -19861,6 +19875,258 @@ const integrationsHandler = (() => {
     });
   }
 
+  // ---------- Voz clonada (Suno Voice) ----------
+  // Flujo Suno: 1) mandas la muestra -> Suno devuelve una FRASE de verificacion.
+  //             2) el cliente canta esa frase y se manda -> Suno crea la voz.
+
+  const VOICE_PATHS_VALIDATE = ["/api/v1/voice/validate", "/api/v1/suno/voice/validate", "/api/v1/validate"];
+  const VOICE_PATHS_GENERATE = ["/api/v1/voice/generate", "/api/v1/suno/voice/generate", "/api/v1/voice"];
+  const VOICE_PATHS_VALIDATE_INFO = ["/api/v1/voice/validate-info", "/api/v1/suno/voice/validate-info"];
+  const VOICE_PATHS_RECORD_INFO = ["/api/v1/voice/record-info", "/api/v1/suno/voice/record-info"];
+
+  function pickString(obj: any, keys: string[]): string {
+    for (const k of keys) {
+      const v = obj?.[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  }
+
+  async function providerFirst(paths: string[], init?: any) {
+    let last: any = null;
+    for (const p of paths) {
+      try {
+        const r = await providerFetchJson(p, init);
+        last = r;
+        if (r?.res?.status !== 404) break;
+      } catch (e) {
+        return { res: null, data: null, text: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    return last;
+  }
+
+  async function handleVoicePhrase(req: any, res: any) {
+    const parsed = await readJsonBodySafe(req);
+    const body = parsed.value;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return sendJson(res, 400, { error: "invalid_body", message: "Body debe ser un objeto JSON.", debug: parsed.debug });
+    }
+
+    const requestId = String(body.request_id || "").trim();
+    if (!/^[A-Za-z0-9._-]{8,64}$/.test(requestId)) {
+      return sendJson(res, 400, { error: "invalid_request_id", field: "request_id", message: "request_id obligatorio (8-64)." });
+    }
+    const audioUrl = String(body.audio_url || "").trim();
+    if (!audioUrl || !/^https:\/\//i.test(audioUrl)) {
+      return sendJson(res, 400, { error: "invalid_audio_url", field: "audio_url", message: "Falta la grabación a capela (https)." });
+    }
+    const duration = Number(body.duration_seconds || body.duration || 0);
+    const language = String(body.language || "es").trim().slice(0, 10) || "es";
+
+    const ownerId = robotUserId();
+    const admin = await getAdminClient();
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable" });
+
+    try {
+      const existing = await admin
+        .from("suno_tasks")
+        .select("task_id")
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_VOICE_VALIDATE_KIND)
+        .eq("client_attempt_id", requestId)
+        .limit(1);
+      const rowTask = String(existing?.data?.[0]?.task_id || "").trim();
+      if (!existing?.error && rowTask) {
+        return sendJson(res, 200, { ok: true, task_id: rowTask, status: "pending", idempotent: true });
+      }
+    } catch {
+      /* sin idempotencia disponible: sigue */
+    }
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const providerBody: any = { voiceUrl: audioUrl, uploadUrl: audioUrl, language, callBackUrl };
+    if (Number.isFinite(duration) && duration > 0) {
+      providerBody.vocalStartS = 0;
+      providerBody.vocalEndS = Math.floor(duration);
+    }
+
+    const last = await providerFirst(VOICE_PATHS_VALIDATE, { method: "POST", body: JSON.stringify(providerBody) });
+    if (!last?.res?.ok) {
+      return sendJson(res, 502, {
+        error: "provider_error",
+        status: last?.res?.status || 0,
+        message: "El proveedor no aceptó la muestra de voz.",
+      });
+    }
+    const taskId = pickString(last?.data?.data || {}, ["taskId", "task_id"]);
+    if (!taskId) return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+
+    try {
+      await admin.from("suno_tasks").insert({
+        task_id: taskId,
+        user_id: ownerId,
+        kind: ROBOT_VOICE_VALIDATE_KIND,
+        cost: 0,
+        consumed: false,
+        client_attempt_id: requestId,
+        extra: { integration: { request_id: requestId, step: "voice-phrase", language } },
+      });
+    } catch {
+      /* si no se puede registrar, el flujo sigue */
+    }
+
+    return sendJson(res, 200, { ok: true, task_id: taskId, status: "pending", idempotent: false });
+  }
+
+  async function handleVoiceClone(req: any, res: any) {
+    const parsed = await readJsonBodySafe(req);
+    const body = parsed.value;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return sendJson(res, 400, { error: "invalid_body", message: "Body debe ser un objeto JSON.", debug: parsed.debug });
+    }
+
+    const requestId = String(body.request_id || "").trim();
+    if (!/^[A-Za-z0-9._-]{8,64}$/.test(requestId)) {
+      return sendJson(res, 400, { error: "invalid_request_id", field: "request_id", message: "request_id obligatorio (8-64)." });
+    }
+    const validateTaskId = String(body.validate_task_id || body.task_id || "").trim();
+    if (!validateTaskId) {
+      return sendJson(res, 400, { error: "missing_validate_task", field: "validate_task_id", message: "Falta validate_task_id (el de la frase)." });
+    }
+    const verifyUrl = String(body.verify_audio_url || body.verify_url || "").trim();
+    if (!verifyUrl || !/^https:\/\//i.test(verifyUrl)) {
+      return sendJson(res, 400, { error: "invalid_verify_audio", field: "verify_audio_url", message: "Falta la grabación de la frase (https)." });
+    }
+    const voiceName = String(body.voice_name || body.voiceName || "").trim().slice(0, 100);
+    if (!voiceName) {
+      return sendJson(res, 400, { error: "missing_voice_name", field: "voice_name", message: "Falta voice_name (nombre de la voz)." });
+    }
+
+    const ownerId = robotUserId();
+    const admin = await getAdminClient();
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable" });
+
+    try {
+      const existing = await admin
+        .from("suno_tasks")
+        .select("task_id, cost")
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_VOICE_GENERATE_KIND)
+        .eq("client_attempt_id", requestId)
+        .limit(1);
+      const rowTask = String(existing?.data?.[0]?.task_id || "").trim();
+      if (!existing?.error && rowTask) {
+        return sendJson(res, 200, { ok: true, task_id: rowTask, status: "pending", idempotent: true });
+      }
+    } catch {
+      /* sigue */
+    }
+
+    // Costo configurable. Por defecto 0: en la tabla de costos "generate_persona" es 0.
+    const cost = Number(process.env.LUCIANA_ROBOT_VOICE_COST || 0);
+    const charge = Number.isFinite(cost) && cost > 0 ? round2(cost) : 0;
+    if (charge > 0) {
+      const consumed = await consumeUserCredits(admin, ownerId, charge);
+      if (!consumed.ok) {
+        const available = await getUserAvailableCredits(admin, ownerId).catch(() => 0);
+        return sendJson(res, 402, { error: "insufficient_credits", needed: charge, available, message: "La cuenta del robot no tiene créditos suficientes." });
+      }
+    }
+
+    const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
+    const providerBody: any = { taskId: validateTaskId, verifyUrl, voiceName, callBackUrl };
+    const last = await providerFirst(VOICE_PATHS_GENERATE, { method: "POST", body: JSON.stringify(providerBody) });
+
+    const refund = async () => {
+      if (charge <= 0) return;
+      try {
+        await adjustUserCredits(admin, ownerId, charge);
+      } catch {
+        /* no tapar el error original */
+      }
+    };
+
+    if (!last?.res?.ok) {
+      await refund();
+      return sendJson(res, 502, { error: "provider_error", status: last?.res?.status || 0, message: "El proveedor no pudo crear la voz." });
+    }
+    const taskId = pickString(last?.data?.data || {}, ["taskId", "task_id"]);
+    if (!taskId) {
+      await refund();
+      return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+    }
+
+    try {
+      await admin.from("suno_tasks").insert({
+        task_id: taskId,
+        user_id: ownerId,
+        kind: ROBOT_VOICE_GENERATE_KIND,
+        cost: charge,
+        consumed: charge > 0,
+        client_attempt_id: requestId,
+        extra: { integration: { request_id: requestId, step: "voice-clone", validate_task_id: validateTaskId, voice_name: voiceName } },
+      });
+    } catch {
+      /* sigue */
+    }
+
+    return sendJson(res, 200, { ok: true, task_id: taskId, status: "pending", credits_charged: charge, idempotent: false });
+  }
+
+  async function handleVoiceStatus(req: any, res: any) {
+    const taskId = (queryParam(req, "task_id") || queryParam(req, "taskId") || "").trim();
+    if (!taskId) return sendJson(res, 400, { error: "missing_task_id", message: "Falta task_id." });
+
+    const ownerId = robotUserId();
+    const admin = await getAdminClient();
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable" });
+
+    let row: any = null;
+    try {
+      const q = await admin
+        .from("suno_tasks")
+        .select("task_id, kind, extra, cost")
+        .eq("user_id", ownerId)
+        .eq("task_id", taskId)
+        .in("kind", [ROBOT_VOICE_VALIDATE_KIND, ROBOT_VOICE_GENERATE_KIND])
+        .limit(1);
+      row = (q?.data && q.data[0]) || null;
+    } catch {
+      row = null;
+    }
+    if (!row) return sendJson(res, 404, { error: "task_not_found", message: "No existe una tarea de voz con ese id." });
+
+    const isValidate = String(row.kind) === ROBOT_VOICE_VALIDATE_KIND;
+    const enc = encodeURIComponent(taskId);
+    const paths = isValidate
+      ? VOICE_PATHS_VALIDATE_INFO.map((p) => `${p}?taskId=${enc}`)
+      : VOICE_PATHS_RECORD_INFO.map((p) => `${p}?taskId=${enc}`);
+
+    const provider = await providerFirst(paths, { method: "GET" });
+    if (!provider?.res) {
+      return sendJson(res, 502, { error: "provider_unavailable", message: "No pude consultar el estado." });
+    }
+
+    const d = provider?.data?.data || {};
+    const rawStatus = d?.status ?? d?.successFlag ?? provider?.data?.status ?? "";
+    const status = normalizeProviderStatus(rawStatus);
+    const phrase = pickString(d, ["phrase", "verifyPhrase", "verify_phrase", "text", "validationPhrase", "validation_phrase"]);
+    const voiceId = pickString(d, ["voiceId", "voice_id", "id"]);
+
+    return sendJson(res, 200, {
+      ok: true,
+      task_id: taskId,
+      step: isValidate ? "voice-phrase" : "voice-clone",
+      status,
+      phrase: phrase || null,
+      voice_id: voiceId || null,
+      credits_charged: Number(row.cost || 0) || 0,
+      error_code: pickString(d, ["errorCode", "error_code"]) || null,
+      error_message: pickString(d, ["errorMessage", "error_message"]) || null,
+    });
+  }
+
   return async function handler(req: any, res: any) {
     const method = (req.method || "GET").toUpperCase();
     const action = (queryParam(req, "_action") || "").toLowerCase() ||
@@ -19903,6 +20169,18 @@ const integrationsHandler = (() => {
     if (action === "status") {
       if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa GET." });
       return handleStatus(req, res);
+    }
+    if (action === "voice-phrase") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      return handleVoicePhrase(req, res);
+    }
+    if (action === "voice-clone") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      return handleVoiceClone(req, res);
+    }
+    if (action === "voice-status") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa GET." });
+      return handleVoiceStatus(req, res);
     }
     return sendJson(res, 404, {
       error: "not_found",
