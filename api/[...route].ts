@@ -19433,24 +19433,44 @@ const integrationsHandler = (() => {
   }
 
   async function readJsonBody(req: any): Promise<any | null> {
+    const out = await readJsonBodySafe(req);
+    return out.value;
+  }
+
+  // Devuelve el valor y su diagnostico. Se usa en el endpoint para poder ver
+  // exactamente que paso cuando el cuerpo no se puede leer.
+  async function readJsonBodySafe(req: any): Promise<{ value: any | null; debug: any }> {
+    const debug: any = {};
     try {
+      const raw = (req as any).body;
+      debug.bodyType = raw == null ? "null" : typeof raw;
+      debug.isBytes = (() => {
+        try {
+          return raw instanceof Uint8Array;
+        } catch {
+          return false;
+        }
+      })();
+      debug.bodyLen = Number((raw && (raw.length ?? raw.byteLength)) || 0);
+      const fnType = typeof readRawBodyString;
+      debug.readerType = fnType;
       const s = (await readRawBodyString(req)).trim();
-      if (bodyReadDebug) bodyReadDebug.sample = s.slice(0, 40);
-      if (!s) return {};
-      if (s.startsWith("{") || s.startsWith("[")) return JSON.parse(s);
-      // Tolerancia: si llega como formulario, se convierte a objeto.
-      const out: any = {};
+      debug.len = s.length;
+      debug.sample = s.slice(0, 40);
+      if (!s) return { value: {}, debug };
+      if (s.startsWith("{") || s.startsWith("[")) return { value: JSON.parse(s), debug };
+      const form: any = {};
       try {
         new URLSearchParams(s).forEach((v, k) => {
-          out[k] = v;
+          form[k] = v;
         });
       } catch {
-        return null;
+        return { value: null, debug };
       }
-      return Object.keys(out).length ? out : null;
+      return { value: Object.keys(form).length ? form : null, debug };
     } catch (e) {
-      if (bodyReadDebug) bodyReadDebug.parseError = e instanceof Error ? e.message : String(e);
-      return null;
+      debug.error = e instanceof Error ? e.message : String(e);
+      return { value: null, debug };
     }
   }
 
@@ -19518,12 +19538,13 @@ const integrationsHandler = (() => {
   }
 
   async function handleGenerate(req: any, res: any) {
-    const body = await readJsonBody(req);
+    const parsedBody = await readJsonBodySafe(req);
+    const body = parsedBody.value;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return sendJson(res, 400, {
         error: "invalid_body",
         message: "Body debe ser un objeto JSON.",
-        debug: bodyReadDebug,
+        debug: parsedBody.debug,
       });
     }
 
