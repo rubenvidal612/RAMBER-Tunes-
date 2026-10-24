@@ -20155,19 +20155,15 @@ const integrationsHandler = (() => {
 
   return async function handler(req: any, res: any) {
     const method = (req.method || "GET").toUpperCase();
-    const action = (queryParam(req, "_action") || "").toLowerCase() ||
-      (() => {
-        try {
-          const parts = new URL(req.url, "http://localhost").pathname.split("/").filter(Boolean);
-          return (parts[parts.length - 1] || "").toLowerCase() === "generate"
-            ? "generate"
-            : (parts[parts.length - 1] || "").toLowerCase() === "status"
-            ? "status"
-            : "";
-        } catch {
-          return "";
-        }
-      })();
+    const lastSegment = (() => {
+      try {
+        const parts = new URL(req.url, "http://localhost").pathname.split("/").filter(Boolean);
+        return (parts[parts.length - 1] || "").toLowerCase();
+      } catch {
+        return "";
+      }
+    })();
+    const action = (queryParam(req, "_action") || "").toLowerCase() || lastSegment;
 
     if (!robotKey() || !robotUserId()) {
       return sendJson(res, 503, {
@@ -20210,7 +20206,8 @@ const integrationsHandler = (() => {
     }
     return sendJson(res, 404, {
       error: "not_found",
-      message: "Rutas del robot: POST /api/integrations/generate y GET /api/integrations/status?task_id=...",
+      message:
+        "Rutas del robot: POST /api/integrations/generate · GET /api/integrations/status · POST /api/integrations/voice-phrase · POST /api/integrations/voice-clone · GET /api/integrations/voice-status",
     });
   };
 })();
