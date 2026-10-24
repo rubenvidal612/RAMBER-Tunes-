@@ -10301,6 +10301,11 @@ const balanceHandler = (() => {
       }
     }
 
+    // Tener saldo también cuenta como "ya pago": muchas cuentas reciben créditos
+    // regalados por el dueño y antes quedaban bloqueadas al clonar voz aunque
+    // tuvieran saldo. La puerta existe para cuentas vacías, no para estas.
+    if (!has_paid && Number(credits || 0) > 0) has_paid = true;
+
     return send(res, 200, {
       credits,
       song_balance: counts.songs,
