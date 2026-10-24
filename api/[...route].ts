@@ -19634,7 +19634,33 @@ const integrationsHandler = (() => {
       /* si falla la consulta se sigue; el tope y el cobro aún protegen */
     }
 
-    // 2) Topes: diario y por minuto.
+    // 2) Topes: intentos por pedido, diario y por minuto.
+    //    El cobro es por cancion generada, asi que el tope por pedido es el que
+    //    evita que un cliente gaste de mas por equivocacion.
+    const maxAttempts = intEnv("LUCIANA_ROBOT_MAX_ATTEMPTS", 2);
+    if (orderId && maxAttempts > 0) {
+      try {
+        const att = await admin
+          .from("suno_tasks")
+          .select("task_id", { count: "exact", head: true })
+          .eq("user_id", ownerId)
+          .eq("kind", ROBOT_TASK_KIND)
+          .eq("extra->integration->>order_id", orderId);
+        const used = Number((att as any)?.count || 0);
+        if (!(att as any)?.error && used >= maxAttempts) {
+          return sendJson(res, 429, {
+            error: "attempts_exhausted",
+            max_attempts: maxAttempts,
+            used,
+            order_id: orderId,
+            message: `Este pedido ya usó sus ${maxAttempts} intentos de generación.`,
+          });
+        }
+      } catch {
+        /* si falla el conteo no se bloquea la generacion */
+      }
+    }
+
     try {
       const dayRes = await admin
         .from("suno_tasks")
