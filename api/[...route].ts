@@ -19350,20 +19350,70 @@ const integrationsHandler = (() => {
     return new Date(start + 24 * 60 * 60 * 1000).toISOString();
   }
 
+  // Lee el cuerpo crudo sin depender de que el runtime lo haya pre-parseado.
+  // Si req.body ya trae algo se usa; si no, se lee el stream con un tope de tiempo
+  // para no colgar la peticion.
+  async function readRawBodyString(req: any): Promise<string> {
+    const body = (req as any).body;
+    if (body != null) {
+      if (typeof body === "string") return body;
+      if (typeof Buffer !== "undefined" && Buffer.isBuffer(body)) return body.toString("utf8");
+      if (body instanceof Uint8Array) return Buffer.from(body).toString("utf8");
+      if (typeof body === "object") {
+        try {
+          return JSON.stringify(body);
+        } catch {
+          return "";
+        }
+      }
+    }
+
+    const chunks: any[] = [];
+    const readPromise = new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      try {
+        if (typeof (req as any).on !== "function") return finish();
+        (req as any).on("data", (c: any) => {
+          if (!c) return;
+          chunks.push(typeof Buffer !== "undefined" && Buffer.isBuffer(c) ? c : Buffer.from(c));
+        });
+        (req as any).on("end", finish);
+        (req as any).on("error", finish);
+        (req as any).on("close", finish);
+      } catch {
+        finish();
+      }
+    });
+
+    // Nunca esperar mas de 2s: mejor responder con lo que haya que colgar la peticion.
+    await Promise.race([readPromise, new Promise<void>((r) => setTimeout(r, 2000))]);
+    try {
+      return chunks.length ? Buffer.concat(chunks as any).toString("utf8") : "";
+    } catch {
+      return "";
+    }
+  }
+
   async function readJsonBody(req: any): Promise<any | null> {
     try {
-      const raw = (req as any).body;
-      if (raw == null) return {};
-      if (typeof raw === "string") {
-        const s = raw.trim();
-        return s ? JSON.parse(s) : {};
+      const s = (await readRawBodyString(req)).trim();
+      if (!s) return {};
+      if (s.startsWith("{") || s.startsWith("[")) return JSON.parse(s);
+      // Tolerancia: si llega como formulario, se convierte a objeto.
+      const out: any = {};
+      try {
+        new URLSearchParams(s).forEach((v, k) => {
+          out[k] = v;
+        });
+      } catch {
+        return null;
       }
-      if (typeof Buffer !== "undefined" && Buffer.isBuffer(raw)) {
-        const s = raw.toString("utf8").trim();
-        return s ? JSON.parse(s) : {};
-      }
-      if (typeof raw === "object") return raw;
-      return null;
+      return Object.keys(out).length ? out : null;
     } catch {
       return null;
     }
