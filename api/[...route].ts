@@ -83,18 +83,9 @@ function creditsFromProfile(profile: any): number {
   const p = profile ?? {};
   const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
 
-  // Verificar si los créditos han vencido
-  const creditsExpiresAt = p.credits_expires_at;
-  if (creditsExpiresAt) {
-    const expiresDate = new Date(creditsExpiresAt);
-    const now = new Date();
-    
-    if (expiresDate < now) {
-      // Créditos vencidos, devolver 0
-      return 0;
-    }
-  }
-
+  // Los créditos NO vencen: se cobran siempre, sin mirar credits_expires_at.
+  // Antes, al pasar la fecha el saldo se leía como 0 y el cliente quedaba
+  // bloqueado aunque el panel le mostrara créditos.
   for (const k of ["ramber_credits", "zingy_credits", "credits"]) {
     if (!has(k)) continue;
     const v = (p as any)[k];
@@ -1559,6 +1550,13 @@ async function expireOverdueBatches(admin: any): Promise<{ ok: boolean; expired:
  * Retorna la cantidad de perfiles borrados.
  */
 async function wipeOverdueFrozenCredits(admin: any): Promise<{ ok: boolean; wiped: number; error?: string }> {
+  // DESACTIVADO: los créditos ya no vencen, así que no se borra el saldo de nadie.
+  // Se deja la función para no romper quien la llama, pero no toca datos.
+  void admin;
+  return { ok: true, wiped: 0 };
+}
+
+async function wipeOverdueFrozenCreditsDisabled(admin: any): Promise<{ ok: boolean; wiped: number; error?: string }> {
   try {
     const { data: profiles, error: selectErr } = await admin
       .from("profiles")
@@ -10191,7 +10189,8 @@ const balanceHandler = (() => {
     // ponia batch_credits en 0 y el cliente veia saldo 0 aunque hubiera comprado
     // creditos vigentes. Ahora solo se descarta el saldo viejo del perfil.
     const batch_credits = await getActiveBatchCredits(admin, user.id);
-    if (globalExpired) profile_credits = 0;
+    // Los créditos del perfil tampoco se descartan por fecha: no vencen.
+    void globalExpired;
     let internal_credits = round2(profile_credits + batch_credits);
     const cycle = await ensureMonthlyCreditsCycle(admin, user.id).catch(() => null as any);
     if (cycle?.did_reset) internal_credits = round2(batch_credits); // reset solo afecta perfil, no lotes
