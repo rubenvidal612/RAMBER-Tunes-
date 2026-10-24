@@ -20164,6 +20164,42 @@ const integrationsHandler = (() => {
     });
   }
 
+  // Solo lectura del saldo de la cuenta dueña. El CRM lo usa para mostrar el
+  // mismo número que el panel, sin recargar nada. Usa getUserAvailableCredits,
+  // que es la misma función del panel (perfil + lotes activos).
+  async function handleBalance(req: any, res: any) {
+    const ownerId = robotUserId();
+    const admin = await getAdminClient();
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable" });
+
+    const available = await getUserAvailableCredits(admin, ownerId).catch(() => null);
+    if (available === null || !Number.isFinite(Number(available))) {
+      return sendJson(res, 502, { error: "balance_unavailable", message: "No pude leer el saldo." });
+    }
+
+    let lastCharged = 0;
+    try {
+      const q = await admin
+        .from("suno_tasks")
+        .select("cost")
+        .eq("user_id", ownerId)
+        .eq("kind", ROBOT_TASK_KIND)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const row = (q?.data && q.data[0]) || null;
+      lastCharged = Number(row?.cost || 0) || 0;
+    } catch {
+      /* dato de referencia: si falla, va en 0 */
+    }
+
+    return sendJson(res, 200, {
+      balance: round2(Number(available)),
+      credits_charged_last: round2(lastCharged),
+      account: String(process.env.LUCIANA_ROBOT_ACCOUNT_LABEL || "luciana-music"),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   return async function handler(req: any, res: any) {
     const method = (req.method || "GET").toUpperCase();
     const lastSegment = (() => {
@@ -20203,6 +20239,10 @@ const integrationsHandler = (() => {
       if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa GET." });
       return handleStatus(req, res);
     }
+    if (action === "balance") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa GET." });
+      return handleBalance(req, res);
+    }
     if (action === "voice-phrase") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
       return handleVoicePhrase(req, res);
@@ -20218,7 +20258,7 @@ const integrationsHandler = (() => {
     return sendJson(res, 404, {
       error: "not_found",
       message:
-        "Rutas del robot: POST /api/integrations/generate · GET /api/integrations/status · POST /api/integrations/voice-phrase · POST /api/integrations/voice-clone · GET /api/integrations/voice-status",
+        "Rutas del robot: POST /api/integrations/generate · GET /api/integrations/status · GET /api/integrations/balance · POST /api/integrations/voice-phrase · POST /api/integrations/voice-clone · GET /api/integrations/voice-status",
     });
   };
 })();
