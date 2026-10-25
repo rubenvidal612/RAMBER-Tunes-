@@ -19305,6 +19305,13 @@ const integrationsHandler = (() => {
   function robotKey() {
     return String(process.env.LUCIANA_ROBOT_API_KEY || "").trim();
   }
+  // Rotacion sin cortes: se aceptan dos llaves a la vez. La vieja va en _2
+  // mientras se actualiza el otro lado, y luego se borra.
+  function robotKeys(): string[] {
+    return [process.env.LUCIANA_ROBOT_API_KEY, process.env.LUCIANA_ROBOT_API_KEY_2]
+      .map((k) => String(k || "").trim())
+      .filter(Boolean);
+  }
   function robotUserId() {
     return String(process.env.LUCIANA_ROBOT_USER_ID || "").trim();
   }
@@ -20223,7 +20230,9 @@ const integrationsHandler = (() => {
     }
 
     const token = bearerToken(req);
-    if (!safeEqual(token, robotKey())) {
+    const validKeys = robotKeys();
+    const keyOk = validKeys.some((k) => safeEqual(token, k));
+    if (!keyOk) {
       return sendJson(res, 401, { error: "unauthorized", message: "Llave inválida." });
     }
 
