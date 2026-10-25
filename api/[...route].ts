@@ -19322,7 +19322,15 @@ const integrationsHandler = (() => {
     const n = Number(process.env[name]);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
   }
-  const dailyCap = () => intEnv("LUCIANA_ROBOT_DAILY_CAP", 40);
+  const dailyCap = () => {
+    // 0 = sin limite. Por defecto sin limite: la cuenta es del dueno y el saldo
+    // real lo marca Suno, no un contador interno.
+    const raw = process.env.LUCIANA_ROBOT_DAILY_CAP;
+    if (raw == null || String(raw).trim() === "") return 0;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
+  };
   const perMinuteCap = () => intEnv("LUCIANA_ROBOT_PER_MINUTE", 6);
 
   function safeEqual(a: string, b: string) {
@@ -19703,17 +19711,13 @@ const integrationsHandler = (() => {
       /* si falla el conteo no se bloquea */
     }
 
-    // 3) Cobro a la cuenta del dueño.
+    // 3) Cobro en el registro interno. La cuenta del robot es del dueno y no tiene
+    // tope: si este contador se queda corto NO se bloquea la generacion. El saldo
+    // real es el de Suno; si alla no hay, el proveedor falla y abajo se devuelve.
     const cost = Number((CREDIT_COSTS as any).upload_and_cover || 12);
     const consumed = await consumeUserCredits(admin, ownerId, cost);
     if (!consumed.ok) {
-      const available = await getUserAvailableCredits(admin, ownerId).catch(() => 0);
-      return sendJson(res, 402, {
-        error: "insufficient_credits",
-        needed: cost,
-        available,
-        message: "La cuenta del robot no tiene créditos suficientes.",
-      });
+      void consumed;
     }
 
     const refund = async () => {
@@ -20179,6 +20183,26 @@ const integrationsHandler = (() => {
     if (available === null || !Number.isFinite(Number(available))) {
       return sendJson(res, 502, { error: "balance_unavailable", message: "No pude leer el saldo." });
     }
+
+    // El numero que manda es el saldo REAL de la cuenta de Suno: es el mismo que
+    // ve el panel y el que de verdad se puede gastar. El contador del perfil es
+    // solo un registro interno y se queda como respaldo si el proveedor no responde.
+    let providerCredits: number | null = null;
+    try {
+      const r = await providerFirst(
+        ["/api/v1/generate/credit", "/api/v1/suno/generate/credit", "/api/v1/suno/credit", "/api/v1/suno/credits"],
+        { method: "GET" },
+      );
+      if (r?.res?.ok) {
+        const raw = r.data?.data?.credits ?? r.data?.data;
+        const n = Number(typeof raw === "object" ? raw?.credits : raw);
+        if (Number.isFinite(n) && n >= 0) providerCredits = round2(n);
+      }
+    } catch {
+      /* si el proveedor no responde, se usa el del perfil */
+    }
+
+    const balance = providerCredits !== null ? providerCredits : round2(Number(available));
 
     let lastCharged = 0;
     try {
