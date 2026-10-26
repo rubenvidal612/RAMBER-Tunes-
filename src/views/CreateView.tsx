@@ -7404,12 +7404,12 @@ function CustomForm({
               <label className="font-bold text-white text-base">Letras</label>
               <button
                 type="button"
-                onClick={() => handleCopyLyricsBox()}
+                onClick={() => { void navigator.clipboard?.writeText(String(lyrics || '')); }}
                 className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 hover:bg-white/10"
                 aria-label="Copiar letra"
                 title="Copiar letra"
               >
-                {lyricsCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <Copy className="w-4 h-4" />
               </button>
               <button
                 type="button"
@@ -7578,12 +7578,12 @@ function CustomForm({
               <div className="mb-3 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleCopyLyricsBox()}
+                  onClick={() => { void navigator.clipboard?.writeText(String(lyrics || '')); }}
                   className="h-9 rounded-full bg-white/5 border border-white/10 px-3 text-xs font-bold text-slate-200 hover:bg-white/10 inline-flex items-center gap-2"
                   title="Copiar letra"
                 >
-                  {lyricsCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  {lyricsCopied ? 'Letra copiada' : 'Copiar letra'}
+                  <Copy className="w-4 h-4" />
+                  Copiar letra
                 </button>
                 <button
                   type="button"
