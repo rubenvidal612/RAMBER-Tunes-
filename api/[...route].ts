@@ -19560,6 +19560,196 @@ const formHandler = (() => {
     return sendJson(res, 200, { ok: true, task_id: provider?.task_id || null, balance_after: provider?.balance_after ?? null });
   }
 
+  // ---------- paginas HTML (sin tocar la app de React) ----------
+  function page(title: string, inner: string) {
+    return `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>
+:root{--bg:#0d0a14;--card:#171221;--line:#2b2340;--gold:#f4c15c;--txt:#f4f1fa;--dim:#a99fc0;--ok:#4fd18b;--bad:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.badge{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#f4c15c);display:grid;place-items:center;font-weight:800;color:#120d1c}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+p.sub{color:var(--dim);margin:0 0 22px;font-size:15px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--dim);margin:0 0 6px;font-weight:600}
+input,select,textarea{width:100%;background:#0f0b17;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:11px 12px;font:inherit;margin-bottom:14px}
+textarea{min-height:96px;resize:vertical}
+.opts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.opt{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:14px;color:var(--dim)}
+.opt.on{border-color:var(--gold);color:var(--txt);background:#1f1830}
+.btn{width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:700;background:var(--gold);color:#1a1220;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.sec{background:#241c33;color:var(--txt);border:1px solid var(--line)}
+.msg{border-radius:10px;padding:12px;margin-bottom:14px;font-size:14px;display:none}
+.msg.ok{display:block;background:#12301f;color:var(--ok);border:1px solid #1e5136}
+.msg.bad{display:block;background:#331418;color:var(--bad);border:1px solid #5c2228}
+.item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:var(--card)}
+.item b{font-size:15px}.meta{color:var(--dim);font-size:13px;margin-top:4px}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);margin-right:6px}
+.tag.pending{color:var(--gold);border-color:#4a3a1c}
+.tag.done{color:var(--ok);border-color:#1e5136}
+.tag.failed{color:var(--bad);border-color:#5c2228}
+.small{font-size:13px;color:var(--dim)}
+</style></head><body><div class="wrap">
+<div class="logo"><div class="badge">L</div><b>Luci&aacute;na <span style="color:var(--dim);font-weight:400">| Music</span></b></div>
+${inner}
+</div></body></html>`;
+  }
+
+  function openPage(token: string) {
+    const inner = `
+<h1>&iquest;Qu&eacute; canci&oacute;n te hacemos?</h1>
+<p class="sub">Cu&eacute;ntanos lo que necesitas. En cuanto la tengamos, te la mandamos para escucharla.</p>
+<div class="msg" id="msg"></div>
+<div class="card">
+  <label>Tu nombre</label>
+  <input id="name" placeholder="Nombre y apellido">
+  <label>Tu WhatsApp</label>
+  <input id="whatsapp" inputmode="numeric" placeholder="10 d&iacute;gitos">
+  <label>&iquest;Para qui&eacute;n es?</label>
+  <input id="dedicate" placeholder="Ej: mi mam&aacute; Carmen">
+  <label>Ocasi&oacute;n</label>
+  <select id="occasion">
+    <option>Cumplea&ntilde;os</option><option>Boda</option><option>Aniversario</option>
+    <option>Declaraci&oacute;n</option><option>Dedicatoria</option><option>Otro</option>
+  </select>
+</div>
+<div class="card">
+  <label>G&eacute;nero</label>
+  <select id="genre">
+    <option>Bachata</option><option>Banda</option><option>Corridos</option><option>Salsa</option>
+    <option>Reggaet&oacute;n</option><option>Mariachi</option><option>Cumbia</option><option>Balada</option>
+  </select>
+  <label>Tipo de voz</label>
+  <div class="opts" id="voz">
+    <div class="opt on" data-v="f">Mujer</div>
+    <div class="opt" data-v="m">Hombre</div>
+  </div>
+</div>
+<div class="card">
+  <label>La letra</label>
+  <div class="opts" id="modo">
+    <div class="opt on" data-m="ia">IA escribe<br><span class="small">Solo dinos de qu&eacute; trata</span></div>
+    <div class="opt" data-m="propia">Yo escribo<br><span class="small">Pega tu letra</span></div>
+  </div>
+  <div id="campoIA">
+    <label>Cu&eacute;ntanos de qu&eacute; trata</label>
+    <textarea id="story" placeholder="Ej: es para mi mam&aacute; Carmen, cumple 60; le encantan las margaritas, el caf&eacute; de la ma&ntilde;ana y bailar en la cocina con mis hermanos."></textarea>
+  </div>
+  <div id="campoLetra" style="display:none">
+    <label>Tu letra</label>
+    <textarea id="lyrics" placeholder="Escribe o pega tu letra..."></textarea>
+  </div>
+</div>
+<button class="btn" id="send">Enviar mi pedido</button>
+<p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
+    const js = `
+<script>
+var T=${JSON.stringify(token)},voz='f',modo='ia';
+function seg(id,attr,on){var box=document.getElementById(id);box.querySelectorAll('.opt').forEach(function(el){el.classList.toggle('on',el.dataset[attr]===on);});}
+document.getElementById('voz').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;voz=t.dataset.v;seg('voz','v',voz);});
+document.getElementById('modo').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;modo=t.dataset.m;seg('modo','m',modo);
+  document.getElementById('campoIA').style.display=modo==='ia'?'':'none';
+  document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';});
+function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;window.scrollTo(0,0);}
+document.getElementById('send').addEventListener('click',async function(){
+  var b=this;var v=function(id){return (document.getElementById(id).value||'').trim();};
+  if(v('name').length<2)return show('bad','Escribe tu nombre.');
+  if(v('whatsapp').replace(/\\D/g,'').length<10)return show('bad','Escribe tu WhatsApp (10 d&iacute;gitos).');
+  if(modo==='ia'&&v('story').length<15)return show('bad','Cu&eacute;ntanos de qu&eacute; trata (con un poco m&aacute;s de detalle).');
+  if(modo==='propia'&&v('lyrics').length<20)return show('bad','Escribe tu letra.');
+  b.disabled=true;b.textContent='Enviando...';
+  try{
+    var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),dedicate_to:v('dedicate'),occasion:v('occasion'),
+        genre:v('genre'),vocal_gender:voz,lyrics_mode:modo,story:v('story'),lyrics:v('lyrics')})});
+    var j=await r.json().catch(function(){return{};});
+    if(!r.ok){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad',j.message||'No pude enviar tu pedido.');}
+    document.querySelectorAll('.card').forEach(function(c){c.style.display='none';});
+    b.style.display='none';
+    show('ok','&iexcl;Listo! Recibimos tu pedido. Te escribimos por WhatsApp cuando est&eacute; lista para escuchar.');
+  }catch(e){b.disabled=false;b.textContent='Enviar mi pedido';show('bad','Sin conexi&oacute;n. Intenta de nuevo.');}
+});
+<\/script>`;
+    return page("Tu canción · Luciána Music", inner + js);
+  }
+
+  function panelPage(token: string) {
+    const inner = `
+<h1>Canciones por hacer</h1>
+<p class="sub">Pedidos que llegaron por el formulario. Pulsa <b>Hacer</b> para generarlos.</p>
+<div class="msg" id="msg"></div>
+<div id="list" class="small">Cargando...</div>
+<button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
+    const js = `
+<script>
+var T=${JSON.stringify(token)};
+function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;}
+function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+async function load(){
+  var box=document.getElementById('list');box.textContent='Cargando...';
+  try{
+    var r=await fetch('/api/form/list?t='+encodeURIComponent(T));
+    var j=await r.json();
+    if(!r.ok){box.textContent='';return show('bad',j.error||'No pude cargar.');}
+    if(!j.orders.length){box.innerHTML='<div class="item">Todav&iacute;a no hay pedidos.</div>';return;}
+    box.innerHTML=j.orders.map(function(o){
+      var st=o.status==='done'?'done':(o.status==='failed'?'failed':'pending');
+      var lbl=o.status==='done'?'lista':(o.status==='failed'?'fallida':(o.status==='generating'?'generando':'pendiente'));
+      return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
+        '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.genre)+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
+        ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
+        '<div class="meta">Para: '+esc(o.dedicate_to||'-')+' &middot; '+esc(o.occasion||'-')+'</div>'+
+        (o.story?'<div class="meta">'+esc(o.story).slice(0,180)+'</div>':'')+
+        (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
+        (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
+        (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
+        '</div>';
+    }).join('');
+    box.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.go,b);});});
+  }catch(e){box.textContent='';show('bad','Sin conexi&oacute;n.');}
+}
+async function go(id,btn){
+  btn.disabled=true;btn.textContent='Generando...';
+  try{
+    var r=await fetch('/api/form/generate?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
+    var j=await r.json();
+    if(!r.ok){btn.disabled=false;btn.textContent='Hacer';return show('bad',j.message||j.error||'No se pudo generar.');}
+    show('ok','Generando. Tarda ~1 minuto; pulsa Actualizar para ver el estado.');
+    setTimeout(load,4000);
+  }catch(e){btn.disabled=false;btn.textContent='Hacer';show('bad','Sin conexi&oacute;n.');}
+}
+document.getElementById('reload').addEventListener('click',load);
+load();
+<\/script>`;
+    return page("Pedidos · Luciána Music", inner + js);
+  }
+
+  async function openForm(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) {
+      return sendJson(res, 401, { error: "unauthorized", message: "Link inválido." });
+    }
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.end(openPage(query(req, "t")));
+    return;
+  }
+
+  async function panel(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) {
+      return sendJson(res, 401, { error: "unauthorized", message: "Link inválido." });
+    }
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.end(panelPage(query(req, "t")));
+    return;
+  }
+
   return async function handler(req: any, res: any) {
     if (!formToken()) {
       return sendJson(res, 503, { error: "form_not_configured", message: "Falta LUCIANA_FORM_TOKEN." });
@@ -19574,6 +19764,14 @@ const formHandler = (() => {
     })();
     const method = (req.method || "GET").toUpperCase();
 
+    if (action === "open") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
+      return openForm(req, res);
+    }
+    if (action === "panel") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
+      return panel(req, res);
+    }
     if (action === "submit") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return submit(req, res);
