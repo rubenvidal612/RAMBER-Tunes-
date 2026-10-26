@@ -19829,11 +19829,14 @@ const formHandler = (() => {
       })
       .join("");
     const pagado = Boolean(ex.paid);
+    const total = precioPedido(ex);
     const botones = pagado
       ? songs
           .map((_: any, i: number) => `<a class="btn" href="/api/form/download?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}&n=${i}">Descargar versión ${i + 1}</a>`)
           .join("")
-      : `<div class="msg ok">Escúchala completa. Cuando confirmes tu pago te habilitamos la descarga.</div>`;
+      : `<div class="msg ok">Escúchala completa. Si te gusta, paga aquí y se habilita la descarga.</div>
+         <a class="btn" href="/api/form/pay?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}">Pagar $${total} MXN</a>
+         <p class="small" style="margin-top:10px">Tarjeta, OXXO o transferencia. En cuanto se confirme el pago, esta misma página te deja descargar.</p>`;
     const inner = `
 <h1>${nombre ? `Tu canción, ${nombre}` : "Tu canción"}</h1>
 <p class="sub">Escúchala completa. Nada de relleno: si no te gusta, no la pagas.</p>
@@ -19918,6 +19921,133 @@ ${botones}
     };
     await db.from("suno_tasks").update({ extra: extra2 }).eq("task_id", rowKey);
     return sendJson(res, 200, { ok: true, stage });
+  }
+
+  // ---------- cobro con MercadoPago (pedidos del formulario) ----------
+  function mpToken() {
+    return String(process.env.MERCADO_PAGO_TEST_TOKEN || process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim();
+  }
+
+  function precioPedido(ex: any) {
+    const plan = String(ex.plan || (ex.voice_mode === "clonada" ? "rola_voz" : "rola"));
+    const base = plan === "rola_voz"
+      ? Number(process.env.PRICE_CLONADA_MXN || 350)
+      : Number(process.env.PRICE_FABRICA_MXN || 200);
+    const extraPistas = Math.max(0, Number(ex.extra_tracks || 0)) * Number(process.env.PRICE_PISTA_EXTRA_MXN || 50);
+    return Math.round((Number(ex.price_mxn) > 0 ? Number(ex.price_mxn) : base + extraPistas) * 100) / 100;
+  }
+
+  // GET /api/form/pay?id=&t=  -> crea la preferencia y manda al checkout
+  async function payOrder(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const id = clean(query(req, "id"), 60);
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    if (ex.paid) return sendJson(res, 409, { error: "already_paid" });
+    const total = precioPedido(ex);
+    const tok = mpToken();
+    if (!tok) return sendJson(res, 503, { error: "mp_not_configured" });
+
+    const origin = (() => {
+      try {
+        return new URL(req.url, `https://${req.headers?.host || "lucianamusic.app"}`).origin;
+      } catch {
+        return "https://lucianamusic.app";
+      }
+    })();
+    const body = {
+      items: [
+        {
+          title: `Luciana Music · ${String(ex.plan) === "rola_voz" ? "Rola con tu voz" : "Rola"}`,
+          quantity: 1,
+          unit_price: total,
+          currency_id: "MXN",
+        },
+      ],
+      back_urls: {
+        success: `${origin}/api/form/listen?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(query(req, "t"))}&pago=1`,
+        failure: `${origin}/api/form/listen?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(query(req, "t"))}&pago=0`,
+        pending: `${origin}/api/form/listen?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(query(req, "t"))}&pago=0`,
+      },
+      notification_url: `${origin}/api/form/mp?t=${encodeURIComponent(formToken())}`,
+      external_reference: `order:${rowKey}`,
+      auto_return: "approved" as const,
+    };
+
+    try {
+      const r = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j: any = await r.json().catch(() => null);
+      if (!r.ok || !j?.init_point) {
+        return sendJson(res, 502, { error: "mp_error", detail: j?.message || r.status });
+      }
+      await db
+        .from("suno_tasks")
+        .update({ extra: { ...ex, price_mxn: total, mp_preference_id: String(j.id || "") } })
+        .eq("task_id", rowKey);
+      const esTest = tok.startsWith("TEST-") || tok.includes("-3795845660") || String(j.init_point).includes("sandbox");
+      res.statusCode = 302;
+      res.setHeader("location", esTest && j.sandbox_init_point ? String(j.sandbox_init_point) : String(j.init_point));
+      res.end();
+      return;
+    } catch (e) {
+      return sendJson(res, 502, { error: "mp_error", message: e instanceof Error ? e.message : "" });
+    }
+  }
+
+  // GET o POST /api/form/mp  -> webhook SOLO de pedidos (no toca el de creditos)
+  async function mpWebhook(req: any, res: any) {
+    const tok = mpToken();
+    let paymentId = clean(query(req, "data.id") || query(req, "id"), 40);
+    if (!paymentId) {
+      const body = await readBody(req);
+      paymentId = clean(body?.data?.id || body?.id, 40);
+    }
+    if (!paymentId || !tok) return sendJson(res, 200, { ok: true, ignored: true });
+    try {
+      const r = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, {
+        headers: { authorization: `Bearer ${tok}` },
+      });
+      const p: any = await r.json().catch(() => null);
+      if (!r.ok || !p) return sendJson(res, 200, { ok: true, ignored: true });
+      const ref = String(p.external_reference || "");
+      const estado = String(p.status || "").toLowerCase();
+      if (!ref.startsWith("order:")) return sendJson(res, 200, { ok: true, ignored: true });
+      const rowKey = ref.slice(6);
+      const db = await admin();
+      if (!db) return sendJson(res, 200, { ok: true, ignored: true });
+      const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+      const row = (q as any)?.data?.[0];
+      if (!row) return sendJson(res, 200, { ok: true, ignored: true });
+      const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+      const pagado = estado === "approved" || estado === "authorized";
+      await db
+        .from("suno_tasks")
+        .update({
+          extra: {
+            ...ex,
+            paid: pagado ? true : Boolean(ex.paid),
+            stage: pagado ? "pagado" : ex.stage || "por_pagar",
+            paid_at: pagado ? new Date().toISOString() : ex.paid_at || null,
+            payment_id: String(paymentId),
+            payment_status: estado,
+            payment_amount: Number(p.transaction_amount || 0),
+            payment_method: String(p.payment_method_id || ""),
+          },
+        })
+        .eq("task_id", rowKey);
+      return sendJson(res, 200, { ok: true, paid: pagado });
+    } catch {
+      return sendJson(res, 200, { ok: true, ignored: true });
+    }
   }
 
   // ---------- paginas HTML (sin tocar la app de React) ----------
@@ -20400,6 +20530,8 @@ load();
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return syncOrder(req, res);
     }
+    if (action === "pay") return payOrder(req, res);
+    if (action === "mp") return mpWebhook(req, res);
     if (action === "stage") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return setStage(req, res);
