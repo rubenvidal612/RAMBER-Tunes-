@@ -20220,7 +20220,7 @@ const integrationsHandler = (() => {
     }
 
     return sendJson(res, 200, {
-      balance: round2(Number(available)),
+      balance: round2(Number(balance)),
       credits_charged_last: round2(lastCharged),
       account: String(process.env.LUCIANA_ROBOT_ACCOUNT_LABEL || "luciana-music"),
       updated_at: new Date().toISOString(),
