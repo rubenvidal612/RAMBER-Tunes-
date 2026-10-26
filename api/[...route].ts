@@ -20291,6 +20291,24 @@ async function guardarVendedor(){
 }
 document.getElementById('reload').addEventListener('click',load);
 if(document.getElementById('addVend'))document.getElementById('addVend').addEventListener('click',guardarVendedor);
+async function load(){
+  var box=document.getElementById('list');box.textContent='Cargando...';
+  try{
+    var r=await fetch('/api/form/list?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
+    var j=await r.json();
+    if(!r.ok){box.textContent='';return show('bad',j.error||'No pude cargar.');}
+    IS_OWNER=!!j.is_owner;TODAS=j.orders||[];
+    render();
+    var pend=TODAS.filter(function(o){return o.status==='generating'&&o.task_id;});
+    window.__tries=(window.__tries||0);
+    if(pend.length&&!window.__syncing&&window.__tries<40){
+      window.__syncing=1;window.__tries++;
+      Promise.all(pend.slice(0,4).map(function(o){
+        return fetch('/api/form/sync?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:o.id})}).catch(function(){});
+      })).then(function(){window.__syncing=0;setTimeout(load,4000);});
+    }
+  }catch(e){box.textContent='';show('bad','Sin conexión.');}
+}
 cargarVendedores();
 document.getElementById('copy').addEventListener('click',async function(){
   var v=document.getElementById('share').value;
