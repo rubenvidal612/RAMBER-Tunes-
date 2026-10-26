@@ -4695,7 +4695,7 @@ export default function App() {
            ) : (
              <>
                {/* Create View (Middle) */}
-              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'oficina' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && (
+              {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'oficina' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && currentTab !== 'pedidos' && (
                  <div className="w-[340px] lg:w-[420px] shrink-0 border-r border-white/10 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30 backdrop-blur-xl flex flex-col relative z-0 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                    <CreateView onSongCreated={addCancion} credits={displayCredits} openPersonaPickerSignal={personaPickerNonce} onOpenCreateVoiceFullScreen={() => setCurrentTab('voces')} onGoLibrary={() => setCurrentTab('biblioteca')} onOpenBalance={() => handleTabChange('planes')} prefill={studioPrefill || undefined} prefillNonce={studioPrefillNonce} />
                  </div>
@@ -4719,6 +4719,14 @@ export default function App() {
                  </div>
                ) : currentTab === 'copiloto' ? (
                 <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />
+               ) : currentTab === 'pedidos' ? (
+                 isAdmin ? (
+                   <iframe
+                     title="Canciones por hacer"
+                     src="https://lucianamusic.app/api/form/panel?t=luciana-form-2026"
+                     style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 0, background: '#0d0a14' }}
+                   />
+                 ) : null
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (
