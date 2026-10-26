@@ -20323,9 +20323,7 @@ function aplicarPlan(){
   var pn=document.getElementById('planNota');
   if(pn)pn.innerHTML=suya?'Sube una canci&oacute;n a capela y te clonamos tu voz para esta rola.':'';
 }
-var pBox=
-  show('bad','Este link no es vÃ¡lido. PÃ­dele a tu vendedor que te mande uno nuevo.');
-}
+var pBox=document.getElementById('plan');
 if(pBox)pBox.addEventListener('click',function(e){
   var t=e.target.closest('.opt');if(!t)return;PLAN=t.dataset.p;seg('plan','p',PLAN);aplicarPlan();
 });
