@@ -19676,8 +19676,8 @@ ${inner}
 
   function openPage(token: string) {
     const inner = `
-<h1>&iquest;Qu&eacute; canci&oacute;n te hacemos?</h1>
-<p class="sub">Cu&eacute;ntanos lo que necesitas. En cuanto la tengamos, te la mandamos para escucharla.</p>
+<h1 id="title">&iquest;Qu&eacute; canci&oacute;n te hacemos?</h1>
+<p class="sub" id="sub">Cu&eacute;ntanos lo que necesitas. En cuanto la tengamos, te la mandamos para escucharla.</p>
 <div class="msg" id="msg"></div>
 <div class="card">
   <label>Tu nombre</label>
@@ -19760,7 +19760,9 @@ document.getElementById('send').addEventListener('click',async function(){
     if(!r.ok){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad',j.message||'No pude enviar tu pedido.');}
     document.querySelectorAll('.card').forEach(function(c){c.style.display='none';});
     b.style.display='none';
-    show('ok','&iexcl;Listo! Recibimos tu pedido. Te escribimos por WhatsApp cuando est&eacute; lista para escuchar.');
+    document.getElementById('title').innerHTML='&iexcl;Pedido recibido!';
+    document.getElementById('sub').innerHTML='Ya lo tenemos. Te escribimos por WhatsApp en cuanto tu canci&oacute;n est&eacute; lista para escucharla.';
+    show('ok','&iexcl;Listo! Guardamos tu pedido con tu nombre y tu WhatsApp.');
   }catch(e){b.disabled=false;b.textContent='Enviar mi pedido';show('bad','Sin conexi&oacute;n. Intenta de nuevo.');}
 });
 <\/script>`;
