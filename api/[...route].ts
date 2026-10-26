@@ -19484,14 +19484,21 @@ const formHandler = (() => {
 
     const rows = (q as any)?.data || [];
     const me = String(query(req, "me") || "").trim().toLowerCase();
+    const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
+    const esDueno = !me || me === dueno;
     const visibles = rows
       .map(orderView)
       .filter((o: any) => {
         if (!me) return true;
         if (!o.owner_email) return true; // pedidos viejos sin dueño: visibles para todos
         return o.owner_email === me || o.shared_with.includes(me);
-      });
-    return sendJson(res, 200, { ok: true, me, orders: visibles });
+      })
+      // El vendedor solo ve los ultimos 4 digitos del WhatsApp; el dueno ve todo.
+      .map((o: any) => ({
+        ...o,
+        whatsapp: esDueno ? o.whatsapp : `•••••${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
+      }));
+    return sendJson(res, 200, { ok: true, me, is_owner: esDueno, orders: visibles });
   }
 
   // POST /api/form/generate { t, id }  (dueno): manda el pedido al robot
@@ -19838,6 +19845,41 @@ ${botones}
     return;
   }
 
+  // GET /api/form/sellers?t=  y POST /api/form/seller { t, email, name }
+  async function sellers(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const method = (req.method || "GET").toUpperCase();
+    if (method === "POST") {
+      const body = await readBody(req);
+      const email = clean(body?.email, 120).toLowerCase();
+      const name = clean(body?.name, 60);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return sendJson(res, 400, { error: "invalid_email", message: "Escribe un correo válido." });
+      }
+      const key = `seller_${email}`;
+      const cur = await db.from("suno_tasks").select("task_id, extra").eq("task_id", key).limit(1);
+      const ex = (cur as any)?.data?.[0]?.extra || {};
+      const ins = await db
+        .from("suno_tasks")
+        .upsert({ task_id: key, user_id: ownerId(), kind: "form-seller", cost: 0, extra: { ...ex, email, name } });
+      if ((ins as any)?.error) return sendJson(res, 500, { error: "save_failed" });
+      return sendJson(res, 200, { ok: true });
+    }
+    const q = await db
+      .from("suno_tasks")
+      .select("task_id, extra")
+      .eq("user_id", ownerId())
+      .eq("kind", "form-seller")
+      .limit(100);
+    const list = ((q as any)?.data || []).map((r: any) => ({
+      email: String(r?.extra?.email || ""),
+      name: String(r?.extra?.name || ""),
+    }));
+    return sendJson(res, 200, { ok: true, sellers: list });
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -20001,11 +20043,16 @@ document.getElementById('send').addEventListener('click',async function(){
   <div class="small" style="margin-top:10px">Mándalo por WhatsApp. El cliente llena y su pedido aparece abajo.</div>
 </div>
 <div class="msg" id="msg"></div>
+<div class="card">
+  <label>Mis vendedores</label>
+  <div style="display:flex;gap:8px"><input id="vendName" placeholder="Nombre" style="margin:0"><input id="vendMail" placeholder="correo@ejemplo.com" style="margin:0"><button class="btn sec" id="addVend" style="width:auto;padding:0 14px">Guardar</button></div>
+  <div id="vendList" class="small" style="margin-top:10px"></div>
+</div>
 <div id="list" class="small">Cargando...</div>
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase();
+var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[];
 if(document.getElementById('share'))document.getElementById('share').value=location.origin+'/api/form/open?t='+encodeURIComponent(T)+(ME?'&o='+encodeURIComponent(ME):'');
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;}
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -20015,6 +20062,7 @@ async function load(){
     var r=await fetch('/api/form/list?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     if(!r.ok){box.textContent='';return show('bad',j.error||'No pude cargar.');}
+    IS_OWNER=!!j.is_owner;
     if(!j.orders.length){box.innerHTML='<div class="item">Todav&iacute;a no hay pedidos.</div>';return;}
     box.innerHTML=j.orders.map(function(o){
       var st=o.status==='done'?'done':(o.status==='failed'?'failed':'pending');
@@ -20040,12 +20088,19 @@ async function load(){
             '<audio controls preload="none" src="'+esc(u)+'" style="width:100%;margin-top:6px"></audio></div>';
         }).join('')+'</div>';
       }
+      var waTel=String(o.whatsapp||'').replace(/\D/g,'');
+      var waBtn=(IS_OWNER&&waTel)?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+waTel.replace(/^52/,'')+'">Enviar WhatsApp</a>'):'';
+      var opciones='<option value="">— vendedor —</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
       return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
         ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
         (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
         (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
         '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
+        '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
+        waBtn+
+        '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
+        (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
         '<div style="display:flex;gap:8px;margin-top:8px"><input data-mail="'+esc(o.id)+'" placeholder="correo para compartir" style="margin:0;font-size:13px"><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share="'+esc(o.id)+'">Enviar</button></div>'+
         (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
@@ -20056,6 +20111,10 @@ async function load(){
     box.querySelectorAll('[data-share]').forEach(function(b){b.addEventListener('click',function(){
       var inp=box.querySelector('[data-mail="'+b.dataset.share+'"]');
       compartir(b.dataset.share,(inp&&inp.value||'').trim(),b);
+    });});
+    box.querySelectorAll('[data-share2]').forEach(function(b){b.addEventListener('click',function(){
+      var sel=box.querySelector('[data-sel="'+b.dataset.share2+'"]');
+      compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
     });});
     box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
     var pend=j.orders.filter(function(o){return o.status==='generating'&&o.task_id;});
@@ -20098,7 +20157,30 @@ async function del(id,btn){
     show('ok','Pedido borrado.');load();
   }catch(e){btn.disabled=false;btn.textContent='Borrar';show('bad','Sin conexión.');}
 }
+async function cargarVendedores(){
+  try{
+    var r=await fetch('/api/form/sellers?t='+encodeURIComponent(T));
+    var j=await r.json();
+    VEND=(j&&j.sellers)||[];
+    var box=document.getElementById('vendList');
+    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div>'+esc(v.name||'-')+' &middot; '+esc(v.email)+'</div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
+  }catch(e){}
+}
+async function guardarVendedor(){
+  var n=(document.getElementById('vendName').value||'').trim();
+  var m=(document.getElementById('vendMail').value||'').trim();
+  if(!m)return show('bad','Escribe el correo del vendedor.');
+  try{
+    var r=await fetch('/api/form/seller?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:n,email:m})});
+    var j=await r.json();
+    if(!r.ok){return show('bad',j.message||j.error||'No pude guardar.');}
+    document.getElementById('vendName').value='';document.getElementById('vendMail').value='';
+    show('ok','Vendedor guardado.');await cargarVendedores();load();
+  }catch(e){show('bad','Sin conexión.');}
+}
 document.getElementById('reload').addEventListener('click',load);
+if(document.getElementById('addVend'))document.getElementById('addVend').addEventListener('click',guardarVendedor);
+cargarVendedores();
 document.getElementById('copy').addEventListener('click',async function(){
   var v=document.getElementById('share').value;
   try{await navigator.clipboard.writeText(v);this.textContent='¡Copiado!';setTimeout(function(){document.getElementById('copy').textContent='Copiar link';},1800);}
@@ -20149,6 +20231,7 @@ load();
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return syncOrder(req, res);
     }
+    if (action === "sellers" || action === "seller") return sellers(req, res);
     if (action === "paid") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return markPaid(req, res);
