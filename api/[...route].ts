@@ -19857,6 +19857,7 @@ ${botones}
       const body = await readBody(req);
       const email = clean(body?.email, 120).toLowerCase();
       const name = clean(body?.name, 60);
+      const phone = clean(body?.phone, 25).replace(/\D/g, "");
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         return sendJson(res, 400, { error: "invalid_email", message: "Escribe un correo válido." });
       }
@@ -19865,7 +19866,7 @@ ${botones}
       const ex = (cur as any)?.data?.[0]?.extra || {};
       const ins = await db
         .from("suno_tasks")
-        .upsert({ task_id: key, user_id: ownerId(), kind: "form-seller", cost: 0, extra: { ...ex, email, name } });
+        .upsert({ task_id: key, user_id: ownerId(), kind: "form-seller", cost: 0, extra: { ...ex, email, name, phone } });
       if ((ins as any)?.error) return sendJson(res, 500, { error: "save_failed" });
       return sendJson(res, 200, { ok: true });
     }
@@ -19878,6 +19879,7 @@ ${botones}
     const list = ((q as any)?.data || []).map((r: any) => ({
       email: String(r?.extra?.email || ""),
       name: String(r?.extra?.name || ""),
+      phone: String(r?.extra?.phone || ""),
     }));
     return sendJson(res, 200, { ok: true, sellers: list });
   }
@@ -20075,7 +20077,8 @@ document.getElementById('send').addEventListener('click',async function(){
 <div class="msg" id="msg"></div>
 <div class="card">
   <label>Mis vendedores</label>
-  <div style="display:flex;gap:8px"><input id="vendName" placeholder="Nombre" style="margin:0"><input id="vendMail" placeholder="correo@ejemplo.com" style="margin:0"><button class="btn sec" id="addVend" style="width:auto;padding:0 14px">Guardar</button></div>
+  <div style="display:flex;gap:8px"><input id="vendName" placeholder="Nombre" style="margin:0"><input id="vendPhone" placeholder="WhatsApp del vendedor" style="margin:0"></div>
+  <div style="display:flex;gap:8px;margin-top:8px"><input id="vendMail" placeholder="correo@ejemplo.com" style="margin:0"><button class="btn sec" id="addVend" style="width:auto;padding:0 14px">Guardar</button></div>
   <div id="vendList" class="small" style="margin-top:10px"></div>
 </div>
 <div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
@@ -20140,6 +20143,15 @@ function item(o){
   }).join('');
   var waBtn=wa?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="'+wa+'">Enviar WhatsApp</a>'):'';
   var opciones='<option value="">— vendedor —</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
+  var avisar='';
+  if(o.transferred_to){
+    var vv=VEND.filter(function(v){return String(v.email).toLowerCase()===String(o.transferred_to).toLowerCase();})[0];
+    var telf=vv?String(vv.phone||'').replace(/\\D/g,''):'';
+    if(telf){
+      var txt='Hola '+(vv.name||'')+', te pasé un pedido de '+(o.name||'un cliente')+' en Luciana Music. Entra a Canciones por hacer para atenderlo.';
+      avisar='<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+telf.replace(/^52/,'')+'?text='+encodeURIComponent(txt)+'">Avisar por WhatsApp al vendedor</a>';
+    }
+  }
   return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
@@ -20150,6 +20162,7 @@ function item(o){
     waBtn+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
     (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
+    avisar+
     '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
     '</div>';
 }
@@ -20274,15 +20287,16 @@ async function cargarVendedores(){
     var j=await r.json();
     VEND=(j&&j.sellers)||[];
     var box=document.getElementById('vendList');
-    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div>'+esc(v.name||'-')+' &middot; '+esc(v.email)+'</div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
+    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div>'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
   }catch(e){}
 }
 async function guardarVendedor(){
   var n=(document.getElementById('vendName').value||'').trim();
   var m=(document.getElementById('vendMail').value||'').trim();
+  var tel=(document.getElementById('vendPhone').value||'').trim();
   if(!m)return show('bad','Escribe el correo del vendedor.');
   try{
-    var r=await fetch('/api/form/seller?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:n,email:m})});
+    var r=await fetch('/api/form/seller?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:n,email:m,phone:tel})});
     var j=await r.json();
     if(!r.ok){return show('bad',j.message||j.error||'No pude guardar.');}
     document.getElementById('vendName').value='';document.getElementById('vendMail').value='';
