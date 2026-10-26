@@ -19851,11 +19851,14 @@ const formHandler = (() => {
       .join("");
     const pagado = Boolean(ex.paid);
     const total = precioPedido(ex);
+    const manual = soloCobroManual(ex);
     const botones = pagado
       ? songs
           .map((_: any, i: number) => `<a class="btn" href="/api/form/download?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}&n=${i}">Descargar versión ${i + 1}</a>`)
           .join("")
-      : `<div class="msg ok">Escúchala completa. Si te gusta, paga aquí y se habilita la descarga.</div>
+      : manual
+        ? `<div class="msg ok">Escúchala completa. Para pagar, escríbenos por WhatsApp y te mandamos los datos.</div>`
+        : `<div class="msg ok">Escúchala completa. Si te gusta, paga aquí y se habilita la descarga.</div>
          <a class="btn" href="/api/form/pay?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}">Pagar $${total} MXN</a>
          <p class="small" style="margin-top:10px">Tarjeta, OXXO o transferencia. En cuanto se confirme el pago, esta misma página te deja descargar.</p>`;
     const inner = `
@@ -19962,6 +19965,14 @@ ${botones}
     return Math.round((Number(ex.price_mxn) > 0 ? Number(ex.price_mxn) : base + extraPistas) * 100) / 100;
   }
 
+  function soloCobroManual(ex: any) {
+    // MercadoPago es SOLO de la cuenta del dueno. Los pedidos de otros vendedores
+    // se cobran a mano (efectivo/transferencia) y ellos marcan "pagado manual".
+    const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
+    const owner = String(ex?.owner_email || "").trim().toLowerCase();
+    return Boolean(owner) && owner !== dueno;
+  }
+
   // GET /api/form/pay?id=&t=  -> crea la preferencia y manda al checkout
   async function payOrder(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
@@ -19974,6 +19985,9 @@ ${botones}
     if (!row) return sendJson(res, 404, { error: "not_found" });
     const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
     if (ex.paid) return sendJson(res, 409, { error: "already_paid" });
+    if (soloCobroManual(ex)) {
+      return sendJson(res, 403, { error: "manual_only", message: "Este pedido se cobra a mano." });
+    }
     const total = precioPedido(ex);
     const tok = mpToken();
     if (!tok) return sendJson(res, 503, { error: "mp_not_configured" });
