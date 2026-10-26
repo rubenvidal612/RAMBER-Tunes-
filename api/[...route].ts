@@ -19386,6 +19386,8 @@ const formHandler = (() => {
       task_id: String(ex.task_id || ""),
       songs: Array.isArray(ex.songs) ? ex.songs : [],
       paid: Boolean(ex.paid),
+      paid_amount: ex.paid_amount == null ? null : Number(ex.paid_amount),
+      paid_manual: Boolean(ex.paid_manual),
       stage: String(ex.stage || (ex.paid ? "pagado" : "pendiente")),
       transferred_to: String(ex.transferred_to || "").toLowerCase(),
       owner_email: String(ex.owner_email || "").toLowerCase(),
@@ -19771,9 +19773,19 @@ const formHandler = (() => {
     if (!row) return sendJson(res, 404, { error: "not_found" });
     const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
     const paid = body?.paid === false ? false : true;
+    const monto = Number(body?.amount);
     await db
       .from("suno_tasks")
-      .update({ extra: { ...ex, paid, paid_at: paid ? new Date().toISOString() : null } })
+      .update({
+        extra: {
+          ...ex,
+          paid,
+          paid_at: paid ? new Date().toISOString() : null,
+          paid_manual: paid ? true : Boolean(ex.paid_manual),
+          paid_amount: paid && Number.isFinite(monto) && monto > 0 ? Math.round(monto * 100) / 100 : ex.paid_amount || null,
+          stage: paid ? "pagado" : "por_pagar",
+        },
+      })
       .eq("task_id", rowKey);
     return sendJson(res, 200, { ok: true, paid });
   }
@@ -20319,6 +20331,7 @@ function item(o){
     return '<button class="btn sec" data-st="'+k+'" data-stid="'+esc(o.id)+'" style="width:auto;padding:6px 10px;font-size:12px;'+(on?'border-color:var(--gold);color:var(--gold)':'')+'">'+t+'</button>';
   }).join('');
   var waBtn=wa?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="'+wa+'">Enviar WhatsApp</a>'):'';
+  var manual='<button class="btn sec" style="margin-top:8px;border-color:#1e5136;color:#4fd18b" data-paid="'+esc(o.id)+'">Pedido pagado manual</button>';
   var opciones='<option value="">— vendedor —</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
   var avisar='';
   if(o.transferred_to){
@@ -20340,6 +20353,8 @@ function item(o){
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
     (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
+    manual+
+    (o.paid_amount?'<div class="meta">Cobrado: $'+esc(String(o.paid_amount))+(o.paid_manual?' (manual)':' (MercadoPago)')+'</div>':'')+
     '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
     '</div>';
 }
@@ -20418,6 +20433,7 @@ async function loadViejo(){
       compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
     });});
     box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
+    box.querySelectorAll('[data-paid]').forEach(function(b){b.addEventListener('click',function(){pagadoManual(b.dataset.paid,b);});});
     var pend=j.orders.filter(function(o){return o.status==='generating'&&o.task_id;});
     window.__tries=(window.__tries||0);
     if(pend.length&&!window.__syncing&&window.__tries<40){
@@ -20437,6 +20453,23 @@ async function go(id,btn){
     show('ok','Generando. Tarda ~1 minuto; pulsa Actualizar para ver el estado.');
     setTimeout(load,4000);
   }catch(e){btn.disabled=false;btn.textContent='Hacer';show('bad','Sin conexi&oacute;n.');}
+}
+async function pagadoManual(id,btn){
+  var sugerido='200';
+  var o=TODAS.filter(function(x){return x.id===id;})[0];
+  if(o&&o.price_mxn)sugerido=String(o.price_mxn);
+  var m=prompt('¿Cuánto te pagó el cliente? (MXN)\n\nPuedes poner un monto menor si le hiciste descuento.',sugerido);
+  if(m===null)return;
+  var n=Number(String(m).replace(/[^0-9.]/g,''));
+  if(!isFinite(n)||n<=0)return show('bad','Escribe un monto válido.');
+  btn.disabled=true;btn.textContent='Guardando...';
+  try{
+    var r=await fetch('/api/form/paid?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,paid:true,amount:n})});
+    var j=await r.json();
+    if(!r.ok){btn.disabled=false;btn.textContent='Pedido pagado manual';return show('bad',j.error||'No pude guardar.');}
+    show('ok','Marcado como pagado por $'+n+'. Su link ya permite descargar.');
+    load();
+  }catch(e){btn.disabled=false;btn.textContent='Pedido pagado manual';show('bad','Sin conexión.');}
 }
 async function compartir(id,email,btn){
   if(!email)return show('bad','Escribe el correo de la persona.');
