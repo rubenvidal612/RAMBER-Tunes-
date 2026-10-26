@@ -19635,6 +19635,18 @@ const formHandler = (() => {
     }
   }
 
+  // POST /api/form/transcribe?t=&path=  -> letra transcrita del audio subido
+  async function transcribeAction(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const path = String(query(req, "path") || "").trim();
+    if (!path) return sendJson(res, 400, { error: "missing_path" });
+    const text = await transcribe(path);
+    if (!text) {
+      return sendJson(res, 200, { ok: false, text: "", message: "No pude entender el audio. Escribe tu letra o intenta con otra grabación." });
+    }
+    return sendJson(res, 200, { ok: true, text });
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -19714,13 +19726,39 @@ ${inner}
     <label>Tu audio a capela</label>
     <input id="audio" type="file" accept="audio/*">
     <div class="small" style="margin:-8px 0 14px">Canta una <b>canci&oacute;n in&eacute;dita</b> (tuya, que nadie haya grabado), a capela, sin m&uacute;sica de fondo ni ruido. Las canciones conocidas se rechazan.</div>
+    <div id="estadoAudio" class="small" style="margin:-6px 0 10px"></div>
+    <div id="cajaLetraAudio" style="display:none">
+      <label>Esta es la letra que escuchamos &mdash; rev&iacute;sala y corr&iacute;gela</label>
+      <textarea id="lyricsAudio" placeholder="Aqu&iacute; aparece tu letra..."></textarea>
+      <div class="small" style="margin:-8px 0 14px">Si algo est&aacute; mal escrito, ed&iacute;talo antes de enviar.</div>
+    </div>
   </div>
 </div>
 <button class="btn" id="send">Enviar mi pedido</button>
 <p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},voz='f',modo='ia';
+var T=${JSON.stringify(token)},voz='f',modo='ia',audioPath='';
+document.getElementById('audio').addEventListener('change',async function(){
+  var f=this.files[0];var st=document.getElementById('estadoAudio');var box=document.getElementById('cajaLetraAudio');
+  audioPath='';box.style.display='none';document.getElementById('lyricsAudio').value='';
+  if(!f)return;
+  if(f.size>18*1024*1024){st.textContent='El audio es muy grande (m&aacute;ximo 18 MB).';return;}
+  st.textContent='Subiendo tu audio...';
+  try{
+    var sg=await fetch('/api/form/sign?t='+encodeURIComponent(T)+'&n='+encodeURIComponent(f.name||'audio.mp3'),{method:'POST'});
+    var sj=await sg.json();if(!sg.ok)throw new Error('sign');
+    var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':f.type||'audio/mpeg','x-upsert':'false'},body:f});
+    if(!up.ok)throw new Error('put');
+    audioPath=sj.path;
+    st.textContent='Escuchando tu audio para escribir la letra...';
+    var r=await fetch('/api/form/transcribe?t='+encodeURIComponent(T)+'&path='+encodeURIComponent(sj.path),{method:'POST'});
+    var j=await r.json().catch(function(){return{};});
+    box.style.display='';
+    if(j&&j.text){document.getElementById('lyricsAudio').value=j.text;st.textContent='Listo. Revisa la letra y corr&iacute;gela si hace falta.';}
+    else{st.textContent=(j&&j.message)||'No pude entender el audio. Escribe la letra abajo.';}
+  }catch(e){st.textContent='No pude subir tu audio. Intenta de nuevo.';audioPath='';}
+});
 function seg(id,attr,on){var box=document.getElementById(id);box.querySelectorAll('.opt').forEach(function(el){el.classList.toggle('on',el.dataset[attr]===on);});}
 document.getElementById('voz').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;voz=t.dataset.v;seg('voz','v',voz);});
 document.getElementById('modo').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;modo=t.dataset.m;seg('modo','m',modo);
@@ -19735,27 +19773,15 @@ document.getElementById('send').addEventListener('click',async function(){
   if(modo==='ia'&&v('story').length<15)return show('bad','Cu&eacute;ntanos de qu&eacute; trata (con un poco m&aacute;s de detalle).');
   if(modo==='propia'&&v('lyrics').length<20)return show('bad','Escribe tu letra.');
   if(v('style').length<5)return show('bad','Describe el estilo: g&eacute;nero y c&oacute;mo lo quieres.');
-  var file=document.getElementById('audio').files[0];
-  if(modo==='audio'&&!file)return show('bad','Elige tu audio a capela.');
+  if(modo==='audio'&&!audioPath)return show('bad','Sube tu audio a capela y espera a que aparezca la letra.');
+  var letraAudio=v('lyricsAudio');
+  if(modo==='audio'&&letraAudio.length<10)return show('bad','Revisa la letra: no pudimos escribirla. Escr&iacute;bela t&uacute; o sube otro audio.');
   b.disabled=true;b.textContent='Enviando...';
-  var audio_path='';
-  if(modo==='audio'&&file){
-    if(file.size>18*1024*1024){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad','El audio es muy grande (m&aacute;ximo 18 MB).');}
-    b.textContent='Subiendo audio...';
-    try{
-      var sg=await fetch('/api/form/sign?t='+encodeURIComponent(T)+'&n='+encodeURIComponent(file.name||'audio.mp3'),{method:'POST'});
-      var sj=await sg.json();
-      if(!sg.ok)throw new Error('sign');
-      var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':file.type||'audio/mpeg','x-upsert':'false'},body:file});
-      if(!up.ok)throw new Error('put');
-      audio_path=sj.path;
-    }catch(err){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad','No pude subir tu audio. Intenta con otro archivo.');}
-    b.textContent='Enviando...';
-  }
   try{
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),
-        vocal_gender:voz,lyrics_mode:modo,story:v('story'),lyrics:v('lyrics'),audio_path:audio_path})});
+        vocal_gender:voz,lyrics_mode:modo,story:v('story'),
+        lyrics:(modo==='audio'?letraAudio:v('lyrics')),audio_path:audioPath})});
     var j=await r.json().catch(function(){return{};});
     if(!r.ok){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad',j.message||'No pude enviar tu pedido.');}
     document.querySelectorAll('.card').forEach(function(c){c.style.display='none';});
@@ -19881,6 +19907,10 @@ load();
     })();
     const method = (req.method || "GET").toUpperCase();
 
+    if (action === "transcribe") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return transcribeAction(req, res);
+    }
     if (action === "sign") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return signAudio(req, res);
