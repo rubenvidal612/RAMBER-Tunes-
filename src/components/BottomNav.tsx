@@ -17,6 +17,7 @@ const mainItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
 ];
 
 const menuItems: Array<{ id: ViewTab; label: string; description: string; icon: typeof Home }> = [
+  { id: 'pedidos', label: 'Canciones por hacer', description: 'Pedidos del formulario', icon: Library },
   { id: 'copiloto', label: 'LucIAna Bot', description: 'Tu asistente musical', icon: Bot },
   { id: 'voces', label: 'Clonar voz', description: 'Crea tu perfil de voz', icon: Mic2 },
   { id: 'masterizar', label: 'Masterizar', description: 'Sonido listo para publicar', icon: Volume2 },
