@@ -24,6 +24,7 @@ const primaryItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
 
 const accountItems: Array<{ id: ViewTab; label: string; icon: typeof Home; adminOnly?: boolean }> = [
   { id: 'oficina', label: 'Oficina', icon: Shield, adminOnly: true },
+  { id: 'pedidos', label: 'Canciones por hacer', icon: MessageSquare, adminOnly: true },
   { id: 'vendedor', label: 'Vendedor', icon: Clock3 },
 ];
 

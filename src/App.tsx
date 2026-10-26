@@ -83,6 +83,7 @@ function tabFromPathname(pathname: string): ViewTab {
   if (/^\/canciones(?:\/|$)/i.test(p)) return 'inicio';
   if (/^\/masterizar(?:\/|$)/i.test(p)) return 'masterizar';
   if (/^\/vendedor(?:\/|$)/i.test(p) || /^\/vendor(?:\/|$)/i.test(p)) return 'vendedor';
+  if (/^\/pedidos(?:\/|$)/i.test(p)) return 'pedidos';
   if (/^\/biblioteca(?:\/|$)/i.test(p) || /^\/library(?:\/|$)/i.test(p)) return 'biblioteca';
   if (/^\/perfil(?:\/|$)/i.test(p) || /^\/profile(?:\/|$)/i.test(p)) return 'perfil';
   if (/^\/oficina(?:\/|$)/i.test(p) || /^\/office(?:\/|$)/i.test(p)) return 'oficina';
@@ -105,6 +106,8 @@ function pathnameFromTab(tab: ViewTab): string {
       return '/masterizar';
     case 'vendedor':
       return '/vendedor';
+    case 'pedidos':
+      return '/pedidos';
     case 'biblioteca':
       return '/biblioteca';
     case 'perfil':
@@ -4611,6 +4614,13 @@ export default function App() {
            )}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
+          {currentTab === 'pedidos' && (isAdmin ? (
+            <iframe
+              title="Canciones por hacer"
+              src="https://lucianamusic.app/api/form/panel?t=luciana-form-2026"
+              style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 18, background: '#0d0a14' }}
+            />
+          ) : null)}
           {currentTab === 'oficina' && (isAdmin ? (
             <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} onToast={showToast} />
           ) : (
