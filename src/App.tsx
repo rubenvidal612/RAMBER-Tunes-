@@ -4614,13 +4614,14 @@ export default function App() {
            )}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
-          {currentTab === 'pedidos' && (isAdmin ? (
+          {currentTab === 'pedidos' && (
             <iframe
               title="Canciones por hacer"
               src={`https://lucianamusic.app/api/form/panel?t=luciana-form-2026&me=${encodeURIComponent(authEmail || '')}`}
+              allow="clipboard-write; clipboard-read"
               style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 18, background: '#0d0a14' }}
             />
-          ) : null)}
+          )}
           {currentTab === 'oficina' && (isAdmin ? (
             <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} onToast={showToast} />
           ) : (
