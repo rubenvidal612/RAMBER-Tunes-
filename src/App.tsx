@@ -4720,13 +4720,11 @@ export default function App() {
                ) : currentTab === 'copiloto' ? (
                 <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />
                ) : currentTab === 'pedidos' ? (
-                 isAdmin ? (
-                   <iframe
-                     title="Canciones por hacer"
-                     src="https://lucianamusic.app/api/form/panel?t=luciana-form-2026"
-                     style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 0, background: '#0d0a14' }}
-                   />
-                 ) : null
+                 <iframe
+                   title="Canciones por hacer"
+                   src="https://lucianamusic.app/api/form/panel?t=luciana-form-2026"
+                   style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 0, background: '#0d0a14' }}
+                 />
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (

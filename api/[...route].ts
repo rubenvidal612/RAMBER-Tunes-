@@ -19516,11 +19516,15 @@ const formHandler = (() => {
     const title = String(ex.title || "").trim() || `Para ${String(ex.dedicate_to || ex.name || "ti")}`;
 
     if (!lyrics && story.length < 15) {
+      const porAudio = String(ex.audio_path || "").trim().length > 0;
+      const msg = porAudio
+        ? "No pude sacar la letra del audio. Pídele al cliente que la escriba o que mande otro audio."
+        : "Falta la letra o la historia del pedido.";
       await db
         .from("suno_tasks")
-        .update({ extra: { ...ex, status: "failed", error: "Falta letra o historia." } })
+        .update({ extra: { ...ex, status: "failed", error: msg } })
         .eq("task_id", rowKey);
-      return sendJson(res, 400, { error: "missing_source", message: "Falta letra o historia." });
+      return sendJson(res, 400, { error: "missing_source", message: msg });
     }
 
     // Llamada interna al robot (server-to-server, con la llave del robot).
@@ -19645,6 +19649,20 @@ const formHandler = (() => {
       return sendJson(res, 200, { ok: false, text: "", message: "No pude entender el audio. Escribe tu letra o intenta con otra grabación." });
     }
     return sendJson(res, 200, { ok: true, text });
+  }
+
+  // POST /api/form/delete { t, id }  -> borra un pedido del formulario
+  async function removeOrder(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const del = await db.from("suno_tasks").delete().eq("task_id", rowKey).eq("kind", FORM_ORDER_KIND);
+    if ((del as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
+    return sendJson(res, 200, { ok: true });
   }
 
   // ---------- paginas HTML (sin tocar la app de React) ----------
@@ -19845,9 +19863,11 @@ async function load(){
         (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
         '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
+        '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
         '</div>';
     }).join('');
     box.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.go,b);});});
+    box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
   }catch(e){box.textContent='';show('bad','Sin conexi&oacute;n.');}
 }
 async function go(id,btn){
@@ -19859,6 +19879,16 @@ async function go(id,btn){
     show('ok','Generando. Tarda ~1 minuto; pulsa Actualizar para ver el estado.');
     setTimeout(load,4000);
   }catch(e){btn.disabled=false;btn.textContent='Hacer';show('bad','Sin conexi&oacute;n.');}
+}
+async function del(id,btn){
+  if(!confirm('¿Borrar este pedido? No se puede deshacer.'))return;
+  btn.disabled=true;btn.textContent='Borrando...';
+  try{
+    var r=await fetch('/api/form/delete?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
+    var j=await r.json();
+    if(!r.ok){btn.disabled=false;btn.textContent='Borrar';return show('bad',j.error||'No pude borrar.');}
+    show('ok','Pedido borrado.');load();
+  }catch(e){btn.disabled=false;btn.textContent='Borrar';show('bad','Sin conexión.');}
 }
 document.getElementById('reload').addEventListener('click',load);
 document.getElementById('copy').addEventListener('click',async function(){
@@ -19907,6 +19937,10 @@ load();
     })();
     const method = (req.method || "GET").toUpperCase();
 
+    if (action === "delete") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return removeOrder(req, res);
+    }
     if (action === "transcribe") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return transcribeAction(req, res);
