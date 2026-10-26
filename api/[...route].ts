@@ -20595,7 +20595,7 @@ async function cargarVendedores(){
     var j=await r.json();
     VEND=(j&&j.sellers)||[];
     var box=document.getElementById('vendList');
-    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" onclick="editarVendedor(\''+esc(v.email)+'\')">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" onclick="borrarVendedor(\''+esc(v.email)+'\')">Borrar</button></div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
+    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" data-ed="'+esc(v.email)+'" onclick="editarVendedor(this.dataset.ed)">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" data-dv="'+esc(v.email)+'" onclick="borrarVendedor(this.dataset.dv)">Borrar</button></div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
   }catch(e){}
 }
 function editarVendedor(email){
