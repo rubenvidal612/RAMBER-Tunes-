@@ -19768,9 +19768,19 @@ document.getElementById('send').addEventListener('click',async function(){
   }
 
   function panelPage(token: string) {
+    const share = `https://lucianamusic.app/api/form/open?t=${encodeURIComponent(token)}`;
     const inner = `
 <h1>Canciones por hacer</h1>
 <p class="sub">Pedidos que llegaron por el formulario. Pulsa <b>Hacer</b> para generarlos.</p>
+<div class="card" style="border-color:#4a3a1c">
+  <label style="color:var(--gold)">Link para tus clientes</label>
+  <input id="share" readonly value="${share}" style="font-size:13px">
+  <div style="display:flex;gap:8px;margin-top:-6px">
+    <button class="btn sec" id="copy" style="flex:1">Copiar link</button>
+    <a class="btn sec" id="openf" href="${share}" target="_blank" style="flex:1;text-align:center;text-decoration:none;line-height:1.4">Abrir formulario</a>
+  </div>
+  <div class="small" style="margin-top:10px">Mándalo por WhatsApp. El cliente llena y su pedido aparece abajo.</div>
+</div>
 <div class="msg" id="msg"></div>
 <div id="list" class="small">Cargando...</div>
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
@@ -19812,6 +19822,11 @@ async function go(id,btn){
   }catch(e){btn.disabled=false;btn.textContent='Hacer';show('bad','Sin conexi&oacute;n.');}
 }
 document.getElementById('reload').addEventListener('click',load);
+document.getElementById('copy').addEventListener('click',async function(){
+  var v=document.getElementById('share').value;
+  try{await navigator.clipboard.writeText(v);this.textContent='¡Copiado!';setTimeout(function(){document.getElementById('copy').textContent='Copiar link';},1800);}
+  catch(e){document.getElementById('share').select();document.execCommand('copy');this.textContent='¡Copiado!';}
+});
 load();
 <\/script>`;
     return page("Pedidos · Luciána Music", inner + js);
