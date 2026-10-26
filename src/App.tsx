@@ -4617,7 +4617,7 @@ export default function App() {
           {currentTab === 'pedidos' && (isAdmin ? (
             <iframe
               title="Canciones por hacer"
-              src="https://lucianamusic.app/api/form/panel?t=luciana-form-2026"
+              src={`https://lucianamusic.app/api/form/panel?t=luciana-form-2026&me=${encodeURIComponent(authEmail || '')}`}
               style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 18, background: '#0d0a14' }}
             />
           ) : null)}
@@ -4722,7 +4722,7 @@ export default function App() {
                ) : currentTab === 'pedidos' ? (
                  <iframe
                    title="Canciones por hacer"
-                   src="https://lucianamusic.app/api/form/panel?t=luciana-form-2026"
+                   src={`https://lucianamusic.app/api/form/panel?t=luciana-form-2026&me=${encodeURIComponent(authEmail || '')}`}
                    style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 0, background: '#0d0a14' }}
                  />
                ) : currentTab === 'masterizar' ? (

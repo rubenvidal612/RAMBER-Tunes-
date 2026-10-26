@@ -19386,6 +19386,8 @@ const formHandler = (() => {
       task_id: String(ex.task_id || ""),
       songs: Array.isArray(ex.songs) ? ex.songs : [],
       paid: Boolean(ex.paid),
+      owner_email: String(ex.owner_email || "").toLowerCase(),
+      shared_with: Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [],
       error: String(ex.error || ""),
     };
   }
@@ -19443,6 +19445,8 @@ const formHandler = (() => {
       lyrics,
       audio_path: audioPath,
       title: clean(body.title, 100),
+      owner_email: clean(body.owner_email || query(req, "o"), 120).toLowerCase(),
+      shared_with: [] as string[],
       created_at: new Date().toISOString(),
     };
 
@@ -19479,7 +19483,15 @@ const formHandler = (() => {
     if ((q as any)?.error) return sendJson(res, 500, { error: "list_failed" });
 
     const rows = (q as any)?.data || [];
-    return sendJson(res, 200, { ok: true, orders: rows.map(orderView) });
+    const me = String(query(req, "me") || "").trim().toLowerCase();
+    const visibles = rows
+      .map(orderView)
+      .filter((o: any) => {
+        if (!me) return true;
+        if (!o.owner_email) return true; // pedidos viejos sin dueño: visibles para todos
+        return o.owner_email === me || o.shared_with.includes(me);
+      });
+    return sendJson(res, 200, { ok: true, me, orders: visibles });
   }
 
   // POST /api/form/generate { t, id }  (dueno): manda el pedido al robot
@@ -19665,6 +19677,28 @@ const formHandler = (() => {
     return sendJson(res, 200, { ok: true });
   }
 
+  // POST /api/form/share { t, id, email }  -> comparte un pedido con otra cuenta
+  async function shareOrder(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    const email = clean(body?.email, 120).toLowerCase();
+    if (!id || !email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return sendJson(res, 400, { error: "invalid", message: "Falta el pedido o el correo no es válido." });
+    }
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const list = Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [];
+    if (!list.includes(email)) list.push(email);
+    await db.from("suno_tasks").update({ extra: { ...ex, shared_with: list } }).eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, shared_with: list });
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -19832,13 +19866,14 @@ document.getElementById('send').addEventListener('click',async function(){
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)};
+var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase();
+if(document.getElementById('share'))document.getElementById('share').value=location.origin+'/api/form/open?t='+encodeURIComponent(T)+(ME?'&o='+encodeURIComponent(ME):'');
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;}
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 async function load(){
   var box=document.getElementById('list');box.textContent='Cargando...';
   try{
-    var r=await fetch('/api/form/list?t='+encodeURIComponent(T));
+    var r=await fetch('/api/form/list?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     if(!r.ok){box.textContent='';return show('bad',j.error||'No pude cargar.');}
     if(!j.orders.length){box.innerHTML='<div class="item">Todav&iacute;a no hay pedidos.</div>';return;}
@@ -19863,10 +19898,16 @@ async function load(){
         (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
         '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
+        '<div style="display:flex;gap:8px;margin-top:8px"><input data-mail="'+esc(o.id)+'" placeholder="correo para compartir" style="margin:0;font-size:13px"><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share="'+esc(o.id)+'">Enviar</button></div>'+
+        (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
         '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
         '</div>';
     }).join('');
     box.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.go,b);});});
+    box.querySelectorAll('[data-share]').forEach(function(b){b.addEventListener('click',function(){
+      var inp=box.querySelector('[data-mail="'+b.dataset.share+'"]');
+      compartir(b.dataset.share,(inp&&inp.value||'').trim(),b);
+    });});
     box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
   }catch(e){box.textContent='';show('bad','Sin conexi&oacute;n.');}
 }
@@ -19879,6 +19920,16 @@ async function go(id,btn){
     show('ok','Generando. Tarda ~1 minuto; pulsa Actualizar para ver el estado.');
     setTimeout(load,4000);
   }catch(e){btn.disabled=false;btn.textContent='Hacer';show('bad','Sin conexi&oacute;n.');}
+}
+async function compartir(id,email,btn){
+  if(!email)return show('bad','Escribe el correo de la persona.');
+  btn.disabled=true;btn.textContent='...';
+  try{
+    var r=await fetch('/api/form/share?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,email:email})});
+    var j=await r.json();
+    if(!r.ok){btn.disabled=false;btn.textContent='Enviar';return show('bad',j.message||j.error||'No pude compartir.');}
+    show('ok','Compartido con '+email+'. Ya lo puede ver en su cuenta.');load();
+  }catch(e){btn.disabled=false;btn.textContent='Enviar';show('bad','Sin conexión.');}
 }
 async function del(id,btn){
   if(!confirm('¿Borrar este pedido? No se puede deshacer.'))return;
@@ -19937,6 +19988,10 @@ load();
     })();
     const method = (req.method || "GET").toUpperCase();
 
+    if (action === "share") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return shareOrder(req, res);
+    }
     if (action === "delete") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return removeOrder(req, res);
