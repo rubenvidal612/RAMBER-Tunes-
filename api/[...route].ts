@@ -19286,6 +19286,309 @@ const appHandler = (() => {
   };
 })();
 
+// =================== FORMULARIO PUBLICO + LISTA DE PEDIDOS ===================
+// Un link con token que el dueno manda por WhatsApp. El cliente lo llena sin cuenta.
+// Cada envio queda como pedido pendiente en la lista; el dueno pulsa "Hacer" y se
+// genera llamando al robot. Se guarda en suno_tasks con kind="form-order".
+const FORM_ORDER_KIND = "form-order";
+const FORM_SHARE_KIND = "form-share";
+
+const formHandler = (() => {
+  function sendJson(res: any, status: number, body: any) {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.end(JSON.stringify(body));
+  }
+
+  function formToken() {
+    return String(process.env.LUCIANA_FORM_TOKEN || "").trim();
+  }
+
+  function sameToken(a: string, b: string) {
+    const x = String(a || "");
+    const y = String(b || "");
+    if (!x || !y || x.length !== y.length) return false;
+    let d = 0;
+    for (let i = 0; i < x.length; i += 1) d |= x.charCodeAt(i) ^ y.charCodeAt(i);
+    return d === 0;
+  }
+
+  function query(req: any, key: string) {
+    try {
+      return (new URL(req.url, "http://localhost").searchParams.get(key) || "").toString();
+    } catch {
+      return "";
+    }
+  }
+
+  async function readBody(req: any): Promise<any | null> {
+    try {
+      const raw = (req as any).body;
+      let text = "";
+      if (raw == null) text = "";
+      else if (typeof raw === "string") text = raw;
+      else if (raw instanceof Uint8Array) text = new TextDecoder("utf-8").decode(raw);
+      else text = JSON.stringify(raw);
+      const s = text.trim();
+      if (!s) return {};
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  }
+
+  async function admin() {
+    const createClient = await getSupabaseCreateClient();
+    const url = process.env.SUPABASE_URL || "";
+    const service = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!url || !service) return null;
+    return createClient(url, service, { auth: { persistSession: false } });
+  }
+
+  function ownerId() {
+    return String(process.env.LUCIANA_ROBOT_USER_ID || "").trim();
+  }
+
+  function newId() {
+    const rnd = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+    return `f${rnd}`;
+  }
+
+  function clean(value: any, max: number) {
+    return String(value == null ? "" : value).trim().slice(0, max);
+  }
+
+  function orderView(row: any) {
+    const ex = row?.extra && typeof row.extra === "object" ? row.extra : {};
+    return {
+      id: String(row?.task_id || ""),
+      status: String(ex.status || "pending"),
+      created_at: row?.created_at || null,
+      name: String(ex.name || ""),
+      whatsapp: String(ex.whatsapp || ""),
+      dedicate_to: String(ex.dedicate_to || ""),
+      occasion: String(ex.occasion || ""),
+      genre: String(ex.genre || ""),
+      vocal_gender: String(ex.vocal_gender || ""),
+      lyrics_mode: String(ex.lyrics_mode || ""),
+      story: String(ex.story || ""),
+      lyrics: String(ex.lyrics || ""),
+      title: String(ex.title || ""),
+      audio_url: String(ex.audio_url || ""),
+      personaje_id: String(ex.personaje_id || ""),
+      task_id: String(ex.task_id || ""),
+      songs: Array.isArray(ex.songs) ? ex.songs : [],
+      paid: Boolean(ex.paid),
+      error: String(ex.error || ""),
+    };
+  }
+
+  // POST /api/form/submit  (publico, con token)
+  async function submit(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) {
+      return sendJson(res, 401, { error: "unauthorized", message: "Link inválido o vencido." });
+    }
+    const body = await readBody(req);
+    if (!body || typeof body !== "object") return sendJson(res, 400, { error: "invalid_body" });
+
+    const name = clean(body.name, 80);
+    const whatsapp = clean(body.whatsapp, 30);
+    if (name.length < 2) return sendJson(res, 400, { error: "missing_name", message: "Escribe tu nombre." });
+    if (whatsapp.replace(/\D/g, "").length < 10) {
+      return sendJson(res, 400, { error: "missing_whatsapp", message: "Escribe tu WhatsApp (10 dígitos)." });
+    }
+
+    const mode = ["ia", "propia", "audio"].includes(String(body.lyrics_mode || "").toLowerCase())
+      ? String(body.lyrics_mode).toLowerCase()
+      : "ia";
+    const lyrics = clean(body.lyrics, 5000);
+    const story = clean(body.story, 1200);
+    if (mode === "propia" && lyrics.length < 20) {
+      return sendJson(res, 400, { error: "missing_lyrics", message: "Escribe tu letra (mínimo 20 caracteres)." });
+    }
+    if (mode === "ia" && story.length < 15) {
+      return sendJson(res, 400, { error: "missing_story", message: "Cuéntanos de qué trata (mínimo 15 caracteres)." });
+    }
+
+    const genre = clean(body.genre, 40) || "Bachata";
+    const vocal = ["m", "f"].includes(String(body.vocal_gender || "").toLowerCase())
+      ? String(body.vocal_gender).toLowerCase()
+      : "f";
+
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+
+    const id = newId();
+    const extra = {
+      kind: "form-order",
+      status: "pending",
+      name,
+      whatsapp,
+      dedicate_to: clean(body.dedicate_to, 80),
+      occasion: clean(body.occasion, 60),
+      genre,
+      vocal_gender: vocal,
+      lyrics_mode: mode,
+      story,
+      lyrics,
+      title: clean(body.title, 100),
+      audio_url: clean(body.audio_url, 500),
+      created_at: new Date().toISOString(),
+    };
+
+    const ins = await db.from("suno_tasks").insert({
+      task_id: `form_${id}`,
+      user_id: ownerId(),
+      kind: FORM_ORDER_KIND,
+      cost: 0,
+      consumed: false,
+      extra,
+    });
+    if ((ins as any)?.error) {
+      return sendJson(res, 500, { error: "save_failed", message: "No pude guardar tu pedido." });
+    }
+
+    return sendJson(res, 200, { ok: true, id, message: "¡Listo! Tu pedido entró a la lista." });
+  }
+
+  // GET /api/form/list?t=TOKEN  (dueno, protegido por el mismo token del formulario)
+  async function list(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) {
+      return sendJson(res, 401, { error: "unauthorized" });
+    }
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+
+    const q = await db
+      .from("suno_tasks")
+      .select("task_id, created_at, extra, cost")
+      .eq("user_id", ownerId())
+      .eq("kind", FORM_ORDER_KIND)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if ((q as any)?.error) return sendJson(res, 500, { error: "list_failed" });
+
+    const rows = (q as any)?.data || [];
+    return sendJson(res, 200, { ok: true, orders: rows.map(orderView) });
+  }
+
+  // POST /api/form/generate { t, id }  (dueno): manda el pedido al robot
+  async function generate(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) {
+      return sendJson(res, 401, { error: "unauthorized" });
+    }
+    const body = await readBody(req);
+    const id = clean(body?.id, 40);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+
+    const rowKey = `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    if (String(ex.status) === "done") return sendJson(res, 409, { error: "already_done" });
+
+    // La letra: si es "ia" o "audio", la escribe el modelo a partir de la historia.
+    const lyrics = String(ex.lyrics || "").trim();
+    const story = String(ex.story || "").trim();
+    const style = [ex.genre, ex.vocal_gender === "f" ? "voz femenina" : "voz masculina"]
+      .filter(Boolean)
+      .join(", ");
+    const title = String(ex.title || "").trim() || `Para ${String(ex.dedicate_to || ex.name || "ti")}`;
+
+    if (!lyrics && story.length < 15) {
+      await db
+        .from("suno_tasks")
+        .update({ extra: { ...ex, status: "failed", error: "Falta letra o historia." } })
+        .eq("task_id", rowKey);
+      return sendJson(res, 400, { error: "missing_source", message: "Falta letra o historia." });
+    }
+
+    // Llamada interna al robot (server-to-server, con la llave del robot).
+    const base = absoluteUrlFromReq(req, "/api/integrations/generate");
+    const robotKey = String(process.env.LUCIANA_ROBOT_API_KEY || "").trim();
+    let provider: any = null;
+    try {
+      const r = await fetch(base, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${robotKey}` },
+        body: JSON.stringify({
+          request_id: `form-${id}`,
+          lyrics: lyrics || story,
+          style,
+          title,
+          vocal_gender: ex.vocal_gender || "f",
+          mode: "review",
+          order_id: id,
+          client_id: ex.whatsapp || "",
+        }),
+      });
+      provider = await r.json().catch(() => null);
+      if (!r.ok) {
+        await db
+          .from("suno_tasks")
+          .update({ extra: { ...ex, status: "failed", error: String(provider?.error || r.status) } })
+          .eq("task_id", rowKey);
+        return sendJson(res, 502, { error: "generate_failed", detail: provider });
+      }
+    } catch (e) {
+      return sendJson(res, 502, { error: "generate_failed", message: e instanceof Error ? e.message : "" });
+    }
+
+    await db
+      .from("suno_tasks")
+      .update({
+        extra: {
+          ...ex,
+          status: "generating",
+          task_id: String(provider?.task_id || ""),
+          credits_charged: Number(provider?.credits_charged || 0),
+          balance_after: Number(provider?.balance_after || 0),
+        },
+      })
+      .eq("task_id", rowKey);
+
+    return sendJson(res, 200, { ok: true, task_id: provider?.task_id || null, balance_after: provider?.balance_after ?? null });
+  }
+
+  return async function handler(req: any, res: any) {
+    if (!formToken()) {
+      return sendJson(res, 503, { error: "form_not_configured", message: "Falta LUCIANA_FORM_TOKEN." });
+    }
+    const action = (() => {
+      try {
+        const parts = new URL(req.url, "http://localhost").pathname.split("/").filter(Boolean);
+        return (parts[parts.length - 1] || "").toLowerCase();
+      } catch {
+        return "";
+      }
+    })();
+    const method = (req.method || "GET").toUpperCase();
+
+    if (action === "submit") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return submit(req, res);
+    }
+    if (action === "list") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
+      return list(req, res);
+    }
+    if (action === "generate") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return generate(req, res);
+    }
+    return sendJson(res, 404, {
+      error: "not_found",
+      message: "Rutas: POST /api/form/submit · GET /api/form/list · POST /api/form/generate",
+    });
+  };
+})();
+
 // =================== INTEGRACIONES (robot del CRM) ===================
 // API para el mini CRM: pide canciones cobrando a la cuenta del dueno, sin sesion
 // de usuario. Se autentica SOLO con LUCIANA_ROBOT_API_KEY (nunca con JWT de usuario).
@@ -26526,6 +26829,7 @@ export default async function handler(req: any, res: any) {
       return sendJson(200, out);
     }
     if (head === "integrations") return integrationsHandler(req, res);
+    if (head === "form") return formHandler(req, res);
     if (head === "webhooks" && next === "suno") return sunoWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-cover") return replicateCoverWebhookHandler(req, res);
     if (head === "webhooks" && next === "replicate-voice-sample") return replicateVoiceSampleWebhookHandler(req, res);
