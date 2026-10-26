@@ -20553,7 +20553,7 @@ async function pagadoManual(id,btn){
   var sugerido='200';
   var o=TODAS.filter(function(x){return x.id===id;})[0];
   if(o&&o.price_mxn)sugerido=String(o.price_mxn);
-  var m=prompt('¿Cuánto te pagó el cliente? (MXN)\n\nPuedes poner un monto menor si le hiciste descuento.',sugerido);
+  var m=prompt('¿Cuánto te pagó el cliente? (MXN)\\n\\nPuedes poner un monto menor si le hiciste descuento.',sugerido);
   if(m===null)return;
   var n=Number(String(m).replace(/[^0-9.]/g,''));
   if(!isFinite(n)||n<=0)return show('bad','Escribe un monto válido.');
