@@ -19302,7 +19302,11 @@ const formHandler = (() => {
   }
 
   function formToken() {
-    return String(process.env.LUCIANA_FORM_TOKEN || "").trim();
+    const explicit = String(process.env.LUCIANA_FORM_TOKEN || "").trim();
+    if (explicit) return explicit;
+    // Sin variable configurada se usa este token fijo, para que el formulario funcione
+    // sin depender de la consola de Vercel. Se puede cambiar con LUCIANA_FORM_TOKEN.
+    return "luciana-form-2026";
   }
 
   function sameToken(a: string, b: string) {
