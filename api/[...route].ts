@@ -20271,9 +20271,7 @@ function aplicarPlan(){
   var pn=document.getElementById('planNota');
   if(pn)pn.innerHTML=suya?'Sube una canci&oacute;n a capela y te clonamos tu voz para esta rola.':'';
 }
-var pBox=document.getElementById('plan');if(!OWNER){
-  var bt=document.getElementById('send');
-  if(bt){bt.disabled=true;bt.textContent='Link no vÃ¡lido';}
+var pBox=
   show('bad','Este link no es vÃ¡lido. PÃ­dele a tu vendedor que te mande uno nuevo.');
 }
 if(pBox)pBox.addEventListener('click',function(e){
@@ -20288,7 +20286,7 @@ document.getElementById('audio').addEventListener('change',async function(){
   try{
     var sg=await fetch('/api/form/sign?t='+encodeURIComponent(T)+'&n='+encodeURIComponent(f.name||'audio.mp3'),{method:'POST'});
     var sj=await sg.json();if(!sg.ok)throw new Error('sign');
-    var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':f.type||'audio/mpeg','x-upsert':'false'},body:f});
+    var up=await (async function(){var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':(f.type||'audio/mpeg'),'x-upsert':'false'},body:f});if(!up.ok){up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':'application/octet-stream','x-upsert':'false'},body:f});}return up;})();
     if(!up.ok)throw new Error('put');
     audioPath=sj.path;
     st.textContent='Escuchando tu audio para escribir la letra...';
