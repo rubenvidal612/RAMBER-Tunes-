@@ -19699,6 +19699,50 @@ const formHandler = (() => {
     return sendJson(res, 200, { ok: true, shared_with: list });
   }
 
+  // POST /api/form/sync { t, id }  -> pregunta a Luciana si ya estan las canciones
+  async function syncOrder(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const taskId = String(ex.task_id || "").trim();
+    if (!taskId) return sendJson(res, 400, { error: "no_task" });
+
+    const robotKey = String(process.env.LUCIANA_ROBOT_API_KEY || "").trim();
+    let data: any = null;
+    try {
+      const r = await fetch(
+        absoluteUrlFromReq(req, `/api/integrations/status?task_id=${encodeURIComponent(taskId)}`),
+        { headers: { authorization: `Bearer ${robotKey}` } },
+      );
+      data = await r.json().catch(() => null);
+    } catch (e) {
+      return sendJson(res, 502, { error: "status_failed", message: e instanceof Error ? e.message : "" });
+    }
+
+    const st = String(data?.status || "").toLowerCase();
+    const songs = Array.isArray(data?.songs) ? data.songs : [];
+    const listo = (st === "complete" || st === "completed" || st === "ready" || st === "success") && songs.length > 0;
+    const fallo = st === "failed" || st === "error";
+
+    const extra2 = {
+      ...ex,
+      status: listo ? "done" : fallo ? "failed" : "generating",
+      songs: listo ? songs : Array.isArray(ex.songs) ? ex.songs : [],
+      error: fallo ? String(data?.error_message || data?.error_code || "Falló la generación") : "",
+      synced_at: new Date().toISOString(),
+    };
+    await db.from("suno_tasks").update({ extra: extra2 }).eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, status: extra2.status, songs: extra2.songs });
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -19891,12 +19935,22 @@ async function load(){
       if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
       if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
       if(o.audio_path)det+='<div class="meta" style="margin-top:8px"><b>Audio a capela:</b> '+esc(o.audio_path)+'</div>';
+      var players='';
+      if(Array.isArray(o.songs)&&o.songs.length){
+        players='<div style="margin-top:10px">'+o.songs.map(function(s,i){
+          var u=String(s.audio_url||'');
+          if(!u)return '';
+          return '<div class="small" style="margin-bottom:8px"><b>Versión '+(i+1)+'</b>'+(s.title?(' &middot; '+esc(s.title)):'')+
+            (s.duration?(' &middot; '+Math.round(Number(s.duration))+'s'):'')+
+            '<audio controls preload="none" src="'+esc(u)+'" style="width:100%;margin-top:6px"></audio></div>';
+        }).join('')+'</div>';
+      }
       return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
         ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
         (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
         (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
-        '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+
+        '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
         '<div style="display:flex;gap:8px;margin-top:8px"><input data-mail="'+esc(o.id)+'" placeholder="correo para compartir" style="margin:0;font-size:13px"><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share="'+esc(o.id)+'">Enviar</button></div>'+
         (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
@@ -19909,6 +19963,14 @@ async function load(){
       compartir(b.dataset.share,(inp&&inp.value||'').trim(),b);
     });});
     box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
+    var pend=j.orders.filter(function(o){return o.status==='generating'&&o.task_id;});
+    window.__tries=(window.__tries||0);
+    if(pend.length&&!window.__syncing&&window.__tries<40){
+      window.__syncing=1;window.__tries++;
+      Promise.all(pend.slice(0,4).map(function(o){
+        return fetch('/api/form/sync?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:o.id})}).catch(function(){});
+      })).then(function(){window.__syncing=0;setTimeout(load,4000);});
+    }
   }catch(e){box.textContent='';show('bad','Sin conexi&oacute;n.');}
 }
 async function go(id,btn){
@@ -19988,6 +20050,10 @@ load();
     })();
     const method = (req.method || "GET").toUpperCase();
 
+    if (action === "sync") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return syncOrder(req, res);
+    }
     if (action === "share") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return shareOrder(req, res);
