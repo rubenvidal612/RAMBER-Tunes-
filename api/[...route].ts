@@ -19388,6 +19388,9 @@ const formHandler = (() => {
       paid: Boolean(ex.paid),
       paid_amount: ex.paid_amount == null ? null : Number(ex.paid_amount),
       paid_manual: Boolean(ex.paid_manual),
+      paid_at: String(ex.paid_at || ""),
+      paid_method: String(ex.paid_method || ""),
+      price_mxn: ex.price_mxn == null ? null : Number(ex.price_mxn),
       stage: String(ex.stage || (ex.paid ? "pagado" : "pendiente")),
       transferred_to: String(ex.transferred_to || "").toLowerCase(),
       owner_email: String(ex.owner_email || "").toLowerCase(),
@@ -19782,6 +19785,7 @@ const formHandler = (() => {
           paid,
           paid_at: paid ? new Date().toISOString() : null,
           paid_manual: paid ? true : Boolean(ex.paid_manual),
+          paid_method: paid ? clean(body?.method, 30).toLowerCase() || ex.paid_method || "manual" : ex.paid_method || "",
           paid_amount: paid && Number.isFinite(monto) && monto > 0 ? Math.round(monto * 100) / 100 : ex.paid_amount || null,
           stage: paid ? "pagado" : "por_pagar",
         },
@@ -20071,6 +20075,49 @@ ${botones}
     }
   }
 
+  // GET /api/form/report?t=&me=  -> ventas por dia, mes y metodo
+  async function report(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const q = await db
+      .from("suno_tasks")
+      .select("task_id, created_at, extra")
+      .eq("user_id", ownerId())
+      .eq("kind", FORM_ORDER_KIND)
+      .limit(1000);
+    const rows = ((q as any)?.data || []).map(orderView).filter((o: any) => o.paid);
+    const monto = (o: any) => Number(o.paid_amount != null ? o.paid_amount : o.price_mxn || 0);
+    const dia = (o: any) => String(o.paid_at || "").slice(0, 10) || String(o.created_at || "").slice(0, 10);
+    const hoy = new Date().toISOString().slice(0, 10);
+    const mes = hoy.slice(0, 7);
+    const porDia: Record<string, { dia: string; monto: number; pedidos: number }> = {};
+    const porMetodo: Record<string, { monto: number; pedidos: number }> = {};
+    let total = 0;
+    for (const o of rows) {
+      const m = monto(o);
+      total += m;
+      const d = dia(o);
+      porDia[d] = porDia[d] || { dia: d, monto: 0, pedidos: 0 };
+      porDia[d].monto += m;
+      porDia[d].pedidos += 1;
+      const met = String(o.paid_method || (o.paid_manual ? "manual" : "mercadopago"));
+      porMetodo[met] = porMetodo[met] || { monto: 0, pedidos: 0 };
+      porMetodo[met].monto += m;
+      porMetodo[met].pedidos += 1;
+    }
+    const dias = Object.values(porDia).sort((a, b) => (a.dia < b.dia ? 1 : -1));
+    return sendJson(res, 200, {
+      ok: true,
+      total: Math.round(total * 100) / 100,
+      pedidos: rows.length,
+      hoy: Math.round(dias.filter((d) => d.dia === hoy).reduce((s, d) => s + d.monto, 0) * 100) / 100,
+      mes: Math.round(dias.filter((d) => d.dia.slice(0, 7) === mes).reduce((s, d) => s + d.monto, 0) * 100) / 100,
+      porDia: dias.slice(0, 60),
+      porMetodo: Object.entries(porMetodo).map(([metodo, v]) => ({ metodo, ...v })),
+    });
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -20270,6 +20317,10 @@ document.getElementById('send').addEventListener('click',async function(){
   <div style="display:flex;gap:8px;margin-top:8px"><input id="vendMail" placeholder="correo@ejemplo.com" style="margin:0"><button class="btn sec" id="addVend" style="width:auto;padding:0 14px">Guardar</button></div>
   <div id="vendList" class="small" style="margin-top:10px"></div>
 </div>
+<div class="card" id="repCard">
+  <label>Ventas</label>
+  <div id="rep" class="small">Cargando...</div>
+</div>
 <div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 <div id="list" class="small">Cargando...</div>
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
@@ -20462,13 +20513,16 @@ async function pagadoManual(id,btn){
   if(m===null)return;
   var n=Number(String(m).replace(/[^0-9.]/g,''));
   if(!isFinite(n)||n<=0)return show('bad','Escribe un monto válido.');
+  var met=prompt('¿Cómo te pagó? (efectivo / transferencia / tarjeta / otro)','transferencia');
+  if(met===null)return;
+  met=String(met||'').trim().toLowerCase()||'manual';
   btn.disabled=true;btn.textContent='Guardando...';
   try{
-    var r=await fetch('/api/form/paid?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,paid:true,amount:n})});
+    var r=await fetch('/api/form/paid?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,paid:true,amount:n,method:met})});
     var j=await r.json();
     if(!r.ok){btn.disabled=false;btn.textContent='Pedido pagado manual';return show('bad',j.error||'No pude guardar.');}
-    show('ok','Marcado como pagado por $'+n+'. Su link ya permite descargar.');
-    load();
+    show('ok','Pagado: $'+n+' ('+met+'). Su link ya permite descargar.');
+    load();cargarReporte();
   }catch(e){btn.disabled=false;btn.textContent='Pedido pagado manual';show('bad','Sin conexión.');}
 }
 async function compartir(id,email,btn){
@@ -20602,6 +20656,7 @@ load();
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return syncOrder(req, res);
     }
+    if (action === "report") return report(req, res);
     if (action === "pay") return payOrder(req, res);
     if (action === "mp") return mpWebhook(req, res);
     if (action === "stage") {
