@@ -19409,6 +19409,14 @@ const formHandler = (() => {
 
     const name = clean(body.name, 80);
     const whatsapp = clean(body.whatsapp, 30);
+    // El link debe traer el correo del vendedor: si no, el pedido no tendría dueño.
+    const ownerEmail = clean(body.owner_email || query(req, "o"), 120).toLowerCase();
+    if (!ownerEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerEmail)) {
+      return sendJson(res, 400, {
+        error: "invalid_link",
+        message: "Este link no es válido. Pídele a tu vendedor que te mande uno nuevo.",
+      });
+    }
     if (name.length < 2) return sendJson(res, 400, { error: "missing_name", message: "Escribe tu nombre." });
     if (whatsapp.replace(/\D/g, "").length < 10) {
       return sendJson(res, 400, { error: "missing_whatsapp", message: "Escribe tu WhatsApp (10 dígitos)." });
@@ -19457,7 +19465,7 @@ const formHandler = (() => {
       price_mxn: Math.round(
         Number(body.price_mxn || process.env.PRICE_FABRICA_MXN || 200) * 100,
       ) / 100,
-      owner_email: clean(body.owner_email || query(req, "o"), 120).toLowerCase(),
+      owner_email: ownerEmail,
       shared_with: [] as string[],
       created_at: new Date().toISOString(),
     };
@@ -20258,7 +20266,11 @@ function aplicarPlan(){
   var pn=document.getElementById('planNota');
   if(pn)pn.innerHTML=suya?'Sube una canci&oacute;n a capela y te clonamos tu voz para esta rola.':'';
 }
-var pBox=document.getElementById('plan');
+var pBox=document.getElementById('plan');if(!OWNER){
+  var bt=document.getElementById('send');
+  if(bt){bt.disabled=true;bt.textContent='Link no válido';}
+  show('bad','Este link no es válido. Pídele a tu vendedor que te mande uno nuevo.');
+}
 if(pBox)pBox.addEventListener('click',function(e){
   var t=e.target.closest('.opt');if(!t)return;PLAN=t.dataset.p;seg('plan','p',PLAN);aplicarPlan();
 });
