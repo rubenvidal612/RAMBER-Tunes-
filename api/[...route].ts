@@ -20086,7 +20086,16 @@ ${botones}
       .eq("user_id", ownerId())
       .eq("kind", FORM_ORDER_KIND)
       .limit(1000);
-    const rows = ((q as any)?.data || []).map(orderView).filter((o: any) => o.paid);
+    const rows = ((q as any)?.data || [])
+      .map(orderView)
+      // Cada usuario ve SOLO sus ventas (mismo criterio que la lista de pedidos).
+      .filter((o: any) => {
+        const me = String(query(req, "me") || "").trim().toLowerCase();
+        if (!me) return true;
+        if (!o.owner_email) return true;
+        return o.owner_email === me || o.shared_with.includes(me);
+      })
+      .filter((o: any) => o.paid);
     const monto = (o: any) => Number(o.paid_amount != null ? o.paid_amount : o.price_mxn || 0);
     const dia = (o: any) => String(o.paid_at || "").slice(0, 10) || String(o.created_at || "").slice(0, 10);
     const hoy = new Date().toISOString().slice(0, 10);
@@ -20590,7 +20599,7 @@ if(document.getElementById('addVend'))document.getElementById('addVend').addEven
 async function cargarReporte(){
   var box=document.getElementById('rep');if(!box)return;
   try{
-    var r=await fetch('/api/form/report?t='+encodeURIComponent(T));
+    var r=await fetch('/api/form/report?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     if(!r.ok){box.innerHTML='No pude cargar.';return;}
     var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'—';
