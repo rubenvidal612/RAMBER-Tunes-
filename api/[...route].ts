@@ -19447,6 +19447,11 @@ const formHandler = (() => {
       lyrics,
       audio_path: audioPath,
       title: clean(body.title, 100),
+      plan: clean(body.plan, 20) || "rola",
+      // Precio congelado al crear el pedido: si mañana cambias precios, este no se mueve.
+      price_mxn: Math.round(
+        Number(body.price_mxn || process.env.PRICE_FABRICA_MXN || 200) * 100,
+      ) / 100,
       owner_email: clean(body.owner_email || query(req, "o"), 120).toLowerCase(),
       shared_with: [] as string[],
       created_at: new Date().toISOString(),
@@ -19925,7 +19930,11 @@ ${botones}
 
   // ---------- cobro con MercadoPago (pedidos del formulario) ----------
   function mpToken() {
-    return String(process.env.MERCADO_PAGO_TEST_TOKEN || process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim();
+    const prod = String(process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim();
+    const test = String(process.env.MERCADO_PAGO_TEST_TOKEN || "").trim();
+    // Por defecto cobra de verdad (produccion). Solo usa sandbox si se pide explicitamente.
+    if (String(process.env.MERCADO_PAGO_TEST_MODE || "") === "1") return test || prod;
+    return prod || test;
   }
 
   function precioPedido(ex: any) {
