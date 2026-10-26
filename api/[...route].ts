@@ -19853,6 +19853,14 @@ ${botones}
     const db = await admin();
     if (!db) return sendJson(res, 500, { error: "db_unavailable" });
     const method = (req.method || "GET").toUpperCase();
+    if (method === "DELETE") {
+      const dbBody = await readBody(req);
+      const demail = clean(dbBody?.email || query(req, "email"), 120).toLowerCase();
+      if (!demail) return sendJson(res, 400, { error: "missing_email" });
+      const del = await db.from("suno_tasks").delete().eq("task_id", `seller_${demail}`).eq("kind", "form-seller");
+      if ((del as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
+      return sendJson(res, 200, { ok: true });
+    }
     if (method === "POST") {
       const body = await readBody(req);
       const email = clean(body?.email, 120).toLowerCase();
@@ -20287,8 +20295,26 @@ async function cargarVendedores(){
     var j=await r.json();
     VEND=(j&&j.sellers)||[];
     var box=document.getElementById('vendList');
-    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div>'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
+    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" onclick="editarVendedor(\''+esc(v.email)+'\')">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" onclick="borrarVendedor(\''+esc(v.email)+'\')">Borrar</button></div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
   }catch(e){}
+}
+function editarVendedor(email){
+  var v=VEND.filter(function(x){return String(x.email).toLowerCase()===String(email).toLowerCase();})[0];
+  if(!v)return;
+  document.getElementById('vendName').value=v.name||'';
+  document.getElementById('vendMail').value=v.email||'';
+  if(document.getElementById('vendPhone'))document.getElementById('vendPhone').value=v.phone||'';
+  window.scrollTo(0,0);
+  show('ok','Editando a '+(v.name||v.email)+'. Cambia lo que necesites y pulsa Guardar.');
+}
+async function borrarVendedor(email){
+  if(!confirm('¿Borrar al vendedor '+email+'?'))return;
+  try{
+    var r=await fetch('/api/form/sellers?t='+encodeURIComponent(T),{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({email:email})});
+    var j=await r.json();
+    if(!r.ok){return show('bad',j.error||'No pude borrar.');}
+    show('ok','Vendedor borrado.');await cargarVendedores();load();
+  }catch(e){show('bad','Sin conexión.');}
 }
 async function guardarVendedor(){
   var n=(document.getElementById('vendName').value||'').trim();
