@@ -19700,7 +19700,7 @@ ${inner}
   <div class="opts" id="modo">
     <div class="opt on" data-m="ia">IA escribe<br><span class="small">Solo dinos de qu&eacute; trata</span></div>
     <div class="opt" data-m="propia">Yo escribo<br><span class="small">Pega tu letra</span></div>
-    <div class="opt" data-m="audio">Ya sub&iacute; mi audio<br><span class="small">A capela</span></div>
+    <div class="opt" data-m="audio">Subir mi audio<br><span class="small">A capela &middot; in&eacute;dita</span></div>
   </div>
   <div id="campoIA">
     <label>Cu&eacute;ntanos de qu&eacute; trata</label>
@@ -19713,7 +19713,7 @@ ${inner}
   <div id="campoAudio" style="display:none">
     <label>Tu audio a capela</label>
     <input id="audio" type="file" accept="audio/*">
-    <div class="small" style="margin:-8px 0 14px">Canta sin m&uacute;sica de fondo ni ruido. Las canciones conocidas se rechazan.</div>
+    <div class="small" style="margin:-8px 0 14px">Canta una <b>canci&oacute;n in&eacute;dita</b> (tuya, que nadie haya grabado), a capela, sin m&uacute;sica de fondo ni ruido. Las canciones conocidas se rechazan.</div>
   </div>
 </div>
 <button class="btn" id="send">Enviar mi pedido</button>
