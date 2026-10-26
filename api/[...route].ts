@@ -978,7 +978,16 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     const exp = (plan as any)?.plan_expires_at;
     const active = Boolean((plan as any)?.plan_active);
     if ((key === "inicio" || key === "productor") && exp && !active) {
-      planRejection = { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+      // El plan vencido NO debe bloquear a quien tiene saldo: los creditos mandan.
+      let saldoPlan = 0;
+      try {
+        saldoPlan = Number(await getUserAvailableCredits(admin, userId)) || 0;
+      } catch {
+        saldoPlan = 0;
+      }
+      if (saldoPlan <= 0) {
+        planRejection = { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+      }
     }
   } catch {
   }
