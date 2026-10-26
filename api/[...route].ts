@@ -20120,6 +20120,14 @@ ${inner}
   </div>
 </div>
 <div class="card">
+  <label>&iquest;Con qu&eacute; voz la quieres?</label>
+  <div class="opts" id="plan">
+    <div class="opt on" data-p="rola">Voz del sistema<br><span class="small">$200</span></div>
+    <div class="opt" data-p="rola_voz">Mi propia voz<br><span class="small">$350 &middot; clonada</span></div>
+  </div>
+  <div class="small" id="planNota" style="margin:-6px 0 0">Con tu propia voz necesitas subir una canci&oacute;n a capela.</div>
+</div>
+<div class="card">
   <label>La letra</label>
   <div class="opts" id="modo">
     <div class="opt on" data-m="ia">IA escribe<br><span class="small">Solo dinos de qu&eacute; trata</span></div>
