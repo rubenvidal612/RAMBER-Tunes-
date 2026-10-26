@@ -19523,7 +19523,7 @@ const formHandler = (() => {
         ...o,
         whatsapp: esDueno ? o.whatsapp : `â€¢â€¢â€¢â€¢â€¢${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
       }));
-    return sendJson(res, 200, { ok: true, me, is_owner: esDueno, orders: visibles });
+    return sendJson(res, 200, { ok: true, me, owner: dueno, is_owner: esDueno, orders: visibles });
   }
 
   // POST /api/form/generate { t, id }  (dueno): manda el pedido al robot
@@ -20649,7 +20649,7 @@ async function load(){
     var r=await fetch('/api/form/list?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     if(!r.ok){box.textContent='';return show('bad',j.error||'No pude cargar.');}
-    IS_OWNER=!!j.is_owner;TODAS=j.orders||[];
+    IS_OWNER=!!j.is_owner;TODAS=j.orders||[];var WHO=ME||j.owner||"";if(document.getElementById("share"))document.getElementById("share").value=location.origin+"/api/form/open?t="+encodeURIComponent(T)+(WHO?"&o="+encodeURIComponent(WHO):"");
     render();
     var pend=TODAS.filter(function(o){return o.status==='generating'&&o.task_id;});
     window.__tries=(window.__tries||0);
