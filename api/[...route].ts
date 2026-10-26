@@ -20646,9 +20646,21 @@ async function load(){
 }
 cargarVendedores();
 document.getElementById('copy').addEventListener('click',async function(){
-  var v=document.getElementById('share').value;
-  try{await navigator.clipboard.writeText(v);this.textContent='¡Copiado!';setTimeout(function(){document.getElementById('copy').textContent='Copiar link';},1800);}
-  catch(e){document.getElementById('share').select();document.execCommand('copy');this.textContent='¡Copiado!';}
+  var inp=document.getElementById('share');
+  var v=inp.value;
+  var btn=this;
+  function ok(){btn.textContent='¡Copiado!';setTimeout(function(){btn.textContent='Copiar link';},1800);}
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(v);return ok();}
+  }catch(e){}
+  try{
+    inp.removeAttribute('readonly');inp.select();inp.setSelectionRange(0,v.length);
+    var done=document.execCommand('copy');
+    inp.setAttribute('readonly','readonly');
+    if(done)return ok();
+  }catch(e){}
+  // Ultimo recurso: mostrar el link para copiar a mano
+  prompt('Copia tu link (mantén presionado y elige Copiar):',v);
 });
 load();
 <\/script>`;
