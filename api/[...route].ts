@@ -19373,13 +19373,15 @@ const formHandler = (() => {
       whatsapp: String(ex.whatsapp || ""),
       dedicate_to: String(ex.dedicate_to || ""),
       occasion: String(ex.occasion || ""),
-      genre: String(ex.genre || ""),
+      genre: String(ex.style || ex.genre || ""),
+      style: String(ex.style || ex.genre || ""),
       vocal_gender: String(ex.vocal_gender || ""),
       lyrics_mode: String(ex.lyrics_mode || ""),
       story: String(ex.story || ""),
       lyrics: String(ex.lyrics || ""),
       title: String(ex.title || ""),
       audio_url: String(ex.audio_url || ""),
+      audio_path: String(ex.audio_path || ""),
       personaje_id: String(ex.personaje_id || ""),
       task_id: String(ex.task_id || ""),
       songs: Array.isArray(ex.songs) ? ex.songs : [],
@@ -19408,14 +19410,19 @@ const formHandler = (() => {
       : "ia";
     const lyrics = clean(body.lyrics, 5000);
     const story = clean(body.story, 1200);
+    const audioPath = clean(body.audio_path, 300);
     if (mode === "propia" && lyrics.length < 20) {
       return sendJson(res, 400, { error: "missing_lyrics", message: "Escribe tu letra (mínimo 20 caracteres)." });
     }
     if (mode === "ia" && story.length < 15) {
       return sendJson(res, 400, { error: "missing_story", message: "Cuéntanos de qué trata (mínimo 15 caracteres)." });
     }
+    if (mode === "audio" && !audioPath) {
+      return sendJson(res, 400, { error: "missing_audio", message: "Sube tu audio a capela." });
+    }
 
-    const genre = clean(body.genre, 40) || "Bachata";
+    // El estilo es texto libre: el cliente describe cómo quiere que suene.
+    const styleText = clean(body.style ?? body.genre, 400) || "Balada romántica";
     const vocal = ["m", "f"].includes(String(body.vocal_gender || "").toLowerCase())
       ? String(body.vocal_gender).toLowerCase()
       : "f";
@@ -19429,15 +19436,13 @@ const formHandler = (() => {
       status: "pending",
       name,
       whatsapp,
-      dedicate_to: clean(body.dedicate_to, 80),
-      occasion: clean(body.occasion, 60),
-      genre,
+      style: styleText,
       vocal_gender: vocal,
       lyrics_mode: mode,
       story,
       lyrics,
+      audio_path: audioPath,
       title: clean(body.title, 100),
-      audio_url: clean(body.audio_url, 500),
       created_at: new Date().toISOString(),
     };
 
@@ -19498,9 +19503,14 @@ const formHandler = (() => {
     if (String(ex.status) === "done") return sendJson(res, 409, { error: "already_done" });
 
     // La letra: si es "ia" o "audio", la escribe el modelo a partir de la historia.
-    const lyrics = String(ex.lyrics || "").trim();
+    // La letra: si subió audio y no hay letra, se transcribe lo que cantó.
+    let lyrics = String(ex.lyrics || "").trim();
     const story = String(ex.story || "").trim();
-    const style = [ex.genre, ex.vocal_gender === "f" ? "voz femenina" : "voz masculina"]
+    if (!lyrics && String(ex.audio_path || "").trim()) {
+      const t = await transcribe(String(ex.audio_path));
+      if (t) lyrics = t;
+    }
+    const style = [String(ex.style || "").trim(), ex.vocal_gender === "f" ? "voz femenina" : "voz masculina"]
       .filter(Boolean)
       .join(", ");
     const title = String(ex.title || "").trim() || `Para ${String(ex.dedicate_to || ex.name || "ti")}`;
@@ -19560,6 +19570,71 @@ const formHandler = (() => {
     return sendJson(res, 200, { ok: true, task_id: provider?.task_id || null, balance_after: provider?.balance_after ?? null });
   }
 
+  // POST /api/form/sign?t=&n=nombre.mp3  -> URL firmada para que el navegador suba el audio
+  async function signAudio(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+    const ext = (String(query(req, "n") || "").split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+    const path = `form/audio/${newId()}.${ext}`;
+    try {
+      const r = await (db as any).storage.from(bucket).createSignedUploadUrl(path);
+      if (r?.error) return sendJson(res, 500, { error: "sign_failed", message: String(r.error.message || "") });
+      return sendJson(res, 200, { ok: true, path, bucket, token: r?.data?.token || "", signedUrl: r?.data?.signedUrl || "" });
+    } catch (e) {
+      return sendJson(res, 500, { error: "sign_failed", message: e instanceof Error ? e.message : "" });
+    }
+  }
+
+  // Transcribe la letra cantada con Gemini (modo "ya subí mi audio").
+  async function transcribe(path: string): Promise<string> {
+    const gk = String(process.env.GEMINI_API_KEY || "").trim();
+    if (!gk || !path) return "";
+    const db = await admin();
+    if (!db) return "";
+    const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+    try {
+      const signed = await (db as any).storage.from(bucket).createSignedUrl(path, 600);
+      const url = signed?.data?.signedUrl;
+      if (!url) return "";
+      const buf = await (await fetch(url)).arrayBuffer();
+      if (!buf || buf.byteLength > 18 * 1024 * 1024) return "";
+      const bytes = new Uint8Array(buf);
+      let bin = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
+      }
+      const b64 = btoa(bin);
+      const body = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: "Transcribe únicamente la letra cantada de este audio, en español, con saltos de línea por verso. Si no se entiende, responde exactamente: ILEGIBLE." },
+              { inline_data: { mime_type: "audio/mpeg", data: b64 } },
+            ],
+          },
+        ],
+      };
+      for (const model of ["gemini-2.0-flash", "gemini-1.5-flash"]) {
+        const r = await fetch(
+          "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(gk),
+          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+        );
+        if (!r.ok) continue;
+        const j: any = await r.json().catch(() => null);
+        const text = String(j?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+        if (text && !/^ILEGIBLE/i.test(text)) return text.slice(0, 5000);
+        return "";
+      }
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -19594,7 +19669,7 @@ textarea{min-height:96px;resize:vertical}
 .tag.failed{color:var(--bad);border-color:#5c2228}
 .small{font-size:13px;color:var(--dim)}
 </style></head><body><div class="wrap">
-<div class="logo"><div class="badge">L</div><b>Luci&aacute;na <span style="color:var(--dim);font-weight:400">| Music</span></b></div>
+<div class="logo"><img src="https://lucianamusic.app/logo-luciana-hd.svg" alt="LuciAna Music" style="height:46px;width:auto"></div>
 ${inner}
 </div></body></html>`;
   }
@@ -19609,20 +19684,11 @@ ${inner}
   <input id="name" placeholder="Nombre y apellido">
   <label>Tu WhatsApp</label>
   <input id="whatsapp" inputmode="numeric" placeholder="10 d&iacute;gitos">
-  <label>&iquest;Para qui&eacute;n es?</label>
-  <input id="dedicate" placeholder="Ej: mi mam&aacute; Carmen">
-  <label>Ocasi&oacute;n</label>
-  <select id="occasion">
-    <option>Cumplea&ntilde;os</option><option>Boda</option><option>Aniversario</option>
-    <option>Declaraci&oacute;n</option><option>Dedicatoria</option><option>Otro</option>
-  </select>
 </div>
 <div class="card">
-  <label>G&eacute;nero</label>
-  <select id="genre">
-    <option>Bachata</option><option>Banda</option><option>Corridos</option><option>Salsa</option>
-    <option>Reggaet&oacute;n</option><option>Mariachi</option><option>Cumbia</option><option>Balada</option>
-  </select>
+  <label>Estilo: g&eacute;nero y c&oacute;mo lo quieres</label>
+  <textarea id="style" placeholder="Ej: bachata rom&aacute;ntica con guitarra ac&uacute;stica, coros suaves, tempo medio"></textarea>
+  <div class="small" style="color:var(--gold);margin:-8px 0 14px">&#9888; No escribas nombres de cantantes ni de canciones: el sistema los rechaza.</div>
   <label>Tipo de voz</label>
   <div class="opts" id="voz">
     <div class="opt on" data-v="f">Mujer</div>
@@ -19634,6 +19700,7 @@ ${inner}
   <div class="opts" id="modo">
     <div class="opt on" data-m="ia">IA escribe<br><span class="small">Solo dinos de qu&eacute; trata</span></div>
     <div class="opt" data-m="propia">Yo escribo<br><span class="small">Pega tu letra</span></div>
+    <div class="opt" data-m="audio">Ya sub&iacute; mi audio<br><span class="small">A capela</span></div>
   </div>
   <div id="campoIA">
     <label>Cu&eacute;ntanos de qu&eacute; trata</label>
@@ -19642,6 +19709,11 @@ ${inner}
   <div id="campoLetra" style="display:none">
     <label>Tu letra</label>
     <textarea id="lyrics" placeholder="Escribe o pega tu letra..."></textarea>
+  </div>
+  <div id="campoAudio" style="display:none">
+    <label>Tu audio a capela</label>
+    <input id="audio" type="file" accept="audio/*">
+    <div class="small" style="margin:-8px 0 14px">Canta sin m&uacute;sica de fondo ni ruido. Las canciones conocidas se rechazan.</div>
   </div>
 </div>
 <button class="btn" id="send">Enviar mi pedido</button>
@@ -19653,7 +19725,8 @@ function seg(id,attr,on){var box=document.getElementById(id);box.querySelectorAl
 document.getElementById('voz').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;voz=t.dataset.v;seg('voz','v',voz);});
 document.getElementById('modo').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;modo=t.dataset.m;seg('modo','m',modo);
   document.getElementById('campoIA').style.display=modo==='ia'?'':'none';
-  document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';});
+  document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';
+  document.getElementById('campoAudio').style.display=modo==='audio'?'':'none';});
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;window.scrollTo(0,0);}
 document.getElementById('send').addEventListener('click',async function(){
   var b=this;var v=function(id){return (document.getElementById(id).value||'').trim();};
@@ -19661,11 +19734,28 @@ document.getElementById('send').addEventListener('click',async function(){
   if(v('whatsapp').replace(/\\D/g,'').length<10)return show('bad','Escribe tu WhatsApp (10 d&iacute;gitos).');
   if(modo==='ia'&&v('story').length<15)return show('bad','Cu&eacute;ntanos de qu&eacute; trata (con un poco m&aacute;s de detalle).');
   if(modo==='propia'&&v('lyrics').length<20)return show('bad','Escribe tu letra.');
+  if(v('style').length<5)return show('bad','Describe el estilo: g&eacute;nero y c&oacute;mo lo quieres.');
+  var file=document.getElementById('audio').files[0];
+  if(modo==='audio'&&!file)return show('bad','Elige tu audio a capela.');
   b.disabled=true;b.textContent='Enviando...';
+  var audio_path='';
+  if(modo==='audio'&&file){
+    if(file.size>18*1024*1024){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad','El audio es muy grande (m&aacute;ximo 18 MB).');}
+    b.textContent='Subiendo audio...';
+    try{
+      var sg=await fetch('/api/form/sign?t='+encodeURIComponent(T)+'&n='+encodeURIComponent(file.name||'audio.mp3'),{method:'POST'});
+      var sj=await sg.json();
+      if(!sg.ok)throw new Error('sign');
+      var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':file.type||'audio/mpeg','x-upsert':'false'},body:file});
+      if(!up.ok)throw new Error('put');
+      audio_path=sj.path;
+    }catch(err){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad','No pude subir tu audio. Intenta con otro archivo.');}
+    b.textContent='Enviando...';
+  }
   try{
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),dedicate_to:v('dedicate'),occasion:v('occasion'),
-        genre:v('genre'),vocal_gender:voz,lyrics_mode:modo,story:v('story'),lyrics:v('lyrics')})});
+      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),
+        vocal_gender:voz,lyrics_mode:modo,story:v('story'),lyrics:v('lyrics'),audio_path:audio_path})});
     var j=await r.json().catch(function(){return{};});
     if(!r.ok){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad',j.message||'No pude enviar tu pedido.');}
     document.querySelectorAll('.card').forEach(function(c){c.style.display='none';});
@@ -19700,9 +19790,8 @@ async function load(){
       var st=o.status==='done'?'done':(o.status==='failed'?'failed':'pending');
       var lbl=o.status==='done'?'lista':(o.status==='failed'?'fallida':(o.status==='generating'?'generando':'pendiente'));
       return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
-        '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.genre)+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
+        '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
         ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
-        '<div class="meta">Para: '+esc(o.dedicate_to||'-')+' &middot; '+esc(o.occasion||'-')+'</div>'+
         (o.story?'<div class="meta">'+esc(o.story).slice(0,180)+'</div>':'')+
         (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
         (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
@@ -19764,6 +19853,10 @@ load();
     })();
     const method = (req.method || "GET").toUpperCase();
 
+    if (action === "sign") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return signAudio(req, res);
+    }
     if (action === "open") {
       if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
       return openForm(req, res);
