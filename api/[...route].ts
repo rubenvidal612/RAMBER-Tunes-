@@ -19494,7 +19494,7 @@ const formHandler = (() => {
     const db = await admin();
     if (!db) return sendJson(res, 500, { error: "db_unavailable" });
 
-    const rowKey = `form_${id}`;
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
     const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
     const row = (q as any)?.data?.[0];
     if (!row) return sendJson(res, 404, { error: "not_found" });
@@ -19801,12 +19801,23 @@ async function load(){
     box.innerHTML=j.orders.map(function(o){
       var st=o.status==='done'?'done':(o.status==='failed'?'failed':'pending');
       var lbl=o.status==='done'?'lista':(o.status==='failed'?'fallida':(o.status==='generating'?'generando':'pendiente'));
+      var tel=String(o.whatsapp||'').replace(/\\D/g,'');
+      var wa=tel?('https://wa.me/52'+tel.replace(/^52/,'')):'';
+      var det='';
+      det+='<div class="meta" style="margin-top:8px"><b>Nombre:</b> '+esc(o.name||'-')+'</div>';
+      det+='<div class="meta"><b>WhatsApp:</b> '+(wa?('<a href="'+wa+'" target="_blank" style="color:var(--gold)">'+esc(o.whatsapp)+' (abrir chat)</a>'):esc(o.whatsapp||'-'))+'</div>';
+      det+='<div class="meta"><b>Estilo:</b> '+esc(o.style||'-')+'</div>';
+      det+='<div class="meta"><b>Voz:</b> '+(o.vocal_gender==='m'?'hombre':'mujer')+'</div>';
+      det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
+      if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
+      if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
+      if(o.audio_path)det+='<div class="meta" style="margin-top:8px"><b>Audio a capela:</b> '+esc(o.audio_path)+'</div>';
       return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
         ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
-        (o.story?'<div class="meta">'+esc(o.story).slice(0,180)+'</div>':'')+
         (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
         (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
+        '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
         '</div>';
     }).join('');
