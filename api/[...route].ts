@@ -19743,6 +19743,101 @@ const formHandler = (() => {
     return sendJson(res, 200, { ok: true, status: extra2.status, songs: extra2.songs });
   }
 
+  // POST /api/form/paid { t, id } -> el dueno marca el pedido como pagado
+  async function markPaid(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const paid = body?.paid === false ? false : true;
+    await db
+      .from("suno_tasks")
+      .update({ extra: { ...ex, paid, paid_at: paid ? new Date().toISOString() : null } })
+      .eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, paid });
+  }
+
+  // GET /api/form/download?id=&t=&n=  -> entrega el MP3 solo si esta pagado
+  async function download(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const id = clean(query(req, "id"), 60);
+    const idx = Math.max(0, Math.min(1, Number(query(req, "n") || "0") || 0));
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    if (!ex.paid) return sendJson(res, 402, { error: "not_paid", message: "Este enlace se habilita cuando se confirma el pago." });
+    const songs = Array.isArray(ex.songs) ? ex.songs : [];
+    const song = songs[idx] || songs[0];
+    const url = String(song?.audio_url || "");
+    if (!url) return sendJson(res, 404, { error: "no_audio" });
+    try {
+      const r = await fetch(url);
+      if (!r.ok) return sendJson(res, 502, { error: "audio_unavailable" });
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const nombre = `${clean(ex.name, 40).replace(/[^\w\s-]/g, "").trim() || "cancion"}-${idx + 1}.mp3`;
+      res.statusCode = 200;
+      res.setHeader("content-type", "audio/mpeg");
+      res.setHeader("content-disposition", `attachment; filename="${nombre}"`);
+      res.end(buf);
+      return;
+    } catch (e) {
+      return sendJson(res, 502, { error: "audio_unavailable", message: e instanceof Error ? e.message : "" });
+    }
+  }
+
+  // GET /api/form/listen?id=&t= -> pagina para que el cliente escuche (sin descarga si no pago)
+  async function listenPage(req: any, res: any) {
+    const id = clean(query(req, "id"), 60);
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const songs = Array.isArray(ex.songs) ? ex.songs : [];
+    const token = query(req, "t");
+    const nombre = String(ex.name || "");
+    const players = songs
+      .map((s: any, i: number) => {
+        const u = String(s?.audio_url || "");
+        if (!u) return "";
+        return `<div class="card"><b>Versión ${i + 1}</b>${s?.title ? ` · ${String(s.title)}` : ""}${
+          s?.duration ? ` · ${Math.round(Number(s.duration))}s` : ""
+        }<audio controls preload="none" src="${u}" style="width:100%;margin-top:10px"></audio></div>`;
+      })
+      .join("");
+    const pagado = Boolean(ex.paid);
+    const botones = pagado
+      ? songs
+          .map((_: any, i: number) => `<a class="btn" href="/api/form/download?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}&n=${i}">Descargar versión ${i + 1}</a>`)
+          .join("")
+      : `<div class="msg ok">Escúchala completa. Cuando confirmes tu pago te habilitamos la descarga.</div>`;
+    const inner = `
+<h1>${nombre ? `Tu canción, ${nombre}` : "Tu canción"}</h1>
+<p class="sub">Escúchala completa. Nada de relleno: si no te gusta, no la pagas.</p>
+${players || '<div class="card">Todavía se está generando. Vuelve en un minuto.</div>'}
+${botones}
+<p class="small" style="margin-top:16px">${pagado ? "Gracias por tu compra." : "Para pagar, escríbenos por WhatsApp y te mandamos los datos."}</p>`;
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.end(page("Tu canción · Luciána Music", inner));
+    return;
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -20053,6 +20148,18 @@ load();
     if (action === "sync") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return syncOrder(req, res);
+    }
+    if (action === "paid") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return markPaid(req, res);
+    }
+    if (action === "download") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
+      return download(req, res);
+    }
+    if (action === "listen") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
+      return listenPage(req, res);
     }
     if (action === "share") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
