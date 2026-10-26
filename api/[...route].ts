@@ -20240,7 +20240,7 @@ ${inner}
 <p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},voz='f',modo='ia',audioPath='',PLAN='rola';
+var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='f',modo='ia',audioPath='',PLAN='rola';
 function aplicarPlan(){
   var suya=PLAN==='rola_voz';
   if(suya){modo='audio';}
@@ -20304,7 +20304,7 @@ document.getElementById('send').addEventListener('click',async function(){
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),
         vocal_gender:voz,lyrics_mode:modo,story:v('story'),
-        plan:PLAN,price_mxn:(PLAN==='rola_voz'?350:200),
+        plan:PLAN,price_mxn:(PLAN==='rola_voz'?350:200),owner_email:OWNER,
         lyrics:(modo==='audio'?letraAudio:v('lyrics')),audio_path:audioPath})});
     var j=await r.json().catch(function(){return{};});
     if(!r.ok){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad',j.message||'No pude enviar tu pedido.');}
