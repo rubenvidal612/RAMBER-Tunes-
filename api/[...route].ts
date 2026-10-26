@@ -20154,6 +20154,58 @@ ${botones}
     });
   }
 
+  // POST /api/form/convert { t, path } -> convierte cualquier audio a MP3 (ffmpeg)
+  async function convertAudio(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const srcPath = clean(body?.path, 300);
+    if (!srcPath) return sendJson(res, 400, { error: "missing_path" });
+    if (/\.mp3$/i.test(srcPath)) return sendJson(res, 200, { ok: true, path: srcPath, converted: false });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+    try {
+      const signed = await (db as any).storage.from(bucket).createSignedUrl(srcPath, 600);
+      const url = signed?.data?.signedUrl;
+      if (!url) return sendJson(res, 500, { error: "sign_failed" });
+
+      const fs = await import("node:fs/promises");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const ffmpegInstaller: any = await import("@ffmpeg-installer/ffmpeg");
+      const ffmpegMod: any = await import("fluent-ffmpeg");
+      const ffmpeg = ffmpegMod?.default || ffmpegMod;
+      if (typeof ffmpeg?.setFfmpegPath === "function" && ffmpegInstaller?.path) {
+        ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+      }
+      const tmp = os.tmpdir();
+      const base = Math.random().toString(36).slice(2, 10);
+      const ext = (srcPath.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+      const inPath = path.join(tmp, `form_in_${Date.now()}_${base}.${ext}`);
+      const outPath = path.join(tmp, `form_out_${Date.now()}_${base}.mp3`);
+      const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      if (!buf.byteLength) return sendJson(res, 400, { error: "empty_audio" });
+      await fs.writeFile(inPath, buf);
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inPath)
+          .audioCodec("libmp3lame")
+          .audioBitrate("192k")
+          .format("mp3")
+          .on("end", () => resolve())
+          .on("error", (e: any) => reject(e))
+          .save(outPath);
+      });
+      const out = new Uint8Array(await fs.readFile(outPath));
+      const newPath = `form/audio/${base}_conv.mp3`;
+      const up = await (db as any).storage.from(bucket).upload(newPath, out, { contentType: "audio/mpeg", upsert: true });
+      if (up?.error) return sendJson(res, 500, { error: "upload_failed", message: String(up.error.message || "") });
+      try { await fs.unlink(inPath); await fs.unlink(outPath); } catch {}
+      return sendJson(res, 200, { ok: true, path: newPath, converted: true });
+    } catch (e) {
+      // Si la conversion falla se devuelve el archivo original: nunca se bloquea al cliente.
+      return sendJson(res, 200, { ok: false, path: srcPath, converted: false, message: e instanceof Error ? e.message : "" });
+    }
+  }
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -20288,9 +20340,9 @@ document.getElementById('audio').addEventListener('change',async function(){
     var sj=await sg.json();if(!sg.ok)throw new Error('sign');
     var up=await (async function(){var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':(f.type||'audio/mpeg'),'x-upsert':'false'},body:f});if(!up.ok){up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':'application/octet-stream','x-upsert':'false'},body:f});}return up;})();
     if(!up.ok)throw new Error('put');
-    audioPath=sj.path;
+    audioPath=sj.path;try{var cv=await fetch('/api/form/convert?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:sj.path})});var cj=await cv.json();if(cj&&cj.path)audioPath=cj.path;}catch(e){}
     st.textContent='Escuchando tu audio para escribir la letra...';
-    var r=await fetch('/api/form/transcribe?t='+encodeURIComponent(T)+'&path='+encodeURIComponent(sj.path),{method:'POST'});
+    var r=await fetch('/api/form/transcribe?t='+encodeURIComponent(T)+'&path='+encodeURIComponent(audioPath),{method:'POST'});
     var j=await r.json().catch(function(){return{};});
     box.style.display='';
     if(j&&j.text){document.getElementById('lyricsAudio').value=j.text;st.textContent='Listo. Revisa la letra y corr&iacute;gela si hace falta.';}
@@ -20749,6 +20801,10 @@ load();
     if (action === "delete") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return removeOrder(req, res);
+    }
+    if (action === "convert") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return convertAudio(req, res);
     }
     if (action === "transcribe") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
