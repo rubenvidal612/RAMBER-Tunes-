@@ -20587,6 +20587,22 @@ async function guardarVendedor(){
 }
 document.getElementById('reload').addEventListener('click',load);
 if(document.getElementById('addVend'))document.getElementById('addVend').addEventListener('click',guardarVendedor);
+async function cargarReporte(){
+  var box=document.getElementById('rep');if(!box)return;
+  try{
+    var r=await fetch('/api/form/report?t='+encodeURIComponent(T));
+    var j=await r.json();
+    if(!r.ok){box.innerHTML='No pude cargar.';return;}
+    var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'—';
+    var dias=(j.porDia||[]).slice(0,14).map(function(d){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(d.dia)+'</span><b>$'+d.monto+'</b><span class="small">'+d.pedidos+' ped.</span></div>';}).join('')||'<div>Aún no hay ventas.</div>';
+    box.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">'+
+      '<div><div class="small">Hoy</div><b style="font-size:20px;color:var(--gold)">$'+j.hoy+'</b></div>'+
+      '<div><div class="small">Este mes</div><b style="font-size:20px;color:var(--gold)">$'+j.mes+'</b></div>'+
+      '<div><div class="small">Total</div><b style="font-size:20px">$'+j.total+'</b><div class="small">'+j.pedidos+' pedidos</div></div>'+
+      '</div><div class="small" style="margin-bottom:8px">Por método: '+met+'</div>'+dias;
+  }catch(e){box.innerHTML='Sin conexión.';}
+}
+cargarReporte();
 async function load(){
   var box=document.getElementById('list');box.textContent='Cargando...';
   try{
