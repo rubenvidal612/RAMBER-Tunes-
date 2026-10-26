@@ -20150,7 +20150,28 @@ ${inner}
 <p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},voz='f',modo='ia',audioPath='';
+var T=${JSON.stringify(token)},voz='f',modo='ia',audioPath='',PLAN='rola';
+function aplicarPlan(){
+  var suya=PLAN==='rola_voz';
+  if(suya){modo='audio';}
+  else if(modo==='audio'){modo='ia';}
+  var bv=document.getElementById('boxVoz');if(bv)bv.style.display=suya?'none':'';
+  var mm=document.getElementById('modo');
+  if(mm){mm.querySelectorAll('.opt').forEach(function(el){
+    var esAudio=el.dataset.m==='audio';
+    el.style.display=(suya!==esAudio)?'':'none';
+    el.classList.toggle('on',el.dataset.m===modo);
+  });}
+  document.getElementById('campoIA').style.display=modo==='ia'?'':'none';
+  document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';
+  document.getElementById('campoAudio').style.display=modo==='audio'?'':'none';
+  var pn=document.getElementById('planNota');
+  if(pn)pn.innerHTML=suya?'Sube una canci&oacute;n a capela y te clonamos tu voz para esta rola.':'';
+}
+var pBox=document.getElementById('plan');
+if(pBox)pBox.addEventListener('click',function(e){
+  var t=e.target.closest('.opt');if(!t)return;PLAN=t.dataset.p;seg('plan','p',PLAN);aplicarPlan();
+});
 document.getElementById('audio').addEventListener('change',async function(){
   var f=this.files[0];var st=document.getElementById('estadoAudio');var box=document.getElementById('cajaLetraAudio');
   audioPath='';box.style.display='none';document.getElementById('lyricsAudio').value='';
@@ -20193,6 +20214,7 @@ document.getElementById('send').addEventListener('click',async function(){
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),
         vocal_gender:voz,lyrics_mode:modo,story:v('story'),
+        plan:PLAN,price_mxn:(PLAN==='rola_voz'?350:200),
         lyrics:(modo==='audio'?letraAudio:v('lyrics')),audio_path:audioPath})});
     var j=await r.json().catch(function(){return{};});
     if(!r.ok){b.disabled=false;b.textContent='Enviar mi pedido';return show('bad',j.message||'No pude enviar tu pedido.');}
