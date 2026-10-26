@@ -19386,6 +19386,8 @@ const formHandler = (() => {
       task_id: String(ex.task_id || ""),
       songs: Array.isArray(ex.songs) ? ex.songs : [],
       paid: Boolean(ex.paid),
+      stage: String(ex.stage || (ex.paid ? "pagado" : "pendiente")),
+      transferred_to: String(ex.transferred_to || "").toLowerCase(),
       owner_email: String(ex.owner_email || "").toLowerCase(),
       shared_with: Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [],
       error: String(ex.error || ""),
@@ -19880,6 +19882,34 @@ ${botones}
     return sendJson(res, 200, { ok: true, sellers: list });
   }
 
+  // POST /api/form/stage { t, id, stage, email } -> mueve el pedido a otra seccion
+  async function setStage(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    const stage = clean(body?.stage, 20).toLowerCase();
+    const email = clean(body?.email, 120).toLowerCase();
+    const ok = ["pendiente", "por_pagar", "pagado", "transferido"];
+    if (!id || !ok.includes(stage)) return sendJson(res, 400, { error: "invalid" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const extra2 = {
+      ...ex,
+      stage,
+      paid: stage === "pagado" ? true : Boolean(ex.paid),
+      paid_at: stage === "pagado" ? new Date().toISOString() : ex.paid_at || null,
+      transferred_to: stage === "transferido" ? email || ex.transferred_to || "" : ex.transferred_to || "",
+      stage_at: new Date().toISOString(),
+    };
+    await db.from("suno_tasks").update({ extra: extra2 }).eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, stage });
+  }
+
   // ---------- paginas HTML (sin tocar la app de React) ----------
   function page(title: string, inner: string) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -20048,15 +20078,96 @@ document.getElementById('send').addEventListener('click',async function(){
   <div style="display:flex;gap:8px"><input id="vendName" placeholder="Nombre" style="margin:0"><input id="vendMail" placeholder="correo@ejemplo.com" style="margin:0"><button class="btn sec" id="addVend" style="width:auto;padding:0 14px">Guardar</button></div>
   <div id="vendList" class="small" style="margin-top:10px"></div>
 </div>
+<div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 <div id="list" class="small">Cargando...</div>
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[];
+var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[],TODAS=[],FSTAGE='todas';
+function pintarFiltros(){
+  var defs=[['todas','Todas'],['pendiente','Pendientes'],['por_pagar','Por pagar'],['pagado','Pagados'],['transferido','Transferidos']];
+  var box=document.getElementById('filtros');if(!box)return;
+  box.innerHTML=defs.map(function(d){
+    var n=TODAS.filter(function(o){return d[0]==='todas'||o.stage===d[0];}).length;
+    var on=FSTAGE===d[0];
+    return '<button class="btn sec" data-f="'+d[0]+'" style="width:auto;padding:6px 12px;font-size:12px;'+(on?'border-color:var(--gold);color:var(--gold)':'')+'">'+d[1]+' ('+n+')</button>';
+  }).join('');
+  box.querySelectorAll('[data-f]').forEach(function(b){b.addEventListener('click',function(){FSTAGE=b.dataset.f;render();});});
+}
+function render(){
+  var box=document.getElementById('list');
+  var arr=TODAS.filter(function(o){return FSTAGE==='todas'||o.stage===FSTAGE;});
+  if(!arr.length){box.innerHTML='<div class="item">No hay pedidos en esta sección.</div>';pintarFiltros();return;}
+  box.innerHTML=arr.map(item).join('');
+  box.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.go,b);});});
+  box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
+  box.querySelectorAll('[data-st]').forEach(function(b){b.addEventListener('click',function(){
+    var id=b.dataset.stid,st=b.dataset.st;
+    cambiarStage(id,st,b);
+  });});
+  box.querySelectorAll('[data-share2]').forEach(function(b){b.addEventListener('click',function(){
+    var sel=box.querySelector('[data-sel="'+b.dataset.share2+'"]');
+    compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
+  });});
+  pintarFiltros();
+}
+function item(o){
+  var st=o.status==='done'?'done':(o.status==='failed'?'failed':'pending');
+  var lbl=o.status==='done'?'lista':(o.status==='failed'?'fallida':(o.status==='generating'?'generando':'pendiente'));
+  var tel=String(o.whatsapp||'').replace(/\\D/g,'');
+  var wa=(IS_OWNER&&tel)?('https://wa.me/52'+tel.replace(/^52/,'')):'';
+  var det='';
+  det+='<div class="meta" style="margin-top:8px"><b>Nombre:</b> '+esc(o.name||'-')+'</div>';
+  det+='<div class="meta"><b>WhatsApp:</b> '+(wa?('<a href="'+wa+'" target="_blank" style="color:var(--gold)">'+esc(o.whatsapp)+' (abrir chat)</a>'):esc(o.whatsapp||'-'))+'</div>';
+  det+='<div class="meta"><b>Estilo:</b> '+esc(o.style||'-')+'</div>';
+  det+='<div class="meta"><b>Voz:</b> '+(o.vocal_gender==='m'?'hombre':'mujer')+'</div>';
+  det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
+  if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
+  if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
+  if(o.audio_path)det+='<div class="meta" style="margin-top:8px"><b>Audio a capela:</b> '+esc(o.audio_path)+'</div>';
+  if(o.transferred_to)det+='<div class="meta"><b>Transferido a:</b> '+esc(o.transferred_to)+'</div>';
+  var players='';
+  if(Array.isArray(o.songs)&&o.songs.length){
+    players='<div style="margin-top:10px">'+o.songs.map(function(s,i){
+      var u=String(s.audio_url||'');if(!u)return '';
+      return '<div class="small" style="margin-bottom:8px"><b>Versión '+(i+1)+'</b>'+(s.title?(' &middot; '+esc(s.title)):'')+(s.duration?(' &middot; '+Math.round(Number(s.duration))+'s'):'')+'<audio controls preload="none" src="'+esc(u)+'" style="width:100%;margin-top:6px"></audio></div>';
+    }).join('')+'</div>';
+  }
+  var chips=['pendiente','por_pagar','pagado','transferido'].map(function(k){
+    var t={pendiente:'Pendiente',por_pagar:'Por pagar',pagado:'Pagado',transferido:'Transferido'}[k];
+    var on=o.stage===k;
+    return '<button class="btn sec" data-st="'+k+'" data-stid="'+esc(o.id)+'" style="width:auto;padding:6px 10px;font-size:12px;'+(on?'border-color:var(--gold);color:var(--gold)':'')+'">'+t+'</button>';
+  }).join('');
+  var waBtn=wa?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="'+wa+'">Enviar WhatsApp</a>'):'';
+  var opciones='<option value="">— vendedor —</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
+  return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
+    '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
+    (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
+    (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
+    '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
+    '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
+    waBtn+
+    '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
+    (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
+    '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
+    '</div>';
+}
+async function cambiarStage(id,stage,btn){
+  btn.disabled=true;
+  try{
+    var r=await fetch('/api/form/stage?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,stage:stage})});
+    var j=await r.json();
+    if(!r.ok){btn.disabled=false;return show('bad',j.error||'No pude cambiar.');}
+    var o=TODAS.filter(function(x){return x.id===id;})[0];if(o)o.stage=stage;
+    if(stage==='pagado'&&o)o.paid=true;
+    render();show('ok','Movido a '+stage.replace('_',' ')+'.');
+  }catch(e){btn.disabled=false;show('bad','Sin conexión.');}
+}
 if(document.getElementById('share'))document.getElementById('share').value=location.origin+'/api/form/open?t='+encodeURIComponent(T)+(ME?'&o='+encodeURIComponent(ME):'');
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;}
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-async function load(){
+async function loadViejo(){
   var box=document.getElementById('list');box.textContent='Cargando...';
   try{
     var r=await fetch('/api/form/list?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
@@ -20230,6 +20341,10 @@ load();
     if (action === "sync") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return syncOrder(req, res);
+    }
+    if (action === "stage") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return setStage(req, res);
     }
     if (action === "sellers" || action === "seller") return sellers(req, res);
     if (action === "paid") {
