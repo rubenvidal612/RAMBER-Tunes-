@@ -19591,6 +19591,14 @@ const integrationsHandler = (() => {
     }
 
     const instrumental = Boolean(body.instrumental);
+    // Voz: Suno solo acepta "m" (hombre) y "f" (mujer). No existe el dueto.
+    const vocalRaw = String(body.vocal_gender || body.vocalGender || "").trim().toLowerCase();
+    const vocalGender =
+      ["hombre", "masculina", "masculino", "m", "male"].includes(vocalRaw)
+        ? "m"
+        : ["mujer", "femenina", "femenino", "f", "female"].includes(vocalRaw)
+        ? "f"
+        : "";
     const lyrics = String(body.lyrics || "").trim();
     if (!instrumental && !lyrics) {
       return sendJson(res, 400, { error: "missing_lyrics", field: "lyrics", message: "Falta lyrics (o envía instrumental: true)." });
@@ -19742,6 +19750,7 @@ const integrationsHandler = (() => {
     };
     // El audio solo va cuando existe: con voz clonada y sin audio se genera directo.
     if (audioUrl) providerBody.uploadUrl = audioUrl;
+    if (vocalGender) providerBody.vocalGender = vocalGender;
     if (personaId) {
       providerBody.personaId = personaId;
       providerBody.personaModel = "voice_persona";
