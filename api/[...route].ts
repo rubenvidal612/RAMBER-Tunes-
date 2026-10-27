@@ -20382,7 +20382,7 @@ function _insTxt(txt){
   var ta=document.getElementById('lyrics');
   var s=ta.selectionStart||0,e=ta.selectionEnd||0;
   var antes=ta.value.slice(0,s),desp=ta.value.slice(e);
-  ta.value=antes+(antes&&!antes.endsWith('\n')?'\n':'')+txt+'\n'+desp;
+  ta.value=antes+(antes&&!antes.endsWith('\\n')?'\\n':'')+txt+'\\n'+desp;
   ta.focus();
 }
 ['insVerso','insCoro','insPuente'].forEach(function(id){
