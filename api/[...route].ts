@@ -20493,6 +20493,14 @@ document.getElementById('send').addEventListener('click',async function(){
   <label>Ventas</label>
   <div id="rep" class="small">Cargando...</div>
 </div>
+<div class="card" style="padding:12px 14px">
+<div class="small" style="margin-bottom:8px"><b>Qu&eacute; significa cada color</b></div>
+<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;line-height:1.9">
+<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ff3b3b;box-shadow:0 0 9px #ff3b3b;margin-right:6px;vertical-align:middle"></span><b style="color:#ff6b6b">Rojo</b> &middot; pedido nuevo, sin vendedor</span>
+<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#3d9bff;box-shadow:0 0 9px #3d9bff;margin-right:6px;vertical-align:middle"></span><b style="color:#6fb4ff">Azul</b> &middot; ya asignado a un vendedor</span>
+<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2fdc7e;box-shadow:0 0 9px #2fdc7e;margin-right:6px;vertical-align:middle"></span><b style="color:#5ee89a">Verde</b> &middot; ya pagado</span>
+</div>
+</div>
 <div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 <div id="list" class="small">Cargando...</div>
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
