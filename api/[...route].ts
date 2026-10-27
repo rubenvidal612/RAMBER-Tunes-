@@ -20714,7 +20714,24 @@ async function compartir(id,email,btn){
     var r=await fetch('/api/form/share?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,email:email})});
     var j=await r.json();
     if(!r.ok){btn.disabled=false;btn.textContent='Enviar';return show('bad',j.message||j.error||'No pude compartir.');}
-    show('ok','Transferido a '+email+'. Ya lo puede ver en su cuenta.');load();
+    show('ok','Transferido a '+email+'. Ya lo puede ver en su cuenta.');
+    // Aviso por WhatsApp al vendedor: se abre con el mensaje ya escrito.
+    try{
+      var NL=String.fromCharCode(10);
+      var _v=VEND.filter(function(x){return String(x.email||'').toLowerCase()===String(email).toLowerCase();})[0];
+      var _tel=_v?String(_v.phone||'').replace(/\D/g,''):'';
+      var _o=TODAS.filter(function(x){return x.id===id;})[0]||{};
+      if(_tel){
+        var _msg='Hola '+((_v&&_v.name)||'')+', te acabo de transferir un cliente en Luciana Music:'+NL+NL+
+          'Cliente: '+(_o.name||'sin nombre')+NL+
+          'WhatsApp: '+(_o.whatsapp||'-')+NL+
+          'Estilo: '+(_o.style||'-')+NL+
+          'Letra: '+(_o.lyrics_mode||'-')+NL+NL+
+          'Entra a lucianamusic.app/pedidos para atenderlo.';
+        window.open('https://wa.me/52'+_tel.replace(/^52/,'')+'?text='+encodeURIComponent(_msg),'_blank');
+      }
+    }catch(e){}
+    load();
   }catch(e){btn.disabled=false;btn.textContent='Enviar';show('bad','Sin conexiÃ³n.');}
 }
 async function del(id,btn){
