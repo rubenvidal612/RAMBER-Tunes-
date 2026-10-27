@@ -20303,7 +20303,8 @@ ${inner}
     <label>Tu audio a capela</label>
     <input id="audio" type="file" accept="audio/*">
     <div class="small" style="margin:-8px 0 14px">Canta una <b>canci&oacute;n in&eacute;dita</b> (tuya, que nadie haya grabado), a capela, sin m&uacute;sica de fondo ni ruido. Las canciones conocidas se rechazan.</div>
-    <div id="estadoAudio" class="small" style="margin:-6px 0 10px"></div>
+    <audio id="audioPlayer" controls style="display:none;width:100%;margin:0 0 10px"></audio>
+<div id="estadoAudio" class="small" style="margin:-6px 0 10px"></div>
     <div id="cajaLetraAudio" style="display:none">
       <label>Esta es la letra que escuchamos &mdash; rev&iacute;sala y corr&iacute;gela</label>
       <textarea id="lyricsAudio" placeholder="Aqu&iacute; aparece tu letra..."></textarea>
@@ -20348,7 +20349,7 @@ document.getElementById('audio').addEventListener('change',async function(){
     var sj=await sg.json();if(!sg.ok)throw new Error('sign');
     var up=await (async function(){var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':(f.type||'audio/mpeg'),'x-upsert':'false'},body:f});if(!up.ok){up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':'application/octet-stream','x-upsert':'false'},body:f});}return up;})();
     if(!up.ok)throw new Error('put');
-    audioPath=sj.path;try{var cv=await fetch('/api/form/convert?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:sj.path})});var cj=await cv.json();if(cj&&cj.path)audioPath=cj.path;}catch(e){}
+    audioPath=sj.path;try{var pl=document.getElementById("audioPlayer");if(pl){pl.src=URL.createObjectURL(f);pl.style.display="";}}catch(e){}try{var cv=await fetch('/api/form/convert?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:sj.path})});var cj=await cv.json();if(cj&&cj.path)audioPath=cj.path;}catch(e){}
     st.textContent='Escuchando tu audio para escribir la letra...';
     var r=await fetch('/api/form/transcribe?t='+encodeURIComponent(T)+'&path='+encodeURIComponent(audioPath),{method:'POST'});
     var j=await r.json().catch(function(){return{};});
