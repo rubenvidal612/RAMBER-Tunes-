@@ -19661,12 +19661,12 @@ const formHandler = (() => {
             role: "user",
             parts: [
               { text: "Transcribe Ãºnicamente la letra cantada de este audio, en espaÃ±ol, con saltos de lÃ­nea por verso. Si no se entiende, responde exactamente: ILEGIBLE." },
-              { inline_data: { mime_type: "audio/mpeg", data: b64 } },
+              { inlineData: { mimeType: "audio/mpeg", data: b64 } },
             ],
           },
         ],
       };
-      for (const model of ["gemini-2.0-flash", "gemini-1.5-flash"]) {
+      for (const model of ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]) {
         const r = await fetch(
           "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(gk),
           { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
