@@ -83,9 +83,9 @@ function creditsFromProfile(profile: any): number {
   const p = profile ?? {};
   const has = (k: string) => Object.prototype.hasOwnProperty.call(p, k);
 
-  // Los créditos NO vencen: se cobran siempre, sin mirar credits_expires_at.
-  // Antes, al pasar la fecha el saldo se leía como 0 y el cliente quedaba
-  // bloqueado aunque el panel le mostrara créditos.
+  // Los crÃ©ditos NO vencen: se cobran siempre, sin mirar credits_expires_at.
+  // Antes, al pasar la fecha el saldo se leÃ­a como 0 y el cliente quedaba
+  // bloqueado aunque el panel le mostrara crÃ©ditos.
   for (const k of ["ramber_credits", "zingy_credits", "credits"]) {
     if (!has(k)) continue;
     const v = (p as any)[k];
@@ -207,7 +207,7 @@ async function fetchUrlToBuffer(url: string): Promise<{ buf: Buffer; contentType
   if (!res.ok) throw new Error(`No pude descargar el audio (HTTP ${res.status})`);
   const ab = await res.arrayBuffer();
   const buf = Buffer.from(ab);
-  if (!buf || buf.length === 0) throw new Error("No pude descargar el audio (vacío)");
+  if (!buf || buf.length === 0) throw new Error("No pude descargar el audio (vacÃ­o)");
   const contentType = (res.headers.get("content-type") || "audio/mpeg").toString().split(";")[0].trim() || "audio/mpeg";
   return { buf, contentType };
 }
@@ -405,11 +405,11 @@ async function insertR2CopyLog(admin: any, input: {
  * @param sourceUrl URL temporal del archivo (ej: de replicate.delivery)
  * @param userId ID del usuario para la ruta en R2
  * @param prefix Prefijo para la ruta en R2 (ej: "voice-models/")
- * @param fileName Nombre del archivo (sin extensión)
+ * @param fileName Nombre del archivo (sin extensiÃ³n)
  * @returns URL permanente en R2
  */
 async function copyUrlToR2(sourceUrl: string, userId: string, prefix: string, fileName: string): Promise<string> {
-  console.log(`Ã°Å¸â€œÂ¦ Copiando archivo a R2: ${sourceUrl.substring(0, 80)}...`);
+  console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Copiando archivo a R2: ${sourceUrl.substring(0, 80)}...`);
   
   try {
     // Descargar el archivo desde la URL temporal
@@ -421,7 +421,7 @@ async function copyUrlToR2(sourceUrl: string, userId: string, prefix: string, fi
     // Obtener el tipo de contenido
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     
-    // Determinar la extensión del archivo
+    // Determinar la extensiÃ³n del archivo
     let ext = 'bin';
     if (contentType.includes('audio')) {
       ext = contentType.includes('wav') ? 'wav' : 'mp3';
@@ -441,11 +441,11 @@ async function copyUrlToR2(sourceUrl: string, userId: string, prefix: string, fi
     // Subir a R2
     const permanentUrl = await uploadToR2(key, buffer, contentType);
     
-    console.log(`Ã¢Å“â€¦ Archivo copiado a R2: ${permanentUrl}`);
+    console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Archivo copiado a R2: ${permanentUrl}`);
     return permanentUrl;
     
   } catch (error) {
-    console.error(`Ã¢ÂÅ’ Error al copiar archivo a R2:`, error);
+    console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ Error al copiar archivo a R2:`, error);
     throw error;
   }
 }
@@ -571,7 +571,7 @@ async function ensureProfileExists(admin: any, userId: string) {
 
 async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: number, extendExpiry = false) {
   const next = round2(Math.max(0, Number(nextCredits)));
-  if (!Number.isFinite(next)) return { ok: false, error: "Créditos inválidos" };
+  if (!Number.isFinite(next)) return { ok: false, error: "CrÃ©ditos invÃ¡lidos" };
 
   const candidates: Array<"ramber_credits" | "zingy_credits" | "credits" | "song_balance"> = [
     "ramber_credits",
@@ -590,10 +590,10 @@ async function updateCreditsAnyColumn(admin: any, userId: string, nextCredits: n
     const { error } = await admin.from("profiles").update(patch).eq("id", userId);
     if (!error) return { ok: true as const, credits: next, col };
     if (isMissingColumnError(error)) continue;
-    return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
+    return { ok: false as const, error: String(error.message || "No pude actualizar crÃ©ditos.") };
   }
 
-  return { ok: false as const, error: "Falta columna de créditos en profiles." };
+  return { ok: false as const, error: "Falta columna de crÃ©ditos en profiles." };
 }
 
 async function applyCreditRolloverWithCap(
@@ -608,27 +608,27 @@ async function applyCreditRolloverWithCap(
 ) {
   const { userId, monthlyCredits, subscriptionActive, renewalPaidSuccessfully, isUnlimitedAccount = false } = input;
 
-  // Solo se acumulan créditos cuando la suscripción/plan está activa
-  // y el pago de renovación fue aprobado exitosamente.
+  // Solo se acumulan crÃ©ditos cuando la suscripciÃ³n/plan estÃ¡ activa
+  // y el pago de renovaciÃ³n fue aprobado exitosamente.
   if (!subscriptionActive) {
-    return { ok: false as const, error: "Suscripción inactiva: no se acumulan créditos." };
+    return { ok: false as const, error: "SuscripciÃ³n inactiva: no se acumulan crÃ©ditos." };
   }
   if (!renewalPaidSuccessfully) {
-    return { ok: false as const, error: "Pago no aprobado: no se acumulan créditos." };
+    return { ok: false as const, error: "Pago no aprobado: no se acumulan crÃ©ditos." };
   }
 
-  // Normalizamos los créditos mensuales del plan.
-  // Ejemplo: si el plan da 2000, monthly será 2000.
+  // Normalizamos los crÃ©ditos mensuales del plan.
+  // Ejemplo: si el plan da 2000, monthly serÃ¡ 2000.
   const monthly = round2(Number(monthlyCredits));
   if (!Number.isFinite(monthly) || monthly <= 0) {
-    return { ok: false as const, error: "Créditos mensuales inválidos." };
+    return { ok: false as const, error: "CrÃ©ditos mensuales invÃ¡lidos." };
   }
 
   const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
   if (readErr) return { ok: false as const, error: readErr.message };
 
   // Leemos el saldo actual no utilizado del usuario.
-  // Si no existe o viene raro, tomamos 0 para no romper el cálculo.
+  // Si no existe o viene raro, tomamos 0 para no romper el cÃ¡lculo.
   const current = round2(creditsFromProfile(profile));
   let batchCredits = 0;
   try {
@@ -637,16 +637,16 @@ async function applyCreditRolloverWithCap(
     batchCredits = 0;
   }
 
-  // Regla 1: suma de créditos = saldo actual no usado + créditos nuevos del mes.
+  // Regla 1: suma de crÃ©ditos = saldo actual no usado + crÃ©ditos nuevos del mes.
   // Ejemplo: 1500 actuales + 2000 nuevos = 3500.
   const sum = round2(current + monthly);
 
-  // Regla 2: tope máximo fijo de saldo acumulado = 2000 créditos.
+  // Regla 2: tope mÃ¡ximo fijo de saldo acumulado = 2000 crÃ©ditos.
   const cap = round2(MAX_ACCUMULATED_CREDITS);
 
-  // Excepción para cuentas admin/ilimitadas:
+  // ExcepciÃ³n para cuentas admin/ilimitadas:
   // si el usuario es admin, no aplicamos tope y puede conservar/acumular todo.
-  // Para el resto sí se limita al equivalente de 2 meses.
+  // Para el resto sÃ­ se limita al equivalente de 2 meses.
   const profileEmail = String((profile as any)?.email || "").trim().toLowerCase();
   const unlimited = isUnlimitedAccount || isAdminEmail(profileEmail);
 
@@ -656,7 +656,7 @@ async function applyCreditRolloverWithCap(
   const maxProfileAllowed = round2(Math.max(0, cap - round2(batchCredits)));
   const next = round2(unlimited ? sum : Math.min(sum, maxProfileAllowed));
 
-  // Actualizar créditos y fecha de vencimiento
+  // Actualizar crÃ©ditos y fecha de vencimiento
   const patch: any = {};
   const col = pickWritableCreditsColumn(profile);
   if (col === "song_balance") {
@@ -668,7 +668,7 @@ async function applyCreditRolloverWithCap(
   patch.credits_expires_at = addDaysIso(60);
   
   const { error } = await admin.from("profiles").update(patch).eq("id", userId);
-  if (error) return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
+  if (error) return { ok: false as const, error: String(error.message || "No pude actualizar crÃ©ditos.") };
   
   return { ok: true as const, previous: current, added: monthly, cap, next, unlimited };
 }
@@ -720,7 +720,7 @@ async function ensureMonthlyCreditsCycle(admin: any, userId: string) {
 
   let didReset = false;
   if (now >= expiresMs) {
-    // Ya no reseteamos créditos a cero en el corte mensual.
+    // Ya no reseteamos crÃ©ditos a cero en el corte mensual.
     // El saldo se conserva y la recarga ocurre cuando entra el pago aprobado.
     await insertCycle(now);
     startMs = now;
@@ -860,7 +860,7 @@ async function prepareCoverUploadUrlForSuno(req: any, uploadUrlRaw: string, uplo
   const fallbackSourceUrl = normalizeBackendSourceUrl(req, uploadUrlRaw);
   const uploadPath = String(uploadPathRaw || "").trim();
   if (!uploadPath && !fallbackSourceUrl) {
-    throw new Error("No recibí una URL final válida del audio.");
+    throw new Error("No recibÃ­ una URL final vÃ¡lida del audio.");
   }
 
   let sourceUrl = fallbackSourceUrl;
@@ -881,7 +881,7 @@ async function prepareCoverUploadUrlForSuno(req: any, uploadUrlRaw: string, uplo
   }
 
   if (!fetchedAudio) {
-    if (!fallbackSourceUrl) throw new Error("No recibí una URL HTTP/HTTPS válida del audio.");
+    if (!fallbackSourceUrl) throw new Error("No recibÃ­ una URL HTTP/HTTPS vÃ¡lida del audio.");
     fetchedAudio = await fetchUrlToBuffer(fallbackSourceUrl);
     sourceUrl = fallbackSourceUrl;
   }
@@ -892,7 +892,7 @@ async function prepareCoverUploadUrlForSuno(req: any, uploadUrlRaw: string, uplo
   const safeUserId = String(userId || "user").trim().replace(/[^a-zA-Z0-9_-]+/g, "").slice(0, 60) || "user";
   const fileName = `${safeStem}_${Date.now()}.${ext}`;
   const uploaded = await uploadBufferToSunoTempFile(buf, contentType, fileName, `ramber-cover-source/${safeUserId}`);
-  if (!uploaded?.downloadUrl) throw new Error("Suno no devolvió una URL temporal descargable para el audio.");
+  if (!uploaded?.downloadUrl) throw new Error("Suno no devolviÃ³ una URL temporal descargable para el audio.");
 
   return {
     uploadUrl: uploaded.downloadUrl,
@@ -932,7 +932,7 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
       next = round2(Math.min(next, maxProfileAllowed));
     }
     
-    // Actualizar créditos y fecha de vencimiento si se están agregando créditos
+    // Actualizar crÃ©ditos y fecha de vencimiento si se estÃ¡n agregando crÃ©ditos
     if (delta > 0) {
       const expiresIso = addDaysIso(60);
       const patch: any = {};
@@ -948,16 +948,16 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
       
       const { error } = await admin.from("profiles").update(patch).eq("id", userId);
       if (!error) return { ok: true as const, credits: next };
-      return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
+      return { ok: false as const, error: String(error.message || "No pude actualizar crÃ©ditos.") };
     } else {
-      // Para restar créditos, usar la función existente
+      // Para restar crÃ©ditos, usar la funciÃ³n existente
       const upd = await updateCreditsAnyColumn(admin, userId, next);
       if (upd.ok) return { ok: true as const, credits: next };
       return { ok: false as const, error: upd.error };
     }
   }
 
-  return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
+  return { ok: false as const, error: "No pude actualizar crÃ©ditos (intenta otra vez)." };
 }
 
 async function consumeUserCredits(admin: any, userId: string, costCredits: number) {
@@ -986,7 +986,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
         saldoPlan = 0;
       }
       if (saldoPlan <= 0) {
-        planRejection = { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+        planRejection = { ok: false as const, error: "Tu paquete venciÃ³. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
       }
     }
   } catch {
@@ -1015,13 +1015,13 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     const profileCreditsRaw = Number.isFinite(profileCreditsRawNumber) ? profileCreditsRawNumber : 0;
     const globalExpired = isIsoInPast((profile as any)?.credits_expires_at);
 
-    // RULETA DE CÃƒÂLCULO DE SALDO (MÃƒÂXIMA TOLERANCIA):
+    // RULETA DE CÃƒÆ’Ã‚ÂLCULO DE SALDO (MÃƒÆ’Ã‚ÂXIMA TOLERANCIA):
     // (a) ADMIN hardcodeado rubenfiverr612@gmail.com / rubenvidal612@gmail.com  => nunca pasa por 402,
-    //     aunque credits_expires_at esté vencido y los lotes estén vacíos, si profile.credits >= cost
+    //     aunque credits_expires_at estÃ© vencido y los lotes estÃ©n vacÃ­os, si profile.credits >= cost
     //     se usa directamente (bypass completo de vencimiento y batches).
     // (b) profileCreditsRaw (tal cual, sin expirar) >= cost  => se considera suficiente,
     //     independientemente de lo que diga credits_expires_at.
-    // (c) Suma: effectiveProfile (respeta expiración) + lotes activos.
+    // (c) Suma: effectiveProfile (respeta expiraciÃ³n) + lotes activos.
     const effectiveProfileCredits = globalExpired ? 0 : profileCreditsRaw;
     const totalAvailableStrict = round2(effectiveProfileCredits + batchCredits);
     const totalAvailableWithProfileFallback = round2(profileCreditsRaw + batchCredits);
@@ -1065,7 +1065,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
 
     if (!isSufficient) {
       if (planRejection) return planRejection;
-      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: calculatedAvailable };
+      return { ok: false as const, error: "CrÃ©ditos insuficientes. Recarga para continuar.", credits: calculatedAvailable };
     }
 
     // Descuento de lotes + profile: si es ADMIN => descontamos DIRECTAMENTE de profile.credits.
@@ -1088,7 +1088,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
     const profileForDeduct = isAdmin ? profileCreditsRaw : effectiveProfileCredits;
     if (profileForDeduct < pendingAfterBatches) {
       if (planRejection) return planRejection;
-      return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar.", credits: calculatedAvailable };
+      return { ok: false as const, error: "CrÃ©ditos insuficientes. Recarga para continuar.", credits: calculatedAvailable };
     }
     const next = round2(Math.max(0, profileForDeduct - pendingAfterBatches));
     const upd = await updateCreditsAnyColumn(admin, userId, next);
@@ -1100,7 +1100,7 @@ async function consumeUserCredits(admin: any, userId: string, costCredits: numbe
   }
 
   if (planRejection) return planRejection;
-  return { ok: false as const, error: "No pude consumir créditos (intenta otra vez)." };
+  return { ok: false as const, error: "No pude consumir crÃ©ditos (intenta otra vez)." };
 }
 
 async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCredits: number) {
@@ -1172,12 +1172,12 @@ async function ensureUserHasCreditsAvailable(admin: any, userId: string, costCre
     const exp = (plan as any)?.plan_expires_at;
     const active = Boolean((plan as any)?.plan_active);
     if ((key === "inicio" || key === "productor") && exp && !active) {
-      return { ok: false as const, error: "Tu paquete venció. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
+      return { ok: false as const, error: "Tu paquete venciÃ³. Para seguir usando, renueva tu plan.", plan_expires_at: exp };
     }
   } catch {
   }
 
-  return { ok: false as const, error: "Créditos insuficientes. Recarga para continuar." };
+  return { ok: false as const, error: "CrÃ©ditos insuficientes. Recarga para continuar." };
 }
 
 function isAdminEmail(email?: string | null) {
@@ -1301,7 +1301,7 @@ async function ensureAffiliateAccount(admin: any, userId: string) {
       return { ok: true as const, account: acc || { user_id: userId, code } };
     }
   }
-  return { ok: false as const, error: "No pude crear tu código de afiliado" };
+  return { ok: false as const, error: "No pude crear tu cÃ³digo de afiliado" };
 }
 
 async function tryAttachAffiliateReferral(admin: any, referredUserId: string, referralCodeRaw: any) {
@@ -1342,13 +1342,13 @@ async function getSupabaseCreateClient() {
 }
 
 // ==========================================================================
-// SISTEMA DE LOTES DE CRÉDITOS (mini paquetes) - NUEVO, SEPARADO
-// Lotes FIFO: al consumir, primero se gasta el lote que vence más pronto.
+// SISTEMA DE LOTES DE CRÃ‰DITOS (mini paquetes) - NUEVO, SEPARADO
+// Lotes FIFO: al consumir, primero se gasta el lote que vence mÃ¡s pronto.
 // ==========================================================================
 
 /**
- * Suma los créditos disponibles de todos los lotes activos y no vencidos del usuario.
- * Si la tabla credit_batches no existe (aún no aplicada la migración), retorna 0
+ * Suma los crÃ©ditos disponibles de todos los lotes activos y no vencidos del usuario.
+ * Si la tabla credit_batches no existe (aÃºn no aplicada la migraciÃ³n), retorna 0
  * para no romper el flujo existente.
  */
 async function getActiveBatchCredits(admin: any, userId: string): Promise<number> {
@@ -1384,13 +1384,13 @@ async function getActiveBatchCredits(admin: any, userId: string): Promise<number
 }
 
 /**
- * Devuelve el crédito TOTAL disponible del usuario:
- *  - Créditos en la columna global del perfil (sistema Pack Inicio / Productor)
+ * Devuelve el crÃ©dito TOTAL disponible del usuario:
+ *  - CrÃ©ditos en la columna global del perfil (sistema Pack Inicio / Productor)
  *    SIN SUMAR si vence antes.
  *    Usamos creditsFromProfile (que ya valida credits_expires_at global).
- *  - Créditos de lotes activos y no vencidos.
+ *  - CrÃ©ditos de lotes activos y no vencidos.
  *
- * Esta es la función que debería usarse para mostrar saldo y validar si puede gastar.
+ * Esta es la funciÃ³n que deberÃ­a usarse para mostrar saldo y validar si puede gastar.
  */
 async function getUserAvailableCredits(admin: any, userId: string, profile?: any): Promise<number> {
   let profileCredits = 0;
@@ -1409,8 +1409,8 @@ async function getUserAvailableCredits(admin: any, userId: string, profile?: any
 }
 
 /**
- * Consume créditos de los lotes activos siguiendo orden FIFO:
- * primero agota el lote cuya fecha de expiración es más próxima.
+ * Consume crÃ©ditos de los lotes activos siguiendo orden FIFO:
+ * primero agota el lote cuya fecha de expiraciÃ³n es mÃ¡s prÃ³xima.
  * Retorna la cantidad que NO pudo cubrir de los lotes (0 = todo cubierto).
  * Si la tabla no existe, retorna costNeeded completo.
  */
@@ -1472,8 +1472,8 @@ async function consumeBatchCreditsFifo(admin: any, userId: string, costNeeded: n
 }
 
 /**
- * Inserta un lote de créditos nuevo cuando se aprueba el pago de un mini paquete.
- * No falla si la tabla no existe (aún no migrada), retorna ok:false en ese caso.
+ * Inserta un lote de crÃ©ditos nuevo cuando se aprueba el pago de un mini paquete.
+ * No falla si la tabla no existe (aÃºn no migrada), retorna ok:false en ese caso.
  */
 async function insertCreditBatch(admin: any, input: {
   userId: string;
@@ -1487,8 +1487,8 @@ async function insertCreditBatch(admin: any, input: {
 }): Promise<{ ok: boolean; error?: string; batchId?: number }> {
   const credits = round2(Number(input.credits ?? 0));
   const days = Number(input.validityDays ?? 0);
-  if (!Number.isFinite(credits) || credits <= 0) return { ok: false, error: "Créditos inválidos" };
-  if (!Number.isFinite(days) || days <= 0) return { ok: false, error: "Vigencia inválida" };
+  if (!Number.isFinite(credits) || credits <= 0) return { ok: false, error: "CrÃ©ditos invÃ¡lidos" };
+  if (!Number.isFinite(days) || days <= 0) return { ok: false, error: "Vigencia invÃ¡lida" };
   if (!input.userId) return { ok: false, error: "Falta usuario" };
 
   const purchasedAt = new Date();
@@ -1511,9 +1511,9 @@ async function insertCreditBatch(admin: any, input: {
     const { data, error } = await admin.from("credit_batches").insert(row).select("id").limit(1);
     if (error) {
       if (isMissingColumnError(error) || /relation.*credit_batches.*does not exist/i.test(String(error?.message || error || ""))) {
-        return { ok: false, error: "La tabla credit_batches aún no existe en Supabase. Aplica la migración primero." };
+        return { ok: false, error: "La tabla credit_batches aÃºn no existe en Supabase. Aplica la migraciÃ³n primero." };
       }
-      return { ok: false, error: String(error?.message || error || "No pude guardar el lote de créditos") };
+      return { ok: false, error: String(error?.message || error || "No pude guardar el lote de crÃ©ditos") };
     }
     const rows = Array.isArray(data) ? data : [];
     const id = Number((rows[0] as any)?.id ?? 0);
@@ -1524,7 +1524,7 @@ async function insertCreditBatch(admin: any, input: {
 }
 
 /**
- * Marca como expirados todos los lotes cuya fecha pasó y aún no están marcados.
+ * Marca como expirados todos los lotes cuya fecha pasÃ³ y aÃºn no estÃ¡n marcados.
  * Retorna la cantidad de lotes marcados. Usado por el job diario (cron).
  */
 async function expireOverdueBatches(admin: any): Promise<{ ok: boolean; expired: number; error?: string }> {
@@ -1551,16 +1551,16 @@ async function expireOverdueBatches(admin: any): Promise<{ ok: boolean; expired:
 
 /**
  * SISTEMA GRANDE (Pack Inicio / Productor):
- * Elimina (pone en 0) el saldo congelado de perfiles donde pasaron 2 MÃƒÂS meses
- * desde que se venció su fecha de créditos. Es decir:
- *   Pagó el día 0 Ã¢â€ â€™ créditos válidos 60 días Ã¢â€ â€™ congelados 60 días más Ã¢â€ â€™ BORRADOS.
- * Total 120 días (Ã¢â€°Ë† 4 meses) desde el último pago aprobado.
- * También pone credits_expires_at = NULL para que no se procese otra vez.
+ * Elimina (pone en 0) el saldo congelado de perfiles donde pasaron 2 MÃƒÆ’Ã‚ÂS meses
+ * desde que se venciÃ³ su fecha de crÃ©ditos. Es decir:
+ *   PagÃ³ el dÃ­a 0 ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ crÃ©ditos vÃ¡lidos 60 dÃ­as ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ congelados 60 dÃ­as mÃ¡s ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ BORRADOS.
+ * Total 120 dÃ­as (ÃƒÂ¢Ã¢â‚¬Â°Ã‹â€  4 meses) desde el Ãºltimo pago aprobado.
+ * TambiÃ©n pone credits_expires_at = NULL para que no se procese otra vez.
  * Retorna la cantidad de perfiles borrados.
  */
 async function wipeOverdueFrozenCredits(admin: any): Promise<{ ok: boolean; wiped: number; error?: string }> {
-  // DESACTIVADO: los créditos ya no vencen, así que no se borra el saldo de nadie.
-  // Se deja la función para no romper quien la llama, pero no toca datos.
+  // DESACTIVADO: los crÃ©ditos ya no vencen, asÃ­ que no se borra el saldo de nadie.
+  // Se deja la funciÃ³n para no romper quien la llama, pero no toca datos.
   void admin;
   return { ok: true, wiped: 0 };
 }
@@ -1584,7 +1584,7 @@ async function wipeOverdueFrozenCreditsDisabled(admin: any): Promise<{ ok: boole
       if (!expIso) continue;
       const expMs = new Date(expIso).getTime();
       if (!Number.isFinite(expMs)) continue;
-      if (expMs > wipeThreshold) continue; // aún no cumplen 60 días congelados
+      if (expMs > wipeThreshold) continue; // aÃºn no cumplen 60 dÃ­as congelados
 
       const userId = String((p as any).id || "");
       if (!userId) continue;
@@ -1624,7 +1624,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 25,
     validity_days: 30,
     sort_order: 1,
-    description: "Hasta 6 canciones estándar (36 créditos) · pago único · Solo una vez por cuenta",
+    description: "Hasta 6 canciones estÃ¡ndar (36 crÃ©ditos) Â· pago Ãºnico Â· Solo una vez por cuenta",
     is_active: false,
   },
   {
@@ -1636,7 +1636,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 50,
     validity_days: 30,
     sort_order: 2,
-    description: "Hasta 12 canciones estándar (72 créditos) · pago único · Agente Bot 24/7",
+    description: "Hasta 12 canciones estÃ¡ndar (72 crÃ©ditos) Â· pago Ãºnico Â· Agente Bot 24/7",
     is_active: false,
   },
   {
@@ -1648,7 +1648,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 70,
     validity_days: 30,
     sort_order: 2,
-    description: "Hasta 20 canciones estándar (120 créditos) · pago único",
+    description: "Hasta 20 canciones estÃ¡ndar (120 crÃ©ditos) Â· pago Ãºnico",
     is_active: false,
   },
   {
@@ -1660,7 +1660,7 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 180,
     validity_days: 30,
     sort_order: 3,
-    description: "Hasta 60 canciones estándar (360 créditos) · pago único",
+    description: "Hasta 60 canciones estÃ¡ndar (360 crÃ©ditos) Â· pago Ãºnico",
     is_active: false,
   },
   {
@@ -1672,19 +1672,19 @@ const CANONICAL_CREDIT_PACKS = [
     price_mxn: 250,
     validity_days: 30,
     sort_order: 4,
-    description: "Hasta 100 canciones estándar (600 créditos) · pago único",
+    description: "Hasta 100 canciones estÃ¡ndar (600 crÃ©ditos) Â· pago Ãºnico",
     is_active: true,
   },
   {
     id: 6,
     pack_key: "basico_100",
-    name: "Básico",
+    name: "BÃ¡sico",
     songs: 20,
     credits_amount: 120,
     price_mxn: 100,
     validity_days: 30,
     sort_order: 2,
-    description: "Hasta 20 canciones estándar (120 créditos) · pago único",
+    description: "Hasta 20 canciones estÃ¡ndar (120 crÃ©ditos) Â· pago Ãºnico",
     is_active: true,
   },
 ];
@@ -1702,8 +1702,8 @@ function canonicalCreditPackById(packId: any): any | null {
 }
 
 /**
- * Lista los paquetes de créditos activos (combina la tabla credit_packs con la fuente canónica local).
- * Si la tabla no existe o tiene huecos, retorna los paquetes canónicos para no romper.
+ * Lista los paquetes de crÃ©ditos activos (combina la tabla credit_packs con la fuente canÃ³nica local).
+ * Si la tabla no existe o tiene huecos, retorna los paquetes canÃ³nicos para no romper.
  */
 async function listActiveCreditPacks(admin: any): Promise<any[]> {
   let rows: any[] = [];
@@ -1746,7 +1746,7 @@ async function listActiveCreditPacks(admin: any): Promise<any[]> {
       if (!(price > 0)) return false;
       const key = String((p as any).pack_key || "").trim().toLowerCase();
       // OCULTAR TEMPORALMENTE pack Mini $25 MXN.
-      // Incluso si la tabla credit_packs lo tiene is_active=true, lo bloqueamos aquí en backend.
+      // Incluso si la tabla credit_packs lo tiene is_active=true, lo bloqueamos aquÃ­ en backend.
       if (key === "mini_3") return false;
       if (price === 25) return false;
       return true;
@@ -1826,7 +1826,7 @@ const sunoHandler = (() => {
       lower.includes('rights') ||
       lower.includes('infring');
     if (looksLikeCopyright) {
-      return 'Error por Copyright.\n\nEse audio parece ser de una canción protegida. Sube un audio original o usa otro audio.';
+      return 'Error por Copyright.\n\nEse audio parece ser de una canciÃ³n protegida. Sube un audio original o usa otro audio.';
     }
     return String(msg);
   }
@@ -1867,7 +1867,7 @@ const sunoHandler = (() => {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("SUNO_FETCH_TIMEOUT") || msg.toLowerCase().includes("abort")) {
-        throw new Error(`El proveedor tardó demasiado en responder (${Math.round(timeoutMs / 1000)}s).`);
+        throw new Error(`El proveedor tardÃ³ demasiado en responder (${Math.round(timeoutMs / 1000)}s).`);
       }
       throw e;
     } finally {
@@ -2039,14 +2039,14 @@ const sunoHandler = (() => {
       }
       // No saved voice: only block when the client explicitly claims a cloned voice.
       if (personaModel === 'voice_persona') {
-        send(res, 409, { error: 'Esta voz no está guardada en tu cuenta. Abre el Clonador y selecciona un perfil confirmado.', code: 'VOICE_UNCONFIRMED' });
+        send(res, 409, { error: 'Esta voz no estÃ¡ guardada en tu cuenta. Abre el Clonador y selecciona un perfil confirmado.', code: 'VOICE_UNCONFIRMED' });
         return false;
       }
       // Ordinary style persona (or no model hint): nothing to guard.
       return true;
     } catch (e: any) {
       send(res, e?.httpStatus === 409 ? 409 : 503, {
-        error: e?.httpStatus === 409 ? e.message : 'No se pudo comprobar la voz con Suno. No se generó ni se cobró la canción. Intenta más tarde.',
+        error: e?.httpStatus === 409 ? e.message : 'No se pudo comprobar la voz con Suno. No se generÃ³ ni se cobrÃ³ la canciÃ³n. Intenta mÃ¡s tarde.',
         code: e?.code || 'VOICE_CHECK_FAILED',
       });
       return false;
@@ -2089,9 +2089,9 @@ const sunoHandler = (() => {
       .eq("user_id", auth.user.id);
   }
 
-  // Persiste el resultado de check-voice en suno_tasks.extra sin duplicar lógica.
+  // Persiste el resultado de check-voice en suno_tasks.extra sin duplicar lÃ³gica.
   // Guarda el objeto como jsonb (nunca string) y conserva un historial de las
-  // últimas comprobaciones para poder ver transiciones ready -> unavailable.
+  // Ãºltimas comprobaciones para poder ver transiciones ready -> unavailable.
   async function persistVoiceCheckExtra(auth: any, taskId: string, state: any, context: string) {
     if (!taskId) return;
     try {
@@ -2124,7 +2124,7 @@ const sunoHandler = (() => {
   }
 
   // Indica si el payload referencia una voz clonada (guardada en suno_voices o
-  // etiquetada explícitamente como voice_persona). Nunca lanza error.
+  // etiquetada explÃ­citamente como voice_persona). Nunca lanza error.
   async function isSelectedClonedVoice(auth: any, payload: any) {
     const voiceId = firstString(payload, ['personaId', 'persona_id']);
     if (!voiceId) return false;
@@ -2144,13 +2144,13 @@ const sunoHandler = (() => {
   }
 
   async function handleGenerate(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
     const style = typeof payload?.style === "string" ? payload.style.trim() : "";
@@ -2170,25 +2170,25 @@ const sunoHandler = (() => {
     body.customMode = customMode;
 
     // Una voz clonada solo puede aplicarse en modo Personalizado. En modo Simple
-    // los campos de persona se descartarían y la canción se generaría sin la voz
-    // elegida, así que se rechaza antes de cobrar.
+    // los campos de persona se descartarÃ­an y la canciÃ³n se generarÃ­a sin la voz
+    // elegida, asÃ­ que se rechaza antes de cobrar.
     if (!customMode && (await isSelectedClonedVoice(auth, payload))) {
       return send(res, 400, { error: 'Selecciona el modo Personalizado para usar una voz clonada.', code: 'VOICE_REQUIRES_CUSTOM_MODE' });
     }
 
     if (!customMode) {
-      if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt máximo es 500 caracteres." });
+      if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt mÃ¡ximo es 500 caracteres." });
       body.prompt = prompt.slice(0, 500);
     } else {
       if (!style) return send(res, 400, { error: "En modo Personalizado falta style." });
-      if (style.length > 1000) return send(res, 400, { error: "El style máximo es 1,000 caracteres." });
+      if (style.length > 1000) return send(res, 400, { error: "El style mÃ¡ximo es 1,000 caracteres." });
       if (!title) return send(res, 400, { error: "En modo Personalizado falta title." });
-      if (title.length > 100) return send(res, 400, { error: "El title máximo es 100 caracteres." });
+      if (title.length > 100) return send(res, 400, { error: "El title mÃ¡ximo es 100 caracteres." });
       if (!instrumental) {
         if (!prompt.trim()) return send(res, 400, { error: "Si no es instrumental, el prompt (letras) es obligatorio." });
-        if (prompt.length > 5000) return send(res, 400, { error: "El prompt (letras) máximo es 5,000 caracteres." });
+        if (prompt.length > 5000) return send(res, 400, { error: "El prompt (letras) mÃ¡ximo es 5,000 caracteres." });
       } else {
-        if (prompt.length > 5000) return send(res, 400, { error: "El prompt máximo es 5,000 caracteres." });
+        if (prompt.length > 5000) return send(res, 400, { error: "El prompt mÃ¡ximo es 5,000 caracteres." });
       }
       body.prompt = (prompt || " ").slice(0, 5000);
       body.style = (style || "General").slice(0, 1000);
@@ -2224,7 +2224,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/generate", "/api/v1/suno/generate"];
@@ -2237,26 +2237,26 @@ const sunoHandler = (() => {
       const { res: r, data, text } = last || {};
       if (!r) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error creando música", detail: "No pude contactar al proveedor" });
+        return send(res, 502, { error: "Error creando mÃºsica", detail: "No pude contactar al proveedor" });
       }
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error creando música", code: r.status, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error creando mÃºsica", code: r.status, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error creando música", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error creando mÃºsica", code, detail: String(msg).slice(0, 1200) });
       }
 
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!taskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "generate", cost, consumed: true };
@@ -2268,18 +2268,18 @@ const sunoHandler = (() => {
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-      return send(res, 502, { error: "Error creando música", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error creando mÃºsica", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleExtend(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
     const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
@@ -2300,22 +2300,22 @@ const sunoHandler = (() => {
     body.customMode = customMode;
 
     // Una voz clonada solo puede aplicarse en modo Personalizado. En modo Simple
-    // los campos de persona se descartarían y la canción se generaría sin la voz
-    // elegida, así que se rechaza antes de cobrar.
+    // los campos de persona se descartarÃ­an y la canciÃ³n se generarÃ­a sin la voz
+    // elegida, asÃ­ que se rechaza antes de cobrar.
     if (!customMode && (await isSelectedClonedVoice(auth, payload))) {
       return send(res, 400, { error: 'Selecciona el modo Personalizado para usar una voz clonada.', code: 'VOICE_REQUIRES_CUSTOM_MODE' });
     }
 
     if (!customMode) {
-      if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt máximo es 500 caracteres." });
+      if (prompt.length > 500) return send(res, 400, { error: "En modo Simple el prompt mÃ¡ximo es 500 caracteres." });
       body.prompt = (prompt || " ").slice(0, 500);
     } else {
       if (!style) return send(res, 400, { error: "En modo Personalizado falta style." });
-      if (style.length > 1000) return send(res, 400, { error: "El style máximo es 1,000 caracteres." });
+      if (style.length > 1000) return send(res, 400, { error: "El style mÃ¡ximo es 1,000 caracteres." });
       if (!title) return send(res, 400, { error: "En modo Personalizado falta title." });
-      if (title.length > 100) return send(res, 400, { error: "El title máximo es 100 caracteres." });
+      if (title.length > 100) return send(res, 400, { error: "El title mÃ¡ximo es 100 caracteres." });
       if (!prompt.trim()) return send(res, 400, { error: "En modo Personalizado falta prompt." });
-      if (prompt.length > 5000) return send(res, 400, { error: "El prompt máximo es 5,000 caracteres." });
+      if (prompt.length > 5000) return send(res, 400, { error: "El prompt mÃ¡ximo es 5,000 caracteres." });
       body.prompt = (prompt || " ").slice(0, 5000);
       body.style = (style || "General").slice(0, 1000);
       body.title = title.slice(0, 100);
@@ -2350,7 +2350,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const { res: r, data, text } = await sunoFetchJson("/api/v1/extend", {
@@ -2361,20 +2361,20 @@ const sunoHandler = (() => {
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error extendiendo música", code: r.status, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error extendiendo mÃºsica", code: r.status, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Error extendiendo música", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error extendiendo mÃºsica", code, detail: String(msg).slice(0, 1200) });
       }
 
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!taskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "extend", cost, consumed: true };
@@ -2386,18 +2386,18 @@ const sunoHandler = (() => {
       return send(res, 200, { taskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-      return send(res, 502, { error: "Error extendiendo música", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error extendiendo mÃºsica", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleUploadCover(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
@@ -2426,7 +2426,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       let preparedAudio: any = null;
@@ -2534,7 +2534,7 @@ const sunoHandler = (() => {
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!taskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       const baseTaskRow = { task_id: taskId, user_id: user.id, kind: "upload-cover", cost, consumed: true };
@@ -2545,11 +2545,11 @@ const sunoHandler = (() => {
           await auth.admin.from("suno_tasks").insert(baseTaskRow);
         }
       } catch (insErr) {
-        // Si falla el insert del task después de cobrar, no devolvemos aquí: el proveedor ya
-        // recibió la solicitud y generará audio. El task simplemente no se registrará en suno_tasks
-        // pero los créditos ya fueron consumidos de forma justa (se generó el audio). Si el proveedor
-        // falla luego, el webhook lo atrapará.
-        console.warn("[handleUploadCover] suno_tasks insert falló (no crítico). taskId=", taskId, "err=", insErr && insErr.message);
+        // Si falla el insert del task despuÃ©s de cobrar, no devolvemos aquÃ­: el proveedor ya
+        // recibiÃ³ la solicitud y generarÃ¡ audio. El task simplemente no se registrarÃ¡ en suno_tasks
+        // pero los crÃ©ditos ya fueron consumidos de forma justa (se generÃ³ el audio). Si el proveedor
+        // falla luego, el webhook lo atraparÃ¡.
+        console.warn("[handleUploadCover] suno_tasks insert fallÃ³ (no crÃ­tico). taskId=", taskId, "err=", insErr && insErr.message);
       }
       return send(res, 200, { taskId });
     } catch (e) {
@@ -2561,13 +2561,13 @@ const sunoHandler = (() => {
   }
 
   async function handleAddInstrumental(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
@@ -2619,7 +2619,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/generate/add-instrumental", "/api/v1/suno/generate/add-instrumental"];
@@ -2651,7 +2651,7 @@ const sunoHandler = (() => {
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!taskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "add-instrumental", cost, consumed: true });
@@ -2663,13 +2663,13 @@ const sunoHandler = (() => {
   }
 
   async function handleAddVocals(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
@@ -2721,7 +2721,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/generate/add-vocals", "/api/v1/suno/generate/add-vocals"];
@@ -2753,7 +2753,7 @@ const sunoHandler = (() => {
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!taskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "add-vocals", cost, consumed: true });
@@ -2765,19 +2765,19 @@ const sunoHandler = (() => {
   }
 
   async function handleSeparate(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
     const type = typeof payload?.type === "string" ? payload.type.trim() : "";
     if (!taskId && !audioId) return send(res, 400, { error: "Falta taskId o audioId" });
-    if (!(type === "separate_vocal" || type === "split_stem")) return send(res, 400, { error: "type inválido. Usa 'separate_vocal' o 'split_stem'." });
+    if (!(type === "separate_vocal" || type === "split_stem")) return send(res, 400, { error: "type invÃ¡lido. Usa 'separate_vocal' o 'split_stem'." });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
     const body = { taskId, audioId, type, callBackUrl };
@@ -2789,7 +2789,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = [
@@ -3075,14 +3075,14 @@ const sunoHandler = (() => {
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!outTaskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       try {
         await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
       } catch (insErr) {
         // Si falla el insert (ej: PK duplicate por retry), continuar; el usuario al menos
-        // tiene el taskId para polling. Los créditos se marcan como consumidos en polling SUCCESS.
+        // tiene el taskId para polling. Los crÃ©ditos se marcan como consumidos en polling SUCCESS.
         console.warn("[handleSeparate] suno_tasks insert fallback. taskId=", outTaskId, "err=", insErr && insErr.message);
       }
       return send(res, 200, { taskId: outTaskId });
@@ -3093,13 +3093,13 @@ const sunoHandler = (() => {
   }
 
   async function handleGeneratePersona(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
@@ -3118,7 +3118,7 @@ const sunoHandler = (() => {
           const statusRaw = sd?.data?.status ?? sd?.data?.data?.status ?? "";
           const status = String(statusRaw || "").toUpperCase();
           if (status && status !== "SUCCESS") {
-            return send(res, 409, { error: "La canción aún no termina. Espera a que esté lista y vuelve a intentar." });
+            return send(res, 409, { error: "La canciÃ³n aÃºn no termina. Espera a que estÃ© lista y vuelve a intentar." });
           }
         }
       } catch {
@@ -3180,13 +3180,13 @@ const sunoHandler = (() => {
   }
 
   async function handleMp4(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
@@ -3221,7 +3221,7 @@ const sunoHandler = (() => {
 
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const body: any = { taskId, audioId, callBackUrl };
@@ -3284,7 +3284,7 @@ const sunoHandler = (() => {
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!outTaskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true });
@@ -3296,7 +3296,7 @@ const sunoHandler = (() => {
   }
 
   async function handleTask(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -3463,7 +3463,7 @@ const sunoHandler = (() => {
         }
 
         // Nota: kind = "upload-cover" ahora se cobra UPFRONT en handleUploadCover (consumed: true
-        // al insertar). Solo cobramos aquí si quedó pendiente por alguna razón histórica
+        // al insertar). Solo cobramos aquÃ­ si quedÃ³ pendiente por alguna razÃ³n histÃ³rica
         // (tareas creadas antes de este fix con consumed=false).
         if (taskKind === "upload-cover" && !consumed && Number.isFinite(cost) && cost > 0) {
           const charged = await consumeUserCredits(auth.admin, user.id, cost);
@@ -3477,22 +3477,22 @@ const sunoHandler = (() => {
 
       return send(res, 200, { data, kind });
     } catch (e) {
-      // Rollback de seguridad: durante el polling handleTask, si se lanzó una excepción inesperada
-      // después de que en una vuelta anterior ya se cobró "upload-cover" (o sea el flujo de SUCCESS
-      // se detuvo a mitad de camino) Ã¢â‚¬â€ no podemos revertir aquí sin información. Pero al menos
+      // Rollback de seguridad: durante el polling handleTask, si se lanzÃ³ una excepciÃ³n inesperada
+      // despuÃ©s de que en una vuelta anterior ya se cobrÃ³ "upload-cover" (o sea el flujo de SUCCESS
+      // se detuvo a mitad de camino) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no podemos revertir aquÃ­ sin informaciÃ³n. Pero al menos
       // devolvemos el detalle del error al frontend con un mensaje claro (no "internal error please try again").
       return send(res, 502, { error: "Error consultando task", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleTimestampedLyrics(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
@@ -3505,7 +3505,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = [
@@ -3551,17 +3551,17 @@ const sunoHandler = (() => {
   }
 
   async function handleLyrics(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const prompt = typeof payload?.prompt === "string" ? payload.prompt.trim() : "";
     if (!prompt) return send(res, 400, { error: "Falta prompt" });
-    if (prompt.length > 200) return send(res, 400, { error: "El prompt máximo para letras es 200 caracteres." });
+    if (prompt.length > 200) return send(res, 400, { error: "El prompt mÃ¡ximo para letras es 200 caracteres." });
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
     const body = { prompt, callBackUrl };
@@ -3573,7 +3573,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/lyrics", "/api/v1/suno/lyrics"];
@@ -3605,7 +3605,7 @@ const sunoHandler = (() => {
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!taskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       await auth.admin.from("suno_tasks").insert({ task_id: taskId, user_id: user.id, kind: "lyrics", cost, consumed: true });
@@ -3617,13 +3617,13 @@ const sunoHandler = (() => {
   }
 
   async function handleWav(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = firstString(payload, ["taskId", "task_id"]);
     const audioId = firstString(payload, ["audioId", "audio_id"]);
@@ -3647,7 +3647,7 @@ const sunoHandler = (() => {
 
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/wav/generate", "/api/v1/suno/wav/generate"];
@@ -3682,7 +3682,7 @@ const sunoHandler = (() => {
 
       if (!outTaskId) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       await auth.admin.from("suno_tasks").insert({
@@ -3700,13 +3700,13 @@ const sunoHandler = (() => {
   }
 
   async function handleMidi(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = firstString(payload, ["taskId", "task_id"]);
     const audioId = firstString(payload, ["audioId", "audio_id"]);
@@ -3728,7 +3728,7 @@ const sunoHandler = (() => {
 
       if (!isAdmin && cost > 0) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/midi/generate", "/api/v1/suno/midi/generate"];
@@ -3760,7 +3760,7 @@ const sunoHandler = (() => {
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (!outTaskId) {
         if (!isAdmin && cost > 0) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
       }
 
       await auth.admin.from("suno_tasks").insert({
@@ -3779,17 +3779,17 @@ const sunoHandler = (() => {
   }
 
   async function handleBoostStyle(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const content = typeof payload?.content === "string" ? payload.content.trim() : "";
     if (!content) return send(res, 400, { error: "Falta content" });
-    if (content.length > 5000) return send(res, 400, { error: "El content máximo es 5,000 caracteres." });
+    if (content.length > 5000) return send(res, 400, { error: "El content mÃ¡ximo es 5,000 caracteres." });
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
@@ -3798,7 +3798,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/style/generate", "/api/v1/suno/style/generate"];
@@ -3836,13 +3836,13 @@ const sunoHandler = (() => {
   }
 
   async function handleMusicCover(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     if (!taskId) return send(res, 400, { error: "Falta taskId" });
@@ -3857,7 +3857,7 @@ const sunoHandler = (() => {
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       const paths = ["/api/v1/suno/cover/generate", "/api/v1/cover/generate", "/api/v1/suno/cover-suno", "/api/v1/suno/cover"];
@@ -3882,7 +3882,7 @@ const sunoHandler = (() => {
       const code = Number(data?.code);
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
       if (code === 200) {
-        if (!outTaskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+        if (!outTaskId) return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
         await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `music-cover:${taskId.slice(0, 120)}`, cost, consumed: true });
         return send(res, 200, { taskId: outTaskId });
       }
@@ -3904,7 +3904,7 @@ const sunoHandler = (() => {
   }
 
   async function handleCredits(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     try {
       const paths = [
@@ -3926,13 +3926,13 @@ const sunoHandler = (() => {
 
       if (!r?.res?.ok) {
         const msg = sunoErrorMessage(r?.data, r?.text || `HTTP ${r?.res?.status || 0}`);
-        return send(res, 502, { error: "Error consultando créditos", code: r?.res?.status || 0, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error consultando crÃ©ditos", code: r?.res?.status || 0, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(r.data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(r.data, "Error del proveedor");
-        return send(res, 502, { error: "Error consultando créditos", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error consultando crÃ©ditos", code, detail: String(msg).slice(0, 1200) });
       }
 
       const raw = r.data?.data?.credits ?? r.data?.data;
@@ -3940,18 +3940,18 @@ const sunoHandler = (() => {
       const credits = Number.isFinite(parsed) ? parsed : 0;
       return send(res, 200, { credits, data: credits });
     } catch (e) {
-      return send(res, 502, { error: "Error consultando créditos", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error consultando crÃ©ditos", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleVoiceValidate(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     function cleanExternalUrl(raw: any) {
       return (raw || "")
@@ -3972,7 +3972,7 @@ const sunoHandler = (() => {
 
     if (!voiceUrl) return send(res, 400, { error: "Falta voiceUrl" });
     if (!Number.isFinite(vocalStartSRaw) || !Number.isFinite(vocalEndSRaw)) {
-      return send(res, 400, { error: "vocalStartS y vocalEndS deben ser números (segundos)" });
+      return send(res, 400, { error: "vocalStartS y vocalEndS deben ser nÃºmeros (segundos)" });
     }
 
     const vocalStartS = Math.max(0, Math.floor(vocalStartSRaw));
@@ -4005,7 +4005,7 @@ const sunoHandler = (() => {
       const existing = voiceValidateIdempotencyCache.get(idemKey);
       if (existing && existing.expiresAt && existing.expiresAt > now) {
         if (existing.fingerprint && existing.fingerprint !== fingerprint) {
-          return send(res, 409, { error: "Ese intento ya fue usado para otra validación. Genera una frase nueva e inténtalo otra vez." });
+          return send(res, 409, { error: "Ese intento ya fue usado para otra validaciÃ³n. Genera una frase nueva e intÃ©ntalo otra vez." });
         }
         if (existing.taskId) {
           return send(res, 200, { taskId: String(existing.taskId || "").trim() });
@@ -4094,7 +4094,7 @@ const sunoHandler = (() => {
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
         return send(res, 502, {
-          error: "Error iniciando validación de voz",
+          error: "Error iniciando validaciÃ³n de voz",
           code: r.status,
           detail: {
             msg: String(msg).slice(0, 1200),
@@ -4107,7 +4107,7 @@ const sunoHandler = (() => {
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
         return send(res, 502, {
-          error: "Error iniciando validación de voz",
+          error: "Error iniciando validaciÃ³n de voz",
           code,
           detail: {
             msg: String(msg).slice(0, 1200),
@@ -4117,7 +4117,7 @@ const sunoHandler = (() => {
       }
 
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
-      if (!taskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      if (!taskId) return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
 
       try {
         const row = {
@@ -4184,12 +4184,12 @@ const sunoHandler = (() => {
           voiceValidateIdempotencyCache.delete(idemKey);
         }
       }
-      return send(res, 502, { error: "Error iniciando validación de voz", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error iniciando validaciÃ³n de voz", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleVoiceValidateInfo(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -4203,13 +4203,13 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        return send(res, 502, { error: "Error consultando validación de voz", code: r.status, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error consultando validaciÃ³n de voz", code: r.status, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
-        return send(res, 502, { error: "Error consultando validación de voz", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error consultando validaciÃ³n de voz", code, detail: String(msg).slice(0, 1200) });
       }
 
       const d = data?.data ?? {};
@@ -4224,18 +4224,18 @@ const sunoHandler = (() => {
       };
       return send(res, 200, out);
     } catch (e) {
-      return send(res, 502, { error: "Error consultando validación de voz", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error consultando validaciÃ³n de voz", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleVoiceRegenerate(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = firstString(payload, ["taskId", "task_id"]);
     const calBackUrl =
@@ -4252,17 +4252,17 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
-        return send(res, 502, { error: "Error regenerando frase de validación", code: r.status, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error regenerando frase de validaciÃ³n", code: r.status, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
-        return send(res, 502, { error: "Error regenerando frase de validación", code, detail: String(msg).slice(0, 1200) });
+        return send(res, 502, { error: "Error regenerando frase de validaciÃ³n", code, detail: String(msg).slice(0, 1200) });
       }
 
       const outTaskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
-      if (!outTaskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      if (!outTaskId) return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
 
       try {
         const regenPhase = {
@@ -4283,7 +4283,7 @@ const sunoHandler = (() => {
         });
         if (ins?.error) {
           if (String(ins.error.code || "") === "23505") {
-            // Suno reutilizó el mismo taskId: conservar las fases existentes y añadir la de regeneración.
+            // Suno reutilizÃ³ el mismo taskId: conservar las fases existentes y aÃ±adir la de regeneraciÃ³n.
             await mergeTaskExtra(auth, outTaskId, "voice-regenerate", regenPhase, { regenerate_task_id: outTaskId });
           } else if (isMissingColumnError(ins.error)) {
             await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: auth.user.id, kind: "voice-regenerate", cost: 0, consumed: false });
@@ -4294,18 +4294,18 @@ const sunoHandler = (() => {
 
       return send(res, 200, { taskId: outTaskId });
     } catch (e) {
-      return send(res, 502, { error: "Error regenerando frase de validación", detail: e instanceof Error ? e.message : String(e) });
+      return send(res, 502, { error: "Error regenerando frase de validaciÃ³n", detail: e instanceof Error ? e.message : String(e) });
     }
   }
 
   async function handleVoiceGenerate(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const validationTaskId = firstString(payload, ["taskId", "task_id"]);
     const verifyUrl = firstString(payload, ["verifyUrl", "verify_url"]);
@@ -4347,7 +4347,7 @@ const sunoHandler = (() => {
       }
 
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
-      if (!taskId) return send(res, 502, { error: "Respuesta inválida del proveedor" });
+      if (!taskId) return send(res, 502, { error: "Respuesta invÃ¡lida del proveedor" });
 
       try {
         const createPhase = {
@@ -4394,7 +4394,7 @@ const sunoHandler = (() => {
   }
 
   async function handleVoiceRecordInfo(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -4456,13 +4456,13 @@ const sunoHandler = (() => {
   }
 
   async function handleVoiceCheckVoice(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const taskId = firstString(payload, ["task_id", "taskId"]);
     if (!taskId) return send(res, 400, { error: "Falta task_id" });
@@ -4484,13 +4484,13 @@ const sunoHandler = (() => {
   }
 
   async function handleCloneVoice(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
@@ -4533,13 +4533,13 @@ const sunoHandler = (() => {
       const audioBuffer = await audioResponse.arrayBuffer();
       console.log(`Audio descargado: ${audioBuffer.byteLength} bytes`);
       
-      // Verificar que el audio sea válido
+      // Verificar que el audio sea vÃ¡lido
       if (audioBuffer.byteLength === 0) {
-        return send(res, 400, { error: "El archivo de audio está vacío" });
+        return send(res, 400, { error: "El archivo de audio estÃ¡ vacÃ­o" });
       }
       
-      if (audioBuffer.byteLength > 50 * 1024 * 1024) { // 50 MB límite
-        return send(res, 413, { error: "El archivo de audio es demasiado grande (máximo 50 MB)" });
+      if (audioBuffer.byteLength > 50 * 1024 * 1024) { // 50 MB lÃ­mite
+        return send(res, 413, { error: "El archivo de audio es demasiado grande (mÃ¡ximo 50 MB)" });
       }
 
       const head = Buffer.from(audioBuffer.slice(0, 12));
@@ -4547,7 +4547,7 @@ const sunoHandler = (() => {
       if (!isWav) {
         return send(res, 400, {
           error: "El audio debe ser WAV",
-          detail: "Sube un WAV (o vuelve a subir el audio para que la app lo convierta a WAV automáticamente).",
+          detail: "Sube un WAV (o vuelve a subir el audio para que la app lo convierta a WAV automÃ¡ticamente).",
         });
       }
 
@@ -4660,7 +4660,7 @@ const sunoHandler = (() => {
       const timestamp = Date.now();
       const rvcDatasetKey = `rvc_datasets/${user.id}/${timestamp}_dataset.zip`;
       
-      console.log(`Subiendo archivo ZIP a R2: ${rvcDatasetKey}, tamaño: ${zipBuffer.length} bytes`);
+      console.log(`Subiendo archivo ZIP a R2: ${rvcDatasetKey}, tamaÃ±o: ${zipBuffer.length} bytes`);
       const env = getR2Env();
       const client = await getR2Client();
       const { PutObjectCommand } = await getR2AwsSdk();
@@ -4709,7 +4709,7 @@ const sunoHandler = (() => {
         replicateVersion = "0397d5e28c9b54665e1e5d29d5cf4f722a7b89ec20e9dbf31487235305b1a101";
       }
 
-      // Parámetros para entrenamiento RVC
+      // ParÃ¡metros para entrenamiento RVC
       const replicateInput = {
         dataset_zip: datasetUrl,
         sample_rate: "48k",
@@ -4720,7 +4720,7 @@ const sunoHandler = (() => {
       };
 
       // Llamar a Replicate API
-      console.log(`Llamando a Replicate API con modelo: ${replicateModel}, versión: ${replicateVersion}`);
+      console.log(`Llamando a Replicate API con modelo: ${replicateModel}, versiÃ³n: ${replicateVersion}`);
       console.log(`Dataset URL: ${datasetUrl}`);
       console.log(`Replicate Input:`, JSON.stringify(replicateInput, null, 2));
       
@@ -4748,7 +4748,7 @@ const sunoHandler = (() => {
         if (looksDisabled) {
           const latest = await getLatestReplicateVersionId(replicateModel);
           if (latest && latest !== replicateVersion) {
-            console.log(`Versión deshabilitada en Replicate (${replicateVersion}). Reintentando con latest_version (${latest})`);
+            console.log(`VersiÃ³n deshabilitada en Replicate (${replicateVersion}). Reintentando con latest_version (${latest})`);
             replicateVersion = latest;
             const retry = await callReplicate(replicateVersion);
             replicateResponse = retry.r;
@@ -4764,22 +4764,22 @@ const sunoHandler = (() => {
         let errorDetail = replicateData?.detail || `HTTP ${replicateResponse.status}`;
         
         if (replicateResponse.status === 401 || replicateResponse.status === 403) {
-          errorMessage = "Error de autenticación con Replicate API";
-          errorDetail = "El token de API no es válido o ha expirado";
+          errorMessage = "Error de autenticaciÃ³n con Replicate API";
+          errorDetail = "El token de API no es vÃ¡lido o ha expirado";
         } else if (replicateResponse.status === 422) {
-          errorMessage = "Datos de solicitud inválidos";
+          errorMessage = "Datos de solicitud invÃ¡lidos";
           const d = String(replicateData?.detail || "").trim();
           const lower = d.toLowerCase();
           if (lower.includes("has been disabled") || lower.includes("consistently fails") || lower.includes("disabled")) {
             errorDetail =
-              "Replicate deshabilitó esa versión del modelo. " +
-              "Solución: actualiza REPLICATE_RVC_VERSION en el servidor (Vercel Ã¢â€ â€™ Settings Ã¢â€ â€™ Environment Variables) o déjalo vacío para usar la última versión automáticamente.";
+              "Replicate deshabilitÃ³ esa versiÃ³n del modelo. " +
+              "SoluciÃ³n: actualiza REPLICATE_RVC_VERSION en el servidor (Vercel ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Settings ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Environment Variables) o dÃ©jalo vacÃ­o para usar la Ãºltima versiÃ³n automÃ¡ticamente.";
           } else {
             errorDetail = d || "El archivo de audio no cumple con los requisitos para RVC";
           }
           console.log(`Error 422 de Replicate: ${errorDetail}`);
         } else if (replicateResponse.status === 429) {
-          errorMessage = "Límite de solicitudes excedido";
+          errorMessage = "LÃ­mite de solicitudes excedido";
           errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
         }
         
@@ -4792,7 +4792,7 @@ const sunoHandler = (() => {
 
       const predictionId = replicateData?.id;
       if (!predictionId) {
-        return send(res, 502, { error: "Respuesta inválida de Replicate API" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida de Replicate API" });
       }
       console.log(`Prediction ID obtenido: ${predictionId}`);
 
@@ -4922,17 +4922,17 @@ notify pgrst, 'reload schema';`;
           detail: errorDetail,
           hint: missingTable
             ? "Falta la tabla kits_voices en Supabase. Crea la tabla y recarga el schema cache (incluyo el SQL)."
-            : "Revisa la tabla kits_voices en Supabase (que exista y tenga las columnas básicas).",
+            : "Revisa la tabla kits_voices en Supabase (que exista y tenga las columnas bÃ¡sicas).",
           sql: missingTable ? createTableSql : undefined,
         });
       }
 
       return send(res, 200, { 
         predictionId, 
-        message: "Modelo RVC en entrenamiento. Recibirás una notificación cuando esté listo.",
+        message: "Modelo RVC en entrenamiento. RecibirÃ¡s una notificaciÃ³n cuando estÃ© listo.",
         status: 'processing',
         provider: 'replicate',
-        note: "Cuando el entrenamiento se complete, el resultado estará disponible en la base de datos. Para obtener la URL del archivo resultante, consulta el campo 'output' en la tabla 'kits_voices' usando el replicate_id.",
+        note: "Cuando el entrenamiento se complete, el resultado estarÃ¡ disponible en la base de datos. Para obtener la URL del archivo resultante, consulta el campo 'output' en la tabla 'kits_voices' usando el replicate_id.",
         helperFunction: "Usa extractOutputUrl(output) para extraer la URL del resultado. Ejemplo: const url = extractOutputUrl(voiceRow.output);"
       });
     } catch (e) {
@@ -4941,13 +4941,13 @@ notify pgrst, 'reload schema';`;
   }
 
   async function handleCreateCover(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const songId = firstString(payload, ["songId", "song_id"]);
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
@@ -4981,23 +4981,23 @@ notify pgrst, 'reload schema';`;
           .eq("user_id", user.id)
           .eq("type", "song")
           .maybeSingle();
-        if (baseErr) return send(res, 500, { error: "No pude buscar la canción", detail: baseErr.message });
-        if (!baseSong || (baseSong as any).deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+        if (baseErr) return send(res, 500, { error: "No pude buscar la canciÃ³n", detail: baseErr.message });
+        if (!baseSong || (baseSong as any).deleted_at) return send(res, 404, { error: "CanciÃ³n no encontrada" });
         baseSongDbId = String((baseSong as any).id || "").trim();
         baseSunoTaskId = String((baseSong as any).suno_task_id || "").trim();
         baseSunoAudioId = String((baseSong as any).suno_audio_id || "").trim();
         const aurl = String((baseSong as any).audio_url || "").trim();
-        if (!aurl) return send(res, 404, { error: "La canción no tiene audio" });
-        finalTitle = rawTitle || `${String((baseSong as any).title || "Canción").trim().slice(0, 90)} (Voz clonada)`;
+        if (!aurl) return send(res, 404, { error: "La canciÃ³n no tiene audio" });
+        finalTitle = rawTitle || `${String((baseSong as any).title || "CanciÃ³n").trim().slice(0, 90)} (Voz clonada)`;
         finalUploadUrl = aurl;
         sourceAudioRef = aurl;
         const isHttp = /^https?:\/\//i.test(finalUploadUrl);
         const isBlobOrData = /^blob:|^data:/i.test(finalUploadUrl);
         if (isBlobOrData) {
           return send(res, 400, {
-            error: "El audio de esta canción no está en una URL pública todavía.",
+            error: "El audio de esta canciÃ³n no estÃ¡ en una URL pÃºblica todavÃ­a.",
             detail:
-              "Esto pasa cuando el audio es temporal. Reproduce la canción una vez en Biblioteca para que se guarde la URL real y vuelve a intentar.",
+              "Esto pasa cuando el audio es temporal. Reproduce la canciÃ³n una vez en Biblioteca para que se guarde la URL real y vuelve a intentar.",
           });
         }
         if (!isHttp) {
@@ -5006,9 +5006,9 @@ notify pgrst, 'reload schema';`;
             finalUploadUrl = await getSignedR2Url(key, 60 * 60 * 2);
           } catch (e) {
             return send(res, 400, {
-              error: "El audio de esta canción no está en una URL pública todavía.",
+              error: "El audio de esta canciÃ³n no estÃ¡ en una URL pÃºblica todavÃ­a.",
               detail: e instanceof Error ? e.message : String(e),
-              hint: "Tip: Reproduce la canción una vez en Biblioteca y vuelve a intentar.",
+              hint: "Tip: Reproduce la canciÃ³n una vez en Biblioteca y vuelve a intentar.",
             });
           }
         }
@@ -5207,7 +5207,7 @@ notify pgrst, 'reload schema';`;
             
             if (lowerUrl.includes('replicate.delivery') || 
                 (lowerUrl.includes('replicate.com/') && !lowerUrl.includes('replicate.com/api/'))) {
-              console.log(`Ã°Å¸â€œÂ¦ Detectada URL temporal de Replicate, copiando a R2: ${modelUrl.substring(0, 80)}...`);
+              console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Detectada URL temporal de Replicate, copiando a R2: ${modelUrl.substring(0, 80)}...`);
               
               try {
                 // Extraer un nombre seguro para el archivo
@@ -5222,15 +5222,15 @@ notify pgrst, 'reload schema';`;
                   voiceName
                 );
                 
-                console.log(`Ã¢Å“â€¦ URL temporal copiada a R2: ${finalModelUrl}`);
+                console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ URL temporal copiada a R2: ${finalModelUrl}`);
               } catch (copyError) {
-                console.error(`Ã¢ÂÅ’ Error al copiar URL temporal a R2:`, copyError);
+                console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ Error al copiar URL temporal a R2:`, copyError);
                 // Continuar con la URL original como fallback
-                console.log(`Ã¢Å¡Â Ã¯Â¸Â Usando URL temporal original como fallback`);
+                console.log(`ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Usando URL temporal original como fallback`);
               }
             }
             
-            // Guardar la URL (permanente de R2 o la original si falló la copia)
+            // Guardar la URL (permanente de R2 o la original si fallÃ³ la copia)
             await auth.admin.from("kits_voices").update({ model_url: finalModelUrl }).eq("id", (voiceRow as any).id);
           } catch {
           }
@@ -5259,7 +5259,7 @@ notify pgrst, 'reload schema';`;
           return send(res, 200, {
             coverId: String((existing as any).prediction_id),
             predictionId: String((existing as any).prediction_id),
-            message: "Cover en proceso. Ya había uno creando. Se seguirá usando ese mismo.",
+            message: "Cover en proceso. Ya habÃ­a uno creando. Se seguirÃ¡ usando ese mismo.",
             status: "processing",
             reused: true,
             cost,
@@ -5283,7 +5283,7 @@ notify pgrst, 'reload schema';`;
         if (!r.ok) throw new Error(`No pude consultar Replicate model (HTTP ${r.status})`);
         const info = await r.json().catch(() => ({}));
         const id = String(info?.latest_version?.id || "").trim();
-        if (!id) throw new Error("No recibí latest_version.id de Replicate");
+        if (!id) throw new Error("No recibÃ­ latest_version.id de Replicate");
         return id;
       };
 
@@ -5356,14 +5356,14 @@ notify pgrst, 'reload schema';`;
         let errorDetail = normalizeDetail(rawDetail) || `HTTP ${replicateResponse.status}`;
         
         if (replicateResponse.status === 401 || replicateResponse.status === 403) {
-          errorMessage = "Error de autenticación con Replicate API";
-          errorDetail = "El token de API no es válido o ha expirado";
+          errorMessage = "Error de autenticaciÃ³n con Replicate API";
+          errorDetail = "El token de API no es vÃ¡lido o ha expirado";
         } else if (replicateResponse.status === 422) {
-          errorMessage = "Datos de solicitud inválidos";
+          errorMessage = "Datos de solicitud invÃ¡lidos";
           const base = "El archivo de audio o el modelo de voz no cumplen con los requisitos.";
           errorDetail = errorDetail ? `${base}\n\nDetalle: ${errorDetail}` : base;
         } else if (replicateResponse.status === 429) {
-          errorMessage = "Límite de solicitudes excedido";
+          errorMessage = "LÃ­mite de solicitudes excedido";
           errorDetail = "Has realizado demasiadas solicitudes a Replicate API. Intenta de nuevo en unos minutos";
         }
         
@@ -5372,7 +5372,7 @@ notify pgrst, 'reload schema';`;
 
       const predictionId = replicateData?.id;
       if (!predictionId) {
-        return send(res, 502, { error: "Respuesta inválida de Replicate API" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida de Replicate API" });
       }
 
       let trackingWarning: string | null = null;
@@ -5407,7 +5407,7 @@ notify pgrst, 'reload schema';`;
       return send(res, 200, { 
         coverId: predictionId,
         predictionId,
-        message: "Cover en proceso. Recibirás una notificación cuando esté listo.",
+        message: "Cover en proceso. RecibirÃ¡s una notificaciÃ³n cuando estÃ© listo.",
         status: 'processing',
         warning: trackingWarning,
         cost: cost
@@ -5490,7 +5490,7 @@ notify pgrst, 'reload schema';`;
         });
       }
     } else {
-      return send(res, 405, { error: "Método no permitido" });
+      return send(res, 405, { error: "MÃ©todo no permitido" });
     }
   }
 
@@ -5582,7 +5582,7 @@ notify pgrst, 'reload schema';`;
       if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
       const payload = parseJsonBody(req);
-      if (!payload) return send(res, 400, { error: "Body inválido" });
+      if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
       const sunoVoiceId =
         firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]) ||
@@ -5600,7 +5600,7 @@ notify pgrst, 'reload schema';`;
         if (status === "ready") {
           if (!taskId) return send(res, 409, { error: "Falta confirmar la disponibilidad de la voz." });
           const state = await inspectVoiceReadiness(taskId, sunoVoiceId, fetchVoiceStatus);
-          if (!state.isAvailable) return send(res, 409, { error: state.status === 'expired' ? 'Suno informa que esta voz expiró. Repite la validación; no se guardó como lista.' : state.reason, code: `VOICE_${state.status.toUpperCase()}` });
+          if (!state.isAvailable) return send(res, 409, { error: state.status === 'expired' ? 'Suno informa que esta voz expirÃ³. Repite la validaciÃ³n; no se guardÃ³ como lista.' : state.reason, code: `VOICE_${state.status.toUpperCase()}` });
         }
 
         let verifyFromTask: any = null;
@@ -5671,7 +5671,7 @@ notify pgrst, 'reload schema';`;
       if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
       const payload = parseJsonBody(req);
-      if (!payload) return send(res, 400, { error: "Body inválido" });
+      if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
       const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]) || "";
       const name = firstString(payload, ["name", "voiceName", "voice_name"]) || "";
@@ -5703,7 +5703,7 @@ notify pgrst, 'reload schema';`;
       if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
       const payload = parseJsonBody(req);
-      if (!payload) return send(res, 400, { error: "Body inválido" });
+      if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
       const deleteAll = Boolean(payload?.deleteAll ?? payload?.delete_all);
       const singleId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId", "voice_id"]);
@@ -5767,7 +5767,7 @@ notify pgrst, 'reload schema';`;
       }
     }
 
-    return send(res, 405, { error: "Método no permitido" });
+    return send(res, 405, { error: "MÃ©todo no permitido" });
   }
 
   async function findUserIdByEmail(admin: any, email: string) {
@@ -5780,23 +5780,23 @@ notify pgrst, 'reload schema';`;
     return match?.id ? String(match.id) : "";
   }
 
-  // Envía un perfil (personaje) de voz ya terminado a la cuenta del correo indicado.
-  // No comparte la cuenta ni la sesión: copia el perfil (nombre, foto, descripción y voiceId)
+  // EnvÃ­a un perfil (personaje) de voz ya terminado a la cuenta del correo indicado.
+  // No comparte la cuenta ni la sesiÃ³n: copia el perfil (nombre, foto, descripciÃ³n y voiceId)
   // a la otra cuenta, que es lo que la app necesita para dejarlo usar al generar.
   async function handleSunoVoicesShare(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const sunoVoiceId = firstString(payload, ["sunoVoiceId", "suno_voice_id", "voiceId"]);
     const rawEmail = firstString(payload, ["email", "to", "recipientEmail"]);
     if (!sunoVoiceId) return send(res, 400, { error: "Falta el personaje que quieres enviar" });
     if (!rawEmail) return send(res, 400, { error: "Falta el correo del colaborador" });
     const email = rawEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: "Ese correo no parece válido" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: "Ese correo no parece vÃ¡lido" });
 
     try {
       const { data: mine, error: mineErr } = await auth.admin
@@ -5806,12 +5806,12 @@ notify pgrst, 'reload schema';`;
         .eq("suno_voice_id", sunoVoiceId)
         .maybeSingle();
       if (mineErr) return send(res, 500, { error: "No pude leer tu personaje", detail: mineErr.message });
-      if (!mine) return send(res, 404, { error: "Ese personaje no está en tu cuenta" });
+      if (!mine) return send(res, 404, { error: "Ese personaje no estÃ¡ en tu cuenta" });
 
       const targetId = await findUserIdByEmail(auth.admin, email);
       if (!targetId) {
         return send(res, 404, {
-          error: `La cuenta ${email} todavía no existe en Luciana. Pídele a tu colaborador que entre una vez con ese Gmail y vuelve a enviarlo.`,
+          error: `La cuenta ${email} todavÃ­a no existe en Luciana. PÃ­dele a tu colaborador que entre una vez con ese Gmail y vuelve a enviarlo.`,
         });
       }
       if (targetId === String(auth.user.id)) {
@@ -5841,7 +5841,7 @@ notify pgrst, 'reload schema';`;
           .update({ name: mine.name, status: mine.status, meta })
           .eq("id", existing.id);
         if (error) return send(res, 500, { error: "No pude actualizar el personaje", detail: error.message });
-        return send(res, 200, { ok: true, copied: false, email, message: `Ese personaje ya estaba en ${email}. Lo actualicé.` });
+        return send(res, 200, { ok: true, copied: false, email, message: `Ese personaje ya estaba en ${email}. Lo actualicÃ©.` });
       }
 
       const { error: insErr } = await auth.admin.from("suno_voices").insert({
@@ -5861,7 +5861,7 @@ notify pgrst, 'reload schema';`;
 
   async function handleSunoVoicesRefresh(req: any, res: any, opts: any = null) {
     const method = (req.method || "").toUpperCase();
-    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const isAdmin = opts && opts.isAdmin === true;
     let auth: any = null;
@@ -5989,7 +5989,7 @@ notify pgrst, 'reload schema';`;
     return send(res, 501, {
       ok: false,
       error: "NO_ACTIVADO",
-      detail: "El reenvío de verificación (renew) está diseñado pero deshabilitado. No se activará hasta que se verifique cuánto tiempo vive el validation_task en Suno.",
+      detail: "El reenvÃ­o de verificaciÃ³n (renew) estÃ¡ diseÃ±ado pero deshabilitado. No se activarÃ¡ hasta que se verifique cuÃ¡nto tiempo vive el validation_task en Suno.",
     });
   }
 
@@ -5998,13 +5998,13 @@ notify pgrst, 'reload schema';`;
   // ------------------------------------------------------------------
 
   async function handleKaraokeStart(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const uploadUrl = firstString(payload, ["uploadUrl", "upload_url"]);
     const uploadPath = firstString(payload, ["uploadPath", "upload_path"]);
@@ -6018,7 +6018,7 @@ notify pgrst, 'reload schema';`;
     try {
       if (!isAdmin) {
         const consumed = await consumeUserCredits(auth.admin, user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar." });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar." });
       }
 
       let sourceAudioUrl = uploadUrl;
@@ -6061,7 +6061,7 @@ notify pgrst, 'reload schema';`;
         const looksHtml = headText.includes("<html") || headText.includes("<!doctype html") || headText.includes("access denied");
         if (looksHtml || (ct && !ct.includes("audio") && !ct.includes("octet-stream"))) {
           if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-          return send(res, 502, { error: "El archivo en R2 no parece ser un audio válido. Revisa la subida y el tipo de archivo." });
+          return send(res, 502, { error: "El archivo en R2 no parece ser un audio vÃ¡lido. Revisa la subida y el tipo de archivo." });
         }
       } catch {
       }
@@ -6085,14 +6085,14 @@ notify pgrst, 'reload schema';`;
       const initData = await initRes.json().catch(() => ({}));
       if (!initRes.ok) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: initData?.detail || "Error iniciando separación en Replicate" });
+        return send(res, 502, { error: initData?.detail || "Error iniciando separaciÃ³n en Replicate" });
       }
 
       const predictionId = initData?.id;
       const predictionUrl = initData?.urls?.get;
       if (!predictionId || !predictionUrl) {
         if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-        return send(res, 502, { error: "Respuesta inválida de Replicate al iniciar" });
+        return send(res, 502, { error: "Respuesta invÃ¡lida de Replicate al iniciar" });
       }
 
       return send(res, 200, {
@@ -6108,7 +6108,7 @@ notify pgrst, 'reload schema';`;
   }
 
   async function handleKaraokeStatus(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -6140,7 +6140,7 @@ notify pgrst, 'reload schema';`;
         const output = pollData?.output || {};
 
         if (stage === "separating") {
-          // Main separation done Ã¢â‚¬â€ extract URLs and kick off BVE
+          // Main separation done ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â extract URLs and kick off BVE
           const vocalUrl = output?.mdx_vocals || output?.vocals || null;
           const instrumentalUrl = output?.mdx_other || output?.instrumental || output?.no_vocals || null;
 
@@ -6156,7 +6156,7 @@ notify pgrst, 'reload schema';`;
               vocalUrl,
               instrumentalUrl,
               backingVocalUrl: null,
-              message: "Separación lista.",
+              message: "SeparaciÃ³n lista.",
             });
           }
 
@@ -6189,7 +6189,7 @@ notify pgrst, 'reload schema';`;
               message: "Extrayendo segundas voces...",
             });
           } else {
-            // BVE failed to start Ã¢â€ â€™ skip it, go straight to finalize
+            // BVE failed to start ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ skip it, go straight to finalize
             return send(res, 200, {
               ok: true,
               status: "ready_for_finalize",
@@ -6197,7 +6197,7 @@ notify pgrst, 'reload schema';`;
               vocalUrl,
               instrumentalUrl,
               backingVocalUrl: null,
-              message: "Separación lista.",
+              message: "SeparaciÃ³n lista.",
             });
           }
         }
@@ -6324,20 +6324,20 @@ notify pgrst, 'reload schema';`;
         }
       }
 
-      return { ok: false as const, error: lastErr || "No se pudo sincronizar con ningún modelo de Gemini" };
+      return { ok: false as const, error: lastErr || "No se pudo sincronizar con ningÃºn modelo de Gemini" };
     } catch (error: any) {
       return { ok: false as const, error: error?.message || String(error) };
     }
   }
 
   async function handleKaraokeFinalize(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const vocalUrl = firstString(payload, ["vocalUrl", "vocal_url"]);
     const instrumentalUrl = firstString(payload, ["instrumentalUrl", "instrumental_url"]);
@@ -6348,7 +6348,7 @@ notify pgrst, 'reload schema';`;
     if (!lyrics.trim()) return send(res, 400, { error: "Falta la letra para sincronizar" });
 
     try {
-      // Download vocal track for Gemini (must fit in memory Ã¢â‚¬â€ vocal tracks are usually < 10MB)
+      // Download vocal track for Gemini (must fit in memory ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â vocal tracks are usually < 10MB)
       const vocalRes = await fetch(vocalUrl);
       if (!vocalRes.ok) return send(res, 502, { error: `No pude descargar la pista vocal (HTTP ${vocalRes.status})` });
       const vocalBuffer = await vocalRes.arrayBuffer();
@@ -6491,12 +6491,12 @@ const karaokeHandler = (() => {
       }
 
       if (next === "verify") {
-        if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+        if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
         const auth = await requireUser(req);
         if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
         const payload = parseJsonBody(req);
-        if (!payload) return send(res, 400, { error: "Body inválido" });
+        if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
         const key = String(payload?.key || "").trim().replace(/^\/+/, "");
         const expectedSizeRaw = payload?.expectedSize ?? payload?.size ?? null;
@@ -6517,12 +6517,12 @@ const karaokeHandler = (() => {
           const contentLength = Number((head as any)?.ContentLength ?? NaN);
           const etag = String((head as any)?.ETag || "").replaceAll('"', "").trim() || null;
           if (!Number.isFinite(contentLength) || contentLength <= 0) {
-            return send(res, 404, { ok: false, error: "No se encontró el archivo en R2", key });
+            return send(res, 404, { ok: false, error: "No se encontrÃ³ el archivo en R2", key });
           }
           if (expectedSize != null && Number.isFinite(expectedSize) && expectedSize > 0 && contentLength !== expectedSize) {
             return send(res, 409, {
               ok: false,
-              error: "La subida a R2 quedó incompleta (tamaño no coincide). Reintenta la subida.",
+              error: "La subida a R2 quedÃ³ incompleta (tamaÃ±o no coincide). Reintenta la subida.",
               expectedSize,
               contentLength,
               key,
@@ -6535,7 +6535,7 @@ const karaokeHandler = (() => {
       }
 
       if (next === "play-url") {
-        if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+        if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
         const auth = await requireUser(req);
         if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -6552,7 +6552,7 @@ const karaokeHandler = (() => {
           const url = await getSignedR2Url(key, 3600);
           return send(res, 200, { ok: true, key, url });
         } catch (e: any) {
-          return send(res, 500, { ok: false, error: "No pude generar URL de reproducción", detail: e?.message || String(e) });
+          return send(res, 500, { ok: false, error: "No pude generar URL de reproducciÃ³n", detail: e?.message || String(e) });
         }
       }
 
@@ -6617,9 +6617,9 @@ const karaokeHandler = (() => {
         } catch {
           u = null;
         }
-        if (!u || u.protocol !== "https:") return { ok: false as const, error: "URL inválida" };
+        if (!u || u.protocol !== "https:") return { ok: false as const, error: "URL invÃ¡lida" };
         const host = (u.hostname || "").toLowerCase();
-        if (!host) return { ok: false as const, error: "URL inválida" };
+        if (!host) return { ok: false as const, error: "URL invÃ¡lida" };
         if (
           host === "localhost" ||
           host === "0.0.0.0" ||
@@ -6641,7 +6641,7 @@ const karaokeHandler = (() => {
       };
 
       if (next === "proxy-url") {
-        if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+        if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
         const auth = await requireUser(req);
         if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -6657,7 +6657,7 @@ const karaokeHandler = (() => {
         }
         if (src) {
           const allowed = isAllowedProxySrc(src);
-          if (!allowed.ok) return send(res, allowed.error === "URL inválida" ? 400 : 403, { ok: false, error: allowed.error });
+          if (!allowed.ok) return send(res, allowed.error === "URL invÃ¡lida" ? 400 : 403, { ok: false, error: allowed.error });
         }
 
         try {
@@ -6693,14 +6693,14 @@ const karaokeHandler = (() => {
           res.end();
           return;
         }
-        if (method !== "GET" && method !== "HEAD") return send(res, 405, { error: "Método no permitido" });
+        if (method !== "GET" && method !== "HEAD") return send(res, 405, { error: "MÃ©todo no permitido" });
         const tokenRaw = pickQuery(req, "token") || pickQuery(req, "t") || "";
         const token = (tokenRaw || "").toString().trim();
         const verified = await verifyProxyToken(token);
         if (!verified) {
           res.statusCode = 403;
           res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify({ ok: false, error: "Token inválido" }));
+          res.end(JSON.stringify({ ok: false, error: "Token invÃ¡lido" }));
           return;
         }
 
@@ -6784,7 +6784,7 @@ const karaokeHandler = (() => {
 
         if (!src) return sendErr(400, "Falta src");
         const allowed = isAllowedProxySrc(src);
-        if (!allowed.ok) return sendErr(allowed.error === "URL inválida" ? 400 : 403, allowed.error);
+        if (!allowed.ok) return sendErr(allowed.error === "URL invÃ¡lida" ? 400 : 403, allowed.error);
         const u = allowed.url;
 
         try {
@@ -6938,7 +6938,7 @@ const mercadoPagoHandler = (() => {
   const TRIAL_PACK_KEY = "mini_3"; // Pack de prueba $25: una sola vez por cuenta, para siempre
   const TRIAL_ALREADY_USED_MESSAGE = "Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.";
 
-  // Tabla de control mini_3_claims (user_id PK). No se tocan los registros históricos de mp_transactions.
+  // Tabla de control mini_3_claims (user_id PK). No se tocan los registros histÃ³ricos de mp_transactions.
   async function userHasApprovedPack(admin: any, userId: string, packKey: string): Promise<boolean> {
     if (!userId) return false;
     try {
@@ -7087,7 +7087,7 @@ const mercadoPagoHandler = (() => {
         },
         body: JSON.stringify({
           transaction_amount: commission,
-          description: "Comisión Afiliados - LucIAna | Music",
+          description: "ComisiÃ³n Afiliados - LucIAna | Music",
           payment_method_id: "account_money",
           operation_type: "money_transfer",
           external_reference: `ramber_aff:${paymentId}`,
@@ -7123,7 +7123,7 @@ const mercadoPagoHandler = (() => {
   }
 
   async function handleCreatePreference(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     if (MP_CHECKOUTS_DISABLED) {
       return send(res, 503, { ok: false, status: "error", code: "MP_CHECKOUTS_DISABLED", message: MP_CHECKOUTS_DISABLED_MSG });
     }
@@ -7134,13 +7134,13 @@ const mercadoPagoHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const packKeyRaw = typeof payload?.packKey === "string" ? payload.packKey.trim().toLowerCase() : "";
     const packKey = (packKeyRaw === "inicio" || packKeyRaw === "productor" || packKeyRaw === "masterizar" ? packKeyRaw : "") as PackKey | "";
-    if (!packKey) return send(res, 400, { error: "packKey inválido" });
+    if (!packKey) return send(res, 400, { error: "packKey invÃ¡lido" });
     if (packKey === "productor") {
-      return send(res, 400, { error: "El Pack Productor no está disponible por ahora." });
+      return send(res, 400, { error: "El Pack Productor no estÃ¡ disponible por ahora." });
     }
 
     const pack = PACKS[packKey];
@@ -7165,7 +7165,7 @@ const mercadoPagoHandler = (() => {
       if (!r.ok) return send(res, 502, { error: "Error creando pago", detail: data || null });
 
       const initPoint = typeof data?.init_point === "string" ? data.init_point : "";
-      if (!initPoint) return send(res, 502, { error: "Respuesta inválida de MercadoPago" });
+      if (!initPoint) return send(res, 502, { error: "Respuesta invÃ¡lida de MercadoPago" });
       return send(res, 200, { init_point: initPoint, preference_id: data?.id || null });
     } catch (e) {
       return send(res, 502, { error: "Error creando pago", detail: e instanceof Error ? e.message : String(e) });
@@ -7173,7 +7173,7 @@ const mercadoPagoHandler = (() => {
   }
 
   async function handleVerify(req: any, res: any) {
-    if (!["GET", "POST"].includes((req.method || "").toUpperCase())) return send(res, 405, { error: "Método no permitido" });
+    if (!["GET", "POST"].includes((req.method || "").toUpperCase())) return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
     if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
@@ -7216,7 +7216,7 @@ const mercadoPagoHandler = (() => {
     }
 
     // ==== IDEMPOTENTE: 1 SOLA LLAMADA A RPC. Fin del race condition. ====
-    // (SIN fallback a flujo vulnerable. Si la migración SQL no está aplicada Ã¢â€ â€™ falla clean.)
+    // (SIN fallback a flujo vulnerable. Si la migraciÃ³n SQL no estÃ¡ aplicada ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ falla clean.)
     const rpcNote = `Compra Mercado Pago ${paymentId}`;
     const rpcCall = await auth.admin.rpc("mp_claim_payment_transaction", {
       p_payment_id: paymentId,
@@ -7232,15 +7232,15 @@ const mercadoPagoHandler = (() => {
     const rpcErr = (rpcCall as any)?.error;
     if (rpcErr) {
       const msg = String(rpcErr?.message || rpcErr || "");
-      // Si la migración SQL NO está en Supabase AÃƒÅ¡N Ã¢â€ â€™ explicación clara.
+      // Si la migraciÃ³n SQL NO estÃ¡ en Supabase AÃƒÆ’Ã…Â¡N ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ explicaciÃ³n clara.
       if (/function.*does not exist/i.test(msg)) {
         return send(res, 500, {
-          error: "Falta aplicar la migración SQL mp_claim_payment_transaction en Supabase SQL Editor. No se acreditó nada. Nada se duplicó. Ve al reporte del commit y ejecuta el SQL primero.",
+          error: "Falta aplicar la migraciÃ³n SQL mp_claim_payment_transaction en Supabase SQL Editor. No se acreditÃ³ nada. Nada se duplicÃ³. Ve al reporte del commit y ejecuta el SQL primero.",
           rpc_missing: true,
           rpc_error: msg,
         });
       }
-      return send(res, 500, { error: `RPC falló: ${msg}` });
+      return send(res, 500, { error: `RPC fallÃ³: ${msg}` });
     }
     const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
     const rpcOut: any = rpcRows[0] || {};
@@ -7249,9 +7249,9 @@ const mercadoPagoHandler = (() => {
     if (!claimSuccess && !already) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
     if (already) return send(res, 200, { ok: true, status: paymentStatus, credited: true, already: true });
 
-    // IMPORTANTE: NO SE HACE NINGÃƒÅ¡N AJUSTE DE CRÉDITOS NI ACTIVACIÓN DE MASTERIZACIÓN AQUÃƒÂ.
-    // TODO (créditos inicio/productor y suscripción masterización) YA fue realizado 1 SOLA VEZ
-    // DENTRO DE LA RPC mp_claim_payment_transaction. Hacerlo otra vez duplicaría.
+    // IMPORTANTE: NO SE HACE NINGÃƒÆ’Ã…Â¡N AJUSTE DE CRÃ‰DITOS NI ACTIVACIÃ“N DE MASTERIZACIÃ“N AQUÃƒÆ’Ã‚Â.
+    // TODO (crÃ©ditos inicio/productor y suscripciÃ³n masterizaciÃ³n) YA fue realizado 1 SOLA VEZ
+    // DENTRO DE LA RPC mp_claim_payment_transaction. Hacerlo otra vez duplicarÃ­a.
 
     await tryPayAffiliateCommission(auth.admin, mpToken, paymentId, auth.user.id, packKey || "", amountMxn);
 
@@ -7267,7 +7267,7 @@ const mercadoPagoHandler = (() => {
   }
 
   async function handleWebhook(req: any, res: any) {
-    if (!["POST", "GET"].includes((req.method || "").toUpperCase())) return send(res, 405, { error: "Método no permitido" });
+    if (!["POST", "GET"].includes((req.method || "").toUpperCase())) return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
     if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
@@ -7357,10 +7357,10 @@ const mercadoPagoHandler = (() => {
       if (rpcErr) {
         const msg = String(rpcErr?.message || rpcErr || "");
         if (/function.*does not exist/i.test(msg)) {
-          console.error("[MP Webhook share_unlock] RPC faltante (migración SQL sin aplicar):", msg);
+          console.error("[MP Webhook share_unlock] RPC faltante (migraciÃ³n SQL sin aplicar):", msg);
           return send(res, 200, { ok: true, status: paymentStatus, skipped: true, rpc_missing: true });
         }
-        console.error("[MP Webhook share_unlock] RPC falló:", rpcErr);
+        console.error("[MP Webhook share_unlock] RPC fallÃ³:", rpcErr);
         return send(res, 200, { ok: true, status: paymentStatus, skipped: true });
       }
       const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
@@ -7411,7 +7411,7 @@ const mercadoPagoHandler = (() => {
       validity_days: Number((miniValidation as any).validity_days || validityDays || 30),
     } : null;
 
-    // Plan $25 trial único por cuenta (antes de RPC para no dar créditos si ya lo usó)
+    // Plan $25 trial Ãºnico por cuenta (antes de RPC para no dar crÃ©ditos si ya lo usÃ³)
     if (isMiniPack) {
       const fixedPackKey = String((finalMiniPack as any)?.pack_key || packKey || "mini_pack");
       if (String(fixedPackKey || "").trim().toLowerCase() === TRIAL_PACK_KEY) {
@@ -7463,13 +7463,13 @@ const mercadoPagoHandler = (() => {
     if (rpcErr) {
       const msg = String(rpcErr?.message || rpcErr || "");
       if (/function.*does not exist/i.test(msg)) {
-        console.error("[MP Webhook claim] RPC faltante (migración SQL sin aplicar):", msg);
+        console.error("[MP Webhook claim] RPC faltante (migraciÃ³n SQL sin aplicar):", msg);
         return send(res, 500, {
-          error: "Falta aplicar la migración SQL mp_claim_payment_transaction en Supabase SQL Editor. No se acreditó nada. Nada se duplicó. Ve al reporte del commit y ejecuta el SQL primero.",
+          error: "Falta aplicar la migraciÃ³n SQL mp_claim_payment_transaction en Supabase SQL Editor. No se acreditÃ³ nada. Nada se duplicÃ³. Ve al reporte del commit y ejecuta el SQL primero.",
           rpc_missing: true,
         });
       }
-      console.error("[MP Webhook claim] RPC falló (no function-not-exist):", rpcErr);
+      console.error("[MP Webhook claim] RPC fallÃ³ (no function-not-exist):", rpcErr);
       return send(res, 500, { error: msg });
     }
     const rpcRows = Array.isArray(rpcCall?.data) ? rpcCall.data : Array.isArray(rpcCall) ? rpcCall : [];
@@ -7482,10 +7482,10 @@ const mercadoPagoHandler = (() => {
     if (already) return send(res, 200, { ok: true, status: paymentStatus, already: true });
     if (!claimSuccess) return send(res, 500, { error: rpcOut?.message || "No pude procesar el pago" });
 
-    // IMPORTANTE: NO SE HACE NINGÃƒÅ¡N AJUSTE DE CRÉDITOS NI ACTIVACIÓN DE MASTERIZACIÓN AQUÃƒÂ.
-    // TODO (suscripción masterización y créditos inicio/productor) YA fue realizado 1 SOLA VEZ
+    // IMPORTANTE: NO SE HACE NINGÃƒÆ’Ã…Â¡N AJUSTE DE CRÃ‰DITOS NI ACTIVACIÃ“N DE MASTERIZACIÃ“N AQUÃƒÆ’Ã‚Â.
+    // TODO (suscripciÃ³n masterizaciÃ³n y crÃ©ditos inicio/productor) YA fue realizado 1 SOLA VEZ
     // DENTRO DE LA RPC mp_claim_payment_transaction.
-    // Cualquier applyCreditRolloverWithCap, adjustUserCredits o UPDATE mastering aquí DUPLICARÃƒÂA.
+    // Cualquier applyCreditRolloverWithCap, adjustUserCredits o UPDATE mastering aquÃ­ DUPLICARÃƒÆ’Ã‚ÂA.
 
     if (!isMiniPack) {
       await tryPayAffiliateCommission(admin, mpToken, paymentId, userId, packKey || "", amountMxn);
@@ -7504,7 +7504,7 @@ const mercadoPagoHandler = (() => {
   }
 
   async function handleClaimFree(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     return send(res, 410, { error: "El plan gratis fue desactivado." });
   }
 
@@ -7512,11 +7512,11 @@ const mercadoPagoHandler = (() => {
 
   /**
    * GET /api/mercadopago/packs
-   * Lista los paquetes de créditos disponibles (leyendo de credit_packs).
-   * No requiere autenticación para ver catálogo.
+   * Lista los paquetes de crÃ©ditos disponibles (leyendo de credit_packs).
+   * No requiere autenticaciÃ³n para ver catÃ¡logo.
    */
   async function handleListPacks(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -7526,7 +7526,7 @@ const mercadoPagoHandler = (() => {
     const createClient = await getSupabaseCreateClient();
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
 
-    // Si viene token, devolvemos si ya usó el Pack de prueba (mini_3) vía la tabla de control.
+    // Si viene token, devolvemos si ya usÃ³ el Pack de prueba (mini_3) vÃ­a la tabla de control.
     let purchasedPackKeys: string[] = [];
     const auth = await requireUser(req);
     if (auth.ok) {
@@ -7536,7 +7536,7 @@ const mercadoPagoHandler = (() => {
           purchasedPackKeys = ["mini_3"];
         }
       } catch {
-        // sin auth o error: catálogo público sin marcar compras
+        // sin auth o error: catÃ¡logo pÃºblico sin marcar compras
       }
     }
 
@@ -7555,7 +7555,7 @@ const mercadoPagoHandler = (() => {
    * Lee el paquete desde la tabla credit_packs (no hardcodeado).
    */
   async function handleCreateMiniPackPreference(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     if (MP_CHECKOUTS_DISABLED) {
       return send(res, 503, { ok: false, status: "error", code: "MP_CHECKOUTS_DISABLED", message: MP_CHECKOUTS_DISABLED_MSG });
     }
@@ -7566,7 +7566,7 @@ const mercadoPagoHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const packKey = (typeof payload?.packKey === "string" ? payload.packKey.trim() : "") ||
                     (typeof payload?.pack_key === "string" ? payload.pack_key.trim() : "");
@@ -7596,9 +7596,9 @@ const mercadoPagoHandler = (() => {
       const songs = Number(canonical.songs ?? 0);
       const validityDays = Number(canonical.validity_days ?? 30);
       const unitPrice = round2(Number(canonical.price_mxn ?? 0));
-      const title = String(canonical.name || "Pack de Créditos").slice(0, 200);
+      const title = String(canonical.name || "Pack de CrÃ©ditos").slice(0, 200);
 
-      if (credits < 0 || unitPrice <= 0) return send(res, 400, { error: "El paquete tiene precio o créditos inválidos." });
+      if (credits < 0 || unitPrice <= 0) return send(res, 400, { error: "El paquete tiene precio o crÃ©ditos invÃ¡lidos." });
 
       const origin = originFromReq(req);
       const preferenceBody: any = {
@@ -7632,7 +7632,7 @@ const mercadoPagoHandler = (() => {
       if (!r.ok) return send(res, 502, { error: "Error creando pago en Mercado Pago", detail: data || null });
 
       const initPoint = typeof data?.init_point === "string" ? data.init_point : "";
-      if (!initPoint) return send(res, 502, { error: "Respuesta inválida de Mercado Pago" });
+      if (!initPoint) return send(res, 502, { error: "Respuesta invÃ¡lida de Mercado Pago" });
       return send(res, 200, {
         ok: true,
         init_point: initPoint,
@@ -7655,13 +7655,13 @@ const mercadoPagoHandler = (() => {
    * POST /api/mercadopago/expire-batches
    * Job diario: marca como expirados los lotes vencidos.
    * Se puede invocar desde un cron externo (Vercel Cron, GitHub Actions, etc).
-   * Seguridad básica: requiere header X-Cron-Secret igual a CRON_JOB_SECRET env var,
+   * Seguridad bÃ¡sica: requiere header X-Cron-Secret igual a CRON_JOB_SECRET env var,
    * o bien un token de admin con rol service en Supabase.
    */
   async function handleExpireBatches(req: any, res: any) {
     // Vercel Cron invoca con GET; aceptamos GET y POST.
     const method = (req.method || "").toUpperCase();
-    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     // Acepta el header estandar de Vercel Cron (Authorization: Bearer <CRON_SECRET>)
     // y, por compatibilidad, el header legacy x-cron-secret / x-cron-token.
@@ -7728,8 +7728,8 @@ const mercadoPagoHandler = (() => {
   };
 })();
 
-// =================== STRIPE CHECKOUT (PAQUETES DE PAGO ÃƒÅ¡NICO) ===================
-// Las claves de Stripe viven únicamente en las variables privadas de Vercel.
+// =================== STRIPE CHECKOUT (PAQUETES DE PAGO ÃƒÆ’Ã…Â¡NICO) ===================
+// Las claves de Stripe viven Ãºnicamente en las variables privadas de Vercel.
 const stripeHandler = (() => {
   const TRIAL_PACK_KEY = "mini_3";
   const TRIAL_ALREADY_USED_MESSAGE = "Este plan de $25 solo puede usarse una vez por usuario. Elige el plan de $50 para continuar.";
@@ -7798,11 +7798,11 @@ const stripeHandler = (() => {
       return { ok: false as const, status: 500, error: "Faltan variables de Supabase." };
     }
     const token = getAuthToken(req);
-    if (!token) return { ok: false as const, status: 401, error: "Inicia sesión para comprar un paquete." };
+    if (!token) return { ok: false as const, status: 401, error: "Inicia sesiÃ³n para comprar un paquete." };
     const createClient = await getSupabaseCreateClient();
     const supabase = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return { ok: false as const, status: 401, error: "Tu sesión ya no es válida." };
+    if (error || !data?.user) return { ok: false as const, status: 401, error: "Tu sesiÃ³n ya no es vÃ¡lida." };
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
     return { ok: true as const, user: data.user, admin };
   }
@@ -7812,7 +7812,7 @@ const stripeHandler = (() => {
     if (typeof req.body === "string") return Buffer.from(req.body, "utf8");
     if (req.body instanceof Uint8Array) return Buffer.from(req.body);
     if (req.body && typeof req.body === "object") {
-      throw new Error("El webhook recibió un body parseado; necesita el body original para validar la firma de Stripe.");
+      throw new Error("El webhook recibiÃ³ un body parseado; necesita el body original para validar la firma de Stripe.");
     }
     return await new Promise<Buffer>((resolve, reject) => {
       const chunks: Buffer[] = [];
@@ -7844,9 +7844,9 @@ const stripeHandler = (() => {
   }
 
   async function handleCreateCheckout(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const stripeSecret = (process.env.STRIPE_SECRET_KEY || "").trim();
-    if (!stripeSecret) return send(res, 503, { error: "Los pagos internacionales todavía no están configurados." });
+    if (!stripeSecret) return send(res, 503, { error: "Los pagos internacionales todavÃ­a no estÃ¡n configurados." });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -7906,17 +7906,17 @@ const stripeHandler = (() => {
   }
 
   async function handleWebhook(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET || "").trim();
     const supabaseUrl = (process.env.SUPABASE_URL || "").trim();
     const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
     if (!webhookSecret || !supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables del webhook de Stripe." });
     const signature = String(req.headers?.["stripe-signature"] || "");
     let raw: Buffer;
-    try { raw = await readRawBody(req); } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : "Body inválido." }); }
-    if (!(await verifyWebhookSignature(raw, signature, webhookSecret))) return send(res, 400, { error: "Firma de Stripe inválida." });
+    try { raw = await readRawBody(req); } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : "Body invÃ¡lido." }); }
+    if (!(await verifyWebhookSignature(raw, signature, webhookSecret))) return send(res, 400, { error: "Firma de Stripe invÃ¡lida." });
     let event: any;
-    try { event = JSON.parse(raw.toString("utf8")); } catch { return send(res, 400, { error: "Evento de Stripe inválido." }); }
+    try { event = JSON.parse(raw.toString("utf8")); } catch { return send(res, 400, { error: "Evento de Stripe invÃ¡lido." }); }
     if (!["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(String(event?.type || ""))) return send(res, 200, { ok: true, ignored: true });
 
     const session = event?.data?.object || {};
@@ -7995,7 +7995,7 @@ const stripeHandler = (() => {
           userId, packId: Number(canonical.id || 0) || undefined, packKey, paymentId: `stripe:${sessionId}`,
           credits: allowed, validityDays: effectiveDays, amountMxn, note: `Compra Stripe ${packKey} ${sessionId}`,
         });
-        if (!batch.ok) throw new Error(batch.error || "No pude acreditar créditos.");
+        if (!batch.ok) throw new Error(batch.error || "No pude acreditar crÃ©ditos.");
       }
       await admin.from("stripe_checkout_transactions").update({ credits_granted_at: new Date().toISOString() }).eq("checkout_session_id", sessionId);
       return send(res, 200, { ok: true, credited: true });
@@ -8012,7 +8012,7 @@ const stripeHandler = (() => {
     if (action === "create-checkout") return handleCreateCheckout(req, res);
     if (action === "webhook") return handleWebhook(req, res);
     if (action === "rates") {
-      if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+      if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
       try {
         const { rate, sources } = await fetchUsdToMxnRate();
         return send(res, 200, {
@@ -8096,7 +8096,7 @@ const libraryHandler = (() => {
       // Primero verificar si es una URL de Cloudflare R2
       const r2Pattern = /\.r2\.cloudflarestorage\.com\//;
       if (r2Pattern.test(u.hostname)) {
-        // Extraer la ruta después del dominio
+        // Extraer la ruta despuÃ©s del dominio
         const path = u.pathname.slice(1); // Eliminar el slash inicial
         const decoded = decodeURIComponent(path);
         if (!decoded) return null;
@@ -8371,7 +8371,7 @@ const libraryHandler = (() => {
   }
 
   async function handleList(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const deleted = ["1", "true", "yes"].includes((pickQuery(req, "deleted") || "").toLowerCase());
     let auth: any = null;
     try {
@@ -8439,14 +8439,14 @@ const libraryHandler = (() => {
   }
 
   async function handleCreate(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
-    const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Nueva Canción";
+    const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Nueva CanciÃ³n";
     const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
     const lyrics = typeof body?.lyrics === "string" ? body.lyrics.trim().slice(0, 8000) : null;
     const gender = typeof body?.gender === "string" ? body.gender.trim().slice(0, 20) : null;
@@ -8526,7 +8526,7 @@ const libraryHandler = (() => {
       }
     }
 
-    // Función para verificar si una URL es de R2
+    // FunciÃ³n para verificar si una URL es de R2
     const isR2Url = (url: string) => {
       try {
         const u = new URL(url);
@@ -8542,7 +8542,7 @@ const libraryHandler = (() => {
     // Copiar siempre a R2 cuando la URL original no sea ya de R2,
     // aunque venga firmada, para evitar que expire con el tiempo.
     if (audioUrl && !isR2Url(audioUrl)) {
-      console.log(`Ã°Å¸â€œÂ¦ [handleCreate] Copiando audio a R2: "${title}" (${audioUrl.substring(0, 80)}...)`);
+      console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ [handleCreate] Copiando audio a R2: "${title}" (${audioUrl.substring(0, 80)}...)`);
       
       try {
         // Descargar el audio
@@ -8552,14 +8552,14 @@ const libraryHandler = (() => {
         clearTimeout(timer);
         
         if (!response.ok) {
-          console.error(`Ã¢ÂÅ’ [handleCreate] Error al descargar audio: HTTP ${response.status}`);
+          console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ [handleCreate] Error al descargar audio: HTTP ${response.status}`);
           // Continuar con la URL original como fallback
         } else {
           const contentType = (response.headers.get("content-type") || "audio/mpeg").toString().trim();
           const arrayBuffer = await response.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
           
-          // Crear path único en R2
+          // Crear path Ãºnico en R2
           const safeBase = (sunoAudioId || title || "audio")
             .replace(/[\\/:*?"<>|]+/g, "_")
             .replace(/\s+/g, "_")
@@ -8567,17 +8567,17 @@ const libraryHandler = (() => {
             .slice(0, 80);
           const path = `imports/${auth.user.id}/${Date.now()}_${safeBase || "audio"}.mp3`;
           
-          console.log(`Ã¢Â¬â€ Ã¯Â¸Â  [handleCreate] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType})`);
+          console.log(`ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â ÃƒÂ¯Ã‚Â¸Ã‚Â  [handleCreate] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType})`);
           finalAudioUrl = await uploadToR2(path, buffer, contentType);
-          console.log(`Ã¢Å“â€¦ [handleCreate] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
+          console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [handleCreate] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
         }
       } catch (uploadError) {
-        console.error(`Ã¢ÂÅ’ [handleCreate] Error al subir audio a R2:`, uploadError);
+        console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ [handleCreate] Error al subir audio a R2:`, uploadError);
         // Usar la URL original como fallback
-        console.log(`Ã°Å¸â€â€ž [handleCreate] Usando URL original como fallback: ${audioUrl.substring(0, 100)}...`);
+        console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ [handleCreate] Usando URL original como fallback: ${audioUrl.substring(0, 100)}...`);
       }
     } else if (audioUrl && isR2Url(audioUrl)) {
-      console.log(`Ã¢Å“â€¦ [handleCreate] Audio ya está en R2: "${title}" (${audioUrl.substring(0, 100)}...)`);
+      console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [handleCreate] Audio ya estÃ¡ en R2: "${title}" (${audioUrl.substring(0, 100)}...)`);
     }
 
     const insertRow: any = {
@@ -8597,7 +8597,7 @@ const libraryHandler = (() => {
 
     const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
     if (error) {
-      console.error(`Ã¢ÂÅ’ [handleCreate] Error al guardar canción en base de datos:`, error);
+      console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ [handleCreate] Error al guardar canciÃ³n en base de datos:`, error);
       try {
         const findExisting = async (query: any) => {
           const { data: existing } = await query.limit(1).maybeSingle();
@@ -8645,7 +8645,7 @@ const libraryHandler = (() => {
         }
 
         if (recovered) {
-          console.log(`Ã¢â€žÂ¹Ã¯Â¸Â [handleCreate] La canción ya existía, regresando el registro guardado: ${recovered.id}`);
+          console.log(`ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¹ÃƒÂ¯Ã‚Â¸Ã‚Â [handleCreate] La canciÃ³n ya existÃ­a, regresando el registro guardado: ${recovered.id}`);
           return send(res, 200, {
             song: recovered,
             deleted_oldest: false,
@@ -8656,12 +8656,12 @@ const libraryHandler = (() => {
           });
         }
       } catch (recoverError) {
-        console.error(`Ã¢ÂÅ’ [handleCreate] No pude recuperar la canción existente tras error de insert:`, recoverError);
+        console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ [handleCreate] No pude recuperar la canciÃ³n existente tras error de insert:`, recoverError);
       }
-      return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+      return send(res, 500, { error: "No pude guardar la canciÃ³n", detail: error.message });
     }
 
-    console.log(`Ã¢Å“â€¦ [handleCreate] Canción guardada en base de datos: ${data.id}`);
+    console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [handleCreate] CanciÃ³n guardada en base de datos: ${data.id}`);
     return send(res, 200, {
       song: data,
       deleted_oldest: false,
@@ -8672,17 +8672,17 @@ const libraryHandler = (() => {
   }
 
   async function handleCreateFromR2(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const keyRaw = typeof body?.key === "string" ? body.key.trim() : "";
     const key = keyRaw.replace(/^\/+/, "").slice(0, 500);
     if (!key) return send(res, 400, { error: "Falta key" });
     const mustPrefix = `uploads/audio/${auth.user.id}/`;
-    if (!key.startsWith(mustPrefix)) return send(res, 403, { error: "Key inválida" });
+    if (!key.startsWith(mustPrefix)) return send(res, 403, { error: "Key invÃ¡lida" });
 
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Audio";
     const description = typeof body?.description === "string" ? body.description.trim().slice(0, 2000) : "";
@@ -8725,16 +8725,16 @@ const libraryHandler = (() => {
       is_cover: isCover,
     };
     const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
-    if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+    if (error) return send(res, 500, { error: "No pude guardar la canciÃ³n", detail: error.message });
     return send(res, 200, { song: data, already: false });
   }
 
   async function handleUploadAudio(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const file = body?.file;
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "Audio";
@@ -8768,7 +8768,7 @@ const libraryHandler = (() => {
         is_cover: false,
       };
       const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
-      if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+      if (error) return send(res, 500, { error: "No pude guardar la canciÃ³n", detail: error.message });
 
       return send(res, 200, { ok: true, url: audioUrl, song: data });
     } catch (e) {
@@ -8777,11 +8777,11 @@ const libraryHandler = (() => {
   }
 
   async function handleImportAudio(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const sourceUrl = typeof body?.sourceUrl === "string" ? body.sourceUrl.trim().slice(0, 2000) : "";
     if (!/^https?:\/\//i.test(sourceUrl)) return send(res, 400, { error: "Falta sourceUrl (http/https)" });
@@ -8819,11 +8819,11 @@ const libraryHandler = (() => {
       // Esto incluye:
       // - URLs de Suno (cdn.suno.ai, suno.ai, firebasestorage.googleapis.com)
       // - URLs de servicios temporales (tempfile.aiquickdraw.com, musicfile.removeai.ai)
-      // - URLs de Supabase Storage (públicas o firmadas)
+      // - URLs de Supabase Storage (pÃºblicas o firmadas)
       // - URLs que parecen expirar
       // - Cualquier otra URL HTTP/HTTPS
       
-      console.log(`Ã°Å¸â€œÂ¦ Copiando audio a R2: "${title}" (${sourceUrl.substring(0, 80)}...)`);
+      console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ Copiando audio a R2: "${title}" (${sourceUrl.substring(0, 80)}...)`);
       return true;
     })();
 
@@ -8841,7 +8841,7 @@ const libraryHandler = (() => {
     }
 
     if (!shouldCopyToR2) {
-      console.log(`Ã¢Å“â€¦ Audio ya está en R2: "${title}" (${sourceUrl.substring(0, 100)}...)`);
+      console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Audio ya estÃ¡ en R2: "${title}" (${sourceUrl.substring(0, 100)}...)`);
       
       const insertRow: any = {
         user_id: auth.user.id,
@@ -8858,10 +8858,10 @@ const libraryHandler = (() => {
       };
       const { data: created, error: createErr } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
       if (createErr) {
-        console.error(`Ã¢ÂÅ’ Error al guardar canción en base de datos:`, createErr);
-        return send(res, 500, { error: "No pude guardar la canción", detail: createErr.message });
+        console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ Error al guardar canciÃ³n en base de datos:`, createErr);
+        return send(res, 500, { error: "No pude guardar la canciÃ³n", detail: createErr.message });
       }
-      console.log(`Ã¢Å“â€¦ Canción guardada en base de datos: ${created.id}`);
+      console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ CanciÃ³n guardada en base de datos: ${created.id}`);
       return send(res, 200, { song: created, already: false, stored: "link" });
     }
 
@@ -8894,13 +8894,13 @@ const libraryHandler = (() => {
 
     let audioUrl = "";
     try {
-      console.log(`Ã¢Â¬â€ Ã¯Â¸Â  Subiendo audio a R2: ${path} (${buf.length} bytes, ${contentType})`);
+      console.log(`ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â ÃƒÂ¯Ã‚Â¸Ã‚Â  Subiendo audio a R2: ${path} (${buf.length} bytes, ${contentType})`);
       audioUrl = await uploadToR2(path, buf, contentType);
-      console.log(`Ã¢Å“â€¦ Audio subido a R2: ${audioUrl.substring(0, 100)}...`);
+      console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Audio subido a R2: ${audioUrl.substring(0, 100)}...`);
     } catch (uploadError) {
-      console.error(`Ã¢ÂÅ’ Error al subir audio a R2:`, uploadError);
+      console.error(`ÃƒÂ¢Ã‚ÂÃ…â€™ Error al subir audio a R2:`, uploadError);
       // Intentar guardar con la URL original como fallback
-      console.log(`Ã°Å¸â€â€ž Usando URL original como fallback: ${sourceUrl.substring(0, 100)}...`);
+      console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Usando URL original como fallback: ${sourceUrl.substring(0, 100)}...`);
       audioUrl = sourceUrl;
     }
 
@@ -8918,16 +8918,16 @@ const libraryHandler = (() => {
       is_cover: false,
     };
     const { data, error } = await auth.admin.from(TABLE).insert(insertRow).select("*").single();
-    if (error) return send(res, 500, { error: "No pude guardar la canción", detail: error.message });
+    if (error) return send(res, 500, { error: "No pude guardar la canciÃ³n", detail: error.message });
     return send(res, 200, { song: data, already: false });
   }
 
   async function handleZipStems(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const rawTitle = typeof body?.title === "string" ? body.title.trim() : "";
     const title = (rawTitle || "stems").slice(0, 120);
@@ -9003,11 +9003,11 @@ const libraryHandler = (() => {
   }
 
   async function handleDelete(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const id = typeof body?.id === "string" ? body.id.trim() : "";
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -9025,8 +9025,8 @@ const libraryHandler = (() => {
     }
 
     const { data: existing, error: findErr } = await existingQuery.maybeSingle();
-    if (findErr) return send(res, 500, { error: "No pude validar la canción", detail: findErr.message });
-    if (!existing) return send(res, 404, { error: "Canción no encontrada" });
+    if (findErr) return send(res, 500, { error: "No pude validar la canciÃ³n", detail: findErr.message });
+    if (!existing) return send(res, 404, { error: "CanciÃ³n no encontrada" });
     if ((existing as any).deleted_at) {
       return send(res, 200, { ok: true, already: true });
     }
@@ -9046,12 +9046,12 @@ const libraryHandler = (() => {
   }
 
   async function handleRestore(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const id = typeof body?.id === "string" ? body.id.trim() : "";
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -9082,11 +9082,11 @@ const libraryHandler = (() => {
   }
 
   async function handlePurge(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const id = typeof body?.id === "string" ? body.id.trim().slice(0, 200) : "";
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -9097,9 +9097,9 @@ const libraryHandler = (() => {
       .eq("user_id", auth.user.id)
       .eq("type", ITEM_TYPE)
       .maybeSingle();
-    if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
-    if (!song) return send(res, 404, { error: "Canción no encontrada" });
-    if (!(song as any).deleted_at) return send(res, 400, { error: "Primero elimínala (Papelera) y luego elimínala definitivamente." });
+    if (error) return send(res, 500, { error: "No pude buscar la canciÃ³n", detail: error.message });
+    if (!song) return send(res, 404, { error: "CanciÃ³n no encontrada" });
+    if (!(song as any).deleted_at) return send(res, 400, { error: "Primero elimÃ­nala (Papelera) y luego elimÃ­nala definitivamente." });
 
     try {
       await auth.admin.from(PUBLIC_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", id);
@@ -9124,12 +9124,12 @@ const libraryHandler = (() => {
   }
 
   async function handleUpdateAudio(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const id = typeof body?.id === "string" ? body.id.trim() : "";
     const audioUrl = typeof body?.audioUrl === "string" ? body.audioUrl.trim().slice(0, 2000) : "";
@@ -9138,7 +9138,7 @@ const libraryHandler = (() => {
 
     if (!id) return send(res, 400, { error: "Falta id" });
     if (!audioUrl || !(audioUrl.startsWith("http://") || audioUrl.startsWith("https://"))) {
-      return send(res, 400, { error: "audioUrl inválido" });
+      return send(res, 400, { error: "audioUrl invÃ¡lido" });
     }
 
     const patch: any = { audio_url: audioUrl };
@@ -9155,17 +9155,17 @@ const libraryHandler = (() => {
       .select("*")
       .maybeSingle();
     if (error) return send(res, 500, { error: "No pude actualizar audio", detail: error.message });
-    if (!data) return send(res, 404, { error: "Canción no encontrada" });
+    if (!data) return send(res, 404, { error: "CanciÃ³n no encontrada" });
     return send(res, 200, { ok: true, song: data });
   }
 
   async function handleUpdateLyrics(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const id = typeof body?.id === "string" ? body.id.trim() : "";
     const lyrics = typeof body?.lyrics === "string" ? body.lyrics.trim().slice(0, 8000) : "";
@@ -9182,17 +9182,17 @@ const libraryHandler = (() => {
       .select("*")
       .maybeSingle();
     if (error) return send(res, 500, { error: "No pude actualizar letra", detail: error.message });
-    if (!data) return send(res, 404, { error: "Canción no encontrada" });
+    if (!data) return send(res, 404, { error: "CanciÃ³n no encontrada" });
     return send(res, 200, { ok: true, song: data });
   }
 
   async function handleUpdateTitle(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const id = typeof body?.id === "string" ? body.id.trim() : "";
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 100) : "";
@@ -9209,7 +9209,7 @@ const libraryHandler = (() => {
       .select("*")
       .maybeSingle();
     if (error) return send(res, 500, { error: "No pude actualizar nombre", detail: error.message });
-    if (!data) return send(res, 404, { error: "Canción no encontrada" });
+    if (!data) return send(res, 404, { error: "CanciÃ³n no encontrada" });
     return send(res, 200, { ok: true, song: data });
   }
 
@@ -9310,12 +9310,12 @@ const libraryHandler = (() => {
   }
 
   async function handleSetCover(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const id = typeof body?.id === "string" ? body.id.trim() : "";
     let base64DataRaw = typeof body?.base64Data === "string" ? body.base64Data : "";
@@ -9331,8 +9331,8 @@ const libraryHandler = (() => {
       .eq("user_id", auth.user.id)
       .eq("type", ITEM_TYPE)
       .maybeSingle();
-    if (rowErr) return send(res, 500, { error: "No pude validar la canción", detail: rowErr.message });
-    if (!row || row.deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+    if (rowErr) return send(res, 500, { error: "No pude validar la canciÃ³n", detail: rowErr.message });
+    if (!row || row.deleted_at) return send(res, 404, { error: "CanciÃ³n no encontrada" });
 
     if (!base64DataRaw && fileUrlRaw && isDataImage(fileUrlRaw)) {
       base64DataRaw = fileUrlRaw;
@@ -9346,12 +9346,12 @@ const libraryHandler = (() => {
         .eq("id", id)
         .eq("user_id", auth.user.id)
         .eq("type", ITEM_TYPE);
-      if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
+      if (updErr) return send(res, 500, { error: "No pude actualizar la canciÃ³n", detail: updErr.message });
       return send(res, 200, { ok: true, coverUrl: fileUrlRaw });
     }
 
     if (!base64DataRaw && fileUrlRaw) {
-      if (!isHttpUrl(fileUrlRaw)) return send(res, 400, { error: "fileUrl inválido" });
+      if (!isHttpUrl(fileUrlRaw)) return send(res, 400, { error: "fileUrl invÃ¡lido" });
       const mirrored = await mirrorCoverToR2(auth.user.id, id, fileUrlRaw, fileName || "cover.jpg");
       if (!mirrored) return send(res, 400, { error: "No pude descargar la imagen" });
 
@@ -9361,13 +9361,13 @@ const libraryHandler = (() => {
         .eq("id", id)
         .eq("user_id", auth.user.id)
         .eq("type", ITEM_TYPE);
-      if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
+      if (updErr) return send(res, 500, { error: "No pude actualizar la canciÃ³n", detail: updErr.message });
 
       return send(res, 200, { ok: true, coverUrl: mirrored });
     }
 
     const base64Parsed = parseBase64Data(base64DataRaw);
-    if (!base64Parsed) return send(res, 400, { error: "base64Data inválido" });
+    if (!base64Parsed) return send(res, 400, { error: "base64Data invÃ¡lido" });
 
     let buf: Buffer | null = null;
     try {
@@ -9377,7 +9377,7 @@ const libraryHandler = (() => {
       buf = null;
     }
     if (!buf || buf.length === 0) return send(res, 400, { error: "No pude procesar la imagen" });
-    if (buf.length > 25_000_000) return send(res, 413, { error: "La imagen está muy pesada. Usa una foto más pequeña." });
+    if (buf.length > 25_000_000) return send(res, 413, { error: "La imagen estÃ¡ muy pesada. Usa una foto mÃ¡s pequeÃ±a." });
 
     const { ext, contentType } = extFromCover(base64Parsed.mime || "", fileName || "");
     const path = `covers/${auth.user.id}/${id}/${Date.now()}_${safeFileBase(fileName)}.${ext}`.slice(0, 500);
@@ -9389,17 +9389,17 @@ const libraryHandler = (() => {
       .eq("id", id)
       .eq("user_id", auth.user.id)
       .eq("type", ITEM_TYPE);
-    if (updErr) return send(res, 500, { error: "No pude actualizar la canción", detail: updErr.message });
+    if (updErr) return send(res, 500, { error: "No pude actualizar la canciÃ³n", detail: updErr.message });
 
     return send(res, 200, { ok: true, coverUrl });
   }
 
   async function handleChargeDownload(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const id = typeof body?.id === "string" ? body.id.trim().slice(0, 200) : "";
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -9410,8 +9410,8 @@ const libraryHandler = (() => {
       .eq("user_id", auth.user.id)
       .eq("type", ITEM_TYPE)
       .maybeSingle();
-    if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
-    if (!song || (song as any).deleted_at) return send(res, 404, { error: "Canción no encontrada" });
+    if (error) return send(res, 500, { error: "No pude buscar la canciÃ³n", detail: error.message });
+    if (!song || (song as any).deleted_at) return send(res, 404, { error: "CanciÃ³n no encontrada" });
 
     const externalId = String((song as any).suno_audio_id || "").trim();
     const isVoiceCover = /^rvc_/i.test(externalId);
@@ -9422,7 +9422,7 @@ const libraryHandler = (() => {
 
     const cost = CREDIT_COSTS.clone_voice || 10;
     const consumed = await consumeUserCredits(auth.admin, auth.user.id, cost);
-    if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes. Recarga para continuar.", charged: false });
+    if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes. Recarga para continuar.", charged: false });
     return send(res, 200, { ok: true, charged: true, cost, credits: consumed.credits });
   }
 
@@ -9586,19 +9586,19 @@ const masteringHandler = (() => {
     const next = isApi ? parts[2] : parts[1];
     if (head !== "mastering") return send(res, 404, { error: "Ruta no encontrada" });
     if (next !== "masterize") return send(res, 404, { error: "Ruta no encontrada" });
-    if (method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const inputKey = String(body?.inputKey || body?.key || "").trim().replace(/^\/+/, "").slice(0, 500);
     const uid = String(auth.user.id || "").trim();
     const mustPrefix = `uploads/audio/${uid}/`;
     if (!inputKey) return send(res, 400, { error: "Falta inputKey" });
-    if (!inputKey.startsWith(mustPrefix)) return send(res, 403, { error: "Archivo inválido" });
+    if (!inputKey.startsWith(mustPrefix)) return send(res, 403, { error: "Archivo invÃ¡lido" });
 
     const titleRaw = typeof body?.title === "string" ? body.title.trim().slice(0, 120) : "";
     const titleBase = titleRaw || safeFileBase(inputKey);
@@ -9607,10 +9607,10 @@ const masteringHandler = (() => {
     const isAdmin = isAdminEmail(auth.user.email);
     if (!isAdmin) {
       const prof = await auth.admin.from("profiles").select("*").eq("id", uid).maybeSingle();
-      if (prof.error) return send(res, 500, { error: "No pude validar tus créditos", detail: prof.error.message });
+      if (prof.error) return send(res, 500, { error: "No pude validar tus crÃ©ditos", detail: prof.error.message });
       const current = creditsFromProfile(prof.data);
       if (current < cost) {
-        return send(res, 402, { error: "Créditos insuficientes. Necesitas 10 créditos para masterizar.", credits: current, cost });
+        return send(res, 402, { error: "CrÃ©ditos insuficientes. Necesitas 10 crÃ©ditos para masterizar.", credits: current, cost });
       }
     }
 
@@ -9645,13 +9645,13 @@ const masteringHandler = (() => {
           await runMasteringWithWorker({ workerUrl, inputUrl, outputPutUrl });
         } catch (workerError) {
           if (!allowLocalFallback) {
-            throw new Error(`Falló el worker de masterización del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
+            throw new Error(`FallÃ³ el worker de masterizaciÃ³n del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
           }
 
           const contentLength = Number(headInfo?.contentLength ?? NaN);
           const maxInline = 15 * 1024 * 1024;
           if (Number.isFinite(contentLength) && contentLength > maxInline) {
-            throw new Error("Falló el worker del VPS y el respaldo local en Vercel está limitado para archivos grandes.");
+            throw new Error("FallÃ³ el worker del VPS y el respaldo local en Vercel estÃ¡ limitado para archivos grandes.");
           }
           await runMasteringLocal(inputUrl, outKey);
         }
@@ -9659,7 +9659,7 @@ const masteringHandler = (() => {
         if (!allowLocalFallback) {
           return send(res, 503, {
             error: "Masterizar requiere tu worker del VPS.",
-            detail: "Configura MASTERING_WORKER_URL en Vercel para usar el procesamiento en Hostinger. El modo local en Vercel está desactivado.",
+            detail: "Configura MASTERING_WORKER_URL en Vercel para usar el procesamiento en Hostinger. El modo local en Vercel estÃ¡ desactivado.",
           });
         }
 
@@ -9667,7 +9667,7 @@ const masteringHandler = (() => {
         const maxInline = 15 * 1024 * 1024;
         if (Number.isFinite(contentLength) && contentLength > maxInline) {
           return send(res, 413, {
-            error: "Ese MP3 está muy pesado para masterizar en Vercel.",
+            error: "Ese MP3 estÃ¡ muy pesado para masterizar en Vercel.",
             detail: "Configura MASTERING_WORKER_URL en tu VPS (Hostinger) o deja activo el worker principal.",
             bytes: contentLength,
           });
@@ -9702,7 +9702,7 @@ const masteringHandler = (() => {
         if (!consumed.ok) {
           await auth.admin.from(TABLE).delete().eq("id", (ins.data as any)?.id).eq("user_id", uid);
           await deleteFromR2([outKey]).catch(() => 0);
-          return send(res, 402, { error: consumed.error || "No pude cobrar créditos", cost });
+          return send(res, 402, { error: consumed.error || "No pude cobrar crÃ©ditos", cost });
         }
         return send(res, 200, { ok: true, song: ins.data, cost, credits: consumed.credits ?? null, downloadUrl: audioUrl });
       }
@@ -9769,14 +9769,14 @@ const masterizarUnlimitedHandler = (() => {
       .single();
 
     if (error) {
-      console.error('Error al verificar suscripción:', error);
+      console.error('Error al verificar suscripciÃ³n:', error);
       return { active: false, expires_at: null };
     }
 
     const active = data.mastering_subscription_active || false;
     const expires_at = data.mastering_subscription_expires_at;
 
-    // Verificar si la suscripción ha expirado
+    // Verificar si la suscripciÃ³n ha expirado
     if (active && expires_at) {
       const now = new Date();
       const expiresDate = new Date(expires_at);
@@ -9887,15 +9887,15 @@ const masterizarUnlimitedHandler = (() => {
     const next = isApi ? parts[2] : parts[1];
     
     if (head !== "masterizar-unlimited") return send(res, 404, { error: "Ruta no encontrada" });
-    if (method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const { action, filePath, isPreview = false, fileName, fileType } = body;
     
     if (!action) {
-      return send(res, 400, { error: 'Falta el parámetro "action"' });
+      return send(res, 400, { error: 'Falta el parÃ¡metro "action"' });
     }
 
     const auth = await getAuthContext(req);
@@ -9924,7 +9924,7 @@ const masterizarUnlimitedHandler = (() => {
         });
       }
 
-      // Generar ruta única para el archivo
+      // Generar ruta Ãºnica para el archivo
       const timestamp = Date.now();
       const random = Math.random().toString(36).slice(2, 10);
       const fileKey = `uploads/masterizar-unlimited/${userId}/${timestamp}_${random}_${safeFileBase(fileName)}.mp3`;
@@ -9938,7 +9938,7 @@ const masterizarUnlimitedHandler = (() => {
       });
 
     } else if (action === 'process') {
-      // Procesar masterización
+      // Procesar masterizaciÃ³n
       if (!filePath) {
         return send(res, 400, { error: 'Falta filePath' });
       }
@@ -9949,13 +9949,13 @@ const masterizarUnlimitedHandler = (() => {
 
       if (!isPreview) {
         if (!auth.ok) {
-          return send(res, 401, { error: 'Inicia sesión para descargar el archivo completo.' });
+          return send(res, 401, { error: 'Inicia sesiÃ³n para descargar el archivo completo.' });
         }
         
         if (!isAdmin) {
           const consumed = await consumeUserCredits(auth.admin, userId, cost);
           if (!consumed.ok) {
-            return send(res, 402, { error: consumed.error || "Créditos insuficientes para descargar." });
+            return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes para descargar." });
           }
           creditsConsumed = true;
         }
@@ -9984,7 +9984,7 @@ const masterizarUnlimitedHandler = (() => {
       const outputPutUrl = await getSignedR2PutUrl(outputKey, 'audio/mpeg', 600);
       const allowLocalFallback = isPreview || ["1", "true", "yes", "on"].includes((process.env.MASTERING_ALLOW_LOCAL_FALLBACK || "").toString().trim().toLowerCase());
 
-      // Ejecutar masterización
+      // Ejecutar masterizaciÃ³n
       try {
         if (workerUrl) {
           try {
@@ -9995,12 +9995,12 @@ const masterizarUnlimitedHandler = (() => {
             });
           } catch (workerError: any) {
             if (!allowLocalFallback) {
-              throw new Error(`Falló el worker de masterización del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
+              throw new Error(`FallÃ³ el worker de masterizaciÃ³n del VPS. ${(workerError instanceof Error ? workerError.message : String(workerError)) || "Error desconocido"}`);
             }
             const contentLength = Number(headInfo?.contentLength ?? NaN);
             const maxInline = 15 * 1024 * 1024;
             if (Number.isFinite(contentLength) && contentLength > maxInline) {
-              throw new Error("Falló el worker del VPS y el respaldo local en Vercel está limitado para archivos grandes.");
+              throw new Error("FallÃ³ el worker del VPS y el respaldo local en Vercel estÃ¡ limitado para archivos grandes.");
             }
             await runMasteringLocal(inputUrl, outputKey);
           }
@@ -10008,14 +10008,14 @@ const masterizarUnlimitedHandler = (() => {
           if (!allowLocalFallback) {
             return send(res, 503, {
               error: "Masterizar requiere tu worker del VPS.",
-              detail: "Configura MASTERING_WORKER_URL en Vercel para usar el procesamiento en Hostinger. El modo local en Vercel está desactivado.",
+              detail: "Configura MASTERING_WORKER_URL en Vercel para usar el procesamiento en Hostinger. El modo local en Vercel estÃ¡ desactivado.",
             });
           }
           const contentLength = Number(headInfo?.contentLength ?? NaN);
           const maxInline = 15 * 1024 * 1024;
           if (Number.isFinite(contentLength) && contentLength > maxInline) {
             return send(res, 413, {
-              error: "Ese MP3 está muy pesado para masterizar en Vercel.",
+              error: "Ese MP3 estÃ¡ muy pesado para masterizar en Vercel.",
               detail: "Configura MASTERING_WORKER_URL en tu VPS (Hostinger) o deja activo el worker principal.",
               bytes: contentLength,
             });
@@ -10040,7 +10040,7 @@ const masterizarUnlimitedHandler = (() => {
       });
 
     } else {
-      return send(res, 400, { error: 'Acción no válida' });
+      return send(res, 400, { error: 'AcciÃ³n no vÃ¡lida' });
     }
   };
 })();
@@ -10104,7 +10104,7 @@ const balanceHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const useProvider = (pickQuery(req, "source") || "").toLowerCase() === "provider";
     if (useProvider) {
@@ -10198,7 +10198,7 @@ const balanceHandler = (() => {
     // ponia batch_credits en 0 y el cliente veia saldo 0 aunque hubiera comprado
     // creditos vigentes. Ahora solo se descarta el saldo viejo del perfil.
     const batch_credits = await getActiveBatchCredits(admin, user.id);
-    // Los créditos del perfil tampoco se descartan por fecha: no vencen.
+    // Los crÃ©ditos del perfil tampoco se descartan por fecha: no vencen.
     void globalExpired;
     let internal_credits = round2(profile_credits + batch_credits);
     const cycle = await ensureMonthlyCreditsCycle(admin, user.id).catch(() => null as any);
@@ -10235,7 +10235,7 @@ const balanceHandler = (() => {
             provider_error = "Error del proveedor";
           }
         } else {
-          provider_error = "No pude consultar créditos del proveedor";
+          provider_error = "No pude consultar crÃ©ditos del proveedor";
         }
       } catch (e) {
         provider_error = e instanceof Error ? e.message : String(e);
@@ -10246,8 +10246,8 @@ const balanceHandler = (() => {
 
     const counts = toCounts(credits);
     
-    // Fecha de vencimiento: preferimos la más PRÓXIMA a vencer (para advertir al usuario),
-    // comparando entre la del perfil global y la del lote más cercano.
+    // Fecha de vencimiento: preferimos la mÃ¡s PRÃ“XIMA a vencer (para advertir al usuario),
+    // comparando entre la del perfil global y la del lote mÃ¡s cercano.
     const global_exp = profile?.credits_expires_at ? new Date(String(profile.credits_expires_at)).getTime() : null;
     let next_batch_exp_ms: number | null = null;
     try {
@@ -10279,7 +10279,7 @@ const balanceHandler = (() => {
       credits_expires_at = new Date(next_batch_exp_ms).toISOString();
     }
 
-    // ¿La cuenta ya hizo al menos una RECARGA (cualquier paquete, incluido el mini)?
+    // Â¿La cuenta ya hizo al menos una RECARGA (cualquier paquete, incluido el mini)?
     // Se usa para pedir recarga antes de clonar una voz. Los admin siempre pasan.
     let has_paid = is_admin;
     if (!has_paid) {
@@ -10309,9 +10309,9 @@ const balanceHandler = (() => {
       }
     }
 
-    // Tener saldo también cuenta como "ya pago": muchas cuentas reciben créditos
-    // regalados por el dueño y antes quedaban bloqueadas al clonar voz aunque
-    // tuvieran saldo. La puerta existe para cuentas vacías, no para estas.
+    // Tener saldo tambiÃ©n cuenta como "ya pago": muchas cuentas reciben crÃ©ditos
+    // regalados por el dueÃ±o y antes quedaban bloqueadas al clonar voz aunque
+    // tuvieran saldo. La puerta existe para cuentas vacÃ­as, no para estas.
     if (!has_paid && Number(credits || 0) > 0) has_paid = true;
 
     return send(res, 200, {
@@ -10360,7 +10360,7 @@ const bootstrapProfileHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
@@ -10404,7 +10404,7 @@ const bootstrapProfileHandler = (() => {
           const credits = CREDIT_COSTS.generate_music * 2;
           const upd = await adjustUserCredits(admin, user.id, credits);
           if (!upd.ok) {
-            welcome_error = upd.error || "No pude acreditar créditos de bienvenida.";
+            welcome_error = upd.error || "No pude acreditar crÃ©ditos de bienvenida.";
             return;
           }
           await admin.from("mp_transactions").insert({
@@ -10556,7 +10556,7 @@ const uploadProfileImageHandler = (() => {
 
   return async function handler(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
-    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if (method !== "POST" && method !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -10579,7 +10579,7 @@ const uploadProfileImageHandler = (() => {
     }
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const path = typeof payload?.path === "string" ? payload.path.trim() : "";
     const data = payload?.data;
@@ -10674,7 +10674,7 @@ const r2ObjectHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const key = pickQuery(req, "key").trim().replace(/^\/+/, "");
     if (!key) return send(res, 400, { error: "Falta key" });
 
@@ -10722,7 +10722,7 @@ const replicateWebhookHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (req.method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -10873,7 +10873,7 @@ const replicateCoverWebhookHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (req.method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -10954,7 +10954,7 @@ const replicateCoverWebhookHandler = (() => {
         if (!r.ok) return send(res, 502, { error: "No pude descargar el audio del cover", detail: `HTTP ${r.status}` });
         remoteCt = (r.headers.get("content-type") || "").toString().trim().slice(0, 120);
         const ab = await r.arrayBuffer();
-        if (!ab || !ab.byteLength) return send(res, 502, { error: "El audio del cover llegó vacío" });
+        if (!ab || !ab.byteLength) return send(res, 502, { error: "El audio del cover llegÃ³ vacÃ­o" });
         buf = Buffer.from(ab);
       } catch (e) {
         return send(res, 502, { error: "No pude descargar el audio del cover", detail: e instanceof Error ? e.message : String(e) });
@@ -11042,7 +11042,7 @@ const replicateVoiceSampleWebhookHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (req.method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -11131,7 +11131,7 @@ const sunoWebhookHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if (req.method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (req.method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
     if (!supabaseUrl || !supabaseService) return send(res, 200, { ok: true });
@@ -11188,8 +11188,8 @@ const sunoWebhookHandler = (() => {
             const consumed = Boolean(taskRow?.consumed);
             if (!consumed && Number.isFinite(cost) && cost > 0) {
               // Cobrar y marcar consumed=true. Si el cobro falla, no marcar como consumido.
-              // Nota: los créditos de vocal-removal se cobran DESPUES del exito en el polling handleTask.
-              // Aquí solo aseguramos que el task no vuelva a ser cobrado 2 veces.
+              // Nota: los crÃ©ditos de vocal-removal se cobran DESPUES del exito en el polling handleTask.
+              // AquÃ­ solo aseguramos que el task no vuelva a ser cobrado 2 veces.
               try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId); } catch (_) {}
             }
           }
@@ -11216,7 +11216,7 @@ const sunoWebhookHandler = (() => {
           };
 
           try {
-            // Leer `extra` actual para conservar las fases previas (validación + creación).
+            // Leer `extra` actual para conservar las fases previas (validaciÃ³n + creaciÃ³n).
             const { data: curRows } = await admin
               .from("suno_tasks")
               .select("extra")
@@ -11234,7 +11234,7 @@ const sunoWebhookHandler = (() => {
             }
             if (!curExtra || typeof curExtra !== "object" || Array.isArray(curExtra)) curExtra = {};
 
-            // Conservar ambas fases cuando Suno reutiliza el mismo taskId entre validación y creación.
+            // Conservar ambas fases cuando Suno reutiliza el mismo taskId entre validaciÃ³n y creaciÃ³n.
             const phases = curExtra.phases && typeof curExtra.phases === "object" && !Array.isArray(curExtra.phases) ? curExtra.phases : {};
             phases[kind] = {
               taskId,
@@ -11257,7 +11257,7 @@ const sunoWebhookHandler = (() => {
             if (error && !isMissingColumnError(error)) {
               // No es un fallo de columna: registrar para trazabilidad sin romper el webhook.
               try {
-                console.error("[sunoWebhook] guardar trazabilidad de voz falló", {
+                console.error("[sunoWebhook] guardar trazabilidad de voz fallÃ³", {
                   taskId,
                   kind,
                   err: error?.message || String(error),
@@ -11266,7 +11266,7 @@ const sunoWebhookHandler = (() => {
             }
           } catch (e) {
             try {
-              console.error("[sunoWebhook] excepción guardando trazabilidad de voz", {
+              console.error("[sunoWebhook] excepciÃ³n guardando trazabilidad de voz", {
                 taskId,
                 kind,
                 err: (e as any)?.message || String(e),
@@ -11388,7 +11388,7 @@ const sunoWebhookHandler = (() => {
                 .filter(Boolean) as any
             );
 
-            // Función para verificar si una URL es de R2
+            // FunciÃ³n para verificar si una URL es de R2
             const isR2Url = (url: string) => {
               try {
                 const u = new URL(url);
@@ -11399,7 +11399,7 @@ const sunoWebhookHandler = (() => {
               }
             };
 
-            // Procesar cada canción para copiar a R2 si es necesario
+            // Procesar cada canciÃ³n para copiar a R2 si es necesario
             const insertRows: any[] = [];
             await Promise.all(
               normalized.map(async (x: any) => {
@@ -11409,7 +11409,7 @@ const sunoWebhookHandler = (() => {
                   
                   // Solo procesar si no es ya una URL de R2
                   if (!isR2Url(x.audioUrl)) {
-                    console.log(`Ã°Å¸â€œÂ¦ [sunoWebhook] Copiando audio a R2: "${x.title}" (${x.audioUrl.substring(0, 80)}...)`);
+                    console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¦ [sunoWebhook] Copiando audio a R2: "${x.title}" (${x.audioUrl.substring(0, 80)}...)`);
 
                     let fetchStatus: number | null = null;
                     let downloadMs: number | null = null;
@@ -11469,9 +11469,9 @@ const sunoWebhookHandler = (() => {
                           .slice(0, 80);
                         const path = `imports/${userId}/${Date.now()}_${safeBase || "audio"}.mp3`;
 
-                        console.log(`Ã¢Â¬â€ Ã¯Â¸Â  [sunoWebhook] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType || "audio/mpeg"})`);
+                        console.log(`ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â ÃƒÂ¯Ã‚Â¸Ã‚Â  [sunoWebhook] Subiendo audio a R2: ${path} (${buffer.length} bytes, ${contentType || "audio/mpeg"})`);
                         finalAudioUrl = await uploadToR2(path, buffer, contentType || "audio/mpeg");
-                        console.log(`Ã¢Å“â€¦ [sunoWebhook] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
+                        console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [sunoWebhook] Audio subido a R2: ${finalAudioUrl.substring(0, 100)}...`);
                       } catch (uploadError) {
                         fallbackUsed = true;
                         errorStep = "uploadToR2";
@@ -11496,10 +11496,10 @@ const sunoWebhookHandler = (() => {
                     });
 
                     if (fallbackUsed) {
-                      console.log(`Ã°Å¸â€â€ž [sunoWebhook] Usando URL original como fallback: ${x.audioUrl.substring(0, 100)}...`);
+                      console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ [sunoWebhook] Usando URL original como fallback: ${x.audioUrl.substring(0, 100)}...`);
                     }
                   } else {
-                    console.log(`Ã¢Å“â€¦ [sunoWebhook] Audio ya está en R2: "${x.title}" (${x.audioUrl.substring(0, 100)}...)`);
+                    console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [sunoWebhook] Audio ya estÃ¡ en R2: "${x.title}" (${x.audioUrl.substring(0, 100)}...)`);
                   }
 
                   const finalAudioUrlTrimmed = typeof finalAudioUrl === "string" ? finalAudioUrl.trim() : "";
@@ -11556,7 +11556,7 @@ const sunoWebhookHandler = (() => {
                         });
                       } else {
                         console.log(
-                          `Ã¢Å“â€¦ [sunoWebhook] Actualicé audio_url a R2 en library_items: ${String(x.sunoAudioId || "").slice(0, 80)}`
+                          `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [sunoWebhook] ActualicÃ© audio_url a R2 en library_items: ${String(x.sunoAudioId || "").slice(0, 80)}`
                         );
                       }
                     }
@@ -11567,7 +11567,7 @@ const sunoWebhookHandler = (() => {
                     user_id: userId,
                     type: "song",
                     title: (() => {
-                      const base = (x.title || "Canción").toString().trim();
+                      const base = (x.title || "CanciÃ³n").toString().trim();
                       const suffix =
                         normalized.length === 2
                           ? x.idx === 0
@@ -11596,7 +11596,7 @@ const sunoWebhookHandler = (() => {
             );
 
             if (insertRows.length > 0) {
-              console.log(`Ã°Å¸â€œÂ¥ [sunoWebhook] Insertando ${insertRows.length} canciones en la base de datos`);
+              console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¥ [sunoWebhook] Insertando ${insertRows.length} canciones en la base de datos`);
               const { error: insertErr } = await admin.from("library_items").insert(insertRows);
               if (insertErr) {
                 console.error(
@@ -11612,7 +11612,7 @@ const sunoWebhookHandler = (() => {
                   )
                 );
               } else {
-                console.log(`Ã¢Å“â€¦ [sunoWebhook] Canciones insertadas exitosamente`);
+                console.log(`ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ [sunoWebhook] Canciones insertadas exitosamente`);
               }
             }
           }
@@ -11645,7 +11645,7 @@ const shareHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const id = pickQuery(req, "id").trim();
     if (!id) return send(res, 400, { error: "Falta id" });
@@ -11670,7 +11670,7 @@ const shareHandler = (() => {
       else if (isUuid) query = query.eq("suno_audio_id", idRaw);
       else return send(res, 404, { error: "No encontrada" });
       const { data, error } = await query.maybeSingle();
-      if (error) return send(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (error) return send(res, 500, { error: "No pude buscar la canciÃ³n", detail: error.message });
       if (!data || data.deleted_at) return send(res, 404, { error: "No encontrada" });
 
       const audioUrl = typeof (data as any).audio_url === "string" ? (data as any).audio_url.trim() : "";
@@ -11834,7 +11834,7 @@ const sharePreviewHandler = (() => {
         if (missingTable(pr.error)) {
           return send(res, 500, {
             error: "Falta configurar las tablas de previews",
-            hint: "Ejecuta la migración nueva de Supabase para preview_shares y vendor_settings.",
+            hint: "Ejecuta la migraciÃ³n nueva de Supabase para preview_shares y vendor_settings.",
             detail: pr.error.message,
           });
         }
@@ -11876,8 +11876,8 @@ const sharePreviewHandler = (() => {
       else if (songIsUuid) songQuery = songQuery.eq("suno_audio_id", songIdRaw);
       else songQuery = songQuery.eq("id", songIdRaw);
       const sr = await songQuery.maybeSingle();
-      if (sr.error) return send(res, 500, { error: "No pude buscar la canción", detail: sr.error.message });
-      if (!sr.data || (sr.data as any).deleted_at) return send(res, 404, { error: "La canción ya no está disponible" });
+      if (sr.error) return send(res, 500, { error: "No pude buscar la canciÃ³n", detail: sr.error.message });
+      if (!sr.data || (sr.data as any).deleted_at) return send(res, 404, { error: "La canciÃ³n ya no estÃ¡ disponible" });
 
       
       // Get product pricing
@@ -11902,7 +11902,7 @@ const song = sr.data as any;
         isPaid: Boolean((share as any).is_paid),
         paidAt: (share as any).paid_at || null,
         createdAt: (share as any).created_at || null,
-        title: String(song?.title || "Canción"),
+        title: String(song?.title || "CanciÃ³n"),
         description: String(song?.description || ""),
         lyrics: String(song?.lyrics || ""),
         genre: "",
@@ -11963,7 +11963,7 @@ const song = sr.data as any;
         } catch {
         }
       }
-      if (!resolvedSongId) return send(res, 404, { error: "La canción ya no está disponible" });
+      if (!resolvedSongId) return send(res, 404, { error: "La canciÃ³n ya no estÃ¡ disponible" });
 
       res.statusCode = 307;
       res.setHeader("location", `/api/share/song/audio?id=${encodeURIComponent(resolvedSongId)}${pickQuery(req, "dl") ? "&dl=1" : ""}`);
@@ -12026,7 +12026,7 @@ const song = sr.data as any;
   }
 
   async function handleCreatePayment(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     if (MP_CHECKOUTS_DISABLED) {
       return send(res, 503, { ok: false, status: "error", code: "MP_CHECKOUTS_DISABLED", message: MP_CHECKOUTS_DISABLED_MSG });
     }
@@ -12034,7 +12034,7 @@ const song = sr.data as any;
     if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const shareId = typeof body?.shareId === "string" ? body.shareId.trim().slice(0, 200) : "";
     if (!shareId) return send(res, 400, { error: "Falta shareId" });
 
@@ -12072,7 +12072,7 @@ const song = sr.data as any;
       const origin = originFromReq(req);
       const preferenceBody: any = {
         items: [{ 
-          title: "Desbloquear Canción", 
+          title: "Desbloquear CanciÃ³n", 
           quantity: 1, 
           currency_id: "MXN", 
           unit_price: price 
@@ -12102,7 +12102,7 @@ const song = sr.data as any;
       if (!mpRes.ok) return send(res, 502, { error: "Error creando pago en Mercado Pago", detail: mpData || null });
 
       const initPoint = typeof mpData?.init_point === "string" ? mpData.init_point : "";
-      if (!initPoint) return send(res, 502, { error: "Respuesta inválida de Mercado Pago" });
+      if (!initPoint) return send(res, 502, { error: "Respuesta invÃ¡lida de Mercado Pago" });
 
       return send(res, 200, { init_point: initPoint, preference_id: mpData?.id || null });
     } catch (e) {
@@ -12120,25 +12120,25 @@ const song = sr.data as any;
     const action = (third || next || pickQuery(req, "action") || "").toString().trim().toLowerCase();
 
     if (action === "create-payment") {
-      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
       return handleCreatePayment(req, res);
     }
 
     if (action === "audio") {
       if ((req.method || "").toUpperCase() !== "GET" && (req.method || "").toUpperCase() !== "HEAD") {
-        return send(res, 405, { error: "Método no permitido" });
+        return send(res, 405, { error: "MÃ©todo no permitido" });
       }
       return handlePreviewAudio(req, res);
     }
 
     if (action === "cleanup-expired") {
       if ((req.method || "").toUpperCase() !== "GET" && (req.method || "").toUpperCase() !== "POST") {
-        return send(res, 405, { error: "Método no permitido" });
+        return send(res, 405, { error: "MÃ©todo no permitido" });
       }
       return handleCleanupExpired(req, res);
     }
 
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     return handleGetPreview(req, res);
   };
 })();
@@ -12232,7 +12232,7 @@ const vendorHandler = (() => {
             watermark_version: "v1"
           });
         }
-        return send(res, 500, { error: "No pude leer la configuración", detail: r.error.message });
+        return send(res, 500, { error: "No pude leer la configuraciÃ³n", detail: r.error.message });
       }
       const data = r.data as any;
       return send(res, 200, {
@@ -12255,9 +12255,9 @@ const vendorHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const hours = normalizeHours(body?.countdown_default_hours);
-    if (hours < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
+    if (hours < 1) return send(res, 400, { error: "La duraciÃ³n debe ser mayor a 0." });
 
     // First get current settings to see if user is employee (role should be set by admin only)
     const currentSettings = await auth.admin
@@ -12288,11 +12288,11 @@ const vendorHandler = (() => {
         if (missingTable(r.error)) {
           return send(res, 500, {
             error: "Falta configurar vendor_settings",
-            hint: "Ejecuta la migración nueva de Supabase.",
+            hint: "Ejecuta la migraciÃ³n nueva de Supabase.",
             detail: r.error.message,
           });
         }
-        return send(res, 500, { error: "No pude guardar la configuración", detail: r.error.message });
+        return send(res, 500, { error: "No pude guardar la configuraciÃ³n", detail: r.error.message });
       }
       return send(res, 200, { 
         ok: true, 
@@ -12312,7 +12312,7 @@ const vendorHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     const clientLabel = typeof body?.clientLabel === "string" ? body.clientLabel.trim().slice(0, 120) : "";
@@ -12336,7 +12336,7 @@ const vendorHandler = (() => {
       if (countdownUnit === "minutes" && countdownMinutes > 0) return countdownMinutes;
       return Math.max(0, hours) * 60;
     })();
-    if (hasCountdown && durationMinutes < 1) return send(res, 400, { error: "La duración debe ser mayor a 0." });
+    if (hasCountdown && durationMinutes < 1) return send(res, 400, { error: "La duraciÃ³n debe ser mayor a 0." });
     if (forceCountdown && !hasCountdown) return send(res, 400, { error: "Debes activar el temporizador." });
 
     try {
@@ -12348,9 +12348,9 @@ const vendorHandler = (() => {
         .eq("type", "song")
         .is("deleted_at", null)
         .maybeSingle();
-      if (sr.error) return send(res, 500, { error: "No pude leer tu canción", detail: sr.error.message });
-      if (!sr.data) return send(res, 404, { error: "No encontré esa canción" });
-      if (!String((sr.data as any)?.audio_url || "").trim()) return send(res, 400, { error: "Esta canción no tiene audio" });
+      if (sr.error) return send(res, 500, { error: "No pude leer tu canciÃ³n", detail: sr.error.message });
+      if (!sr.data) return send(res, 404, { error: "No encontrÃ© esa canciÃ³n" });
+      if (!String((sr.data as any)?.audio_url || "").trim()) return send(res, 400, { error: "Esta canciÃ³n no tiene audio" });
 
       const expiresAt = hasCountdown ? new Date(Date.now() + durationMinutes * 60 * 1000).toISOString() : null;
       const row = {
@@ -12371,7 +12371,7 @@ const vendorHandler = (() => {
         if (missingTable(ir.error)) {
           return send(res, 500, {
             error: "Falta configurar preview_shares",
-            hint: "Ejecuta la migración nueva de Supabase.",
+            hint: "Ejecuta la migraciÃ³n nueva de Supabase.",
             detail: ir.error.message,
           });
         }
@@ -12435,7 +12435,7 @@ const vendorHandler = (() => {
         return {
           id: String(row?.id || ""),
           songId: String(row?.song_id || ""),
-          title: String(song?.title || "Canción"),
+          title: String(song?.title || "CanciÃ³n"),
           coverUrl: String(song?.cover_url || ""),
           clientLabel: String(row?.client_label || ""),
           hasCountdown: Boolean(row?.has_countdown),
@@ -12458,7 +12458,7 @@ const vendorHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const id = typeof body?.id === "string" ? body.id.trim().slice(0, 200) : "";
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -12475,7 +12475,7 @@ const vendorHandler = (() => {
         if (missingTable(ur.error)) {
           return send(res, 500, {
             error: "Falta configurar preview_shares",
-            hint: "Ejecuta la migración nueva de Supabase.",
+            hint: "Ejecuta la migraciÃ³n nueva de Supabase.",
             detail: ur.error.message,
           });
         }
@@ -12501,18 +12501,18 @@ const vendorHandler = (() => {
     if (action === "settings") {
       if ((req.method || "").toUpperCase() === "GET") return handleGetSettings(req, res);
       if ((req.method || "").toUpperCase() === "POST") return handleSaveSettings(req, res);
-      return send(res, 405, { error: "Método no permitido" });
+      return send(res, 405, { error: "MÃ©todo no permitido" });
     }
     if (action === "preview-shares") {
       if ((req.method || "").toUpperCase() === "GET") return handleListPreviews(req, res);
-      return send(res, 405, { error: "Método no permitido" });
+      return send(res, 405, { error: "MÃ©todo no permitido" });
     }
     if (action === "create-preview") {
-      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
       return handleCreatePreview(req, res);
     }
     if (action === "mark-paid") {
-      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
       return handleMarkPaid(req, res);
     }
     return send(res, 404, { error: "Ruta no encontrada" });
@@ -12809,7 +12809,7 @@ const shareSongAudioHandler = (() => {
       res.end();
       return;
     }
-    if (method !== "GET" && method !== "HEAD") return sendJson(res, 405, { error: "Método no permitido" });
+    if (method !== "GET" && method !== "HEAD") return sendJson(res, 405, { error: "MÃ©todo no permitido" });
 
     const id = pickQuery(req, "id").trim();
     if (!id) return sendJson(res, 400, { error: "Falta id" });
@@ -12834,7 +12834,7 @@ const shareSongAudioHandler = (() => {
       else if (isUuid) query = query.eq("suno_audio_id", idRaw);
       else return sendJson(res, 404, { error: "No encontrada" });
       const { data, error } = await query.maybeSingle();
-      if (error) return sendJson(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (error) return sendJson(res, 500, { error: "No pude buscar la canciÃ³n", detail: error.message });
       if (!data || (data as any).deleted_at) return sendJson(res, 404, { error: "No encontrada" });
 
       const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
@@ -13068,7 +13068,7 @@ const shareSongCoverHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return sendJson(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return sendJson(res, 405, { error: "MÃ©todo no permitido" });
 
     const id = pickQuery(req, "id").trim();
     if (!id) return sendJson(res, 400, { error: "Falta id" });
@@ -13088,7 +13088,7 @@ const shareSongCoverHandler = (() => {
         .eq("id", id.slice(0, 200))
         .eq("type", "song")
         .maybeSingle();
-      if (error) return sendJson(res, 500, { error: "No pude buscar la canción", detail: error.message });
+      if (error) return sendJson(res, 500, { error: "No pude buscar la canciÃ³n", detail: error.message });
       if (!data || (data as any).deleted_at) return sendJson(res, 404, { error: "No encontrada" });
 
       const title = typeof (data as any).title === "string" ? (data as any).title.trim() : "";
@@ -13156,7 +13156,7 @@ const shareProfileHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const id = pickQuery(req, "id").trim();
     if (!id) return send(res, 400, { error: "Falta id" });
@@ -13202,7 +13202,7 @@ const shareProfileHandler = (() => {
         const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
         if (missing) {
           return send(res, 500, {
-            error: "Falta configurar el perfil público",
+            error: "Falta configurar el perfil pÃºblico",
             hint: "Crea la tabla 'profile_pins' en Supabase (SQL Editor). Luego intenta de nuevo.\nSi quieres, te paso el SQL listo para pegar.",
           });
         }
@@ -13228,7 +13228,7 @@ const shareProfileHandler = (() => {
           .filter(Boolean)
           .map((x: any) => ({
             id: String(x?.id || ""),
-            title: String(x?.title || "Canción").trim(),
+            title: String(x?.title || "CanciÃ³n").trim(),
             audioUrl: String(x?.audio_url || "").trim(),
             coverUrl: String(x?.cover_url || "").trim() || null,
           }))
@@ -13305,7 +13305,7 @@ const profileHandler = (() => {
   }
 
   async function handlePins(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -13331,7 +13331,7 @@ const profileHandler = (() => {
   }
 
   async function handlePinsFull(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -13371,7 +13371,7 @@ const profileHandler = (() => {
       .filter(Boolean)
       .map((x: any) => ({
         id: String(x?.id || ""),
-        title: String(x?.title || "Canción").trim(),
+        title: String(x?.title || "CanciÃ³n").trim(),
         audioUrl: String(x?.audio_url || "").trim(),
         coverUrl: String(x?.cover_url || "").trim(),
       }))
@@ -13380,12 +13380,12 @@ const profileHandler = (() => {
   }
 
   async function handlePin(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     const pin = Boolean(body?.pin ?? body?.pinned ?? true);
     if (!songId) return send(res, 400, { error: "Falta songId" });
@@ -13398,8 +13398,8 @@ const profileHandler = (() => {
       .eq("type", "song")
       .is("deleted_at", null)
       .maybeSingle();
-    if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
-    if (!song) return send(res, 404, { error: "No encontré esa canción" });
+    if (songErr) return send(res, 500, { error: "No pude leer tu canciÃ³n", detail: songErr.message });
+    if (!song) return send(res, 404, { error: "No encontrÃ© esa canciÃ³n" });
 
     if (!pin) {
       const { error } = await auth.admin.from(PINS_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", songId);
@@ -13483,7 +13483,7 @@ const likesHandler = (() => {
   }
 
   async function handleLikes(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -13515,12 +13515,12 @@ const likesHandler = (() => {
   }
 
   async function handleLike(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     const like = Boolean(body?.like ?? body?.liked ?? true);
     if (!songId) return send(res, 400, { error: "Falta songId" });
@@ -13533,8 +13533,8 @@ const likesHandler = (() => {
       .eq("type", "song")
       .is("deleted_at", null)
       .maybeSingle();
-    if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
-    if (!song) return send(res, 404, { error: "No encontré esa canción" });
+    if (songErr) return send(res, 500, { error: "No pude leer tu canciÃ³n", detail: songErr.message });
+    if (!song) return send(res, 404, { error: "No encontrÃ© esa canciÃ³n" });
 
     if (!like) {
       const { error } = await auth.admin.from(LIKES_TABLE).delete().eq("user_id", auth.user.id).eq("song_id", songId);
@@ -13644,17 +13644,17 @@ const socialHandler = (() => {
   }
 
   async function handlePublish(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     const publish = Boolean(body?.publish);
     const genre = typeof body?.genre === "string" ? body.genre.trim().slice(0, 50) : "";
     if (!songId) return send(res, 400, { error: "Falta songId" });
-    if (publish && !genre) return send(res, 400, { error: "Falta género" });
+    if (publish && !genre) return send(res, 400, { error: "Falta gÃ©nero" });
 
     try {
       const { data: song, error: songErr } = await auth.admin
@@ -13665,17 +13665,17 @@ const socialHandler = (() => {
         .eq("type", "song")
         .is("deleted_at", null)
         .maybeSingle();
-      if (songErr) return send(res, 500, { error: "No pude leer tu canción", detail: songErr.message });
-      if (!song) return send(res, 404, { error: "No encontré esa canción" });
-      const title = String((song as any).title || "Canción").trim().slice(0, 120);
+      if (songErr) return send(res, 500, { error: "No pude leer tu canciÃ³n", detail: songErr.message });
+      if (!song) return send(res, 404, { error: "No encontrÃ© esa canciÃ³n" });
+      const title = String((song as any).title || "CanciÃ³n").trim().slice(0, 120);
       const audioUrl = String((song as any).audio_url || "").trim().slice(0, 2000);
       const coverUrl = String((song as any).cover_url || "").trim().slice(0, 2000);
-      if (!audioUrl) return send(res, 400, { error: "Esta canción no tiene audio" });
+      if (!audioUrl) return send(res, 400, { error: "Esta canciÃ³n no tiene audio" });
 
       if (!publish) {
         const { error } = await auth.admin.from(PUBLIC_TABLE).delete().eq("song_id", songId).eq("user_id", auth.user.id);
         if (error) {
-          const msg = error.message || "No pude quitarla de público.";
+          const msg = error.message || "No pude quitarla de pÃºblico.";
           return send(res, 500, { error: msg });
         }
         return send(res, 200, { ok: true, is_public: false });
@@ -13702,14 +13702,14 @@ const socialHandler = (() => {
         const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
         if (missing) {
           return send(res, 500, {
-            error: "Falta configurar la tabla pública",
+            error: "Falta configurar la tabla pÃºblica",
             hint:
               "Crea la tabla 'public_songs' en Supabase (SQL Editor). Luego intenta de nuevo.\n" +
               "Si quieres, te paso el SQL listo para pegar.",
             detail: error.message,
           });
         }
-        return send(res, 500, { error: "No pude publicar la canción", detail: error.message });
+        return send(res, 500, { error: "No pude publicar la canciÃ³n", detail: error.message });
       }
 
       return send(res, 200, { ok: true, is_public: true, public_genre: genre, published_at: publishedAt });
@@ -13719,12 +13719,12 @@ const socialHandler = (() => {
   }
 
   async function handleRemoveFromFeed(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const songId = typeof body?.songId === "string" ? body.songId.trim().slice(0, 200) : "";
     if (!songId) return send(res, 400, { error: "Falta songId" });
 
@@ -13734,7 +13734,7 @@ const socialHandler = (() => {
     try {
       const { error } = await auth.admin.from(PUBLIC_TABLE).delete().eq("song_id", songId);
       if (error) {
-        return send(res, 500, { error: "No pude quitar la canción del inicio", detail: error.message });
+        return send(res, 500, { error: "No pude quitar la canciÃ³n del inicio", detail: error.message });
       }
       return send(res, 200, { ok: true, removed_from_feed: true });
     } catch (e) {
@@ -13743,18 +13743,18 @@ const socialHandler = (() => {
   }
 
   async function handleSearchUsers(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const query = (pickQuery(req, "q") || "").toString().trim();
-    if (!query) return send(res, 400, { error: "Falta término de búsqueda" });
+    if (!query) return send(res, 400, { error: "Falta tÃ©rmino de bÃºsqueda" });
 
     try {
       const searchTerm = query.toLowerCase();
       const filteredUsers: any[] = [];
       
-      // Buscar usuarios página por página
+      // Buscar usuarios pÃ¡gina por pÃ¡gina
       for (let page = 1; page <= 10; page++) {
         const { data: users, error } = await auth.admin.auth.admin.listUsers({
           page,
@@ -13803,12 +13803,12 @@ const socialHandler = (() => {
   }
 
   async function handleFollowUser(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     
     const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId.trim() : "";
     const follow = Boolean(body?.follow);
@@ -13821,7 +13821,7 @@ const socialHandler = (() => {
       const { data: targetUser, error: targetError } = await auth.admin.auth.admin.getUserById(targetUserId);
       if (targetError || !targetUser) return send(res, 404, { error: "Usuario no encontrado" });
 
-      // Crear o eliminar la relación de seguimiento
+      // Crear o eliminar la relaciÃ³n de seguimiento
       if (follow) {
         const { error } = await auth.admin
           .from('user_follows')
@@ -13837,7 +13837,7 @@ const socialHandler = (() => {
           if (missing) {
             return send(res, 500, {
               error: "Falta configurar la tabla de seguimientos",
-              hint: "En Supabase: Database Ã¢â€ â€™ SQL Editor Ã¢â€ â€™ New query Ã¢â€ â€™ pega el SQL Ã¢â€ â€™ Run. Luego intenta de nuevo.",
+              hint: "En Supabase: Database ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ SQL Editor ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ New query ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ pega el SQL ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Run. Luego intenta de nuevo.",
               sql:
                 "create table if not exists public.user_follows (\n" +
                 "  follower_id uuid not null references auth.users(id) on delete cascade,\n" +
@@ -13865,7 +13865,7 @@ const socialHandler = (() => {
           if (missing) {
             return send(res, 500, {
               error: "Falta configurar la tabla de seguimientos",
-              hint: "En Supabase: Database Ã¢â€ â€™ SQL Editor Ã¢â€ â€™ New query Ã¢â€ â€™ pega el SQL Ã¢â€ â€™ Run. Luego intenta de nuevo.",
+              hint: "En Supabase: Database ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ SQL Editor ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ New query ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ pega el SQL ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Run. Luego intenta de nuevo.",
               sql:
                 "create table if not exists public.user_follows (\n" +
                 "  follower_id uuid not null references auth.users(id) on delete cascade,\n" +
@@ -13889,7 +13889,7 @@ const socialHandler = (() => {
   }
 
   async function handleUserProfile(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -13927,13 +13927,13 @@ const socialHandler = (() => {
         const msg = (songsError.message || "").toLowerCase();
         const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
         if (missing) return send(res, 200, { ok: true, user, songs: [] });
-        return send(res, 500, { error: "No pude cargar canciones públicas", detail: songsError.message });
+        return send(res, 500, { error: "No pude cargar canciones pÃºblicas", detail: songsError.message });
       }
 
       const songs = (Array.isArray(songsData) ? songsData : [])
         .map((r: any) => ({
           id: String(r?.song_id || "").trim(),
-          title: String(r?.title || "Canción").trim(),
+          title: String(r?.title || "CanciÃ³n").trim(),
           audioUrl: String(r?.audio_url || "").trim(),
           coverUrl: String(r?.cover_url || "").trim() || undefined,
           genre: typeof r?.genre === "string" ? r.genre : "",
@@ -13950,7 +13950,7 @@ const socialHandler = (() => {
   }
 
   async function handleFollowStatus(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -13994,7 +13994,7 @@ const socialHandler = (() => {
   }
 
   async function handleFeed(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const a = await getAdminOrError();
     if (!a.ok) return send(res, 500, { error: a.error });
     const admin = a.admin;
@@ -14026,7 +14026,7 @@ const socialHandler = (() => {
       const items = (Array.isArray(data) ? data : [])
         .map((r: any) => ({
           id: String(r?.song_id || "").trim(),
-          title: String(r?.title || "Canción").trim(),
+          title: String(r?.title || "CanciÃ³n").trim(),
           audioUrl: String(r?.audio_url || "").trim(),
           coverUrl: String(r?.cover_url || "").trim(),
           publicGenre: typeof r?.genre === "string" ? r.genre : null,
@@ -14044,7 +14044,7 @@ const socialHandler = (() => {
   }
 
   async function handleGenres(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const a = await getAdminOrError();
     if (!a.ok) return send(res, 500, { error: a.error });
     const admin = a.admin;
@@ -14057,7 +14057,7 @@ const socialHandler = (() => {
         const msg = (error.message || "").toLowerCase();
         const missing = msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache");
         if (missing) return send(res, 200, { ok: true, items: [] });
-        return send(res, 500, { error: "No pude cargar géneros", detail: error.message });
+        return send(res, 500, { error: "No pude cargar gÃ©neros", detail: error.message });
       }
 
       const map = new Map<string, { genre: string; count: number; coverUrl: string }>();
@@ -14160,7 +14160,7 @@ const videosHandler = (() => {
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     if (action === "list") {
-      if (method !== "GET") return send(res, 405, { error: "Método no permitido" });
+      if (method !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
 
       const limitRaw = Number(pickQuery(req, "limit") || 50);
       const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
@@ -14198,7 +14198,7 @@ const videosHandler = (() => {
     }
 
     if (action && action !== "list") {
-      if (method !== "DELETE") return send(res, 405, { error: "Método no permitido" });
+      if (method !== "DELETE") return send(res, 405, { error: "MÃ©todo no permitido" });
       const taskId = String((next || "").toString() || "").trim();
       if (!taskId) return send(res, 400, { error: "Falta taskId del video." });
       const userId = String(auth.user.id || "").trim();
@@ -14258,7 +14258,7 @@ const supportHandler = (() => {
     const head = isApi ? parts[1] : parts[0];
     const next = isApi ? parts[2] : parts[1];
     if (head !== "support" || next !== "feedback") return send(res, 404, { error: "Ruta no encontrada" });
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseAnon = process.env.SUPABASE_ANON_KEY || "";
@@ -14271,7 +14271,7 @@ const supportHandler = (() => {
     if (!token) return send(res, 401, { error: "No autorizado" });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const name = (payload?.name || "").toString().trim().slice(0, 120);
     const whatsapp = (payload?.whatsapp || "").toString().trim().slice(0, 80);
@@ -14332,7 +14332,7 @@ const adminHandler = (() => {
     return authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
   }
 
-  // ----------- Helpers administración (error_id + serverLog seguros) -----------
+  // ----------- Helpers administraciÃ³n (error_id + serverLog seguros) -----------
   function genAdminErrorId(prefix = "ADM") {
     const pad = (n: number) => n.toString().padStart(2, "0");
     const d = new Date();
@@ -14384,7 +14384,7 @@ const adminHandler = (() => {
 
   async function handleCronRefreshSunoVoices(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
-    if (method !== "GET" && method !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if (method !== "GET" && method !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireServiceRoleAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
@@ -14426,7 +14426,7 @@ const adminHandler = (() => {
     const eid = genAdminErrorId("ADMCOL");
     const safeHandler = "handleGetCollaborators";
     try {
-      if ((req.method || "").toUpperCase() !== "GET") return adminSendError(res, 405, "Método no permitido", eid);
+      if ((req.method || "").toUpperCase() !== "GET") return adminSendError(res, 405, "MÃ©todo no permitido", eid);
       const auth = await requireAdmin(req);
       if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
     try {
@@ -14472,7 +14472,7 @@ const adminHandler = (() => {
         errMessage: e instanceof Error ? e.message : String(e),
         errStack: e instanceof Error ? e.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
     } catch (outer) {
       adminServerLog(eid, safeHandler, {
@@ -14480,7 +14480,7 @@ const adminHandler = (() => {
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
   }
 
@@ -14488,19 +14488,19 @@ const adminHandler = (() => {
     const eid = genAdminErrorId("ADMCOL");
     const safeHandler = "handleAssignCollaborator";
     try {
-      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "MÃ©todo no permitido", eid);
       const auth = await requireAdmin(req);
       if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
       const body = parseJsonBody(req);
-      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      if (!body) return adminSendError(res, 400, "Body invÃ¡lido", eid);
 
       const email = String(body?.email || "").trim().toLowerCase();
       const requestedRole = String(body?.role || "").trim().toLowerCase();
       const commissionValue = Number(body?.commission_value ?? 0);
       if (!email) return adminSendError(res, 400, "Falta email", eid);
       if (requestedRole !== "empleado") return adminSendError(res, 400, "En esta fase solo se permite role = empleado", eid);
-      if (!Number.isFinite(commissionValue) || commissionValue < 0) return adminSendError(res, 400, "commission_value inválido", eid);
+      if (!Number.isFinite(commissionValue) || commissionValue < 0) return adminSendError(res, 400, "commission_value invÃ¡lido", eid);
 
     try {
       let userId = "";
@@ -14512,11 +14512,11 @@ const adminHandler = (() => {
 
       if (!userId) {
         const found = await findUserIdByEmail(auth, email);
-        if (!found.ok) return adminSendError(res, found.status || 404, found.error || "No encontré ese usuario por correo.", eid, { detail: found.detail || null });
+        if (!found.ok) return adminSendError(res, found.status || 404, found.error || "No encontrÃ© ese usuario por correo.", eid, { detail: found.detail || null });
         userId = String(found.userId || "").trim();
       }
 
-      if (!userId) return adminSendError(res, 404, "No encontré ese usuario por correo.", eid);
+      if (!userId) return adminSendError(res, 404, "No encontrÃ© ese usuario por correo.", eid);
 
       await ensureProfileExists(auth.admin, userId);
       const up = await auth.admin.from("profiles").upsert({ id: userId, email }, { onConflict: "id" });
@@ -14553,7 +14553,7 @@ const adminHandler = (() => {
         errMessage: e instanceof Error ? e.message : String(e),
         errStack: e instanceof Error ? e.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
     } catch (outer) {
       adminServerLog(eid, safeHandler, {
@@ -14561,12 +14561,12 @@ const adminHandler = (() => {
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
   }
 
   async function handleCommissionsReport(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -14583,7 +14583,7 @@ const adminHandler = (() => {
     } else if (period === "month") {
       start = new Date(start.getFullYear(), start.getMonth(), 1);
     } else {
-      return send(res, 400, { error: "Periodo inválido. Usa day, week o month." });
+      return send(res, 400, { error: "Periodo invÃ¡lido. Usa day, week o month." });
     }
 
     try {
@@ -14731,7 +14731,7 @@ const adminHandler = (() => {
   async function deleteUserViaHttp(supabaseUrl: string, serviceKey: string, userId: string) {
     const base = String(supabaseUrl || "").replace(/\/+$/, "");
     const uid = String(userId || "").trim();
-    if (!uid) return { ok: false as const, status: 400, error: "user_id inválido" };
+    if (!uid) return { ok: false as const, status: 400, error: "user_id invÃ¡lido" };
     const url = `${base}/auth/v1/admin/users/${encodeURIComponent(uid)}`;
     const r = await fetch(url, {
       method: "DELETE",
@@ -14748,7 +14748,7 @@ const adminHandler = (() => {
 
   async function findUserIdByEmail(authCtx: any, email: string) {
     const clean = (email || "").toString().trim().toLowerCase();
-    if (!clean) return { ok: false as const, status: 400, error: "Email inválido" };
+    if (!clean) return { ok: false as const, status: 400, error: "Email invÃ¡lido" };
 
     const supabaseUrl = String(authCtx?.supabaseUrl || "").trim();
     const supabaseService = String(authCtx?.supabaseService || "").trim();
@@ -14780,7 +14780,7 @@ const adminHandler = (() => {
       const uid = String(r?.data?.user?.id || "").trim();
       if (uid) return { ok: true as const, userId: uid };
       if (err) return { ok: false as const, status: 500, error: explainAuthAdminError(err), detail: String(err?.message || "").slice(0, 600) };
-      return { ok: false as const, status: 404, error: "No encontré ese usuario por correo." };
+      return { ok: false as const, status: 404, error: "No encontrÃ© ese usuario por correo." };
     }
 
     const listUsers = v2?.listUsers || v1?.listUsers;
@@ -14799,8 +14799,8 @@ const adminHandler = (() => {
       }
     }
 
-    // FALLBACK: si Auth Admin no lo encontró, buscar por profiles.email
-    // (puede pasar si el profile se creó pero el usuario nunca inició sesión real
+    // FALLBACK: si Auth Admin no lo encontrÃ³, buscar por profiles.email
+    // (puede pasar si el profile se creÃ³ pero el usuario nunca iniciÃ³ sesiÃ³n real
     //  o hay desfase entre auth.users y profiles.email).
     try {
       const adminClient = authCtx?.admin;
@@ -14825,7 +14825,7 @@ const adminHandler = (() => {
       // Ignorar fallback silenciosamente; devolver error de Auth
     }
 
-    return { ok: false as const, status: 404, error: "No encontré ese usuario por correo.", detail: `Ese correo (${clean}) no existe en auth.users ni en profiles. Asegúrate de que el usuario haya iniciado sesión al menos una vez.` };
+    return { ok: false as const, status: 404, error: "No encontrÃ© ese usuario por correo.", detail: `Ese correo (${clean}) no existe en auth.users ni en profiles. AsegÃºrate de que el usuario haya iniciado sesiÃ³n al menos una vez.` };
   }
 
   async function sumPayments(admin: any, sinceIso: string | null) {
@@ -14839,7 +14839,7 @@ const adminHandler = (() => {
   }
 
   async function handleStats(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -15071,7 +15071,7 @@ const adminHandler = (() => {
   }
 
   async function handleDiag(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -15121,16 +15121,16 @@ const adminHandler = (() => {
     const eid = genAdminErrorId("ADMGRN");
     const safeHandler = "handleGrantCredits";
     try {
-      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "MÃ©todo no permitido", eid);
       const auth = await requireAdmin(req);
       if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
       const body = parseJsonBody(req);
-      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      if (!body) return adminSendError(res, 400, "Body invÃ¡lido", eid);
       const email = (body?.email || "").toString().trim().toLowerCase();
       const credits = Number(body?.credits ?? 0);
       if (!email) return adminSendError(res, 400, "Falta email", eid);
-      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "Créditos inválidos", eid);
+      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "CrÃ©ditos invÃ¡lidos", eid);
 
       const admin = auth.admin;
       const found = await findUserIdByEmail(auth, email);
@@ -15138,7 +15138,7 @@ const adminHandler = (() => {
       const userId = found.userId;
 
       const upd = await adjustUserCredits(admin, userId, credits);
-      if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar créditos", eid);
+      if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar crÃ©ditos", eid);
 
       const insert = await admin.from("mp_transactions").insert({
         user_id: userId,
@@ -15158,7 +15158,7 @@ const adminHandler = (() => {
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
   }
 
@@ -15166,12 +15166,12 @@ const adminHandler = (() => {
     const eid = genAdminErrorId("ADMPCK");
     const safeHandler = "handleGrantMiniPack";
     try {
-      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "MÃ©todo no permitido", eid);
       const auth = await requireAdmin(req);
       if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
       const body = parseJsonBody(req);
-      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      if (!body) return adminSendError(res, 400, "Body invÃ¡lido", eid);
       const email = (body?.email || "").toString().trim().toLowerCase();
       const packKey = (body?.packKey || body?.pack_key || "").toString().trim();
       if (!email) return adminSendError(res, 400, "Falta email", eid);
@@ -15189,8 +15189,8 @@ const adminHandler = (() => {
       const packId = Number((pack as any).id ?? 0);
       const credits = round2(Number((pack as any).credits_amount ?? 0));
       const validityDays = Number((pack as any).validity_days ?? 30);
-      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "Créditos inválidos en el paquete.", eid);
-      if (!Number.isFinite(validityDays) || validityDays <= 0) return adminSendError(res, 400, "Vigencia inválida en el paquete.", eid);
+      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "CrÃ©ditos invÃ¡lidos en el paquete.", eid);
+      if (!Number.isFinite(validityDays) || validityDays <= 0) return adminSendError(res, 400, "Vigencia invÃ¡lida en el paquete.", eid);
 
       const paymentId = `admin_mini_pack:${auth.user.id}:${userId}:${Date.now()}`;
       const batch = await insertCreditBatch(admin, {
@@ -15223,7 +15223,7 @@ const adminHandler = (() => {
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
   }
 
@@ -15231,16 +15231,16 @@ const adminHandler = (() => {
     const eid = genAdminErrorId("ADMTRN");
     const safeHandler = "handleTransferCredits";
     try {
-      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "MÃ©todo no permitido", eid);
       const auth = await requireAdmin(req);
       if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
       const body = parseJsonBody(req);
-      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      if (!body) return adminSendError(res, 400, "Body invÃ¡lido", eid);
       const email = (body?.email || "").toString().trim().toLowerCase();
       const credits = round2(Number(body?.credits ?? 0));
       if (!email) return adminSendError(res, 400, "Falta email", eid);
-      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "Créditos inválidos", eid);
+      if (!Number.isFinite(credits) || credits <= 0) return adminSendError(res, 400, "CrÃ©ditos invÃ¡lidos", eid);
 
       const admin = auth.admin;
       const found = await findUserIdByEmail(auth, email);
@@ -15259,17 +15259,17 @@ const adminHandler = (() => {
       const toProfileBefore = await admin.from("profiles").select("*").eq("id", toUserId).maybeSingle();
       const toCreditsBefore = toProfileBefore.error ? null : round2(creditsFromProfile(toProfileBefore.data));
       if (fromCreditsBefore < credits) {
-        return adminSendError(res, 400, `El usuario solo tiene ${fromCreditsBefore} créditos.`, eid);
+        return adminSendError(res, 400, `El usuario solo tiene ${fromCreditsBefore} crÃ©ditos.`, eid);
       }
       const transferId = `admin_transfer:${toUserId}:${fromUserId}:${Date.now()}`;
 
       const out = await consumeUserCredits(admin, fromUserId, credits);
-      if (!out.ok) return adminSendError(res, 500, out.error || "No pude quitar créditos.", eid);
+      if (!out.ok) return adminSendError(res, 500, out.error || "No pude quitar crÃ©ditos.", eid);
 
       const inc = await adjustUserCredits(admin, toUserId, credits);
       if (!inc.ok) {
         try { await adjustUserCredits(admin, fromUserId, credits); } catch {}
-        return adminSendError(res, 500, inc.error || "No pude regresarte los créditos (revertido).", eid);
+        return adminSendError(res, 500, inc.error || "No pude regresarte los crÃ©ditos (revertido).", eid);
       }
 
       const insertTr = await admin.from("mp_transactions").insert([
@@ -15301,13 +15301,13 @@ const adminHandler = (() => {
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid);
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid);
     }
   }
 
   async function setUserCreditsAbsolute(admin: any, userId: string, nextCredits: number) {
     const next = round2(Math.max(0, Number(nextCredits)));
-    if (!Number.isFinite(next)) return { ok: false as const, error: "Créditos inválidos" };
+    if (!Number.isFinite(next)) return { ok: false as const, error: "CrÃ©ditos invÃ¡lidos" };
 
     for (let i = 0; i < 4; i++) {
       const { data: profile, error: readErr } = await admin.from("profiles").select("*").eq("id", userId).maybeSingle();
@@ -15322,19 +15322,19 @@ const adminHandler = (() => {
       return { ok: false as const, error: upd.error };
     }
 
-    return { ok: false as const, error: "No pude actualizar créditos (intenta otra vez)." };
+    return { ok: false as const, error: "No pude actualizar crÃ©ditos (intenta otra vez)." };
   }
 
   async function handleSetPlan(req: any, res: any) {
     const eid = genAdminErrorId("ADMPLN");
     const safeHandler = "handleSetPlan";
     try {
-      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "Método no permitido", eid);
+      if ((req.method || "").toUpperCase() !== "POST") return adminSendError(res, 405, "MÃ©todo no permitido", eid);
       const auth = await requireAdmin(req);
       if (!auth.ok) return adminSendError(res, auth.status, auth.error || "No autorizado", eid);
 
       const body = parseJsonBody(req);
-      if (!body) return adminSendError(res, 400, "Body inválido", eid);
+      if (!body) return adminSendError(res, 400, "Body invÃ¡lido", eid);
       const email = (body?.email || "").toString().trim().toLowerCase();
       const plan_key = (body?.plan_key || "").toString().trim().toLowerCase();
       const credits_mode = (body?.credits_mode || "none").toString().trim().toLowerCase();
@@ -15342,10 +15342,10 @@ const adminHandler = (() => {
 
       if (!email) return adminSendError(res, 400, "Falta email", eid);
       if (!(plan_key === "ninguno" || plan_key === "inicio" || plan_key === "productor")) {
-        return adminSendError(res, 400, "Plan inválido", eid);
+        return adminSendError(res, 400, "Plan invÃ¡lido", eid);
       }
       if (!(credits_mode === "none" || credits_mode === "default" || credits_mode === "set")) {
-        return adminSendError(res, 400, "Modo de créditos inválido", eid);
+        return adminSendError(res, 400, "Modo de crÃ©ditos invÃ¡lido", eid);
       }
 
       const admin = auth.admin;
@@ -15374,12 +15374,12 @@ const adminHandler = (() => {
             subscriptionActive: true,
             renewalPaidSuccessfully: true,
           });
-          if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar créditos", eid, { detail: `email=${email}; credits_mode=default; add=${add}` });
+          if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude acreditar crÃ©ditos", eid, { detail: `email=${email}; credits_mode=default; add=${add}` });
         }
       } else if (credits_mode === "set") {
-        if (!Number.isFinite(credits) || credits < 0) return adminSendError(res, 400, "Créditos inválidos", eid);
+        if (!Number.isFinite(credits) || credits < 0) return adminSendError(res, 400, "CrÃ©ditos invÃ¡lidos", eid);
         const upd = await setUserCreditsAbsolute(admin, userId, credits);
-        if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude fijar créditos", eid, { detail: `email=${email}; credits_mode=set; credits=${String(credits)}` });
+        if (!upd.ok) return adminSendError(res, 500, upd.error || "No pude fijar crÃ©ditos", eid, { detail: `email=${email}; credits_mode=set; credits=${String(credits)}` });
       }
 
       return send(res, 200, { ok: true, user_id: userId, plan_key, credits_mode, error_id: eid });
@@ -15390,14 +15390,14 @@ const adminHandler = (() => {
         errMessage: outer instanceof Error ? outer.message : String(outer),
         errStack: outer instanceof Error ? outer.stack : undefined,
       });
-      return adminSendError(res, 500, "Algo salió mal.", eid, {
+      return adminSendError(res, 500, "Algo saliÃ³ mal.", eid, {
         detail: `email=${String(body?.email || "")}; plan_key=${String(body?.plan_key || "")}; credits_mode=${String(body?.credits_mode || "")}; raw=${outerMsg.slice(0, 300)}`,
       });
     }
   }
 
   async function handleFeedback(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -15427,12 +15427,12 @@ const adminHandler = (() => {
   }
 
   async function handleFeedbackMarkRead(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const id = (body?.id || "").toString().trim();
     if (!id) return send(res, 400, { error: "Falta id" });
 
@@ -15443,7 +15443,7 @@ const adminHandler = (() => {
   }
 
   async function handleUsers(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -15528,7 +15528,7 @@ const adminHandler = (() => {
   }
 
   async function handleUserDetail(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -15554,9 +15554,9 @@ const adminHandler = (() => {
         null;
       if (found) break;
     }
-    if (!found) return send(res, 404, { error: "No encontré ese usuario." });
+    if (!found) return send(res, 404, { error: "No encontrÃ© ese usuario." });
     const uid = String(found?.id || "").trim();
-    if (!uid) return send(res, 404, { error: "No encontré ese usuario." });
+    if (!uid) return send(res, 404, { error: "No encontrÃ© ese usuario." });
     if (isAdminEmail(String(found?.email || "").trim().toLowerCase())) return send(res, 403, { error: "No puedes ver este usuario." });
 
     const meta = (found as any)?.user_metadata ?? (found as any)?.user_meta_data ?? (found as any)?.raw_user_meta_data ?? {};
@@ -15603,12 +15603,12 @@ const adminHandler = (() => {
   }
 
   async function handleDeleteUser(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const email = (body?.email || "").toString().trim().toLowerCase();
     if (!email) return send(res, 400, { error: "Falta email" });
     if (isAdminEmail(email)) return send(res, 403, { error: "No puedes borrar este usuario." });
@@ -15650,7 +15650,7 @@ const adminHandler = (() => {
   }
 
   async function handlePruneUsers(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireAdmin(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -15859,7 +15859,7 @@ const aiHandler = (() => {
       return {
         ok: false as const,
         error: "Falta GEMINI_API_KEY en Vercel",
-        userMessage: "La transcripción no está configurada. Falta GEMINI_API_KEY en Vercel.",
+        userMessage: "La transcripciÃ³n no estÃ¡ configurada. Falta GEMINI_API_KEY en Vercel.",
       };
     }
 
@@ -15869,13 +15869,13 @@ const aiHandler = (() => {
 
     const ai = new GoogleGenAI({ apiKey });
     const systemInstruction =
-      "Eres un experto en transcripción de audio difícil (con ruido, eco, baja calidad y voces mezcladas). " +
+      "Eres un experto en transcripciÃ³n de audio difÃ­cil (con ruido, eco, baja calidad y voces mezcladas). " +
       "Debes limpiar el ruido mentalmente y enfocarte en la coherencia de las frases. " +
       "No inventes contenido: si una palabra no se entiende, usa [inaudible]. " +
-      "Entrega únicamente la letra, sin explicaciones.";
+      "Entrega Ãºnicamente la letra, sin explicaciones.";
     const prompt =
-      "Transcribe únicamente la letra cantada en este audio. " +
-      "Respeta saltos de línea. " +
+      "Transcribe Ãºnicamente la letra cantada en este audio. " +
+      "Respeta saltos de lÃ­nea. " +
       "Si identificas estructura, usa etiquetas como [Verso], [Coro], [Puente]. " +
       "Si NO hay voz/canto, responde exactamente: SIN_LETRA. " +
       "Si el audio es de plano ilegible y no se puede transcribir, responde exactamente: ILEGIBLE.";
@@ -15928,8 +15928,8 @@ const aiHandler = (() => {
             ok: false as const,
             error: msg,
             userMessage:
-              "No pude encontrar un modelo de transcripción disponible (404). " +
-              "Esto puede pasar si el modelo cambió o tu API Key no tiene acceso. Intenta de nuevo en unos minutos.",
+              "No pude encontrar un modelo de transcripciÃ³n disponible (404). " +
+              "Esto puede pasar si el modelo cambiÃ³ o tu API Key no tiene acceso. Intenta de nuevo en unos minutos.",
           };
         }
 
@@ -15937,8 +15937,8 @@ const aiHandler = (() => {
         if (!text) {
           return {
             ok: false as const,
-            error: "Gemini no devolvió texto",
-            userMessage: "No pude transcribir la letra. Intenta con un audio más claro o más corto.",
+            error: "Gemini no devolviÃ³ texto",
+            userMessage: "No pude transcribir la letra. Intenta con un audio mÃ¡s claro o mÃ¡s corto.",
           };
         }
         const upper = text.toUpperCase();
@@ -15957,10 +15957,10 @@ const aiHandler = (() => {
         const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
         const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
         const userMessage = is429
-          ? "La transcripción está saturada en este momento. Intenta de nuevo en unos minutos."
+          ? "La transcripciÃ³n estÃ¡ saturada en este momento. Intenta de nuevo en unos minutos."
           : is401 || is403
-            ? "La transcripción no está disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
-            : "No pude transcribir la letra. Intenta con un audio más claro o más corto.";
+            ? "La transcripciÃ³n no estÃ¡ disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
+            : "No pude transcribir la letra. Intenta con un audio mÃ¡s claro o mÃ¡s corto.";
         return { ok: false as const, error: msg, userMessage };
       }
     }
@@ -15969,8 +15969,8 @@ const aiHandler = (() => {
       ok: false as const,
       error: String(lastErr || "Modelo no disponible"),
       userMessage:
-        "La transcripción no está disponible en este momento. " +
-        "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
+        "La transcripciÃ³n no estÃ¡ disponible en este momento. " +
+        "Si sigue igual, revisa que GEMINI_API_KEY estÃ© bien configurada en Vercel y vuelve a intentar.",
     };
   }
 
@@ -16114,9 +16114,9 @@ const aiHandler = (() => {
     return { ok: true, lyrics: text, status: 200, interaction_keys: interactionKeys, output_length: outLen };
   }
 
-  // Transcripción de audio a letras con OpenAI Speech-to-Text.
-  // Conservada la función de Gemini (transcribeLyricsWithGeminiTranscribe) intacta
-  // para poder regresar fácilmente si fuera necesario.
+  // TranscripciÃ³n de audio a letras con OpenAI Speech-to-Text.
+  // Conservada la funciÃ³n de Gemini (transcribeLyricsWithGeminiTranscribe) intacta
+  // para poder regresar fÃ¡cilmente si fuera necesario.
   async function transcribeLyricsWithOpenAI(audioBuf: ArrayBuffer, timeoutMs: number) {
     const apiKey = String(process.env.OPENAI_TRANSCRIBE_API_KEY || "").trim();
     if (!apiKey) {
@@ -16228,7 +16228,7 @@ const aiHandler = (() => {
       return {
         ok: false as const,
         error: "Falta GEMINI_API_KEY en Vercel",
-        userMessage: "La generación de letras no está configurada. Falta GEMINI_API_KEY en Vercel.",
+        userMessage: "La generaciÃ³n de letras no estÃ¡ configurada. Falta GEMINI_API_KEY en Vercel.",
       };
     }
 
@@ -16240,14 +16240,14 @@ const aiHandler = (() => {
     const systemInstruction =
       "Eres un compositor profesional. " +
       "Genera letras totalmente originales (no copies canciones existentes). " +
-      "Entrega solo la letra, sin explicación.";
+      "Entrega solo la letra, sin explicaciÃ³n.";
     const userPrompt =
-      "Genera una letra para una canción en español con estructura clara. " +
-      "Regla obligatoria: Todas las etiquetas de estructura, indicaciones musicales, efectos, voces, instrumentos y direcciones de interpretación deben escribirse exclusivamente entre corchetes [ ]. Nunca deben escribirse entre paréntesis ( ). " +
+      "Genera una letra para una canciÃ³n en espaÃ±ol con estructura clara. " +
+      "Regla obligatoria: Todas las etiquetas de estructura, indicaciones musicales, efectos, voces, instrumentos y direcciones de interpretaciÃ³n deben escribirse exclusivamente entre corchetes [ ]. Nunca deben escribirse entre parÃ©ntesis ( ). " +
       "Usa etiquetas como: [Intro], [Verso], [Coro], [Puente], [Outro]. " +
       "Tema: " +
       topic +
-      "\nGénero vocal: " +
+      "\nGÃ©nero vocal: " +
       gender +
       "\nEstilo musical: " +
       style +
@@ -16291,7 +16291,7 @@ const aiHandler = (() => {
         }
         if (!ok) {
           const msg = String(lastErr || "Modelo no disponible");
-          return { ok: false as const, error: msg, userMessage: "La generación de letras no está disponible (modelo). Intenta de nuevo." };
+          return { ok: false as const, error: msg, userMessage: "La generaciÃ³n de letras no estÃ¡ disponible (modelo). Intenta de nuevo." };
         }
 
         const pickCandidateText = (obj: any) => {
@@ -16300,7 +16300,7 @@ const aiHandler = (() => {
           return parts.map((p: any) => (p?.text ? String(p.text) : "")).join("");
         };
         const text = String(r?.text || pickCandidateText(r) || "").trim();
-        if (!text) return { ok: false as const, error: "Gemini no devolvió texto", userMessage: "La IA no devolvió letra para ese tema. Intenta con otro tema o espera unos minutos." };
+        if (!text) return { ok: false as const, error: "Gemini no devolviÃ³ texto", userMessage: "La IA no devolviÃ³ letra para ese tema. Intenta con otro tema o espera unos minutos." };
 
         const cleaned = text.replaceAll("```", "").trim();
         return { ok: true as const, lyrics: cleaned };
@@ -16314,9 +16314,9 @@ const aiHandler = (() => {
         const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
         const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
         const userMessage = is429
-          ? "La generación está saturada. Intenta de nuevo en unos minutos."
+          ? "La generaciÃ³n estÃ¡ saturada. Intenta de nuevo en unos minutos."
           : is401 || is403
-            ? "La generación no está disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
+            ? "La generaciÃ³n no estÃ¡ disponible por permisos (API Key). Revisa tu GEMINI_API_KEY en Vercel."
             : "No pude generar letras en este momento. Intenta de nuevo.";
         return { ok: false as const, error: msg, userMessage };
       }
@@ -16326,15 +16326,15 @@ const aiHandler = (() => {
       ok: false as const,
       error: String(lastErr || "Modelo no disponible"),
       userMessage:
-        "La generación de letras no está disponible en este momento. " +
-        "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
+        "La generaciÃ³n de letras no estÃ¡ disponible en este momento. " +
+        "Si sigue igual, revisa que GEMINI_API_KEY estÃ© bien configurada en Vercel y vuelve a intentar.",
     };
   }
 
   async function generateLyricsWithOpenAI(topic: string, gender: string, style: string) {
     const apiKey = String(process.env.OPENAI_TRANSCRIBE_API_KEY || "").trim();
     if (!apiKey) {
-      return { ok: false as const, error: "Falta OPENAI_TRANSCRIBE_API_KEY", userMessage: "La generación de letras no está disponible (proveedor)." };
+      return { ok: false as const, error: "Falta OPENAI_TRANSCRIBE_API_KEY", userMessage: "La generaciÃ³n de letras no estÃ¡ disponible (proveedor)." };
     }
 
     let OpenAIClient: any;
@@ -16342,23 +16342,23 @@ const aiHandler = (() => {
       const mod = await import("openai");
       OpenAIClient = mod?.OpenAI || mod?.default;
     } catch (e) {
-      return { ok: false as const, error: "No pude cargar OpenAI SDK", userMessage: "La generación de letras no está disponible." };
+      return { ok: false as const, error: "No pude cargar OpenAI SDK", userMessage: "La generaciÃ³n de letras no estÃ¡ disponible." };
     }
-    if (!OpenAIClient) return { ok: false as const, error: "No pude cargar OpenAI SDK", userMessage: "La generación de letras no está disponible." };
+    if (!OpenAIClient) return { ok: false as const, error: "No pude cargar OpenAI SDK", userMessage: "La generaciÃ³n de letras no estÃ¡ disponible." };
 
     const client = new OpenAIClient({ apiKey });
 
     const systemInstruction =
       "Eres un compositor profesional. " +
       "Genera letras totalmente originales (no copies canciones existentes). " +
-      "Entrega solo la letra, sin explicación.";
+      "Entrega solo la letra, sin explicaciÃ³n.";
     const userPrompt =
-      "Genera una letra para una canción en español con estructura clara. " +
-      "Regla obligatoria: Todas las etiquetas de estructura, indicaciones musicales, efectos, voces, instrumentos y direcciones de interpretación deben escribirse exclusivamente entre corchetes [ ]. Nunca deben escribirse entre paréntesis ( ). " +
+      "Genera una letra para una canciÃ³n en espaÃ±ol con estructura clara. " +
+      "Regla obligatoria: Todas las etiquetas de estructura, indicaciones musicales, efectos, voces, instrumentos y direcciones de interpretaciÃ³n deben escribirse exclusivamente entre corchetes [ ]. Nunca deben escribirse entre parÃ©ntesis ( ). " +
       "Usa etiquetas como: [Intro], [Verso], [Coro], [Puente], [Outro]. " +
       "Tema: " +
       topic +
-      "\nGénero vocal: " +
+      "\nGÃ©nero vocal: " +
       gender +
       "\nEstilo musical: " +
       style +
@@ -16373,7 +16373,7 @@ const aiHandler = (() => {
         ],
       });
       const text = String(r?.choices?.[0]?.message?.content || "").trim();
-      if (!text) return { ok: false as const, error: "OpenAI no devolvió texto", userMessage: "La IA no devolvió letra. Intenta con otro tema o espera unos minutos." };
+      if (!text) return { ok: false as const, error: "OpenAI no devolviÃ³ texto", userMessage: "La IA no devolviÃ³ letra. Intenta con otro tema o espera unos minutos." };
       const cleaned = text.replaceAll("```", "").trim();
       return { ok: true as const, lyrics: cleaned };
     } catch (e: any) {
@@ -16384,11 +16384,11 @@ const aiHandler = (() => {
       const is403 = lower.includes("403") || lower.includes("permission") || lower.includes("forbidden");
       const is429 = lower.includes("429") || lower.includes("rate limit") || lower.includes("quota");
       const userMessage = is429
-        ? "La generación está saturada. Intenta de nuevo en unos minutos."
+        ? "La generaciÃ³n estÃ¡ saturada. Intenta de nuevo en unos minutos."
         : is401 || is403
-          ? "La generación no está disponible por permisos (API Key). Revisa tu OPENAI_TRANSCRIBE_API_KEY en Vercel."
+          ? "La generaciÃ³n no estÃ¡ disponible por permisos (API Key). Revisa tu OPENAI_TRANSCRIBE_API_KEY en Vercel."
           : is404
-            ? "El modelo no está disponible. Intenta de nuevo."
+            ? "El modelo no estÃ¡ disponible. Intenta de nuevo."
             : "No pude generar letras en este momento. Intenta de nuevo.";
       return { ok: false as const, error: msg, userMessage };
     }
@@ -16398,7 +16398,7 @@ const aiHandler = (() => {
     const apiKeyRaw = process.env.SUNO_API_KEY || process.env.SUNO_KEY || "";
     const apiKey = String(apiKeyRaw || "").trim().replace(/^[`"' ]+/, "").replace(/[`"' ]+$/, "").trim();
     if (!apiKey) {
-      return { ok: false as const, error: "Falta SUNO_API_KEY en Vercel", userMessage: "La generación de letras no está disponible (proveedor)." };
+      return { ok: false as const, error: "Falta SUNO_API_KEY en Vercel", userMessage: "La generaciÃ³n de letras no estÃ¡ disponible (proveedor)." };
     }
 
     const cleanLine = (s: string) =>
@@ -16415,7 +16415,7 @@ const aiHandler = (() => {
     let prompt = base;
     if (extra && (base.length + 3 + extra.length) <= 200) prompt = `${base} | ${extra}`;
     prompt = cleanLine(prompt).slice(0, 200);
-    if (!prompt) return { ok: false as const, error: "Prompt vacío", userMessage: "Escribe un tema para generar letras." };
+    if (!prompt) return { ok: false as const, error: "Prompt vacÃ­o", userMessage: "Escribe un tema para generar letras." };
 
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
     try {
@@ -16433,7 +16433,7 @@ const aiHandler = (() => {
         return { ok: false as const, error: String(msg), userMessage: "No pude generar letras con el proveedor." };
       }
       const taskId = typeof data?.data?.taskId === "string" ? data.data.taskId.trim() : "";
-      if (!taskId) return { ok: false as const, error: "Respuesta inválida del proveedor", userMessage: "No pude generar letras con el proveedor." };
+      if (!taskId) return { ok: false as const, error: "Respuesta invÃ¡lida del proveedor", userMessage: "No pude generar letras con el proveedor." };
 
       const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
       const startedAt = Date.now();
@@ -16473,7 +16473,7 @@ const aiHandler = (() => {
             }))
             .filter((x: any) => x.text && (x.status === "complete" || x.status === "completed" || !x.status));
           const best = candidates[0]?.text || "";
-          if (!best) return { ok: false as const, error: "El proveedor no devolvió letra", userMessage: "La IA no devolvió letra. Intenta con un tema más específico." };
+          if (!best) return { ok: false as const, error: "El proveedor no devolviÃ³ letra", userMessage: "La IA no devolviÃ³ letra. Intenta con un tema mÃ¡s especÃ­fico." };
           return { ok: true as const, lyrics: best };
         }
 
@@ -16491,7 +16491,7 @@ const aiHandler = (() => {
         await sleep(1200);
       }
 
-      return { ok: false as const, error: "Timeout esperando letras", userMessage: "El proveedor tardó demasiado. Voy a intentar con otra IA." };
+      return { ok: false as const, error: "Timeout esperando letras", userMessage: "El proveedor tardÃ³ demasiado. Voy a intentar con otra IA." };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { ok: false as const, error: msg, userMessage: "No pude generar letras con el proveedor." };
@@ -16499,13 +16499,13 @@ const aiHandler = (() => {
   }
 
   async function handleGenerateLyrics(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const topic = typeof payload?.topic === "string" ? payload.topic.trim() : "";
     const gender = typeof payload?.gender === "string" ? payload.gender.trim() : "Masculino";
@@ -16524,8 +16524,8 @@ const aiHandler = (() => {
       if (!isAdminEmail(auth.user.email)) {
         if (credits < cost) {
           return send(res, 402, {
-            error: "Créditos insuficientes",
-            message: `Necesitas ${cost} créditos para generar letras. Tienes ${credits} créditos.`,
+            error: "CrÃ©ditos insuficientes",
+            message: `Necesitas ${cost} crÃ©ditos para generar letras. Tienes ${credits} crÃ©ditos.`,
           });
         }
       }
@@ -16557,7 +16557,7 @@ const aiHandler = (() => {
       if (!out || !out.ok) {
         const technicalErr = String(out?.error || "No pude generar letras").slice(0, 500);
         console.error("[handleGenerateLyrics] final fail. user=", auth.user.email, "technicalErr=", technicalErr);
-        const userFriendly = "No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.";
+        const userFriendly = "No pudimos generar la letra automÃ¡ticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.";
         return send(res, 200, { 
           ok: false, 
           message: userFriendly,
@@ -16569,14 +16569,14 @@ const aiHandler = (() => {
         console.error("[handleGenerateLyrics] empty lyrics after provider ok");
         return send(res, 200, {
           ok: false,
-          message: "No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.",
+          message: "No pudimos generar la letra automÃ¡ticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.",
         });
       }
 
       let remaining = credits;
       if (!isAdminEmail(auth.user.email)) {
         const consumed = await consumeUserCredits(auth.admin, auth.user.id, cost);
-        if (!consumed.ok) return send(res, 402, { error: consumed.error || "Créditos insuficientes", ok: false });
+        if (!consumed.ok) return send(res, 402, { error: consumed.error || "CrÃ©ditos insuficientes", ok: false });
         remaining = Number(consumed.credits ?? remaining);
       }
 
@@ -16590,7 +16590,7 @@ const aiHandler = (() => {
       console.error("[handleGenerateLyrics] uncaught top-level:", e instanceof Error ? e.message : String(e));
       return send(res, 200, {
         ok: false,
-        message: "No pudimos generar la letra automáticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.",
+        message: "No pudimos generar la letra automÃ¡ticamente en este momento. Por favor intenta de nuevo o escribe tu propia letra.",
       });
     }
   }
@@ -16611,7 +16611,7 @@ const aiHandler = (() => {
       return send(res, s, {
         ok: false,
         message: "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.",
-        error: "Método no permitido",
+        error: "MÃ©todo no permitido",
       });
     }
 
@@ -16849,7 +16849,7 @@ const aiHandler = (() => {
         if (isRateLimit) {
           return safeFinalize(429, "error", {
             ok: false,
-            message: "Esperando disponibilidad para transcribirÃ¢â‚¬Â¦",
+            message: "Esperando disponibilidad para transcribirÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
             error_id: eid,
             recoverable: true,
             retry_after: retryAfterSeconds,
@@ -17051,7 +17051,7 @@ const lucianaBotHandler = (() => {
   }
 
   function defaultComposer(): LucianaSession["composer"] {
-    return { mode: "text", placeholder: "Escribe aquíÃ¢â‚¬Â¦", sendLabel: "Enviar" };
+    return { mode: "text", placeholder: "Escribe aquÃ­ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", sendLabel: "Enviar" };
   }
 
   function createEmptySession(): LucianaSession {
@@ -17094,7 +17094,7 @@ const lucianaBotHandler = (() => {
           ? m.songs
               .map((s: any) => ({
                 id: typeof s?.id === "string" ? s.id.slice(0, 200) : "",
-                title: typeof s?.title === "string" ? s.title.slice(0, 160) : "Canción",
+                title: typeof s?.title === "string" ? s.title.slice(0, 160) : "CanciÃ³n",
                 audioUrl: typeof s?.audioUrl === "string" ? s.audioUrl.slice(0, 2000) : "",
                 coverUrl: typeof s?.coverUrl === "string" ? s.coverUrl.slice(0, 2000) : "",
                 createdAt: typeof s?.createdAt === "string" ? s.createdAt : "",
@@ -17126,7 +17126,7 @@ const lucianaBotHandler = (() => {
         composerInput?.mode === "disabled"
           ? composerInput.mode
           : "text",
-      placeholder: typeof composerInput?.placeholder === "string" ? composerInput.placeholder.slice(0, 200) : "Escribe aquíÃ¢â‚¬Â¦",
+      placeholder: typeof composerInput?.placeholder === "string" ? composerInput.placeholder.slice(0, 200) : "Escribe aquÃ­ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
       sendLabel: typeof composerInput?.sendLabel === "string" ? composerInput.sendLabel.slice(0, 40) : "Enviar",
     };
 
@@ -17187,10 +17187,10 @@ const lucianaBotHandler = (() => {
 
   function mainMenuReplies(): LucianaQuickReply[] {
     return [
-      { id: "menu-generate", label: "Generar canción", value: "menu:generate", icon: "sparkles", variant: "primary" },
+      { id: "menu-generate", label: "Generar canciÃ³n", value: "menu:generate", icon: "sparkles", variant: "primary" },
       { id: "menu-cover", label: "Hacer cover", value: "menu:cover", icon: "music", variant: "secondary" },
       { id: "menu-mastering", label: "Masterizar", value: "menu:mastering", icon: "upload", variant: "secondary" },
-      { id: "menu-credits", label: "Ver créditos", value: "menu:credits", icon: "coins", variant: "ghost" },
+      { id: "menu-credits", label: "Ver crÃ©ditos", value: "menu:credits", icon: "coins", variant: "ghost" },
       { id: "menu-recent", label: "Canciones recientes", value: "menu:recent", icon: "library", variant: "ghost" },
     ];
   }
@@ -17198,12 +17198,12 @@ const lucianaBotHandler = (() => {
   function genreReplies(): LucianaQuickReply[] {
     return [
       { id: "genre-banda", label: "Banda", value: "genre:Banda", icon: "music", variant: "primary" },
-      { id: "genre-reggaeton", label: "Reggaetón", value: "genre:Reggaetón", icon: "music", variant: "secondary" },
+      { id: "genre-reggaeton", label: "ReggaetÃ³n", value: "genre:ReggaetÃ³n", icon: "music", variant: "secondary" },
       { id: "genre-corridos", label: "Corridos", value: "genre:Corridos", icon: "music", variant: "secondary" },
       { id: "genre-balada", label: "Balada", value: "genre:Balada", icon: "music", variant: "secondary" },
       { id: "genre-pop", label: "Pop", value: "genre:Pop", icon: "music", variant: "secondary" },
       { id: "genre-mariachi", label: "Mariachi", value: "genre:Mariachi", icon: "music", variant: "secondary" },
-      { id: "genre-other", label: "Otro género", value: "genre:other", icon: "edit", variant: "ghost" },
+      { id: "genre-other", label: "Otro gÃ©nero", value: "genre:other", icon: "edit", variant: "ghost" },
     ];
   }
 
@@ -17219,7 +17219,7 @@ const lucianaBotHandler = (() => {
       .split("\n")
       .map((x) => x.trim())
       .find((x) => x && !x.startsWith("["));
-    return (line || "Canción LucIAna").slice(0, 90);
+    return (line || "CanciÃ³n LucIAna").slice(0, 90);
   }
 
   async function internalJson(req: any, path: string, init?: { method?: string; body?: any }) {
@@ -17288,27 +17288,27 @@ const lucianaBotHandler = (() => {
     const trimmed = normalizeText(text, 800);
     const lower = trimmed.toLowerCase();
     const separateOnlyAfterSongMessage =
-      "Quitar voz solo aparece al final de una canción creada dentro de la app. Si subes una canción externa, esa opción no aplica aquí.";
+      "Quitar voz solo aparece al final de una canciÃ³n creada dentro de la app. Si subes una canciÃ³n externa, esa opciÃ³n no aplica aquÃ­.";
     const byKeyword = (() => {
-      if (lower.includes("crédito") || lower.includes("saldo")) return { toolName: "show_account", input: { view: "credits" } };
+      if (lower.includes("crÃ©dito") || lower.includes("saldo")) return { toolName: "show_account", input: { view: "credits" } };
       if (lower.includes("reciente") || lower.includes("biblioteca") || lower.includes("cancione")) return { toolName: "show_account", input: { view: "recent_songs" } };
       if (lower.includes("masteriz")) return { toolName: "open_flow", input: { flow: "mastering" } };
       if (lower.includes("cover")) return { toolName: "open_flow", input: { flow: "cover" } };
       if (lower.includes("separa") || lower.includes("karaoke") || lower.includes("stems") || lower.includes("voz")) {
         return { toolName: "answer_user", input: { message: separateOnlyAfterSongMessage } };
       }
-      if (lower.includes("genera") || lower.includes("hazme") || lower.includes("canción") || lower.includes("cancion")) return { toolName: "open_flow", input: { flow: "generate" } };
+      if (lower.includes("genera") || lower.includes("hazme") || lower.includes("canciÃ³n") || lower.includes("cancion")) return { toolName: "open_flow", input: { flow: "generate" } };
       return null;
     })();
 
     const ai = await callAnthropicTools({
       system:
-        "Eres LucIAna Bot. Tu trabajo aquí es SOLO detectar la intención principal del usuario dentro de una app de música. " +
-        "Debes usar una herramienta. Si el usuario quiere crear/generar canción usa open_flow(generate). " +
-        "Si quiere masterizar una canción, masterizar un mp3 o dice frases como masteriza esto, usa open_flow(mastering). " +
-        "Si quiere cover usa open_flow(cover). Si pregunta por quitar voz, karaoke o stems usa answer_user y explica que eso solo aparece al final de una canción creada dentro de la app. " +
-        "Si quiere ver créditos usa show_account(credits). Si quiere ver canciones recientes usa show_account(recent_songs). " +
-        "Si solo está saludando o no está claro, usa answer_user con un mensaje corto y amable.",
+        "Eres LucIAna Bot. Tu trabajo aquÃ­ es SOLO detectar la intenciÃ³n principal del usuario dentro de una app de mÃºsica. " +
+        "Debes usar una herramienta. Si el usuario quiere crear/generar canciÃ³n usa open_flow(generate). " +
+        "Si quiere masterizar una canciÃ³n, masterizar un mp3 o dice frases como masteriza esto, usa open_flow(mastering). " +
+        "Si quiere cover usa open_flow(cover). Si pregunta por quitar voz, karaoke o stems usa answer_user y explica que eso solo aparece al final de una canciÃ³n creada dentro de la app. " +
+        "Si quiere ver crÃ©ditos usa show_account(credits). Si quiere ver canciones recientes usa show_account(recent_songs). " +
+        "Si solo estÃ¡ saludando o no estÃ¡ claro, usa answer_user con un mensaje corto y amable.",
       userText: trimmed || "hola",
       tools: [
         {
@@ -17322,7 +17322,7 @@ const lucianaBotHandler = (() => {
         },
         {
           name: "show_account",
-          description: "Muestra información rápida de la cuenta.",
+          description: "Muestra informaciÃ³n rÃ¡pida de la cuenta.",
           input_schema: {
             type: "object",
             properties: { view: { type: "string", enum: ["credits", "recent_songs"] } },
@@ -17341,22 +17341,22 @@ const lucianaBotHandler = (() => {
       ],
     });
 
-    if (!ai.ok) return byKeyword || { toolName: "answer_user", input: { message: "Te ayudo con eso. Puedes elegir una opción de abajo." } };
+    if (!ai.ok) return byKeyword || { toolName: "answer_user", input: { message: "Te ayudo con eso. Puedes elegir una opciÃ³n de abajo." } };
     if (ai.toolName) return { toolName: ai.toolName, input: ai.input || {} };
-    return byKeyword || { toolName: "answer_user", input: { message: ai.text || "Te ayudo con eso. Puedes elegir una opción de abajo." } };
+    return byKeyword || { toolName: "answer_user", input: { message: ai.text || "Te ayudo con eso. Puedes elegir una opciÃ³n de abajo." } };
   }
 
   async function reviewLyricsWithAnthropic(lyrics: string) {
     const text = normalizeText(lyrics, 12000);
     const ai = await callAnthropicTools({
       system:
-        "Eres corrector ortográfico en español de México. Revisa solo escritura, acentos, signos y errores evidentes. " +
-        "No cambies el estilo ni la intención artística. Usa la herramienta con el resultado.",
+        "Eres corrector ortogrÃ¡fico en espaÃ±ol de MÃ©xico. Revisa solo escritura, acentos, signos y errores evidentes. " +
+        "No cambies el estilo ni la intenciÃ³n artÃ­stica. Usa la herramienta con el resultado.",
       userText: text,
       tools: [
         {
           name: "lyrics_review",
-          description: "Resultado de revisión ortográfica de una letra.",
+          description: "Resultado de revisiÃ³n ortogrÃ¡fica de una letra.",
           input_schema: {
             type: "object",
             properties: {
@@ -17370,30 +17370,30 @@ const lucianaBotHandler = (() => {
       ],
     });
     if (!ai.ok || ai.toolName !== "lyrics_review") {
-      return { hasIssues: false, correctedLyrics: text, summary: "No detecté cambios necesarios." };
+      return { hasIssues: false, correctedLyrics: text, summary: "No detectÃ© cambios necesarios." };
     }
     return {
       hasIssues: Boolean(ai.input?.hasIssues),
       correctedLyrics: normalizeText(ai.input?.correctedLyrics || text, 12000) || text,
-      summary: normalizeText(ai.input?.summary || "Detecté algunos ajustes.", 500),
+      summary: normalizeText(ai.input?.summary || "DetectÃ© algunos ajustes.", 500),
     };
   }
 
   async function generateLyricsWithAnthropic(topic: string, genre: string, extra: string) {
     const prompt =
       `Tema: ${normalizeText(topic, 400)}\n` +
-      `Género: ${normalizeText(genre, 120) || "General"}\n` +
-      `Indicaciones: ${normalizeText(extra, 500) || "Hazla original, pegajosa y en español."}\n` +
-      "Genera una letra original en español con etiquetas [Intro], [Verso], [Coro], [Puente], [Outro].";
+      `GÃ©nero: ${normalizeText(genre, 120) || "General"}\n` +
+      `Indicaciones: ${normalizeText(extra, 500) || "Hazla original, pegajosa y en espaÃ±ol."}\n` +
+      "Genera una letra original en espaÃ±ol con etiquetas [Intro], [Verso], [Coro], [Puente], [Outro].";
     const ai = await callAnthropicTools({
       system:
-        "Eres compositor profesional. Crea letras originales para canciones en español. " +
-        "No expliques nada. Usa la herramienta con la letra final y una sugerencia corta de título.",
+        "Eres compositor profesional. Crea letras originales para canciones en espaÃ±ol. " +
+        "No expliques nada. Usa la herramienta con la letra final y una sugerencia corta de tÃ­tulo.",
       userText: prompt,
       tools: [
         {
           name: "lyrics_result",
-          description: "Letra final para la canción.",
+          description: "Letra final para la canciÃ³n.",
           input_schema: {
             type: "object",
             properties: {
@@ -17406,12 +17406,12 @@ const lucianaBotHandler = (() => {
       ],
     });
     if (!ai.ok || ai.toolName !== "lyrics_result") {
-      return { ok: false as const, error: ai.ok ? "Claude no devolvió letra" : ai.error };
+      return { ok: false as const, error: ai.ok ? "Claude no devolviÃ³ letra" : ai.error };
     }
     return {
       ok: true as const,
       lyrics: normalizeText(ai.input?.lyrics || "", 12000),
-      titleSuggestion: normalizeText(ai.input?.titleSuggestion || "Canción LucIAna", 120),
+      titleSuggestion: normalizeText(ai.input?.titleSuggestion || "CanciÃ³n LucIAna", 120),
     };
   }
 
@@ -17443,7 +17443,7 @@ const lucianaBotHandler = (() => {
     if (error) return [];
     return (Array.isArray(data) ? data : []).map((row: any) => ({
       id: String(row?.id || ""),
-      title: String(row?.title || "Canción").trim(),
+      title: String(row?.title || "CanciÃ³n").trim(),
       audioUrl: String(row?.audio_url || "").trim(),
       coverUrl: String(row?.cover_url || "").trim(),
       createdAt: String(row?.created_at || "").trim(),
@@ -17483,7 +17483,7 @@ const lucianaBotHandler = (() => {
     if (error) return [];
     return (Array.isArray(data) ? data : []).map((row: any) => ({
       id: String(row?.id || ""),
-      title: String(row?.title || "Canción").trim(),
+      title: String(row?.title || "CanciÃ³n").trim(),
       audioUrl: String(row?.audio_url || "").trim(),
       coverUrl: String(row?.cover_url || "").trim(),
       createdAt: String(row?.created_at || "").trim(),
@@ -17509,7 +17509,7 @@ const lucianaBotHandler = (() => {
     return (Array.isArray(data) ? data : [])
       .map((row: any) => ({
         id: String(row?.id || ""),
-        title: String(row?.title || "Canción").trim(),
+        title: String(row?.title || "CanciÃ³n").trim(),
         audioUrl: String(row?.audio_url || "").trim(),
         coverUrl: String(row?.cover_url || "").trim(),
         createdAt: String(row?.created_at || "").trim(),
@@ -17573,11 +17573,11 @@ const lucianaBotHandler = (() => {
       instrumentalUrl: "Instrumental (Karaoke)",
       vocalUrl: "Voz",
       backingVocalsUrl: "Coros",
-      drumsUrl: "Batería",
+      drumsUrl: "BaterÃ­a",
       bassUrl: "Bajo",
       guitarUrl: "Guitarra",
       keyboardUrl: "Teclado",
-      percussionUrl: "Percusión",
+      percussionUrl: "PercusiÃ³n",
       stringsUrl: "Cuerdas",
       synthUrl: "Synth",
       fxUrl: "FX",
@@ -17649,7 +17649,7 @@ const lucianaBotHandler = (() => {
     if (!tracks.length) return [];
 
     for (const track of tracks) {
-      const base = normalizeText(track.title || "Canción", 120) || "Canción";
+      const base = normalizeText(track.title || "CanciÃ³n", 120) || "CanciÃ³n";
       const suffix = tracks.length === 2 ? (track.idx === 0 ? "A" : track.idx === 1 ? "B" : String(track.idx + 1)) : tracks.length > 1 ? String(track.idx + 1) : "";
       const finalTitle = /\s(A|B|\d+)$/i.test(base) || !suffix ? base.slice(0, 120) : `${base} ${suffix}`.slice(0, 120);
       await internalJson(req, "/api/library/import-audio", {
@@ -17673,14 +17673,14 @@ const lucianaBotHandler = (() => {
     session.flow = "home";
     session.step = "home";
     session.draft = {};
-    setComposer(session, "text", "Escribe lo que necesitas o toca un botónÃ¢â‚¬Â¦", "Enviar");
+    setComposer(session, "text", "Escribe lo que necesitas o toca un botÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
     pushAssistant(
       session,
-      intro || "Soy LucIAna Bot. Te ayudo a crear canciones, hacer covers, ver créditos o revisar tus canciones recientes.",
+      intro || "Soy LucIAna Bot. Te ayudo a crear canciones, hacer covers, ver crÃ©ditos o revisar tus canciones recientes.",
       {
         quickReplies: mainMenuReplies(),
         inputMode: "text",
-        inputPlaceholder: "Ejemplo: quiero una canción para mi negocio",
+        inputPlaceholder: "Ejemplo: quiero una canciÃ³n para mi negocio",
       },
     );
   }
@@ -17688,13 +17688,13 @@ const lucianaBotHandler = (() => {
   function askGenerateStart(session: LucianaSession) {
     session.flow = "generate";
     session.step = "generate-start";
-    setComposer(session, "disabled", "Elige una opción para empezarÃ¢â‚¬Â¦", "Enviar");
-    pushAssistant(session, "¿Cómo quieres empezar tu canción?", {
+    setComposer(session, "disabled", "Elige una opciÃ³n para empezarÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+    pushAssistant(session, "Â¿CÃ³mo quieres empezar tu canciÃ³n?", {
       quickReplies: [
         { id: "gen-audio", label: "Tengo un audio de referencia", value: "generate:start:audio", icon: "upload", variant: "primary" },
         { id: "gen-lyrics", label: "Ya tengo la letra", value: "generate:start:lyrics", icon: "file-text", variant: "secondary" },
         { id: "gen-nothing", label: "No tengo nada", value: "generate:start:nothing", icon: "sparkles", variant: "secondary" },
-        { id: "go-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        { id: "go-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
       ],
       inputMode: "disabled",
     });
@@ -17702,23 +17702,23 @@ const lucianaBotHandler = (() => {
 
   function askGenre(session: LucianaSession) {
     session.step = "generate-genre";
-    setComposer(session, "disabled", "Elige un género o escribe unoÃ¢â‚¬Â¦", "Enviar");
-    pushAssistant(session, "Ahora dime el género musical.", {
-      quickReplies: [...genreReplies(), { id: "go-home-2", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+    setComposer(session, "disabled", "Elige un gÃ©nero o escribe unoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+    pushAssistant(session, "Ahora dime el gÃ©nero musical.", {
+      quickReplies: [...genreReplies(), { id: "go-home-2", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
       inputMode: "disabled",
     });
   }
 
   function askExtraInstructions(session: LucianaSession) {
     session.step = "generate-extra";
-    setComposer(session, "multiline", "Ejemplo: romántica, para aniversario, voz masculina, con trompetasÃ¢â‚¬Â¦", "Guardar");
-    pushAssistant(session, "Cuéntame cómo la quieres: mood, ocasión, detalles o cualquier instrucción extra.", {
+    setComposer(session, "multiline", "Ejemplo: romÃ¡ntica, para aniversario, voz masculina, con trompetasÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+    pushAssistant(session, "CuÃ©ntame cÃ³mo la quieres: mood, ocasiÃ³n, detalles o cualquier instrucciÃ³n extra.", {
       quickReplies: [
         { id: "extra-skip", label: "Sin instrucciones extra", value: "generate:extra:skip", icon: "arrow-right", variant: "secondary" },
-        { id: "extra-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        { id: "extra-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
       ],
       inputMode: "multiline",
-      inputPlaceholder: "Escribe aquí detalles de la canciónÃ¢â‚¬Â¦",
+      inputPlaceholder: "Escribe aquÃ­ detalles de la canciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
     });
   }
 
@@ -17727,14 +17727,14 @@ const lucianaBotHandler = (() => {
     const summary: string[] = [];
     if (session.draft.lyrics) summary.push("Letra: lista");
     else if (session.draft.promptIdea) summary.push(`Idea: ${session.draft.promptIdea}`);
-    if (session.draft.genre) summary.push(`Género: ${session.draft.genre}`);
+    if (session.draft.genre) summary.push(`GÃ©nero: ${session.draft.genre}`);
     if (session.draft.extraInstructions) summary.push(`Detalles: ${session.draft.extraInstructions}`);
-    setComposer(session, "disabled", "Confirma para generarÃ¢â‚¬Â¦", "Enviar");
-    pushAssistant(session, `Ya casi.\n\n${summary.join("\n")}\n\n¿La genero así?`, {
+    setComposer(session, "disabled", "Confirma para generarÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+    pushAssistant(session, `Ya casi.\n\n${summary.join("\n")}\n\nÂ¿La genero asÃ­?`, {
       quickReplies: [
-        { id: "gen-confirm", label: "Sí, generar canción", value: "generate:confirm", icon: "sparkles", variant: "primary" },
+        { id: "gen-confirm", label: "SÃ­, generar canciÃ³n", value: "generate:confirm", icon: "sparkles", variant: "primary" },
         { id: "gen-adjust", label: "Cambiar algo", value: "generate:adjust", icon: "edit", variant: "secondary" },
-        { id: "gen-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        { id: "gen-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
       ],
       inputMode: "disabled",
     });
@@ -17745,45 +17745,45 @@ const lucianaBotHandler = (() => {
       return [
         { id: "gen-service-separate", label: "Quitar voz", value: "generate:service:separate", icon: "mic-off", variant: "primary" as const },
         { id: "gen-service-video", label: "Hacer video", value: "generate:service:video", icon: "video", variant: "secondary" as const },
-        { id: "gen-ready-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const },
+        { id: "gen-ready-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" as const },
       ];
     }
-    return [{ id: "cover-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const }];
+    return [{ id: "cover-home-ready", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" as const }];
   }
 
   async function askSongVersionForService(auth: any, session: LucianaSession, service: "separate" | "video") {
     const songs = await getSongsByIds(auth.admin, auth.user.id, session.draft.pendingSongIds || []);
     if (!songs.length) {
-      pushAssistant(session, "No encontré esas canciones en tu Biblioteca. Si quieres, te muestro tus canciones recientes.", {
+      pushAssistant(session, "No encontrÃ© esas canciones en tu Biblioteca. Si quieres, te muestro tus canciones recientes.", {
         quickReplies: [
           { id: "recent-after-missing", label: "Ver Biblioteca", value: "menu:recent", icon: "library", variant: "primary" },
-          { id: "missing-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          { id: "missing-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
         ],
       });
       session.flow = "home";
       session.step = "home";
-      setComposer(session, "text", "Escribe aquíÃ¢â‚¬Â¦", "Enviar");
+      setComposer(session, "text", "Escribe aquÃ­ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
       return;
     }
     session.draft.selectedAction = service;
     session.step = service === "separate" ? "generate-service-separate-song" : "generate-service-video-song";
-    setComposer(session, "disabled", "Elige una versiónÃ¢â‚¬Â¦", "Enviar");
+    setComposer(session, "disabled", "Elige una versiÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
     pushAssistant(
       session,
       service === "separate"
-        ? "Claro. ¿A cuál versión quieres que le quite la voz?"
-        : "Claro. ¿Cuál versión quieres que convierta en video para redes?",
+        ? "Claro. Â¿A cuÃ¡l versiÃ³n quieres que le quite la voz?"
+        : "Claro. Â¿CuÃ¡l versiÃ³n quieres que convierta en video para redes?",
       {
         songs,
         quickReplies: [
           ...songs.slice(0, 2).map((song: any, idx: number) => ({
             id: `${service}-pick-${song.id}`,
-            label: `${idx === 0 ? "Versión A" : idx === 1 ? "Versión B" : song.title.slice(0, 22)}`,
+            label: `${idx === 0 ? "VersiÃ³n A" : idx === 1 ? "VersiÃ³n B" : song.title.slice(0, 22)}`,
             value: `generate:service:${service}:song:${song.id}`,
             icon: service === "separate" ? "mic-off" : "video",
             variant: "secondary" as const,
           })),
-          { id: `${service}-home`, label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" as const },
+          { id: `${service}-home`, label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" as const },
         ],
       },
     );
@@ -17803,24 +17803,24 @@ const lucianaBotHandler = (() => {
           instrumental: false,
         }
       : {
-          prompt: [normalizeText(session.draft.promptIdea || session.draft.topic || "", 1000), `Género: ${genre}`, extra].filter(Boolean).join(". "),
+          prompt: [normalizeText(session.draft.promptIdea || session.draft.topic || "", 1000), `GÃ©nero: ${genre}`, extra].filter(Boolean).join(". "),
           customMode: false,
           instrumental: false,
           model: "V4_5",
         };
     const started = await internalJson(req, "/api/suno/generate", { method: "POST", body: payload });
     if (!started.ok) {
-      pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar la generación.").toString(), {
+      pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar la generaciÃ³n.").toString(), {
         quickReplies: [
           { id: "retry-generate", label: "Intentar otra vez", value: "generate:confirm", icon: "refresh", variant: "primary" },
-          { id: "home-generate", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          { id: "home-generate", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
         ],
       });
       return;
     }
     const taskId = String(started.out?.taskId || "").trim();
     if (!taskId) {
-      pushAssistant(session, "No recibí taskId del proveedor. Intenta otra vez.", {
+      pushAssistant(session, "No recibÃ­ taskId del proveedor. Intenta otra vez.", {
         quickReplies: [{ id: "retry-generate-2", label: "Reintentar", value: "generate:confirm", icon: "refresh", variant: "primary" }],
       });
       return;
@@ -17828,14 +17828,14 @@ const lucianaBotHandler = (() => {
     session.step = "generate-polling";
     session.draft.pendingTaskId = taskId;
     session.draft.pendingKind = "generate";
-    setComposer(session, "disabled", "Generando canciónÃ¢â‚¬Â¦", "Enviar");
-    upsertStatusMessage(session, `generate:${taskId}`, "Estoy generando tu canción. Voy a revisar el estado real cada 15 segundos hasta que quede lista.");
+    setComposer(session, "disabled", "Generando canciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+    upsertStatusMessage(session, `generate:${taskId}`, "Estoy generando tu canciÃ³n. Voy a revisar el estado real cada 15 segundos hasta que quede lista.");
   }
 
   async function startCover(req: any, session: LucianaSession) {
     const audio = session.draft.coverAudio;
     if (!audio?.url) {
-      pushAssistant(session, "Primero súbeme el audio para el cover.");
+      pushAssistant(session, "Primero sÃºbeme el audio para el cover.");
       return;
     }
     const payload: any = {
@@ -17853,21 +17853,21 @@ const lucianaBotHandler = (() => {
       pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar el cover.").toString(), {
         quickReplies: [
           { id: "cover-retry", label: "Intentar otra vez", value: "cover:confirm", icon: "refresh", variant: "primary" },
-          { id: "cover-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          { id: "cover-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
         ],
       });
       return;
     }
     const taskId = String(started.out?.taskId || "").trim();
     if (!taskId) {
-      pushAssistant(session, "No recibí taskId del cover. Intenta otra vez.");
+      pushAssistant(session, "No recibÃ­ taskId del cover. Intenta otra vez.");
       return;
     }
     session.step = "cover-polling";
     session.draft.pendingTaskId = taskId;
     session.draft.pendingKind = "upload-cover";
-    setComposer(session, "disabled", "Generando coverÃ¢â‚¬Â¦", "Enviar");
-    upsertStatusMessage(session, `cover:${taskId}`, "Ya puse a trabajar tu cover. Te aviso aquí mismo cuando esté listo.");
+    setComposer(session, "disabled", "Generando coverÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+    upsertStatusMessage(session, `cover:${taskId}`, "Ya puse a trabajar tu cover. Te aviso aquÃ­ mismo cuando estÃ© listo.");
   }
 
   async function startSeparate(req: any, session: LucianaSession) {
@@ -17875,7 +17875,7 @@ const lucianaBotHandler = (() => {
     const audioId = normalizeText(session.draft.selectedSongAudioId || "", 200);
     const type = normalizeText(session.draft.pendingKind || "separate_vocal", 40);
     if (!taskId && !audioId) {
-      pushAssistant(session, "Esa canción no tiene datos suficientes para separar voz. Elige otra más reciente.");
+      pushAssistant(session, "Esa canciÃ³n no tiene datos suficientes para separar voz. Elige otra mÃ¡s reciente.");
       return;
     }
     const started = await internalJson(req, "/api/suno/separate", {
@@ -17883,30 +17883,30 @@ const lucianaBotHandler = (() => {
       body: { taskId, audioId, type },
     });
     if (!started.ok) {
-      pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar la separación.").toString(), {
+      pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar la separaciÃ³n.").toString(), {
         quickReplies: [
-          { id: "sep-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          { id: "sep-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
         ],
       });
       return;
     }
     const outTaskId = String(started.out?.taskId || "").trim();
     if (!outTaskId) {
-      pushAssistant(session, "No recibí taskId de separación. Intenta otra vez.");
+      pushAssistant(session, "No recibÃ­ taskId de separaciÃ³n. Intenta otra vez.");
       return;
     }
     session.step = "separate-polling";
     session.draft.pendingTaskId = outTaskId;
     session.draft.pendingKind = type || "separate_vocal";
-    setComposer(session, "disabled", "Separando vozÃ¢â‚¬Â¦", "Enviar");
-    upsertStatusMessage(session, `separate:${outTaskId}`, "Ya estoy separando la voz. Voy a revisar el estado real y te pondré aquí los links cuando terminen.");
+    setComposer(session, "disabled", "Separando vozÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+    upsertStatusMessage(session, `separate:${outTaskId}`, "Ya estoy separando la voz. Voy a revisar el estado real y te pondrÃ© aquÃ­ los links cuando terminen.");
   }
 
   async function startVideo(req: any, auth: any, session: LucianaSession) {
     const taskId = normalizeText(session.draft.selectedSongTaskId || "", 200);
     const audioId = normalizeText(session.draft.selectedSongAudioId || "", 200);
     if (!taskId && !audioId) {
-      pushAssistant(session, "Esa canción no tiene datos suficientes para crear el video. Elige otra versión.");
+      pushAssistant(session, "Esa canciÃ³n no tiene datos suficientes para crear el video. Elige otra versiÃ³n.");
       return;
     }
     const author = normalizeText(
@@ -17922,20 +17922,20 @@ const lucianaBotHandler = (() => {
     if (!started.ok) {
       pushAssistant(session, (started.out?.detail || started.out?.error || "No pude iniciar el video.").toString(), {
         quickReplies: [
-          { id: "video-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+          { id: "video-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
         ],
       });
       return;
     }
     const outTaskId = String(started.out?.taskId || "").trim();
     if (!outTaskId) {
-      pushAssistant(session, "No recibí taskId del video. Intenta otra vez.");
+      pushAssistant(session, "No recibÃ­ taskId del video. Intenta otra vez.");
       return;
     }
     session.step = "video-polling";
     session.draft.pendingTaskId = outTaskId;
     session.draft.pendingKind = "mp4";
-    setComposer(session, "disabled", "Generando videoÃ¢â‚¬Â¦", "Enviar");
+    setComposer(session, "disabled", "Generando videoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
     upsertStatusMessage(session, `video:${outTaskId}`, "Preparando tu video para redes. Esto puede tardar unos minutos.");
   }
 
@@ -17954,7 +17954,7 @@ const lucianaBotHandler = (() => {
         session.draft.pendingFlow = undefined;
         if (pendingFlow === "cover") {
           session.step = "cover-audio";
-          setComposer(session, "audio", "Súbeme el MP3 para hacer el coverÃ¢â‚¬Â¦", "Enviar");
+          setComposer(session, "audio", "SÃºbeme el MP3 para hacer el coverÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
           pushAssistant(session, "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.", {
             quickReplies: [
               { id: "cover-retry-audio", label: "Reintentar", value: "cover:retry-audio", icon: "refresh", variant: "primary" },
@@ -17965,7 +17965,7 @@ const lucianaBotHandler = (() => {
           return;
         }
         session.step = "generate-lyrics";
-        setComposer(session, "multiline", "Pégame la letra o unas líneas de referenciaÃ¢â‚¬Â¦", "Guardar");
+        setComposer(session, "multiline", "PÃ©game la letra o unas lÃ­neas de referenciaÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
         pushAssistant(session, "No pudimos transcribir este audio. Intenta de nuevo o pega la letra manualmente.", {
           quickReplies: [
             { id: "gen-retry-audio", label: "Reintentar", value: "generate:retry-audio", icon: "refresh", variant: "primary" },
@@ -17986,13 +17986,13 @@ const lucianaBotHandler = (() => {
         session.draft.pendingFlow = undefined;
         if (pendingFlow === "cover") {
           session.step = "cover-lyrics-manual";
-          setComposer(session, "multiline", "Pega aquí la letraÃ¢â‚¬Â¦", "Guardar");
-          pushAssistant(session, "No pude encontrar el audio que subiste. Pega aquí la letra manualmente.", { inputMode: "multiline" });
+          setComposer(session, "multiline", "Pega aquÃ­ la letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+          pushAssistant(session, "No pude encontrar el audio que subiste. Pega aquÃ­ la letra manualmente.", { inputMode: "multiline" });
           return;
         }
         session.step = "generate-lyrics";
-        setComposer(session, "multiline", "Pégame la letra o unas líneas de referenciaÃ¢â‚¬Â¦", "Guardar");
-        pushAssistant(session, "No pude encontrar el audio que subiste. Si quieres, pégame aquí la letra manualmente o unas líneas de referencia.", {
+        setComposer(session, "multiline", "PÃ©game la letra o unas lÃ­neas de referenciaÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+        pushAssistant(session, "No pude encontrar el audio que subiste. Si quieres, pÃ©game aquÃ­ la letra manualmente o unas lÃ­neas de referencia.", {
           inputMode: "multiline",
         });
         return;
@@ -18014,12 +18014,12 @@ const lucianaBotHandler = (() => {
         const safeMsg = [msg, id ? `(Error ${id})` : ""].filter(Boolean).join(" ");
         if (pendingFlow === "cover") {
           session.step = "cover-lyrics-manual";
-          setComposer(session, "multiline", "Pega aquí la letraÃ¢â‚¬Â¦", "Guardar");
+          setComposer(session, "multiline", "Pega aquÃ­ la letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
           pushAssistant(session, safeMsg, { inputMode: "multiline" });
           return;
         }
         session.step = "generate-lyrics";
-        setComposer(session, "multiline", "Pégame la letra o unas líneas de referenciaÃ¢â‚¬Â¦", "Guardar");
+        setComposer(session, "multiline", "PÃ©game la letra o unas lÃ­neas de referenciaÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
         pushAssistant(session, safeMsg, { inputMode: "multiline" });
         return;
       }
@@ -18027,11 +18027,11 @@ const lucianaBotHandler = (() => {
       if (pendingFlow === "cover") {
         session.draft.coverLyrics = lyrics;
         session.step = "cover-lyrics-confirm";
-        setComposer(session, "disabled", "Confirma la letraÃ¢â‚¬Â¦", "Enviar");
-        pushAssistant(session, `Te detecté esta letra del audio:\n\n${lyrics}\n\n¿La letra está correcta?`, {
+        setComposer(session, "disabled", "Confirma la letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+        pushAssistant(session, `Te detectÃ© esta letra del audio:\n\n${lyrics}\n\nÂ¿La letra estÃ¡ correcta?`, {
           quickReplies: [
-            { id: "cover-lyrics-ok", label: "Sí, está correcta", value: "cover:lyrics:ok", icon: "check", variant: "primary" },
-            { id: "cover-lyrics-manual", label: "No, escribiré la letra", value: "cover:lyrics:manual", icon: "edit", variant: "secondary" },
+            { id: "cover-lyrics-ok", label: "SÃ­, estÃ¡ correcta", value: "cover:lyrics:ok", icon: "check", variant: "primary" },
+            { id: "cover-lyrics-manual", label: "No, escribirÃ© la letra", value: "cover:lyrics:manual", icon: "edit", variant: "secondary" },
           ],
           inputMode: "disabled",
         });
@@ -18040,7 +18040,7 @@ const lucianaBotHandler = (() => {
 
       session.draft.originalLyrics = lyrics;
       session.draft.lyrics = lyrics;
-      pushAssistant(session, `Te detecté esta letra del audio:\n\n${lyrics}`, {
+      pushAssistant(session, `Te detectÃ© esta letra del audio:\n\n${lyrics}`, {
         quickReplies: [{ id: "audio-lyrics-ok", label: "Seguir", value: "generate:audio:continue", icon: "arrow-right", variant: "primary" }],
       });
       askGenre(session);
@@ -18058,8 +18058,8 @@ const lucianaBotHandler = (() => {
         pushAssistant(
           session,
           kind === "generate"
-            ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas. Si quieres, también puedo quitar la voz de una de ellas o hacerte un video para redes."
-            : "Tu cover ya quedó listo y guardado automáticamente en tu Biblioteca.",
+            ? "Tus 2 versiones ya quedaron listas y guardadas automÃ¡ticamente en tu Biblioteca. AquÃ­ puedes escucharlas. Si quieres, tambiÃ©n puedo quitar la voz de una de ellas o hacerte un video para redes."
+            : "Tu cover ya quedÃ³ listo y guardado automÃ¡ticamente en tu Biblioteca.",
           {
             songs,
             quickReplies: readySongQuickReplies(kind === "generate" ? "generate" : "cover"),
@@ -18071,7 +18071,7 @@ const lucianaBotHandler = (() => {
 
     const polled = await internalJson(req, `/api/suno/task?kind=${encodeURIComponent(kind === "upload-cover" ? "generate" : kind)}&taskId=${encodeURIComponent(taskId)}`);
     if (!polled.ok) {
-      upsertStatusMessage(session, `${kind}:${taskId}`, "Sigo revisando tu proceso. Si tarda, vuelve a tocar el botón o espera unos segundos.");
+      upsertStatusMessage(session, `${kind}:${taskId}`, "Sigo revisando tu proceso. Si tarda, vuelve a tocar el botÃ³n o espera unos segundos.");
       return;
     }
     const provider = polled.out?.data;
@@ -18092,8 +18092,8 @@ const lucianaBotHandler = (() => {
           pushAssistant(
             session,
             kind === "generate"
-              ? "Tus 2 versiones ya quedaron listas y guardadas automáticamente en tu Biblioteca. Aquí puedes escucharlas. Si quieres, también puedo quitar la voz de una de ellas o hacerte un video para redes."
-              : "Tu cover ya quedó listo y guardado automáticamente en tu Biblioteca.",
+              ? "Tus 2 versiones ya quedaron listas y guardadas automÃ¡ticamente en tu Biblioteca. AquÃ­ puedes escucharlas. Si quieres, tambiÃ©n puedo quitar la voz de una de ellas o hacerte un video para redes."
+              : "Tu cover ya quedÃ³ listo y guardado automÃ¡ticamente en tu Biblioteca.",
             {
               songs,
               quickReplies: readySongQuickReplies(kind === "generate" ? "generate" : "cover"),
@@ -18112,11 +18112,11 @@ const lucianaBotHandler = (() => {
         session.draft.pendingTaskId = undefined;
         session.draft.pendingKind = undefined;
         session.step = "home";
-        setComposer(session, "text", "Escribe aquíÃ¢â‚¬Â¦", "Enviar");
-        pushAssistant(session, "No pude terminar esa generación. Si quieres, la intentamos de nuevo con otra idea.", {
+        setComposer(session, "text", "Escribe aquÃ­ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+        pushAssistant(session, "No pude terminar esa generaciÃ³n. Si quieres, la intentamos de nuevo con otra idea.", {
           quickReplies: [
-            { id: "gen-again", label: "Generar otra canción", value: "menu:generate", icon: "sparkles", variant: "primary" },
-            { id: "gen-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+            { id: "gen-again", label: "Generar otra canciÃ³n", value: "menu:generate", icon: "sparkles", variant: "primary" },
+            { id: "gen-home-fail", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
           ],
         });
         return;
@@ -18129,9 +18129,9 @@ const lucianaBotHandler = (() => {
         session.draft.pendingTaskId = undefined;
         session.draft.pendingKind = undefined;
         setComposer(session, "disabled", "Listo", "Enviar");
-        pushAssistant(session, "La separación ya quedó lista. Aquí te dejo los links que regresó el proveedor.", {
+        pushAssistant(session, "La separaciÃ³n ya quedÃ³ lista. AquÃ­ te dejo los links que regresÃ³ el proveedor.", {
           links: items.map((x) => ({ label: x.label, url: x.url })).slice(0, 12),
-          quickReplies: [{ id: "sep-ready-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+          quickReplies: [{ id: "sep-ready-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
         });
         return;
       }
@@ -18139,10 +18139,10 @@ const lucianaBotHandler = (() => {
         session.draft.pendingTaskId = undefined;
         session.draft.pendingKind = undefined;
         session.step = "home";
-        setComposer(session, "text", "Escribe aquíÃ¢â‚¬Â¦", "Enviar");
-        pushAssistant(session, "La separación falló. Si quieres, intento con otra canción.", {
+        setComposer(session, "text", "Escribe aquÃ­ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+        pushAssistant(session, "La separaciÃ³n fallÃ³. Si quieres, intento con otra canciÃ³n.", {
           quickReplies: [
-            { id: "sep-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+            { id: "sep-home-fail", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
           ],
         });
         return;
@@ -18158,11 +18158,11 @@ const lucianaBotHandler = (() => {
         pushAssistant(
           session,
           videoUrl
-            ? "Tu video para redes ya quedó listo. Aquí te dejo el botón para abrirlo."
-            : "El video terminó, pero no recibí el link final. Si quieres, lo revisamos otra vez.",
+            ? "Tu video para redes ya quedÃ³ listo. AquÃ­ te dejo el botÃ³n para abrirlo."
+            : "El video terminÃ³, pero no recibÃ­ el link final. Si quieres, lo revisamos otra vez.",
           {
             links: videoUrl ? [{ label: "Abrir video", url: videoUrl }] : [],
-            quickReplies: [{ id: "video-ready-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            quickReplies: [{ id: "video-ready-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
           },
         );
         return;
@@ -18171,11 +18171,11 @@ const lucianaBotHandler = (() => {
         session.draft.pendingTaskId = undefined;
         session.draft.pendingKind = undefined;
         session.step = "home";
-        setComposer(session, "text", "Escribe aquíÃ¢â‚¬Â¦", "Enviar");
+        setComposer(session, "text", "Escribe aquÃ­ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
         pushAssistant(session, "No pude terminar el video. Si quieres, luego lo intento otra vez con una de tus canciones.", {
           quickReplies: [
             { id: "video-recent", label: "Ver canciones recientes", value: "menu:recent", icon: "library", variant: "primary" },
-            { id: "video-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+            { id: "video-home-fail", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
           ],
         });
         return;
@@ -18183,7 +18183,7 @@ const lucianaBotHandler = (() => {
     }
     const friendly =
       kind === "generate"
-        ? "Generando tu canción... Esto puede tardar unos minutos."
+        ? "Generando tu canciÃ³n... Esto puede tardar unos minutos."
         : kind === "upload-cover"
           ? "Generando tu cover... Esto puede tardar unos minutos."
           : kind === "mp4"
@@ -18197,13 +18197,13 @@ const lucianaBotHandler = (() => {
   async function showCredits(req: any, session: LucianaSession) {
     const info = await internalJson(req, "/api/account/balance");
     if (!info.ok) {
-      pushAssistant(session, (info.out?.detail || info.out?.error || "No pude leer tus créditos.").toString(), {
+      pushAssistant(session, (info.out?.detail || info.out?.error || "No pude leer tus crÃ©ditos.").toString(), {
         quickReplies: mainMenuReplies(),
       });
       return;
     }
     const out = info.out || {};
-    pushAssistant(session, "Aquí tienes tu saldo actual.", {
+    pushAssistant(session, "AquÃ­ tienes tu saldo actual.", {
       credits: {
         credits: Number(out?.credits ?? 0),
         songBalance: Number(out?.song_balance ?? 0),
@@ -18218,7 +18218,7 @@ const lucianaBotHandler = (() => {
 
   async function getCreditsSummary(req: any) {
     const info = await internalJson(req, "/api/account/balance");
-    if (!info.ok) return { ok: false as const, error: (info.out?.detail || info.out?.error || "No pude leer tus créditos.").toString() };
+    if (!info.ok) return { ok: false as const, error: (info.out?.detail || info.out?.error || "No pude leer tus crÃ©ditos.").toString() };
     const out = info.out || {};
     return {
       ok: true as const,
@@ -18236,13 +18236,13 @@ const lucianaBotHandler = (() => {
     session.flow = "mastering";
     session.step = "mastering-audio";
     session.draft = {};
-    setComposer(session, "audio_mp3", "Súbeme el MP3 que quieres masterizarÃ¢â‚¬Â¦", "Enviar");
+    setComposer(session, "audio_mp3", "SÃºbeme el MP3 que quieres masterizarÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
     if (!balance.ok) {
       pushAssistant(
         session,
-        "Te ayudo a masterizar tu canción. Primero súbeme un MP3.\n\nSi tu archivo no está en MP3, conviértelo aquí: https://online-audio-converter.com/sp/",
+        "Te ayudo a masterizar tu canciÃ³n. Primero sÃºbeme un MP3.\n\nSi tu archivo no estÃ¡ en MP3, conviÃ©rtelo aquÃ­: https://online-audio-converter.com/sp/",
         {
-          quickReplies: [{ id: "master-home-0", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+          quickReplies: [{ id: "master-home-0", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
           inputMode: "audio_mp3",
           inputPlaceholder: "Sube un MP3",
         },
@@ -18253,7 +18253,7 @@ const lucianaBotHandler = (() => {
     if (balance.credits < (CREDIT_COSTS.mastering || 10)) {
       pushAssistant(
         session,
-        `Para masterizar necesitas 10 créditos y ahorita tienes ${balance.credits.toLocaleString("es-MX")}.\n\nRecarga saldo y en cuanto quieras lo hacemos aquí mismo.`,
+        `Para masterizar necesitas 10 crÃ©ditos y ahorita tienes ${balance.credits.toLocaleString("es-MX")}.\n\nRecarga saldo y en cuanto quieras lo hacemos aquÃ­ mismo.`,
         {
           credits: {
             credits: balance.credits,
@@ -18264,18 +18264,18 @@ const lucianaBotHandler = (() => {
             planExpiresAt: balance.planExpiresAt,
           },
           quickReplies: [
-            { id: "master-low-credits", label: "Ver créditos", value: "menu:credits", icon: "coins", variant: "primary" },
-            { id: "master-home-1", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+            { id: "master-low-credits", label: "Ver crÃ©ditos", value: "menu:credits", icon: "coins", variant: "primary" },
+            { id: "master-home-1", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
           ],
         },
       );
-      setComposer(session, "disabled", "Necesitas recargar créditosÃ¢â‚¬Â¦", "Enviar");
+      setComposer(session, "disabled", "Necesitas recargar crÃ©ditosÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
       return;
     }
 
     pushAssistant(
       session,
-      `Perfecto. Sí tienes saldo suficiente para masterizar: ${balance.credits.toLocaleString("es-MX")} créditos.\n\nAhora súbeme tu archivo en MP3 y yo me encargo del resto.\n\nSi no está en MP3, conviértelo aquí: https://online-audio-converter.com/sp/`,
+      `Perfecto. SÃ­ tienes saldo suficiente para masterizar: ${balance.credits.toLocaleString("es-MX")} crÃ©ditos.\n\nAhora sÃºbeme tu archivo en MP3 y yo me encargo del resto.\n\nSi no estÃ¡ en MP3, conviÃ©rtelo aquÃ­: https://online-audio-converter.com/sp/`,
       {
         credits: {
           credits: balance.credits,
@@ -18285,7 +18285,7 @@ const lucianaBotHandler = (() => {
           planActive: balance.planActive,
           planExpiresAt: balance.planExpiresAt,
         },
-        quickReplies: [{ id: "master-home-2", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+        quickReplies: [{ id: "master-home-2", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
         inputMode: "audio_mp3",
         inputPlaceholder: "Sube un MP3",
       },
@@ -18296,7 +18296,7 @@ const lucianaBotHandler = (() => {
     const audio = session.draft.masteringAudio;
     const inputKey = normalizeText(audio?.key || "", 500);
     if (!inputKey) {
-      pushAssistant(session, "Primero súbeme el MP3 que quieres masterizar.");
+      pushAssistant(session, "Primero sÃºbeme el MP3 que quieres masterizar.");
       return;
     }
 
@@ -18314,18 +18314,18 @@ const lucianaBotHandler = (() => {
       const converterUrl = normalizeText(started.out?.converterUrl || "", 500);
       pushAssistant(
         session,
-        converterUrl ? `${errorText}\n\nConvierte tu audio aquí: ${converterUrl}` : errorText,
+        converterUrl ? `${errorText}\n\nConvierte tu audio aquÃ­: ${converterUrl}` : errorText,
         {
           quickReplies: [
             { id: "master-retry", label: "Subir otro MP3", value: "menu:mastering", icon: "upload", variant: "primary" },
-            { id: "master-home-fail", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+            { id: "master-home-fail", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
           ],
           inputMode: converterUrl ? "audio_mp3" : "disabled",
         },
       );
       if (converterUrl) {
         session.step = "mastering-audio";
-        setComposer(session, "audio_mp3", "Súbeme un MP3Ã¢â‚¬Â¦", "Enviar");
+        setComposer(session, "audio_mp3", "SÃºbeme un MP3ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
       }
       return;
     }
@@ -18335,7 +18335,7 @@ const lucianaBotHandler = (() => {
     session.draft.pendingTaskId = undefined;
     session.draft.pendingKind = undefined;
     setComposer(session, "disabled", "Listo", "Enviar");
-    pushAssistant(session, "Tu canción ya quedó masterizada con nuestra tecnología LucIAna SoundCore y también la guardé en tu Biblioteca.", {
+    pushAssistant(session, "Tu canciÃ³n ya quedÃ³ masterizada con nuestra tecnologÃ­a LucIAna SoundCore y tambiÃ©n la guardÃ© en tu Biblioteca.", {
       songs: [
         {
           id: String(song?.id || `master_${Date.now()}`),
@@ -18351,7 +18351,7 @@ const lucianaBotHandler = (() => {
       quickReplies: [
         { id: "master-again", label: "Masterizar otra", value: "menu:mastering", icon: "upload", variant: "primary" },
         { id: "master-recent", label: "Ver Biblioteca", value: "menu:recent", icon: "library", variant: "secondary" },
-        { id: "master-home-ready", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        { id: "master-home-ready", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
       ],
     });
   }
@@ -18359,16 +18359,16 @@ const lucianaBotHandler = (() => {
   async function showRecentSongs(auth: any, session: LucianaSession) {
     const songs = await getRecentSongs(auth.admin, auth.user.id, 6);
     if (!songs.length) {
-      pushAssistant(session, "Todavía no veo canciones en tu biblioteca.", {
+      pushAssistant(session, "TodavÃ­a no veo canciones en tu biblioteca.", {
         quickReplies: mainMenuReplies(),
       });
       return;
     }
-    pushAssistant(session, "Estas son tus canciones más recientes.", {
+    pushAssistant(session, "Estas son tus canciones mÃ¡s recientes.", {
       songs,
       quickReplies: [
-        { id: "recent-generate", label: "Generar otra canción", value: "menu:generate", icon: "sparkles", variant: "primary" },
-        { id: "recent-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+        { id: "recent-generate", label: "Generar otra canciÃ³n", value: "menu:generate", icon: "sparkles", variant: "primary" },
+        { id: "recent-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
       ],
     });
   }
@@ -18379,15 +18379,15 @@ const lucianaBotHandler = (() => {
       String(auth?.user?.user_metadata?.display_name || auth?.user?.user_metadata?.full_name || auth?.user?.email || "amigo")
         .split("@")[0]
         .slice(0, 40);
-    resetHome(session, `Hola, ${name}. Soy LucIAna Bot. Aquí te ayudo paso por paso sin que tengas que meterte a cosas técnicas.`);
+    resetHome(session, `Hola, ${name}. Soy LucIAna Bot. AquÃ­ te ayudo paso por paso sin que tengas que meterte a cosas tÃ©cnicas.`);
   }
 
   async function handleChat(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const session = normalizeSession(body?.session);
     const event = body?.event && typeof body.event === "object" ? body.event : {};
     const eventType = typeof event?.type === "string" ? event.type.trim().toLowerCase() : "open";
@@ -18411,7 +18411,7 @@ const lucianaBotHandler = (() => {
       } else if (eventType === "quick_reply" && eventText) {
         pushUser(session, eventText);
       } else if (eventType === "file" && file) {
-        pushUser(session, `Subí un audio: ${normalizeText(file?.fileName || "audio", 120)}`);
+        pushUser(session, `SubÃ­ un audio: ${normalizeText(file?.fileName || "audio", 120)}`);
       }
 
       if (eventType === "quick_reply" && eventValue === "menu:home") {
@@ -18428,13 +18428,13 @@ const lucianaBotHandler = (() => {
             contentType: normalizeText(file?.contentType || "", 120),
             size: Number(file?.size || 0),
           };
-          setComposer(session, "disabled", "Elige una opciónÃ¢â‚¬Â¦", "Enviar");
-          pushAssistant(session, "Recibí tu MP3. ¿Qué quieres hacer con este audio?", {
+          setComposer(session, "disabled", "Elige una opciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+          pushAssistant(session, "RecibÃ­ tu MP3. Â¿QuÃ© quieres hacer con este audio?", {
             quickReplies: [
               { id: "home-file-cover", label: "Hacer cover", value: "home:file:cover", icon: "sparkles", variant: "primary" },
-              { id: "home-file-generate", label: "Crear canción", value: "home:file:generate", icon: "music", variant: "secondary" },
+              { id: "home-file-generate", label: "Crear canciÃ³n", value: "home:file:generate", icon: "music", variant: "secondary" },
               { id: "home-file-master", label: "Masterizar", value: "home:file:mastering", icon: "upload", variant: "secondary" },
-              { id: "home-file-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+              { id: "home-file-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
             ],
             inputMode: "disabled",
           });
@@ -18445,7 +18445,7 @@ const lucianaBotHandler = (() => {
           const saved = session.draft.homeUploadedFile;
           const savedFile = saved && typeof saved === "object" ? saved : null;
           if (!savedFile?.url) {
-            resetHome(session, "No encontré el audio que subiste. Súbelo otra vez, por favor.");
+            resetHome(session, "No encontrÃ© el audio que subiste. SÃºbelo otra vez, por favor.");
             return send(res, 200, { ok: true, session });
           }
 
@@ -18453,7 +18453,7 @@ const lucianaBotHandler = (() => {
           const fileNameLower = normalizeText(savedFile?.fileName || "", 200).toLowerCase();
           const isMp3 = contentType === "audio/mpeg" || fileNameLower.endsWith(".mp3");
           if (!isMp3) {
-            resetHome(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/");
+            resetHome(session, "Ese archivo no estÃ¡ en MP3. Convierte tu audio aquÃ­ y luego sÃºbelo otra vez: https://online-audio-converter.com/sp/");
             return send(res, 200, { ok: true, session });
           }
 
@@ -18477,8 +18477,8 @@ const lucianaBotHandler = (() => {
             session.draft.pendingKind = "transcribe-lyrics";
             session.draft.pendingStartedAt = Date.now();
             session.draft.pendingFlow = "cover";
-            setComposer(session, "disabled", "Transcribiendo letraÃ¢â‚¬Â¦", "Enviar");
-            upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendoÃ¢â‚¬Â¦");
+            setComposer(session, "disabled", "Transcribiendo letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+            upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorizaciÃ³n y transcribiendoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦");
             return send(res, 200, { ok: true, session });
           }
 
@@ -18498,8 +18498,8 @@ const lucianaBotHandler = (() => {
             session.draft.pendingKind = "transcribe-lyrics";
             session.draft.pendingStartedAt = Date.now();
             session.draft.pendingFlow = "generate";
-            setComposer(session, "disabled", "Transcribiendo letraÃ¢â‚¬Â¦", "Enviar");
-            upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendoÃ¢â‚¬Â¦");
+            setComposer(session, "disabled", "Transcribiendo letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+            upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorizaciÃ³n y transcribiendoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦");
             return send(res, 200, { ok: true, session });
           }
 
@@ -18528,7 +18528,7 @@ const lucianaBotHandler = (() => {
                     toolName: "answer_user",
                     input: {
                       message:
-                        "Quitar voz solo aparece al final de una canción creada dentro de la app. Si subes una canción externa, esa opción no aplica aquí.",
+                        "Quitar voz solo aparece al final de una canciÃ³n creada dentro de la app. Si subes una canciÃ³n externa, esa opciÃ³n no aplica aquÃ­.",
                     },
                   };
                 }
@@ -18547,9 +18547,9 @@ const lucianaBotHandler = (() => {
           if (flow === "cover") {
             session.flow = "cover";
             session.step = "cover-audio";
-            setComposer(session, "audio", "Súbeme el audio para hacer el coverÃ¢â‚¬Â¦", "Enviar");
-            pushAssistant(session, "Súbeme el audio que quieres usar para el cover. Cuando lo tenga, te pido las indicaciones extra.", {
-              quickReplies: [{ id: "cover-home-btn", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            setComposer(session, "audio", "SÃºbeme el audio para hacer el coverÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+            pushAssistant(session, "SÃºbeme el audio que quieres usar para el cover. Cuando lo tenga, te pido las indicaciones extra.", {
+              quickReplies: [{ id: "cover-home-btn", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
               inputMode: "audio",
             });
             return send(res, 200, { ok: true, session });
@@ -18581,12 +18581,12 @@ const lucianaBotHandler = (() => {
           if (eventValue === "generate:start:audio") {
             session.draft = { sourceMode: "audio" };
             session.step = "generate-audio";
-            setComposer(session, "audio_mp3", "Súbeme un MP3 de referenciaÃ¢â‚¬Â¦", "Enviar");
+            setComposer(session, "audio_mp3", "SÃºbeme un MP3 de referenciaÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
             pushAssistant(
               session,
-              "Súbeme un MP3 de referencia. Ojo: es solo para inspirarnos, no debe ser una canción famosa con derechos de autor.\n\nSi tu archivo no está en MP3, conviértelo aquí: https://online-audio-converter.com/sp/",
+              "SÃºbeme un MP3 de referencia. Ojo: es solo para inspirarnos, no debe ser una canciÃ³n famosa con derechos de autor.\n\nSi tu archivo no estÃ¡ en MP3, conviÃ©rtelo aquÃ­: https://online-audio-converter.com/sp/",
               {
-                quickReplies: [{ id: "gen-audio-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+                quickReplies: [{ id: "gen-audio-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
                 inputMode: "audio_mp3",
               },
             );
@@ -18595,22 +18595,22 @@ const lucianaBotHandler = (() => {
           if (eventValue === "generate:start:lyrics") {
             session.draft = { sourceMode: "lyrics" };
             session.step = "generate-lyrics";
-            setComposer(session, "multiline", "Pega aquí tu letra completaÃ¢â‚¬Â¦", "Guardar letra");
-            pushAssistant(session, "Pégame aquí la letra completa y la reviso antes de generar.", {
+            setComposer(session, "multiline", "Pega aquÃ­ tu letra completaÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar letra");
+            pushAssistant(session, "PÃ©game aquÃ­ la letra completa y la reviso antes de generar.", {
               inputMode: "multiline",
-              inputPlaceholder: "Pega aquí tu letraÃ¢â‚¬Â¦",
+              inputPlaceholder: "Pega aquÃ­ tu letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
             });
             return send(res, 200, { ok: true, session });
           }
           if (eventValue === "generate:start:nothing") {
             session.draft = { sourceMode: "nothing" };
             session.step = "generate-ai-lyrics-confirm";
-            setComposer(session, "disabled", "Elige una opciónÃ¢â‚¬Â¦", "Enviar");
-            pushAssistant(session, "¿Quieres que te hagamos una letra única sin costo extra?", {
+            setComposer(session, "disabled", "Elige una opciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+            pushAssistant(session, "Â¿Quieres que te hagamos una letra Ãºnica sin costo extra?", {
               quickReplies: [
-                { id: "ai-lyrics-yes", label: "Sí, hazme la letra", value: "generate:ai-lyrics:yes", icon: "sparkles", variant: "primary" },
+                { id: "ai-lyrics-yes", label: "SÃ­, hazme la letra", value: "generate:ai-lyrics:yes", icon: "sparkles", variant: "primary" },
                 { id: "ai-lyrics-no", label: "No, solo dame ideas", value: "generate:ai-lyrics:no", icon: "edit", variant: "secondary" },
-                { id: "ai-lyrics-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+                { id: "ai-lyrics-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
               ],
               inputMode: "disabled",
             });
@@ -18623,7 +18623,7 @@ const lucianaBotHandler = (() => {
           const fileName = normalizeText(file?.fileName || "", 200).toLowerCase();
           const isMp3 = contentType === "audio/mpeg" || fileName.endsWith(".mp3");
           if (!isMp3) {
-            pushAssistant(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/", {
+            pushAssistant(session, "Ese archivo no estÃ¡ en MP3. Convierte tu audio aquÃ­ y luego sÃºbelo otra vez: https://online-audio-converter.com/sp/", {
               inputMode: "audio_mp3",
             });
             return send(res, 200, { ok: true, session });
@@ -18641,8 +18641,8 @@ const lucianaBotHandler = (() => {
           session.draft.pendingKind = "transcribe-lyrics";
           session.draft.pendingStartedAt = Date.now();
           session.draft.pendingFlow = "generate";
-          setComposer(session, "disabled", "Transcribiendo letraÃ¢â‚¬Â¦", "Enviar");
-          upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendoÃ¢â‚¬Â¦");
+          setComposer(session, "disabled", "Transcribiendo letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+          upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorizaciÃ³n y transcribiendoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦");
           return send(res, 200, { ok: true, session });
         }
 
@@ -18652,14 +18652,14 @@ const lucianaBotHandler = (() => {
           session.draft.correctedLyrics = review.correctedLyrics;
           if (review.hasIssues && normalizeText(review.correctedLyrics, 12000) !== normalizeText(eventText, 12000)) {
             session.step = "generate-lyrics-fix";
-            setComposer(session, "disabled", "Elige una opciónÃ¢â‚¬Â¦", "Enviar");
+            setComposer(session, "disabled", "Elige una opciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
             pushAssistant(
               session,
-              `Detectamos algunos errores de escritura.\n\n${review.summary}\n\n¿Quieres que los corrijamos?`,
+              `Detectamos algunos errores de escritura.\n\n${review.summary}\n\nÂ¿Quieres que los corrijamos?`,
               {
                 quickReplies: [
-                  { id: "lyrics-fix-yes", label: "Sí, corrígelos", value: "generate:lyrics:apply-fix", icon: "check", variant: "primary" },
-                  { id: "lyrics-fix-no", label: "Déjala original", value: "generate:lyrics:keep-original", icon: "edit", variant: "secondary" },
+                  { id: "lyrics-fix-yes", label: "SÃ­, corrÃ­gelos", value: "generate:lyrics:apply-fix", icon: "check", variant: "primary" },
+                  { id: "lyrics-fix-no", label: "DÃ©jala original", value: "generate:lyrics:keep-original", icon: "edit", variant: "secondary" },
                 ],
                 inputMode: "disabled",
               },
@@ -18682,15 +18682,15 @@ const lucianaBotHandler = (() => {
           if (eventValue === "generate:ai-lyrics:yes") {
             session.draft.wantsAiLyrics = true;
             session.step = "generate-ai-topic";
-            setComposer(session, "multiline", "¿De qué debe tratar la canción?", "Guardar tema");
-            pushAssistant(session, "Perfecto. ¿Sobre qué debe tratar la canción?", { inputMode: "multiline" });
+            setComposer(session, "multiline", "Â¿De quÃ© debe tratar la canciÃ³n?", "Guardar tema");
+            pushAssistant(session, "Perfecto. Â¿Sobre quÃ© debe tratar la canciÃ³n?", { inputMode: "multiline" });
             return send(res, 200, { ok: true, session });
           }
           if (eventValue === "generate:ai-lyrics:no") {
             session.draft.wantsAiLyrics = false;
             session.step = "generate-prompt-topic";
-            setComposer(session, "multiline", "Cuéntame la idea principal de la canciónÃ¢â‚¬Â¦", "Guardar idea");
-            pushAssistant(session, "Cuéntame la idea principal y yo la usaré como base para generar la canción.", { inputMode: "multiline" });
+            setComposer(session, "multiline", "CuÃ©ntame la idea principal de la canciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar idea");
+            pushAssistant(session, "CuÃ©ntame la idea principal y yo la usarÃ© como base para generar la canciÃ³n.", { inputMode: "multiline" });
             return send(res, 200, { ok: true, session });
           }
         }
@@ -18705,7 +18705,7 @@ const lucianaBotHandler = (() => {
             return send(res, 200, { ok: true, session });
           }
           session.draft.lyrics = generated.lyrics;
-          pushAssistant(session, `Ya te armé una letra original:\n\n${generated.lyrics}`);
+          pushAssistant(session, `Ya te armÃ© una letra original:\n\n${generated.lyrics}`);
           askGenre(session);
           return send(res, 200, { ok: true, session });
         }
@@ -18722,8 +18722,8 @@ const lucianaBotHandler = (() => {
             const genre = eventValue.replace(/^genre:/, "").trim();
             if (genre === "other") {
               session.step = "generate-genre-other";
-              setComposer(session, "text", "Escribe tu géneroÃ¢â‚¬Â¦", "Guardar");
-              pushAssistant(session, "Escríbeme el género que quieres.", { inputMode: "text" });
+              setComposer(session, "text", "Escribe tu gÃ©neroÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+              pushAssistant(session, "EscrÃ­beme el gÃ©nero que quieres.", { inputMode: "text" });
               return send(res, 200, { ok: true, session });
             }
             session.draft.genre = genre;
@@ -18758,8 +18758,8 @@ const lucianaBotHandler = (() => {
           }
           if (eventValue === "generate:adjust") {
             session.step = "generate-extra";
-            setComposer(session, "multiline", "Escribe lo que quieres ajustarÃ¢â‚¬Â¦", "Guardar");
-            pushAssistant(session, "Dime qué quieres ajustar y lo vuelvo a preparar.", { inputMode: "multiline" });
+            setComposer(session, "multiline", "Escribe lo que quieres ajustarÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+            pushAssistant(session, "Dime quÃ© quieres ajustar y lo vuelvo a preparar.", { inputMode: "multiline" });
             return send(res, 200, { ok: true, session });
           }
         }
@@ -18791,8 +18791,8 @@ const lucianaBotHandler = (() => {
           const songs = await getSongsByIds(auth.admin, auth.user.id, session.draft.pendingSongIds || []);
           const picked = songs.find((x: any) => x.id === songId);
           if (!picked) {
-            pushAssistant(session, "No encontré esa versión. Intenta otra vez.", {
-              quickReplies: [{ id: "service-home-missing", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            pushAssistant(session, "No encontrÃ© esa versiÃ³n. Intenta otra vez.", {
+              quickReplies: [{ id: "service-home-missing", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
             });
             return send(res, 200, { ok: true, session });
           }
@@ -18821,15 +18821,15 @@ const lucianaBotHandler = (() => {
       if (session.flow === "cover") {
         if (eventType === "quick_reply" && eventValue === "cover:retry-audio") {
           session.step = "cover-audio";
-          setComposer(session, "audio", "Súbeme el MP3 para hacer el coverÃ¢â‚¬Â¦", "Enviar");
-          pushAssistant(session, "Súbeme el MP3 que quieres usar para el cover.", { inputMode: "audio" });
+          setComposer(session, "audio", "SÃºbeme el MP3 para hacer el coverÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+          pushAssistant(session, "SÃºbeme el MP3 que quieres usar para el cover.", { inputMode: "audio" });
           return send(res, 200, { ok: true, session });
         }
 
         if (eventType === "quick_reply" && eventValue === "cover:lyrics:manual") {
           session.step = "cover-lyrics-manual";
-          setComposer(session, "multiline", "Pega aquí la letraÃ¢â‚¬Â¦", "Guardar");
-          pushAssistant(session, "Pega aquí la letra manualmente.", { inputMode: "multiline" });
+          setComposer(session, "multiline", "Pega aquÃ­ la letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+          pushAssistant(session, "Pega aquÃ­ la letra manualmente.", { inputMode: "multiline" });
           return send(res, 200, { ok: true, session });
         }
 
@@ -18838,9 +18838,9 @@ const lucianaBotHandler = (() => {
           const fileNameLower = normalizeText(file?.fileName || "", 200).toLowerCase();
           const isMp3 = contentType === "audio/mpeg" || fileNameLower.endsWith(".mp3");
           if (!isMp3) {
-            pushAssistant(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/", {
+            pushAssistant(session, "Ese archivo no estÃ¡ en MP3. Convierte tu audio aquÃ­ y luego sÃºbelo otra vez: https://online-audio-converter.com/sp/", {
               inputMode: "audio",
-              quickReplies: [{ id: "cover-home-bad-file", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+              quickReplies: [{ id: "cover-home-bad-file", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
             });
             return send(res, 200, { ok: true, session });
           }
@@ -18859,25 +18859,25 @@ const lucianaBotHandler = (() => {
           session.draft.pendingKind = "transcribe-lyrics";
           session.draft.pendingStartedAt = Date.now();
           session.draft.pendingFlow = "cover";
-          setComposer(session, "disabled", "Transcribiendo letraÃ¢â‚¬Â¦", "Enviar");
-          upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorización y transcribiendoÃ¢â‚¬Â¦");
+          setComposer(session, "disabled", "Transcribiendo letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+          upsertStatusMessage(session, `transcribe:${nextTaskId}`, "Audio cargado. Confirmando autorizaciÃ³n y transcribiendoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦");
           return send(res, 200, { ok: true, session });
         }
 
         if (session.step === "cover-lyrics-confirm" && eventType === "quick_reply") {
           if (eventValue === "cover:lyrics:ok") {
             session.step = "cover-genre";
-            setComposer(session, "multiline", "Dime el género musicalÃ¢â‚¬Â¦", "Guardar");
-            pushAssistant(session, "Ahora dime el género musical.", {
-              quickReplies: [...genreReplies(), { id: "cover-genre-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+            setComposer(session, "multiline", "Dime el gÃ©nero musicalÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+            pushAssistant(session, "Ahora dime el gÃ©nero musical.", {
+              quickReplies: [...genreReplies(), { id: "cover-genre-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
               inputMode: "multiline",
             });
             return send(res, 200, { ok: true, session });
           }
           if (eventValue === "cover:lyrics:manual") {
             session.step = "cover-lyrics-manual";
-            setComposer(session, "multiline", "Pega aquí la letraÃ¢â‚¬Â¦", "Guardar");
-            pushAssistant(session, "Pega aquí la letra manualmente.", { inputMode: "multiline" });
+            setComposer(session, "multiline", "Pega aquÃ­ la letraÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+            pushAssistant(session, "Pega aquÃ­ la letra manualmente.", { inputMode: "multiline" });
             return send(res, 200, { ok: true, session });
           }
         }
@@ -18885,9 +18885,9 @@ const lucianaBotHandler = (() => {
         if (session.step === "cover-lyrics-manual" && eventType === "message" && eventText) {
           session.draft.coverLyrics = eventText;
           session.step = "cover-genre";
-          setComposer(session, "multiline", "Dime el género musicalÃ¢â‚¬Â¦", "Guardar");
-          pushAssistant(session, "Ahora dime el género musical.", {
-            quickReplies: [...genreReplies(), { id: "cover-genre-home-2", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+          setComposer(session, "multiline", "Dime el gÃ©nero musicalÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
+          pushAssistant(session, "Ahora dime el gÃ©nero musical.", {
+            quickReplies: [...genreReplies(), { id: "cover-genre-home-2", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
             inputMode: "multiline",
           });
           return send(res, 200, { ok: true, session });
@@ -18902,7 +18902,7 @@ const lucianaBotHandler = (() => {
           }
           if ((eventType === "message" && eventText) || (eventType === "quick_reply" && eventValue.startsWith("genre:"))) {
             session.step = "cover-extra";
-            setComposer(session, "multiline", "Escribe indicaciones extra (opcional)Ã¢â‚¬Â¦", "Guardar");
+            setComposer(session, "multiline", "Escribe indicaciones extra (opcional)ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Guardar");
             pushAssistant(session, "Ahora dime cualquier detalle extra (opcional). Si no tienes, puedes omitirlo.", {
               quickReplies: [{ id: "cover-skip-extra", label: "Sin indicaciones", value: "cover:extra:skip", icon: "arrow-right", variant: "secondary" }],
               inputMode: "multiline",
@@ -18915,14 +18915,14 @@ const lucianaBotHandler = (() => {
           if (eventType === "message") session.draft.extraInstructions = eventText;
           if ((eventType === "message" && eventText) || (eventType === "quick_reply" && eventValue === "cover:extra:skip")) {
             session.step = "cover-confirm";
-            setComposer(session, "disabled", "Confirma para generarÃ¢â‚¬Â¦", "Enviar");
+            setComposer(session, "disabled", "Confirma para generarÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
             const summary: string[] = [];
-            if (session.draft.genre) summary.push(`Género: ${session.draft.genre}`);
+            if (session.draft.genre) summary.push(`GÃ©nero: ${session.draft.genre}`);
             if (session.draft.extraInstructions) summary.push(`Detalles: ${session.draft.extraInstructions}`);
-            pushAssistant(session, `Listo.\n\n${summary.filter(Boolean).join("\n")}\n\n¿Genero el cover así?`, {
+            pushAssistant(session, `Listo.\n\n${summary.filter(Boolean).join("\n")}\n\nÂ¿Genero el cover asÃ­?`, {
               quickReplies: [
                 { id: "cover-confirm", label: "Generar cover", value: "cover:confirm", icon: "sparkles", variant: "primary" },
-                { id: "cover-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+                { id: "cover-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
               ],
               inputMode: "disabled",
             });
@@ -18951,7 +18951,7 @@ const lucianaBotHandler = (() => {
           const songs = await getRecentSongs(auth.admin, auth.user.id, 10);
           const picked = songs.find((x: any) => x.id === songId);
           if (!picked) {
-            pushAssistant(session, "No encontré esa canción. Intenta otra vez.");
+            pushAssistant(session, "No encontrÃ© esa canciÃ³n. Intenta otra vez.");
             return send(res, 200, { ok: true, session });
           }
           session.draft.selectedSongId = picked.id;
@@ -18959,12 +18959,12 @@ const lucianaBotHandler = (() => {
           session.draft.selectedSongTaskId = picked.sunoTaskId || "";
           session.draft.selectedSongAudioId = picked.sunoAudioId || "";
           session.step = "separate-type";
-          setComposer(session, "disabled", "Elige el tipoÃ¢â‚¬Â¦", "Enviar");
-          pushAssistant(session, `¿Qué quieres sacar de "${picked.title}"?`, {
+          setComposer(session, "disabled", "Elige el tipoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦", "Enviar");
+          pushAssistant(session, `Â¿QuÃ© quieres sacar de "${picked.title}"?`, {
             quickReplies: [
               { id: "sep-karaoke", label: "Karaoke (sin voz)", value: "separate:type:separate_vocal", icon: "mic-off", variant: "primary" },
               { id: "sep-stems", label: "Stems (12 pistas)", value: "separate:type:split_stem", icon: "layers", variant: "secondary" },
-              { id: "sep-home-back", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" },
+              { id: "sep-home-back", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" },
             ],
           });
           return send(res, 200, { ok: true, session });
@@ -18986,9 +18986,9 @@ const lucianaBotHandler = (() => {
           const fileName = normalizeText(file?.fileName || "", 200).toLowerCase();
           const isMp3 = contentType === "audio/mpeg" || fileName.endsWith(".mp3");
           if (!isMp3) {
-            pushAssistant(session, "Ese archivo no está en MP3. Convierte tu audio aquí y luego súbelo otra vez: https://online-audio-converter.com/sp/", {
+            pushAssistant(session, "Ese archivo no estÃ¡ en MP3. Convierte tu audio aquÃ­ y luego sÃºbelo otra vez: https://online-audio-converter.com/sp/", {
               inputMode: "audio_mp3",
-              quickReplies: [{ id: "master-bad-file-home", label: "Menú principal", value: "menu:home", icon: "home", variant: "ghost" }],
+              quickReplies: [{ id: "master-bad-file-home", label: "MenÃº principal", value: "menu:home", icon: "home", variant: "ghost" }],
             });
             return send(res, 200, { ok: true, session });
           }
@@ -19004,7 +19004,7 @@ const lucianaBotHandler = (() => {
         }
       }
 
-      pushAssistant(session, "Te sigo ayudando. Si quieres, toca una opción del menú para continuar.", {
+      pushAssistant(session, "Te sigo ayudando. Si quieres, toca una opciÃ³n del menÃº para continuar.", {
         quickReplies: mainMenuReplies(),
       });
       return send(res, 200, { ok: true, session });
@@ -19126,7 +19126,7 @@ create policy "affiliate_commissions_select_own" on public.affiliate_commissions
 notify pgrst, 'reload schema';`;
 
   async function handleMe(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -19212,11 +19212,11 @@ notify pgrst, 'reload schema';`;
   }
 
   async function handlePayoutEmail(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
     const body = parseJsonBody(req);
-    if (!body) return send(res, 400, { error: "Body inválido" });
+    if (!body) return send(res, 400, { error: "Body invÃ¡lido" });
     const payoutEmail = (typeof body?.payoutEmail === "string" ? body.payoutEmail : "").toString().trim().slice(0, 160);
     if (!payoutEmail) return send(res, 400, { error: "Falta correo de Mercado Pago" });
 
@@ -19279,7 +19279,7 @@ const appHandler = (() => {
     const a = action || (next || "").toLowerCase();
 
     if (a === "version") {
-      if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+      if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
       res.setHeader("cache-control", "no-store, max-age=0, s-maxage=0, must-revalidate");
       res.setHeader("pragma", "no-cache");
       res.setHeader("expires", "0");
@@ -19388,6 +19388,7 @@ const formHandler = (() => {
       style: String(ex.style || ex.genre || ""),
       vocal_gender: String(ex.vocal_gender || ""),
       lyrics_mode: String(ex.lyrics_mode || ""),
+      observations: String(ex.observations || ""),
       story: String(ex.story || ""),
       lyrics: String(ex.lyrics || ""),
       title: String(ex.title || ""),
@@ -19413,7 +19414,7 @@ const formHandler = (() => {
   // POST /api/form/submit  (publico, con token)
   async function submit(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) {
-      return sendJson(res, 401, { error: "unauthorized", message: "Link inválido o vencido." });
+      return sendJson(res, 401, { error: "unauthorized", message: "Link invÃ¡lido o vencido." });
     }
     const body = await readBody(req);
     if (!body || typeof body !== "object") return sendJson(res, 400, { error: "invalid_body" });
@@ -19426,7 +19427,7 @@ const formHandler = (() => {
     const ownerEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(enviado) ? enviado : duenoForm;
     if (name.length < 2) return sendJson(res, 400, { error: "missing_name", message: "Escribe tu nombre." });
     if (whatsapp.replace(/\D/g, "").length < 10) {
-      return sendJson(res, 400, { error: "missing_whatsapp", message: "Escribe tu WhatsApp (10 dígitos)." });
+      return sendJson(res, 400, { error: "missing_whatsapp", message: "Escribe tu WhatsApp (10 dÃ­gitos)." });
     }
 
     const mode = ["ia", "propia", "audio"].includes(String(body.lyrics_mode || "").toLowerCase())
@@ -19436,17 +19437,17 @@ const formHandler = (() => {
     const story = clean(body.story, 1200);
     const audioPath = clean(body.audio_path, 300);
     if (mode === "propia" && lyrics.length < 20) {
-      return sendJson(res, 400, { error: "missing_lyrics", message: "Escribe tu letra (mínimo 20 caracteres)." });
+      return sendJson(res, 400, { error: "missing_lyrics", message: "Escribe tu letra (mÃ­nimo 20 caracteres)." });
     }
     if (mode === "ia" && story.length < 15) {
-      return sendJson(res, 400, { error: "missing_story", message: "Cuéntanos de qué trata (mínimo 15 caracteres)." });
+      return sendJson(res, 400, { error: "missing_story", message: "CuÃ©ntanos de quÃ© trata (mÃ­nimo 15 caracteres)." });
     }
     if (mode === "audio" && !audioPath) {
       return sendJson(res, 400, { error: "missing_audio", message: "Sube tu audio a capela." });
     }
 
-    // El estilo es texto libre: el cliente describe cómo quiere que suene.
-    const styleText = clean(body.style ?? body.genre, 400) || "Balada romántica";
+    // El estilo es texto libre: el cliente describe cÃ³mo quiere que suene.
+    const styleText = clean(body.style ?? body.genre, 400) || "Balada romÃ¡ntica";
     const vocal = ["m", "f"].includes(String(body.vocal_gender || "").toLowerCase())
       ? String(body.vocal_gender).toLowerCase()
       : "f";
@@ -19463,12 +19464,13 @@ const formHandler = (() => {
       style: styleText,
       vocal_gender: vocal,
       lyrics_mode: mode,
+      observations: clean(body.observations, 2000),
       story,
       lyrics,
       audio_path: audioPath,
       title: clean(body.title, 100),
       plan: clean(body.plan, 20) || "rola",
-      // Precio congelado al crear el pedido: si mañana cambias precios, este no se mueve.
+      // Precio congelado al crear el pedido: si maÃ±ana cambias precios, este no se mueve.
       price_mxn: Math.round(
         Number(body.price_mxn || process.env.PRICE_FABRICA_MXN || 200) * 100,
       ) / 100,
@@ -19489,7 +19491,7 @@ const formHandler = (() => {
       return sendJson(res, 500, { error: "save_failed", message: "No pude guardar tu pedido." });
     }
 
-    return sendJson(res, 200, { ok: true, id, message: "¡Listo! Tu pedido entró a la lista." });
+    return sendJson(res, 200, { ok: true, id, message: "Â¡Listo! Tu pedido entrÃ³ a la lista." });
   }
 
   // GET /api/form/list?t=TOKEN  (dueno, protegido por el mismo token del formulario)
@@ -19517,13 +19519,13 @@ const formHandler = (() => {
       .map(orderView)
       .filter((o: any) => {
         if (!me) return true;
-        if (!o.owner_email) return true; // pedidos viejos sin dueño: visibles para todos
+        if (!o.owner_email) return true; // pedidos viejos sin dueÃ±o: visibles para todos
         return o.owner_email === me || o.shared_with.includes(me);
       })
       // El vendedor solo ve los ultimos 4 digitos del WhatsApp; el dueno ve todo.
       .map((o: any) => ({
         ...o,
-        whatsapp: esDueno ? o.whatsapp : `Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
+        whatsapp: esDueno ? o.whatsapp : `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
       }));
     return sendJson(res, 200, { ok: true, me, owner: dueno, is_owner: esDueno, orders: visibles });
   }
@@ -19549,7 +19551,7 @@ const formHandler = (() => {
     if (String(ex.status) === "done") return sendJson(res, 409, { error: "already_done" });
 
     // La letra: si es "ia" o "audio", la escribe el modelo a partir de la historia.
-    // La letra: si subió audio y no hay letra, se transcribe lo que cantó.
+    // La letra: si subiÃ³ audio y no hay letra, se transcribe lo que cantÃ³.
     let lyrics = String(ex.lyrics || "").trim();
     const story = String(ex.story || "").trim();
     if (!lyrics && String(ex.audio_path || "").trim()) {
@@ -19564,7 +19566,7 @@ const formHandler = (() => {
     if (!lyrics && story.length < 15) {
       const porAudio = String(ex.audio_path || "").trim().length > 0;
       const msg = porAudio
-        ? "No pude sacar la letra del audio. Pídele al cliente que la escriba o que mande otro audio."
+        ? "No pude sacar la letra del audio. PÃ­dele al cliente que la escriba o que mande otro audio."
         : "Falta la letra o la historia del pedido.";
       await db
         .from("suno_tasks")
@@ -19637,7 +19639,7 @@ const formHandler = (() => {
     }
   }
 
-  // Transcribe la letra cantada con Gemini (modo "ya subí mi audio").
+  // Transcribe la letra cantada con Gemini (modo "ya subÃ­ mi audio").
   async function transcribe(path: string): Promise<string> {
     const gk = String(process.env.GEMINI_TRANSCRIBE_API_KEY || process.env.GEMINI_TRANSCRIBE_API || process.env.GEMINI_TRANSCRIBE_A || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY || "").trim();
     if (!gk || !path) return "";
@@ -19672,7 +19674,7 @@ const formHandler = (() => {
           {
             role: "user",
             parts: [
-              { text: "Transcribe únicamente la letra cantada de este audio, en español, con saltos de línea por verso. Si no se entiende, responde exactamente: ILEGIBLE." },
+              { text: "Transcribe Ãºnicamente la letra cantada de este audio, en espaÃ±ol, con saltos de lÃ­nea por verso. Si no se entiende, responde exactamente: ILEGIBLE." },
               { inlineData: { mimeType: "audio/mpeg", data: b64 } },
             ],
           },
@@ -19702,7 +19704,7 @@ const formHandler = (() => {
     if (!path) return sendJson(res, 400, { error: "missing_path" });
     const text = await transcribe(path);
     if (!text) {
-      return sendJson(res, 200, { ok: false, text: "", message: "No pude entender el audio. Escribe tu letra o intenta con otra grabación." });
+      return sendJson(res, 200, { ok: false, text: "", message: "No pude entender el audio. Escribe tu letra o intenta con otra grabaciÃ³n." });
     }
     return sendJson(res, 200, { ok: true, text });
   }
@@ -19728,7 +19730,7 @@ const formHandler = (() => {
     const id = clean(body?.id, 60);
     const email = clean(body?.email, 120).toLowerCase();
     if (!id || !email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      return sendJson(res, 400, { error: "invalid", message: "Falta el pedido o el correo no es válido." });
+      return sendJson(res, 400, { error: "invalid", message: "Falta el pedido o el correo no es vÃ¡lido." });
     }
     const db = await admin();
     if (!db) return sendJson(res, 500, { error: "db_unavailable" });
@@ -19780,7 +19782,7 @@ const formHandler = (() => {
       ...ex,
       status: listo ? "done" : fallo ? "failed" : "generating",
       songs: listo ? songs : Array.isArray(ex.songs) ? ex.songs : [],
-      error: fallo ? String(data?.error_message || data?.error_code || "Falló la generación") : "",
+      error: fallo ? String(data?.error_message || data?.error_code || "FallÃ³ la generaciÃ³n") : "",
       synced_at: new Date().toISOString(),
     };
     await db.from("suno_tasks").update({ extra: extra2 }).eq("task_id", rowKey);
@@ -19869,8 +19871,8 @@ const formHandler = (() => {
       .map((s: any, i: number) => {
         const u = String(s?.audio_url || "");
         if (!u) return "";
-        return `<div class="card"><b>Versión ${i + 1}</b>${s?.title ? ` · ${String(s.title)}` : ""}${
-          s?.duration ? ` · ${Math.round(Number(s.duration))}s` : ""
+        return `<div class="card"><b>VersiÃ³n ${i + 1}</b>${s?.title ? ` Â· ${String(s.title)}` : ""}${
+          s?.duration ? ` Â· ${Math.round(Number(s.duration))}s` : ""
         }<audio controls preload="none" src="${u}" style="width:100%;margin-top:10px"></audio></div>`;
       })
       .join("");
@@ -19879,23 +19881,23 @@ const formHandler = (() => {
     const manual = soloCobroManual(ex);
     const botones = pagado
       ? songs
-          .map((_: any, i: number) => `<a class="btn" href="/api/form/download?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}&n=${i}">Descargar versión ${i + 1}</a>`)
+          .map((_: any, i: number) => `<a class="btn" href="/api/form/download?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}&n=${i}">Descargar versiÃ³n ${i + 1}</a>`)
           .join("")
       : manual
-        ? `<div class="msg ok">Escúchala completa. Para pagar, escríbenos por WhatsApp y te mandamos los datos.</div>`
-        : `<div class="msg ok">Escúchala completa. Si te gusta, paga aquí y se habilita la descarga.</div>
+        ? `<div class="msg ok">EscÃºchala completa. Para pagar, escrÃ­benos por WhatsApp y te mandamos los datos.</div>`
+        : `<div class="msg ok">EscÃºchala completa. Si te gusta, paga aquÃ­ y se habilita la descarga.</div>
          <a class="btn" href="/api/form/pay?id=${encodeURIComponent(rowKey)}&t=${encodeURIComponent(token)}">Pagar $${total} MXN</a>
-         <p class="small" style="margin-top:10px">Tarjeta, OXXO o transferencia. En cuanto se confirme el pago, esta misma página te deja descargar.</p>`;
+         <p class="small" style="margin-top:10px">Tarjeta, OXXO o transferencia. En cuanto se confirme el pago, esta misma pÃ¡gina te deja descargar.</p>`;
     const inner = `
-<h1>${nombre ? `Tu canción, ${nombre}` : "Tu canción"}</h1>
-<p class="sub">Escúchala completa. Nada de relleno: si no te gusta, no la pagas.</p>
-${players || '<div class="card">Todavía se está generando. Vuelve en un minuto.</div>'}
+<h1>${nombre ? `Tu canciÃ³n, ${nombre}` : "Tu canciÃ³n"}</h1>
+<p class="sub">EscÃºchala completa. Nada de relleno: si no te gusta, no la pagas.</p>
+${players || '<div class="card">TodavÃ­a se estÃ¡ generando. Vuelve en un minuto.</div>'}
 ${botones}
-<p class="small" style="margin-top:16px">${pagado ? "Gracias por tu compra." : "Para pagar, escríbenos por WhatsApp y te mandamos los datos."}</p>`;
+<p class="small" style="margin-top:16px">${pagado ? "Gracias por tu compra." : "Para pagar, escrÃ­benos por WhatsApp y te mandamos los datos."}</p>`;
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store, max-age=0");
-    res.end(page("Tu canción · Luciána Music", inner));
+    res.end(page("Tu canciÃ³n Â· LuciÃ¡na Music", inner));
     return;
   }
 
@@ -19919,7 +19921,7 @@ ${botones}
       const name = clean(body?.name, 60);
       const phone = clean(body?.phone, 25).replace(/\D/g, "");
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        return sendJson(res, 400, { error: "invalid_email", message: "Escribe un correo válido." });
+        return sendJson(res, 400, { error: "invalid_email", message: "Escribe un correo vÃ¡lido." });
       }
       const key = `seller_${email}`;
       const cur = await db.from("suno_tasks").select("task_id, extra").eq("task_id", key).limit(1);
@@ -20027,7 +20029,7 @@ ${botones}
     const body = {
       items: [
         {
-          title: `Luciana Music · ${String(ex.plan) === "rola_voz" ? "Rola con tu voz" : "Rola"}`,
+          title: `Luciana Music Â· ${String(ex.plan) === "rola_voz" ? "Rola con tu voz" : "Rola"}`,
           quantity: 1,
           unit_price: total,
           currency_id: "MXN",
@@ -20352,6 +20354,11 @@ ${inner}
     </div>
   </div>
 </div>
+<div class="card">
+  <label>Observaciones (opcional)</label>
+  <textarea id="obs" placeholder="Ej: mi nombre se pronuncia As&iacute;, no cambies el final, lo necesito para el 15, tengo otra idea para el coro..."></textarea>
+  <div class="small" style="margin:-8px 0 0">Cualquier detalle extra que debamos saber. Puedes dejarlo vac&iacute;o.</div>
+</div>
 <button class="btn" id="send">Enviar mi pedido</button>
 <p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
     const js = `
@@ -20396,11 +20403,11 @@ function _insTxt(txt){
   var ta=document.getElementById('lyrics');
   var cb=document.getElementById('btnCopiar'),pb=document.getElementById('btnPegar');
   if(cb)cb.addEventListener('click',async function(){
-    try{await navigator.clipboard.writeText(ta.value);cb.textContent='Â¡Copiado!';setTimeout(function(){cb.textContent='Copiar';},1500);}
+    try{await navigator.clipboard.writeText(ta.value);cb.textContent='Ã‚Â¡Copiado!';setTimeout(function(){cb.textContent='Copiar';},1500);}
     catch(e){ta.select();document.execCommand('copy');}
   });
   if(pb)pb.addEventListener('click',async function(){
-    try{var t=await navigator.clipboard.readText();ta.value=(ta.value?ta.value+'\\n':'')+t;pb.textContent='Â¡Pegado!';setTimeout(function(){pb.textContent='Pegar';},1500);}
+    try{var t=await navigator.clipboard.readText();ta.value=(ta.value?ta.value+'\\n':'')+t;pb.textContent='Ã‚Â¡Pegado!';setTimeout(function(){pb.textContent='Pegar';},1500);}
     catch(e){pb.textContent='No se pudo';setTimeout(function(){pb.textContent='Pegar';},1800);}
   });
 })();
@@ -20444,7 +20451,7 @@ document.getElementById('send').addEventListener('click',async function(){
   b.disabled=true;b.textContent='Enviando...';
   try{
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),
+      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),observations:v('obs'),
         vocal_gender:voz,lyrics_mode:modo,story:v('story'),
         plan:PLAN,price_mxn:(PLAN==='rola_voz'?350:200),owner_email:OWNER,
         lyrics:(modo==='audio'?letraAudio:v('lyrics')),audio_path:audioPath})});
@@ -20458,7 +20465,7 @@ document.getElementById('send').addEventListener('click',async function(){
   }catch(e){b.disabled=false;b.textContent='Enviar mi pedido';show('bad','Sin conexi&oacute;n. Intenta de nuevo.');}
 });
 <\/script>`;
-    return page("Tu canción · Luciána Music", inner + js);
+    return page("Tu canciÃ³n Â· LuciÃ¡na Music", inner + js);
   }
 
   function panelPage(token: string) {
@@ -20473,7 +20480,7 @@ document.getElementById('send').addEventListener('click',async function(){
     <button class="btn sec" id="copy" style="flex:1">Copiar link</button>
     <a class="btn sec" id="openf" href="${share}" target="_blank" style="flex:1;text-align:center;text-decoration:none;line-height:1.4">Abrir formulario</a>
   </div>
-  <div class="small" style="margin-top:10px">Mándalo por WhatsApp. El cliente llena y su pedido aparece abajo.</div>
+  <div class="small" style="margin-top:10px">MÃ¡ndalo por WhatsApp. El cliente llena y su pedido aparece abajo.</div>
 </div>
 <div class="msg" id="msg"></div>
 <div class="card">
@@ -20505,7 +20512,7 @@ function pintarFiltros(){
 function render(){
   var box=document.getElementById('list');
   var arr=TODAS.filter(function(o){return FSTAGE==='todas'||o.stage===FSTAGE;});
-  if(!arr.length){box.innerHTML='<div class="item">No hay pedidos en esta sección.</div>';pintarFiltros();return;}
+  if(!arr.length){box.innerHTML='<div class="item">No hay pedidos en esta secciÃ³n.</div>';pintarFiltros();return;}
   box.innerHTML=arr.map(item).join('');
   box.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.go,b);});});
   box.querySelectorAll('[data-del]').forEach(function(b){b.addEventListener('click',function(){del(b.dataset.del,b);});});
@@ -20531,6 +20538,7 @@ function item(o){
   det+='<div class="meta"><b>Voz:</b> '+(o.vocal_gender==='m'?'hombre':'mujer')+'</div>';
   det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
   if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
+if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px solid var(--gold);padding-left:10px"><b>Observaciones del cliente:</b><br>'+esc(o.observations)+'</div>';
   if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
   if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
   if(o.transferred_to){var _hh=0,_ee=String(o.transferred_to).toLowerCase();for(var _ii=0;_ii<_ee.length;_ii++){_hh=(_hh*31+_ee.charCodeAt(_ii))%360;}var _cc='hsl('+_hh+',90%,58%)';det+='<div class="meta" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_cc+';box-shadow:0 0 8px '+_cc+';margin-right:6px"></span><b>Transferido a:</b> <span style="color:'+_cc+'">'+esc(o.transferred_to)+'</span></div>';}
@@ -20538,7 +20546,7 @@ function item(o){
   if(Array.isArray(o.songs)&&o.songs.length){
     players='<div style="margin-top:10px">'+o.songs.map(function(s,i){
       var u=String(s.audio_url||'');if(!u)return '';
-      return '<div class="small" style="margin-bottom:8px"><b>Versión '+(i+1)+'</b>'+(s.title?(' &middot; '+esc(s.title)):'')+(s.duration?(' &middot; '+Math.round(Number(s.duration))+'s'):'')+'<audio controls preload="none" src="'+esc(u)+'" style="width:100%;margin-top:6px"></audio></div>';
+      return '<div class="small" style="margin-bottom:8px"><b>VersiÃ³n '+(i+1)+'</b>'+(s.title?(' &middot; '+esc(s.title)):'')+(s.duration?(' &middot; '+Math.round(Number(s.duration))+'s'):'')+'<audio controls preload="none" src="'+esc(u)+'" style="width:100%;margin-top:6px"></audio></div>';
     }).join('')+'</div>';
   }
   var chips=['pendiente','por_pagar','pagado','transferido'].map(function(k){
@@ -20554,7 +20562,7 @@ function item(o){
     var vv=VEND.filter(function(v){return String(v.email).toLowerCase()===String(o.transferred_to).toLowerCase();})[0];
     var telf=vv?String(vv.phone||'').replace(/\\D/g,''):'';
     if(telf){
-      var txt='Hola '+(vv.name||'')+', te pasé un pedido de '+(o.name||'un cliente')+' en Luciana Music. Entra a Canciones por hacer para atenderlo.';
+      var txt='Hola '+(vv.name||'')+', te pasÃ© un pedido de '+(o.name||'un cliente')+' en Luciana Music. Entra a Canciones por hacer para atenderlo.';
       avisar='<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+telf.replace(/^52/,'')+'?text='+encodeURIComponent(txt)+'">Avisar por WhatsApp al vendedor</a>';
     }
   }
@@ -20587,7 +20595,7 @@ async function cambiarStage(id,stage,btn){
     var o=TODAS.filter(function(x){return x.id===id;})[0];if(o)o.stage=stage;
     if(stage==='pagado'&&o)o.paid=true;
     render();show('ok','Movido a '+stage.replace('_',' ')+'.');
-  }catch(e){btn.disabled=false;show('bad','Sin conexión.');}
+  }catch(e){btn.disabled=false;show('bad','Sin conexiÃ³n.');}
 }
 if(document.getElementById('share'))document.getElementById('share').value=location.origin+'/api/form/open?t='+encodeURIComponent(T)+(ME?'&o='+encodeURIComponent(ME):'');
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;}
@@ -20612,6 +20620,7 @@ async function loadViejo(){
       det+='<div class="meta"><b>Voz:</b> '+(o.vocal_gender==='m'?'hombre':'mujer')+'</div>';
       det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
       if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
+if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px solid var(--gold);padding-left:10px"><b>Observaciones del cliente:</b><br>'+esc(o.observations)+'</div>';
       if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
       if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
       var players='';
@@ -20619,7 +20628,7 @@ async function loadViejo(){
         players='<div style="margin-top:10px">'+o.songs.map(function(s,i){
           var u=String(s.audio_url||'');
           if(!u)return '';
-          return '<div class="small" style="margin-bottom:8px"><b>Versión '+(i+1)+'</b>'+(s.title?(' &middot; '+esc(s.title)):'')+
+          return '<div class="small" style="margin-bottom:8px"><b>VersiÃ³n '+(i+1)+'</b>'+(s.title?(' &middot; '+esc(s.title)):'')+
             (s.duration?(' &middot; '+Math.round(Number(s.duration))+'s'):'')+
             '<audio controls preload="none" src="'+esc(u)+'" style="width:100%;margin-top:6px"></audio></div>';
         }).join('')+'</div>';
@@ -20682,11 +20691,11 @@ async function pagadoManual(id,btn){
   var sugerido='200';
   var o=TODAS.filter(function(x){return x.id===id;})[0];
   if(o&&o.price_mxn)sugerido=String(o.price_mxn);
-  var m=prompt('¿Cuánto te pagó el cliente? (MXN)\\n\\nPuedes poner un monto menor si le hiciste descuento.',sugerido);
+  var m=prompt('Â¿CuÃ¡nto te pagÃ³ el cliente? (MXN)\\n\\nPuedes poner un monto menor si le hiciste descuento.',sugerido);
   if(m===null)return;
   var n=Number(String(m).replace(/[^0-9.]/g,''));
-  if(!isFinite(n)||n<=0)return show('bad','Escribe un monto válido.');
-  var met=prompt('¿Cómo te pagó? (efectivo / transferencia / tarjeta / otro)','transferencia');
+  if(!isFinite(n)||n<=0)return show('bad','Escribe un monto vÃ¡lido.');
+  var met=prompt('Â¿CÃ³mo te pagÃ³? (efectivo / transferencia / tarjeta / otro)','transferencia');
   if(met===null)return;
   met=String(met||'').trim().toLowerCase()||'manual';
   btn.disabled=true;btn.textContent='Guardando...';
@@ -20696,7 +20705,7 @@ async function pagadoManual(id,btn){
     if(!r.ok){btn.disabled=false;btn.textContent='Pedido pagado manual';return show('bad',j.error||'No pude guardar.');}
     show('ok','Pagado: $'+n+' ('+met+'). Su link ya permite descargar.');
     load();cargarReporte();
-  }catch(e){btn.disabled=false;btn.textContent='Pedido pagado manual';show('bad','Sin conexión.');}
+  }catch(e){btn.disabled=false;btn.textContent='Pedido pagado manual';show('bad','Sin conexiÃ³n.');}
 }
 async function compartir(id,email,btn){
   if(!email)return show('bad','Escribe el correo de la persona.');
@@ -20706,17 +20715,17 @@ async function compartir(id,email,btn){
     var j=await r.json();
     if(!r.ok){btn.disabled=false;btn.textContent='Enviar';return show('bad',j.message||j.error||'No pude compartir.');}
     show('ok','Transferido a '+email+'. Ya lo puede ver en su cuenta.');load();
-  }catch(e){btn.disabled=false;btn.textContent='Enviar';show('bad','Sin conexión.');}
+  }catch(e){btn.disabled=false;btn.textContent='Enviar';show('bad','Sin conexiÃ³n.');}
 }
 async function del(id,btn){
-  if(!confirm('¿Borrar este pedido? No se puede deshacer.'))return;
+  if(!confirm('Â¿Borrar este pedido? No se puede deshacer.'))return;
   btn.disabled=true;btn.textContent='Borrando...';
   try{
     var r=await fetch('/api/form/delete?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
     var j=await r.json();
     if(!r.ok){btn.disabled=false;btn.textContent='Borrar';return show('bad',j.error||'No pude borrar.');}
     show('ok','Pedido borrado.');load();
-  }catch(e){btn.disabled=false;btn.textContent='Borrar';show('bad','Sin conexión.');}
+  }catch(e){btn.disabled=false;btn.textContent='Borrar';show('bad','Sin conexiÃ³n.');}
 }
 async function cargarVendedores(){
   try{
@@ -20724,7 +20733,7 @@ async function cargarVendedores(){
     var j=await r.json();
     VEND=(j&&j.sellers)||[];
     var box=document.getElementById('vendList');
-    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" data-ed="'+esc(v.email)+'" onclick="editarVendedor(this.dataset.ed)">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" data-dv="'+esc(v.email)+'" onclick="borrarVendedor(this.dataset.dv)">Borrar</button></div>';}).join(''):'<div>Todavía no hay vendedores guardados.</div>';
+    if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" data-ed="'+esc(v.email)+'" onclick="editarVendedor(this.dataset.ed)">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" data-dv="'+esc(v.email)+'" onclick="borrarVendedor(this.dataset.dv)">Borrar</button></div>';}).join(''):'<div>TodavÃ­a no hay vendedores guardados.</div>';
   }catch(e){}
 }
 function editarVendedor(email){
@@ -20737,13 +20746,13 @@ function editarVendedor(email){
   show('ok','Editando a '+(v.name||v.email)+'. Cambia lo que necesites y pulsa Guardar.');
 }
 async function borrarVendedor(email){
-  if(!confirm('¿Borrar al vendedor '+email+'?'))return;
+  if(!confirm('Â¿Borrar al vendedor '+email+'?'))return;
   try{
     var r=await fetch('/api/form/sellers?t='+encodeURIComponent(T),{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({email:email})});
     var j=await r.json();
     if(!r.ok){return show('bad',j.error||'No pude borrar.');}
     show('ok','Vendedor borrado.');await cargarVendedores();load();
-  }catch(e){show('bad','Sin conexión.');}
+  }catch(e){show('bad','Sin conexiÃ³n.');}
 }
 async function guardarVendedor(){
   var n=(document.getElementById('vendName').value||'').trim();
@@ -20756,7 +20765,7 @@ async function guardarVendedor(){
     if(!r.ok){return show('bad',j.message||j.error||'No pude guardar.');}
     document.getElementById('vendName').value='';document.getElementById('vendMail').value='';
     show('ok','Vendedor guardado.');await cargarVendedores();load();
-  }catch(e){show('bad','Sin conexión.');}
+  }catch(e){show('bad','Sin conexiÃ³n.');}
 }
 document.getElementById('reload').addEventListener('click',load);
 if(document.getElementById('addVend'))document.getElementById('addVend').addEventListener('click',guardarVendedor);
@@ -20766,17 +20775,17 @@ async function cargarReporte(){
     var r=await fetch('/api/form/report?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     if(!r.ok){box.innerHTML='No pude cargar.';return;}
-    var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'Ã¢â‚¬â€';
+    var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â';
     var vend=(j.porVendedor||[]).map(function(v){
       return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(v.vendedor)+'</span><b>$'+v.monto+'</b><span class="small">'+v.pedidos+' ventas</span></div>';
     }).join('')||'';
-    var dias=(j.porDia||[]).slice(0,14).map(function(d){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(d.dia)+'</span><b>$'+d.monto+'</b><span class="small">'+d.pedidos+' ped.</span></div>';}).join('')||'<div>Aún no hay ventas.</div>';
+    var dias=(j.porDia||[]).slice(0,14).map(function(d){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(d.dia)+'</span><b>$'+d.monto+'</b><span class="small">'+d.pedidos+' ped.</span></div>';}).join('')||'<div>AÃºn no hay ventas.</div>';
     box.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">'+
       '<div><div class="small">Hoy</div><b style="font-size:20px;color:var(--gold)">$'+j.hoy+'</b></div>'+
       '<div><div class="small">Este mes</div><b style="font-size:20px;color:var(--gold)">$'+j.mes+'</b></div>'+
       '<div><div class="small">Total</div><b style="font-size:20px">$'+j.total+'</b><div class="small">'+j.pedidos+' pedidos</div></div>'+
-      '</div><div class="small" style="margin-bottom:8px">Por método: '+met+'</div>'+vend+'<div class="small" style="margin:10px 0 6px">Por vendedor</div>'+dias;
-  }catch(e){box.innerHTML='Sin conexión.';}
+      '</div><div class="small" style="margin-bottom:8px">Por mÃ©todo: '+met+'</div>'+vend+'<div class="small" style="margin:10px 0 6px">Por vendedor</div>'+dias;
+  }catch(e){box.innerHTML='Sin conexiÃ³n.';}
 }
 cargarReporte();
 async function load(){
@@ -20795,14 +20804,14 @@ async function load(){
         return fetch('/api/form/sync?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:o.id})}).catch(function(){});
       })).then(function(){window.__syncing=0;setTimeout(load,4000);});
     }
-  }catch(e){box.textContent='';show('bad','Sin conexión.');}
+  }catch(e){box.textContent='';show('bad','Sin conexiÃ³n.');}
 }
 cargarVendedores();
 document.getElementById('copy').addEventListener('click',async function(){
   var inp=document.getElementById('share');
   var v=inp.value;
   var btn=this;
-  function ok(){btn.textContent='¡Copiado!';setTimeout(function(){btn.textContent='Copiar link';},1800);}
+  function ok(){btn.textContent='Â¡Copiado!';setTimeout(function(){btn.textContent='Copiar link';},1800);}
   try{
     if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(v);return ok();}
   }catch(e){}
@@ -20813,16 +20822,16 @@ document.getElementById('copy').addEventListener('click',async function(){
     if(done)return ok();
   }catch(e){}
   // Ultimo recurso: mostrar el link para copiar a mano
-  prompt('Copia tu link (mantén presionado y elige Copiar):',v);
+  prompt('Copia tu link (mantÃ©n presionado y elige Copiar):',v);
 });
 load();
 <\/script>`;
-    return page("Pedidos · Luciána Music", inner + js);
+    return page("Pedidos Â· LuciÃ¡na Music", inner + js);
   }
 
   async function openForm(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) {
-      return sendJson(res, 401, { error: "unauthorized", message: "Link inválido." });
+      return sendJson(res, 401, { error: "unauthorized", message: "Link invÃ¡lido." });
     }
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
@@ -20833,7 +20842,7 @@ load();
 
   async function panel(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) {
-      return sendJson(res, 401, { error: "unauthorized", message: "Link inválido." });
+      return sendJson(res, 401, { error: "unauthorized", message: "Link invÃ¡lido." });
     }
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
@@ -20923,7 +20932,7 @@ load();
     }
     return sendJson(res, 404, {
       error: "not_found",
-      message: "Rutas: POST /api/form/submit · GET /api/form/list · POST /api/form/generate",
+      message: "Rutas: POST /api/form/submit Â· GET /api/form/list Â· POST /api/form/generate",
     });
   };
 })();
@@ -21222,7 +21231,7 @@ const integrationsHandler = (() => {
 
     const audioUrl = String(body.audio_url || "").trim();
     // Se puede generar de tres formas: con audio (cover), con voz clonada, o
-    // desde cero solo con letra y estilo. Antes se exigía audio o persona_id y
+    // desde cero solo con letra y estilo. Antes se exigÃ­a audio o persona_id y
     // eso bloqueaba las canciones nuevas, que no llevan muestra.
     if (audioUrl && !/^https:\/\//i.test(audioUrl)) {
       return sendJson(res, 400, {
@@ -21243,21 +21252,21 @@ const integrationsHandler = (() => {
         : "";
     const lyrics = String(body.lyrics || "").trim();
     if (!instrumental && !lyrics) {
-      return sendJson(res, 400, { error: "missing_lyrics", field: "lyrics", message: "Falta lyrics (o envía instrumental: true)." });
+      return sendJson(res, 400, { error: "missing_lyrics", field: "lyrics", message: "Falta lyrics (o envÃ­a instrumental: true)." });
     }
     if (lyrics.length > 5000) {
-      return sendJson(res, 400, { error: "lyrics_too_long", field: "lyrics", message: "lyrics máximo 5.000 caracteres." });
+      return sendJson(res, 400, { error: "lyrics_too_long", field: "lyrics", message: "lyrics mÃ¡ximo 5.000 caracteres." });
     }
 
     const style = String(body.style || "").trim() || "General";
     if (style.length > 1000) {
-      return sendJson(res, 400, { error: "style_too_long", field: "style", message: "style máximo 1.000 caracteres." });
+      return sendJson(res, 400, { error: "style_too_long", field: "style", message: "style mÃ¡ximo 1.000 caracteres." });
     }
 
     const title = String(body.title || "").trim();
     if (!title) return sendJson(res, 400, { error: "missing_title", field: "title", message: "title es obligatorio." });
     if (title.length > 100) {
-      return sendJson(res, 400, { error: "title_too_long", field: "title", message: "title máximo 100 caracteres." });
+      return sendJson(res, 400, { error: "title_too_long", field: "title", message: "title mÃ¡ximo 100 caracteres." });
     }
 
     const mode = String(body.mode || "review").trim().toLowerCase() === "auto" ? "auto" : "review";
@@ -21269,7 +21278,7 @@ const integrationsHandler = (() => {
 
     const ownerId = robotUserId();
     const admin = await getAdminClient();
-    if (!admin) return sendJson(res, 500, { error: "db_unavailable", message: "Configuración de base de datos incompleta." });
+    if (!admin) return sendJson(res, 500, { error: "db_unavailable", message: "ConfiguraciÃ³n de base de datos incompleta." });
 
     // 1) Idempotencia: mismo request_id => mismo task_id, sin cobrar de nuevo.
     try {
@@ -21294,7 +21303,7 @@ const integrationsHandler = (() => {
         });
       }
     } catch {
-      /* si falla la consulta se sigue; el tope y el cobro aún protegen */
+      /* si falla la consulta se sigue; el tope y el cobro aÃºn protegen */
     }
 
     // 2) Topes: intentos por pedido, diario y por minuto.
@@ -21319,7 +21328,7 @@ const integrationsHandler = (() => {
             max_attempts: maxAttempts,
             used,
             order_id: orderId,
-            message: `Este pedido ya usó sus ${maxAttempts} intentos de generación.`,
+            message: `Este pedido ya usÃ³ sus ${maxAttempts} intentos de generaciÃ³n.`,
           });
         }
       } catch {
@@ -21341,7 +21350,7 @@ const integrationsHandler = (() => {
           cap: dailyCap(),
           used: usedToday,
           retry_after: nextMidnightMexicoIso(),
-          message: "Se alcanzó el tope diario del robot.",
+          message: "Se alcanzÃ³ el tope diario del robot.",
         });
       }
       const minRes = await admin
@@ -21374,7 +21383,7 @@ const integrationsHandler = (() => {
       try {
         await adjustUserCredits(admin, ownerId, cost);
       } catch {
-        /* la devolución no debe tapar el error original */
+        /* la devoluciÃ³n no debe tapar el error original */
       }
     };
 
@@ -21424,7 +21433,7 @@ const integrationsHandler = (() => {
       return sendJson(res, 502, {
         error: "provider_error",
         status: provRes?.status || 0,
-        message: "El proveedor no aceptó la generación.",
+        message: "El proveedor no aceptÃ³ la generaciÃ³n.",
       });
     }
     const provCode = Number(last?.data?.code);
@@ -21433,14 +21442,14 @@ const integrationsHandler = (() => {
       return sendJson(res, 502, {
         error: "provider_error",
         code: provCode,
-        message: "El proveedor devolvió un error.",
+        message: "El proveedor devolviÃ³ un error.",
       });
     }
 
     const taskId = String(last?.data?.data?.taskId || "").trim();
     if (!taskId) {
       await refund();
-      return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+      return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolviÃ³ taskId." });
     }
 
     // 5) Registro de la tarea con la trazabilidad del CRM.
@@ -21469,7 +21478,7 @@ const integrationsHandler = (() => {
       if (err) {
         const code = String(err.code || "");
         if (code === "23505") {
-          // Otra petición con el mismo request_id ganó: se devuelve esa y se devuelve el cobro.
+          // Otra peticiÃ³n con el mismo request_id ganÃ³: se devuelve esa y se devuelve el cobro.
           const existing = await admin
             .from("suno_tasks")
             .select("task_id, cost")
@@ -21494,7 +21503,7 @@ const integrationsHandler = (() => {
         }
       }
     } catch {
-      /* si no se puede registrar, la generación ya está en marcha: se responde igual */
+      /* si no se puede registrar, la generaciÃ³n ya estÃ¡ en marcha: se responde igual */
     }
 
     const balance = await getUserAvailableCredits(admin, ownerId).catch(() => null);
@@ -21548,7 +21557,7 @@ const integrationsHandler = (() => {
 
     const songs = tracks.map((t, i) => ({
       index: i + 1,
-      title: t.title || `${String(integration.client_id || "Canción")} (${i + 1})`,
+      title: t.title || `${String(integration.client_id || "CanciÃ³n")} (${i + 1})`,
       audio_url: t.audio_url,
       duration: t.duration,
     }));
@@ -21614,7 +21623,7 @@ const integrationsHandler = (() => {
     }
     const audioUrl = String(body.audio_url || "").trim();
     if (!audioUrl || !/^https:\/\//i.test(audioUrl)) {
-      return sendJson(res, 400, { error: "invalid_audio_url", field: "audio_url", message: "Falta la grabación a capela (https)." });
+      return sendJson(res, 400, { error: "invalid_audio_url", field: "audio_url", message: "Falta la grabaciÃ³n a capela (https)." });
     }
     const duration = Number(body.duration_seconds || body.duration || 0);
     const language = String(body.language || "es").trim().slice(0, 10) || "es";
@@ -21651,11 +21660,11 @@ const integrationsHandler = (() => {
       return sendJson(res, 502, {
         error: "provider_error",
         status: last?.res?.status || 0,
-        message: "El proveedor no aceptó la muestra de voz.",
+        message: "El proveedor no aceptÃ³ la muestra de voz.",
       });
     }
     const taskId = pickString(last?.data?.data || {}, ["taskId", "task_id"]);
-    if (!taskId) return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+    if (!taskId) return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolviÃ³ taskId." });
 
     try {
       await admin.from("suno_tasks").insert({
@@ -21691,7 +21700,7 @@ const integrationsHandler = (() => {
     }
     const verifyUrl = String(body.verify_audio_url || body.verify_url || "").trim();
     if (!verifyUrl || !/^https:\/\//i.test(verifyUrl)) {
-      return sendJson(res, 400, { error: "invalid_verify_audio", field: "verify_audio_url", message: "Falta la grabación de la frase (https)." });
+      return sendJson(res, 400, { error: "invalid_verify_audio", field: "verify_audio_url", message: "Falta la grabaciÃ³n de la frase (https)." });
     }
     const voiceName = String(body.voice_name || body.voiceName || "").trim().slice(0, 100);
     if (!voiceName) {
@@ -21725,7 +21734,7 @@ const integrationsHandler = (() => {
       const consumed = await consumeUserCredits(admin, ownerId, charge);
       if (!consumed.ok) {
         const available = await getUserAvailableCredits(admin, ownerId).catch(() => 0);
-        return sendJson(res, 402, { error: "insufficient_credits", needed: charge, available, message: "La cuenta del robot no tiene créditos suficientes." });
+        return sendJson(res, 402, { error: "insufficient_credits", needed: charge, available, message: "La cuenta del robot no tiene crÃ©ditos suficientes." });
       }
     }
 
@@ -21749,7 +21758,7 @@ const integrationsHandler = (() => {
     const taskId = pickString(last?.data?.data || {}, ["taskId", "task_id"]);
     if (!taskId) {
       await refund();
-      return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+      return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolviÃ³ taskId." });
     }
 
     try {
@@ -21822,9 +21831,9 @@ const integrationsHandler = (() => {
     });
   }
 
-  // Solo lectura del saldo de la cuenta dueña. El CRM lo usa para mostrar el
-  // mismo número que el panel, sin recargar nada. Usa getUserAvailableCredits,
-  // que es la misma función del panel (perfil + lotes activos).
+  // Solo lectura del saldo de la cuenta dueÃ±a. El CRM lo usa para mostrar el
+  // mismo nÃºmero que el panel, sin recargar nada. Usa getUserAvailableCredits,
+  // que es la misma funciÃ³n del panel (perfil + lotes activos).
   async function handleBalance(req: any, res: any) {
     const ownerId = robotUserId();
     const admin = await getAdminClient();
@@ -21900,7 +21909,7 @@ const integrationsHandler = (() => {
     if (!robotEnabled()) {
       return sendJson(res, 503, {
         error: "robot_disabled",
-        message: "El robot está apagado (LUCIANA_ROBOT_ENABLED != 1).",
+        message: "El robot estÃ¡ apagado (LUCIANA_ROBOT_ENABLED != 1).",
       });
     }
 
@@ -21908,7 +21917,7 @@ const integrationsHandler = (() => {
     const validKeys = robotKeys();
     const keyOk = validKeys.some((k) => safeEqual(token, k));
     if (!keyOk) {
-      return sendJson(res, 401, { error: "unauthorized", message: "Llave inválida." });
+      return sendJson(res, 401, { error: "unauthorized", message: "Llave invÃ¡lida." });
     }
 
     if (action === "generate") {
@@ -21938,7 +21947,7 @@ const integrationsHandler = (() => {
     return sendJson(res, 404, {
       error: "not_found",
       message:
-        "Rutas del robot: POST /api/integrations/generate · GET /api/integrations/status · GET /api/integrations/balance · POST /api/integrations/voice-phrase · POST /api/integrations/voice-clone · GET /api/integrations/voice-status",
+        "Rutas del robot: POST /api/integrations/generate Â· GET /api/integrations/status Â· GET /api/integrations/balance Â· POST /api/integrations/voice-phrase Â· POST /api/integrations/voice-clone Â· GET /api/integrations/voice-status",
     });
   };
 })();
@@ -21997,14 +22006,14 @@ const kitsVoicesHandler = (() => {
     const pathname = url.pathname;
     const parts = pathname.split("/").filter(Boolean);
     
-    // Verificar si es una ruta específica como /api/kits/voice-conversions/:id
+    // Verificar si es una ruta especÃ­fica como /api/kits/voice-conversions/:id
     const isApi = parts[0] === "api";
     const head = isApi ? parts[1] : parts[0];
     const next = isApi ? parts[2] : parts[1];
     const third = isApi ? parts[3] : parts[2];
     
     if (head === "kits" && next === "voice-conversions" && third) {
-      // Es una solicitud para obtener el estado de una conversión específica
+      // Es una solicitud para obtener el estado de una conversiÃ³n especÃ­fica
       const conversionId = third;
       
       if ((req.method || "").toUpperCase() === "GET") {
@@ -22022,7 +22031,7 @@ const kitsVoicesHandler = (() => {
 
           if (error) {
             if (error.code === "PGRST116") {
-              return send(res, 404, { error: "Conversión no encontrada" });
+              return send(res, 404, { error: "ConversiÃ³n no encontrada" });
             }
             throw error;
           }
@@ -22042,7 +22051,7 @@ const kitsVoicesHandler = (() => {
 
           if (!response.ok) {
             if (response.status === 404) {
-              return send(res, 404, { error: "Conversión no encontrada en Arpeggi" });
+              return send(res, 404, { error: "ConversiÃ³n no encontrada en Arpeggi" });
             }
             const errorData = await response.json().catch(() => ({}));
             return send(res, response.status, { 
@@ -22077,10 +22086,10 @@ const kitsVoicesHandler = (() => {
             }
           });
         } catch (e) {
-          return send(res, 500, { error: "Error obteniendo estado de conversión", detail: e instanceof Error ? e.message : String(e) });
+          return send(res, 500, { error: "Error obteniendo estado de conversiÃ³n", detail: e instanceof Error ? e.message : String(e) });
         }
       } else {
-        return send(res, 405, { error: "Método no permitido" });
+        return send(res, 405, { error: "MÃ©todo no permitido" });
       }
     }
     
@@ -22185,7 +22194,7 @@ const kitsVoicesHandler = (() => {
         return send(res, 500, { error: "Error actualizando voz", detail: e instanceof Error ? e.message : String(e) });
       }
     } else {
-      return send(res, 405, { error: "Método no permitido" });
+      return send(res, 405, { error: "MÃ©todo no permitido" });
     }
   };
 })();
@@ -22248,13 +22257,13 @@ const uploadAudioHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const bucket = "ramber-tunes";
     const title = typeof payload?.title === "string" ? payload.title.trim() : "audio.mp3";
@@ -22265,7 +22274,7 @@ const uploadAudioHandler = (() => {
     const userId = String(auth.user.id || "");
 
     try {
-      // Intentar usar R2 si está configurado
+      // Intentar usar R2 si estÃ¡ configurado
       let inline: Uint8Array | null = null;
       let inlineSizeBytes = 0;
       if (typeof payload?.file === "string") {
@@ -22277,13 +22286,13 @@ const uploadAudioHandler = (() => {
       inlineSizeBytes = inline ? inline.byteLength : 0;
 
       if (inline) {
-        const maxBytes = 3 * 1024 * 1024; // 3 MB - seguro bajo el límite Vercel (~4.5MB) para evitar FUNCTION_PAYLOAD_TOO_LARGE
+        const maxBytes = 3 * 1024 * 1024; // 3 MB - seguro bajo el lÃ­mite Vercel (~4.5MB) para evitar FUNCTION_PAYLOAD_TOO_LARGE
         if (inline.byteLength > maxBytes) {
           try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_HANDLER", userId, mode: "inline_rejected_oversize", key, sizeBytes: inlineSizeBytes, maxBytes, contentType, fname })); } catch {}
           return send(res, 413, {
             ok: false,
             error: "Audio muy pesado",
-            message: "Ese MP3 está muy pesado para subirlo por el servidor. Se usará subida directa a Supabase Storage.",
+            message: "Ese MP3 estÃ¡ muy pesado para subirlo por el servidor. Se usarÃ¡ subida directa a Supabase Storage.",
           });
         }
         try {
@@ -22327,7 +22336,7 @@ const uploadAudioHandler = (() => {
         return send(res, 200, {
           ok: false,
           error: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - subiendo por servidor" : "No pude preparar la subida del audio",
-          detail: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - vuelve a intentar para subir por servidor." : "R2 no está configurado para subida directa. Vuelve a intentar para subir por servidor."
+          detail: isMissingEnv ? "Falta configurar Cloudflare R2 en Vercel - vuelve a intentar para subir por servidor." : "R2 no estÃ¡ configurado para subida directa. Vuelve a intentar para subir por servidor."
         });
       }
     } catch (e) {
@@ -22395,13 +22404,13 @@ const uploadAudioSupabaseHandler = (() => {
   }
 
   return async function handler(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido" });
 
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
     const payload = parseJsonBody(req);
-    if (!payload) return send(res, 400, { error: "Body inválido" });
+    if (!payload) return send(res, 400, { error: "Body invÃ¡lido" });
 
     const bucket = "ramber-tunes";
     const wantFetchUrl = typeof payload?.fetchSignedUrl === "boolean" ? !!payload.fetchSignedUrl : String(payload?.mode || "").toLowerCase() === "fetchsignedurl";
@@ -22409,7 +22418,7 @@ const uploadAudioSupabaseHandler = (() => {
     const userId = String(auth.user.id || "");
 
     try {
-      // MODO ESPECIAL: Segunda llamada DESPUÉS de que el cliente terminó de subir (POST multipart).
+      // MODO ESPECIAL: Segunda llamada DESPUÃ‰S de que el cliente terminÃ³ de subir (POST multipart).
       if (wantFetchUrl && keyInPayload) {
         let safeKey = keyInPayload.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/^\/+/, "").slice(0, 500);
         if (!safeKey || !/^(uploads\/(audio|avatars|profiles|))\//i.test(safeKey + "/")) {
@@ -22440,18 +22449,18 @@ const uploadAudioSupabaseHandler = (() => {
           }
 
           // ================================================================
-          // NUEVA ESTRATEGIA ULTRA-ROBUSTA fetchSignedUrl (v4 - sin errores de redeclaración):
+          // NUEVA ESTRATEGIA ULTRA-ROBUSTA fetchSignedUrl (v4 - sin errores de redeclaraciÃ³n):
           //
           // PRINCIPIO FUNDAMENTAL (corrige bug anterior):
-          //   El list() por consistencia eventual devuelve a VECES el ARCHIVO ANTERIOR (aún no
-          //   se ha replicado el NUEVO). Antes usábamos listedNames[0] (más reciente VISIBLE) como #1
-          //   Ã¢â€ â€™ eso era el UPLOAD ANTERIOR, no el actual. Ahora:
+          //   El list() por consistencia eventual devuelve a VECES el ARCHIVO ANTERIOR (aÃºn no
+          //   se ha replicado el NUEVO). Antes usÃ¡bamos listedNames[0] (mÃ¡s reciente VISIBLE) como #1
+          //   ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ eso era el UPLOAD ANTERIOR, no el actual. Ahora:
           //
-          //   #1 PRIORIDAD SIEMPRE = keyInPayload (el EXACTO que devolvió PREP, creado en el servidor).
-          //   Si ese path da Object not found Ã¢â€ â€™ es SOLO por lag, esperamos y reintentamos.
+          //   #1 PRIORIDAD SIEMPRE = keyInPayload (el EXACTO que devolviÃ³ PREP, creado en el servidor).
+          //   Si ese path da Object not found ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ es SOLO por lag, esperamos y reintentamos.
           //
-          // REINTENTOS: 8 totales, backoff exponencial 500Ã¢â€ â€™1500ms (espera total ~8s mínimo).
-          // CADA 2 intentos Ã¢â€ â€™ RE-LISTAMOS la carpeta para refrescar listedNames y resolvedListPath.
+          // REINTENTOS: 8 totales, backoff exponencial 500ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢1500ms (espera total ~8s mÃ­nimo).
+          // CADA 2 intentos ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ RE-LISTAMOS la carpeta para refrescar listedNames y resolvedListPath.
           // ================================================================
           const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
           const backoffForAttempt = (n: number): number => {
@@ -22484,7 +22493,7 @@ const uploadAudioSupabaseHandler = (() => {
 
           const resolveFromListed = (): string => {
             try {
-              // PRIMERO: coincidencia EXACTA con keyInPayload o safeKey (por si list() ya vió el nuevo archivo)
+              // PRIMERO: coincidencia EXACTA con keyInPayload o safeKey (por si list() ya viÃ³ el nuevo archivo)
               let path = "";
               const exact = listedNames.find(n =>
                 n.fullPath === keyInPayload || n.fullPath === safeKey ||
@@ -22500,7 +22509,7 @@ const uploadAudioSupabaseHandler = (() => {
                 );
                 if (bySuffix) return bySuffix.fullPath;
               }
-              // TERCERO: el más reciente visible (SOLO como último recurso Ã¢â‚¬â€ podría ser upload anterior)
+              // TERCERO: el mÃ¡s reciente visible (SOLO como Ãºltimo recurso ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â podrÃ­a ser upload anterior)
               if (listedNames.length > 0) path = listedNames[0].fullPath;
               return path;
             } catch { return ""; }
@@ -22515,15 +22524,15 @@ const uploadAudioSupabaseHandler = (() => {
           let finalKeyUsed = "";
 
           for (let attempt = 1; attempt <= totalAttempts; attempt++) {
-            // Re-listar cada 2 intentos (attempts 3,5,7) Ã¢â€ â€™ refrescar visibilidad:
+            // Re-listar cada 2 intentos (attempts 3,5,7) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ refrescar visibilidad:
             if (attempt === 3 || attempt === 5 || attempt === 7) {
               await listFolder(`refresh_attempt${attempt}`);
             }
             const resolvedListPath = resolveFromListed();
 
-            // ---- ELEGIR QUÉ PATH PROBAR AHORA (prioridades correctas) ----
+            // ---- ELEGIR QUÃ‰ PATH PROBAR AHORA (prioridades correctas) ----
             let tryKey = "";
-            // (1) Exacto keyInPayload 100% (devuelto por PREP) Ã¢â€ â€™ #1 de #1
+            // (1) Exacto keyInPayload 100% (devuelto por PREP) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ #1 de #1
             if (attempt === 1 || attempt === 2 || attempt === 4 || attempt === 6) {
               tryKey = keyInPayload;
             }
@@ -22538,16 +22547,16 @@ const uploadAudioSupabaseHandler = (() => {
               } else {
                 tryKey = keyInPayload;
               }
-              // attempt 8: si safeKey es diferente a keyInPayload, probar safeKey como última bala antes del throw
+              // attempt 8: si safeKey es diferente a keyInPayload, probar safeKey como Ãºltima bala antes del throw
               if (attempt === 8 && safeKey !== keyInPayload && !signed) {
                 tryKey = safeKey;
               }
             }
-            if (!tryKey) tryKey = keyInPayload || safeKey; // Nunca vacío
+            if (!tryKey) tryKey = keyInPayload || safeKey; // Nunca vacÃ­o
 
             // ---- PROBAR createSignedUrl ----
             try {
-              try { console.log(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}/${totalAttempts} Ã¢â€ â€™ tryKey=${tryKey.slice(0, 160)}`); } catch {}
+              try { console.log(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}/${totalAttempts} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ tryKey=${tryKey.slice(0, 160)}`); } catch {}
               const trySigned = await auth.admin.storage.from(bucket).createSignedUrl(tryKey, 60 * 60 * 2);
               if (trySigned.error) throw trySigned.error;
               signed = trySigned;
@@ -22558,14 +22567,14 @@ const uploadAudioSupabaseHandler = (() => {
               const msg = String((signedErr as any)?.message || signedErr || "").toLowerCase();
               triedKeys.push({ attempt, key: tryKey.slice(0, 240), err: (signedErr as any)?.message ? String((signedErr as any).message).slice(0, 200) : msg.slice(0, 200) });
               const isObjectNotFound = msg.includes("object not found");
-              // ÃƒÅ¡ltimo intento: no esperar, salir.
+              // ÃƒÆ’Ã…Â¡ltimo intento: no esperar, salir.
               if (attempt === totalAttempts) break;
-              // Si NO es Object not found Ã¢â€ â€™ error distinto (permisos, formato, etc.), no vale la pena reintentar:
+              // Si NO es Object not found ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ error distinto (permisos, formato, etc.), no vale la pena reintentar:
               if (!isObjectNotFound) {
                 try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt}: ERROR NO ES \"Object not found\" (${msg.slice(0, 160)}), abortando retries anticipadamente.`); } catch {}
                 break;
               }
-              // Sí es Object not found + quedan intentos Ã¢â€ â€™ esperar backoff:
+              // SÃ­ es Object not found + quedan intentos ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ esperar backoff:
               const waitMs = backoffForAttempt(attempt);
               try { console.warn(`[UPLOAD_AUDIO_SUPABASE] fetchSignedUrl attempt=${attempt} Object not found. Esperando ${waitMs}ms antes de retry...`); } catch {}
               await sleepMs(waitMs);
@@ -22575,7 +22584,7 @@ const uploadAudioSupabaseHandler = (() => {
           // Fallback: si firmamos pero con key distinta, actualizar safeKey para respuesta:
           if (signed && finalKeyUsed) safeKey = finalKeyUsed;
 
-          // Error final con DIAGNÓSTICO COMPLETO (para logs y UI):
+          // Error final con DIAGNÃ“STICO COMPLETO (para logs y UI):
           if (!signed) {
             let diagnostic = "";
             try {
@@ -22602,7 +22611,7 @@ const uploadAudioSupabaseHandler = (() => {
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e || "");
             try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "fetch_signed_failed", key: safeKey.slice(0, 200), keyInPayload: keyInPayload.slice(0, 200), error: msg.slice(0, 1200) })); } catch {}
-            return send(res, 500, { ok: false, error: "No pude generar la URL de reproducción (fetchSignedUrl)", detail: msg.slice(0, 1400) });
+            return send(res, 500, { ok: false, error: "No pude generar la URL de reproducciÃ³n (fetchSignedUrl)", detail: msg.slice(0, 1400) });
           }
         }
 
@@ -22644,19 +22653,19 @@ const uploadAudioSupabaseHandler = (() => {
       // MODO 2 (DIRECTO SIGNED UPLOAD) > 3MB:
       // Usamos EXCLUSIVAMENTE createSignedUploadUrl del SDK admin (service_role).
       // Esto funciona porque:
-      //  (1) La firma del endpoint la hace ADMIN (service_role) -> URL VÃƒÂLIDA siempre.
+      //  (1) La firma del endpoint la hace ADMIN (service_role) -> URL VÃƒÆ’Ã‚ÂLIDA siempre.
       //  (2) El INSERT en storage.objects pasa por RLS PERO nuestra nueva policy
       //      anon_insert_ramber_tunes_uploads_paths TO public PERMITE INSERT SIEMPRE
       //      que bucket='ramber-tunes' y path empiece por uploads/audio (no necesita auth.uid())
       //      -> eso soluciona el 403 RLS ("row violates row-level security policy").
-      //  (3) DESPUÉS de que el cliente termina el upload y llama fetchSignedUrl=1,
+      //  (3) DESPUÃ‰S de que el cliente termina el upload y llama fetchSignedUrl=1,
       //      el servidor ADMIN actualiza owner_id=auth.user.id en la fila de storage.objects,
-      //      así SELECT/UPDATE/DELETE siguen funcionando con auth.uid() normal.
+      //      asÃ­ SELECT/UPDATE/DELETE siguen funcionando con auth.uid() normal.
       const t0 = Date.now();
       const anonKey = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
       const urlBase = (auth.supabaseUrl || process.env.SUPABASE_URL || "").toString().trim();
 
-      // Crear signed upload URL con ADMIN SDK (siempre válida por service_role)
+      // Crear signed upload URL con ADMIN SDK (siempre vÃ¡lida por service_role)
       const { data, error } = await auth.admin.storage.from(bucket).createSignedUploadUrl(key);
       const dtPrep = Date.now() - t0;
       if (error) {
@@ -22667,9 +22676,9 @@ const uploadAudioSupabaseHandler = (() => {
       const pathKey: string = (data as any)?.path || key;
       if (!uploadUrl) {
         try { console.error(JSON.stringify({ kind: "UPLOAD_AUDIO_SUPABASE", userId, mode: "prep_signed_sdk_missing_url", key, contentType, fname })); } catch {}
-        return send(res, 500, { ok: false, error: "No recibí la URL de subida de Supabase" });
+        return send(res, 500, { ok: false, error: "No recibÃ­ la URL de subida de Supabase" });
       }
-      // Ã°Å¸â€Â DIAGNÓSTICO: Comparar el key QUE NOSOTROS CREAMOS vs el path que DEVUELVE Supabase.
+      // ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â DIAGNÃ“STICO: Comparar el key QUE NOSOTROS CREAMOS vs el path que DEVUELVE Supabase.
       // A veces Supabase normaliza slashes / quita caracteres / encoding, y esto causa Object not found luego.
       try {
         console.log(JSON.stringify({
@@ -22691,8 +22700,8 @@ const uploadAudioSupabaseHandler = (() => {
         key: pathKey || key,
         contentType,
         via: "supabase_signed_direct_sdk",
-        // Ã¢Å“â€¦ createSignedUploadUrl() de Supabase SDK crea una URL firmada para método PUT BLOB DIRECTO.
-        // NO usar POST FormData (multipart) aquí Ã¢â‚¬â€ método incompat; causa "Object not found" persistente.
+        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ createSignedUploadUrl() de Supabase SDK crea una URL firmada para mÃ©todo PUT BLOB DIRECTO.
+        // NO usar POST FormData (multipart) aquÃ­ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mÃ©todo incompat; causa "Object not found" persistente.
         uploadMethod: "PUT_BLOB",
         needsFetchSignedUrl: true,
         // Headers que el cliente DEBE enviar JUNTO al PUT (junto a la firma de la URL):
@@ -22751,7 +22760,7 @@ const rvcHandler = (() => {
   }
 
   async function coverStatus(req: any, res: any) {
-    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "Método no permitido" });
+    if ((req.method || "").toUpperCase() !== "GET") return send(res, 405, { error: "MÃ©todo no permitido" });
     const auth = await requireUser(req);
     if (!auth.ok) return send(res, auth.status, { error: auth.error });
 
@@ -22925,7 +22934,7 @@ const rvcHandler = (() => {
         }
         const audioSourceUrl = pickFirstUrl(outObj);
         console.log(`[DEBUG] audioSourceUrl: ${audioSourceUrl}`);
-        if (!audioSourceUrl) importError = "Replicate terminó, pero no devolvió una URL de audio para descargar.";
+        if (!audioSourceUrl) importError = "Replicate terminÃ³, pero no devolviÃ³ una URL de audio para descargar.";
         if (audioSourceUrl) {
           try {
               console.log(`[DEBUG] Intentando descargar audio de: ${audioSourceUrl}`);
@@ -22935,12 +22944,12 @@ const rvcHandler = (() => {
               clearTimeout(timer);
               console.log(`[DEBUG] Respuesta de descarga: HTTP ${r.status}, ok=${r.ok}`);
               if (!r.ok) {
-                importError = `Replicate terminó, pero no pude descargar el audio (HTTP ${r.status}).`;
+                importError = `Replicate terminÃ³, pero no pude descargar el audio (HTTP ${r.status}).`;
               } else {
               const remoteCt = (r.headers.get("content-type") || "").toString().trim().slice(0, 120);
               const ab = await r.arrayBuffer();
               if (!ab || !ab.byteLength) {
-                importError = "Replicate terminó, pero el audio descargado llegó vacío.";
+                importError = "Replicate terminÃ³, pero el audio descargado llegÃ³ vacÃ­o.";
               } else {
                 const buf = Buffer.from(ab);
                 console.log(`[DEBUG] Audio descargado: ${ab.byteLength} bytes`);
@@ -22978,12 +22987,12 @@ const rvcHandler = (() => {
                     is_cover: true,
                   } as any);
                   if (!insErr) {
-                    console.log(`[DEBUG] Inserción exitosa en library_items`);
+                    console.log(`[DEBUG] InserciÃ³n exitosa en library_items`);
                     syncImported = true;
                     importError = null;
                   } else {
-                    console.log(`[DEBUG] Error en inserción: ${insErr.message}`);
-                    importError = `El cover está listo, pero no pude guardarlo en Biblioteca: ${insErr.message}`;
+                    console.log(`[DEBUG] Error en inserciÃ³n: ${insErr.message}`);
+                    importError = `El cover estÃ¡ listo, pero no pude guardarlo en Biblioteca: ${insErr.message}`;
                   }
                 } else {
                   syncImported = true;
@@ -22992,7 +23001,7 @@ const rvcHandler = (() => {
               }
             }
           } catch {
-            importError = "El cover está listo, pero falló la descarga/subida automática del audio.";
+            importError = "El cover estÃ¡ listo, pero fallÃ³ la descarga/subida automÃ¡tica del audio.";
           }
         }
       }
@@ -23345,7 +23354,7 @@ const oauthHandler = (() => {
     if (method !== "GET") {
       res.statusCode = 405;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ error: "invalid_request", error_description: "Método no permitido" }));
+      res.end(JSON.stringify({ error: "invalid_request", error_description: "MÃ©todo no permitido" }));
       return;
     }
 
@@ -23353,7 +23362,7 @@ const oauthHandler = (() => {
       console.log(`[oauth:authorize] invalid_client: clientId esperado ${CHATGPT_OAUTH_CONFIG.clientId} vs recibido ${clientId}`);
       res.statusCode = 400;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ error: "invalid_client", error_description: "client_id OAuth no válido" }));
+      res.end(JSON.stringify({ error: "invalid_client", error_description: "client_id OAuth no vÃ¡lido" }));
       return;
     }
     if (responseType && responseType !== "code") {
@@ -23374,7 +23383,7 @@ const oauthHandler = (() => {
       console.log(`[oauth:authorize] falta state`);
       res.statusCode = 400;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ error: "invalid_request", error_description: "Falta el parámetro state" }));
+      res.end(JSON.stringify({ error: "invalid_request", error_description: "Falta el parÃ¡metro state" }));
       return;
     }
 
@@ -23417,7 +23426,7 @@ const oauthHandler = (() => {
       res.end();
       return;
     }
-    if (method !== "POST") return oauthGptSendJson(res, 405, { error: "invalid_request", error_description: "Método no permitido" });
+    if (method !== "POST") return oauthGptSendJson(res, 405, { error: "invalid_request", error_description: "MÃ©todo no permitido" });
 
     const contentType = (req.headers?.["content-type"] || req.headers?.["Content-Type"] || "").toString().toLowerCase();
     const bodyRaw = await (async () => {
@@ -23462,21 +23471,21 @@ const oauthHandler = (() => {
     }
     if (clientId !== CHATGPT_OAUTH_CONFIG.clientId || clientSecret !== CHATGPT_OAUTH_CONFIG.clientSecret) {
       console.log(`[oauth:token] invalid_client: credenciales NO coinciden. ClientID esperado=<<<${CHATGPT_OAUTH_CONFIG.clientId}>>> vs <<<${clientId}>>>. Secret match=${clientSecret === CHATGPT_OAUTH_CONFIG.clientSecret}`);
-      return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Credenciales OAuth inválidas" });
+      return oauthGptSendJson(res, 401, { error: "invalid_client", error_description: "Credenciales OAuth invÃ¡lidas" });
     }
     if (grantType && grantType !== "authorization_code") {
       console.log(`[oauth:token] unsupported_grant_type: ${grantType}`);
       return oauthGptSendJson(res, 400, { error: "unsupported_grant_type", error_description: "Solo se admite authorization_code" });
     }
     if (!code) {
-      console.log(`[oauth:token] invalid_grant: code vacío.`);
+      console.log(`[oauth:token] invalid_grant: code vacÃ­o.`);
       return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "Falta code" });
     }
 
     const auth = await requireAnyUserFromToken(code);
     if (!auth.ok) {
-      console.log(`[oauth:token] invalid_grant: requireAnyUserFromToken falló status=${auth.status} msg=${auth.error}`);
-      return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "El code no corresponde a una sesión válida" });
+      console.log(`[oauth:token] invalid_grant: requireAnyUserFromToken fallÃ³ status=${auth.status} msg=${auth.error}`);
+      return oauthGptSendJson(res, 400, { error: "invalid_grant", error_description: "El code no corresponde a una sesiÃ³n vÃ¡lida" });
     }
     const userId = (auth.user?.id || "").toString();
     const userEmail = (auth.user?.email || "").toString();
@@ -23849,7 +23858,7 @@ const difyHandler = (() => {
       throw new Error(`Dify upload fetch error: ${e instanceof Error ? String(e.message) : String(e)}`);
     }
     if (!r || typeof r.status !== "number") {
-      throw new Error("Dify upload: el servidor remoto no devolvió status.");
+      throw new Error("Dify upload: el servidor remoto no devolviÃ³ status.");
     }
     const t = typeof r.text === "function" ? await r.text() : "";
     let j: any = null;
@@ -23867,7 +23876,7 @@ const difyHandler = (() => {
       (j && j.data && typeof j.data.id === "string" ? j.data.id : "") ||
       ""
     ).trim();
-    if (!id) throw new Error("Dify upload no devolvió id de archivo.");
+    if (!id) throw new Error("Dify upload no devolviÃ³ id de archivo.");
     return {
       id,
       name: String(j && typeof (j as any).name === "string" ? (j as any).name : fileName || "file"),
@@ -23922,7 +23931,7 @@ const difyHandler = (() => {
       throw new Error(`Dify upstream fetch error: ${e instanceof Error ? String(e.message) : String(e)}`);
     }
     if (!r || typeof r.status !== "number") {
-      throw new Error("Dify upstream no devolvió status.");
+      throw new Error("Dify upstream no devolviÃ³ status.");
     }
     const textOut = typeof r.text === "function" ? await r.text() : String((r as any).body || "");
     let jsonOut: any = null;
@@ -23961,12 +23970,12 @@ const difyHandler = (() => {
 
     const userToken = difyExtractBearerFromHeader(req, "authorization");
     if (!userToken) {
-      return difySendJson(res, 401, { error: "unauthorized", message: "Sesión expirada o faltante. Vuelve a iniciar sesión con Google." });
+      return difySendJson(res, 401, { error: "unauthorized", message: "SesiÃ³n expirada o faltante. Vuelve a iniciar sesiÃ³n con Google." });
     }
     const auth = await requireAnyUserFromToken(userToken);
     if (!auth.ok) {
       const isMissing = !userToken || (auth.status && auth.status >= 400 && auth.status < 500);
-      return difySendJson(res, isMissing ? (auth.status || 401) : 500, { error: "unauthorized", message: "Tu sesión de LucIAna no es válida. Cierra y vuelve a iniciar sesión con Google." });
+      return difySendJson(res, isMissing ? (auth.status || 401) : 500, { error: "unauthorized", message: "Tu sesiÃ³n de LucIAna no es vÃ¡lida. Cierra y vuelve a iniciar sesiÃ³n con Google." });
     }
 
     const copilotApiKey = String(process.env.DIFY_COPILOT_API_KEY || process.env.DIFY_API_KEY || "").trim();
@@ -23979,7 +23988,7 @@ const difyHandler = (() => {
     if (copilotApiKey.length < 16) {
       return difySendJson(res, 500, {
         error: "dify_copilot_not_configured",
-        message: "DIFY_COPILOT_API_KEY configurada pero demasiado corta (mínimo 16 chars).",
+        message: "DIFY_COPILOT_API_KEY configurada pero demasiado corta (mÃ­nimo 16 chars).",
       });
     }
     const copilotApiUrl = String(process.env.DIFY_COPILOT_API_URL || "").trim() || "https://api.dify.ai/v1/chat-messages";
@@ -24048,7 +24057,7 @@ const difyHandler = (() => {
           try { bytes = Buffer.from(b64, "base64"); }
           catch { bytes = null; }
           if (!bytes || !bytes.length) {
-            return difySendJson(res, 400, { error: "image_bytes_invalid", message: "La imagen no contiene bytes válidos." });
+            return difySendJson(res, 400, { error: "image_bytes_invalid", message: "La imagen no contiene bytes vÃ¡lidos." });
           }
           if (bytes.length > MAX_IMAGE_BYTES) {
             return difySendJson(res, 413, { error: "image_too_large", message: "La imagen supera los 10 MB permitidos." });
@@ -24074,11 +24083,11 @@ const difyHandler = (() => {
     }
     const message = String(body?.message || body?.query || body?.text || "").trim();
     if (!message && !difyFileRefs.length) {
-      return difySendJson(res, 400, { error: "field_message_required", message: "Falta el campo 'message' (texto no vacío) o una imagen adjunta." });
+      return difySendJson(res, 400, { error: "field_message_required", message: "Falta el campo 'message' (texto no vacÃ­o) o una imagen adjunta." });
     }
     const finalMessage =
       !message && difyFileRefs.length
-        ? "Analiza con precisión esta foto y extrae todo el texto (letra de canción, párrafos o líneas). Si no se lee nada, indícalo claramente."
+        ? "Analiza con precisiÃ³n esta foto y extrae todo el texto (letra de canciÃ³n, pÃ¡rrafos o lÃ­neas). Si no se lee nada, indÃ­calo claramente."
         : message;
     if (finalMessage.length > 20000) {
       return difySendJson(res, 413, { error: "field_message_too_long", message: "Mensaje demasiado largo (max 20,000 chars)." });
@@ -24154,9 +24163,9 @@ const difyHandler = (() => {
     if (!apiKeyCheck.ok) {
       const msg =
         apiKeyCheck.status === 500
-          ? "DIFY_TOOL_API_KEY no está configurada en Vercel Environment Variables."
+          ? "DIFY_TOOL_API_KEY no estÃ¡ configurada en Vercel Environment Variables."
           : apiKeyCheck.status === 401
-          ? "Authorization header inválido. Usa: Authorization: Bearer <DIFY_TOOL_API_KEY>."
+          ? "Authorization header invÃ¡lido. Usa: Authorization: Bearer <DIFY_TOOL_API_KEY>."
           : "No autorizado.";
       return difySendJson(res, apiKeyCheck.status, { error: apiKeyCheck.error || "unauthorized", message: msg });
     }
@@ -24166,7 +24175,7 @@ const difyHandler = (() => {
       return difySendJson(res, 401, {
         error: "missing_x_luciana_user_token",
         message:
-          "Falta el header X-Luciana-User-Token con el Bearer token del usuario final de LucIAna Music (SU sesión, JWT). Dify no se salta la autenticación ni los límites/créditos.",
+          "Falta el header X-Luciana-User-Token con el Bearer token del usuario final de LucIAna Music (SU sesiÃ³n, JWT). Dify no se salta la autenticaciÃ³n ni los lÃ­mites/crÃ©ditos.",
       });
     }
 
@@ -24196,12 +24205,12 @@ const difyHandler = (() => {
     if (!v.ok || !v.normalized) {
       const detail =
         v.error === "field_prompt_required"
-          ? "Falta el campo 'prompt' (texto no vacío)."
+          ? "Falta el campo 'prompt' (texto no vacÃ­o)."
           : v.error === "field_prompt_too_long"
           ? "Campo 'prompt' muy largo (max 12,000 chars)."
           : v.error === "invalid_body_expected_json_object"
           ? "Body debe ser un objeto JSON."
-          : "Body inválido.";
+          : "Body invÃ¡lido.";
       return difySendJson(res, v.status, { error: v.error || "invalid_request", message: detail });
     }
 
@@ -24232,7 +24241,7 @@ const difyHandler = (() => {
     try {
       const r = await difyCaptureResponse(shared.generate, wrapped);
       if (!r.body || typeof r.body !== "object") {
-        return difySendJson(res, 502, { error: "internal_generate_bad_response", message: "El generador interno no devolvió un JSON válido.", debug: typeof r.body });
+        return difySendJson(res, 502, { error: "internal_generate_bad_response", message: "El generador interno no devolviÃ³ un JSON vÃ¡lido.", debug: typeof r.body });
       }
       const taskId =
         String((r.body as any).task_id || (r.body as any).taskId || "").trim() ||
@@ -24280,9 +24289,9 @@ const difyHandler = (() => {
     if (!apiKeyCheck.ok) {
       const msg =
         apiKeyCheck.status === 500
-          ? "DIFY_TOOL_API_KEY no está configurada en Vercel Environment Variables."
+          ? "DIFY_TOOL_API_KEY no estÃ¡ configurada en Vercel Environment Variables."
           : apiKeyCheck.status === 401
-          ? "Authorization header inválido. Usa: Authorization: Bearer <DIFY_TOOL_API_KEY>."
+          ? "Authorization header invÃ¡lido. Usa: Authorization: Bearer <DIFY_TOOL_API_KEY>."
           : "No autorizado.";
       return difySendJson(res, apiKeyCheck.status, { error: apiKeyCheck.error || "unauthorized", message: msg });
     }
@@ -24301,7 +24310,7 @@ const difyHandler = (() => {
       taskId = String(u.searchParams.get("task_id") || u.searchParams.get("taskId") || u.searchParams.get("tid") || "").trim();
     } catch {}
     if (!taskId) {
-      return difySendJson(res, 400, { error: "field_task_id_required", message: "Falta la query ?task_id=XXX (también admite taskId)." });
+      return difySendJson(res, 400, { error: "field_task_id_required", message: "Falta la query ?task_id=XXX (tambiÃ©n admite taskId)." });
     }
     if (taskId.length > 200) {
       return difySendJson(res, 400, { error: "field_task_id_too_long", message: "task_id demasiado largo." });
@@ -24404,7 +24413,7 @@ const difyHandler = (() => {
       if (status === "failed") {
         out.message =
           String((r.body as any).message || (r.body as any).error || (r.body as any).provider_error || "").slice(0, 600) ||
-          "La generación falló en el proveedor.";
+          "La generaciÃ³n fallÃ³ en el proveedor.";
       }
       return difySendJson(res, r.status >= 400 && r.status < 600 ? r.status : 200, out);
     } catch (e) {
@@ -24438,7 +24447,7 @@ const difyHandler = (() => {
       return difySendJson(res, 404, {
         error: "ruta_no_encontrada",
         message:
-          "Endpoints Dify admitidos:\n· POST /api/dify/chat (copiloto conversacional por usuario)\n· POST /api/dify/generate · GET /api/dify/status?task_id=... (herramientas server-to-server con DIFY_TOOL_API_KEY)",
+          "Endpoints Dify admitidos:\nÂ· POST /api/dify/chat (copiloto conversacional por usuario)\nÂ· POST /api/dify/generate Â· GET /api/dify/status?task_id=... (herramientas server-to-server con DIFY_TOOL_API_KEY)",
       });
     } catch (e) {
       try {
@@ -24478,7 +24487,7 @@ const gptHandler = (() => {
       if (!Number.isFinite(available) || available < cost) {
         return oauthGptSendJson(res, 402, {
           error: "insufficient_credits",
-          message: "No tienes suficientes créditos en LucIAna Music para generar esta canción. Recarga en tu panel.",
+          message: "No tienes suficientes crÃ©ditos en LucIAna Music para generar esta canciÃ³n. Recarga en tu panel.",
           credits_required: cost,
           credits_available: Number.isFinite(available) ? available : 0,
         });
@@ -24526,9 +24535,9 @@ const gptHandler = (() => {
       const out = await r.json().catch(() => ({}));
       started = { ok: r.ok, status: r.status, out };
     } catch (e) {
-      // Fallback de seguridad: si falló la conexión al internal, garantizamos
-      // que no hubo cobro aquí, pero si lo hubiera habría sido en el internal;
-      // no podemos reembolsar aquí ya que no cobramos.
+      // Fallback de seguridad: si fallÃ³ la conexiÃ³n al internal, garantizamos
+      // que no hubo cobro aquÃ­, pero si lo hubiera habrÃ­a sido en el internal;
+      // no podemos reembolsar aquÃ­ ya que no cobramos.
       return oauthGptSendJson(res, 502, {
         error: "generate_error",
         message: e instanceof Error ? e.message : "No pude conectar con el generador.",
@@ -24542,9 +24551,9 @@ const gptHandler = (() => {
         (typeof started?.out?.message === "string" && started.out.message) ||
         (typeof started?.out?.detail === "string" && started.out.detail) ||
         `Error HTTP ${errCode || 502}`;
-      // Si el internal respondió error distinto a 402 (créditos insuficientes), puede que haya
-      // cobrado y no devuelto por algún fallo de DB/proveedor. Devolvemos por seguridad
-      // garantizar (ajuste positivo idempotente: si no existía cobro, queda igual, se a 0).
+      // Si el internal respondiÃ³ error distinto a 402 (crÃ©ditos insuficientes), puede que haya
+      // cobrado y no devuelto por algÃºn fallo de DB/proveedor. Devolvemos por seguridad
+      // garantizar (ajuste positivo idempotente: si no existÃ­a cobro, queda igual, se a 0).
       if (!isAdmin && errCode !== 402 && errCode !== 401) {
         try {
           await adjustUserCredits(auth.admin, auth.user.id, cost);
@@ -24559,7 +24568,7 @@ const gptHandler = (() => {
     const taskId = String(started?.out?.taskId || started?.out?.task_id || "").trim();
     const title =
       (typeof payload.title === "string" && payload.title.trim()) ||
-      (typeof payload.prompt === "string" ? payload.prompt.slice(0, 80).trim() : "Canción LucIAna");
+      (typeof payload.prompt === "string" ? payload.prompt.slice(0, 80).trim() : "CanciÃ³n LucIAna");
     return oauthGptSendJson(res, 200, {
       taskId: taskId || undefined,
       task_id: taskId || undefined,
@@ -24590,7 +24599,7 @@ const gptHandler = (() => {
       const u = new URL(req.url, "http://localhost");
       taskId = String(u.searchParams.get("taskId") || u.searchParams.get("task_id") || "").trim();
     } catch {}
-    if (!taskId) return oauthGptSendJson(res, 400, { error: "invalid_request", message: "Falta el parámetro taskId en la query." });
+    if (!taskId) return oauthGptSendJson(res, 400, { error: "invalid_request", message: "Falta el parÃ¡metro taskId en la query." });
 
     const isAdmin = isAdminEmail(auth.user.email);
     try {
@@ -24794,7 +24803,7 @@ const gptHandler = (() => {
           (typeof raw?.msg === "string" && raw.msg) ||
           (typeof raw?.message === "string" && raw.message) ||
           (typeof raw?.data?.message === "string" && raw.data.message) ||
-          "El proveedor no pudo generar la canción (tema restringido, parámetros inválidos o error interno). Intenta con otro prompt."
+          "El proveedor no pudo generar la canciÃ³n (tema restringido, parÃ¡metros invÃ¡lidos o error interno). Intenta con otro prompt."
         : null;
 
     return oauthGptSendJson(res, 200, {
@@ -24865,7 +24874,7 @@ const gptHandler = (() => {
         const raw = await gptReadRawBody(req);
         const parsed = gptParseMultipart(raw, boundary);
         const f = parsed.files.find(x => x) || null;
-        if (!f || !f.content?.byteLength) throw new Error("No se recibió ningún archivo de audio (multipart). Sube un archivo .mp3/.wav/.m4a/.ogg en el campo 'file'.");
+        if (!f || !f.content?.byteLength) throw new Error("No se recibiÃ³ ningÃºn archivo de audio (multipart). Sube un archivo .mp3/.wav/.m4a/.ogg en el campo 'file'.");
         bytes = f.content;
         fileName = f.filename || "";
         mime = f.contentType || "";
@@ -24915,16 +24924,16 @@ const gptHandler = (() => {
     }
 
     if (!bytes || !bytes.byteLength) {
-      return oauthGptSendJson(res, 400, { success: false, error: "missing_audio", message: "No se recibió ningún archivo de audio válido. Sube un archivo .mp3, .wav, .m4a o .ogg." });
+      return oauthGptSendJson(res, 400, { success: false, error: "missing_audio", message: "No se recibiÃ³ ningÃºn archivo de audio vÃ¡lido. Sube un archivo .mp3, .wav, .m4a o .ogg." });
     }
 
     const sizeBytes = Number(bytes.byteLength) || 0;
-    if (!sizeBytes) return oauthGptSendJson(res, 400, { success: false, error: "empty_audio", message: "El audio está vacío." });
+    if (!sizeBytes) return oauthGptSendJson(res, 400, { success: false, error: "empty_audio", message: "El audio estÃ¡ vacÃ­o." });
     if (sizeBytes > GPT_UPLOAD_AUDIO_MAX_BYTES) {
       return oauthGptSendJson(res, 413, {
         success: false,
         error: "audio_too_large",
-        message: `Audio muy pesado. Máximo permitido: ${Math.round(GPT_UPLOAD_AUDIO_MAX_BYTES / 1024 / 1024)} MB. Tu archivo: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB.`,
+        message: `Audio muy pesado. MÃ¡ximo permitido: ${Math.round(GPT_UPLOAD_AUDIO_MAX_BYTES / 1024 / 1024)} MB. Tu archivo: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB.`,
         max_bytes: GPT_UPLOAD_AUDIO_MAX_BYTES,
         size_bytes: sizeBytes,
       });
@@ -24949,7 +24958,7 @@ const gptHandler = (() => {
       return oauthGptSendJson(res, 500, {
         success: false,
         error: "storage_not_configured",
-        message: "Almacenamiento R2 no está configurado en el servidor.",
+        message: "Almacenamiento R2 no estÃ¡ configurado en el servidor.",
       });
     }
 
@@ -25027,7 +25036,7 @@ const gptHandler = (() => {
       if (!Number.isFinite(available) || available < cost) {
         return oauthGptSendJson(res, 402, {
           error: "insufficient_credits",
-          message: "No tienes suficientes créditos en LucIAna Music para hacer este cover. Recarga en tu panel.",
+          message: "No tienes suficientes crÃ©ditos en LucIAna Music para hacer este cover. Recarga en tu panel.",
           credits_required: cost,
           credits_available: Number.isFinite(available) ? available : 0,
         });
@@ -25050,7 +25059,7 @@ const gptHandler = (() => {
     if (!uploadUrl && !uploadPath) {
       return oauthGptSendJson(res, 400, {
         error: "invalid_request",
-        message: "Falta upload_url (URL pública HTTPS del audio) o upload_path (key del archivo en R2). Primero sube el audio a /api/gpt/upload-audio.",
+        message: "Falta upload_url (URL pÃºblica HTTPS del audio) o upload_path (key del archivo en R2). Primero sube el audio a /api/gpt/upload-audio.",
       });
     }
 
@@ -25105,7 +25114,7 @@ const gptHandler = (() => {
         (typeof started?.out?.message === "string" && started.out.message) ||
         (typeof started?.out?.detail === "string" && started.out.detail) ||
         `Error HTTP ${errCode || 502}`;
-      // Por seguridad: si el internal devolvió 500/502/etc != 402, devuelve créditos
+      // Por seguridad: si el internal devolviÃ³ 500/502/etc != 402, devuelve crÃ©ditos
       // en esta capa por si el internal hubiera cobrado antes de fallar.
       if (!isAdmin && errCode !== 402 && errCode !== 401) {
         try {
@@ -25167,7 +25176,7 @@ const gptHandler = (() => {
       return oauthGptSendJson(res, 400, {
         success: false,
         error: "invalid_request",
-        message: "Falta audio_url (URL pública HTTPS o HTTP del archivo MP3).",
+        message: "Falta audio_url (URL pÃºblica HTTPS o HTTP del archivo MP3).",
       });
     }
     let audioUrl: URL;
@@ -25182,7 +25191,7 @@ const gptHandler = (() => {
       return oauthGptSendJson(res, 400, {
         success: false,
         error: "invalid_request",
-        message: "audio_url debe ser una URL pública válida (https:// o http://).",
+        message: "audio_url debe ser una URL pÃºblica vÃ¡lida (https:// o http://).",
       });
     }
 
@@ -25191,7 +25200,7 @@ const gptHandler = (() => {
 
     if (!auth.ok) {
       if (isTrustedHost) {
-        console.error("[handleTranscribe Auth Bypass] auth failed but audio from trusted host Ã¢â€ â€™ allowed (no user)", {
+        console.error("[handleTranscribe Auth Bypass] auth failed but audio from trusted host ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ allowed (no user)", {
           hostname: audioUrl.hostname,
           authStatus: auth.status,
           authError: auth.error,
@@ -25248,7 +25257,7 @@ const gptHandler = (() => {
     const transcribeGemini: any = resolveTranscribeFn();
     if (typeof transcribeGemini !== "function") {
       const detail = [
-        "Error interno: pipeline de transcripción (transcribeLyricsWithGemini) no está disponible en este despliegue.",
+        "Error interno: pipeline de transcripciÃ³n (transcribeLyricsWithGemini) no estÃ¡ disponible en este despliegue.",
         `GEMINI_RESOLVED_KEY.length=${resolvedLen}; env_detailed_present=${JSON.stringify(ENV_DETAILED_PRESENT)}`,
         `Lexical scope typeof=${typeof (transcribeLyricsWithGemini as any)}; shared typeof=${typeof (globalThis as any)?.__LUCIANA_SHARED_FNS?.transcribeLyricsWithGemini}`,
       ].join(" | ");
@@ -25262,7 +25271,7 @@ const gptHandler = (() => {
         success: false,
         error: "transcribe_failed",
         detail,
-        message: "El motor de transcripción no está disponible en este despliegue. Revisa que GEMINI_API_KEY esté configurada en Vercel.",
+        message: "El motor de transcripciÃ³n no estÃ¡ disponible en este despliegue. Revisa que GEMINI_API_KEY estÃ© configurada en Vercel.",
         env_detailed_present: ENV_DETAILED_PRESENT,
         resolved_key_len: resolvedLen,
       });
@@ -25301,7 +25310,7 @@ const gptHandler = (() => {
       return oauthGptSendJson(res, 502, {
         success: false,
         error: "download_failed",
-        message: `No pude descargar el audio. El servidor remoto devolvió HTTP ${fr.status}.`,
+        message: `No pude descargar el audio. El servidor remoto devolviÃ³ HTTP ${fr.status}.`,
         http_status: fr.status,
       });
     }
@@ -25337,7 +25346,7 @@ const gptHandler = (() => {
     const size = Number(ab?.byteLength || 0);
     if (!size) {
       console.error("[handleTranscribe Error] invalid_request: audio empty 0 bytes", { audioUrl: audioUrl.toString().slice(0, 200) });
-      return oauthGptSendJson(res, 400, { success: false, error: "invalid_request", message: "El audio está vacío (0 bytes)." });
+      return oauthGptSendJson(res, 400, { success: false, error: "invalid_request", message: "El audio estÃ¡ vacÃ­o (0 bytes)." });
     }
     if (size > TRANSCRIBE_MAX_BYTES) {
       console.error("[handleTranscribe Error] payload_too_large", {
@@ -25348,7 +25357,7 @@ const gptHandler = (() => {
       return oauthGptSendJson(res, 413, {
         success: false,
         error: "payload_too_large",
-        message: `Audio demasiado pesado para transcribir. Máximo ${Math.round(TRANSCRIBE_MAX_BYTES / 1024 / 1024)} MB. Sube un fragmento más corto o comprímelo.`,
+        message: `Audio demasiado pesado para transcribir. MÃ¡ximo ${Math.round(TRANSCRIBE_MAX_BYTES / 1024 / 1024)} MB. Sube un fragmento mÃ¡s corto o comprÃ­melo.`,
         size_bytes: size,
         max_bytes: TRANSCRIBE_MAX_BYTES,
       });
@@ -25368,7 +25377,7 @@ const gptHandler = (() => {
         success: false,
         error: "transcribe_failed",
         detail,
-        message: "No pude procesar la transcripción de este audio. Revisa la calidad del MP3 o prueba con un fragmento más corto.",
+        message: "No pude procesar la transcripciÃ³n de este audio. Revisa la calidad del MP3 o prueba con un fragmento mÃ¡s corto.",
       });
     }
     const transOk = !!(transcription && transcription.ok);
@@ -25377,7 +25386,7 @@ const gptHandler = (() => {
     const isGeminiKeyMissing = transErrRaw.includes("falta gemini_api_key") || transErrRaw.includes("gemini_api_key");
     if (isGeminiKeyMissing) {
       const detail = [
-        "Falta configurar la clave GEMINI_API_KEY (o equivalente) en Vercel Environment Variables, sección Serverless Functions.",
+        "Falta configurar la clave GEMINI_API_KEY (o equivalente) en Vercel Environment Variables, secciÃ³n Serverless Functions.",
         `Resolved key length: ${resolvedLen}.`,
         `Env detailed present: ${JSON.stringify(ENV_DETAILED_PRESENT)}`,
         String((transcription as any)?.error || "").slice(0, 400),
@@ -25391,7 +25400,7 @@ const gptHandler = (() => {
         success: false,
         error: "transcribe_failed",
         detail,
-        message: "La transcripción no está disponible. Añade GEMINI_API_KEY en Vercel Settings Ã¢â€ â€™ Environment Variables (marca Serverless Functions) y haz Redeploy.",
+        message: "La transcripciÃ³n no estÃ¡ disponible. AÃ±ade GEMINI_API_KEY en Vercel Settings ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Environment Variables (marca Serverless Functions) y haz Redeploy.",
         env_detailed_present: ENV_DETAILED_PRESENT,
         resolved_key_len: resolvedLen,
       });
@@ -25431,7 +25440,7 @@ const gptHandler = (() => {
         success: false,
         error: "transcribe_failed",
         detail,
-        message: "No pude entender la letra con este audio. Prueba con un fragmento más corto o con menos ruido.",
+        message: "No pude entender la letra con este audio. Prueba con un fragmento mÃ¡s corto o con menos ruido.",
       });
     }
     const lyrics = String((transcription as any)?.lyrics || "").trim();
@@ -25564,7 +25573,7 @@ const chatHandler = (() => {
       .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at, pinned, deleted_at")
       .maybeSingle();
     if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
-    if (!data) return chatSendJson(res, 500, { success: false, error: "create_failed", message: "No se pudo crear la conversación." });
+    if (!data) return chatSendJson(res, 500, { success: false, error: "create_failed", message: "No se pudo crear la conversaciÃ³n." });
     return chatSendJson(res, 200, {
       success: true,
       conversation: {
@@ -25581,7 +25590,7 @@ const chatHandler = (() => {
   }
 
   async function handleGetConversation(req: any, res: any, auth: any, convId: string) {
-    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversaciÃ³n no es vÃ¡lido." });
     const { admin, user } = auth;
     const { data: conv, error: convErr } = await admin
       .from("chat_conversations")
@@ -25591,7 +25600,7 @@ const chatHandler = (() => {
       .is("deleted_at", null)
       .maybeSingle();
     if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
-    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
     const { data: msgs, error: msgErr } = await admin
       .from("chat_messages")
       .select("id, conversation_id, role, content, structured_action, tokens, created_at")
@@ -25645,7 +25654,7 @@ const chatHandler = (() => {
   }
 
   async function handlePatchConversation(req: any, res: any, auth: any, convId: string) {
-    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversaciÃ³n no es vÃ¡lido." });
     const body = parseAnyBody(req);
     const { admin, user } = auth;
     const patch: any = {};
@@ -25677,7 +25686,7 @@ const chatHandler = (() => {
         .eq("user_id", user.id)
         .maybeSingle();
       if (chkErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(chkErr?.message || chkErr) });
-      if (!checkRow) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+      if (!checkRow) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
       if (Boolean(checkRow.pinned)) {
         return chatSendJson(res, 409, { success: false, error: "chat_fijado", message: "Primero desfija este chat para poder eliminarlo." });
       }
@@ -25690,7 +25699,7 @@ const chatHandler = (() => {
       .select("id, title, internal_dify_conversation_id, summary_snapshot, created_at, updated_at, archived_at, pinned, deleted_at")
       .maybeSingle();
     if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
-    if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
     return chatSendJson(res, 200, {
       success: true,
       updated: true,
@@ -25708,7 +25717,7 @@ const chatHandler = (() => {
   }
 
   async function handleSoftDeleteConversation(req: any, res: any, auth: any, convId: string) {
-    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversaciÃ³n no es vÃ¡lido." });
     const { admin, user } = auth;
     const { data: checkRow, error: chkErr } = await admin
       .from("chat_conversations")
@@ -25717,7 +25726,7 @@ const chatHandler = (() => {
       .eq("user_id", user.id)
       .maybeSingle();
     if (chkErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(chkErr?.message || chkErr) });
-    if (!checkRow) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (!checkRow) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
     if (Boolean(checkRow.pinned)) {
       return chatSendJson(res, 409, { success: false, error: "chat_fijado", message: "Primero desfija este chat para poder eliminarlo." });
     }
@@ -25730,7 +25739,7 @@ const chatHandler = (() => {
       .select("id, title, pinned, deleted_at, updated_at")
       .maybeSingle();
     if (error) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(error?.message || error) });
-    if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (!data) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
     return chatSendJson(res, 200, {
       success: true,
       deleted: true,
@@ -25745,7 +25754,7 @@ const chatHandler = (() => {
   }
 
   async function handleAppendMessage(req: any, res: any, auth: any, convId: string) {
-    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversaciÃ³n no es vÃ¡lido." });
     const { admin, user } = auth;
     const { data: conv, error: convErr } = await admin
       .from("chat_conversations")
@@ -25754,7 +25763,7 @@ const chatHandler = (() => {
       .eq("user_id", user.id)
       .maybeSingle();
     if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
-    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
     const body = parseAnyBody(req);
     const roleRaw = chatSafeString(body?.role || "", 20, "").toLowerCase();
     if (roleRaw !== "user" && roleRaw !== "assistant" && roleRaw !== "system") {
@@ -25762,7 +25771,7 @@ const chatHandler = (() => {
     }
     const contentRaw = chatSafeString(body?.content || "", 50000, "");
     const content = roleRaw === "assistant" || roleRaw === "system" ? stripInternalReasoning(contentRaw) : contentRaw;
-    if (!content) return chatSendJson(res, 400, { success: false, error: "contenido_vacio", message: "El contenido no puede estar vacío." });
+    if (!content) return chatSendJson(res, 400, { success: false, error: "contenido_vacio", message: "El contenido no puede estar vacÃ­o." });
     const structured_action = body?.structured_action !== undefined && body?.structured_action !== null ? body.structured_action : null;
     const tokensRaw = body?.tokens;
     const tokens = tokensRaw === null || tokensRaw === undefined || tokensRaw === "" ? null : chatSafeInt(tokensRaw, 0, 1_000_000, 0);
@@ -25794,7 +25803,7 @@ const chatHandler = (() => {
   }
 
   async function handleBatchAppendMessages(req: any, res: any, auth: any, convId: string) {
-    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversación no es válido." });
+    if (!chatIsValidUuid(convId)) return chatSendJson(res, 400, { success: false, error: "id_invalido", message: "El id de conversaciÃ³n no es vÃ¡lido." });
     const { admin, user } = auth;
     const { data: conv, error: convErr } = await admin
       .from("chat_conversations")
@@ -25803,11 +25812,11 @@ const chatHandler = (() => {
       .eq("user_id", user.id)
       .maybeSingle();
     if (convErr) return chatSendJson(res, 500, { success: false, error: "db_error", message: String(convErr?.message || convErr) });
-    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "Conversación no encontrada." });
+    if (!conv) return chatSendJson(res, 404, { success: false, error: "no_encontrada", message: "ConversaciÃ³n no encontrada." });
     const body = parseAnyBody(req);
     const rawMsgs = Array.isArray(body?.messages) ? body.messages : [];
     if (!rawMsgs.length) return chatSendJson(res, 400, { success: false, error: "sin_mensajes", message: "Debe enviar al menos un mensaje." });
-    if (rawMsgs.length > 50) return chatSendJson(res, 413, { success: false, error: "demasiados_mensajes", message: "Máximo 50 mensajes por lote." });
+    if (rawMsgs.length > 50) return chatSendJson(res, 413, { success: false, error: "demasiados_mensajes", message: "MÃ¡ximo 50 mensajes por lote." });
     const rows: any[] = [];
     for (const it of rawMsgs) {
       const roleRaw = chatSafeString(it?.role || "", 20, "").toLowerCase();
@@ -25823,7 +25832,7 @@ const chatHandler = (() => {
       if (tokens !== null) row.tokens = tokens;
       rows.push(row);
     }
-    if (!rows.length) return chatSendJson(res, 400, { success: false, error: "mensajes_invalidos", message: "Ningún mensaje del lote es válido." });
+    if (!rows.length) return chatSendJson(res, 400, { success: false, error: "mensajes_invalidos", message: "NingÃºn mensaje del lote es vÃ¡lido." });
     const { data, error } = await admin
       .from("chat_messages")
       .insert(rows)
@@ -25849,7 +25858,7 @@ const chatHandler = (() => {
       const rawCl = String(req.headers["content-length"] || "0").trim();
       const contentLength = Number(rawCl);
       if (!Number.isFinite(contentLength) || contentLength <= 0) {
-        return chatSendJson(res, 400, { success: false, error: "sin_archivo", message: "No se detectó archivo en la petición." });
+        return chatSendJson(res, 400, { success: false, error: "sin_archivo", message: "No se detectÃ³ archivo en la peticiÃ³n." });
       }
       if (contentLength > MAX_BYTES) {
         return chatSendJson(res, 413, { success: false, error: "demasiado_grande", message: "La imagen supera los 10 MB permitidos." });
@@ -25858,7 +25867,7 @@ const chatHandler = (() => {
       const isMultipart = ct.includes("multipart/form-data");
       const isJsonImage = ct.includes("application/json");
       if (!isMultipart && !isJsonImage) {
-        return chatSendJson(res, 400, { success: false, error: "tipo_invalido", message: "Formato de petición no admitido. Usa multipart/form-data o JSON con la imagen." });
+        return chatSendJson(res, 400, { success: false, error: "tipo_invalido", message: "Formato de peticiÃ³n no admitido. Usa multipart/form-data o JSON con la imagen." });
       }
       const userId = String(auth.user?.id || "").trim();
       if (!userId) {
@@ -25868,7 +25877,7 @@ const chatHandler = (() => {
         success: true,
         feature_stage: "development",
         will_process: false,
-        message: "Adjuntar foto de letra: funcionalidad en desarrollo. Tu imagen se validó correctamente pero aún no se procesa. Cuando esté activo, se extraerá el texto de la letra con el modelo de visión configurado.",
+        message: "Adjuntar foto de letra: funcionalidad en desarrollo. Tu imagen se validÃ³ correctamente pero aÃºn no se procesa. Cuando estÃ© activo, se extraerÃ¡ el texto de la letra con el modelo de visiÃ³n configurado.",
         user_id: userId,
         received_bytes: contentLength,
         max_allowed_bytes: MAX_BYTES,
@@ -25887,7 +25896,7 @@ const chatHandler = (() => {
       const method = (req.method || "GET").toUpperCase();
       const token = extractBearerToken(req);
       const auth = await requireAnyUserFromToken(token);
-      if (!auth.ok) return chatSendJson(res, auth.status, { success: false, error: "sesion_invalida", message: auth.error || "Sesión inválida." });
+      if (!auth.ok) return chatSendJson(res, auth.status, { success: false, error: "sesion_invalida", message: auth.error || "SesiÃ³n invÃ¡lida." });
       const next = parts[0] === "api" ? parts[2] : parts[1];
       const third = parts[0] === "api" ? parts[3] : parts[2];
       const fourth = parts[0] === "api" ? parts[4] : parts[3];
@@ -25913,9 +25922,9 @@ const chatHandler = (() => {
 })();
 
 // ============================================================
-// LUCIANA VOICE FLOW · PERSONAJE PERMANENTE + ACTIVACIONES 24h
+// LUCIANA VOICE FLOW Â· PERSONAJE PERMANENTE + ACTIVACIONES 24h
 // TODO acceso es exclusivamente por este endpoint.
-// RLS: 0 políticas = navegador no lee nada directo; solo Service Role.
+// RLS: 0 polÃ­ticas = navegador no lee nada directo; solo Service Role.
 // ============================================================
 const lucianaVoiceHandler = (() => {
   function send(res: any, status: number, body: any) {
@@ -25931,13 +25940,13 @@ const lucianaVoiceHandler = (() => {
   function nowISO() { return new Date().toISOString(); }
   function addHoursISO(h: number) { const d = new Date(); d.setHours(d.getHours() + h); return d.toISOString(); }
 
-  // Texto consentimiento (versionado; guardamos consent_version con la aceptación)
+  // Texto consentimiento (versionado; guardamos consent_version con la aceptaciÃ³n)
   const CONSENT_VERSION = "v1-es-20260919";
   const CONSENT_TEXT =
-    "Confirmo que esta es mi voz o que tengo autorización explícita para usarla.";
+    "Confirmo que esta es mi voz o que tengo autorizaciÃ³n explÃ­cita para usarla.";
 
   // NOTA DE NEGOCIO (2026-09-19): Crear personaje y reactivar personaje es GRATIS para el cliente.
-  // Los créditos solo se descuentan al generar canciones o covers (cobro Suno por crear la voz es costo interno).
+  // Los crÃ©ditos solo se descuentan al generar canciones o covers (cobro Suno por crear la voz es costo interno).
   const ACTIVATION_COST = 0;
 
   function parseJsonBody(req: any) {
@@ -25950,7 +25959,7 @@ const lucianaVoiceHandler = (() => {
     const supabaseAnon = (process.env.SUPABASE_ANON_KEY || "").toString().trim();
     const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").toString().trim();
     if (!supabaseUrl || !supabaseAnon || !supabaseService) {
-      return { ok: false as const, status: 500, error: "Falta configuración de Supabase." };
+      return { ok: false as const, status: 500, error: "Falta configuraciÃ³n de Supabase." };
     }
     const authHeader = (req.headers.authorization || req.headers.Authorization || "").toString();
     const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
@@ -25958,7 +25967,7 @@ const lucianaVoiceHandler = (() => {
     const createClient = await getSupabaseCreateClient();
     const sbAnon = createClient(supabaseUrl, supabaseAnon, { auth: { persistSession: false } });
     const { data, error } = await sbAnon.auth.getUser(token);
-    if (error || !data?.user) return { ok: false as const, status: 401, error: "Sesión inválida." };
+    if (error || !data?.user) return { ok: false as const, status: 401, error: "SesiÃ³n invÃ¡lida." };
     const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
     return { ok: true as const, user: data.user, admin };
   }
@@ -26082,15 +26091,15 @@ const lucianaVoiceHandler = (() => {
 
   async function chargeActivationIdempotent(auth: any, activationId: string) {
     // NEGOCIO (2026-09-19): crear/reactivar personaje es GRATIS para el cliente.
-    // Esta función se mantiene por compatibilidad (sin cobro ni consumo de créditos).
+    // Esta funciÃ³n se mantiene por compatibilidad (sin cobro ni consumo de crÃ©ditos).
     const { data: rows, error } = await auth.admin
       .from("voice_activations")
       .select("id, cost_charged, voice_generate_task_id")
       .eq("id", activationId)
       .eq("user_id", auth.user.id)
       .limit(1);
-    if (error || !rows?.length) return { ok: false, message: "No encontré la activación." };
-    // Idempotencia: si ya está marcado no volvemos a escribir.
+    if (error || !rows?.length) return { ok: false, message: "No encontrÃ© la activaciÃ³n." };
+    // Idempotencia: si ya estÃ¡ marcado no volvemos a escribir.
     const row = rows[0] as any;
     if (Number(row.cost_charged || 0) <= 0) {
       await auth.admin
@@ -26106,7 +26115,7 @@ const lucianaVoiceHandler = (() => {
 
   return async function handler(req: any, res: any) {
     try {
-      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido." });
+      if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "MÃ©todo no permitido." });
 
       function genErrorId(): string {
         const hh = String(new Date().getHours()).padStart(2, "0");
@@ -26149,7 +26158,7 @@ const lucianaVoiceHandler = (() => {
       if (!payload || typeof payload !== "object") {
         const eid = genErrorId();
         serverLog(eid, "parse_body", { payloadType: typeof payload, payload });
-        return clientError(400, "Petición inválida.", eid);
+        return clientError(400, "PeticiÃ³n invÃ¡lida.", eid);
       }
 
       const action = String(payload?.action || "").trim();
@@ -26157,7 +26166,7 @@ const lucianaVoiceHandler = (() => {
 
       const nowMs = Date.now();
 
-      // 1) list · mis personajes
+      // 1) list Â· mis personajes
       if (action === "list") {
         const { data: rows, error } = await auth.admin
           .from("voice_profiles")
@@ -26179,7 +26188,7 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, { ok: true, list: items });
       }
 
-      // 2) get · un solo personaje
+      // 2) get Â· un solo personaje
       if (action === "get") {
         if (!profileId) {
           const eid = genErrorId();
@@ -26204,19 +26213,19 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, { ok: true, profile });
       }
 
-      // 3) create · nuevo personaje (borrador)
+      // 3) create Â· nuevo personaje (borrador)
       // ---------------------------------------------------------------
-      // ROOT CAUSE confirmada vía inspección:
-      // El SQL v5.1 manual (ejecutado en Supabase por el usuario) declaró
+      // ROOT CAUSE confirmada vÃ­a inspecciÃ³n:
+      // El SQL v5.1 manual (ejecutado en Supabase por el usuario) declarÃ³
       //   voice_profiles.name  AS  VARCHAR NOT NULL
-      // sin DEFAULT. Pero el INSERT original enviaba `name = null` (línea
-      // anterior) para que el usuario elija el nombre después Ã¢â€ â€™ el trigger
-      // NOT NULL rechazaba el INSERT inmediatamente y salía "No pude crear
+      // sin DEFAULT. Pero el INSERT original enviaba `name = null` (lÃ­nea
+      // anterior) para que el usuario elija el nombre despuÃ©s ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ el trigger
+      // NOT NULL rechazaba el INSERT inmediatamente y salÃ­a "No pude crear
       // el personaje." justo al tocar "Empezar ahora".
-      // FIX: generar nombre temporal único interno (nunca visible al cliente
+      // FIX: generar nombre temporal Ãºnico interno (nunca visible al cliente
       // hasta que el usuario lo confirme en el paso "Nombre").
       //
-      // Cualquier error técnico se registra en console.error del servidor
+      // Cualquier error tÃ©cnico se registra en console.error del servidor
       // con error_id corto; al cliente SOLO le enviamos error + error_id
       // (nunca code/message/details/hint/vars/env internas).
       if (action === "create") {
@@ -26263,7 +26272,7 @@ const lucianaVoiceHandler = (() => {
 
         const rawName = String(payload?.name || "").trim();
 
-        // Generar UUID ID por si el SQL v5.1 declaró id NOT NULL sin DEFAULT gen_random_uuid()
+        // Generar UUID ID por si el SQL v5.1 declarÃ³ id NOT NULL sin DEFAULT gen_random_uuid()
         let idUuid: string | null = null;
         try {
           if (typeof (globalThis as any)?.crypto?.randomUUID === "function") {
@@ -26274,10 +26283,10 @@ const lucianaVoiceHandler = (() => {
         } catch {}
 
         // ROOT FIX: `voice_profiles.name` es NOT NULL (SQL v5.1 manual sin DEFAULT).
-        // No podemos insertar NULL Ã¢â€ â€™ nombre temporal interno único: Borrador-<8hex userId>
+        // No podemos insertar NULL ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ nombre temporal interno Ãºnico: Borrador-<8hex userId>
         const insert: any = {
           user_id: auth.user.id,
-          name: "", // Ã¢â€ Â se setea abajo (NOT NULL)
+          name: "", // ÃƒÂ¢Ã¢â‚¬Â Ã‚Â se setea abajo (NOT NULL)
           status: "draft",
           created_at: nowISO(),
           updated_at: nowISO(),
@@ -26319,8 +26328,8 @@ const lucianaVoiceHandler = (() => {
           const details = (insertErr as any)?.details ? String((insertErr as any).details) : null;
           const hint = (insertErr as any)?.hint ? String((insertErr as any).hint) : null;
           const msg = (message || "").toString();
-          // SÓLO si es unique_name_alive el usuario SÃƒÂ puede ver el mensaje real
-          // (es un error de negocio visible, no técnico). El resto SOLO server log.
+          // SÃ“LO si es unique_name_alive el usuario SÃƒÆ’Ã‚Â puede ver el mensaje real
+          // (es un error de negocio visible, no tÃ©cnico). El resto SOLO server log.
           const isUniqueNameAlive =
             (code === "23505") ||
             /uq_voice_profiles_user_name_alive|duplicate key value violates unique constraint/i.test(msg + " " + (details || ""));
@@ -26360,7 +26369,7 @@ const lucianaVoiceHandler = (() => {
       //    Devuelve URLs firmadas de SUBIDA (PUT) y el R2 path privado a guardar.
       if (action === "get-upload-url") {
         const kind = String(payload?.kind || "").trim();
-        if (!["sample", "verify"].includes(kind)) return send(res, 400, { error: "Tipo inválido." });
+        if (!["sample", "verify"].includes(kind)) return send(res, 400, { error: "Tipo invÃ¡lido." });
         const extension = String(payload?.extension || payload?.ext || "webm").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "webm";
         const contentType = String(payload?.contentType || payload?.content_type || "").trim() || `audio/${extension === "mp3" ? "mpeg" : extension === "wav" ? "wav" : extension === "m4a" ? "mp4" : extension === "ogg" ? "ogg" : "webm"}`;
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
@@ -26371,7 +26380,7 @@ const lucianaVoiceHandler = (() => {
           ? `voice_profiles/${auth.user.id}/${profileId}/sample_original.${rand}.${safeExt}`
           : `voice_profiles/${auth.user.id}/${profileId}/verify_${actId || "new"}.${rand}.${safeExt}`;
 
-        // Usar la función global getSignedR2PutUrl(key, contentType, expiresInSeconds)
+        // Usar la funciÃ³n global getSignedR2PutUrl(key, contentType, expiresInSeconds)
         try {
           if (typeof getSignedR2PutUrl === "function") {
             const putUrl = await getSignedR2PutUrl(path, contentType, 30 * 60);
@@ -26389,10 +26398,10 @@ const lucianaVoiceHandler = (() => {
           const detail = e instanceof Error ? e.message : String(e || "");
           return send(res, 500, { error: "No puedo generar la URL de subida (R2).", detail });
         }
-        return send(res, 500, { error: "No puedo generar la URL de subida (módulo R2 no cargado)." });
+        return send(res, 500, { error: "No puedo generar la URL de subida (mÃ³dulo R2 no cargado)." });
       }
 
-      // 6) save-sample-path · guarda el path R2 de la muestra original (permanente)
+      // 6) save-sample-path Â· guarda el path R2 de la muestra original (permanente)
       if (action === "save-sample-path") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const r2Path = String(payload?.r2_path || payload?.r2Path || payload?.key || payload?.suggested_path || "").trim();
@@ -26406,26 +26415,26 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, { ok: true, message: "Muestra original guardada." });
       }
 
-      // 7) save-verify-path · guarda el path R2 de la grabación de la frase
+      // 7) save-verify-path Â· guarda el path R2 de la grabaciÃ³n de la frase
       if (action === "save-verify-path") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const r2Path = String(payload?.r2_path || payload?.r2Path || payload?.key || payload?.suggested_path || "").trim();
         const actId = String(payload?.activationId || "").trim();
-        if (!r2Path) return send(res, 400, { error: "Falta ruta de grabación." });
+        if (!r2Path) return send(res, 400, { error: "Falta ruta de grabaciÃ³n." });
         const { error } = await auth.admin
           .from("voice_profiles")
           .update({ last_verify_r2_path: r2Path, updated_at: nowISO() })
           .eq("id", profileId)
           .eq("user_id", auth.user.id);
-        if (error) return send(res, 500, { error: "No pude guardar la grabación." });
+        if (error) return send(res, 500, { error: "No pude guardar la grabaciÃ³n." });
         if (actId) {
-          // Registrar también en la activación por si acaso.
+          // Registrar tambiÃ©n en la activaciÃ³n por si acaso.
           await auth.admin.from("voice_activations").update({ updated_at: nowISO() }).eq("id", actId).eq("user_id", auth.user.id).catch(() => {});
         }
-        return send(res, 200, { ok: true, message: "Grabación de verificación guardada." });
+        return send(res, 200, { ok: true, message: "GrabaciÃ³n de verificaciÃ³n guardada." });
       }
 
-      // 8) request-phrase · Iniciar validación y pedir frase a Suno (con la muestra original guardada)
+      // 8) request-phrase Â· Iniciar validaciÃ³n y pedir frase a Suno (con la muestra original guardada)
       if (action === "request-phrase" || action === "regenerate-phrase") {
         // safeAction: variable declarada ANTES del try/catch outer para estar disponible en TODOS los catches.
         // Evita ReferenceError: OUTER_ACTION is not defined (VF-0808-d177de).
@@ -26474,8 +26483,8 @@ const lucianaVoiceHandler = (() => {
           }
 
         // 2. Firmar URL de la muestra para enviarla a Suno (URL FIRMADA TEMPORAL SOLAMENTE)
-        //    - PRIVACIDAD CRÃƒÂTICA: audios biométricos NUNCA públicos.
-        //    - No se usa ninguna URL pública ni fallback; si falla la firma, cortamos el flujo.
+        //    - PRIVACIDAD CRÃƒÆ’Ã‚ÂTICA: audios biomÃ©tricos NUNCA pÃºblicos.
+        //    - No se usa ninguna URL pÃºblica ni fallback; si falla la firma, cortamos el flujo.
         //    - TTL: PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS (7 dias)
         //      para dar tiempo al proveedor de entrar en cola antes de descargar.
         const samplePath = String(profile.sample_original_r2_path || "").trim();
@@ -26483,7 +26492,7 @@ const lucianaVoiceHandler = (() => {
         if (typeof getSignedR2Url !== "function" || !samplePath) {
           const eid = genErrorId();
           serverLog(eid, action, { step: "getSignedR2Url_check", samplePath, getSignedR2Url_type: typeof getSignedR2Url });
-          return clientError(500, "No podemos preparar tu muestra en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+          return clientError(500, "No podemos preparar tu muestra en este momento. IntÃ©ntalo de nuevo o contacta a soporte.", eid);
         }
         try {
           sampleSigned = String(await getSignedR2Url(samplePath, PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS) || "").trim();
@@ -26501,11 +26510,11 @@ const lucianaVoiceHandler = (() => {
         if (!sampleSigned) {
           const eid = genErrorId();
           serverLog(eid, action, { step: "sample_url_empty_after_throw", samplePath });
-          return clientError(500, "No podemos preparar tu muestra en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+          return clientError(500, "No podemos preparar tu muestra en este momento. IntÃ©ntalo de nuevo o contacta a soporte.", eid);
         }
 
-        // Ã¢Å¡Â Ã¯Â¸Â Flujo oficial Suno: NUEVA frase Ã¢â€ â€™ el usuario DEBE grabar/cantar EXACTAMENTE la frase nueva.
-        // Cualquier grabación de verificación anterior NO SIRVE (la frase cambió).
+        // ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Flujo oficial Suno: NUEVA frase ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ el usuario DEBE grabar/cantar EXACTAMENTE la frase nueva.
+        // Cualquier grabaciÃ³n de verificaciÃ³n anterior NO SIRVE (la frase cambiÃ³).
         // NULLificamos last_verify_r2_path para forzar que UI pida grabar OTRA VEZ.
         try {
           await auth.admin
@@ -26515,7 +26524,7 @@ const lucianaVoiceHandler = (() => {
             .eq("user_id", auth.user.id);
         } catch { /* ignore; no-romper */ }
 
-        // 3. Transacción atómica: desactivar activa anterior + nueva
+        // 3. TransacciÃ³n atÃ³mica: desactivar activa anterior + nueva
         const language = "es";
         const { data: newActRows, error: insErr } = await auth.admin
           .rpc("voice_start_new_activation", {
@@ -26556,13 +26565,13 @@ const lucianaVoiceHandler = (() => {
           if (aerr) {
             const eid = genErrorId();
             serverLog(eid, action, { step: "insert.voice_activations", err: aerr });
-            return clientError(500, "No puedo iniciar la validación. Intenta de nuevo.", eid);
+            return clientError(500, "No puedo iniciar la validaciÃ³n. Intenta de nuevo.", eid);
           }
           activationId = (arows as any[])?.[0]?.id || null;
         }
         if (!activationId) {
           const eid = genErrorId();
-          return clientError(500, "No se pudo preparar la validación.", eid);
+          return clientError(500, "No se pudo preparar la validaciÃ³n.", eid);
         }
 
         // 4. Llamar Suno
@@ -26622,7 +26631,7 @@ const lucianaVoiceHandler = (() => {
               const rawMsg = sunoErrorMessage(r.data, (r.text || "").slice(0, 800) || `HTTP ${r.status || 0}`);
               const friendly = /rate.*limit|too.*many|demasiadas|429/.test(String(rawMsg || "").toLowerCase())
                 ? "Hay mucha gente creando voces ahora. Espera 1 minuto y vuelve a intentarlo (Error 429 Suno)."
-                : "El proveedor tardó en responder la validación. Vuelve a intentarlo en 30 segundos.";
+                : "El proveedor tardÃ³ en responder la validaciÃ³n. Vuelve a intentarlo en 30 segundos.";
               return clientError(502, friendly, eid);
             }
           } else {
@@ -26634,7 +26643,7 @@ const lucianaVoiceHandler = (() => {
             }
             if (!prevTaskId) {
               const eid = genErrorId();
-              return clientError(400, "Falta identificación para regenerar la frase.", eid);
+              return clientError(400, "Falta identificaciÃ³n para regenerar la frase.", eid);
             }
             const paths = [
               "/api/v1/voice/regenerate",
@@ -26654,7 +26663,7 @@ const lucianaVoiceHandler = (() => {
               return clientError(502, "No pude generar otra frase. Intenta en 30 segundos.", eid);
             }
           }
-          // Guardar taskId en activación
+          // Guardar taskId en activaciÃ³n
           await auth.admin
             .from("voice_activations")
             .update({ validate_task_id: taskId, status: "processing", updated_at: nowISO() })
@@ -26702,18 +26711,18 @@ const lucianaVoiceHandler = (() => {
             phrase: phrase || null,
             status: phrase ? "esperando_grabacion_verificacion" : "creando",
             message: phrase
-              ? "Frase lista. Grábala tal cual está escrita."
-              : "Preparando frase de verificaciónÃ¢â‚¬Â¦ actualiza en un momento.",
+              ? "Frase lista. GrÃ¡bala tal cual estÃ¡ escrita."
+              : "Preparando frase de verificaciÃ³nÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ actualiza en un momento.",
           });
         } catch (e) {
           const eid = genErrorId();
           serverLog(eid, safeAction, { step: "suno.full_try", err: e instanceof Error ? e.stack || String(e) : String(e) });
-          return clientError(502, "El proveedor no respondió bien.", eid);
+          return clientError(502, "El proveedor no respondiÃ³ bien.", eid);
         }
         } catch (outerErr) {
           // Catch EXTERNO de request-phrase / regenerate-phrase:
-          // Captura CUALQUIER throw síncrono/permiso no controlado (TypeError Cannot read 'from' de auth.admin, undefined vars, etc.)
-          // para que NUNCA caiga en el catch top genérico "Error interno."
+          // Captura CUALQUIER throw sÃ­ncrono/permiso no controlado (TypeError Cannot read 'from' de auth.admin, undefined vars, etc.)
+          // para que NUNCA caiga en el catch top genÃ©rico "Error interno."
           const eid = genErrorId();
           try {
             // eslint-disable-next-line no-console
@@ -26726,11 +26735,11 @@ const lucianaVoiceHandler = (() => {
             errStack: outerErr instanceof Error ? outerErr.stack : undefined,
             toString: String(outerErr || ""),
           });
-          return clientError(500, "No pudimos preparar tu solicitud en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+          return clientError(500, "No pudimos preparar tu solicitud en este momento. IntÃ©ntalo de nuevo o contacta a soporte.", eid);
         }
       }
 
-      // 9) set-name · nombre del personaje (antes de confirmar costo)
+      // 9) set-name Â· nombre del personaje (antes de confirmar costo)
       if (action === "set-name") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const name = String(payload?.name || "").trim().slice(0, 50);
@@ -26752,7 +26761,7 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, { ok: true, message: `Nombre guardado: ${name}.`, ...pub });
       }
 
-      // 10) confirm-create · cobra y crea la voz en Suno (GRABAR + voice/generate)
+      // 10) confirm-create Â· cobra y crea la voz en Suno (GRABAR + voice/generate)
       if (action === "confirm-create") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const { data: pRows, error: pErr } = await auth.admin
@@ -26761,18 +26770,18 @@ const lucianaVoiceHandler = (() => {
         const profile = pRows[0] as any;
         if (!profile.consent_given_at) return send(res, 400, { error: "Acepta el consentimiento." });
         if (!profile.sample_original_r2_path) return send(res, 400, { error: "Sube tu muestra de voz." });
-        if (!profile.last_verify_r2_path) return send(res, 400, { error: "Graba la frase de verificación." });
+        if (!profile.last_verify_r2_path) return send(res, 400, { error: "Graba la frase de verificaciÃ³n." });
         const name = String(profile.name || "").trim().slice(0, 50);
         if (!name) return send(res, 400, { error: "Ponle nombre al personaje." });
 
-        // Obtener activación activa o última
+        // Obtener activaciÃ³n activa o Ãºltima
         const { active, latest } = await getProfileActiveActivation(auth, profile.id);
         const source: any = active || latest;
-        if (!source) return send(res, 400, { error: "Pide la frase de verificación primero." });
-        if (!source.validate_task_id) return send(res, 400, { error: "Pide la frase de verificación primero." });
-        if (!source.current_validate_phrase) return send(res, 400, { error: "La frase de verificación aún no está lista." });
+        if (!source) return send(res, 400, { error: "Pide la frase de verificaciÃ³n primero." });
+        if (!source.validate_task_id) return send(res, 400, { error: "Pide la frase de verificaciÃ³n primero." });
+        if (!source.current_validate_phrase) return send(res, 400, { error: "La frase de verificaciÃ³n aÃºn no estÃ¡ lista." });
 
-        // Cobro 15 créditos (idempotente; si ya se cobró, no cobra 2)
+        // Cobro 15 crÃ©ditos (idempotente; si ya se cobrÃ³, no cobra 2)
         const charge = await chargeActivationIdempotent(auth, source.id);
         if (!charge.ok) return send(res, 402, { error: charge.message || "No puedo procesar el pago." });
 
@@ -26782,7 +26791,7 @@ const lucianaVoiceHandler = (() => {
         if (typeof getSignedR2Url !== "function" || !verifyPath) {
           const eid = genErrorId();
           serverLog(eid, action, { step: "getSignedR2Url_verify_check", verifyPath, getSignedR2Url_type: typeof getSignedR2Url });
-          return clientError(500, "No podemos preparar tu grabación en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+          return clientError(500, "No podemos preparar tu grabaciÃ³n en este momento. IntÃ©ntalo de nuevo o contacta a soporte.", eid);
         }
         try {
           verifySigned = String(await getSignedR2Url(verifyPath, PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS) || "").trim();
@@ -26799,7 +26808,7 @@ const lucianaVoiceHandler = (() => {
         if (!verifySigned) {
           const eid = genErrorId();
           serverLog(eid, action, { step: "verify_url_empty_after_throw", verifyPath });
-          return clientError(500, "No podemos preparar tu grabación en este momento. Inténtalo de nuevo o contacta a soporte.", eid);
+          return clientError(500, "No podemos preparar tu grabaciÃ³n en este momento. IntÃ©ntalo de nuevo o contacta a soporte.", eid);
         }
 
         const callback = absoluteUrlFromReq ? absoluteUrlFromReq(req, "/api/webhooks/suno") : undefined;
@@ -26823,11 +26832,11 @@ const lucianaVoiceHandler = (() => {
           activationId: source.id,
           status: "creando",
           cost_charged: ACTIVATION_COST,
-          message: "Estoy creando tu personaje de voz Ã°Å¸Å½â„¢Ã¯Â¸Â Puede tardar un momento. Actualiza en unos segundos.",
+          message: "Estoy creando tu personaje de voz ÃƒÂ°Ã…Â¸Ã…Â½Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â Puede tardar un momento. Actualiza en unos segundos.",
         });
       }
 
-      // 11) refresh-status · polling (backend consulta a Suno; NUNCA pongas polling agresivo; intervalo > 12s)
+      // 11) refresh-status Â· polling (backend consulta a Suno; NUNCA pongas polling agresivo; intervalo > 12s)
       if (action === "refresh-status") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const { data: pRows, error: pErr } = await auth.admin
@@ -26897,7 +26906,7 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, await buildPublicView(auth, profile));
       }
 
-      // 12) reactivate · crear nueva activación usando la muestra original guardada
+      // 12) reactivate Â· crear nueva activaciÃ³n usando la muestra original guardada
       if (action === "reactivate") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const { data: pRows } = await auth.admin
@@ -26923,16 +26932,16 @@ const lucianaVoiceHandler = (() => {
           .select("id").limit(1);
         const activationId = (arows as any[])?.[0]?.id;
 
-        // Ã¢Å¡Â Ã¯Â¸Â Flujo oficial Suno: CADA NUEVA activación necesita FRASE NUEVA + GRABACIÓN NUEVA.
-        // No se puede reutilizar la grabación de verificación anterior (la frase es distinta).
-        // Borramos la última ruta de verify para forzar que el UI muestre el paso "graba la frase".
+        // ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Flujo oficial Suno: CADA NUEVA activaciÃ³n necesita FRASE NUEVA + GRABACIÃ“N NUEVA.
+        // No se puede reutilizar la grabaciÃ³n de verificaciÃ³n anterior (la frase es distinta).
+        // Borramos la Ãºltima ruta de verify para forzar que el UI muestre el paso "graba la frase".
         await auth.admin
           .from("voice_profiles")
           .update({ last_verify_r2_path: null, updated_at: nowISO() })
           .eq("id", profile.id)
           .eq("user_id", auth.user.id);
 
-        return send(res, 200, { ok: true, activationId, status: "esperando_frase", message: "Personaje cargado. Ahora pide la frase de verificación." });
+        return send(res, 200, { ok: true, activationId, status: "esperando_frase", message: "Personaje cargado. Ahora pide la frase de verificaciÃ³n." });
       }
 
       // 13) hide (soft delete) vs delete-permanent (confirmado en UI 2 pasos)
@@ -26946,7 +26955,7 @@ const lucianaVoiceHandler = (() => {
       if (action === "delete-permanently") {
         if (!profileId) return send(res, 400, { error: "Falta profileId." });
         const confirm = String(payload?.confirm || "").trim();
-        if (confirm !== "ELIMINAR_PERMANENTEMENTE") return send(res, 400, { error: "Confirmación requerida." });
+        if (confirm !== "ELIMINAR_PERMANENTEMENTE") return send(res, 400, { error: "ConfirmaciÃ³n requerida." });
         const { data: rows, error } = await auth.admin
           .from("voice_profiles").select("*").eq("id", profileId).eq("user_id", auth.user.id).limit(1);
         if (error || !rows?.length) return send(res, 404, { error: "Personaje no encontrado." });
@@ -26962,7 +26971,7 @@ const lucianaVoiceHandler = (() => {
         return send(res, 200, { ok: true, message: "Personaje eliminado de forma permanente junto con sus audios." });
       }
 
-      return send(res, 404, { error: "Acción desconocida." });
+      return send(res, 404, { error: "AcciÃ³n desconocida." });
     } catch (e) {
       const eid =
         (typeof (e as any)?.id === "string" && String((e as any).id).startsWith("VF-"))
@@ -26994,18 +27003,18 @@ const lucianaVoiceHandler = (() => {
         // eslint-disable-next-line no-console
         try { console.error(`[${eid}] lucianaVoiceHandler action=unknown step=top_catch_unhandled`, e instanceof Error ? e.stack || String(e) : String(e || "")); } catch {}
       }
-      return send(res, 500, { error: "No pudimos procesar tu petición. Inténtalo de nuevo o contacta a soporte.", error_id: eid });
+      return send(res, 500, { error: "No pudimos procesar tu peticiÃ³n. IntÃ©ntalo de nuevo o contacta a soporte.", error_id: eid });
     }
   };
 })();
 
 // #region Mureka
 const MUREKA_DISABLED = true;
-const MUREKA_DISABLED_MSG = "Mureka está temporalmente deshabilitado. Por favor usa Suno por ahora.";
+const MUREKA_DISABLED_MSG = "Mureka estÃ¡ temporalmente deshabilitado. Por favor usa Suno por ahora.";
 
 // Bandera global para pausar NUEVOS checkouts Mercado Pago (solo nuevos pagos, no webhook/confirm)
 const MP_CHECKOUTS_DISABLED = false;
-const MP_CHECKOUTS_DISABLED_MSG = "Compras temporalmente no disponibles. Intenta más tarde.";
+const MP_CHECKOUTS_DISABLED_MSG = "Compras temporalmente no disponibles. Intenta mÃ¡s tarde.";
 
 const murekaHandler = (() => {
   function send(res, status, body) {
@@ -27214,8 +27223,8 @@ const murekaHandler = (() => {
     const method = String(req.method || "GET").toUpperCase();
 
     const apiKey = String(process.env.MUREKA_API_KEY || "").trim();
-    const userFriendlyNoConfig = "Proveedor Mureka no está configurado en este momento. Intenta nuevamente más tarde.";
-    const userFriendlyGenerateFail = "No pudimos iniciar la generación con Mureka. Créditos devueltos.";
+    const userFriendlyNoConfig = "Proveedor Mureka no estÃ¡ configurado en este momento. Intenta nuevamente mÃ¡s tarde.";
+    const userFriendlyGenerateFail = "No pudimos iniciar la generaciÃ³n con Mureka. CrÃ©ditos devueltos.";
 
     if (method === "POST" && sub === "generate") {
       if (MUREKA_DISABLED) {
@@ -27239,30 +27248,30 @@ const murekaHandler = (() => {
       const validModels = ["mureka-9.5", "auto", "mureka-9"];
       const model = validModels.indexOf(requestedModel) >= 0 ? requestedModel : "auto";
 
-      // Costo dinámico por modelo: TODOS los modelos Mureka (V9.5 / Auto / V9) = 12 créditos
-      // Mureka entrega 1 sola canción por solicitud a $0.15 USD Ã¢â€ â€™ 12 créditos estándar.
+      // Costo dinÃ¡mico por modelo: TODOS los modelos Mureka (V9.5 / Auto / V9) = 12 crÃ©ditos
+      // Mureka entrega 1 sola canciÃ³n por solicitud a $0.15 USD ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ 12 crÃ©ditos estÃ¡ndar.
       const costCredits = 12;
 
       const lyricsRaw = typeof body.lyrics === "string" ? body.lyrics : "";
       const promptRaw = (typeof body.prompt === "string" ? body.prompt : "") ||
                         ((typeof body.title === "string" ? body.title : "") + ". " + (typeof body.style === "string" ? body.style : ""));
-      const titleIn = (typeof body.title === "string" ? body.title : "").slice(0, 140) || "Canción Mureka";
+      const titleIn = (typeof body.title === "string" ? body.title : "").slice(0, 140) || "CanciÃ³n Mureka";
       const genderIn = String(body.gender || "").toLowerCase().startsWith("m") ? "m" :
                        String(body.gender || "").toLowerCase().startsWith("f") ? "f" : null;
       const nVal = Number(body.n);
       const n = Number.isFinite(nVal) && nVal >= 1 && nVal <= 4 ? Math.floor(nVal) : 2;
 
       if (lyricsRaw.trim().length === 0 && promptRaw.trim().length === 0) {
-        return send(res, 400, { ok:false, message:"Debes proporcionar al menos una letra o un estilo/descripción para generar la canción." });
+        return send(res, 400, { ok:false, message:"Debes proporcionar al menos una letra o un estilo/descripciÃ³n para generar la canciÃ³n." });
       }
 
       if (!apiKey) {
         return send(res, 500, { ok:false, message: userFriendlyNoConfig });
       }
 
-      // --- CÃƒÂLCULO DE CRÉDITOS MÃƒÂS ROBUSTO ANTES DE consumeUserCredits ---
+      // --- CÃƒÆ’Ã‚ÂLCULO DE CRÃ‰DITOS MÃƒÆ’Ã‚ÂS ROBUSTO ANTES DE consumeUserCredits ---
       // BUG REPORTADO EN VIVO: profile.credits = 1,322 visibles en navbar,
-      // pero consumeUserCredits retorna ok=false. Si las condiciones heurísticas
+      // pero consumeUserCredits retorna ok=false. Si las condiciones heurÃ­sticas
       // detectan que el usuario TIENE saldo (admin o profile.credits >= cost),
       // nos saltamos el consume estricto y descontamos manualmente al final
       // (o directamente de profile.credits), sin lanzar el 402.
@@ -27312,7 +27321,7 @@ const murekaHandler = (() => {
       let consumedOk = false;
       if (bypassConsumeCredits) {
         // Intento de bypass: descontar directamente de profile.credits,
-        // sin pasar por la lógica que chequea expiración/lotes.
+        // sin pasar por la lÃ³gica que chequea expiraciÃ³n/lotes.
         try {
           const after = Math.max(0, Number(profileRawCreditsNumber - costCredits));
           const updRes = await updateCreditsAnyColumn(admin, userId, after);
@@ -27357,7 +27366,7 @@ const murekaHandler = (() => {
         }
       }
       if (!consumedOk) {
-        // ÃƒÅ¡LTIMO FALLBACK: si todavía NO consumió PERO el usuario parece que TIENE saldo
+        // ÃƒÆ’Ã…Â¡LTIMO FALLBACK: si todavÃ­a NO consumiÃ³ PERO el usuario parece que TIENE saldo
         // (es admin o profile.credits >= cost), descontamos a pelo de profile.credits
         // con math manual y marcamos consumedOk, evitando el 402 para siempre.
         if (bypassConsumeCredits && profileRawCreditsNumber >= costCredits) {
@@ -27396,7 +27405,7 @@ const murekaHandler = (() => {
             consumedByBypass: consumedByBypass,
           });
         } catch (_) {}
-        return send(res, 402, { ok:false, message:"No tienes suficientes créditos para generar la canción." });
+        return send(res, 402, { ok:false, message:"No tienes suficientes crÃ©ditos para generar la canciÃ³n." });
       }
 
       let refunded = false;
@@ -27406,7 +27415,7 @@ const murekaHandler = (() => {
         try { await adjustUserCredits(admin, userId, costCredits); } catch (e) {
           console.error("[murekaHandler.generate] refund FAIL userId=", userId, "cost=", costCredits, "err=", e && e.message);
         }
-        // Si el cobro fue por BYPASS (profile.credits directo), también restauramos
+        // Si el cobro fue por BYPASS (profile.credits directo), tambiÃ©n restauramos
         // la columna profiles.credits para que el usuario recupere saldo visible en el navbar.
         if (consumedByBypass) {
           try {
@@ -27496,16 +27505,16 @@ const murekaHandler = (() => {
       const authByToken = token ? await requireAnyUserFromToken(token).catch(function () { return { ok: false }; }) : { ok: false };
 
       if (!(authByToken && authByToken.ok && authByToken.user && String(authByToken.user.id || "").length > 0)) {
-        // AUTENTICACIÓN ESTRICTA: NO permitimos acceso permisivo solo por taskId.
-        // El usuario debe estar logueado con token Supabase válido.
-        return send(res, 401, { ok:false, status:"error", code:"AUTH_REQUIRED", message:"No autorizado. Inicia sesión para consultar tu tarea Mureka." });
+        // AUTENTICACIÃ“N ESTRICTA: NO permitimos acceso permisivo solo por taskId.
+        // El usuario debe estar logueado con token Supabase vÃ¡lido.
+        return send(res, 401, { ok:false, status:"error", code:"AUTH_REQUIRED", message:"No autorizado. Inicia sesiÃ³n para consultar tu tarea Mureka." });
       }
 
       const userId = String(authByToken.user.id || "");
       const admin = (authByToken && (authByToken as any).admin) ? (authByToken as any).admin : adminGlob;
       if (!admin) return send(res, 500, { ok:false, status:"error", message:"No disponible." });
 
-      // VALIDACIÓN DE PROPIEDAD ESTRICTA: el taskId debe pertenecer a ESTE userId autenticado.
+      // VALIDACIÃ“N DE PROPIEDAD ESTRICTA: el taskId debe pertenecer a ESTE userId autenticado.
       let ownerOk = false;
       let taskRow = null;
       try {
@@ -27635,7 +27644,7 @@ const murekaHandler = (() => {
         } catch (_) {}
         console.error("[murekaHandler.query] Mureka status=failed taskId=", taskIdFromPath,
           "payload=", JSON.stringify(qRes.json || {}).slice(0, 1200));
-        return send(res, 200, { ok:false, status:"failed", code:"MUREKA_RESPONSE_FAILED", message:"No se pudo generar la canción con Mureka. Créditos devueltos." });
+        return send(res, 200, { ok:false, status:"failed", code:"MUREKA_RESPONSE_FAILED", message:"No se pudo generar la canciÃ³n con Mureka. CrÃ©ditos devueltos." });
       }
 
       if (statusMureka === "queued" || statusMureka === "preparing" || statusMureka === "running" || statusMureka === "processing") {
@@ -27643,7 +27652,7 @@ const murekaHandler = (() => {
         const d = qRes.json && qRes.json.data ? qRes.json.data : (qRes.json || {});
         if (typeof d.progress === "number") progress = d.progress;
         else if (typeof d.percentage === "number") progress = d.percentage;
-        return send(res, 200, { ok:true, status:"processing", progress: progress, message:"Generando canción con Mureka..." });
+        return send(res, 200, { ok:true, status:"processing", progress: progress, message:"Generando canciÃ³n con Mureka..." });
       }
 
       const isSuccessMureka = (statusMureka === "succeeded" || statusMureka === "success" || statusMureka === "done" || statusMureka === "completed" ||
@@ -27657,7 +27666,7 @@ const murekaHandler = (() => {
 
       // ==========================================================
       //  STATUS SUCCESS: Extraer URL audio, guardar library_items, responder succeeded.
-      //  R2: best-effort ASÃƒÂNCRONO (no bloquea respuesta)
+      //  R2: best-effort ASÃƒÆ’Ã‚ÂNCRONO (no bloquea respuesta)
       // ==========================================================
       let tracks: any[] = [];
       try {
@@ -27667,7 +27676,7 @@ const murekaHandler = (() => {
         tracks = [];
       }
 
-      // Second pass: extracción directa adicional para capturar URLs que el extractor perdió
+      // Second pass: extracciÃ³n directa adicional para capturar URLs que el extractor perdiÃ³
       if (Array.isArray(tracks) && tracks.length === 0) {
         try {
           const findUrlDeep = (obj: any, depth: number): string | null => {
@@ -27753,12 +27762,12 @@ const murekaHandler = (() => {
         });
       } catch (_) {}
 
-      // Ã°Å¸â€Â´ CHECK OBLIGATORIO: Si no hay URL audio Ã¢â€ â€™ failed inmediatamente, NO dejes 95%
+      // ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â´ CHECK OBLIGATORIO: Si no hay URL audio ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ failed inmediatamente, NO dejes 95%
       const hasAnyValidAudioUrl = Array.isArray(tracks) && tracks.some(function (t) {
         return t && typeof t.audio_url === "string" && /^https?:\/\//i.test(t.audio_url);
       });
       if (!hasAnyValidAudioUrl) {
-        // Refundar créditos por URL no encontrada
+        // Refundar crÃ©ditos por URL no encontrada
         try {
           await adjustUserCredits(admin, userId, taskCost);
         } catch (e) {
@@ -27777,7 +27786,7 @@ const murekaHandler = (() => {
           "topKeys=", topKeys.join(","), "dataKeys=", String(dataKeys || ""),
           "jsonSnippet=", JSON.stringify(qRes.json || {}).slice(0, 1500));
         return send(res, 200, { ok:false, status:"failed", code:"MUREKA_AUDIO_URL_NOT_FOUND",
-          message:"No pude extraer la URL del audio de Mureka (status success sin URLs). Créditos devueltos. Intenta de nuevo en unos minutos." });
+          message:"No pude extraer la URL del audio de Mureka (status success sin URLs). CrÃ©ditos devueltos. Intenta de nuevo en unos minutos." });
       }
 
       let modelCode = "mureka-9.5";
@@ -27788,7 +27797,7 @@ const murekaHandler = (() => {
         } catch (_) {}
       }
       let genderFromExtra = null;
-      let titleDefault = "Canción Mureka";
+      let titleDefault = "CanciÃ³n Mureka";
       if (taskRow && taskRow.extra) {
         try {
           const ex = typeof taskRow.extra === "string" ? JSON.parse(taskRow.extra) : taskRow.extra;
@@ -27806,7 +27815,7 @@ const murekaHandler = (() => {
       let insertedUsingDirectUrl = false;
       let firstAudioUrlReturn = "";
 
-      // Ã°Å¸â€Â´ Insertar en library_items INMEDIATAMENTE con URL DIRECTA de Mureka,
+      // ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â´ Insertar en library_items INMEDIATAMENTE con URL DIRECTA de Mureka,
       // SIN esperar a R2. R2 se hace de fondo, sin bloquear.
       const validTracks = (tracks || []).filter(function (t) {
         return t && typeof t.audio_url === "string" && /^https?:\/\//i.test(t.audio_url);
@@ -27900,7 +27909,7 @@ const murekaHandler = (() => {
         }
       }
 
-      // Fallback último: 0 insertados con metadatos, intentamos fila MÃƒÂNIMA
+      // Fallback Ãºltimo: 0 insertados con metadatos, intentamos fila MÃƒÆ’Ã‚ÂNIMA
       if (finalIds.length === 0) {
         try {
           console.warn("[murekaHandler.query] 0 insertados: intentando fallback MIN insert sin metadata/gender.");
@@ -27939,7 +27948,7 @@ const murekaHandler = (() => {
               atLeastOneInserted = true;
               break;
             } else {
-              console.error("[murekaHandler.query] fallback MIN insert TAMBIÉN falló. idxF=", idxF,
+              console.error("[murekaHandler.query] fallback MIN insert TAMBIÃ‰N fallÃ³. idxF=", idxF,
                 "err=", rF && rF.error && ((rF.error as any).message || String(rF.error)).slice(0, 1000));
             }
           }
@@ -27958,8 +27967,8 @@ const murekaHandler = (() => {
         }
       } catch (_) {}
 
-      // Ã¢ËœÂÃ¯Â¸Â R2: BEST EFFORT ASÃƒÂNCRONO (NO BLOQUEA RESPUESTA AL CLIENTE)
-      // Si por alguna razón falla download o upload, la canción ya está insertada con la URL Mureka directa.
+      // ÃƒÂ¢Ã‹Å“Ã‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â R2: BEST EFFORT ASÃƒÆ’Ã‚ÂNCRONO (NO BLOQUEA RESPUESTA AL CLIENTE)
+      // Si por alguna razÃ³n falla download o upload, la canciÃ³n ya estÃ¡ insertada con la URL Mureka directa.
       (async function backgroundR2Upload() {
         try {
           if (typeof uploadToR2 !== "function") return;
@@ -28012,10 +28021,10 @@ const murekaHandler = (() => {
         } catch (e) {
           console.error("[murekaHandler.query] refund on ZERO INSERT taskId=", taskIdFromPath, "err=", e && (e as any).message);
         }
-        console.error("[murekaHandler.query] SUCCEEDED pero 0 canciones guardadas (incluso después fallback). userId=", userId, "taskId=", taskIdFromPath,
+        console.error("[murekaHandler.query] SUCCEEDED pero 0 canciones guardadas (incluso despuÃ©s fallback). userId=", userId, "taskId=", taskIdFromPath,
           "tracksRaw=", JSON.stringify(validTracks).slice(0, 1000));
         return send(res, 200, { ok:false, status:"failed", code:"LIBRARY_INSERT_FAILED",
-          message:"No pude guardar la canción en tu biblioteca. Revisa Mis canciones en unos minutos. Créditos devueltos." });
+          message:"No pude guardar la canciÃ³n en tu biblioteca. Revisa Mis canciones en unos minutos. CrÃ©ditos devueltos." });
       }
 
       return send(res, 200, {
@@ -28074,7 +28083,7 @@ export default async function handler(req: any, res: any) {
         res.end(JSON.stringify(body));
       };
       const status = authorizeAudioCleanup(req, process.env);
-      if (status !== 200) return respond(status, { ok: false, error: status === 503 ? "Falta CRON_SECRET" : "No autorizado o método no permitido" });
+      if (status !== 200) return respond(status, { ok: false, error: status === 503 ? "Falta CRON_SECRET" : "No autorizado o mÃ©todo no permitido" });
       const supabaseUrl = String(process.env.SUPABASE_URL || "");
       const serviceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
       if (!supabaseUrl || !serviceKey) return respond(503, { ok: false, error: "Faltan variables de Supabase" });
@@ -28133,7 +28142,7 @@ export default async function handler(req: any, res: any) {
         res.end(JSON.stringify(body));
       };
 
-      if ((req.method || "").toUpperCase() !== "POST") return sendJson(405, { error: "Método no permitido" });
+      if ((req.method || "").toUpperCase() !== "POST") return sendJson(405, { error: "MÃ©todo no permitido" });
 
       const predictionId = String(third || "").trim();
       const authHeader = (req.headers?.authorization || req.headers?.Authorization || "").toString();
