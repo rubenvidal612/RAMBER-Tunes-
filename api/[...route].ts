@@ -20301,20 +20301,13 @@ ${inner}
     <div class="opt" data-v="m">Hombre</div>
   </div>
 </div>
-<div class="card">
-  <label>&iquest;Con qu&eacute; voz la quieres?</label>
-  <div class="opts" id="plan">
-    <div class="opt on" data-p="rola">Voz del sistema<br><span class="small">$200</span></div>
-    <div class="opt" data-p="rola_voz">Mi propia voz<br><span class="small">$350 &middot; clonada</span></div>
-  </div>
-  <div class="small" id="planNota" style="margin:-6px 0 0">Con tu propia voz necesitas subir una canci&oacute;n a capela.</div>
-</div>
+
 <div class="card">
   <label>La letra</label>
   <div class="opts" id="modo">
-    <div class="opt on" data-m="ia">IA escribe<br><span class="small">Solo dinos de qu&eacute; trata</span></div>
-    <div class="opt" data-m="propia">Yo escribo<br><span class="small">Pega tu letra</span></div>
-    <div class="opt" data-m="audio">Subir mi audio<br><span class="small">A capela &middot; in&eacute;dita</span></div>
+    <div class="opt on" data-m="ia">Tu letra<br><span class="small">Te la escribimos</span></div>
+    <div class="opt" data-m="propia">Yo escribo la letra<br><span class="small">Ya la tengo</span></div>
+    <div class="opt" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola</span></div>
   </div>
   <div id="campoIA">
     <label>Cu&eacute;ntanos de qu&eacute; trata</label>
@@ -20327,8 +20320,16 @@ ${inner}
   <div id="campoAudio" style="display:none">
     <label>Tu audio a capela</label>
     <input id="audio" type="file" accept="audio/*">
-    <div class="small" style="margin:-8px 0 14px">Canta una <b>canci&oacute;n in&eacute;dita</b> (tuya, que nadie haya grabado), a capela, sin m&uacute;sica de fondo ni ruido. Las canciones conocidas se rechazan.</div>
+    <div class="small" style="margin:-8px 0 14px">Canta una <b>canci&oacute;n in&eacute;dita</b> (tuya, que nadie haya grabado), a capela, sin m&uacute;sica de fondo ni ruido. <b>Con este mismo audio escribimos tu letra y, si quieres, clonamos tu voz: no lo subes dos veces.</b></div>
     <audio id="audioPlayer" controls style="display:none;width:100%;margin:0 0 10px"></audio>
+<div style="margin:14px 0 4px;padding:12px;border:1px solid var(--line);border-radius:12px">
+  <label style="margin-top:0">&iquest;Con qu&eacute; voz la quieres?</label>
+  <div class="opts" id="plan" style="margin-bottom:6px">
+    <div class="opt on" data-p="rola">Voz del sistema<br><span class="small">usamos tu audio igual</span></div>
+    <div class="opt" data-p="rola_voz">Mi propia voz<br><span class="small">clonada de tu audio</span></div>
+  </div>
+  <div class="small" id="planNota" style="margin:0">Con cualquiera de las dos usamos el audio que ya subiste.</div>
+</div>
 <div id="estadoAudio" class="small" style="margin:-6px 0 10px"></div>
     <div id="cajaLetraAudio" style="display:none">
       <label>Esta es la letra que escuchamos &mdash; rev&iacute;sala y corr&iacute;gela</label>
