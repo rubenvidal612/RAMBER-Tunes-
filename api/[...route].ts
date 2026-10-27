@@ -20444,7 +20444,7 @@ document.getElementById('send').addEventListener('click',async function(){
   if(v('whatsapp').replace(/\\D/g,'').length<10)return show('bad','Escribe tu WhatsApp (10 d&iacute;gitos).');
   if(modo==='ia'&&v('story').length<15)return show('bad','Cu&eacute;ntanos de qu&eacute; trata (con un poco m&aacute;s de detalle).');
   if(modo==='propia'&&v('lyrics').length<20)return show('bad','Escribe tu letra.');
-  if(v('style').length<5)return show('bad','Describe el estilo: g&eacute;nero y c&oacute;mo lo quieres.');
+  if(v('style').trim().length<3)return show('bad','Escribe el g&eacute;nero (ej: Pop, Banda, Balada) y c&oacute;mo lo quieres: con guitarra, m&aacute;s r&aacute;pida, etc.');
   if(modo==='audio'&&!audioPath)return show('bad','Sube tu audio a capela y espera a que aparezca la letra.');
   var letraAudio=v('lyricsAudio');
   if(modo==='audio'&&letraAudio.length<10)return show('bad','Revisa la letra: no pudimos escribirla. Escr&iacute;bela t&uacute; o sube otro audio.');
