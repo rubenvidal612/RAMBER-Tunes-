@@ -19637,7 +19637,7 @@ const formHandler = (() => {
 
   // Transcribe la letra cantada con Gemini (modo "ya subí mi audio").
   async function transcribe(path: string): Promise<string> {
-    const gk = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_KEY || "").trim();
+    const gk = String(process.env.GEMINI_TRANSCRIBE_API_KEY || process.env.GEMINI_TRANSCRIBE_API || process.env.GEMINI_TRANSCRIBE_A || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY || "").trim();
     if (!gk || !path) return "";
     const db = await admin();
     if (!db) return "";
