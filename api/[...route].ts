@@ -19649,7 +19649,7 @@ const formHandler = (() => {
       try {
         const it = await fetch("https://lucianamusic.app/api/ai/transcribe-lyrics", {
           method: "POST",
-          headers: { "content-type": "application/json", "x-transcribe-source": "bot" },
+          headers: { "content-type": "application/json", "x-transcribe-source": "bot", "x-internal-secret": String(process.env.LUCIANA_FORM_TOKEN || "luciana-form-2026") },
           body: JSON.stringify({ uploadUrl: url, mimeType: "audio/mpeg", source: "bot" }),
         });
         const ij: any = await it.json().catch(() => null);
