@@ -20492,7 +20492,7 @@ function item(o){
   if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
   if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
   if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
-  if(o.transferred_to)det+='<div class="meta"><b>Transferido a:</b> '+esc(o.transferred_to)+'</div>';
+  if(o.transferred_to){var _hh=0,_ee=String(o.transferred_to).toLowerCase();for(var _ii=0;_ii<_ee.length;_ii++){_hh=(_hh*31+_ee.charCodeAt(_ii))%360;}var _cc='hsl('+_hh+',90%,58%)';det+='<div class="meta" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_cc+';box-shadow:0 0 8px '+_cc+';margin-right:6px"></span><b>Transferido a:</b> <span style="color:'+_cc+'">'+esc(o.transferred_to)+'</span></div>';}
   var players='';
   if(Array.isArray(o.songs)&&o.songs.length){
     players='<div style="margin-top:10px">'+o.songs.map(function(s,i){
@@ -20517,7 +20517,14 @@ function item(o){
       avisar='<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+telf.replace(/^52/,'')+'?text='+encodeURIComponent(txt)+'">Avisar por WhatsApp al vendedor</a>';
     }
   }
-  return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
+  var _glow='';
+if(o.transferred_to){
+  var _h=0,_e=String(o.transferred_to).toLowerCase();
+  for(var _i=0;_i<_e.length;_i++){_h=(_h*31+_e.charCodeAt(_i))%360;}
+  var _c='hsl('+_h+',90%,58%)';
+  _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
+}
+return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
@@ -20582,7 +20589,14 @@ async function loadViejo(){
       var waTel=String(o.whatsapp||'').replace(/\D/g,'');
       var waBtn=(IS_OWNER&&waTel)?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+waTel.replace(/^52/,'')+'">Enviar WhatsApp</a>'):'';
       var opciones='<option value="">vendedor</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
-      return '<div class="item"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
+      var _glow='';
+if(o.transferred_to){
+  var _h=0,_e=String(o.transferred_to).toLowerCase();
+  for(var _i=0;_i<_e.length;_i++){_h=(_h*31+_e.charCodeAt(_i))%360;}
+  var _c='hsl('+_h+',90%,58%)';
+  _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
+}
+return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
         ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
         (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
