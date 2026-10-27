@@ -20114,6 +20114,29 @@ ${botones}
     }
   }
 
+  // GET /api/form/audio?id=&t=&dl=1 -> abre o descarga el audio a capela del pedido
+  async function formAudio(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const id = clean(query(req, "id"), 60);
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const q = await db.from("suno_tasks").select("extra").eq("task_id", rowKey).limit(1);
+    const ex = (((q as any)?.data?.[0]?.extra) || {}) as any;
+    const srcPath = String(ex.audio_path || "").trim();
+    if (!srcPath) return sendJson(res, 404, { error: "no_audio" });
+    const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+    const dl = query(req, "dl") === "1";
+    const signed = dl
+      ? await (db as any).storage.from(bucket).createSignedUrl(srcPath, 600, { download: true })
+      : await (db as any).storage.from(bucket).createSignedUrl(srcPath, 600);
+    const url = signed?.data?.signedUrl;
+    if (!url) return sendJson(res, 500, { error: "sign_failed" });
+    res.statusCode = 302;
+    res.setHeader("location", String(url));
+    res.end();
+    return;
+  }
   // GET /api/form/report?t=&me=  -> ventas por dia, mes y metodo
   async function report(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
@@ -20468,7 +20491,7 @@ function item(o){
   det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
   if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
   if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
-  if(o.audio_path)det+='<div class="meta" style="margin-top:8px"><b>Audio a capela:</b> '+esc(o.audio_path)+'</div>';
+  if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
   if(o.transferred_to)det+='<div class="meta"><b>Transferido a:</b> '+esc(o.transferred_to)+'</div>';
   var players='';
   if(Array.isArray(o.songs)&&o.songs.length){
@@ -20545,7 +20568,7 @@ async function loadViejo(){
       det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
       if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
       if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
-      if(o.audio_path)det+='<div class="meta" style="margin-top:8px"><b>Audio a capela:</b> '+esc(o.audio_path)+'</div>';
+      if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
       var players='';
       if(Array.isArray(o.songs)&&o.songs.length){
         players='<div style="margin-top:10px">'+o.songs.map(function(s,i){
@@ -20785,6 +20808,7 @@ load();
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return syncOrder(req, res);
     }
+    if (action === "audio") return formAudio(req, res);
     if (action === "report") return report(req, res);
     if (action === "pay") return payOrder(req, res);
     if (action === "mp") return mpWebhook(req, res);
