@@ -20400,7 +20400,7 @@ function _insTxt(txt){
     catch(e){ta.select();document.execCommand('copy');}
   });
   if(pb)pb.addEventListener('click',async function(){
-    try{var t=await navigator.clipboard.readText();ta.value=(ta.value?ta.value+'\n':'')+t;pb.textContent='Â¡Pegado!';setTimeout(function(){pb.textContent='Pegar';},1500);}
+    try{var t=await navigator.clipboard.readText();ta.value=(ta.value?ta.value+'\\n':'')+t;pb.textContent='Â¡Pegado!';setTimeout(function(){pb.textContent='Pegar';},1500);}
     catch(e){pb.textContent='No se pudo';setTimeout(function(){pb.textContent='Pegar';},1800);}
   });
 })();
