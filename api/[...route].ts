@@ -19646,6 +19646,16 @@ const formHandler = (() => {
       const signed = await (db as any).storage.from(bucket).createSignedUrl(path, 600);
       const url = signed?.data?.signedUrl;
       if (!url) return "";
+      try {
+        const it = await fetch("https://lucianamusic.app/api/ai/transcribe-lyrics", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-transcribe-source": "bot" },
+          body: JSON.stringify({ uploadUrl: url, mimeType: "audio/mpeg", source: "bot" }),
+        });
+        const ij: any = await it.json().catch(() => null);
+        const ly = String(ij?.lyrics || "").trim();
+        if (it.ok && ly && !/^ILEGIBLE/i.test(ly)) return ly.slice(0, 5000);
+      } catch {}
       const buf = await (await fetch(url)).arrayBuffer();
       if (!buf || buf.byteLength > 18 * 1024 * 1024) return "";
       const bytes = new Uint8Array(buf);
