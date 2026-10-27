@@ -20556,7 +20556,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   }).join('');
   var waBtn=wa?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="'+wa+'">Enviar WhatsApp</a>'):'';
   var manual='<button class="btn sec" style="margin-top:8px;border-color:#1e5136;color:#4fd18b" data-paid="'+esc(o.id)+'">Pedido pagado manual</button>';
-  var opciones='<option value="">vendedor</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
+  var opciones='<option value="">Elegir vendedor...</option>'+'<option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
   var avisar='';
   if(o.transferred_to){
     var vv=VEND.filter(function(v){return String(v.email).toLowerCase()===String(o.transferred_to).toLowerCase();})[0];
@@ -20635,7 +20635,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
       }
       var waTel=String(o.whatsapp||'').replace(/\D/g,'');
       var waBtn=(IS_OWNER&&waTel)?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+waTel.replace(/^52/,'')+'">Enviar WhatsApp</a>'):'';
-      var opciones='<option value="">vendedor</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
+      var opciones='<option value="">Elegir vendedor...</option>'+'<option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
       var _glow='';
 var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
 var _c=o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b');
@@ -20749,6 +20749,7 @@ async function cargarVendedores(){
     var r=await fetch('/api/form/sellers?t='+encodeURIComponent(T));
     var j=await r.json();
     VEND=(j&&j.sellers)||[];
+    try{render();}catch(e){}
     var box=document.getElementById('vendList');
     if(box)box.innerHTML=VEND.length?VEND.map(function(v){return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(v.name||'-')+' &middot; '+esc(v.email)+(v.phone?(' &middot; '+esc(v.phone)):'')+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" data-ed="'+esc(v.email)+'" onclick="editarVendedor(this.dataset.ed)">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" data-dv="'+esc(v.email)+'" onclick="borrarVendedor(this.dataset.dv)">Borrar</button></div>';}).join(''):'<div>TodavÃ­a no hay vendedores guardados.</div>';
   }catch(e){}
