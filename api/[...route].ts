@@ -20518,8 +20518,9 @@ function item(o){
     }
   }
   var _glow='';
-if(o.transferred_to){
-  var _h=0,_e=String(o.transferred_to).toLowerCase();
+var _quien=o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[0]:'');
+if(_quien){
+  var _h=0,_e=String(_quien).toLowerCase();
   for(var _i=0;_i<_e.length;_i++){_h=(_h*31+_e.charCodeAt(_i))%360;}
   var _c='hsl('+_h+',90%,58%)';
   _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
@@ -20590,8 +20591,9 @@ async function loadViejo(){
       var waBtn=(IS_OWNER&&waTel)?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+waTel.replace(/^52/,'')+'">Enviar WhatsApp</a>'):'';
       var opciones='<option value="">vendedor</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
       var _glow='';
-if(o.transferred_to){
-  var _h=0,_e=String(o.transferred_to).toLowerCase();
+var _quien=o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[0]:'');
+if(_quien){
+  var _h=0,_e=String(_quien).toLowerCase();
   for(var _i=0;_i<_e.length;_i++){_h=(_h*31+_e.charCodeAt(_i))%360;}
   var _c='hsl('+_h+',90%,58%)';
   _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
