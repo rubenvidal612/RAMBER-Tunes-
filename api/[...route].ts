@@ -20297,18 +20297,18 @@ ${inner}
   <div class="small" style="color:var(--gold);margin:-8px 0 14px">&#9888; No escribas nombres de cantantes ni de canciones: el sistema los rechaza.</div>
   <label>Tipo de voz</label>
   <div class="opts" id="voz">
-    <div class="opt on" data-v="f">Mujer</div>
-    <div class="opt" data-v="m">Hombre</div>
+    <div class="opt" data-v="f">Mujer</div>
+    <div class="opt on" data-v="m">Hombre</div>
   </div>
 </div>
 
 <div class="card">
   <label>La letra</label>
   <div class="opts" id="modo">
-    <div class="opt on" data-m="ia">Tu letra<br><span class="small">Te la escribimos</span></div>
-    <div class="opt" data-m="propia">Yo escribo la letra<br><span class="small">Ya la tengo</span></div>
-    <div class="opt" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola</span></div>
-  </div>
+  <div class="opt" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola &middot; se respetan los tiempos del audio como base</span></div>
+  <div class="opt" data-m="propia">Yo escribo la letra<br><span class="small">Pega tu letra</span></div>
+  <div class="opt on" data-m="ia">Tu letra<br><span class="small">Te la escribimos</span></div>
+</div>
   <div id="campoIA">
     <label>Cu&eacute;ntanos de qu&eacute; trata</label>
     <textarea id="story" placeholder="Ej: es para mi mam&aacute; Carmen, cumple 60; le encantan las margaritas, el caf&eacute; de la ma&ntilde;ana y bailar en la cocina con mis hermanos."></textarea>
@@ -20342,7 +20342,7 @@ ${inner}
 <p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='f',modo='ia',audioPath='',PLAN='rola';
+var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='m',modo='ia',audioPath='',PLAN='rola';
 function aplicarPlan(){
   var suya=PLAN==='rola_voz';
   if(suya){modo='audio';}
