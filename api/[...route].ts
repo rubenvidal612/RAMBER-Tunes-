@@ -20164,6 +20164,7 @@ ${botones}
     const mes = hoy.slice(0, 7);
     const porDia: Record<string, { dia: string; monto: number; pedidos: number }> = {};
     const porMetodo: Record<string, { monto: number; pedidos: number }> = {};
+    const porVendedor: Record<string, { vendedor: string; monto: number; pedidos: number }> = {};
     let total = 0;
     for (const o of rows) {
       const m = monto(o);
@@ -20176,6 +20177,10 @@ ${botones}
       porMetodo[met] = porMetodo[met] || { monto: 0, pedidos: 0 };
       porMetodo[met].monto += m;
       porMetodo[met].pedidos += 1;
+      const vk = String(o.owner_email || "(sin asignar)");
+      porVendedor[vk] = porVendedor[vk] || { vendedor: vk, monto: 0, pedidos: 0 };
+      porVendedor[vk].monto += m;
+      porVendedor[vk].pedidos += 1;
     }
     const dias = Object.values(porDia).sort((a, b) => (a.dia < b.dia ? 1 : -1));
     return sendJson(res, 200, {
@@ -20186,6 +20191,7 @@ ${botones}
       mes: Math.round(dias.filter((d) => d.dia.slice(0, 7) === mes).reduce((s, d) => s + d.monto, 0) * 100) / 100,
       porDia: dias.slice(0, 60),
       porMetodo: Object.entries(porMetodo).map(([metodo, v]) => ({ metodo, ...v })),
+      porVendedor: Object.values(porVendedor).sort((a, b) => b.monto - a.monto),
     });
   }
 
@@ -20305,9 +20311,9 @@ ${inner}
 <div class="card">
   <label>La letra</label>
   <div class="opts" id="modo">
-  <div class="opt" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola &middot; se respetan los tiempos del audio como base</span></div>
+  <div class="opt on" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola &middot; se respetan los tiempos del audio como base</span></div>
   <div class="opt" data-m="propia">Yo escribo la letra<br><span class="small">Pega tu letra</span></div>
-  <div class="opt on" data-m="ia">Tu letra<br><span class="small">Te la escribimos</span></div>
+  <div class="opt" data-m="ia">Tu letra<br><span class="small">Te la escribimos</span></div>
 </div>
   <div id="campoIA">
     <label>Cu&eacute;ntanos de qu&eacute; trata</label>
@@ -20315,7 +20321,15 @@ ${inner}
   </div>
   <div id="campoLetra" style="display:none">
     <label>Tu letra</label>
-    <textarea id="lyrics" placeholder="Escribe o pega tu letra..."></textarea>
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+  <button type="button" class="btn sec" style="width:auto;padding:4px 10px;font-size:12px" id="insVerso">+ [verso]</button>
+  <button type="button" class="btn sec" style="width:auto;padding:4px 10px;font-size:12px" id="insCoro">+ [coro]</button>
+  <button type="button" class="btn sec" style="width:auto;padding:4px 10px;font-size:12px" id="insPuente">+ [puente instrumental]</button>
+  <button type="button" class="btn sec" style="width:auto;padding:4px 10px;font-size:12px;margin-left:auto" id="btnCopiar">Copiar</button>
+  <button type="button" class="btn sec" style="width:auto;padding:4px 10px;font-size:12px" id="btnPegar">Pegar</button>
+</div>
+<textarea id="lyrics" rows="18" style="min-height:340px" placeholder="Escribe o pega tu letra dividida por secciones. Ejemplo:&#10;[verso]&#10;tu primera estrofa...&#10;&#10;[coro]&#10;el coro que se repite...&#10;&#10;[puente instrumental]"></textarea>
+<div class="small" style="margin:6px 0 14px">Los <b>corchetes</b> son indicaciones dentro de la letra. Si hay un <b>[puente instrumental]</b>, ponlo donde va. Si algo est&aacute; mal escrito, ed&iacute;talo antes de enviar.</div>
   </div>
   <div id="campoAudio" style="display:none">
     <label>Tu audio a capela</label>
@@ -20325,15 +20339,15 @@ ${inner}
 <div style="margin:14px 0 4px;padding:12px;border:1px solid var(--line);border-radius:12px">
   <label style="margin-top:0">&iquest;Con qu&eacute; voz la quieres?</label>
   <div class="opts" id="plan" style="margin-bottom:6px">
-    <div class="opt on" data-p="rola">Voz del sistema<br><span class="small">usamos tu audio igual</span></div>
-    <div class="opt" data-p="rola_voz">Mi propia voz<br><span class="small">clonada de tu audio</span></div>
+    <div class="opt" data-p="rola">Voz del sistema<br><span class="small">usamos tu audio igual</span></div>
+    <div class="opt on" data-p="rola_voz">Mi propia voz<br><span class="small">clonada de tu audio</span></div>
   </div>
   <div class="small" id="planNota" style="margin:0">Con cualquiera de las dos usamos el audio que ya subiste.</div>
 </div>
 <div id="estadoAudio" class="small" style="margin:-6px 0 10px"></div>
     <div id="cajaLetraAudio" style="display:none">
       <label>Esta es la letra que escuchamos &mdash; rev&iacute;sala y corr&iacute;gela</label>
-      <textarea id="lyricsAudio" placeholder="Aqu&iacute; aparece tu letra..."></textarea>
+      <textarea id="lyricsAudio" rows="16" style="min-height:300px" placeholder="Aqu&iacute; aparece tu letra... (puedes editarla)"></textarea>
       <div class="small" style="margin:-8px 0 14px">Si algo est&aacute; mal escrito, ed&iacute;talo antes de enviar.</div>
     </div>
   </div>
@@ -20342,7 +20356,7 @@ ${inner}
 <p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='m',modo='ia',audioPath='',PLAN='rola';
+var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='m',modo='audio',audioPath='',PLAN='rola_voz';
 function aplicarPlan(){
   var suya=PLAN==='rola_voz';
   if(suya){modo='audio';}
@@ -20364,6 +20378,32 @@ var pBox=document.getElementById('plan');
 if(pBox)pBox.addEventListener('click',function(e){
   var t=e.target.closest('.opt');if(!t)return;PLAN=t.dataset.p;seg('plan','p',PLAN);aplicarPlan();
 });
+function _insTxt(txt){
+  var ta=document.getElementById('lyrics');
+  var s=ta.selectionStart||0,e=ta.selectionEnd||0;
+  var antes=ta.value.slice(0,s),desp=ta.value.slice(e);
+  ta.value=antes+(antes&&!antes.endsWith('\n')?'\n':'')+txt+'\n'+desp;
+  ta.focus();
+}
+['insVerso','insCoro','insPuente'].forEach(function(id){
+  var b=document.getElementById(id);
+  if(!b)return;
+  b.addEventListener('click',function(){
+    _insTxt(id==='insVerso'?'[verso]':(id==='insCoro'?'[coro]':'[puente instrumental]'));
+  });
+});
+(function(){
+  var ta=document.getElementById('lyrics');
+  var cb=document.getElementById('btnCopiar'),pb=document.getElementById('btnPegar');
+  if(cb)cb.addEventListener('click',async function(){
+    try{await navigator.clipboard.writeText(ta.value);cb.textContent='Â¡Copiado!';setTimeout(function(){cb.textContent='Copiar';},1500);}
+    catch(e){ta.select();document.execCommand('copy');}
+  });
+  if(pb)pb.addEventListener('click',async function(){
+    try{var t=await navigator.clipboard.readText();ta.value=(ta.value?ta.value+'\n':'')+t;pb.textContent='Â¡Pegado!';setTimeout(function(){pb.textContent='Pegar';},1500);}
+    catch(e){pb.textContent='No se pudo';setTimeout(function(){pb.textContent='Pegar';},1800);}
+  });
+})();
 document.getElementById('audio').addEventListener('change',async function(){
   var f=this.files[0];var st=document.getElementById('estadoAudio');var box=document.getElementById('cajaLetraAudio');
   audioPath='';box.style.display='none';document.getElementById('lyricsAudio').value='';
@@ -20519,13 +20559,9 @@ function item(o){
     }
   }
   var _glow='';
-var _quien=o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[0]:'');
-if(_quien){
-  var _h=0,_e=String(_quien).toLowerCase();
-  for(var _i=0;_i<_e.length;_i++){_h=(_h*31+_e.charCodeAt(_i))%360;}
-  var _c='hsl('+_h+',90%,58%)';
-  _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
-}
+var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
+var _c=o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b');
+_glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
 return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
@@ -20592,13 +20628,9 @@ async function loadViejo(){
       var waBtn=(IS_OWNER&&waTel)?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+waTel.replace(/^52/,'')+'">Enviar WhatsApp</a>'):'';
       var opciones='<option value="">vendedor</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
       var _glow='';
-var _quien=o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[0]:'');
-if(_quien){
-  var _h=0,_e=String(_quien).toLowerCase();
-  for(var _i=0;_i<_e.length;_i++){_h=(_h*31+_e.charCodeAt(_i))%360;}
-  var _c='hsl('+_h+',90%,58%)';
-  _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
-}
+var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
+var _c=o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b');
+_glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
 return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
         ' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
@@ -20735,12 +20767,15 @@ async function cargarReporte(){
     var j=await r.json();
     if(!r.ok){box.innerHTML='No pude cargar.';return;}
     var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'Ã¢â‚¬â€';
+    var vend=(j.porVendedor||[]).map(function(v){
+      return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(v.vendedor)+'</span><b>$'+v.monto+'</b><span class="small">'+v.pedidos+' ventas</span></div>';
+    }).join('')||'';
     var dias=(j.porDia||[]).slice(0,14).map(function(d){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(d.dia)+'</span><b>$'+d.monto+'</b><span class="small">'+d.pedidos+' ped.</span></div>';}).join('')||'<div>Aún no hay ventas.</div>';
     box.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">'+
       '<div><div class="small">Hoy</div><b style="font-size:20px;color:var(--gold)">$'+j.hoy+'</b></div>'+
       '<div><div class="small">Este mes</div><b style="font-size:20px;color:var(--gold)">$'+j.mes+'</b></div>'+
       '<div><div class="small">Total</div><b style="font-size:20px">$'+j.total+'</b><div class="small">'+j.pedidos+' pedidos</div></div>'+
-      '</div><div class="small" style="margin-bottom:8px">Por método: '+met+'</div>'+dias;
+      '</div><div class="small" style="margin-bottom:8px">Por método: '+met+'</div>'+vend+'<div class="small" style="margin:10px 0 6px">Por vendedor</div>'+dias;
   }catch(e){box.innerHTML='Sin conexión.';}
 }
 cargarReporte();
