@@ -20534,7 +20534,7 @@ return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
     waBtn+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
-    (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
+    (o.shared_with&&o.shared_with.length?'<div class="meta">Transferido a: '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
     manual+
     (o.paid_amount?'<div class="meta">Cobrado: $'+esc(String(o.paid_amount))+(o.paid_manual?' (manual)':' (MercadoPago)')+'</div>':'')+
@@ -20607,10 +20607,10 @@ return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</
         '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
         waBtn+
         '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
-        (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
+        (o.shared_with&&o.shared_with.length?'<div class="meta">Transferido a: '+esc(o.shared_with.join(', '))+'</div>':'')+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
         '<div style="display:flex;gap:8px;margin-top:8px"><input data-mail="'+esc(o.id)+'" placeholder="correo para compartir" style="margin:0;font-size:13px"><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share="'+esc(o.id)+'">Enviar</button></div>'+
-        (o.shared_with&&o.shared_with.length?'<div class="meta">Compartido con: '+esc(o.shared_with.join(', '))+'</div>':'')+
+        (o.shared_with&&o.shared_with.length?'<div class="meta">Transferido a: '+esc(o.shared_with.join(', '))+'</div>':'')+
         '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
         '</div>';
     }).join('');
@@ -20672,7 +20672,7 @@ async function compartir(id,email,btn){
     var r=await fetch('/api/form/share?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,email:email})});
     var j=await r.json();
     if(!r.ok){btn.disabled=false;btn.textContent='Enviar';return show('bad',j.message||j.error||'No pude compartir.');}
-    show('ok','Compartido con '+email+'. Ya lo puede ver en su cuenta.');load();
+    show('ok','Transferido a '+email+'. Ya lo puede ver en su cuenta.');load();
   }catch(e){btn.disabled=false;btn.textContent='Enviar';show('bad','Sin conexión.');}
 }
 async function del(id,btn){
