@@ -20533,11 +20533,13 @@ document.getElementById('send').addEventListener('click',async function(){
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#3d9bff;box-shadow:0 0 9px #3d9bff;margin-right:6px;vertical-align:middle"></span><b style="color:#6fb4ff">Azul</b> &middot; ya asignado a un vendedor</span>
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2fdc7e;box-shadow:0 0 9px #2fdc7e;margin-right:6px;vertical-align:middle"></span><b style="color:#5ee89a">Verde</b> &middot; ya pagado</span>
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ffd54a;box-shadow:0 0 9px #ffd54a;margin-right:6px;vertical-align:middle"></span><b style="color:#ffd54a">Amarillo</b> &middot; asignado a ti</span>
+<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#a855f7;box-shadow:0 0 9px #a855f7;margin-right:6px;vertical-align:middle"></span><b style="color:#c084fc">Morado</b> &middot; pendiente de pago</span>
 </div>
 </div>
 <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
   <button class="btn sec" id="btnDel" style="width:auto;padding:6px 12px">&#128465; Eliminar</button>
   <button class="btn sec" id="btnTra" style="width:auto;padding:6px 12px">&#8644; Transferir</button>
+  <button class="btn sec" id="btnPagar" style="width:auto;padding:6px 12px;border-color:#7c3aed;color:#c084fc">&#128181; Por pagar</button>
   <select id="btnTraSel" style="display:none;margin:0;font-size:13px;flex:1;min-width:140px"></select>
   <button class="btn sec" id="btnTodos" style="width:auto;padding:6px 12px;display:none">&#9745; Todo</button>
   <button class="btn" id="btnOk" style="width:auto;padding:6px 14px;display:none">Borrar (0)</button>
@@ -20620,7 +20622,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   }
   var _glow='';
 var _quien=String(o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[o.shared_with.length-1]:'')).toLowerCase();var _aMi=!!_quien&&_quien===ME;var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
-var _c=_aMi?'#ffd54a':(o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b'));
+var _c=o.paid?'#2fdc7e':(String(o.stage||'')==='por_pagar'?'#a855f7':(_aMi?'#ffd54a':(_asignado?'#3d9bff':'#ff3b3b')));
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';'+(o.paid||_asignado?'':'animation:neonPulse 1.7s ease-in-out infinite;');
 var _clone=(String(o.plan||'')==='rola_voz')?' <span style="background:#ff3b3b;color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:6px;letter-spacing:.4px">CLONAR: S&Iacute;</span>':'';
 return '<div class="item" style="'+_glow+'position:relative"><input type="checkbox" class="selchk" data-id="'+esc(o.id)+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
@@ -20691,7 +20693,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
       var opciones='<option value="">Elegir vendedor...</option>'+'<option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
       var _glow='';
 var _quien=String(o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[o.shared_with.length-1]:'')).toLowerCase();var _aMi=!!_quien&&_quien===ME;var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
-var _c=_aMi?'#ffd54a':(o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b'));
+var _c=o.paid?'#2fdc7e':(String(o.stage||'')==='por_pagar'?'#a855f7':(_aMi?'#ffd54a':(_asignado?'#3d9bff':'#ff3b3b')));
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
 return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
@@ -20928,10 +20930,11 @@ function actualizarSel(){
   SEL=[];
   document.querySelectorAll('.selchk:checked').forEach(function(c){SEL.push(c.dataset.id);});
   var n=SEL.length;
-  document.getElementById('btnOk').textContent=(SELACC==='delete'?'Borrar':'Transferir')+' ('+n+')';
+  document.getElementById('btnOk').textContent=(SELACC==='delete'?'Borrar':(SELACC==='pagar'?'Por pagar':'Transferir'))+' ('+n+')';
 }
 document.getElementById('btnDel').addEventListener('click',function(){entrarModo('delete');});
 document.getElementById('btnTra').addEventListener('click',function(){entrarModo('transfer');});
+document.getElementById('btnPagar').addEventListener('click',function(){entrarModo('pagar');});
 document.getElementById('btnCancel').addEventListener('click',salirModo);
 document.getElementById('btnTodos').addEventListener('click',function(){
   var chks=document.querySelectorAll('.selchk');
@@ -20948,6 +20951,10 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     if(!confirm('¿Borrar '+SEL.length+' pedido(s)? Se borran también sus audios. No se puede deshacer.'))return;
     for(var i=0;i<SEL.length;i++){await fetch('/api/form/delete?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:SEL[i]})}).catch(function(){});}
     show('ok','Borrados '+SEL.length+' pedido(s).');salirModo();load();
+  }else if(SELACC==='pagar'){
+    if(!confirm('¿Marcar '+SEL.length+' pedido(s) como pendiente de pago?'))return;
+    for(var k=0;k<SEL.length;k++){await fetch('/api/form/stage?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:SEL[k],stage:'por_pagar'})}).catch(function(){});}
+    show('ok','Marcados '+SEL.length+' como pendiente de pago.');salirModo();load();
   }else{
     var em=document.getElementById('btnTraSel').value.trim();
     if(!em)return show('bad','Elige a qué vendedor transferir.');
