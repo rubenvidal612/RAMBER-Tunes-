@@ -19525,7 +19525,7 @@ const formHandler = (() => {
       // El vendedor solo ve los ultimos 4 digitos del WhatsApp; el dueno ve todo.
       .map((o: any) => ({
         ...o,
-        whatsapp: esDueno ? o.whatsapp : `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
+        whatsapp: esDueno ? o.whatsapp : `*****${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
       }));
     return sendJson(res, 200, { ok: true, me, owner: dueno, is_owner: esDueno, orders: visibles });
   }
