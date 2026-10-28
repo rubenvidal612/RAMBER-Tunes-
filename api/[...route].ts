@@ -20471,7 +20471,7 @@ document.getElementById('send').addEventListener('click',async function(){
     return page("Tu canción · Luciána Music", inner + js);
   }
 
-  function panelPage(token: string, vista: string = "ventas", me: string = "") {
+  function panelPage(token: string, vista: string = "pedidos", me: string = "") {
   const meq = me ? "&me=" + encodeURIComponent(me) : "";
   const show = (id: string) => `style="display:${vista === id ? "" : "none"}"`;
   const on = (id: string) => (vista === id ? "on" : "");
@@ -20900,7 +20900,7 @@ load();
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store, max-age=0");
-    res.end(panelPage(query(req, "t"), query(req, "vista") || "ventas", query(req, "me")));
+    res.end(panelPage(query(req, "t"), query(req, "vista") || "pedidos", query(req, "me")));
     return;
   }
 
