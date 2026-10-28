@@ -19974,7 +19974,7 @@ ${botones}
       const amount = Math.round(Number(b?.amount || 0) * 100) / 100;
       const description = clean(b?.description, 200);
       const met = clean(b?.method, 30).toLowerCase() || "transferencia";
-      const date = clean(b?.date, 10) || new Date().toISOString().slice(0, 10);
+      const date = clean(b?.date, 10) || mxDayIso(new Date().toISOString());
       const idIn = clean(b?.id, 60);
       if (!(amount > 0)) return sendJson(res, 400, { error: "invalid_amount", message: "Escribe un monto mayor a cero." });
       if (!description) return sendJson(res, 400, { error: "missing_description", message: "Escribe qué vendiste." });
@@ -20206,6 +20206,14 @@ ${botones}
     return;
   }
   // GET /api/form/report?t=&me=  -> ventas por dia, mes y metodo
+  const mxDayIso = (iso: any) => {
+    try {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(String(iso)));
+    } catch {
+      return String(iso || "").slice(0, 10);
+    }
+  };
+
   async function report(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
     const db = await admin();
@@ -20227,8 +20235,8 @@ ${botones}
       })
       .filter((o: any) => o.paid);
     const monto = (o: any) => Number(o.paid_amount != null ? o.paid_amount : o.price_mxn || 0);
-    const dia = (o: any) => String(o.paid_at || "").slice(0, 10) || String(o.created_at || "").slice(0, 10);
-    const hoy = new Date().toISOString().slice(0, 10);
+    const dia = (o: any) => mxDayIso(o.paid_at || o.created_at || new Date().toISOString());
+    const hoy = mxDayIso(new Date().toISOString());
     const mes = hoy.slice(0, 7);
     const porDia: Record<string, { dia: string; monto: number; pedidos: number }> = {};
     const porMetodo: Record<string, { monto: number; pedidos: number }> = {};
