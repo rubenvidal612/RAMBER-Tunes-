@@ -20298,6 +20298,8 @@ ${inner}
   <input id="name" placeholder="Nombre y apellido">
   <label>Tu WhatsApp</label>
   <input id="whatsapp" inputmode="numeric" placeholder="10 d&iacute;gitos">
+<label>Nombre de la canci&oacute;n (opcional)</label>
+<input id="title" placeholder="Ej: Para mi mam&aacute; Carmen">
 </div>
 <div class="card">
   <label>Estilo: g&eacute;nero y c&oacute;mo lo quieres</label>
@@ -20451,7 +20453,7 @@ document.getElementById('send').addEventListener('click',async function(){
   b.disabled=true;b.textContent='Enviando...';
   try{
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),style:v('style'),observations:v('obs'),
+      body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),title:v('title'),style:v('style'),observations:v('obs'),
         vocal_gender:voz,lyrics_mode:modo,story:v('story'),
         plan:PLAN,price_mxn:(PLAN==='rola_voz'?350:200),owner_email:OWNER,
         lyrics:(modo==='audio'?letraAudio:v('lyrics')),audio_path:audioPath})});
@@ -20542,7 +20544,8 @@ function item(o){
   var det='';
   det+='<div class="meta" style="margin-top:8px"><b>Nombre:</b> '+esc(o.name||'-')+'</div>';
   det+='<div class="meta"><b>WhatsApp:</b> '+(wa?('<a href="'+wa+'" target="_blank" style="color:var(--gold)">'+esc(o.whatsapp)+' (abrir chat)</a>'):esc(o.whatsapp||'-'))+'</div>';
-  det+='<div class="meta"><b>Estilo:</b> '+esc(o.style||'-')+'</div>';
+  if(o.title)det+='<div class="meta"><b>Canci&oacute;n:</b> '+esc(o.title)+'</div>';
+det+='<div class="meta"><b>Estilo:</b> '+esc(o.style||'-')+'</div>';
   det+='<div class="meta"><b>Voz:</b> '+(o.vocal_gender==='m'?'hombre':'mujer')+'</div>';
   det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
   if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
