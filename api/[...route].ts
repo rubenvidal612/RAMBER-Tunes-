@@ -20475,6 +20475,12 @@ document.getElementById('send').addEventListener('click',async function(){
     const share = `https://lucianamusic.app/api/form/open?t=${encodeURIComponent(token)}`;
     const inner = `
 <h1>Canciones por hacer</h1>
+<div class="opts" id="ptabs" style="margin:12px 0 16px">
+  <div class="opt on" data-sec="ventas">Ventas</div>
+  <div class="opt" data-sec="link">Link para clientes</div>
+  <div class="opt" data-sec="vendedores">Mis vendedores</div>
+  <div class="opt" data-sec="pedidos">Pedidos</div>
+</div>
 <p class="sub">Pedidos que llegaron por el formulario. Pulsa <b>Hacer</b> para generarlos.</p>
 <div class="card" style="border-color:#4a3a1c">
   <label style="color:var(--gold)">Link para tus clientes</label>
@@ -20718,6 +20724,33 @@ async function pagadoManual(id,btn){
     if(!r.ok){btn.disabled=false;btn.textContent='Pedido pagado manual';return show('bad',j.error||'No pude guardar.');}
     show('ok','Pagado: $'+n+' ('+met+'). Su link ya permite descargar.');
     load();cargarReporte();
+(function(){
+  var todas=[].slice.call(document.querySelectorAll('.card')).filter(function(c){return !c.closest('#list');});
+  var grupos={ventas:[],link:[],vendedores:[],pedidos:[]};
+  todas.forEach(function(c){
+    var t=(c.textContent||'');
+    if(c.id==='repCard') grupos.ventas.push(c);
+    else if(t.indexOf('Link para tus clientes')>=0) grupos.link.push(c);
+    else if(t.indexOf('Mis vendedores')>=0) grupos.vendedores.push(c);
+    else grupos.pedidos.push(c);
+  });
+  var filtros=document.getElementById('filtros');
+  var lista=document.getElementById('list');
+  function mostrar(sec){
+    Object.keys(grupos).forEach(function(k){
+      grupos[k].forEach(function(el){ el.style.display=(k===sec)?'':'none'; });
+    });
+    if(filtros) filtros.style.display=(sec==='pedidos')?'':'none';
+    if(lista) lista.style.display=(sec==='pedidos')?'':'none';
+    var tabs=document.getElementById('ptabs');
+    if(tabs) [].forEach.call(tabs.children,function(b){ b.classList.toggle('on', b.dataset.sec===sec); });
+  }
+  var tabs=document.getElementById('ptabs');
+  if(tabs) tabs.addEventListener('click',function(e){
+    var t=e.target.closest('.opt'); if(!t) return; mostrar(t.dataset.sec);
+  });
+  mostrar('ventas');
+})();
   }catch(e){btn.disabled=false;btn.textContent='Pedido pagado manual';show('bad','Sin conexión.');}
 }
 async function compartir(id,email,btn){
