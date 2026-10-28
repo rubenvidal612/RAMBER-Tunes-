@@ -20255,6 +20255,7 @@ ${botones}
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
+@keyframes neonPulse{0%,100%{box-shadow:0 0 10px #ff3b3b,inset 5px 0 0 #ff3b3b}50%{box-shadow:0 0 30px #ff3b3b,inset 5px 0 0 #ff3b3b}}
 :root{--bg:#0d0a14;--card:#171221;--line:#2b2340;--gold:#f4c15c;--txt:#f4f1fa;--dim:#a99fc0;--ok:#4fd18b;--bad:#ff6b6b}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px}
@@ -20580,8 +20581,9 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   var _glow='';
 var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
 var _c=o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b');
-_glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
-return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
+_glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';'+(o.paid||_asignado?'':'animation:neonPulse 1.7s ease-in-out infinite;');
+var _clone=(String(o.plan||'')==='rola_voz')?' <span style="background:#ff3b3b;color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:6px;letter-spacing:.4px">CLONAR: S&Iacute;</span>':'';
+return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
