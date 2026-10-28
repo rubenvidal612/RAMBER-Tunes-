@@ -20323,7 +20323,7 @@ ${botones}
       await new Promise<void>((resolve, reject) => {
         ffmpeg(inPath)
           .audioCodec("libmp3lame")
-          .audioBitrate("192k")
+          .audioBitrate("320k")
           .format("mp3")
           .on("end", () => resolve())
           .on("error", (e: any) => reject(e))
