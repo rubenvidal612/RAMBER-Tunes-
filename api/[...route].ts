@@ -20869,10 +20869,9 @@ async function compartir(id,email,btn){
       if(_tel){
         var _msg='Hola '+((_v&&_v.name)||'')+', te acabo de transferir un cliente en Luciana Music:'+NL+NL+
           'Cliente: '+(_o.name||'sin nombre')+NL+
-          'WhatsApp: '+(_o.whatsapp||'-')+NL+
           'Estilo: '+(_o.style||'-')+NL+
           'Letra: '+(_o.lyrics_mode||'-')+NL+NL+
-          'Entra a lucianamusic.app/pedidos para atenderlo.';
+          'Los datos del cliente estan en el panel. Entra a lucianamusic.app/pedidos para atenderlo.';
         window.open('https://wa.me/52'+_tel.replace(/^52/,'')+'?text='+encodeURIComponent(_msg),'_blank');
       }
     }catch(e){}
