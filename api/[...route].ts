@@ -20739,29 +20739,7 @@ async function pagadoManual(id,btn){
     if(!r.ok){btn.disabled=false;btn.textContent='Pedido pagado manual';return show('bad',j.error||'No pude guardar.');}
     show('ok','Pagado: $'+n+' ('+met+'). Su link ya permite descargar.');
     load();cargarReporte();
-window.pTab=function(sec){
-  try{
-    var todas=[].slice.call(document.querySelectorAll('.card')).filter(function(c){return !c.closest('#list');});
-    var grupos={ventas:[],link:[],vendedores:[],pedidos:[]};
-    todas.forEach(function(c){
-      var t=(c.textContent||'');
-      if(c.id==='repCard') grupos.ventas.push(c);
-      else if(t.indexOf('Link para tus clientes')>=0) grupos.link.push(c);
-      else if(t.indexOf('Mis vendedores')>=0) grupos.vendedores.push(c);
-      else grupos.pedidos.push(c);
-    });
-    var filtros=document.getElementById('filtros');
-    var lista=document.getElementById('list');
-    Object.keys(grupos).forEach(function(k){
-      grupos[k].forEach(function(el){ el.style.display=(k===sec)?'':'none'; });
-    });
-    if(filtros) filtros.style.display=(sec==='pedidos')?'':'none';
-    if(lista) lista.style.display=(sec==='pedidos')?'':'none';
-    var tabs=document.getElementById('ptabs');
-    if(tabs)[].forEach.call(tabs.children,function(b){ b.classList.toggle('on', b.dataset.sec===sec); });
-  }catch(e){}
-};
-setTimeout(function(){ pTab('ventas'); }, 300);
+
   }catch(e){btn.disabled=false;btn.textContent='Pedido pagado manual';show('bad','Sin conexión.');}
 }
 async function compartir(id,email,btn){
