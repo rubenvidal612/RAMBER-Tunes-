@@ -19718,6 +19718,15 @@ const formHandler = (() => {
     const db = await admin();
     if (!db) return sendJson(res, 500, { error: "db_unavailable" });
     const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    try {
+      const q = await db.from("suno_tasks").select("extra").eq("task_id", rowKey).limit(1);
+      const ex = (((q as any)?.data?.[0]?.extra) || {}) as any;
+      const ap = String(ex.audio_path || "").trim();
+      if (ap) {
+        const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+        await (db as any).storage.from(bucket).remove([ap]);
+      }
+    } catch {}
     const del = await db.from("suno_tasks").delete().eq("task_id", rowKey).eq("kind", FORM_ORDER_KIND);
     if ((del as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
     return sendJson(res, 200, { ok: true });
@@ -19739,10 +19748,9 @@ const formHandler = (() => {
     const row = (q as any)?.data?.[0];
     if (!row) return sendJson(res, 404, { error: "not_found" });
     const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
-    const list = Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [];
-    if (!list.includes(email)) list.push(email);
-    await db.from("suno_tasks").update({ extra: { ...ex, shared_with: list } }).eq("task_id", rowKey);
-    return sendJson(res, 200, { ok: true, shared_with: list });
+    const list = [email];
+    await db.from("suno_tasks").update({ extra: { ...ex, shared_with: [email], transferred_to: email } }).eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, shared_with: [email] });
   }
 
   // POST /api/form/sync { t, id }  -> pregunta a Luciana si ya estan las canciones
@@ -20522,6 +20530,7 @@ document.getElementById('send').addEventListener('click',async function(){
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ff3b3b;box-shadow:0 0 9px #ff3b3b;margin-right:6px;vertical-align:middle"></span><b style="color:#ff6b6b">Rojo</b> &middot; pedido nuevo, sin vendedor</span>
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#3d9bff;box-shadow:0 0 9px #3d9bff;margin-right:6px;vertical-align:middle"></span><b style="color:#6fb4ff">Azul</b> &middot; ya asignado a un vendedor</span>
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2fdc7e;box-shadow:0 0 9px #2fdc7e;margin-right:6px;vertical-align:middle"></span><b style="color:#5ee89a">Verde</b> &middot; ya pagado</span>
+<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ffd54a;box-shadow:0 0 9px #ffd54a;margin-right:6px;vertical-align:middle"></span><b style="color:#ffd54a">Amarillo</b> &middot; asignado a ti</span>
 </div>
 </div>
 <div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
@@ -20600,8 +20609,8 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
     }
   }
   var _glow='';
-var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
-var _c=o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b');
+var _quien=String(o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[o.shared_with.length-1]:'')).toLowerCase();var _aMi=!!_quien&&_quien===ME;var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
+var _c=_aMi?'#ffd54a':(o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b'));
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';'+(o.paid||_asignado?'':'animation:neonPulse 1.7s ease-in-out infinite;');
 var _clone=(String(o.plan||'')==='rola_voz')?' <span style="background:#ff3b3b;color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:6px;letter-spacing:.4px">CLONAR: S&Iacute;</span>':'';
 return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
@@ -20671,8 +20680,8 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
       var waBtn=(IS_OWNER&&waTel)?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="https://wa.me/52'+waTel.replace(/^52/,'')+'">Enviar WhatsApp</a>'):'';
       var opciones='<option value="">Elegir vendedor...</option>'+'<option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
       var _glow='';
-var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
-var _c=o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b');
+var _quien=String(o.transferred_to||((o.shared_with&&o.shared_with.length)?o.shared_with[o.shared_with.length-1]:'')).toLowerCase();var _aMi=!!_quien&&_quien===ME;var _asignado=!!(o.transferred_to||((o.shared_with&&o.shared_with.length)));
+var _c=_aMi?'#ffd54a':(o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b'));
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';';
 return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+
         '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+
