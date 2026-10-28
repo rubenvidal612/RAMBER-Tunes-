@@ -19954,6 +19954,64 @@ ${botones}
     return sendJson(res, 200, { ok: true, sellers: list });
   }
 
+  // /api/form/sale  -> ventas manuales (agregar, editar, borrar)
+  async function sales(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const method = (req.method || "GET").toUpperCase();
+    if (method === "DELETE") {
+      const b = await readBody(req);
+      const idIn = clean(b?.id || query(req, "id"), 60);
+      if (!idIn) return sendJson(res, 400, { error: "missing_id" });
+      const key = idIn.startsWith("sale_") ? idIn : `sale_${idIn}`;
+      const del = await db.from("suno_tasks").delete().eq("task_id", key).eq("kind", "form-sale");
+      if ((del as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
+      return sendJson(res, 200, { ok: true });
+    }
+    if (method === "POST") {
+      const b = await readBody(req);
+      const amount = Math.round(Number(b?.amount || 0) * 100) / 100;
+      const description = clean(b?.description, 200);
+      const met = clean(b?.method, 30).toLowerCase() || "transferencia";
+      const date = clean(b?.date, 10) || new Date().toISOString().slice(0, 10);
+      const idIn = clean(b?.id, 60);
+      if (!(amount > 0)) return sendJson(res, 400, { error: "invalid_amount", message: "Escribe un monto mayor a cero." });
+      if (!description) return sendJson(res, 400, { error: "missing_description", message: "Escribe qué vendiste." });
+      const key = idIn ? (idIn.startsWith("sale_") ? idIn : `sale_${idIn}`) : `sale_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      const cur = await db.from("suno_tasks").select("task_id, extra").eq("task_id", key).limit(1);
+      const ex = (((cur as any)?.data?.[0]?.extra) || {}) as any;
+      const ins = await db.from("suno_tasks").upsert({
+        task_id: key,
+        user_id: ownerId(),
+        kind: "form-sale",
+        cost: 0,
+        extra: {
+          ...ex,
+          amount,
+          description,
+          method: met,
+          date,
+          owner_email: String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").toLowerCase(),
+          created_at: ex.created_at || new Date().toISOString(),
+        },
+      });
+      if ((ins as any)?.error) return sendJson(res, 500, { error: "save_failed" });
+      return sendJson(res, 200, { ok: true, id: key });
+    }
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale").limit(500);
+    const list = (((q as any)?.data) || [])
+      .map((r: any) => ({
+        id: String(r?.task_id || ""),
+        amount: Number(r?.extra?.amount || 0),
+        description: String(r?.extra?.description || ""),
+        method: String(r?.extra?.method || ""),
+        date: String(r?.extra?.date || ""),
+      }))
+      .sort((a: any, b: any) => (a.date < b.date ? 1 : -1));
+    return sendJson(res, 200, { ok: true, sales: list });
+  }
+
   // POST /api/form/stage { t, id, stage, email } -> mueve el pedido a otra seccion
   async function setStage(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
@@ -20192,6 +20250,23 @@ ${botones}
       porVendedor[vk].monto += m;
       porVendedor[vk].pedidos += 1;
     }
+    try {
+      const sq = await db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale").limit(500);
+      for (const srow of (((sq as any)?.data) || [])) {
+        const sx = (srow.extra || {}) as any;
+        const sm = Number(sx.amount || 0);
+        const sd = String(sx.date || "").slice(0, 10);
+        if (!(sm > 0) || !sd) continue;
+        total += sm;
+        porDia[sd] = porDia[sd] || { dia: sd, monto: 0, pedidos: 0 };
+        porDia[sd].monto += sm;
+        porDia[sd].pedidos += 1;
+        const smet = String(sx.method || "manual");
+        porMetodo[smet] = porMetodo[smet] || { monto: 0, pedidos: 0 };
+        porMetodo[smet].monto += sm;
+        porMetodo[smet].pedidos += 1;
+      }
+    } catch {}
     const dias = Object.values(porDia).sort((a, b) => (a.dia < b.dia ? 1 : -1));
     return sendJson(res, 200, {
       ok: true,
@@ -20522,6 +20597,12 @@ document.getElementById('send').addEventListener('click',async function(){
 <div class="card" id="repCard">
   <label>Ventas</label>
   <div id="rep" class="small">Cargando...</div>
+</div>
+<div class="card" id="saleCard">
+  <label>Agregar venta manual</label>
+  <div style="display:flex;gap:8px"><input id="saleAmount" placeholder="Monto $" inputmode="decimal" style="margin:0"><input id="saleDesc" placeholder="¿Qué vendiste? (ej. Rola para Juan)" style="margin:0"></div>
+  <div style="display:flex;gap:8px;margin-top:8px"><input id="saleMethod" placeholder="transferencia / efectivo" style="margin:0"><button class="btn sec" id="addSale" style="width:auto;padding:0 14px">Agregar</button></div>
+  <div id="saleList" class="small" style="margin-top:10px"></div>
 </div>
 </div>
 
@@ -20880,6 +20961,47 @@ async function load(){
     }
   }catch(e){box.textContent='';show('bad','Sin conexión.');}
 }
+async function cargarVentas(){
+  try{
+    var r=await fetch('/api/form/sale?t='+encodeURIComponent(T));
+    var j=await r.json();
+    var box=document.getElementById('saleList');if(!box)return;
+    if(!r.ok){box.textContent='No pude cargar.';return;}
+    var arr=j.sales||[];
+    box.innerHTML=arr.length?arr.map(function(s){
+      return '<div style="display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--line);padding:6px 0"><span style="flex:1">'+esc(s.date)+' &middot; '+esc(s.description)+' &middot; <b>$'+s.amount+'</b> &middot; '+esc(s.method)+'</span><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px" data-ved="'+esc(s.id)+'">Editar</button><button class="btn sec" style="width:auto;padding:2px 8px;font-size:11px;border-color:#5c2228;color:#ff6b6b" data-vdel="'+esc(s.id)+'">Borrar</button></div>';
+    }).join(''):'<div>Aún no hay ventas manuales.</div>';
+    box.querySelectorAll('[data-ved]').forEach(function(b){b.addEventListener('click',function(){editarVenta(b.dataset.ved);});});
+    box.querySelectorAll('[data-vdel]').forEach(function(b){b.addEventListener('click',function(){borrarVenta(b.dataset.vdel);});});
+  }catch(e){}
+}
+async function guardarVenta(id,monto,desc,met){
+  var r=await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id||'',amount:monto,description:desc,method:met})});
+  var j=await r.json();
+  if(!r.ok)return show('bad',j.message||j.error||'No pude guardar.');
+  cargarVentas();cargarReporte();
+}
+function editarVenta(id){
+  var monto=prompt('Monto de la venta ($):');if(monto===null)return;
+  var desc=prompt('¿Qué vendiste?');if(desc===null)return;
+  var met=prompt('Método (transferencia / efectivo):');if(met===null)return;
+  guardarVenta(id,monto,desc,met);
+}
+async function borrarVenta(id){
+  if(!confirm('¿Borrar esta venta manual?'))return;
+  await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})}).catch(function(){});
+  cargarVentas();cargarReporte();
+}
+document.getElementById('addSale').addEventListener('click',function(){
+  var a=document.getElementById('saleAmount').value.trim();
+  var d=document.getElementById('saleDesc').value.trim();
+  var m=document.getElementById('saleMethod').value.trim()||'transferencia';
+  if(!a||!(Number(a)>0))return show('bad','Escribe el monto de la venta.');
+  if(!d)return show('bad','Escribe qué vendiste.');
+  guardarVenta('',a,d,m);
+  document.getElementById('saleAmount').value='';document.getElementById('saleDesc').value='';document.getElementById('saleMethod').value='';
+});
+cargarVentas();
 cargarVendedores();
 document.getElementById('copy').addEventListener('click',async function(){
   var inp=document.getElementById('share');
@@ -21015,6 +21137,7 @@ document.getElementById('btnOk').addEventListener('click',async function(){
       return setStage(req, res);
     }
     if (action === "sellers" || action === "seller") return sellers(req, res);
+    if (action === "sales" || action === "sale") return sales(req, res);
     if (action === "paid") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return markPaid(req, res);
