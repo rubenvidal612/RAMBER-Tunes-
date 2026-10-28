@@ -20263,6 +20263,8 @@ ${botones}
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
+.selchk{display:none;position:absolute;top:8px;right:8px;width:19px;height:19px;accent-color:#ffd54a;margin:0;cursor:pointer}
+#list.selmode .selchk{display:inline-block}
 @keyframes neonPulse{0%,100%{box-shadow:0 0 10px #ff3b3b,inset 5px 0 0 #ff3b3b}50%{box-shadow:0 0 30px #ff3b3b,inset 5px 0 0 #ff3b3b}}
 :root{--bg:#0d0a14;--card:#171221;--line:#2b2340;--gold:#f4c15c;--txt:#f4f1fa;--dim:#a99fc0;--ok:#4fd18b;--bad:#ff6b6b}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -20533,6 +20535,14 @@ document.getElementById('send').addEventListener('click',async function(){
 <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ffd54a;box-shadow:0 0 9px #ffd54a;margin-right:6px;vertical-align:middle"></span><b style="color:#ffd54a">Amarillo</b> &middot; asignado a ti</span>
 </div>
 </div>
+<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+  <button class="btn sec" id="btnDel" style="width:auto;padding:6px 12px">&#128465; Eliminar</button>
+  <button class="btn sec" id="btnTra" style="width:auto;padding:6px 12px">&#8644; Transferir</button>
+  <select id="btnTraSel" style="display:none;margin:0;font-size:13px;flex:1;min-width:140px"></select>
+  <button class="btn sec" id="btnTodos" style="width:auto;padding:6px 12px;display:none">&#9745; Todo</button>
+  <button class="btn" id="btnOk" style="width:auto;padding:6px 14px;display:none">Borrar (0)</button>
+  <button class="btn sec" id="btnCancel" style="width:auto;padding:6px 12px;display:none">Cancelar</button>
+</div>
 <div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 <div id="list" class="small">Cargando...</div>
 <button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>
@@ -20613,7 +20623,7 @@ var _quien=String(o.transferred_to||((o.shared_with&&o.shared_with.length)?o.sha
 var _c=_aMi?'#ffd54a':(o.paid?'#2fdc7e':(_asignado?'#3d9bff':'#ff3b3b'));
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';'+(o.paid||_asignado?'':'animation:neonPulse 1.7s ease-in-out infinite;');
 var _clone=(String(o.plan||'')==='rola_voz')?' <span style="background:#ff3b3b;color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:6px;letter-spacing:.4px">CLONAR: S&Iacute;</span>':'';
-return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
+return '<div class="item" style="'+_glow+'position:relative"><input type="checkbox" class="selchk" data-id="'+esc(o.id)+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
@@ -20887,6 +20897,64 @@ document.getElementById('copy').addEventListener('click',async function(){
   prompt('Copia tu link (mantén presionado y elige Copiar):',v);
 });
 load();
+
+var SELMODE=false,SELACC='delete',SEL=[];
+function poblarTraSel(){
+  var s=document.getElementById('btnTraSel');if(!s)return;
+  s.innerHTML='<option value="">Elegir vendedor...</option><option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
+}
+function entrarModo(acc){
+  SELMODE=true;SELACC=acc;SEL=[];
+  var l=document.getElementById('list');if(l)l.classList.add('selmode');
+  document.getElementById('btnTodos').style.display='';
+  document.getElementById('btnOk').style.display='';
+  document.getElementById('btnCancel').style.display='';
+  document.getElementById('btnDel').style.display='none';
+  document.getElementById('btnTra').style.display='none';
+  if(acc==='transfer'){poblarTraSel();document.getElementById('btnTraSel').style.display='';}
+  actualizarSel();
+}
+function salirModo(){
+  SELMODE=false;SEL=[];
+  var l=document.getElementById('list');if(l)l.classList.remove('selmode');
+  document.getElementById('btnTodos').style.display='none';
+  document.getElementById('btnOk').style.display='none';
+  document.getElementById('btnCancel').style.display='none';
+  document.getElementById('btnDel').style.display='';
+  document.getElementById('btnTra').style.display='';
+  document.getElementById('btnTraSel').style.display='none';
+}
+function actualizarSel(){
+  SEL=[];
+  document.querySelectorAll('.selchk:checked').forEach(function(c){SEL.push(c.dataset.id);});
+  var n=SEL.length;
+  document.getElementById('btnOk').textContent=(SELACC==='delete'?'Borrar':'Transferir')+' ('+n+')';
+}
+document.getElementById('btnDel').addEventListener('click',function(){entrarModo('delete');});
+document.getElementById('btnTra').addEventListener('click',function(){entrarModo('transfer');});
+document.getElementById('btnCancel').addEventListener('click',salirModo);
+document.getElementById('btnTodos').addEventListener('click',function(){
+  var chks=document.querySelectorAll('.selchk');
+  var todos=[].every.call(chks,function(c){return c.checked;});
+  chks.forEach(function(c){c.checked=!todos;});
+  actualizarSel();
+});
+document.getElementById('list').addEventListener('change',function(e){
+  if(e.target&&e.target.classList&&e.target.classList.contains('selchk'))actualizarSel();
+});
+document.getElementById('btnOk').addEventListener('click',async function(){
+  if(!SEL.length)return show('bad','Selecciona al menos un pedido.');
+  if(SELACC==='delete'){
+    if(!confirm('¿Borrar '+SEL.length+' pedido(s)? Se borran también sus audios. No se puede deshacer.'))return;
+    for(var i=0;i<SEL.length;i++){await fetch('/api/form/delete?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:SEL[i]})}).catch(function(){});}
+    show('ok','Borrados '+SEL.length+' pedido(s).');salirModo();load();
+  }else{
+    var em=document.getElementById('btnTraSel').value.trim();
+    if(!em)return show('bad','Elige a qué vendedor transferir.');
+    for(var j=0;j<SEL.length;j++){await fetch('/api/form/share?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:SEL[j],email:em})}).catch(function(){});}
+    show('ok','Transferidos '+SEL.length+' pedido(s) a '+em+'.');salirModo();load();
+  }
+});
 <\/script>`;
     return page("Pedidos · Luciána Music", inner + js);
   }
