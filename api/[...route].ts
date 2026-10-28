@@ -20804,7 +20804,7 @@ async function cargarReporte(){
     var r=await fetch('/api/form/report?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     if(!r.ok){box.innerHTML='No pude cargar.';return;}
-    var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'ÃƒÂ¢Ã¢â€šÂ¬”';
+    var met=(j.porMetodo||[]).map(function(m){return esc(m.metodo)+': $'+m.monto+' ('+m.pedidos+')';}).join(' &middot; ')||'ninguno';
     var vend=(j.porVendedor||[]).map(function(v){
       return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>'+esc(v.vendedor)+'</span><b>$'+v.monto+'</b><span class="small">'+v.pedidos+' ventas</span></div>';
     }).join('')||'';
