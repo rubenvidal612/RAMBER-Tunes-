@@ -20666,6 +20666,17 @@ function render(){
     var sel=box.querySelector('[data-sel="'+b.dataset.share2+'"]');
     compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
   });});
+  box.querySelectorAll('[data-copylyr]').forEach(function(b){b.addEventListener('click',function(){
+    var oo=TODAS.filter(function(x){return x.id===b.dataset.copylyr;})[0];
+    if(!oo)return;
+    var txt=String(oo.lyrics||'');
+    if(!txt)return;
+    function okc(){b.textContent='¡Copiado!';setTimeout(function(){b.textContent='Copiar letra';},1600);}
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(okc).catch(function(){prompt('Copia la letra:',txt);});}
+      else{prompt('Copia la letra:',txt);}
+    }catch(e){prompt('Copia la letra:',txt);}
+  });});
   pintarFiltros();
 }
 function item(o){
@@ -20682,7 +20693,7 @@ det+='<div class="meta"><b>Estilo:</b> '+esc(o.style||'-')+'</div>';
   det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
   if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
 if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px solid var(--gold);padding-left:10px"><b>Observaciones del cliente:</b><br>'+esc(o.observations)+'</div>';
-  if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
+  if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b> <button class="btn sec" style="width:auto;padding:2px 9px;font-size:11px" data-copylyr="'+esc(o.id)+'">Copiar letra</button><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
   if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
   if(o.transferred_to){var _hh=0,_ee=String(o.transferred_to).toLowerCase();for(var _ii=0;_ii<_ee.length;_ii++){_hh=(_hh*31+_ee.charCodeAt(_ii))%360;}var _cc='hsl('+_hh+',90%,58%)';det+='<div class="meta" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_cc+';box-shadow:0 0 8px '+_cc+';margin-right:6px"></span><b>Transferido a:</b> <span style="color:'+_cc+'">'+esc(o.transferred_to)+'</span></div>';}
   var players='';
@@ -20765,7 +20776,7 @@ async function loadViejo(){
       det+='<div class="meta"><b>Letra:</b> '+esc(o.lyrics_mode)+'</div>';
       if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
 if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px solid var(--gold);padding-left:10px"><b>Observaciones del cliente:</b><br>'+esc(o.observations)+'</div>';
-      if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
+      if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b> <button class="btn sec" style="width:auto;padding:2px 9px;font-size:11px" data-copylyr="'+esc(o.id)+'">Copiar letra</button><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
       if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
       var players='';
       if(Array.isArray(o.songs)&&o.songs.length){
