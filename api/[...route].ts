@@ -20471,16 +20471,22 @@ document.getElementById('send').addEventListener('click',async function(){
     return page("Tu canción · Luciána Music", inner + js);
   }
 
-  function panelPage(token: string) {
+  function panelPage(token: string, vista: string = "ventas", me: string = "") {
+  const meq = me ? "&me=" + encodeURIComponent(me) : "";
+  const show = (id: string) => `style="display:${vista === id ? "" : "none"}"`;
+  const on = (id: string) => (vista === id ? "on" : "");
     const share = `https://lucianamusic.app/api/form/open?t=${encodeURIComponent(token)}`;
     const inner = `
 <h1>Canciones por hacer</h1>
-<div class="opts" id="ptabs" style="margin:12px 0 16px">
-  <div class="opt on" data-sec="ventas" onclick="pTab('ventas')">Ventas</div>
-  <div class="opt" data-sec="link" onclick="pTab('link')">Link para clientes</div>
-  <div class="opt" data-sec="vendedores" onclick="pTab('vendedores')">Mis vendedores</div>
-  <div class="opt" data-sec="pedidos" onclick="pTab('pedidos')">Pedidos</div>
+<div class="opts" id="ptabs" style="margin:12px 0 16px;flex-wrap:wrap">
+  <a class="opt ${on('ventas')}" href="?t=${token}${meq}&vista=ventas" style="text-decoration:none">Ventas</a>
+  <a class="opt ${on('link')}" href="?t=${token}${meq}&vista=link" style="text-decoration:none">Link para clientes</a>
+  <a class="opt ${on('vendedores')}" href="?t=${token}${meq}&vista=vendedores" style="text-decoration:none">Mis vendedores</a>
+  <a class="opt ${on('pedidos')}" href="?t=${token}${meq}&vista=pedidos" style="text-decoration:none">Pedidos</a>
 </div>
+<div class="msg" id="msg"></div>
+
+<div id="sec-link" ${show('link')}>
 <p class="sub">Pedidos que llegaron por el formulario. Pulsa <b>Hacer</b> para generarlos.</p>
 <div class="card" style="border-color:#4a3a1c">
   <label style="color:var(--gold)">Link para tus clientes</label>
@@ -20491,17 +20497,25 @@ document.getElementById('send').addEventListener('click',async function(){
   </div>
   <div class="small" style="margin-top:10px">Mándalo por WhatsApp. El cliente llena y su pedido aparece abajo.</div>
 </div>
-<div class="msg" id="msg"></div>
+</div>
+
+<div id="sec-vendedores" ${show('vendedores')}>
 <div class="card">
   <label>Mis vendedores</label>
   <div style="display:flex;gap:8px"><input id="vendName" placeholder="Nombre" style="margin:0"><input id="vendPhone" placeholder="WhatsApp del vendedor" style="margin:0"></div>
   <div style="display:flex;gap:8px;margin-top:8px"><input id="vendMail" placeholder="correo@ejemplo.com" style="margin:0"><button class="btn sec" id="addVend" style="width:auto;padding:0 14px">Guardar</button></div>
   <div id="vendList" class="small" style="margin-top:10px"></div>
 </div>
+</div>
+
+<div id="sec-ventas" ${show('ventas')}>
 <div class="card" id="repCard">
   <label>Ventas</label>
   <div id="rep" class="small">Cargando...</div>
 </div>
+</div>
+
+<div id="sec-pedidos" ${show('pedidos')}>
 <div class="card" style="padding:12px 14px">
 <div class="small" style="margin-bottom:8px"><b>Qu&eacute; significa cada color</b></div>
 <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;line-height:1.9">
@@ -20512,7 +20526,8 @@ document.getElementById('send').addEventListener('click',async function(){
 </div>
 <div id="filtros" class="small" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 <div id="list" class="small">Cargando...</div>
-<button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>`;
+<button class="btn sec" id="reload" style="margin-top:14px">Actualizar</button>
+</div>`;
     const js = `
 <script>
 var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[],TODAS=[],FSTAGE='todas';
@@ -20907,7 +20922,7 @@ load();
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store, max-age=0");
-    res.end(panelPage(query(req, "t")));
+    res.end(panelPage(query(req, "t"), query(req, "vista") || "ventas", query(req, "me")));
     return;
   }
 
