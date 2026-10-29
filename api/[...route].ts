@@ -19492,6 +19492,22 @@ const formHandler = (() => {
       return sendJson(res, 500, { error: "save_failed", message: "No pude guardar tu pedido." });
     }
 
+    // Aviso a WhatsApp del dueno (no bloquea la respuesta)
+    try {
+      const aPhone = String(process.env.WHATSAPP_ALERT_PHONE || "5219931520202").replace(/\D/g, "");
+      const aKey = String(process.env.WHATSAPP_ALERT_KEY || "").trim();
+      if (aPhone && aKey) {
+        const txt = "Nuevo pedido en Luciana Music\n" +
+          "Cliente: " + name + "\n" +
+          "WhatsApp: " + whatsapp + "\n" +
+          "Estilo: " + (styleText || "-") + "\n" +
+          "Letra: " + mode + "\n" +
+          "Plan: " + (String(body.plan || "") === "rola_voz" ? "voz clonada ($350)" : "voz del sistema ($200)") + "\n" +
+          "Ver: lucianamusic.app/pedidos";
+        fetch("https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(aPhone) + "&text=" + encodeURIComponent(txt) + "&apikey=" + encodeURIComponent(aKey), { method: "GET" }).catch(() => {});
+      }
+    } catch {}
+
     return sendJson(res, 200, { ok: true, id, message: "¡Listo! Tu pedido entró a la lista." });
   }
 
