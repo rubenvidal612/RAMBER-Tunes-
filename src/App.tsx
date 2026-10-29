@@ -4801,7 +4801,7 @@ export default function App() {
                   onClick={async () => {
                     const id = (activeSong?.id || '').toString().trim();
                     if (!id) return;
-                    const shareUrl = `https://lucianamusic.app/share/${encodeURIComponent(id)}`;
+                    const shareUrl = `https://lucianamusic.app/share/${encodeURIComponent(id)}?wm=1`;
                     try {
                       if (navigator.share) {
                         await navigator.share({ title: `LucIAna | Music - ${(activeSong.title || 'Canción').toString()}`, url: shareUrl });
@@ -5469,10 +5469,17 @@ function SharedSongPage({ shareId }: { shareId: string }) {
           return;
         }
         const id = String(out?.id || shareId);
+        const wmOn = (() => {
+          try {
+            return new URLSearchParams(window.location.search).get('wm') === '1';
+          } catch {
+            return false;
+          }
+        })();
         setData({
           id,
           title,
-          audioUrl: `/api/share/song/audio?id=${encodeURIComponent(id)}`,
+          audioUrl: `/api/share/song/audio?id=${encodeURIComponent(id)}${wmOn ? '&wm=1' : ''}`,
           coverUrl: coverUrl || undefined,
           description: String(out?.description || '').trim() || undefined,
           lyrics: String(out?.lyrics || '').trim() || undefined,
@@ -5865,11 +5872,22 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
           setError('Este preview no tiene canción para reproducir.');
           return;
         }
+        const wmOn = (() => {
+          try {
+            return new URLSearchParams(window.location.search).get('wm') === '1';
+          } catch {
+            return false;
+          }
+        })();
+        const baseAudioUrl = String(out?.audioUrl || `/api/share/song/audio?id=${encodeURIComponent(songId)}`);
+        const shareAudioUrl = wmOn
+          ? `${baseAudioUrl}${baseAudioUrl.includes('?') ? '&' : '?'}wm=1`
+          : baseAudioUrl;
         setData({
           id: String(out?.id || shareId),
           songId,
           title: String(out?.title || 'Canción'),
-          audioUrl: String(out?.audioUrl || `/api/share/song/audio?id=${encodeURIComponent(songId)}`),
+          audioUrl: shareAudioUrl,
           coverUrl: String(out?.coverUrl || '').trim() || undefined,
           hasCountdown: Boolean(out?.hasCountdown),
           expiresAt: out?.expiresAt || null,
@@ -6427,7 +6445,7 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
 
   const shareSong = async (s: { id: string; title: string }) => {
     const title = (s?.title || 'Canción').toString().trim();
-    const url = s?.id ? `https://lucianamusic.app/share/${encodeURIComponent(s.id)}` : '';
+    const url = s?.id ? `https://lucianamusic.app/share/${encodeURIComponent(s.id)}?wm=1` : '';
     if (!url) return;
     try {
       if (navigator.share) {

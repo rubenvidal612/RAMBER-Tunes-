@@ -113,6 +113,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [songActionBusy, setSongActionBusy] = useState<Record<string, boolean>>({});
   const didAutoResetDateFiltersRef = useRef(false);
   const [sharePickerSong, setSharePickerSong] = useState<SongItem | null>(null);
+  const [shareWatermark, setShareWatermark] = useState(true);
   const [countdownShareSong, setCountdownShareSong] = useState<SongItem | null>(null);
   const [countdownClientLabel, setCountdownClientLabel] = useState('');
   const [countdownValue, setCountdownValue] = useState('24');
@@ -705,7 +706,15 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   const openSharePicker = (song: SongItem) => {
+    setShareWatermark(true);
     setSharePickerSong(song);
+  };
+
+  const withWatermark = (url: string, on: boolean) => {
+    const clean = String(url || '').trim();
+    if (!clean || !on) return clean;
+    if (/[?&]wm=1(?:&|$)/.test(clean)) return clean;
+    return `${clean}${clean.includes('?') ? '&' : '?'}wm=1`;
   };
 
   const copyTextToClipboard = async (text: string) => {
@@ -814,7 +823,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         alert((out?.error || 'No pude crear el link con cuenta regresiva.').toString());
         return;
       }
-      const url = String(out?.url || '').trim();
+      const url = withWatermark(String(out?.url || '').trim(), shareWatermark);
       setCountdownShareSong(null);
       const unitLabel = countdownUnit === 'days' ? 'días' : countdownUnit === 'hours' ? 'horas' : 'minutos';
       await showPreviewLink(song, url, {
@@ -829,7 +838,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   const shareSongCard = async (song: SongItem) => {
-    const shareUrl = song?.id ? `https://lucianamusic.app/share/${encodeURIComponent(song.id)}` : '';
+    const shareUrl = song?.id
+      ? withWatermark(`https://lucianamusic.app/share/${encodeURIComponent(song.id)}`, shareWatermark)
+      : '';
     if (shareUrl) {
       await showPreviewLink(song, shareUrl, {
         isCountdown: false,
@@ -3326,6 +3337,36 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   <div className="mt-1 text-slate-400 text-sm">Elige cómo quieres compartir este preview con tu cliente.</div>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShareWatermark((v) => !v)}
+                aria-pressed={shareWatermark}
+                className={`w-full text-left rounded-[26px] border px-5 py-4 transition-colors ${
+                  shareWatermark
+                    ? 'border-emerald-400/40 bg-emerald-400/10'
+                    : 'border-white/10 bg-white/[0.03]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-white font-extrabold text-base">Marca de agua</div>
+                    <div className="mt-1 text-slate-300 text-sm">
+                      El cliente escucha la voz de Rubén cada 30 segundos. La descarga siempre sale limpia.
+                    </div>
+                  </div>
+                  <div
+                    className={`shrink-0 w-12 h-7 rounded-full p-1 transition-colors ${
+                      shareWatermark ? 'bg-emerald-400' : 'bg-white/15'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                        shareWatermark ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
+                </div>
+              </button>
               <button
                 onClick={() => openCountdownShare(sharePickerSong).catch(() => {})}
                 className="w-full text-left rounded-[26px] border border-fuchsia-500/40 bg-[linear-gradient(180deg,rgba(77,29,149,0.26),rgba(31,10,61,0.3))] px-5 py-5 shadow-[0_0_0_1px_rgba(168,85,247,0.12)]"

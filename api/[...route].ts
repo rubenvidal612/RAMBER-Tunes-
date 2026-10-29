@@ -11966,7 +11966,10 @@ const song = sr.data as any;
       if (!resolvedSongId) return send(res, 404, { error: "La canción ya no está disponible" });
 
       res.statusCode = 307;
-      res.setHeader("location", `/api/share/song/audio?id=${encodeURIComponent(resolvedSongId)}${pickQuery(req, "dl") ? "&dl=1" : ""}`);
+      res.setHeader(
+        "location",
+        `/api/share/song/audio?id=${encodeURIComponent(resolvedSongId)}${pickQuery(req, "dl") ? "&dl=1" : ""}${pickQuery(req, "wm") ? "&wm=1" : ""}`,
+      );
       res.end();
       return;
     } catch (e) {
@@ -12798,6 +12801,133 @@ const shareSongAudioHandler = (() => {
     }
   }
 
+  async function readR2ObjectBuffer(key: string, bucketOverride?: string): Promise<Buffer | null> {
+    try {
+      const env = getR2Env();
+      const client = await getR2Client();
+      const { GetObjectCommand } = await getR2AwsSdk();
+      const bucket = (bucketOverride || env.bucketName || "").toString().trim() || env.bucketName;
+      if (!key || !bucket) return null;
+      const out: any = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const body = out?.Body;
+      if (!body) return null;
+      if (typeof body.transformToByteArray === "function") {
+        return Buffer.from(await body.transformToByteArray());
+      }
+      if (typeof body.arrayBuffer === "function") {
+        return Buffer.from(await body.arrayBuffer());
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function readSourceAudioBuffer(raw: string): Promise<Buffer | null> {
+    try {
+      const src = (raw || "").toString().trim();
+      if (!src) return null;
+      const loc = parseR2LocationFromUrlString(src);
+      if (loc?.key) {
+        const fromR2 = await readR2ObjectBuffer(loc.key, loc.bucket);
+        if (fromR2 && fromR2.length > 2048) return fromR2;
+      }
+      if (!/^https?:\/\//i.test(src)) {
+        const keyOnly = extractR2KeyFromUrlOrKey(src);
+        if (!keyOnly) return null;
+        const fromR2 = await readR2ObjectBuffer(keyOnly);
+        return fromR2 && fromR2.length > 2048 ? fromR2 : null;
+      }
+      const target = normalizeHttpUrl(src);
+      if (!/^https?:\/\//i.test(target)) return null;
+      const r = await fetch(target, { signal: AbortSignal.timeout(10000) }).catch(() => null as any);
+      if (!r || !r.ok) return null;
+      const ab = await (r as any).arrayBuffer?.().catch(() => null);
+      if (!ab) return null;
+      return Buffer.from(ab);
+    } catch {
+      return null;
+    }
+  }
+
+  async function buildWatermarkedAudio(raw: string, admin: any): Promise<Buffer | null> {
+    let tmp = "";
+    try {
+      const source = await readSourceAudioBuffer(raw);
+      if (!source || source.length < 2048) return null;
+
+      const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+      const signed = await admin.storage.from(bucket).createSignedUrl("form/watermark.wav", 600);
+      const wmUrl = String(signed?.data?.signedUrl || "");
+      if (!wmUrl) return null;
+      const wmRes = await fetch(wmUrl, { signal: AbortSignal.timeout(10000) }).catch(() => null as any);
+      if (!wmRes || !wmRes.ok) return null;
+      const wmAb = await wmRes.arrayBuffer().catch(() => null);
+      if (!wmAb || wmAb.byteLength < 512) return null;
+
+      const fsmod = await import("node:fs/promises");
+      const osmod = await import("node:os");
+      const pathmod = await import("node:path");
+      const cproc = await import("node:child_process");
+      const inst: any = await import("@ffmpeg-installer/ffmpeg");
+
+      tmp = await fsmod.mkdtemp(pathmod.join(osmod.tmpdir(), "wm-share-"));
+      const inP = pathmod.join(tmp, "in.mp3");
+      const wmP = pathmod.join(tmp, "wm.wav");
+      const outP = pathmod.join(tmp, "out.mp3");
+      await fsmod.writeFile(inP, source);
+      await fsmod.writeFile(wmP, Buffer.from(wmAb));
+
+      // Voz de Ruben al inicio de cada ciclo de 30 s (3.48 s de voz + 26.52 s de silencio).
+      const args = [
+        "-y",
+        "-i", inP,
+        "-i", wmP,
+        "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
+        "-filter_complex",
+        "[1:a]aresample=44100,volume=0.45[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
+        "-map", "[a]",
+        "-b:a", "192k",
+        outP,
+      ];
+      await new Promise<void>((resolve, reject) => {
+        const p = cproc.spawn(String(inst.path), args, { windowsHide: true });
+        let settled = false;
+        let timer: any = null;
+        const finish = (fn: () => void) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          fn();
+        };
+        timer = setTimeout(() => {
+          try {
+            p.kill("SIGKILL");
+          } catch {
+          }
+          finish(() => reject(new Error("ffmpeg_timeout")));
+        }, 20000);
+        p.on("error", (e: any) => finish(() => reject(e)));
+        p.on("close", (code: number | null) =>
+          finish(() => (code === 0 ? resolve() : reject(new Error("ffmpeg_" + code)))),
+        );
+      });
+
+      const out = await fsmod.readFile(outP);
+      return out && out.length > 2048 ? out : null;
+    } catch {
+      return null;
+    } finally {
+      if (tmp) {
+        try {
+          const fsmod = await import("node:fs/promises");
+          await fsmod.rm(tmp, { recursive: true, force: true });
+        } catch {
+        }
+      }
+    }
+  }
+
   return async function handler(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
     if (method === "OPTIONS") {
@@ -12864,6 +12994,32 @@ const shareSongAudioHandler = (() => {
       const dlName = wantDownload ? pickQuery(req, "filename") || pickQuery(req, "name") || "" : "";
       const fallbackName = sanitizeDispositionName((title || "Cancion").toString(), "Cancion");
       const downloadName = wantDownload ? sanitizeDispositionName(dlName, `${fallbackName}.mp3`) : "";
+
+      const wantWatermark = (() => {
+        const v = (pickQuery(req, "wm") || "").toString().trim().toLowerCase();
+        return v === "1" || v === "true" || v === "yes" || v === "si";
+      })();
+
+      // Marca de agua solo para escucha. La descarga (?dl=1) siempre sale limpia.
+      // Fail-open: si la mezcla falla, se responde el audio original.
+      if (wantWatermark && !wantDownload && method !== "HEAD") {
+        const mixed = await Promise.race([
+          buildWatermarkedAudio(audioUrl, admin),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 25000)),
+        ]);
+        if (mixed && mixed.length > 2048) {
+          res.statusCode = 200;
+          res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800");
+          res.setHeader("access-control-allow-origin", "*");
+          res.setHeader("access-control-allow-headers", "range, content-type");
+          res.setHeader("access-control-expose-headers", "content-length, content-type");
+          res.setHeader("accept-ranges", "none");
+          res.setHeader("content-type", "audio/mpeg");
+          res.setHeader("content-length", String(mixed.length));
+          res.end(mixed);
+          return;
+        }
+      }
 
       const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
       const r2Loc = /^https?:\/\//i.test((audioUrl || "").toString().trim()) ? parseR2LocationFromUrlString(audioUrl) : null;
