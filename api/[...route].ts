@@ -20591,8 +20591,19 @@ document.getElementById('send').addEventListener('click',async function(){
     document.querySelectorAll('.card').forEach(function(c){c.style.display='none';});
     b.style.display='none';
     document.getElementById('title').innerHTML='&iexcl;Pedido recibido!';
-    document.getElementById('sub').innerHTML='Ya lo tenemos. Te escribimos por WhatsApp en cuanto tu canci&oacute;n est&eacute; lista para escucharla.';
+    document.getElementById('sub').innerHTML='Ya lo tenemos. Ahora te abrimos WhatsApp para avisarle a Luciana: solo pulsa <b>enviar</b>. Si no se abre, toca <a id="waAviso" href="#" style="color:var(--gold)">avisar por WhatsApp</a>.';
     show('ok','&iexcl;Listo! Guardamos tu pedido con tu nombre y tu WhatsApp.');
+    var _nl=String.fromCharCode(10);
+    var _waN='529931520202';
+    var _msg='Nuevo pedido en Luciana Music'+_nl+_nl+
+      'Nombre: '+v('name')+_nl+
+      'WhatsApp: '+v('whatsapp')+_nl+
+      'Estilo: '+v('style')+_nl+
+      'Plan: '+(PLAN==='rola_voz'?'voz clonada $350':'voz del sistema $200')+_nl+
+      'Letra: '+modo+(audioPath?' (con audio a capela)':'');
+    var _wa='https://wa.me/'+_waN+'?text='+encodeURIComponent(_msg);
+    var _waBtn=document.getElementById('waAviso');if(_waBtn)_waBtn.href=_wa;
+    setTimeout(function(){try{window.location.href=_wa;}catch(e){}},1800);
   }catch(e){b.disabled=false;b.textContent='Enviar mi pedido';show('bad','Sin conexi&oacute;n. Intenta de nuevo.');}
 });
 <\/script>`;
