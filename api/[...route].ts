@@ -19861,7 +19861,7 @@ const formHandler = (() => {
     if (!row) return sendJson(res, 404, { error: "not_found" });
     const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
     if (!ex.paid) return sendJson(res, 402, { error: "not_paid", message: "Este enlace se habilita cuando se confirma el pago." });
-    const _wmOn = Boolean(ex.wm);
+    const _wmOn = ex.wm !== false;
     const songs = (() => {
       const base = Array.isArray(ex.songs) ? ex.songs : [];
       if (!_wmOn) return base;
