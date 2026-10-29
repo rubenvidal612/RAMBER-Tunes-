@@ -150,16 +150,78 @@ GET /api/share/song/audio?id=<id>&wm=1
 
 ---
 
-## 5. Bug conocido sin resolver
+## 5. Clonador de voz (diagnosticado y corregido 2026-10-29)
 
-### Clonador de voz atorado en "Procesando…"
-- El usuario sube un audio, la voz aparece en la lista con "Procesando…"
-  para siempre.
-- **Dato**: en `kits_voices` solo hay 2 voces (mayo 2026), ambas `ready`.
-  La clonación nueva **no crea fila** → se traba antes del insert.
-- El Clonador convierte el audio **en el navegador** antes de subir; es la
-  parte frágil (formatos m4a/ogg/wav pesados).
-- Siguiente paso: reproducir con F12 → Network y ver qué petición falla.
+### La cadena completa (esto es lo que hay que entender)
+```
+CloneVoiceView.tsx (navegador)
+  ├─ normalizeVoiceAudioFile(): decodifica con WebAudio y re-encodea a WAV
+  │    → mono + máx. 120 s (antes: estéreo completo)
+  ├─ POST /api/upload-audio        → { uploadUrl, url, key }
+  ├─ PUT <uploadUrl>               → R2: uploads/audio/<uid>/...
+  └─ POST /api/suno/clone-voice    (handleCloneVoice, api/[...route].ts ~4486)
+        ├─ exige WAV real (RIFF/WAVE) y <= 50 MB
+        ├─ ZIP del dataset → R2: rvc_datasets/<uid>/<ts>_dataset.zip
+        ├─ fila en kits_voices (status 'processing')   ← se crea ANTES de Replicate
+        ├─ POST Replicate (replicate/train-rvc-model)
+        │    webhook = /api/webhooks/replicate
+        └─ guarda voice_id + replicate_id en la fila
+              ↓
+   webhook → kits_voices.status = 'ready' + model_url   (o 'failed' + error)
+              ↓
+   pide la muestra de audio con zsxkib/realistic-voice-cloning
+   (webhook /api/webhooks/replicate-voice-sample)
+```
+La lista de voces sale **solo** de `kits_voices` (`GET /api/kits/voices` →
+`kitsVoicesHandler`, ~22955). No hay estado local: si no hay fila, no hay voz.
+
+### Por qué se quedaba en "Procesando…" (dos causas reales)
+1. **La fila se insertaba después de llamar a Replicate.** Si el POST fallaba
+   (token, modelo deshabilitado, R2) no se creaba nada; y si el webhook llegaba
+   antes del insert (`replicate_id` todavía no existía) el update no encontraba
+   fila y quedaba en `processing` para siempre.
+2. **El navegador mandaba el WAV estéreo completo.** 4-5 min ≈ 50 MB: subida
+   larguísima (el botón dice "Procesando…" todo ese rato) y el servidor lo
+   rechaza por tamaño → la voz nunca se crea. Es lo que pasaba de verdad con
+   los audios de WhatsApp (canciones a capela completas).
+
+Dato duro del 2026-10-29: en `kits_voices` solo había 2 filas (14-may-2026,
+ambas `ready`) → ningún intento había llegado al insert.
+
+### Qué se cambió
+- `handleCloneVoice`: la fila se crea **antes** de Replicate (status
+  `processing`, `voice_id: local_*`) y luego se actualiza con
+  `voice_id`/`replicate_id`. Cualquier fallo posterior marca la fila como
+  `failed` con `error.message` (se ve el motivo, no un spinner eterno).
+- `GET /api/kits/voices`: auto-sanación. Si una fila lleva `processing` más de
+  60 s y tiene `replicate_id`, pregunta a Replicate (máx. 3 por carga) y la
+  actualiza a `ready` (+ `model_url`/`output`) o `failed`.
+- `CloneVoiceView.tsx`: la muestra se manda **mono y recortada a 120 s**
+  (~10 MB en vez de 50 MB+).
+
+Commits: `c23f376` (servidor) y `6b7f821` (cliente).
+
+### Cómo probar esto sin entrar por Google (usuarios de prueba)
+Con `SUPABASE_SERVICE_ROLE_KEY` del `.env`:
+1. `POST {SUPABASE_URL}/auth/v1/admin/users` con
+   `{email, password, email_confirm:true}` → devuelve el uuid.
+2. `POST {SUPABASE_URL}/auth/v1/token?grant_type=password` con `apikey: ANON` →
+   `access_token` (ese es el JWT que espera la API).
+3. Subir un WAV a Supabase Storage (bucket `ramber-tunes`) + firmar la URL, o
+   usar el flujo `POST /api/upload-audio` (prep) + `PUT` a R2.
+4. Borrar filas y usuario al terminar.
+
+### Trampas de esta área
+- **Replicate borra predicciones viejas** (~30 días): una voz atorada de hace
+  meses no se puede reconciliar (la consulta da 404). La auto-sanación sirve
+  para intentos recientes.
+- El `REPLICATE_API_TOKEN` del `.env` local es un **placeholder** (`your...`):
+  no sirve para probar Replicate desde la PC; el bueno está en Vercel.
+- El endpoint exige **WAV de verdad** (cabecera RIFF/WAVE). MP3/OGG/M4A →
+  400 "El audio debe ser WAV".
+- Safari/iOS no decodifica OGG/Opus (notas de voz de WhatsApp): el navegador
+  lanza error antes de subir. Hay que pedir MP3 o WAV.
+- `vocalGender` en SunoAPI solo acepta `m` o `f` (nada de `male`/`female`).
 
 ---
 
