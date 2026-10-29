@@ -12852,24 +12852,67 @@ const shareSongAudioHandler = (() => {
 
   async function buildWatermarkedAudio(raw: string, admin: any): Promise<Buffer | null> {
     let tmp = "";
+    const t0 = Date.now();
+    const wmLog = (reason: string, extra?: any) => {
+      try {
+        console.log(
+          `[wm] FAIL ${reason}`,
+          extra ? JSON.stringify(extra) : "",
+          `platform=${process.platform}/${process.arch}`,
+          `ms=${Date.now() - t0}`,
+        );
+      } catch {
+      }
+    };
     try {
+      console.log(`[wm] start platform=${process.platform}/${process.arch} raw=${String(raw || "").slice(0, 140)}`);
       const source = await readSourceAudioBuffer(raw);
-      if (!source || source.length < 2048) return null;
+      if (!source || source.length < 2048) {
+        wmLog("source_unavailable_or_too_small", { bytes: source ? source.length : 0, raw: String(raw || "").slice(0, 140) });
+        return null;
+      }
 
       const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
       const signed = await admin.storage.from(bucket).createSignedUrl("form/watermark.wav", 600);
       const wmUrl = String(signed?.data?.signedUrl || "");
-      if (!wmUrl) return null;
+      if (!wmUrl) {
+        wmLog("watermark_sign_failed", { bucket, error: signed?.error?.message || null });
+        return null;
+      }
       const wmRes = await fetch(wmUrl, { signal: AbortSignal.timeout(10000) }).catch(() => null as any);
-      if (!wmRes || !wmRes.ok) return null;
+      if (!wmRes || !wmRes.ok) {
+        wmLog("watermark_download_failed", { status: wmRes ? wmRes.status : null });
+        return null;
+      }
       const wmAb = await wmRes.arrayBuffer().catch(() => null);
-      if (!wmAb || wmAb.byteLength < 512) return null;
+      if (!wmAb || wmAb.byteLength < 512) {
+        wmLog("watermark_too_small", { bytes: wmAb ? wmAb.byteLength : 0 });
+        return null;
+      }
 
       const fsmod = await import("node:fs/promises");
       const osmod = await import("node:os");
       const pathmod = await import("node:path");
       const cproc = await import("node:child_process");
-      const inst: any = await import("@ffmpeg-installer/ffmpeg");
+      let inst: any = null;
+      try {
+        inst = await import("@ffmpeg-installer/ffmpeg");
+      } catch (e: any) {
+        wmLog("ffmpeg_import_failed", { error: e instanceof Error ? e.message : String(e) });
+        return null;
+      }
+      const ffmpegPath = String(inst?.path || "");
+      if (!ffmpegPath) {
+        wmLog("ffmpeg_path_empty", { inst: inst ? Object.keys(inst) : null });
+        return null;
+      }
+      try {
+        await fsmod.access(ffmpegPath);
+      } catch {
+        wmLog("ffmpeg_binary_missing", { path: ffmpegPath });
+        return null;
+      }
+      console.log(`[wm] ffmpeg ok path=${ffmpegPath} version=${String(inst?.version || "")}`);
 
       tmp = await fsmod.mkdtemp(pathmod.join(osmod.tmpdir(), "wm-share-"));
       const inP = pathmod.join(tmp, "in.mp3");
@@ -12891,31 +12934,54 @@ const shareSongAudioHandler = (() => {
         outP,
       ];
       await new Promise<void>((resolve, reject) => {
-        const p = cproc.spawn(String(inst.path), args, { windowsHide: true });
+        const p = cproc.spawn(ffmpegPath, args, { windowsHide: true });
         let settled = false;
         let timer: any = null;
+        let stderrTail = "";
         const finish = (fn: () => void) => {
           if (settled) return;
           settled = true;
           if (timer) clearTimeout(timer);
           fn();
         };
+        // Consumir los pipes evita bloqueos si ffmpeg escribe mucho en stderr,
+        // y deja capturar el error exacto de ffmpeg.
+        p.stdout?.resume();
+        p.stderr?.on("data", (b: any) => {
+          stderrTail = (stderrTail + b.toString("utf8")).slice(-1200);
+        });
         timer = setTimeout(() => {
           try {
             p.kill("SIGKILL");
           } catch {
           }
+          wmLog("ffmpeg_timeout_20s", { path: ffmpegPath, stderrTail });
           finish(() => reject(new Error("ffmpeg_timeout")));
         }, 20000);
-        p.on("error", (e: any) => finish(() => reject(e)));
+        p.on("error", (e: any) =>
+          finish(() => {
+            wmLog("ffmpeg_spawn_error", { error: e?.message || String(e), path: ffmpegPath });
+            reject(e);
+          }),
+        );
         p.on("close", (code: number | null) =>
-          finish(() => (code === 0 ? resolve() : reject(new Error("ffmpeg_" + code)))),
+          finish(() => {
+            if (code === 0) return resolve();
+            wmLog("ffmpeg_exit_nonzero", { code, path: ffmpegPath, stderrTail });
+            reject(new Error("ffmpeg_" + code));
+          }),
         );
       });
 
       const out = await fsmod.readFile(outP);
-      return out && out.length > 2048 ? out : null;
-    } catch {
+      if (!out || out.length <= 2048) {
+        wmLog("output_too_small", { bytes: out ? out.length : 0 });
+        return null;
+      }
+      console.log(`[wm] OK bytes=${out.length} ms=${Date.now() - t0}`);
+      return out;
+    } catch (e: any) {
+      wmLog("unexpected_exception", { error: e instanceof Error ? e.message : String(e) });
       return null;
     } finally {
       if (tmp) {
@@ -13002,11 +13068,18 @@ const shareSongAudioHandler = (() => {
 
       // Marca de agua solo para escucha. La descarga (?dl=1) siempre sale limpia.
       // Fail-open: si la mezcla falla, se responde el audio original.
+      console.log(
+        `[wm] request id=${idRaw} wantWatermark=${wantWatermark} wantDownload=${wantDownload} method=${method}`,
+      );
       if (wantWatermark && !wantDownload && method !== "HEAD") {
+        const raceStart = Date.now();
         const mixed = await Promise.race([
           buildWatermarkedAudio(audioUrl, admin),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 25000)),
         ]);
+        if (!mixed) {
+          console.log(`[wm] FAIL race_null_or_25s_cap ms=${Date.now() - raceStart}`);
+        }
         if (mixed && mixed.length > 2048) {
           res.statusCode = 200;
           res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800");
