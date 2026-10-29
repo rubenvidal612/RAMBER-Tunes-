@@ -38,6 +38,8 @@ const has = (name) => argv.includes(`--${name}`) || argv.some((a) => a.startsWit
 const LIMIT = Number(flag("limit", "0")) || 0;
 const ONLY = flag("only", "").trim();
 const FORCE = has("force");
+// --seconds=N : procesar solo los primeros N segundos (prueba rapida, poco calor)
+const SECONDS = Number(flag("seconds", "0")) || 0;
 
 // ---------------------------------------------------------------- .env
 function loadEnv() {
@@ -152,7 +154,11 @@ function mixArgs(inPath, wmPath, outPath) {
       "[bed]aloop=loop=-1:size=1323000[w];" +
       "[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
     "-map", "[a]",
-    "-b:a", "192k",
+    // ---- limites de carga: la PC se apagaba con ffmpeg a full ----
+    "-threads", "1",
+    "-filter_threads", "1",
+    "-b:a", "128k",
+    ...(SECONDS > 0 ? ["-t", String(SECONDS)] : []),
     outPath,
   ];
 }
@@ -160,6 +166,10 @@ function mixArgs(inPath, wmPath, outPath) {
 function runFfmpeg(args, timeoutMs = 15 * 60 * 1000) {
   return new Promise((resolve, reject) => {
     const p = spawn(ffmpegPath(), args, { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    // prioridad minima: que la PC no se caliente ni se apague
+    try {
+      if (p.pid) os.setPriority(p.pid, os.constants.priority.PRIORITY_IDLE);
+    } catch {}
     let err = "";
     p.stderr.on("data", (d) => {
       err += String(d);
