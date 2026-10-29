@@ -20811,7 +20811,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
     '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
-    waBtn+nota+'<button class="btn sec" style="margin-top:8px;width:auto;padding:6px 12px;font-size:12px" data-wm="'+esc(o.id)+'">Marca de agua: '+(o.wm===false?'NO':'SI')+'</button>'+
+    waBtn+nota+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
     (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
