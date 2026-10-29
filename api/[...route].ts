@@ -19504,7 +19504,7 @@ const formHandler = (() => {
           "Letra: " + mode + "\n" +
           "Plan: " + (String(body.plan || "") === "rola_voz" ? "voz clonada ($350)" : "voz del sistema ($200)") + "\n" +
           "Ver: lucianamusic.app/pedidos";
-        fetch("https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(aPhone) + "&text=" + encodeURIComponent(txt) + "&apikey=" + encodeURIComponent(aKey), { method: "GET" }).catch(() => {});
+        fetch("https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent("+" + aPhone) + "&text=" + encodeURIComponent(txt) + "&apikey=" + encodeURIComponent(aKey), { method: "GET" }).catch(() => {});
       }
     } catch {}
 
