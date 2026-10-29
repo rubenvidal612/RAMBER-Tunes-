@@ -713,6 +713,14 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const withWatermark = (url: string, on: boolean) => {
     const clean = String(url || '').trim();
     if (!clean || !on) return clean;
+    // precalentar: que la marca de agua se genere mientras el usuario comparte,
+    // asi el cliente no espera 18 s al abrir el link
+    try {
+      const m = clean.match(/\/share\/([^/?#]+)/);
+      if (m && m[1]) {
+        fetch(`/api/share/song/audio?id=${encodeURIComponent(m[1])}&wm=1&warm=1`).catch(() => {});
+      }
+    } catch {}
     if (/[?&]wm=1(?:&|$)/.test(clean)) return clean;
     return `${clean}${clean.includes('?') ? '&' : '?'}wm=1`;
   };

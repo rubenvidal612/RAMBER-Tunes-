@@ -12976,7 +12976,7 @@ const shareSongAudioHandler = (() => {
           "-i", wmP,
           "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
           "-filter_complex",
-          "[1:a]aresample=44100,volume=0.45[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
+          "[1:a]aresample=44100,volume=1.15[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
           "-map", "[a]",
           "-threads", "1",
           "-b:a", "192k",
@@ -13256,6 +13256,12 @@ const shareSongAudioHandler = (() => {
       );
       if (wantWatermark && !wantDownload && method !== "HEAD") {
         const wmKey = watermarkKeyForSong(songIdForWm);
+        // warm=1: generar sin servir audio (para precalentar al compartir)
+        if ((pickQuery(req, "warm") || "") === "1") {
+          const w2 = await ensureWatermarkedAudio(songIdForWm, audioUrl, admin);
+          console.log("[wm] warm ok=" + w2.ok + " reason=" + w2.reason + " ms=" + w2.ms);
+          return sendJson(res, 200, { ok: w2.ok, reason: w2.reason, ms: w2.ms, key: w2.key });
+        }
         const stored = wmKey ? await headR2Object(wmKey) : false;
         if (stored) {
           const pub = publicUrlForKey(wmKey);
@@ -21682,7 +21688,7 @@ document.getElementById('btnOk').addEventListener('click',async function(){
         "-y", "-i", inP, "-i", wmP,
         "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
         "-filter_complex",
-        "[1:a]aresample=44100,volume=0.45[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
+        "[1:a]aresample=44100,volume=1.15[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
         "-map", "[a]", "-b:a", "192k", outP,
       ];
       await new Promise<void>((resolve, reject) => {
