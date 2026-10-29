@@ -20395,6 +20395,7 @@ p.sub{color:var(--dim);margin:0 0 22px;font-size:15px}
 label{display:block;font-size:13px;color:var(--dim);margin:0 0 6px;font-weight:600}
 input,select,textarea{width:100%;background:#0f0b17;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:11px 12px;font:inherit;margin-bottom:14px}
 textarea{min-height:96px;resize:vertical}
+@media (max-width:640px){#lyrics{min-height:190px!important;height:190px}}
 .opts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .opt{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:14px;color:var(--dim)}
 .opt.on{border-color:var(--gold);color:var(--txt);background:#1f1830}
@@ -20568,7 +20569,7 @@ document.getElementById('modo').addEventListener('click',function(e){var t=e.tar
   document.getElementById('campoIA').style.display=modo==='ia'?'':'none';
   document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';
   document.getElementById('campoAudio').style.display=modo==='audio'?'':'none';});
-function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;window.scrollTo(0,0);}
+function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;try{m.scrollIntoView({block:'nearest'});}catch(e){}}
 document.getElementById('send').addEventListener('click',async function(){
   var b=this;var v=function(id){return (document.getElementById(id).value||'').trim();};
   if(v('name').length<2)return show('bad','Escribe tu nombre.');
