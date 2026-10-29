@@ -4,6 +4,7 @@ import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
 import { MiniPlayer } from './components/MiniPlayer';
 import { CreateView } from './views/CreateView';
+import { FloatingOrderWidget } from './views/FloatingOrderWidget';
 import { ApprovedCreatePreview, ApprovedCloneVoicePreview } from './ApprovedCreatePreview';
 import { LibraryView } from './views/LibraryView';
 import { ProfileView } from './views/ProfileView';
@@ -4561,6 +4562,7 @@ export default function App() {
         </div>
       )}
       <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
+        {currentTab === 'studio' && <FloatingOrderWidget />}
         {/* Mobile View Switching */}
         <div className={`${currentTab === 'landing' ? 'home-mobile-layout' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
            {currentTab === 'landing' && (

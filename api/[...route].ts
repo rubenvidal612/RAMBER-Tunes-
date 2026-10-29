@@ -19897,7 +19897,7 @@ const formHandler = (() => {
       title: String(ex.title || ""),
       audio_url: String(ex.audio_url || ""),
       audio_path: String(ex.audio_path || ""),
-      personaje_id: String(ex.personaje_id || ""),
+      personaje_id: String(ex.personaje_id || ""),      plan: String(ex.plan || ""),
       task_id: String(ex.task_id || ""),
       songs: Array.isArray(ex.songs) ? ex.songs : [],
       paid: Boolean(ex.paid),
@@ -20047,6 +20047,55 @@ const formHandler = (() => {
         whatsapp: esDueno ? o.whatsapp : `*****${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
       }));
     return sendJson(res, 200, { ok: true, me, owner: dueno, is_owner: esDueno, orders: visibles });
+  }
+
+
+  // GET /api/form/order?id=<id>  -> un solo pedido (para el widget flotante de Crear).
+  // Auth: token del formulario (panel) o sesion Supabase del dueno (la app React).
+  async function userFromReq(req: any) {
+    const url = process.env.SUPABASE_URL || "";
+    const anon = process.env.SUPABASE_ANON_KEY || "";
+    if (!url || !anon) return null;
+    const token = ((req?.headers?.authorization || "").toString() || "").replace(/^bearer\s+/i, "").trim();
+    if (!token) return null;
+    try {
+      const createClient = await getSupabaseCreateClient();
+      const sb = createClient(url, anon, { auth: { persistSession: false } });
+      const r = await sb.auth.getUser(token);
+      return r?.data?.user || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function order(req: any, res: any) {
+    const id = clean(query(req, "id"), 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+
+    const tokenOk = sameToken(query(req, "t"), formToken());
+    let allowed = tokenOk;
+    if (!allowed) {
+      const u = await userFromReq(req);
+      if (u) {
+        const email = String(u.email || "").trim().toLowerCase();
+        const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
+        allowed = isAdminEmail(u.email) || email === dueno;
+      }
+    }
+    if (!allowed) return sendJson(res, 401, { error: "unauthorized" });
+
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+
+    const view = orderView(row);
+    if (view.audio_path) {
+      view.audio_url = "/api/form/audio?t=" + encodeURIComponent(formToken()) + "&id=" + encodeURIComponent(view.id);
+    }
+    return sendJson(res, 200, { ok: true, order: view });
   }
 
   // POST /api/form/generate { t, id }  (dueno): manda el pedido al robot
@@ -21276,6 +21325,10 @@ function render(){
     var id=b.dataset.stid,st=b.dataset.st;
     cambiarStage(id,st,b);
   });});
+  box.querySelectorAll('[data-manual]').forEach(function(b){b.addEventListener('click',function(){
+    var url='/crear?pedido='+encodeURIComponent(b.dataset.manual);
+    try{window.top.location.href=url;}catch(e){window.location.href=url;}
+  });});
   box.querySelectorAll('[data-share2]').forEach(function(b){b.addEventListener('click',function(){
     var sel=box.querySelector('[data-sel="'+b.dataset.share2+'"]');
     compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
@@ -21393,6 +21446,13 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
     return '<button class="btn sec" data-st="'+k+'" data-stid="'+esc(o.id)+'" style="width:auto;padding:6px 10px;font-size:12px;'+(on?'border-color:var(--gold);color:var(--gold)':'')+'">'+t+'</button>';
   }).join('');
   var waBtn=wa?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="'+wa+'">Enviar WhatsApp</a>'):'';
+
+  var hacer='';
+  if(o.status!=='done'){
+    hacer='<button class="btn" style="margin-top:10px;flex:1" data-go="'+esc(o.id)+'">Hacer</button>';
+    if(IS_OWNER){hacer+='<button class="btn sec" style="margin-top:10px;flex:1" data-manual="'+esc(o.id)+'">Hacer manual</button>';}
+    hacer='<div style="display:flex;gap:8px;margin-top:10px">'+hacer+'</div>';
+  }
   var manual='<button class="btn sec" style="margin-top:8px;border-color:#1e5136;color:#4fd18b" data-paid="'+esc(o.id)+'">Pedido pagado manual</button>';
   var opciones='<option value="">Elegir vendedor...</option>'+'<option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
   var avisar='';
@@ -21434,7 +21494,7 @@ var nota='<div style="margin-top:12px;border:1px solid var(--line);border-radius
 
 return '<div class="item" style="'+_glow+'position:relative"><input type="checkbox" class="selchk" data-id="'+esc(o.id)+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+hacer+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
     (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
     '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+audioBox+players+
@@ -21986,6 +22046,10 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     if (action === "submit") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return submit(req, res);
+    }
+    if (action === "order") {
+      if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
+      return order(req, res);
     }
     if (action === "list") {
       if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed" });
