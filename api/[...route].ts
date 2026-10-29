@@ -20431,6 +20431,66 @@ ${botones}
     return sendJson(res, 200, { ok: true, notes });
   }
 
+
+  // POST /api/form/update { t, id, ...campos } -> el dueno corrige un pedido ya enviado.
+  // Se usa desde el panel (bloque "Editar pedido") y tambien para subir el audio a capela
+  // que el cliente manda despues por WhatsApp. Solo lista blanca: nada mas se toca.
+  async function updateOrder(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+
+    const LIMITS: Record<string, number> = {
+      name: 80,
+      whatsapp: 30,
+      style: 120,
+      observations: 2000,
+      title: 120,
+      story: 3000,
+      lyrics: 5000,
+      lyrics_mode: 30,
+      audio_path: 300,
+      audio_original: 300,
+    };
+    const patch: Record<string, string> = {};
+    for (const key of Object.keys(LIMITS)) {
+      if (!body || typeof body !== "object" || !(key in body)) continue;
+      patch[key] = clean((body as any)[key], LIMITS[key]);
+    }
+    if (Object.keys(patch).length === 0) return sendJson(res, 400, { error: "nothing_to_update" });
+
+    if ("name" in patch && patch.name.length < 2) {
+      return sendJson(res, 400, { error: "missing_name", message: "Escribe el nombre del cliente." });
+    }
+    if ("whatsapp" in patch && patch.whatsapp.replace(/\D/g, "").length < 10) {
+      return sendJson(res, 400, { error: "missing_whatsapp", message: "Escribe el WhatsApp con 10 digitos." });
+    }
+    if ("audio_path" in patch) {
+      const p = patch.audio_path;
+      const safe = /^[A-Za-z0-9._\-/]+$/.test(p);
+      if (!p || p.indexOf("form/") !== 0 || p.indexOf("..") >= 0 || !safe) {
+        return sendJson(res, 400, { error: "invalid_audio_path" });
+      }
+    }
+
+    const extra2 = { ...ex, ...patch, edited_at: new Date().toISOString() };
+    const upd = await db.from("suno_tasks").update({ extra: extra2 }).eq("task_id", rowKey);
+    if ((upd as any)?.error) return sendJson(res, 500, { error: "update_failed" });
+    return sendJson(res, 200, {
+      ok: true,
+      updated: Object.keys(patch),
+      order: orderView({ ...(row as any), task_id: rowKey, extra: extra2 }),
+    });
+  }
+
   // /api/form/sale  -> ventas manuales (agregar, editar, borrar)
   async function sales(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
@@ -21180,6 +21240,43 @@ function render(){
     }catch(e){b.disabled=false;b.textContent=prev;show('bad','Sin conexión.');}
     b.disabled=false;
   });});
+
+  box.querySelectorAll('[data-saveedit]').forEach(function(b){b.addEventListener('click',async function(){
+    var id=b.dataset.saveedit;
+    var prev=b.textContent;
+    var fld=function(f){var el=document.querySelector('[data-ed="'+f+'"][data-eid="'+id+'"]');return el?el.value:'';};
+    var body={id:id,name:fld('name'),whatsapp:fld('whatsapp'),style:fld('style'),title:fld('title'),observations:fld('observations'),story:fld('story'),lyrics:fld('lyrics')};
+    b.disabled=true;b.textContent='Guardando...';
+    try{
+      var fi=document.querySelector('[data-audio="'+id+'"]');
+      var est=document.querySelector('[data-ast="'+id+'"]');
+      if(fi&&fi.files&&fi.files.length){
+        var f=fi.files[0];
+        if(f.size>18*1024*1024){b.disabled=false;b.textContent=prev;return show('bad','El audio es muy grande (m&aacute;ximo 18 MB).');}
+        b.textContent='Subiendo audio...';if(est)est.textContent='Subiendo audio...';
+        try{
+          var sg=await fetch('/api/form/sign?t='+encodeURIComponent(T)+'&n='+encodeURIComponent(f.name||'audio.mp3'),{method:'POST'});
+          var sj=await sg.json();
+          if(!sg.ok||!sj.signedUrl)throw new Error('sign');
+          var up=await fetch(sj.signedUrl,{method:'PUT',headers:{'content-type':(f.type||'audio/mpeg'),'x-upsert':'false'},body:f});
+          if(!up.ok)throw new Error('put');
+          var ap=sj.path;
+          try{
+            var cv=await fetch('/api/form/convert?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:ap})});
+            var cj=await cv.json();
+            if(cj&&cj.path)ap=cj.path;
+          }catch(e){}
+          body.audio_path=ap;body.audio_original=sj.path;
+          if(est)est.textContent='Audio subido.';
+        }catch(e){b.disabled=false;b.textContent=prev;if(est)est.textContent='No pude subir el audio.';return show('bad','No pude subir el audio. Intenta de nuevo.');}
+      }
+      b.textContent='Guardando...';
+      var r=await fetch('/api/form/update?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      var j=await r.json().catch(function(){return{};});
+      if(!r.ok){b.disabled=false;b.textContent=prev;return show('bad',j.message||j.error||'No pude guardar los cambios.');}
+      show('ok','Cambios guardados.');load();
+    }catch(e){b.disabled=false;b.textContent=prev;show('bad','No se pudo guardar. Revisa tu conexi&oacute;n.');}
+  });});
   box.querySelectorAll('[data-copylyr]').forEach(function(b){b.addEventListener('click',function(){
     var oo=TODAS.filter(function(x){return x.id===b.dataset.copylyr;})[0];
     if(!oo)return;
@@ -21240,6 +21337,28 @@ var _c=o.paid?'#2fdc7e':(String(o.stage||'')==='por_pagar'?'#a855f7':(_aMi?'#ffd
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';'+(o.paid||_asignado?'':'animation:neonPulse 1.7s ease-in-out infinite;');
 var _clone=(String(o.plan||'')==='rola_voz')?' <span style="background:#ff3b3b;color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:6px;letter-spacing:.4px">CLONAR: S&Iacute;</span>':'';
 var nota='<div style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px"><label style="font-size:12px;color:var(--gold);margin:0 0 6px">Nota interna (la ve el vendedor)</label><textarea data-note="'+esc(o.id)+'" rows="2" style="min-height:58px;font-size:13px;margin:0">'+esc(o.notes||'')+'</textarea><button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" data-savenote="'+esc(o.id)+'">Guardar nota</button></div>';
+
+  var editar='';
+  if(IS_OWNER){
+    var _ei=esc(o.id);
+    var _inp=function(f,lbl,val){return '<label style="font-size:12px;color:var(--dim);margin:0 0 3px;display:block">'+lbl+'</label><input data-ed="'+f+'" data-eid="'+_ei+'" value="'+esc(val||'')+'" style="margin:0 0 8px;font-size:13px">';};
+    var _txa=function(f,lbl,val,rows){return '<label style="font-size:12px;color:var(--dim);margin:0 0 3px;display:block">'+lbl+'</label><textarea data-ed="'+f+'" data-eid="'+_ei+'" rows="'+rows+'" style="margin:0 0 8px;font-size:13px">'+esc(val||'')+'</textarea>';};
+    editar='<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Editar pedido</summary>'+
+      '<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px">'+
+      _inp('name','Nombre',o.name)+
+      _inp('whatsapp','WhatsApp',o.whatsapp)+
+      _inp('style','Estilo',o.style)+
+      _inp('title','Canci&oacute;n',o.title)+
+      _inp('observations','Observaciones',o.observations)+
+      _txa('story','Historia',o.story,3)+
+      _txa('lyrics','Letra',o.lyrics,4)+
+      '<label style="font-size:12px;color:var(--dim);margin:0 0 3px;display:block">Audio a capela (MP3)</label>'+
+      '<input type="file" accept="audio/*" data-audio="'+_ei+'" style="margin:0 0 6px;font-size:13px;padding:8px">'+
+      '<div class="small" data-ast="'+_ei+'" style="margin:0 0 8px">'+(o.audio_path?'Ya tiene audio. Si subes otro, se reemplaza.':'Este pedido no tiene audio.')+'</div>'+
+      '<button class="btn" data-saveedit="'+_ei+'" style="width:100%">Guardar cambios</button>'+
+      '</div></details>';
+  }
+
 return '<div class="item" style="'+_glow+'position:relative"><input type="checkbox" class="selchk" data-id="'+esc(o.id)+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
@@ -21247,7 +21366,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
     '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
-    waBtn+nota+
+    waBtn+nota+editar+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
     (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
@@ -21750,6 +21869,7 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     if (action === "sellers" || action === "seller") return sellers(req, res);
     if (action === "sales" || action === "sale") return sales(req, res);
     if (action === "notes") { if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" }); return setNotes(req, res); }
+    if (action === "update") { if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" }); return updateOrder(req, res); }
     if (action === "paid") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return markPaid(req, res);
