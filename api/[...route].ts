@@ -19390,6 +19390,7 @@ const formHandler = (() => {
       lyrics_mode: String(ex.lyrics_mode || ""),
       observations: String(ex.observations || ""),
       notes: String(ex.notes || ""),
+      wm: ex.wm !== false,
       story: String(ex.story || ""),
       lyrics: String(ex.lyrics || ""),
       title: String(ex.title || ""),
@@ -19860,7 +19861,12 @@ const formHandler = (() => {
     if (!row) return sendJson(res, 404, { error: "not_found" });
     const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
     if (!ex.paid) return sendJson(res, 402, { error: "not_paid", message: "Este enlace se habilita cuando se confirma el pago." });
-    const songs = Array.isArray(ex.songs) ? ex.songs : [];
+    const _wmOn = Boolean(ex.wm);
+    const songs = (() => {
+      const base = Array.isArray(ex.songs) ? ex.songs : [];
+      if (!_wmOn) return base;
+      return base.map((s: any, i: number) => ({ ...s, audio_url: `/api/form/song-wm?id=${encodeURIComponent(rowKey)}&i=${i}&t=${encodeURIComponent(token)}` }));
+    })();
     const song = songs[idx] || songs[0];
     const url = String(song?.audio_url || "");
     if (!url) return sendJson(res, 404, { error: "no_audio" });
@@ -20713,6 +20719,18 @@ function render(){
     var sel=box.querySelector('[data-sel="'+b.dataset.share2+'"]');
     compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
   });});
+  box.querySelectorAll('[data-wm]').forEach(function(b){b.addEventListener('click',async function(){
+    var actual=b.textContent.indexOf('SI')>=0;
+    var nuevo=!actual;
+    b.disabled=true;
+    try{
+      var r=await fetch('/api/form/wm?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:b.dataset.wm,on:nuevo})});
+      var j=await r.json();
+      if(!r.ok){b.disabled=false;return show('bad',j.error||'No pude cambiar la marca de agua.');}
+      b.textContent='Marca de agua: '+(j.wm?'SI':'NO');
+    }catch(e){show('bad','Sin conexion.');}
+    b.disabled=false;
+  });});
   box.querySelectorAll('[data-savenote]').forEach(function(b){b.addEventListener('click',async function(){
     var ta=document.querySelector('[data-note="'+b.dataset.savenote+'"]');
     var txt=ta?ta.value:'';
@@ -20793,7 +20811,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
     '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
-    waBtn+nota+
+    waBtn+nota+'<button class="btn sec" style="margin-top:8px;width:auto;padding:6px 12px;font-size:12px" data-wm="'+esc(o.id)+'">Marca de agua: '+(o.wm===false?'NO':'SI')+'</button>'+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
     (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
@@ -21178,6 +21196,82 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     return;
   }
 
+  // POST /api/form/wm { t, id, on } -> prende o apaga la marca de agua del pedido
+  async function setWm(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    const on = Boolean(body?.on);
+    await db.from("suno_tasks").update({ extra: { ...ex, wm: on } }).eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, wm: on });
+  }
+
+  // GET /api/form/song-wm?id=<pedido>&i=<n>&t=<token>  -> cancion con marca de agua
+  async function songWatermarked(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const id = query(req, "id");
+    const idx = Math.max(0, Number(query(req, "i") || 0) || 0);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("extra").eq("task_id", rowKey).limit(1);
+    const ex = (((q as any)?.data?.[0]?.extra) || {}) as any;
+    const songs = Array.isArray(ex.songs) ? ex.songs : [];
+    const src = String(songs[idx]?.audio_url || "");
+    if (!src) return sendJson(res, 404, { error: "no_song" });
+    try {
+      const fsmod = await import("node:fs/promises");
+      const osmod = await import("node:os");
+      const pathmod = await import("node:path");
+      const cproc = await import("node:child_process");
+      const inst: any = await import("@ffmpeg-installer/ffmpeg");
+      const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+      const tmp = await fsmod.mkdtemp(pathmod.join(osmod.tmpdir(), "wm-"));
+      const inP = pathmod.join(tmp, "in.mp3");
+      const wmP = pathmod.join(tmp, "wm.wav");
+      const outP = pathmod.join(tmp, "out.mp3");
+      const sr = await fetch(src);
+      if (!sr.ok) return sendJson(res, 502, { error: "song_unavailable" });
+      await fsmod.writeFile(inP, Buffer.from(await sr.arrayBuffer()));
+      const ws = await (db as any).storage.from(bucket).createSignedUrl("form/watermark.wav", 600);
+      const wmUrl = String(ws?.data?.signedUrl || "");
+      if (!wmUrl) return sendJson(res, 500, { error: "no_watermark" });
+      const wr = await fetch(wmUrl);
+      if (!wr.ok) return sendJson(res, 500, { error: "watermark_unavailable" });
+      await fsmod.writeFile(wmP, Buffer.from(await wr.arrayBuffer()));
+      const args = [
+        "-y", "-i", inP, "-i", wmP,
+        "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
+        "-filter_complex",
+        "[1:a]aresample=44100,volume=0.45[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
+        "-map", "[a]", "-b:a", "192k", outP,
+      ];
+      await new Promise<void>((resolve, reject) => {
+        const p = cproc.spawn(String(inst.path), args, { windowsHide: true });
+        p.on("error", reject);
+        p.on("close", (code: number) => (code === 0 ? resolve() : reject(new Error("ffmpeg_" + code))));
+      });
+      const buf = await fsmod.readFile(outP);
+      await fsmod.rm(tmp, { recursive: true, force: true }).catch(() => {});
+      res.statusCode = 200;
+      res.setHeader("content-type", "audio/mpeg");
+      res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800");
+      res.setHeader("content-length", String(buf.length));
+      return res.end(buf);
+    } catch {
+      return sendJson(res, 500, { error: "mix_failed" });
+    }
+  }
+
   async function panel(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) {
       return sendJson(res, 401, { error: "unauthorized", message: "Link inválido." });
@@ -21208,6 +21302,8 @@ document.getElementById('btnOk').addEventListener('click',async function(){
       return syncOrder(req, res);
     }
     if (action === "audio") return formAudio(req, res);
+    if (action === "song-wm") return songWatermarked(req, res);
+    if (action === "wm") { if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" }); return setWm(req, res); }
     if (action === "report") return report(req, res);
     if (action === "pay") return payOrder(req, res);
     if (action === "mp") return mpWebhook(req, res);
