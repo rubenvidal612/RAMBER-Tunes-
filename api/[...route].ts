@@ -21447,11 +21447,13 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   }).join('');
   var waBtn=wa?('<a class="btn sec" style="margin-top:8px;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="'+wa+'">Enviar WhatsApp</a>'):'';
 
+  // "Hacer" (generar desde el panel) queda oculto por ahora: solo se usa "Hacer manual".
+  var SHOW_HACER=false;
   var hacer='';
   if(o.status!=='done'){
-    hacer='<button class="btn" style="margin-top:10px;flex:1" data-go="'+esc(o.id)+'">Hacer</button>';
+    if(SHOW_HACER){hacer='<button class="btn" style="margin-top:10px;flex:1" data-go="'+esc(o.id)+'">Hacer</button>';}
     if(IS_OWNER){hacer+='<button class="btn sec" style="margin-top:10px;flex:1" data-manual="'+esc(o.id)+'">Hacer manual</button>';}
-    hacer='<div style="display:flex;gap:8px;margin-top:10px">'+hacer+'</div>';
+    if(hacer)hacer='<div style="display:flex;gap:8px;margin-top:10px">'+hacer+'</div>';
   }
   var manual='<button class="btn sec" style="margin-top:8px;border-color:#1e5136;color:#4fd18b" data-paid="'+esc(o.id)+'">Pedido pagado manual</button>';
   var opciones='<option value="">Elegir vendedor...</option>'+'<option value="'+esc(ME||'rubenfiverr612@gmail.com')+'">Rub&eacute;n (yo)</option>'+VEND.map(function(v){return '<option value="'+esc(v.email)+'">'+esc(v.name||v.email)+'</option>';}).join('');
