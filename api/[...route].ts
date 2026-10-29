@@ -20734,7 +20734,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
     waBtn+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
-    (o.shared_with&&o.shared_with.length?'<div class="meta">Transferido a: '+esc(o.shared_with.join(', '))+'</div>':'')+
+    (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
     manual+
     (o.paid_amount?'<div class="meta">Cobrado: $'+esc(String(o.paid_amount))+(o.paid_manual?' (manual)':' (MercadoPago)')+'</div>':'')+
@@ -20804,10 +20804,10 @@ return '<div class="item" style="'+_glow+'"><b>'+esc(o.name||'(sin nombre)')+'</
         '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
         waBtn+
         '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
-        (o.shared_with&&o.shared_with.length?'<div class="meta">Transferido a: '+esc(o.shared_with.join(', '))+'</div>':'')+
+        (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
         (o.status!=='done'?'<button class="btn" style="margin-top:10px" data-go="'+esc(o.id)+'">Hacer</button>':'')+
         '<div style="display:flex;gap:8px;margin-top:8px"><input data-mail="'+esc(o.id)+'" placeholder="correo para compartir" style="margin:0;font-size:13px"><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share="'+esc(o.id)+'">Enviar</button></div>'+
-        (o.shared_with&&o.shared_with.length?'<div class="meta">Transferido a: '+esc(o.shared_with.join(', '))+'</div>':'')+
+        (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
         '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
         '</div>';
     }).join('');
