@@ -3359,7 +3359,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   <div className="min-w-0">
                     <div className="text-white font-extrabold text-base">Marca de agua</div>
                     <div className="mt-1 text-slate-300 text-sm">
-                      El cliente escucha la voz de Rubén cada 30 segundos. La descarga siempre sale limpia.
+                      El cliente escucha un aviso de Luciana Music cada 30 segundos. La descarga siempre sale limpia.
                     </div>
                   </div>
                   <div
