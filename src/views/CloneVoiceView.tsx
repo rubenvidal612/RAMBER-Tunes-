@@ -497,6 +497,29 @@ export function CloneVoiceView() {
         } catch {}
       }
 
+      // El clonador solo necesita una muestra corta. Antes se mandaba el WAV estereo completo
+      // (4-5 min = 50 MB+) y el servidor lo rechazaba por tamano, dejando la voz sin crear.
+      try {
+        const MAX_SECONDS = 120;
+        const srcBuf = toEncode;
+        const dur = Number.isFinite(srcBuf.duration) ? srcBuf.duration : 0;
+        const needMono = (srcBuf.numberOfChannels || 1) > 1;
+        const needTrim = dur > MAX_SECONDS;
+        if (needMono || needTrim) {
+          const rate = Math.max(8000, Math.min(96000, Math.floor(srcBuf.sampleRate || 48000)));
+          const secs = Math.min(dur > 0 ? dur : MAX_SECONDS, MAX_SECONDS);
+          const len = Math.max(1, Math.floor(secs * rate));
+          const mono = ctx.createBuffer(1, len, rate);
+          const dst = mono.getChannelData(0);
+          const chs = Math.max(1, srcBuf.numberOfChannels || 1);
+          for (let c = 0; c < chs; c++) {
+            const chData = srcBuf.getChannelData(c);
+            for (let i = 0; i < len; i++) dst[i] += (chData[i] || 0) / chs;
+          }
+          toEncode = mono;
+        }
+      } catch {}
+
       const wavBlob = audioBufferToWavBlob(toEncode);
       const base = name.replace(/\.[^/.]+$/, '').slice(0, 120) || 'voz';
       const wavFile = new File([wavBlob], `${base}.wav`, { type: 'audio/wav' });
