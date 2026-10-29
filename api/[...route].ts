@@ -12921,68 +12921,100 @@ const shareSongAudioHandler = (() => {
       tmp = await fsmod.mkdtemp(pathmod.join(osmod.tmpdir(), "wm-share-"));
       const inP = pathmod.join(tmp, "in.mp3");
       const wmP = pathmod.join(tmp, "wm.wav");
-      const outP = pathmod.join(tmp, "out.mp3");
       await fsmod.writeFile(inP, source);
       await fsmod.writeFile(wmP, Buffer.from(wmAb));
 
-      // Voz de Ruben al inicio de cada ciclo de 30 s (3.48 s de voz + 26.52 s de silencio).
-      const args = [
-        "-y",
-        "-i", inP,
-        "-i", wmP,
-        "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
-        "-filter_complex",
-        "[1:a]aresample=44100,volume=0.45[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
-        "-map", "[a]",
-        "-b:a", "192k",
-        outP,
-      ];
-      await new Promise<void>((resolve, reject) => {
-        const p = cproc.spawn(ffmpegPath, args, { windowsHide: true });
-        let settled = false;
-        let timer: any = null;
-        let stderrTail = "";
-        const finish = (fn: () => void) => {
-          if (settled) return;
-          settled = true;
-          if (timer) clearTimeout(timer);
-          fn();
-        };
-        // Consumir los pipes evita bloqueos si ffmpeg escribe mucho en stderr,
-        // y deja capturar el error exacto de ffmpeg.
-        p.stdout?.resume();
-        p.stderr?.on("data", (b: any) => {
-          stderrTail = (stderrTail + b.toString("utf8")).slice(-1200);
+      // Mezclar POR PEDAZOS: la cancion completa de un jalon agota la memoria
+      // de la funcion (FUNCTION_INVOCATION_FAILED). Cada trozo es chico.
+      const runFf = (args: string[], label: string) =>
+        new Promise<void>((resolve, reject) => {
+          const p = cproc.spawn(ffmpegPath, args, { windowsHide: true });
+          let settled = false;
+          let timer: any = null;
+          let stderrTail = "";
+          const finish = (fn: () => void) => {
+            if (settled) return;
+            settled = true;
+            if (timer) clearTimeout(timer);
+            fn();
+          };
+          p.stdout?.resume();
+          p.stderr?.on("data", (b: any) => {
+            stderrTail = (stderrTail + b.toString("utf8")).slice(-900);
+          });
+          timer = setTimeout(() => {
+            try { p.kill("SIGKILL"); } catch {}
+            wmLog("ffmpeg_timeout_" + label, { stderrTail });
+            finish(() => reject(new Error("ffmpeg_timeout")));
+          }, 240000);
+          p.on("error", (err: any) =>
+            finish(() => {
+              wmLog("ffmpeg_spawn_error", { label, error: err?.message || String(err) });
+              reject(err);
+            }),
+          );
+          p.on("close", (code: number | null) =>
+            finish(() => {
+              if (code === 0) return resolve();
+              wmLog("ffmpeg_exit_nonzero", { label, code, stderrTail });
+              reject(new Error("ffmpeg_" + code));
+            }),
+          );
         });
-        timer = setTimeout(() => {
-          try {
-            p.kill("SIGKILL");
-          } catch {
-          }
-          wmLog("ffmpeg_timeout_120s", { path: ffmpegPath, stderrTail });
-          finish(() => reject(new Error("ffmpeg_timeout")));
-        }, 120000);
-        p.on("error", (e: any) =>
-          finish(() => {
-            wmLog("ffmpeg_spawn_error", { error: e?.message || String(e), path: ffmpegPath });
-            reject(e);
-          }),
-        );
-        p.on("close", (code: number | null) =>
-          finish(() => {
-            if (code === 0) return resolve();
-            wmLog("ffmpeg_exit_nonzero", { code, path: ffmpegPath, stderrTail });
-            reject(new Error("ffmpeg_" + code));
-          }),
-        );
-      });
 
-      const out = await fsmod.readFile(outP);
-      if (!out || out.length <= 2048) {
-        wmLog("output_too_small", { bytes: out ? out.length : 0 });
+      const CHUNK = 60;
+      const MAX_CHUNKS = 20;
+      const parts: string[] = [];
+      for (let i = 0; i < MAX_CHUNKS; i++) {
+        const startSec = i * CHUNK;
+        const partP = pathmod.join(tmp, "part_" + i + ".mp3");
+        const args = [
+          "-y",
+          "-ss", String(startSec),
+          "-t", String(CHUNK),
+          "-i", inP,
+          "-i", wmP,
+          "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
+          "-filter_complex",
+          "[1:a]aresample=44100,volume=0.45[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2[a]",
+          "-map", "[a]",
+          "-threads", "1",
+          "-b:a", "192k",
+          partP,
+        ];
+        try {
+          await runFf(args, "chunk_" + i);
+        } catch {
+          break;
+        }
+        const st = await fsmod.stat(partP).catch(() => null);
+        if (!st || st.size < 2048) break;
+        parts.push(partP);
+      }
+      if (!parts.length) {
+        wmLog("no_chunks_generated", { sourceBytes: source.length });
         return null;
       }
-      console.log(`[wm] OK bytes=${out.length} ms=${Date.now() - t0}`);
+      console.log("[wm] chunks=" + parts.length);
+
+      let finalP = parts[0];
+      if (parts.length > 1) {
+        const listP = pathmod.join(tmp, "lista.txt");
+        await fsmod.writeFile(
+          listP,
+          parts.map((f) => "file '" + f.replace(/\\/g, "/") + "'").join("\n"),
+        );
+        const joinedP = pathmod.join(tmp, "final.mp3");
+        await runFf(["-y", "-f", "concat", "-safe", "0", "-i", listP, "-c", "copy", joinedP], "concat");
+        finalP = joinedP;
+      }
+
+      const out = await fsmod.readFile(finalP);
+      if (!out || out.length <= 2048) {
+        wmLog("output_too_small", { bytes: out ? out.length : 0, parts: parts.length });
+        return null;
+      }
+      console.log("[wm] OK bytes=" + out.length + " ms=" + (Date.now() - t0) + " parts=" + parts.length);
       return out;
     } catch (e: any) {
       wmLog("unexpected_exception", { error: e instanceof Error ? e.message : String(e) });

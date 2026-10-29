@@ -14,3 +14,5 @@ debug-*.md
 test_suno_api.js
 
 .wm-tmp/
+
+.build-tmp/
