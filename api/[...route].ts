@@ -4509,6 +4509,23 @@ const sunoHandler = (() => {
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
     const cost = 0;
+    // La fila de kits_voices se crea ANTES de entrenar: asi el panel nunca se queda
+    // en "Procesando..." para siempre. Si algo falla, queda en 'failed' con el motivo.
+    let preRowId: string | null = null;
+    const markPreRowFailed = async (message: string) => {
+      if (!preRowId) return;
+      try {
+        await auth.admin
+          .from("kits_voices")
+          .update({
+            status: "failed",
+            error: JSON.stringify({ message: String(message || "").slice(0, 900) }),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", preRowId);
+      } catch {}
+    };
+
 
     try {
       let finalUploadUrl = uploadUrl;
@@ -4685,6 +4702,38 @@ const sunoHandler = (() => {
       }
 
       const replicateModel = process.env.REPLICATE_RVC_MODEL || 'replicate/train-rvc-model';
+      // Crear la voz en la base ANTES de llamar a Replicate (status 'processing').
+      {
+        const preRow: any = {
+          voice_id: "local_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+          user_id: user.id,
+          voice_name: voiceName,
+          description,
+          cost,
+          created_at: new Date().toISOString(),
+          status: "processing",
+          provider: "replicate",
+          dataset_url: datasetUrl,
+          model_name: replicateModel,
+          sample_url: (uploadUrl || finalUploadUrl || null),
+          profile_image_url: profileImageUrl || null,
+          voice_profile_name: voiceProfileName,
+          category,
+          language,
+          gender,
+          tags: tags.length > 0 ? tags : null,
+          is_public: isPublic,
+        };
+        try {
+          const ins: any = await auth.admin.from("kits_voices").insert(preRow).select("id").single();
+          const gotId = ins && !ins.error ? ins.data && ins.data.id : null;
+          if (gotId) preRowId = String(gotId);
+          else if (ins && ins.error) console.log("pre-insert kits_voices fallo:", ins.error.message);
+        } catch (e) {
+          console.log("pre-insert kits_voices excepcion:", e instanceof Error ? e.message : String(e));
+        }
+      }
+
       const getLatestReplicateVersionId = async (modelSlug: string): Promise<string | null> => {
         try {
           const infoRes = await fetch(`https://api.replicate.com/v1/models/${modelSlug}`, {
@@ -4787,16 +4836,31 @@ const sunoHandler = (() => {
           errorDetail && String(errorDetail || "").trim()
             ? `${errorMessage}\n\n${String(errorDetail || "").trim()}`
             : errorMessage;
+        await markPreRowFailed(combined);
         return send(res, 502, { error: combined, detail: errorDetail, status: replicateResponse.status });
       }
 
       const predictionId = replicateData?.id;
       if (!predictionId) {
+        await markPreRowFailed("Replicate no devolvio el id de la prediccion.");
         return send(res, 502, { error: "Respuesta inválida de Replicate API" });
       }
       console.log(`Prediction ID obtenido: ${predictionId}`);
 
-      // Guardar en la base de datos
+
+      if (preRowId) {
+        try {
+          await auth.admin
+            .from("kits_voices")
+            .update({
+              voice_id: predictionId,
+              replicate_id: predictionId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", preRowId);
+        } catch {}
+      }
+      // Guardar en la base de datos (solo si el pre-insert no se pudo hacer)
       const sampleUrlToSave = (uploadUrl || "").toString().trim() || (finalUploadUrl || "").toString().trim() || null;
       const fullRow: any = {
         voice_id: predictionId,
@@ -4845,7 +4909,7 @@ const sunoHandler = (() => {
         return { ok: false as const, error: lastErr };
       };
 
-      const saved = await tryInsertWithFallback();
+      const saved: any = preRowId ? { ok: true } : await tryInsertWithFallback();
       if (!saved.ok) {
         let errorDetail = "";
         if (saved.error) {
@@ -4936,6 +5000,7 @@ notify pgrst, 'reload schema';`;
         helperFunction: "Usa extractOutputUrl(output) para extraer la URL del resultado. Ejemplo: const url = extractOutputUrl(voiceRow.output);"
       });
     } catch (e) {
+      await markPreRowFailed(e instanceof Error ? e.message : String(e));
       return send(res, 502, { error: "Error entrenando modelo RVC", detail: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -23107,6 +23172,58 @@ const kitsVoicesHandler = (() => {
 
         if (error) throw error;
         const out: any[] = Array.isArray(voices) ? voices : [];
+        // Auto-sanacion: si una voz se quedo en "processing" (webhook perdido o carrera
+        // entre el webhook y el insert), le preguntamos a Replicate y la actualizamos.
+        try {
+          const rtok = String(process.env.REPLICATE_API_TOKEN || "").trim();
+          if (rtok) {
+            const atoradas = out
+              .filter((v: any) => {
+                const st = String(v?.status || "").toLowerCase();
+                const rid = String(v?.replicate_id || "").trim();
+                if (!rid) return false;
+                if (!(st === "processing" || st === "starting" || st === "queued")) return false;
+                const t = Date.parse(String(v?.created_at || "")) || 0;
+                return !t || Date.now() - t > 60000;
+              })
+              .slice(0, 3);
+            await Promise.all(
+              atoradas.map(async (v: any) => {
+                try {
+                  const pr = await fetch(
+                    "https://api.replicate.com/v1/predictions/" + encodeURIComponent(String(v.replicate_id)),
+                    { headers: { Authorization: "Token " + rtok } },
+                  );
+                  if (!pr.ok) return;
+                  const pj: any = await pr.json().catch(() => null);
+                  const st = String(pj?.status || "").toLowerCase();
+                  const patch: any = { updated_at: new Date().toISOString() };
+                  if (st === "succeeded" || st === "completed") {
+                    patch.status = "ready";
+                    if (pj?.output != null) {
+                      patch.output = JSON.stringify(pj.output);
+                      const url =
+                        typeof pj.output === "string"
+                          ? pj.output
+                          : Array.isArray(pj.output)
+                          ? String(pj.output[pj.output.length - 1] || "")
+                          : "";
+                      if (url) patch.model_url = url;
+                    }
+                  } else if (st === "failed" || st === "canceled") {
+                    patch.status = "failed";
+                    if (pj?.error) patch.error = JSON.stringify(pj.error);
+                  } else {
+                    return;
+                  }
+                  const ur = await auth.admin.from("kits_voices").update(patch).eq("id", v.id);
+                  if (!(ur as any)?.error) Object.assign(v, patch);
+                } catch {}
+              }),
+            );
+          }
+        } catch {}
+
         const refreshSignedUrlField = async (row: any, field: string) => {
           const raw = row?.[field];
           if (typeof raw !== "string" || !raw.trim()) return;
