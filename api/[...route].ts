@@ -12976,7 +12976,7 @@ const shareSongAudioHandler = (() => {
           "-i", wmP,
           "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
           "-filter_complex",
-          "[1:a]aresample=44100,volume=1.15[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
+          "[1:a]aresample=44100,volume=4.5[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
           "-map", "[a]",
           "-threads", "1",
           "-b:a", "192k",
@@ -21688,7 +21688,7 @@ document.getElementById('btnOk').addEventListener('click',async function(){
         "-y", "-i", inP, "-i", wmP,
         "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
         "-filter_complex",
-        "[1:a]aresample=44100,volume=1.15[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
+        "[1:a]aresample=44100,volume=4.5[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
         "-map", "[a]", "-b:a", "192k", outP,
       ];
       await new Promise<void>((resolve, reject) => {

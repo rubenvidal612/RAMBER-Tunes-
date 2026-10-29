@@ -149,7 +149,7 @@ function mixArgs(inPath, wmPath, outPath) {
     "-i", wmPath,
     "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
     "-filter_complex",
-    "[1:a]aresample=44100,volume=1.15[v];" +
+    "[1:a]aresample=44100,volume=4.5[v];" +
       "[v][2:a]concat=n=2:v=0:a=1[bed];" +
       "[bed]aloop=loop=-1:size=1323000[w];" +
       "[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
