@@ -208,8 +208,8 @@ export function FloatingOrderWidget() {
                 <div className="truncate text-[11px] text-slate-400">{chipVoz}</div>
               ) : null}
             </div>
-            <button type="button" onClick={() => setMini((v) => !v)} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Minimizar">–</button>
-            <button type="button" onClick={() => setMaxi((v) => !v)} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Maximizar">□</button>
+            <button type="button" onClick={() => { setMini((v) => !v); setMaxi(false); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Minimizar">–</button>
+            <button type="button" onClick={() => { setMaxi((v) => !v); setMini(false); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Maximizar">□</button>
             <button
               type="button"
               onClick={() => {
