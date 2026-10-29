@@ -19389,6 +19389,7 @@ const formHandler = (() => {
       vocal_gender: String(ex.vocal_gender || ""),
       lyrics_mode: String(ex.lyrics_mode || ""),
       observations: String(ex.observations || ""),
+      notes: String(ex.notes || ""),
       story: String(ex.story || ""),
       lyrics: String(ex.lyrics || ""),
       title: String(ex.title || ""),
@@ -19952,6 +19953,24 @@ ${botones}
       phone: String(r?.extra?.phone || ""),
     }));
     return sendJson(res, 200, { ok: true, sellers: list });
+  }
+
+  // POST /api/form/notes { t, id, notes } -> nota interna del dueno
+  async function setNotes(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const notes = clean(body?.notes, 1200);
+    const q = await db.from("suno_tasks").select("extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
+    await db.from("suno_tasks").update({ extra: { ...ex, notes } }).eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, notes });
   }
 
   // /api/form/sale  -> ventas manuales (agregar, editar, borrar)
@@ -20666,6 +20685,19 @@ function render(){
     var sel=box.querySelector('[data-sel="'+b.dataset.share2+'"]');
     compartir(b.dataset.share2,(sel&&sel.value||'').trim(),b);
   });});
+  box.querySelectorAll('[data-savenote]').forEach(function(b){b.addEventListener('click',async function(){
+    var ta=document.querySelector('[data-note="'+b.dataset.savenote+'"]');
+    var txt=ta?ta.value:'';
+    b.disabled=true;var prev=b.textContent;b.textContent='Guardando...';
+    try{
+      var r=await fetch('/api/form/notes?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:b.dataset.savenote,notes:txt})});
+      var j=await r.json();
+      if(!r.ok){b.disabled=false;b.textContent=prev;return show('bad',j.error||'No pude guardar la nota.');}
+      b.textContent='Guardada';setTimeout(function(){b.textContent=prev;},1500);
+      var oo=TODAS.filter(function(x){return x.id===b.dataset.savenote;})[0];if(oo)oo.notes=txt;
+    }catch(e){b.disabled=false;b.textContent=prev;show('bad','Sin conexión.');}
+    b.disabled=false;
+  });});
   box.querySelectorAll('[data-copylyr]').forEach(function(b){b.addEventListener('click',function(){
     var oo=TODAS.filter(function(x){return x.id===b.dataset.copylyr;})[0];
     if(!oo)return;
@@ -20725,6 +20757,7 @@ var _quien=String(o.transferred_to||((o.shared_with&&o.shared_with.length)?o.sha
 var _c=o.paid?'#2fdc7e':(String(o.stage||'')==='por_pagar'?'#a855f7':(_aMi?'#ffd54a':(_asignado?'#3d9bff':'#ff3b3b')));
 _glow='border:2px solid '+_c+';box-shadow:0 0 16px '+_c+',inset 5px 0 0 '+_c+';'+(o.paid||_asignado?'':'animation:neonPulse 1.7s ease-in-out infinite;');
 var _clone=(String(o.plan||'')==='rola_voz')?' <span style="background:#ff3b3b;color:#fff;font-size:11px;font-weight:800;padding:2px 9px;border-radius:6px;letter-spacing:.4px">CLONAR: S&Iacute;</span>':'';
+var nota='<div style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px"><label style="font-size:12px;color:var(--gold);margin:0 0 6px">Nota interna (la ve el vendedor)</label><textarea data-note="'+esc(o.id)+'" rows="2" style="min-height:58px;font-size:13px;margin:0">'+esc(o.notes||'')+'</textarea><button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" data-savenote="'+esc(o.id)+'">Guardar nota</button></div>';
 return '<div class="item" style="'+_glow+'position:relative"><input type="checkbox" class="selchk" data-id="'+esc(o.id)+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
@@ -20732,7 +20765,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
     '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
-    waBtn+
+    waBtn+nota+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
     (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
@@ -21156,6 +21189,7 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     }
     if (action === "sellers" || action === "seller") return sellers(req, res);
     if (action === "sales" || action === "sale") return sales(req, res);
+    if (action === "notes") { if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" }); return setNotes(req, res); }
     if (action === "paid") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return markPaid(req, res);
