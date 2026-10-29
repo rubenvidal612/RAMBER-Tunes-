@@ -12808,7 +12808,11 @@ const shareSongAudioHandler = (() => {
       const { GetObjectCommand } = await getR2AwsSdk();
       const bucket = (bucketOverride || env.bucketName || "").toString().trim() || env.bucketName;
       if (!key || !bucket) return null;
-      const out: any = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const out: any = await client.send(
+        new GetObjectCommand({ Bucket: bucket, Key: key }),
+        // Sin esto la descarga de R2 no tiene limite y puede colgar la invocacion.
+        { abortSignal: AbortSignal.timeout(15000) },
+      );
       const body = out?.Body;
       if (!body) return null;
       if (typeof body.transformToByteArray === "function") {
@@ -12955,9 +12959,9 @@ const shareSongAudioHandler = (() => {
             p.kill("SIGKILL");
           } catch {
           }
-          wmLog("ffmpeg_timeout_20s", { path: ffmpegPath, stderrTail });
+          wmLog("ffmpeg_timeout_120s", { path: ffmpegPath, stderrTail });
           finish(() => reject(new Error("ffmpeg_timeout")));
-        }, 20000);
+        }, 120000);
         p.on("error", (e: any) =>
           finish(() => {
             wmLog("ffmpeg_spawn_error", { error: e?.message || String(e), path: ffmpegPath });
@@ -12992,6 +12996,132 @@ const shareSongAudioHandler = (() => {
         }
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Marca de agua pre-generada.
+  // Se construye UNA sola vez, fuera del camino de escucha, y se guarda en R2 con
+  // una clave determinista por cancion. La escucha solo hace HEAD + redirect.
+  // ---------------------------------------------------------------------------
+  function watermarkKeyForSong(songId: string): string {
+    const safe = String(songId || "").replace(/[^0-9A-Za-z_-]/g, "").slice(0, 64);
+    return safe ? `share-watermark/song-${safe}.mp3` : "";
+  }
+
+  function publicUrlForKey(key: string): string {
+    try {
+      const env = getR2Env();
+      const base = String(env.publicBaseUrl || "").trim().replace(/\/+$/, "");
+      if (!base || !key) return "";
+      return `${base}/${key.split("/").map((s) => encodeURIComponent(s)).join("/")}`;
+    } catch {
+      return "";
+    }
+  }
+
+  async function headR2Object(key: string): Promise<boolean> {
+    if (!key) return false;
+    try {
+      const env = getR2Env();
+      const client = await getR2Client();
+      const { HeadObjectCommand } = await getR2AwsSdk();
+      await client.send(new HeadObjectCommand({ Bucket: env.bucketName, Key: key }), {
+        abortSignal: AbortSignal.timeout(15000),
+      });
+      return true;
+    } catch (e: any) {
+      const name = String(e?.name || "");
+      const status = Number(e?.$metadata?.httpStatusCode || 0);
+      if (name === "NotFound" || name === "NoSuchKey" || status === 404) return false;
+      console.log(`[wm] head_failed key=${key} name=${name} status=${status} msg=${String(e?.message || "")}`);
+      return false;
+    }
+  }
+
+  async function putR2ObjectIfAbsent(key: string, body: Buffer): Promise<boolean> {
+    if (!key) return false;
+    try {
+      const env = getR2Env();
+      const client = await getR2Client();
+      const { PutObjectCommand } = await getR2AwsSdk();
+      await client.send(
+        new PutObjectCommand({
+          Bucket: env.bucketName,
+          Key: key,
+          Body: body,
+          ContentType: "audio/mpeg",
+          CacheControl: "public, max-age=31536000, immutable",
+          // Escritura condicional: si dos requests compiten, solo uno escribe.
+          IfNoneMatch: "*",
+        }),
+        { abortSignal: AbortSignal.timeout(120000) },
+      );
+      return true;
+    } catch (e: any) {
+      const status = Number(e?.$metadata?.httpStatusCode || 0);
+      if (status === 412 || status === 409) {
+        console.log(`[wm] put_already_exists key=${key} status=${status}`);
+        return true;
+      }
+      console.log(
+        `[wm] FAIL put_failed key=${key} name=${String(e?.name || "")} status=${status} msg=${String(e?.message || "")}`,
+      );
+      return false;
+    }
+  }
+
+  const wmBuilding = new Set<string>();
+
+  async function ensureWatermarkedAudio(
+    songId: string,
+    audioUrl: string,
+    admin: any,
+  ): Promise<{ ok: boolean; key: string; reason: string; ms: number; bytes: number }> {
+    const key = watermarkKeyForSong(songId);
+    const startedAt = Date.now();
+    if (!key) return { ok: false, key: "", reason: "bad_song_id", ms: 0, bytes: 0 };
+    if (wmBuilding.has(key)) return { ok: false, key, reason: "in_flight", ms: 0, bytes: 0 };
+    wmBuilding.add(key);
+    try {
+      if (await headR2Object(key)) {
+        return { ok: true, key, reason: "already_stored", ms: Date.now() - startedAt, bytes: 0 };
+      }
+      const mixed = await buildWatermarkedAudio(audioUrl, admin);
+      if (!mixed || mixed.length <= 2048) {
+        return { ok: false, key, reason: "build_failed", ms: Date.now() - startedAt, bytes: 0 };
+      }
+      const stored = await putR2ObjectIfAbsent(key, mixed);
+      if (!stored) {
+        return { ok: false, key, reason: "put_failed", ms: Date.now() - startedAt, bytes: mixed.length };
+      }
+      console.log(`[wm] stored key=${key} bytes=${mixed.length} ms=${Date.now() - startedAt}`);
+      return { ok: true, key, reason: "generated", ms: Date.now() - startedAt, bytes: mixed.length };
+    } catch (e: any) {
+      console.log(`[wm] FAIL ensure_exception msg=${String(e?.message || e)}`);
+      return { ok: false, key, reason: "exception", ms: Date.now() - startedAt, bytes: 0 };
+    } finally {
+      wmBuilding.delete(key);
+    }
+  }
+
+  function triggerWatermarkBuild(songId: string, audioUrl: string, admin: any): void {
+    const work = ensureWatermarkedAudio(songId, audioUrl, admin).catch(() => null);
+    void (async () => {
+      try {
+        // Especificador construido en runtime: evita que el bundler intente
+        // resolverlo en build cuando el paquete no esta instalado.
+        const pkg = ["@vercel", "functions"].join("/");
+        const mod: any = await import(pkg).catch(() => null);
+        if (mod && typeof mod.waitUntil === "function") {
+          mod.waitUntil(work);
+          return;
+        }
+      } catch {
+      }
+      // Sin waitUntil: se deja correr; si la invocacion se congela, el siguiente
+      // request lo reintenta (la escritura es condicional, sin duplicados).
+      work.catch(() => null);
+    })();
   }
 
   return async function handler(req: any, res: any) {
@@ -13061,37 +13191,58 @@ const shareSongAudioHandler = (() => {
       const fallbackName = sanitizeDispositionName((title || "Cancion").toString(), "Cancion");
       const downloadName = wantDownload ? sanitizeDispositionName(dlName, `${fallbackName}.mp3`) : "";
 
-      const wantWatermark = (() => {
-        const v = (pickQuery(req, "wm") || "").toString().trim().toLowerCase();
-        return v === "1" || v === "true" || v === "yes" || v === "si";
-      })();
+      const wmRaw = (pickQuery(req, "wm") || "").toString().trim().toLowerCase();
+      const wantWatermark = wmRaw === "1" || wmRaw === "true" || wmRaw === "yes" || wmRaw === "si";
+      const wantWmBuild = wmRaw === "build" || wmRaw === "prepare";
+
+      const songIdForWm = String((data as any).id || idRaw || "");
+
+      // Generacion explicita, fuera del camino de escucha y con timeout largo.
+      //   GET /api/share/song/audio?id=<cancion>&wm=build
+      if (wantWmBuild && !wantDownload) {
+        const built = await ensureWatermarkedAudio(songIdForWm, audioUrl, admin);
+        console.log(
+          `[wm] build id=${songIdForWm} ok=${built.ok} reason=${built.reason} ms=${built.ms} bytes=${built.bytes}`,
+        );
+        return sendJson(res, built.ok ? 200 : 500, {
+          ok: built.ok,
+          song_id: songIdForWm,
+          key: built.key,
+          reason: built.reason,
+          ms: built.ms,
+          bytes: built.bytes,
+          public_url: built.ok ? publicUrlForKey(built.key) : "",
+        });
+      }
 
       // Marca de agua solo para escucha. La descarga (?dl=1) siempre sale limpia.
-      // Fail-open: si la mezcla falla, se responde el audio original.
+      // Camino rapido: si ya esta pre-generada, HEAD + redirect al CDN publico.
+      // Si no existe, se sirve el original (sin cachear) y se dispara la
+      // generacion en segundo plano. Nunca se mezcla dentro de este request.
       console.log(
-        `[wm] request id=${idRaw} wantWatermark=${wantWatermark} wantDownload=${wantDownload} method=${method}`,
+        `[wm] request id=${idRaw} wantWatermark=${wantWatermark} wantBuild=${wantWmBuild} wantDownload=${wantDownload} method=${method}`,
       );
       if (wantWatermark && !wantDownload && method !== "HEAD") {
-        const raceStart = Date.now();
-        const mixed = await Promise.race([
-          buildWatermarkedAudio(audioUrl, admin),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 25000)),
-        ]);
-        if (!mixed) {
-          console.log(`[wm] FAIL race_null_or_25s_cap ms=${Date.now() - raceStart}`);
-        }
-        if (mixed && mixed.length > 2048) {
-          res.statusCode = 200;
-          res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800");
-          res.setHeader("access-control-allow-origin", "*");
-          res.setHeader("access-control-allow-headers", "range, content-type");
-          res.setHeader("access-control-expose-headers", "content-length, content-type");
-          res.setHeader("accept-ranges", "none");
-          res.setHeader("content-type", "audio/mpeg");
-          res.setHeader("content-length", String(mixed.length));
-          res.end(mixed);
+        const wmKey = watermarkKeyForSong(songIdForWm);
+        const stored = wmKey ? await headR2Object(wmKey) : false;
+        if (stored) {
+          const pub = publicUrlForKey(wmKey);
+          if (pub) {
+            console.log(`[wm] hit key=${wmKey} -> redirect cdn`);
+            res.statusCode = 302;
+            res.setHeader("location", pub);
+            res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800");
+            res.setHeader("access-control-allow-origin", "*");
+            res.setHeader("access-control-expose-headers", "location, content-type");
+            res.end();
+            return;
+          }
+          console.log(`[wm] hit key=${wmKey} sin public_base_url -> se sirve desde R2`);
+          await serveR2Object(req, res, wmKey);
           return;
         }
+        console.log(`[wm] miss key=${wmKey} -> original sin cache + build en segundo plano`);
+        triggerWatermarkBuild(songIdForWm, audioUrl, admin);
       }
 
       const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
