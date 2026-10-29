@@ -21305,7 +21305,15 @@ det+='<div class="meta"><b>Estilo:</b> '+esc(o.style||'-')+'</div>';
   if(o.story)det+='<div class="meta" style="margin-top:8px"><b>Historia:</b><br>'+esc(o.story)+'</div>';
 if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px solid var(--gold);padding-left:10px"><b>Observaciones del cliente:</b><br>'+esc(o.observations)+'</div>';
   if(o.lyrics)det+='<div class="meta" style="margin-top:8px"><b>Letra:</b> <button class="btn sec" style="width:auto;padding:2px 9px;font-size:11px" data-copylyr="'+esc(o.id)+'">Copiar letra</button><br>'+esc(o.lyrics).replace(/\\n/g,'<br>')+'</div>';
-  if(o.audio_path){var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);det+='<div style="margin-top:10px"><b>Audio a capela</b></div><audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio><a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin-bottom:10px" href="'+_au+'&dl=1">Descargar audio</a>';}
+  var audioBox='';
+  if(o.audio_path){
+    var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);
+    audioBox='<div style="margin-top:10px;border:1px solid #3a3050;border-radius:10px;padding:10px">'+
+      '<b style="color:var(--gold)">Audio a capela del cliente</b>'+
+      '<audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio>'+
+      '<a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin:0" href="'+_au+'&dl=1">Descargar audio</a>'+
+      '</div>';
+  }
   if(o.transferred_to){var _hh=0,_ee=String(o.transferred_to).toLowerCase();for(var _ii=0;_ii<_ee.length;_ii++){_hh=(_hh*31+_ee.charCodeAt(_ii))%360;}var _cc='hsl('+_hh+',90%,58%)';det+='<div class="meta" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_cc+';box-shadow:0 0 8px '+_cc+';margin-right:6px"></span><b>Transferido a:</b> <span style="color:'+_cc+'">'+esc(o.transferred_to)+'</span></div>';}
   var players='';
   if(Array.isArray(o.songs)&&o.songs.length){
@@ -21364,7 +21372,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
     (o.task_id?'<div class="meta">task: '+esc(o.task_id)+'</div>':'')+
-    '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+players+
+    '<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--gold)">Ver su formulario</summary>'+det+'</details>'+audioBox+players+
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
     waBtn+nota+editar+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
