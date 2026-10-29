@@ -12,3 +12,5 @@ scratch/
 check_*.js
 debug-*.md
 test_suno_api.js
+
+.wm-tmp/
