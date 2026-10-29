@@ -13274,7 +13274,25 @@ const shareSongAudioHandler = (() => {
           return;
         }
         console.log(`[wm] miss key=${wmKey} -> original sin cache + build en segundo plano`);
-        triggerWatermarkBuild(songIdForWm, audioUrl, admin);
+        // En Vercel el "segundo plano" no existe: al responder, la funcion se congela
+        // y la generacion muere. Hay que esperarla aqui mismo.
+        const built = await ensureWatermarkedAudio(songIdForWm, audioUrl, admin);
+        console.log("[wm] build result ok=" + built.ok + " reason=" + built.reason + " ms=" + built.ms + " bytes=" + built.bytes);
+        if (built.ok) {
+          const pubDone = publicUrlForKey(wmKey);
+          if (pubDone) {
+            res.statusCode = 302;
+            res.setHeader("location", pubDone);
+            res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800");
+            res.setHeader("access-control-allow-origin", "*");
+            res.setHeader("access-control-expose-headers", "location, content-type");
+            res.end();
+            return;
+          }
+          await serveR2Object(req, res, wmKey);
+          return;
+        }
+        console.log("[wm] generacion fallo (" + built.reason + ") -> se entrega el original");
       }
 
       const r2Key = extractR2KeyFromUrlOrKey(audioUrl);
