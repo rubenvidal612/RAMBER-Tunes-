@@ -21525,7 +21525,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   var audioBox='';
   if(o.audio_path){
     var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);
-    var _dln='acapela-'+(String(o.name||'').replace(/[^\w\s-]/g,'').replace(/\s+/g,'-').trim().slice(0,40)||'audio')+'.mp3';
+    var _dln='acapela-'+(String(o.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\\w\\s-]/g,'').replace(/\\s+/g,'-').trim().slice(0,40)||'audio')+'.mp3';
     audioBox='<div style="margin-top:10px;border:1px solid #3a3050;border-radius:10px;padding:10px">'+
       '<b style="color:var(--gold)">Audio a capela del cliente</b>'+
       '<audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio>'+
