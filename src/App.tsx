@@ -1873,7 +1873,7 @@ export default function App() {
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j?.f) throw new Error(j?.message || j?.error || 'No pude abrir Pedidos.');
         if (alive) {
-          setPanelPass({ me: String(j.me || ''), f: String(j.f || ''), e: String(j.e || '') });
+          setPanelPass({ me: String(j.me || ''), f: String(j.f || ''), e: String(j.exp ?? j.e ?? '') });
           setPanelPassError('');
         }
       } catch (e) {
