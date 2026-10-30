@@ -19874,6 +19874,14 @@ const formHandler = (() => {
   function clean(value: any, max: number) {
     return String(value == null ? "" : value).trim().slice(0, max);
   }
+  // Quien esta actuando: el "me" que manda el panel (email del usuario) o el dueno.
+  // Se usa para que cada usuario vea SOLO sus ventas manuales.
+  function whoFrom(req: any, body?: any) {
+    const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
+    const raw = clean(query(req, "me") || (body && body.me) || "", 120).toLowerCase();
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? raw : dueno;
+  }
+
 
   function orderView(row: any) {
     const ex = row?.extra && typeof row.extra === "object" ? row.extra : {};
@@ -20616,6 +20624,12 @@ ${botones}
       const idIn = clean(b?.id || query(req, "id"), 60);
       if (!idIn) return sendJson(res, 400, { error: "missing_id" });
       const key = idIn.startsWith("sale_") ? idIn : `sale_${idIn}`;
+      const who = whoFrom(req, b);
+      const curD = await db.from("suno_tasks").select("task_id, extra").eq("task_id", key).eq("kind", "form-sale").limit(1);
+      const curRow = (curD as any)?.data?.[0];
+      if (!curRow) return sendJson(res, 404, { error: "not_found" });
+      const curOwner = String((curRow.extra || {}).owner_email || process.env.LUCIANA_OWNER_EMAIL || "").trim().toLowerCase();
+      if (curOwner && curOwner !== who) return sendJson(res, 403, { error: "forbidden", message: "Esa venta no es tuya." });
       const del = await db.from("suno_tasks").delete().eq("task_id", key).eq("kind", "form-sale");
       if ((del as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
       return sendJson(res, 200, { ok: true });
@@ -20627,11 +20641,15 @@ ${botones}
       const met = clean(b?.method, 30).toLowerCase() || "transferencia";
       const date = clean(b?.date, 10) || mxDayIso(new Date().toISOString());
       const idIn = clean(b?.id, 60);
+      const who = whoFrom(req, b);
       if (!(amount > 0)) return sendJson(res, 400, { error: "invalid_amount", message: "Escribe un monto mayor a cero." });
       if (!description) return sendJson(res, 400, { error: "missing_description", message: "Escribe qué vendiste." });
       const key = idIn ? (idIn.startsWith("sale_") ? idIn : `sale_${idIn}`) : `sale_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
       const cur = await db.from("suno_tasks").select("task_id, extra").eq("task_id", key).limit(1);
       const ex = (((cur as any)?.data?.[0]?.extra) || {}) as any;
+      // Solo se puede editar una venta propia.
+      const exOwner = String((ex || {}).owner_email || "").trim().toLowerCase();
+      if (idIn && exOwner && exOwner !== who) return sendJson(res, 403, { error: "forbidden", message: "Esa venta no es tuya." });
       const ins = await db.from("suno_tasks").upsert({
         task_id: key,
         user_id: ownerId(),
@@ -20643,15 +20661,23 @@ ${botones}
           description,
           method: met,
           date,
-          owner_email: String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").toLowerCase(),
+          owner_email: who,
           created_at: ex.created_at || new Date().toISOString(),
         },
       });
       if ((ins as any)?.error) return sendJson(res, 500, { error: "save_failed" });
       return sendJson(res, 200, { ok: true, id: key });
     }
+    const who = whoFrom(req);
+    const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
     const q = await db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale").limit(500);
     const list = (((q as any)?.data) || [])
+      // Cada usuario ve SOLO sus ventas. Las viejas sin owner_email son del dueno.
+      .filter((r: any) => {
+        const owner = String(r?.extra?.owner_email || "").trim().toLowerCase();
+        if (!owner) return who === dueno;
+        return owner === who;
+      })
       .map((r: any) => ({
         id: String(r?.task_id || ""),
         amount: Number(r?.extra?.amount || 0),
@@ -20911,8 +20937,13 @@ ${botones}
     }
     try {
       const sq = await db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale").limit(500);
+      const rWho = whoFrom(req);
+      const rDueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
       for (const srow of (((sq as any)?.data) || [])) {
         const sx = (srow.extra || {}) as any;
+        const sOwner = String(sx.owner_email || "").trim().toLowerCase();
+        // Solo las ventas del usuario que consulta.
+        if (sOwner ? sOwner !== rWho : rWho !== rDueno) continue;
         const sm = Number(sx.amount || 0);
         const sd = String(sx.date || "").slice(0, 10);
         if (!(sm > 0) || !sd) continue;
@@ -21750,7 +21781,7 @@ async function load(){
 }
 async function cargarVentas(){
   try{
-    var r=await fetch('/api/form/sale?t='+encodeURIComponent(T));
+    var r=await fetch('/api/form/sale?t='+encodeURIComponent(T)+(ME?'&me='+encodeURIComponent(ME):''));
     var j=await r.json();
     var box=document.getElementById('saleList');if(!box)return;
     if(!r.ok){box.textContent='No pude cargar.';return;}
@@ -21763,7 +21794,7 @@ async function cargarVentas(){
   }catch(e){}
 }
 async function guardarVenta(id,monto,desc,met){
-  var r=await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id||'',amount:monto,description:desc,method:met})});
+  var r=await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id||'',amount:monto,description:desc,method:met,me:ME})});
   var j=await r.json();
   if(!r.ok)return show('bad',j.message||j.error||'No pude guardar.');
   cargarVentas();cargarReporte();
@@ -21776,7 +21807,7 @@ function editarVenta(id){
 }
 async function borrarVenta(id){
   if(!confirm('¿Borrar esta venta manual?'))return;
-  await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})}).catch(function(){});
+  await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,me:ME})}).catch(function(){});
   cargarVentas();cargarReporte();
 }
 document.getElementById('addSale').addEventListener('click',function(){
