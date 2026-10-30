@@ -19950,6 +19950,7 @@ const formHandler = (() => {
       transferred_to: String(ex.transferred_to || "").toLowerCase(),
       owner_email: String(ex.owner_email || "").toLowerCase(),
       shared_with: Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [],
+      share_whatsapp: Boolean(ex.share_whatsapp),
       error: String(ex.error || ""),
     };
   }
@@ -20084,7 +20085,7 @@ const formHandler = (() => {
       // El vendedor solo ve los ultimos 4 digitos del WhatsApp; el dueno ve todo.
       .map((o: any) => ({
         ...o,
-        whatsapp: esDueno ? o.whatsapp : `*****${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
+        whatsapp: esDueno || o.share_whatsapp ? o.whatsapp : `*****${String(o.whatsapp || "").replace(/\D/g, "").slice(-4)}`,
       }));
     return sendJson(res, 200, { ok: true, me, owner: dueno, is_owner: esDueno, orders: visibles });
   }
@@ -20356,9 +20357,13 @@ const formHandler = (() => {
     const row = (q as any)?.data?.[0];
     if (!row) return sendJson(res, 404, { error: "not_found" });
     const ex = row.extra && typeof row.extra === "object" ? row.extra : {};
-    const list = [email];
-    await db.from("suno_tasks").update({ extra: { ...ex, shared_with: [email], transferred_to: email } }).eq("task_id", rowKey);
-    return sendJson(res, 200, { ok: true, shared_with: [email] });
+    // El dueno decide si el vendedor ve el WhatsApp completo del cliente.
+    const includeWhatsapp = body?.includeWhatsapp === true || body?.includeWhatsapp === "true" || body?.includeWhatsapp === 1;
+    await db
+      .from("suno_tasks")
+      .update({ extra: { ...ex, shared_with: [email], transferred_to: email, share_whatsapp: includeWhatsapp } })
+      .eq("task_id", rowKey);
+    return sendJson(res, 200, { ok: true, shared_with: [email], share_whatsapp: includeWhatsapp });
   }
 
   // POST /api/form/sync { t, id }  -> pregunta a Luciana si ya estan las canciones
@@ -21603,6 +21608,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     '<div style="display:flex;gap:8px;margin-top:8px"><a class="btn sec" style="flex:1;text-decoration:none;text-align:center;line-height:1.6" target="_blank" href="/api/form/listen?id='+esc(o.id)+'&t='+encodeURIComponent(T)+'">Abrir link de escucha</a></div>'+
     waBtn+nota+editar+
     '<div style="display:flex;gap:8px;margin-top:8px"><select data-sel="'+esc(o.id)+'" style="margin:0;font-size:13px">'+opciones+'</select><button class="btn sec" style="width:auto;padding:0 14px;font-size:13px" data-share2="'+esc(o.id)+'">Transferir</button></div>'+
+    '<label class="small" style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer"><input type="checkbox" data-wa="'+esc(o.id)+'"'+(o.share_whatsapp?' checked':'')+' style="width:auto;margin:0"> Incluir el WhatsApp del cliente al vendedor</label>'+
     (o.shared_with&&o.shared_with.length?'<div style="margin:12px 0;font-size:12px;line-height:1.45;word-break:break-all;background:rgba(168,85,247,.14);border-left:3px solid #a855f7;padding:7px 9px;border-radius:6px"><b>Transferido a:</b> '+esc(o.shared_with.join(', '))+'</div>':'')+
     avisar+
     manual+
@@ -21761,12 +21767,14 @@ async function pagadoManual(id,btn){
 }
 async function compartir(id,email,btn){
   if(!email)return show('bad','Escribe el correo de la persona.');
+  var waEl=document.querySelector('[data-wa="'+id+'"]');
+  var incluirWa=!!(waEl&&waEl.checked);
   btn.disabled=true;btn.textContent='...';
   try{
-    var r=await fetch('/api/form/share?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,email:email})});
+    var r=await fetch('/api/form/share?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,email:email,includeWhatsapp:incluirWa})});
     var j=await r.json();
     if(!r.ok){btn.disabled=false;btn.textContent='Enviar';return show('bad',j.message||j.error||'No pude compartir.');}
-    show('ok','Transferido a '+email+'. Ya lo puede ver en su cuenta.');
+    show('ok','Transferido a '+email+'. Ya lo puede ver en su cuenta'+(incluirWa?' (con WhatsApp del cliente)':' (sin WhatsApp)')+'.');
     // Aviso por WhatsApp al vendedor: se abre con el mensaje ya escrito.
     try{
       var NL=String.fromCharCode(10);
