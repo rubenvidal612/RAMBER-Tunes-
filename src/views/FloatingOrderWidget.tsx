@@ -75,6 +75,9 @@ function Campo({ label, value, onCopy }: { label: string; value: string; onCopy:
 }
 
 export function FloatingOrderWidget() {
+  // Solo se abre sola si vienes de "Hacer manual" (con ?pedido= en la URL).
+  // Si el pedido viene guardado de antes, se muestra solo el icono.
+  const cameFromUrl = useRef<boolean>(pedidoDeUrl() !== '');
   const [pedidoId, setPedidoId] = useState<string>(() => {
     try {
       return pedidoDeUrl() || (localStorage.getItem(STORE_KEY) || '');
@@ -124,9 +127,19 @@ export function FloatingOrderWidget() {
         try {
           localStorage.setItem(STORE_KEY, pedidoId);
         } catch {}
-        if (!shownRef.current) {
+        // Se abre sola SOLO la primera vez si vienes de "Hacer manual".
+        if (cameFromUrl.current && !shownRef.current) {
           shownRef.current = true;
           setAbierto(true);
+          // Quitamos "?pedido=" de la URL para que no se vuelva a abrir sola
+          // al cambiar de pestana o al recargar.
+          try {
+            const u = new URL(window.location.href);
+            if (u.searchParams.has('pedido')) {
+              u.searchParams.delete('pedido');
+              window.history.replaceState({}, '', u.pathname + (u.search || '') + (u.hash || ''));
+            }
+          } catch {}
         }
       } catch (e) {
         if (activo) setError(e instanceof Error ? e.message : 'No se pudo cargar el pedido');
@@ -179,6 +192,23 @@ export function FloatingOrderWidget() {
     } catch {}
     dragRef.current = null;
     setArrastrando(false);
+  }, []);
+
+  // "Quitar" de verdad: cierra la ventanita, borra el icono y olvida el pedido.
+  const quitarFormulario = useCallback(() => {
+    try {
+      localStorage.removeItem(STORE_KEY);
+    } catch {}
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.has('pedido')) {
+        u.searchParams.delete('pedido');
+        window.history.replaceState({}, '', u.pathname + (u.search || '') + (u.hash || ''));
+      }
+    } catch {}
+    setConfirmando(false);
+    setAbierto(false);
+    setPedidoId('');
   }, []);
 
   if (!pedidoId) return null;
@@ -255,10 +285,7 @@ export function FloatingOrderWidget() {
               <div className="mt-2 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setConfirmando(false);
-                    setAbierto(false);
-                  }}
+                  onClick={quitarFormulario}
                   className="h-8 flex-1 rounded-lg bg-red-500 px-2 text-[12px] font-bold text-white"
                 >
                   Sí, quitar
