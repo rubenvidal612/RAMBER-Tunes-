@@ -20918,6 +20918,8 @@ ${botones}
     // Nombre bonito para el archivo descargado: "acapela-<cliente>.mp3"
     const baseName =
       String(ex.name || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^\w\s-]/g, "")
         .replace(/\s+/g, "-")
         .trim()
