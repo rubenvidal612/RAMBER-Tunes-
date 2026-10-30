@@ -20670,14 +20670,25 @@ ${botones}
     }
     const who = whoFrom(req);
     const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
-    const q = await db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale").limit(500);
-    const list = (((q as any)?.data) || [])
-      // Cada usuario ve SOLO sus ventas. Las viejas sin owner_email son del dueno.
-      .filter((r: any) => {
+    const salesQuery = () =>
+      db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale");
+    // Filtro en la base (JSONB): asi no se pierden ventas cuando hay muchas.
+    const q = await salesQuery().eq("extra->>owner_email", who).limit(500);
+    let rawSales = ((q as any)?.data || []);
+    if ((q as any)?.error) {
+      // Compatibilidad: si el filtro JSONB fallara, se filtra en memoria.
+      const qAll = await salesQuery().limit(2000);
+      rawSales = ((qAll as any)?.data || []).filter((r: any) => {
         const owner = String(r?.extra?.owner_email || "").trim().toLowerCase();
         if (!owner) return who === dueno;
         return owner === who;
-      })
+      });
+    } else if (who === dueno) {
+      // Ventas viejas sin owner_email: son del dueno.
+      const qNull = await salesQuery().is("extra->>owner_email", null).limit(500);
+      if (!(qNull as any)?.error) rawSales = rawSales.concat(((qNull as any)?.data || []));
+    }
+    const list = rawSales
       .map((r: any) => ({
         id: String(r?.task_id || ""),
         amount: Number(r?.extra?.amount || 0),
@@ -20936,14 +20947,22 @@ ${botones}
       porVendedor[vk].pedidos += 1;
     }
     try {
-      const sq = await db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale").limit(500);
       const rWho = whoFrom(req);
       const rDueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
-      for (const srow of (((sq as any)?.data) || [])) {
+      const sqBase = () =>
+        db.from("suno_tasks").select("task_id, extra").eq("user_id", ownerId()).eq("kind", "form-sale");
+      // Solo las ventas del usuario que consulta, filtradas en la base.
+      const sq = await sqBase().eq("extra->>owner_email", rWho).limit(500);
+      let saleRows = ((sq as any)?.data || []);
+      if ((sq as any)?.error) {
+        const sqAll = await sqBase().limit(2000);
+        saleRows = ((sqAll as any)?.data || []).filter((r: any) => {
+          const o = String(r?.extra?.owner_email || "").trim().toLowerCase();
+          return o ? o === rWho : rWho === rDueno;
+        });
+      }
+      for (const srow of saleRows) {
         const sx = (srow.extra || {}) as any;
-        const sOwner = String(sx.owner_email || "").trim().toLowerCase();
-        // Solo las ventas del usuario que consulta.
-        if (sOwner ? sOwner !== rWho : rWho !== rDueno) continue;
         const sm = Number(sx.amount || 0);
         const sd = String(sx.date || "").slice(0, 10);
         if (!(sm > 0) || !sd) continue;
