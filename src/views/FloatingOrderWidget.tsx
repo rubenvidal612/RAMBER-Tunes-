@@ -322,6 +322,14 @@ export function FloatingOrderWidget() {
                     <div className="mt-2">
                       <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-violet-300/80">Audio a capela</div>
                       <audio controls preload="none" src={order.audio_url} className="w-full" />
+                      <a
+                        href={`${order.audio_url}&dl=1`}
+                        target="_blank"
+                        rel="noopener"
+                        className="mt-1 flex h-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-bold text-slate-200"
+                      >
+                        Descargar audio
+                      </a>
                     </div>
                   ) : (
                     <div className="mt-2 text-[11px] text-slate-500">Este pedido no tiene audio a capela.</div>

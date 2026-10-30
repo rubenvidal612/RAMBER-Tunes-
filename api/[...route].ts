@@ -20915,8 +20915,17 @@ ${botones}
     if (!srcPath) return sendJson(res, 404, { error: "no_audio" });
     const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
     const dl = query(req, "dl") === "1";
+    // Nombre bonito para el archivo descargado: "acapela-<cliente>.mp3"
+    const baseName =
+      String(ex.name || "")
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .trim()
+        .slice(0, 40) || "audio";
+    const ext = (srcPath.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+    const dlName = "acapela-" + baseName + "." + ext;
     const signed = dl
-      ? await (db as any).storage.from(bucket).createSignedUrl(srcPath, 600, { download: true })
+      ? await (db as any).storage.from(bucket).createSignedUrl(srcPath, 600, { download: dlName })
       : await (db as any).storage.from(bucket).createSignedUrl(srcPath, 600);
     const url = signed?.data?.signedUrl;
     if (!url) return sendJson(res, 500, { error: "sign_failed" });
@@ -21516,7 +21525,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
     audioBox='<div style="margin-top:10px;border:1px solid #3a3050;border-radius:10px;padding:10px">'+
       '<b style="color:var(--gold)">Audio a capela del cliente</b>'+
       '<audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio>'+
-      '<a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin:0" href="'+_au+'&dl=1">Descargar audio</a>'+
+      '<a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin:0" href="'+_au+'&dl=1" target="_blank" rel="noopener">Descargar audio</a>'+
       '</div>';
   }
   if(o.transferred_to){var _hh=0,_ee=String(o.transferred_to).toLowerCase();for(var _ii=0;_ii<_ee.length;_ii++){_hh=(_hh*31+_ee.charCodeAt(_ii))%360;}var _cc='hsl('+_hh+',90%,58%)';det+='<div class="meta" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_cc+';box-shadow:0 0 8px '+_cc+';margin-right:6px"></span><b>Transferido a:</b> <span style="color:'+_cc+'">'+esc(o.transferred_to)+'</span></div>';}
