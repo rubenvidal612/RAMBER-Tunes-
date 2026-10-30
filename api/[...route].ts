@@ -19882,6 +19882,38 @@ const formHandler = (() => {
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? raw : dueno;
   }
 
+  // ---------- firma del panel ----------
+  // El panel recibe "me" (correo del usuario) en la URL. Para que nadie lo pueda
+  // cambiar a mano, la app pide un pase firmado con HMAC y el panel lo verifica.
+  function panelSecret() {
+    return String(process.env.LUCIANA_PANEL_SECRET || process.env.LUCIANA_FORM_TOKEN || formToken()).trim() || "luciana-panel";
+  }
+
+  async function panelSign(me: string, exp: number) {
+    const crypto = await import("node:crypto");
+    return crypto.createHmac("sha256", panelSecret()).update(me + "|" + exp).digest("hex");
+  }
+
+  // Devuelve { me, exp, f } si la firma es valida; null si no.
+  async function panelAuth(req: any) {
+    const me = clean(query(req, "me"), 120).toLowerCase();
+    const exp = Number(query(req, "e") || 0) || 0;
+    const f = clean(query(req, "f"), 80).toLowerCase();
+    if (!me || !exp || !f) return null;
+    if (exp * 1000 < Date.now()) return null;
+    const expected = await panelSign(me, exp);
+    try {
+      const crypto = await import("node:crypto");
+      const a = Buffer.from(f, "utf8");
+      const b = Buffer.from(expected, "utf8");
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    } catch {
+      return null;
+    }
+    return { me, exp, f };
+  }
+
+
 
   function orderView(row: any) {
     const ex = row?.extra && typeof row.extra === "object" ? row.extra : {};
@@ -20080,8 +20112,8 @@ const formHandler = (() => {
     const id = clean(query(req, "id"), 60);
     if (!id) return sendJson(res, 400, { error: "missing_id" });
 
-    const tokenOk = sameToken(query(req, "t"), formToken());
-    let allowed = tokenOk;
+    const sig = await panelAuth(req);
+    let allowed = !!sig;
     if (!allowed) {
       const u = await userFromReq(req);
       if (u) {
@@ -21277,8 +21309,10 @@ document.getElementById('send').addEventListener('click',async function(){
     return page("Tu canción · Luciána Music", inner + js);
   }
 
-  function panelPage(token: string, vista: string = "pedidos", me: string = "") {
-  const meq = me ? "&me=" + encodeURIComponent(me) : "";
+  function panelPage(token: string, vista: string = "pedidos", me: string = "", f: string = "", e: string = "") {
+  const meq = me
+    ? "&me=" + encodeURIComponent(me) + "&f=" + encodeURIComponent(f) + "&e=" + encodeURIComponent(e)
+    : "";
   const show = (id: string) => `style="display:${vista === id ? "" : "none"}"`;
   const on = (id: string) => (vista === id ? "on" : "");
     const share = `https://lucianamusic.app/api/form/open?t=${encodeURIComponent(token)}`;
@@ -21354,6 +21388,9 @@ document.getElementById('send').addEventListener('click',async function(){
     const js = `
 <script>
 var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[],TODAS=[],FSTAGE='todas';
+// Pase firmado (me/f/e) para que el servidor confie en el correo.
+var AUTHQ=(function(){try{var p=new URLSearchParams(location.search);var q='';['me','f','e'].forEach(function(k){var v=p.get(k)||'';if(v)q+='&'+k+'='+encodeURIComponent(v);});return q;}catch(e2){return '';}})();
+(function(){var _f=window.fetch;window.fetch=function(u,o){try{if(typeof u==='string'&&u.indexOf('/api/form/')===0&&u.indexOf('&f=')<0&&u.indexOf('t=')>=0){u=u+AUTHQ;}}catch(e2){}return _f(u,o);};})();
 function pintarFiltros(){
   var defs=[['todas','Todas'],['pendiente','Pendientes'],['por_pagar','Por pagar'],['pagado','Pagados'],['transferido','Transferidos']];
   var box=document.getElementById('filtros');if(!box)return;
@@ -22012,14 +22049,37 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     }
   }
 
+
+  // POST /api/form/link-token  -> pase firmado para abrir el panel (requiere sesion real)
+  async function linkToken(req: any, res: any) {
+    const u = await userFromReq(req);
+    if (!u) return sendJson(res, 401, { error: "unauthorized" });
+    const me = String(u.email || "").trim().toLowerCase();
+    if (!me) return sendJson(res, 400, { error: "no_email" });
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 12; // 12 horas
+    const f = await panelSign(me, exp);
+    return sendJson(res, 200, { ok: true, me, exp, f });
+  }
+
   async function panel(req: any, res: any) {
     if (!sameToken(query(req, "t"), formToken())) {
       return sendJson(res, 401, { error: "unauthorized", message: "Link inválido." });
     }
+    const auth = await panelAuth(req);
+    if (!auth) {
+      // Sin firma valida no se muestra nada (evita que alguien cambie "me" a mano).
+      res.statusCode = 403;
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.setHeader("cache-control", "no-store, max-age=0");
+      res.end(
+        '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Link no v&aacute;lido</title></head><body style="margin:0;background:#0d0a14;color:#f4f1fa;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px;text-align:center"><div><div style="font-size:36px;margin-bottom:10px">&#128274;</div><h1 style="font-size:22px;margin:0 0 8px">Abre esta pantalla desde la app</h1><p style="color:#a99fc0;max-width:330px;margin:0 auto">Por seguridad, la lista de pedidos solo funciona desde la app. Entra y vuelve a abrir <b>Pedidos</b>.</p></div></body></html>',
+      );
+      return;
+    }
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store, max-age=0");
-    res.end(panelPage(query(req, "t"), query(req, "vista") || "pedidos", query(req, "me")));
+    res.end(panelPage(query(req, "t"), query(req, "vista") || "pedidos", auth.me, auth.f, String(auth.exp)));
     return;
   }
 
@@ -22036,6 +22096,19 @@ document.getElementById('btnOk').addEventListener('click',async function(){
       }
     })();
     const method = (req.method || "GET").toUpperCase();
+
+    // Pase firmado (solo para rutas del panel; el formulario publico del cliente no lo usa).
+    if (action === "link-token") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return linkToken(req, res);
+    }
+    const PANEL_ONLY = ["list","sale","sales","report","sellers","seller","notes","stage","share","paid","delete","wm","generate","sync"];
+    if (PANEL_ONLY.indexOf(action) >= 0) {
+      const pa = await panelAuth(req);
+      if (!pa) {
+        return sendJson(res, 401, { error: "invalid_link", message: "Este link no es valido. Abre la pantalla desde la app." });
+      }
+    }
 
     if (action === "sync") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });

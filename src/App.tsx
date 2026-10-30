@@ -1794,6 +1794,29 @@ ${(lyrics || '').length ? (lyrics.length > 300 ? lyrics.slice(0, 300) + '...' : 
   );
 }
 
+// Pedidos: el iframe lleva el correo del usuario + un pase firmado por el servidor,
+// para que nadie pueda cambiar "me" a mano y ver datos de otro.
+function PanelPedidos({ pass, error, radius = 18 }: { pass: { me: string; f: string; e: string } | null; error: string; radius?: number }) {
+  if (!pass) {
+    return (
+      <div
+        style={{ width: '100%', height: 'calc(100vh - 80px)', borderRadius: radius, background: '#0d0a14', display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center' }}
+      >
+        <div className="text-sm text-slate-400">{error || 'Cargando Pedidos…'}</div>
+      </div>
+    );
+  }
+  const src = `https://lucianamusic.app/api/form/panel?t=luciana-form-2026&me=${encodeURIComponent(pass.me)}&f=${encodeURIComponent(pass.f)}&e=${encodeURIComponent(pass.e)}`;
+  return (
+    <iframe
+      title="Canciones por hacer"
+      src={src}
+      allow="clipboard-write; clipboard-read"
+      style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: radius, background: '#0d0a14' }}
+    />
+  );
+}
+
 export default function App() {
   // #region debug-point app-mount
   console.log('[DEBUG] App component mounting...');
@@ -1830,6 +1853,37 @@ export default function App() {
   const [isAuthBooting, setIsAuthBooting] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authUserId, setAuthUserId] = useState('');
+  const [panelPass, setPanelPass] = useState<{ me: string; f: string; e: string } | null>(null);
+  const [panelPassError, setPanelPassError] = useState('');
+
+  // Pide al servidor el pase firmado para abrir Pedidos (lleva el correo del usuario).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const t = await getAccessToken();
+        if (!t.ok) {
+          if (alive) setPanelPassError(t.error || 'Necesitas iniciar sesión.');
+          return;
+        }
+        const r = await fetch('/api/form/link-token', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j?.f) throw new Error(j?.message || j?.error || 'No pude abrir Pedidos.');
+        if (alive) {
+          setPanelPass({ me: String(j.me || ''), f: String(j.f || ''), e: String(j.e || '') });
+          setPanelPassError('');
+        }
+      } catch (e) {
+        if (alive) setPanelPassError(e instanceof Error ? e.message : 'No pude abrir Pedidos.');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [authEmail]);
   
   const [activeSong, setActiveSong] = useState<SongItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -4616,14 +4670,7 @@ export default function App() {
            )}
            {currentTab === 'masterizar' && <MasterizarView />}
           {currentTab === 'vendedor' && <VendorView />}
-          {currentTab === 'pedidos' && (
-            <iframe
-              title="Canciones por hacer"
-              src={`https://lucianamusic.app/api/form/panel?t=luciana-form-2026&me=${encodeURIComponent(authEmail || '')}`}
-              allow="clipboard-write; clipboard-read"
-              style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 18, background: '#0d0a14' }}
-            />
-          )}
+          {currentTab === 'pedidos' && <PanelPedidos pass={panelPass} error={panelPassError} />}
           {currentTab === 'oficina' && (isAdmin ? (
             <SettingsView pageMode initialOffice onClose={() => setCurrentTab('landing')} onOpenPricing={() => openPricingModal()} onOpenUpdates={() => openUpdates()} onToast={showToast} />
           ) : (
@@ -4723,12 +4770,7 @@ export default function App() {
                ) : currentTab === 'copiloto' ? (
                 <DifyCopilotView onChange={setCurrentTab} onMenuClick={() => setIsSettingsOpen(true)} />
                ) : currentTab === 'pedidos' ? (
-                 <iframe
-                   title="Canciones por hacer"
-                   src={`https://lucianamusic.app/api/form/panel?t=luciana-form-2026&me=${encodeURIComponent(authEmail || '')}`}
-                   allow="clipboard-write; clipboard-read"
-                   style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: 0, background: '#0d0a14' }}
-                 />
+                 <PanelPedidos pass={panelPass} error={panelPassError} radius={0} />
                ) : currentTab === 'masterizar' ? (
                  <MasterizarView />
                ) : currentTab === 'vendedor' ? (
