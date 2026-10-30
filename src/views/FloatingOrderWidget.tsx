@@ -101,6 +101,7 @@ export function FloatingOrderWidget() {
     }
   });
   const [confirmando, setConfirmando] = useState(false);
+  const [descargando, setDescargando] = useState(false);
   const [arrastrando, setArrastrando] = useState(false);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const shownRef = useRef(false);
@@ -193,6 +194,37 @@ export function FloatingOrderWidget() {
     dragRef.current = null;
     setArrastrando(false);
   }, []);
+
+  // Descarga el audio a capela bajando el archivo a memoria (funciona en iPhone/PWA).
+  const descargarAudio = useCallback(async () => {
+    const u = order?.audio_url;
+    if (!u) return;
+    const base = String(order?.name || 'audio').replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').trim().slice(0, 40) || 'audio';
+    setDescargando(true);
+    try {
+      const r = await fetch(`${u}&dl=1`);
+      if (!r.ok) throw new Error(`http ${r.status}`);
+      const b = await r.blob();
+      if (!b || !b.size) throw new Error('vacio');
+      const a = document.createElement('a');
+      const bu = URL.createObjectURL(b);
+      a.href = bu;
+      a.download = `acapela-${base}.mp3`;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(bu);
+        } catch {}
+      }, 10000);
+    } catch {
+      window.open(`${u}&dl=1`, '_blank');
+    } finally {
+      setDescargando(false);
+    }
+  }, [order]);
 
   // "Quitar" de verdad: cierra la ventanita, borra el icono y olvida el pedido.
   const quitarFormulario = useCallback(() => {
@@ -322,14 +354,16 @@ export function FloatingOrderWidget() {
                     <div className="mt-2">
                       <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-violet-300/80">Audio a capela</div>
                       <audio controls preload="none" src={order.audio_url} className="w-full" />
-                      <a
-                        href={`${order.audio_url}&dl=1`}
-                        target="_blank"
-                        rel="noopener"
-                        className="mt-1 flex h-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-bold text-slate-200"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          descargarAudio().catch(() => {});
+                        }}
+                        disabled={descargando}
+                        className="mt-1 flex h-8 w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-bold text-slate-200 disabled:opacity-60"
                       >
-                        Descargar audio
-                      </a>
+                        {descargando ? 'Descargando…' : 'Descargar audio'}
+                      </button>
                     </div>
                   ) : (
                     <div className="mt-2 text-[11px] text-slate-500">Este pedido no tiene audio a capela.</div>

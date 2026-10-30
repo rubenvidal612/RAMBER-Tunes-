@@ -21423,6 +21423,7 @@ function render(){
     var id=b.dataset.stid,st=b.dataset.st;
     cambiarStage(id,st,b);
   });});
+  box.querySelectorAll('[data-dl]').forEach(function(b){b.addEventListener('click',function(){descargarAudio(b.dataset.dl,b.dataset.dln,b);});});
   box.querySelectorAll('[data-manual]').forEach(function(b){b.addEventListener('click',function(){
     var url='/crear?pedido='+encodeURIComponent(b.dataset.manual);
     try{window.top.location.href=url;}catch(e){window.location.href=url;}
@@ -21524,10 +21525,11 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   var audioBox='';
   if(o.audio_path){
     var _au='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(o.id);
+    var _dln='acapela-'+(String(o.name||'').replace(/[^\w\s-]/g,'').replace(/\s+/g,'-').trim().slice(0,40)||'audio')+'.mp3';
     audioBox='<div style="margin-top:10px;border:1px solid #3a3050;border-radius:10px;padding:10px">'+
       '<b style="color:var(--gold)">Audio a capela del cliente</b>'+
       '<audio controls preload="none" style="width:100%;margin:6px 0" src="'+_au+'"></audio>'+
-      '<a class="btn sec" style="display:block;text-align:center;text-decoration:none;line-height:1.8;margin:0" href="'+_au+'&dl=1" target="_blank" rel="noopener">Descargar audio</a>'+
+      '<button class="btn sec" style="display:block;width:100%;text-align:center;line-height:1.8;margin:0" data-dl="'+esc(o.id)+'" data-dln="'+esc(_dln)+'">Descargar audio</button>'+
       '</div>';
   }
   if(o.transferred_to){var _hh=0,_ee=String(o.transferred_to).toLowerCase();for(var _ii=0;_ii<_ee.length;_ii++){_hh=(_hh*31+_ee.charCodeAt(_ii))%360;}var _cc='hsl('+_hh+',90%,58%)';det+='<div class="meta" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_cc+';box-shadow:0 0 8px '+_cc+';margin-right:6px"></span><b>Transferido a:</b> <span style="color:'+_cc+'">'+esc(o.transferred_to)+'</span></div>';}
@@ -21620,6 +21622,33 @@ async function cambiarStage(id,stage,btn){
   }catch(e){btn.disabled=false;show('bad','Sin conexión.');}
 }
 if(document.getElementById('share'))document.getElementById('share').value=location.origin+'/api/form/open?t='+encodeURIComponent(T)+(ME?'&o='+encodeURIComponent(ME):'');
+// Descarga el audio a capela como archivo. Se baja a memoria y se guarda con un
+// enlace temporal: asi funciona en iPhone/PWA y dentro del iframe (el enlace
+// normal solo lo reproducia en algunos telefonos).
+async function descargarAudio(id,nombre,btn){
+  var prev=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Descargando...';}
+  var url='/api/form/audio?t='+encodeURIComponent(T)+'&id='+encodeURIComponent(id)+'&dl=1';
+  try{
+    var r=await fetch(url);
+    if(!r.ok)throw new Error('http '+r.status);
+    var b=await r.blob();
+    if(!b||!b.size)throw new Error('vacio');
+    var a=document.createElement('a');
+    var bu=URL.createObjectURL(b);
+    a.href=bu;
+    a.download=nombre||'acapela.mp3';
+    a.rel='noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){try{URL.revokeObjectURL(bu);}catch(e){}},10000);
+    if(btn){btn.textContent='Listo, revisa tus descargas';setTimeout(function(){btn.textContent=prev;btn.disabled=false;},2000);}
+  }catch(e){
+    try{window.top.open(url,'_blank');}catch(e2){try{window.open(url,'_blank');}catch(e3){window.location.href=url;}}
+    if(btn){btn.textContent=prev;btn.disabled=false;}
+  }
+}
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;}
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 async function loadViejo(){
