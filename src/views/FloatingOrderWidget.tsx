@@ -88,7 +88,16 @@ export function FloatingOrderWidget() {
   const [abierto, setAbierto] = useState(false);
   const [mini, setMini] = useState(false);
   const [maxi, setMaxi] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [pos, setPos] = useState(() => {
+    try {
+      const w = typeof window !== 'undefined' ? window.innerWidth : 390;
+      const h = typeof window !== 'undefined' ? window.innerHeight : 780;
+      return { x: Math.max(8, w - 348), y: Math.max(8, h - 420) };
+    } catch {
+      return { x: 16, y: 120 };
+    }
+  });
+  const [confirmando, setConfirmando] = useState(false);
   const [arrastrando, setArrastrando] = useState(false);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const shownRef = useRef(false);
@@ -130,12 +139,26 @@ export function FloatingOrderWidget() {
     };
   }, [pedidoId]);
 
+  useEffect(() => {
+    const onResize = () => {
+      setPos((p) => ({
+        x: Math.max(0, Math.min((window.innerWidth || 390) - 60, p.x)),
+        y: Math.max(0, Math.min((window.innerHeight || 780) - 60, p.y)),
+      }));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const onPointerDown = useCallback((e: any) => {
+    if (e.button !== undefined && e.button !== 0) return;
     const el = e.currentTarget as HTMLElement;
     const rect = el.getBoundingClientRect();
     dragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
     setArrastrando(true);
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {}
   }, []);
 
   const onPointerMove = useCallback(
@@ -150,7 +173,10 @@ export function FloatingOrderWidget() {
     [],
   );
 
-  const onPointerUp = useCallback(() => {
+  const onPointerUp = useCallback((e: any) => {
+    try {
+      (e?.currentTarget as HTMLElement)?.releasePointerCapture?.(e.pointerId);
+    } catch {}
     dragRef.current = null;
     setArrastrando(false);
   }, []);
@@ -166,7 +192,10 @@ export function FloatingOrderWidget() {
       <button
         type="button"
         aria-label="Abrir formulario del pedido"
-        onClick={() => setAbierto((v) => !v)}
+        onClick={() => {
+          setConfirmando(false);
+          setAbierto((v) => !v);
+        }}
         className="fixed bottom-24 right-3 z-[90] grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-2xl shadow-[0_8px_24px_rgba(139,92,246,0.45)] ring-2 ring-white/20"
         style={{ display: abierto ? 'none' : undefined }}
       >
@@ -180,14 +209,12 @@ export function FloatingOrderWidget() {
           style={
             maxi
               ? { inset: 8 }
-              : mini
-              ? { right: 12, bottom: 96, left: 12, height: 44 }
               : {
-                  right: 12,
-                  bottom: 96,
-                  left: 12,
-                  height: 'auto',
-                  maxHeight: '70vh',
+                  left: pos.x,
+                  top: pos.y,
+                  width: 340,
+                  maxWidth: 'calc(100vw - 16px)',
+                  ...(mini ? { height: 44 } : { maxHeight: '70vh' }),
                 }
           }
         >
@@ -208,21 +235,44 @@ export function FloatingOrderWidget() {
                 <div className="truncate text-[11px] text-slate-400">{chipVoz}</div>
               ) : null}
             </div>
-            <button type="button" onClick={() => { setMini((v) => !v); setMaxi(false); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Minimizar">–</button>
-            <button type="button" onClick={() => { setMaxi((v) => !v); setMini(false); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Maximizar">□</button>
+            <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={() => { setMini((v) => !v); setMaxi(false); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Minimizar">–</button>
+            <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={() => { setMaxi((v) => !v); setMini(false); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-white/15" aria-label="Maximizar">□</button>
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm('¿Seguro que quieres quitar el formulario?')) {
-                  setAbierto(false);
-                }
-              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setConfirmando(true)}
               className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-red-500/30"
               aria-label="Cerrar"
             >
               ✕
             </button>
           </div>
+
+          {/* Confirmacion de cierre (dentro del widget: window.confirm falla en webviews) */}
+          {confirmando && (
+            <div className="border-b border-red-400/20 bg-red-500/10 px-3 py-2">
+              <div className="text-[12px] font-semibold text-red-100">¿Seguro que quieres quitar el formulario?</div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmando(false);
+                    setAbierto(false);
+                  }}
+                  className="h-8 flex-1 rounded-lg bg-red-500 px-2 text-[12px] font-bold text-white"
+                >
+                  Sí, quitar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmando(false)}
+                  className="h-8 flex-1 rounded-lg bg-white/10 px-2 text-[12px] font-bold text-slate-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Cuerpo */}
           {!mini && (
