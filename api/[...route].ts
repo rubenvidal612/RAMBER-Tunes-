@@ -21126,8 +21126,9 @@ details.item>summary::-webkit-details-marker{display:none}
 details.item[open]>summary{border-bottom:1px solid var(--line)}
 .acc-arrow{display:inline-block;width:12px;flex:0 0 12px;text-align:center;color:var(--gold);transition:transform .15s}
 details.item[open] .acc-arrow{transform:rotate(90deg)}
-.acc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.acc-style{color:var(--dim);font-size:12px;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-name{flex:1 1 auto;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-style{color:var(--dim);font-size:12px;flex:0 1 auto;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:520px){.acc-style{display:none}}
 .acc-body{padding:0 13px 13px}
 .item b{font-size:15px}.meta{color:var(--dim);font-size:13px;margin-top:4px}
 .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);margin-right:6px}
