@@ -21120,6 +21120,15 @@ textarea{min-height:96px;resize:vertical}
 .msg.ok{display:block;background:#12301f;color:var(--ok);border:1px solid #1e5136}
 .msg.bad{display:block;background:#331418;color:var(--bad);border:1px solid #5c2228}
 .item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:var(--card)}
+details.item{padding:0;overflow:hidden}
+details.item>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 13px;cursor:pointer}
+details.item>summary::-webkit-details-marker{display:none}
+details.item[open]>summary{border-bottom:1px solid var(--line)}
+.acc-arrow{display:inline-block;width:12px;flex:0 0 12px;text-align:center;color:var(--gold);transition:transform .15s}
+details.item[open] .acc-arrow{transform:rotate(90deg)}
+.acc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-style{color:var(--dim);font-size:12px;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-body{padding:0 13px 13px}
 .item b{font-size:15px}.meta{color:var(--dim);font-size:13px;margin-top:4px}
 .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);margin-right:6px}
 .tag.pending{color:var(--gold);border-color:#4a3a1c}
@@ -21403,7 +21412,7 @@ document.getElementById('send').addEventListener('click',async function(){
 </div>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[],TODAS=[],FSTAGE='todas';
+var T=${JSON.stringify(token)},ME=(new URLSearchParams(location.search).get('me')||'').toLowerCase(),IS_OWNER=false,VEND=[],TODAS=[],FSTAGE='todas',ABIERTOS={};
 // Pase firmado (me/f/e) para que el servidor confie en el correo.
 var AUTHQ=(function(){try{var p=new URLSearchParams(location.search);var q='';['me','f','e'].forEach(function(k){var v=p.get(k)||'';if(v)q+='&'+k+'='+encodeURIComponent(v);});return q;}catch(e2){return '';}})();
 (function(){var _f=window.fetch;window.fetch=function(u,o){try{if(typeof u==='string'&&u.indexOf('/api/form/')===0&&u.indexOf('&f=')<0&&u.indexOf('t=')>=0){u=u+AUTHQ;}}catch(e2){}return _f(u,o);};})();
@@ -21429,6 +21438,17 @@ function render(){
     cambiarStage(id,st,b);
   });});
   box.querySelectorAll('[data-dl]').forEach(function(b){b.addEventListener('click',function(){descargarAudio(b.dataset.dl,b.dataset.dln,b);});});
+  // Acordeon: recordar los abiertos y cerrar los demas (uno a la vez).
+  box.querySelectorAll('details[data-acc]').forEach(function(d){
+    d.addEventListener('toggle',function(){
+      if(d.open){
+        ABIERTOS[d.dataset.acc]=1;
+        box.querySelectorAll('details[data-acc]').forEach(function(x){
+          if(x!==d&&x.open){x.open=false;delete ABIERTOS[x.dataset.acc];}
+        });
+      }else{delete ABIERTOS[d.dataset.acc];}
+    });
+  });
   box.querySelectorAll('[data-manual]').forEach(function(b){b.addEventListener('click',function(){
     var url='/crear?pedido='+encodeURIComponent(b.dataset.manual);
     try{window.top.location.href=url;}catch(e){window.location.href=url;}
@@ -21599,7 +21619,13 @@ var nota='<div style="margin-top:12px;border:1px solid var(--line);border-radius
       '</div></details>';
   }
 
-return '<div class="item" style="'+_glow+'position:relative"><input type="checkbox" class="selchk" data-id="'+esc(o.id)+'"><b>'+esc(o.name||'(sin nombre)')+'</b> <span class="tag '+st+'">'+lbl+'</span>'+_clone+
+return '<details class="item"'+(ABIERTOS[o.id]?' open':'')+' data-acc="'+esc(o.id)+'" style="'+_glow+'position:relative">'+
+    '<input type="checkbox" class="selchk" data-id="'+esc(o.id)+'">'+
+    '<summary><span class="acc-arrow">&#9656;</span>'+
+    '<b class="acc-name">'+esc(o.name||'(sin nombre)')+'</b>'+_clone+
+    (o.style?'<span class="acc-style">'+esc(o.style)+'</span>':'')+
+    '<span class="tag '+st+'">'+lbl+'</span></summary>'+
+    '<div class="acc-body">'+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+hacer+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
@@ -21614,7 +21640,7 @@ return '<div class="item" style="'+_glow+'position:relative"><input type="checkb
     manual+
     (o.paid_amount?'<div class="meta">Cobrado: $'+esc(String(o.paid_amount))+(o.paid_manual?' (manual)':' (MercadoPago)')+'</div>':'')+
     '<button class="btn sec" style="margin-top:8px;border-color:#5c2228;color:#ff6b6b" data-del="'+esc(o.id)+'">Borrar</button>'+
-    '</div>';
+    '</div></details>';
 }
 async function cambiarStage(id,stage,btn){
   btn.disabled=true;
