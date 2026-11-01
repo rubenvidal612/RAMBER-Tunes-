@@ -18,6 +18,7 @@ import approvedCreditCss from "./approved-create/credit-fix.css?raw";
 import approvedDesignCss from "./approved-create/design-v2.css?raw";
 import approvedPlayerCss from "./approved-create/player-options.css?raw";
 import { ensureAnonSession, getAccessToken } from "./lib/supabaseBrowser";
+import { MOSTRAR_RVC } from "./lib/features";
 import { formatLyricsForEditing } from "./lib/lyricsFormatting.js";
 import { isVoiceAvailable } from "./lib/voiceAvailability";
 import { convertAudioFileToMp3, isAlreadyMp3 } from "./lib/audioToMp3";
@@ -3086,6 +3087,10 @@ function StartStep({ data, setData, setToast, handlers }) {
         const out = await r.json().catch(() => ({}));
         const rows = Array.isArray(out?.voices) ? out.voices : [];
         if (cancelled) return;
+        if (!MOSTRAR_RVC) {
+          setCloneVoices([]);
+          return;
+        }
         setCloneVoices(
           rows
             .map((v) => ({ id: String(v?.voice_id || v?.id || '').trim(), name: String(v?.voice_name || v?.name || 'Voz').trim() || 'Voz', status: String(v?.status || '').trim().toLowerCase() }))
