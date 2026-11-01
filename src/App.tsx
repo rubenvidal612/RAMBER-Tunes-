@@ -13,6 +13,7 @@ import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { DifyCopilotView } from './views/DifyCopilotView';
 import { CloneVoiceView } from './views/CloneVoiceView';
+import { MOSTRAR_RVC } from './lib/features';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
 import { VendorView } from './views/VendorView';
@@ -1819,8 +1820,12 @@ function PanelPedidos({ pass, error, radius = 18 }: { pass: { me: string; f: str
 }
 
 // Clonador con dos modos: con frase (Suno) o sin frase (Replicate, rápido).
+// El modo "sin frase" (Replicate) está oculto: ver MOSTRAR_RVC en src/lib/features.ts
 function Clonador({ onClose, hasPaid }: { onClose: () => void; hasPaid: boolean }) {
   const [sinFrase, setSinFrase] = useState(false);
+  if (!MOSTRAR_RVC) {
+    return <ApprovedCloneVoicePreview onClose={onClose} hasPaid={hasPaid} />;
+  }
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 bg-black/40 px-3 py-2">

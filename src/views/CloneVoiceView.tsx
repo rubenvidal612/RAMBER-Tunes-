@@ -1776,8 +1776,7 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
         <div>
           <h1 className="text-2xl font-bold text-white">Clonar Voz</h1>
           <p className="text-sm text-slate-300 mt-1">
-            Sube un audio de tu voz para crear tu clon. Para ponérselo a una canción, usa
-            "Cambiar voz (clon)" en Mis canciones.
+            Sube un audio de tu voz para crear tu clon.
           </p>
         </div>
 

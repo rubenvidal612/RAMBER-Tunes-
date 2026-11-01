@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { type ViewTab } from '@/types';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
+import { MOSTRAR_RVC } from '@/lib/features';
 
 interface SidebarProps {
   currentTab: ViewTab;
@@ -17,7 +18,8 @@ const primaryItems: Array<{ id: ViewTab; label: string; icon: typeof Home }> = [
   { id: 'landing', label: 'Inicio', icon: Home },
   { id: 'studio', label: 'Crear', icon: Sparkles },
   { id: 'biblioteca', label: 'Mis canciones', icon: Library },
-  { id: 'voces', label: 'Clonador de voz', icon: Mic2 },
+  // Camino RVC (Replicate) oculto. Reactivar: MOSTRAR_RVC = true en src/lib/features.ts
+  ...(MOSTRAR_RVC ? [{ id: 'voces' as ViewTab, label: 'Clonador de voz', icon: Mic2 }] : []),
   { id: 'masterizar', label: 'Masterizar', icon: Volume2 },
   { id: 'planes', label: 'Comprar créditos', icon: Coins },
 ];
