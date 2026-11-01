@@ -22804,10 +22804,11 @@ const integrationsHandler = (() => {
         .eq("kind", ROBOT_TASK_KIND)
         .gte("created_at", startOfTodayMexicoIso());
       const usedToday = Number((dayRes as any)?.count || 0);
-      if (usedToday >= dailyCap()) {
+      const capForToday = dailyCap();
+      if (capForToday > 0 && usedToday >= capForToday) {
         return sendJson(res, 429, {
           error: "daily_cap_reached",
-          cap: dailyCap(),
+          cap: capForToday,
           used: usedToday,
           retry_after: nextMidnightMexicoIso(),
           message: "Se alcanzó el tope diario del robot.",
