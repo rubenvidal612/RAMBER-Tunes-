@@ -1889,6 +1889,55 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authUserId, setAuthUserId] = useState('');
   const [panelPass, setPanelPass] = useState<{ me: string; f: string; e: string } | null>(null);
+  // Si quedó una conversion pendiente (canción generada con voz clonada), la resolvemos aquí
+  // aunque se haya cerrado la pestaña: buscamos la canción y le aplicamos el clon.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const KEY = 'ramber.pendingCover';
+      let pend: Array<{ taskId: string; voiceId: string; at: number }> = [];
+      try {
+        const raw = window.localStorage.getItem(KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        pend = Array.isArray(list) ? list.filter((x) => x && x.taskId && x.voiceId) : [];
+      } catch {
+        pend = [];
+      }
+      if (!pend.length) return;
+      const t = await getAccessToken().catch(() => ({ ok: false, token: '' } as any));
+      if (!alive || !t || !t.ok) return;
+      const quedan: typeof pend = [];
+      for (const p of pend) {
+        if (Date.now() - Number(p.at || 0) > 60 * 60 * 1000) continue; // más de 1 h: se descarta
+        try {
+          const r = await fetch('/api/library/list?deleted=0', { headers: { authorization: `Bearer ${t.token}` } });
+          const out = await r.json().catch(() => ({}));
+          const rows = Array.isArray((out as any)?.songs) ? (out as any).songs : [];
+          const hit = rows.find((s: any) => String(s?.suno_task_id || s?.sunoTaskId || '').trim() === String(p.taskId).trim());
+          if (!hit || !hit.id) {
+            quedan.push(p);
+            continue;
+          }
+          const ya = rows.some((s: any) => String(s?.suno_audio_id || '').startsWith('rvc_') && String(s?.title || '').includes(String(hit.title || '').slice(0, 20)));
+          if (ya) continue;
+          await fetch('/api/suno/create-cover', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+            body: JSON.stringify({ songId: String(hit.id), voiceId: p.voiceId }),
+          }).catch(() => {});
+        } catch {
+          quedan.push(p);
+        }
+      }
+      try {
+        if (alive) window.localStorage.setItem(KEY, JSON.stringify(quedan.slice(-10)));
+      } catch {}
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [authEmail]);
+
   const [panelPassError, setPanelPassError] = useState('');
 
   // Pide al servidor el pase firmado para abrir Pedidos (lleva el correo del usuario).

@@ -6424,6 +6424,14 @@ function ApprovedCreateContent(props) {
       try {
         const cloneVoiceId = String(data?.voiceProfile?.source === 'replicate' ? data.voiceProfile.voiceId : '').trim();
         if (cloneVoiceId) {
+          try {
+            const KEY = 'ramber.pendingCover';
+            const raw = window.localStorage.getItem(KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            const arr = Array.isArray(list) ? list.filter((x) => x && x.taskId !== taskId) : [];
+            arr.push({ taskId, voiceId: cloneVoiceId, at: Date.now() });
+            window.localStorage.setItem(KEY, JSON.stringify(arr.slice(-10)));
+          } catch {}
           aplicarVozClonadaCuandoListo(taskId, cloneVoiceId, t.token).catch(() => {});
           setToast('Generando la cancion. Al terminar le aplicamos tu voz clonada (unos minutos).');
         }
