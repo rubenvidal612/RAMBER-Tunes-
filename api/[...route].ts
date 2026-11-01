@@ -3474,8 +3474,18 @@ const sunoHandler = (() => {
           const cost = Number(row?.cost ?? 0);
           const consumed = Boolean(row?.consumed);
           if (consumed && Number.isFinite(cost) && cost > 0) {
-            await adjustUserCredits(auth.admin, user.id, cost);
-            await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", user.id);
+            // Reembolso atómico: solo devuelve quien logre pasar consumed true -> false.
+            // (Antes el webhook y el polling devolvían los dos y el cliente ganaba créditos.)
+            const { data: upd } = await auth.admin
+              .from("suno_tasks")
+              .update({ consumed: false })
+              .eq("task_id", taskId)
+              .eq("user_id", user.id)
+              .eq("consumed", true)
+              .select("task_id");
+            if (Array.isArray(upd) && upd.length > 0) {
+              await adjustUserCredits(auth.admin, user.id, cost);
+            }
           }
         }
       }
@@ -11352,8 +11362,19 @@ const sunoWebhookHandler = (() => {
             const cost = Number(taskRow?.cost ?? 0);
             const consumed = Boolean(taskRow?.consumed);
             if (consumed && Number.isFinite(cost) && cost > 0) {
-              try { await adjustUserCredits(admin, userId, cost); } catch (_) {}
-              try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId); } catch (_) {}
+              // Reembolso atómico (ver handleTask): evita devolverlo dos veces.
+              try {
+                const { data: updCb } = await admin
+                  .from("suno_tasks")
+                  .update({ consumed: false })
+                  .eq("task_id", taskId)
+                  .eq("user_id", userId)
+                  .eq("consumed", true)
+                  .select("task_id");
+                if (Array.isArray(updCb) && updCb.length > 0) {
+                  await adjustUserCredits(admin, userId, cost);
+                }
+              } catch (_) {}
             } else if (!consumed && Number.isFinite(cost) && cost > 0) {
               // Solo marcar consumed=false para no cobrar luego en polling
               try { await admin.from("suno_tasks").update({ consumed: false }).eq("task_id", taskId).eq("user_id", userId); } catch (_) {}
