@@ -5255,11 +5255,16 @@ notify pgrst, 'reload schema';`;
       if (voiceId && !voiceModelUrl) {
         // Buscar la voz en la base de datos
         const safeVoiceId = voiceId.replaceAll(",", "").slice(0, 200);
+        // Solo comparamos contra "id" si de verdad parece un UUID: si no, PostgREST
+        // rechaza toda la consulta y nunca encuentra el modelo de la voz.
+        const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(safeVoiceId);
+        const partesOr = [`voice_id.eq.${safeVoiceId}`, `replicate_id.eq.${safeVoiceId}`];
+        if (esUuid) partesOr.unshift(`id.eq.${safeVoiceId}`);
         const { data: voiceRows } = await auth.admin
           .from("kits_voices")
           .select("id, replicate_id, voice_id, output, model_url")
           .eq("user_id", user.id)
-          .or(`id.eq.${safeVoiceId},voice_id.eq.${safeVoiceId},replicate_id.eq.${safeVoiceId}`)
+          .or(partesOr.join(","))
           .limit(1);
         
         const voiceRow = Array.isArray(voiceRows) ? voiceRows[0] : null;
