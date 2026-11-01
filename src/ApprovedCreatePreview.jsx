@@ -2864,6 +2864,7 @@ function StartStep({ data, setData, setToast, handlers }) {
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personasError, setPersonasError] = useState('');
   const [personas, setPersonas] = useState([]);
+  const [cloneVoices, setCloneVoices] = useState([]);
   const [personaMenuOpen, setPersonaMenuOpen] = useState('');
   const [editingPersona, setEditingPersona] = useState(null);
   const [editingName, setEditingName] = useState('');
@@ -3012,6 +3013,13 @@ function StartStep({ data, setData, setToast, handlers }) {
     setPersonaMenuOpen('');
   };
 
+  const updateSelectedReplicateVoice = (v) => {
+    previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
+    setData((current) => ({ ...current, voice: 'clone', voiceProfile: { voiceId: v.id, name: v.name, source: 'replicate' } }));
+    closeClonePicker({ keepSelection: true });
+    setToast('Voz clonada seleccionada: se aplicara cuando termine la cancion.');
+  };
+
   const closeClonePicker = ({ keepSelection } = {}) => {
     setClonePickerOpen(false);
     setPersonaMenuOpen('');
@@ -3069,6 +3077,23 @@ function StartStep({ data, setData, setToast, handlers }) {
     let cancelled = false;
     setPersonasLoading(true);
     setPersonasError('');
+    // Voces clonadas con Replicate (tambien se pueden elegir aqui).
+    (async () => {
+      try {
+        const t = await getAccessToken();
+        if (!t || !t.ok) return;
+        const r = await fetch('/api/kits/voices', { headers: { authorization: 'Bearer ' + t.token } });
+        const out = await r.json().catch(() => ({}));
+        const rows = Array.isArray(out?.voices) ? out.voices : [];
+        if (cancelled) return;
+        setCloneVoices(
+          rows
+            .map((v) => ({ id: String(v?.voice_id || v?.id || '').trim(), name: String(v?.voice_name || v?.name || 'Voz').trim() || 'Voz', status: String(v?.status || '').trim().toLowerCase() }))
+            .filter((v) => v.id && v.status === 'ready')
+            .map((v) => ({ id: v.id, name: v.name })),
+        );
+      } catch {}
+    })();
     loadPersonasFromDb()
       .catch(() => loadPersonasFromLocalCache())
       .catch(() => [])
@@ -3893,6 +3918,35 @@ function StartStep({ data, setData, setToast, handlers }) {
                       {selectedPersonaIds.length > 1 ? `Eliminar (${selectedPersonaIds.length})` : 'Eliminar'}
                     </button>
                   </div>
+                  {cloneVoices.length > 0 ? (
+                    <div style={{ marginBottom: 16 }}>
+                      <div className="persona-empty-title" style={{ marginBottom: 8 }}>
+                        Voces clonadas (se aplican al terminar la cancion)
+                      </div>
+                      <div className="persona-grid">
+                        {cloneVoices.map((v) => (
+                          <div
+                            key={v.id}
+                            className={
+                              data.voiceProfile?.voiceId === v.id && data.voiceProfile?.source === 'replicate'
+                                ? 'persona-card is-selected'
+                                : 'persona-card'
+                            }
+                          >
+                            <button type="button" className="persona-card-select" onClick={() => updateSelectedReplicateVoice(v)}>
+                              <span className="persona-avatar">
+                                <Users size={18} />
+                              </span>
+                              <span className="persona-card-text">
+                                <strong>{v.name}</strong>
+                                <small>Tu clon · voz real</small>
+                              </span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="persona-grid">
                   {personas.map((p) => {
                     const isMarked = selectedPersonaIds.includes(String(p.voiceId || '').trim());
@@ -6107,7 +6161,7 @@ function ApprovedCreateContent(props) {
       const isMureka = reqProvider === 'mureka';
 
       if (isMureka) {
-        const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId);
+        const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId && data.voiceProfile?.source !== 'replicate');
         const requestedVocalGender = !hasSelectedVoice
           ? (data.vocalGender === 'f' ? 'f' : data.vocalGender === 'm' ? 'm' : undefined)
           : undefined;
@@ -6223,7 +6277,7 @@ function ApprovedCreateContent(props) {
         return true;
       }
 
-      const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId);
+      const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId && data.voiceProfile?.source !== 'replicate');
       const requestedVocalGender = !hasSelectedVoice
         ? (data.vocalGender === 'f' ? 'f' : data.vocalGender === 'm' ? 'm' : undefined)
         : undefined;
@@ -6336,6 +6390,13 @@ function ApprovedCreateContent(props) {
         setToast('No recibí taskId del servidor.');
         return false;
       }
+      try {
+        const cloneVoiceId = String(data?.voiceProfile?.source === 'replicate' ? data.voiceProfile.voiceId : '').trim();
+        if (cloneVoiceId) {
+          aplicarVozClonadaCuandoListo(taskId, cloneVoiceId, t.token).catch(() => {});
+          setToast('Generando la cancion. Al terminar le aplicamos tu voz clonada (unos minutos).');
+        }
+      } catch {}
       try {
         const raw = window.localStorage.getItem(pendingListKey);
         const arr = raw ? JSON.parse(raw) : [];
@@ -6514,6 +6575,35 @@ function ApprovedCreateContent(props) {
       )}
     </div>
   );
+}
+
+// Cuando la cancion termina de generarse, le aplica la voz clonada (Replicate).
+async function aplicarVozClonadaCuandoListo(taskId, voiceId, token) {
+  if (!taskId || !voiceId || !token) return;
+  const inicio = Date.now();
+  const limite = 15 * 60 * 1000;
+  let songId = '';
+  while (Date.now() - inicio < limite) {
+    await new Promise((r) => setTimeout(r, 8000));
+    try {
+      const r = await fetch('/api/library/list?deleted=0', { headers: { authorization: 'Bearer ' + token } });
+      const out = await r.json().catch(() => ({}));
+      const rows = Array.isArray(out?.songs) ? out.songs : [];
+      const hit = rows.find((s) => String(s?.sunoTaskId || s?.suno_task_id || '').trim() === String(taskId).trim());
+      if (hit && hit.id) {
+        songId = String(hit.id);
+        break;
+      }
+    } catch {}
+  }
+  if (!songId) return;
+  try {
+    await fetch('/api/suno/create-cover', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      body: JSON.stringify({ songId, voiceId }),
+    });
+  } catch {}
 }
 
 export function ApprovedCreatePreview(props) {
