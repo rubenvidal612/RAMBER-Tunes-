@@ -63,7 +63,7 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
   const [language, setLanguage] = useState('es');
   const [gender, setGender] = useState('unknown');
   const [tags, setTags] = useState<string[]>([]);
-  const [isPublic, setIsPublic] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -2589,7 +2589,7 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
                 </>
               ) : (
                 <>
-                  <Mic className="w-4 h-4" /> Clonar Voz (15 créditos)
+                  <Mic className="w-4 h-4" /> Clonar Voz
                 </>
               )}
             </button>
