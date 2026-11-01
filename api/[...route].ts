@@ -3478,7 +3478,7 @@ const sunoHandler = (() => {
             // (Antes el webhook y el polling devolvían los dos y el cliente ganaba créditos.)
             const { data: upd } = await auth.admin
               .from("suno_tasks")
-              .update({ consumed: false })
+              .update({ consumed: false, cost: 0 })
               .eq("task_id", taskId)
               .eq("user_id", user.id)
               .eq("consumed", true)
@@ -11366,7 +11366,7 @@ const sunoWebhookHandler = (() => {
               try {
                 const { data: updCb } = await admin
                   .from("suno_tasks")
-                  .update({ consumed: false })
+                  .update({ consumed: false, cost: 0 })
                   .eq("task_id", taskId)
                   .eq("user_id", userId)
                   .eq("consumed", true)
