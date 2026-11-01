@@ -29,8 +29,8 @@ interface LibrarySongItem {
   suno_audio_id: string;
 }
 
-export function CloneVoiceView() {
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) {
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || enabled;
 
   const DRAFT_KEY = 'ramber.cloneVoiceDraft.v1';
   const [voiceName, setVoiceName] = useState('');

@@ -1846,7 +1846,7 @@ function Clonador({ onClose, hasPaid }: { onClose: () => void; hasPaid: boolean 
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {sinFrase ? <CloneVoiceView /> : <ApprovedCloneVoicePreview onClose={onClose} hasPaid={hasPaid} />}
+        {sinFrase ? <CloneVoiceView enabled /> : <ApprovedCloneVoicePreview onClose={onClose} hasPaid={hasPaid} />}
       </div>
     </div>
   );
