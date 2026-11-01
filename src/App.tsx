@@ -12,6 +12,7 @@ import { KaraokeView } from './views/KaraokeView';
 import { SettingsView } from './views/SettingsView';
 import { PricingView } from './views/PricingView';
 import { DifyCopilotView } from './views/DifyCopilotView';
+import { CloneVoiceView } from './views/CloneVoiceView';
 import { ElencoPresentationView } from './views/ElencoPresentationView';
 import { MasterizarView } from './views/MasterizarView';
 import { VendorView } from './views/VendorView';
@@ -1814,6 +1815,40 @@ function PanelPedidos({ pass, error, radius = 18 }: { pass: { me: string; f: str
       allow="clipboard-write; clipboard-read"
       style={{ width: '100%', height: 'calc(100vh - 80px)', border: 0, borderRadius: radius, background: '#0d0a14' }}
     />
+  );
+}
+
+// Clonador con dos modos: con frase (Suno) o sin frase (Replicate, rápido).
+function Clonador({ onClose, hasPaid }: { onClose: () => void; hasPaid: boolean }) {
+  const [sinFrase, setSinFrase] = useState(false);
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-white/10 bg-black/40 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setSinFrase(false)}
+          className={cn(
+            'h-9 rounded-full px-4 text-[12px] font-bold transition-colors',
+            sinFrase ? 'bg-white/5 text-slate-300 border border-white/10' : 'bg-white/15 text-white border border-white/25',
+          )}
+        >
+          Con frase (Suno)
+        </button>
+        <button
+          type="button"
+          onClick={() => setSinFrase(true)}
+          className={cn(
+            'h-9 rounded-full px-4 text-[12px] font-bold transition-colors',
+            sinFrase ? 'bg-emerald-500/25 text-emerald-100 border border-emerald-400/40' : 'bg-white/5 text-slate-300 border border-white/10',
+          )}
+        >
+          Sin frase (rápido)
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {sinFrase ? <CloneVoiceView /> : <ApprovedCloneVoicePreview onClose={onClose} hasPaid={hasPaid} />}
+      </div>
+    </div>
   );
 }
 
@@ -4653,7 +4688,7 @@ export default function App() {
              </div>
            )}
            {currentTab === 'voces' && (
-            <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
+            <Clonador onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
            )}
            {currentTab === 'karaoke' && (
              <div className="flex-1 flex items-center justify-center px-6">
@@ -4757,7 +4792,7 @@ export default function App() {
                  currentTab === 'biblioteca' ? "overflow-y-auto" : ""
                )}>
                 {currentTab === 'voces' ? (
-                 <ApprovedCloneVoicePreview onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
+                 <Clonador onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
                 ) : currentTab === 'perfil' ? (
                   <ProfileView onGoStudio={() => setCurrentTab('studio')} songs={canciones} onPlaySong={playSong} onRefreshSongs={refreshLibrary} />
               ) : currentTab === 'karaoke' ? (
