@@ -4,6 +4,7 @@ import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
 import { Sparkles, Plus, Image as ImageIcon, ChevronDown, ChevronRight, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock, Copy } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
+import { clonarVozEnCancion } from '@/lib/clonarVoz';
 import { jsPDF } from 'jspdf';
 import { VoiceSelector } from '@/components/VoiceSelector';
 
@@ -4164,6 +4165,7 @@ function SongOptionsSheet({
   const [changeVoicesBusy, setChangeVoicesBusy] = useState(false);
   const [pickedVoiceId, setPickedVoiceId] = useState('');
   const [changeVoiceBusy, setChangeVoiceBusy] = useState(false);
+  const [changeVoiceMsg, setChangeVoiceMsg] = useState('');
   const [mp4Author, setMp4Author] = useState('');
   const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
@@ -4189,6 +4191,7 @@ function SongOptionsSheet({
     setShowChangeVoice(true);
     setPickedVoiceId('');
     setChangeVoices([]);
+    setChangeVoiceMsg('');
     setChangeVoicesBusy(true);
     try {
       const t = await getAccessToken();
@@ -4246,6 +4249,30 @@ function SongOptionsSheet({
     try {
       const t = await getAccessToken();
       if (!t.ok) throw new Error('No autorizado');
+
+      // Flujo con separacion: suena mucho mejor (voz sola -> clon -> mezcla).
+      const taskId = String((song as any)?.sunoTaskId || (song as any)?.suno_task_id || '').trim();
+      const audioId = String((song as any)?.sunoAudioId || (song as any)?.suno_audio_id || '').trim();
+      if (taskId || audioId) {
+        setChangeVoiceMsg('Separando la voz de la música…');
+        onToast?.('Separando y mezclando… tarda 6-10 min. Te aviso al terminar.');
+        await clonarVozEnCancion({
+          token: t.token,
+          voiceId: pickedVoiceId,
+          baseName: String(song.title || 'Canción'),
+          description: String((song as any)?.description || ''),
+          coverUrl: String(song.coverUrl || ''),
+          taskId,
+          audioId,
+          onProgress: (m) => setChangeVoiceMsg(m),
+        });
+        onToast?.('¡Listo! La canción con tu voz ya está en Mis canciones.');
+        setShowChangeVoice(false);
+        setChangeVoiceMsg('');
+        onRefreshSongs?.();
+        return;
+      }
+
       const r = await fetch('/api/suno/create-cover', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
@@ -7560,6 +7587,11 @@ function SongOptionsSheet({
 
             <div className="p-4 flex-1 overflow-y-auto overscroll-contain">
               <div className="text-slate-400 text-xs">Usa una voz de tu Clonador. No pide frase.</div>
+              {changeVoiceBusy ? (
+                <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[12px] font-semibold text-emerald-100">
+                  {changeVoiceMsg || 'Procesando…'}
+                </div>
+              ) : null}
 
               {changeVoicesBusy ? (
                 <div className="mt-6 text-slate-400 text-sm">Buscando tus voces…</div>
@@ -7596,7 +7628,7 @@ function SongOptionsSheet({
                   applyChangeVoice().catch(() => {});
                 }}
               >
-                {changeVoiceBusy ? 'Procesando…' : 'Aplicar'}
+                {changeVoiceBusy ? 'Procesando… (no cierres)' : 'Aplicar'}
               </button>
             </div>
           </div>
