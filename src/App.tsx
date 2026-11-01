@@ -3831,6 +3831,8 @@ export default function App() {
               window.localStorage.setItem('ramber.voice_expired_v1', String(Date.now()));
             } catch {}
             showToast('La voz seleccionada expiró. Entra a “Clonador” y elige otra voz (o vuelve a crearla).');
+          } else if (String(pending.kind || '').toLowerCase() === 'separate_vocal' || String(pending.kind || '').toLowerCase() === 'split_stem') {
+            showToast('No se pudo quitar la voz esta vez. Te devolvimos el crédito: puedes intentarlo de nuevo.');
           } else {
             showToast(raw || 'Error en la generación');
           }
