@@ -2060,7 +2060,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         verifyUrl,
         verifyPath,
         voiceName: profile.name,
-        description: profile.description,
+        description: profile.description || profile.name,
         style: profile.style,
         singerSkillLevel: profile.level,
         clientAttemptId: String(validation.clientAttemptId || "").trim() || undefined,
@@ -2257,7 +2257,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return false;
       }
       const meta = {
-        description: profile.description,
+        description: profile.description || profile.name,
         singerSkillLevel: profile.level,
         profileImageUrl: "",
         style: profile.style,
@@ -2287,7 +2287,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         const parsed = raw ? JSON.parse(raw) : null;
         const list = Array.isArray(parsed) ? parsed : [];
         const next = [
-          { voiceId, name: profile.name, createdAt: new Date().toISOString(), taskId, status: voiceGen.isAvailable ? "ready" : "processing", profileImageUrl: "", description: profile.description, singerSkillLevel: profile.level },
+          { voiceId, name: profile.name, createdAt: new Date().toISOString(), taskId, status: voiceGen.isAvailable ? "ready" : "processing", profileImageUrl: "", description: profile.description || profile.name, singerSkillLevel: profile.level },
           ...list.filter((x) => String(x?.voiceId || x?.voice_id || "").trim() !== voiceId),
         ];
         window.localStorage.setItem(sunoVoicesCacheKey, JSON.stringify(next.slice(0, 50)));
@@ -2307,7 +2307,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         <div className="wizard-header"><div><span className="eyebrow">CLONACIÓN DE VOZ · PERFIL PERSONAL</span><h2>Crear perfil de voz</h2></div><button className="wizard-close" aria-label="Cerrar creación de perfil" onClick={() => { cancelVerificationFlow(); cleanupPhraseRecording(); cleanupSourcePlayer(); onClose(); }}><X size={23} /></button></div>
         <div className="wizard-progress">{wizardSteps.map((label,index)=><div key={label} className={index === wizardStep ? "active" : index < wizardStep ? "done" : ""}><span>{index < wizardStep ? <Check size={14} weight="bold" /> : index + 1}</span><small>{label}</small></div>)}</div>
         <div className="wizard-body" ref={wizardBodyRef}>
-          {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Estos datos te ayudarán a reconocer y reutilizar esta voz.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><label>Descripción<input value={profile.description} onChange={(e)=>setProfile({...profile,description:e.target.value})} placeholder="Ejemplo: Voz cálida para baladas" /></label><div className="wizard-fields"><label>Estilo vocal<select value={profile.style} onChange={(e)=>setProfile({...profile,style:e.target.value})}><option>Pop</option><option>Balada</option><option>Regional</option><option>Rock</option><option>Otro</option></select></label><label>Nivel del cantante<select value={profile.level} onChange={(e)=>setProfile({...profile,level:e.target.value})}><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option><option value="professional">Profesional</option></select></label></div><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
+          {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Solo ponle un nombre. Suno aprende la voz del audio y de la frase, nada más.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
           {wizardStep === 1 && (
             <div className="wizard-section">
               <h3>Audio original</h3>
@@ -2702,7 +2702,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             <div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : isVoiceAvailable(voiceGen.isAvailable) ? <Check size={34} weight="bold"/> : <Info size={34}/>}</div>
             <h3>{voiceGen.loading ? "Comprobando tu personaje…" : isVoiceAvailable(voiceGen.isAvailable) ? "Personaje confirmado por Suno" : "Voz sin confirmar"}</h3>
             <p>{isVoiceAvailable(voiceGen.isAvailable) ? "Suno confirmó su disponibilidad en esta comprobación. Volveremos a comprobarla antes de cada canción." : "Completa la validación y espera la confirmación de Suno antes de usar este perfil."}</p>
-            <div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><small>{profile.style} · {profile.level}</small><span>Estado</span><strong>{isVoiceAvailable(voiceGen.isAvailable) ? 'Disponible en Suno' : voiceGen.status || "Procesando"}</strong></div>
+            <div className="profile-preview"><span>Perfil</span><strong>{profile.name}</strong><span>Estado</span><strong>{isVoiceAvailable(voiceGen.isAvailable) ? 'Disponible en Suno' : voiceGen.status || "Procesando"}</strong></div>
             {voiceGen.error ? <div className="wizard-info"><Info size={19}/><span>{voiceGen.error}</span></div> : null}
             {saveError ? <div className="wizard-info"><Info size={19}/><span>{saveError}</span></div> : null}
           </div>}
