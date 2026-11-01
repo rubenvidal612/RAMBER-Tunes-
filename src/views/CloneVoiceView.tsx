@@ -124,7 +124,7 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
   const [coverSuccess, setCoverSuccess] = useState('');
   const [showPickCoverSong, setShowPickCoverSong] = useState(false);
   const [showPickCoverVoice, setShowPickCoverVoice] = useState(false);
-  const [activeSection, setActiveSection] = useState<'song' | 'voices'>('song');
+  const [activeSection, setActiveSection] = useState<'song' | 'voices'>('voices');
   const [songCloneMode, setSongCloneMode] = useState<'tracks' | 'library'>('tracks');
   const vocalFileInputRef = useRef<HTMLInputElement>(null);
   const instrumentalFileInputRef = useRef<HTMLInputElement>(null);
@@ -1776,31 +1776,9 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
         <div>
           <h1 className="text-2xl font-bold text-white">Clonar Voz</h1>
           <p className="text-sm text-slate-300 mt-1">
-            Sube un audio de tu voz para crear un clon que podrás usar en tus canciones.
+            Sube un audio de tu voz para crear tu clon. Para ponérselo a una canción, usa
+            "Cambiar voz (clon)" en Mis canciones.
           </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveSection('song')}
-            className={cn(
-              "py-3 rounded-full border text-sm font-extrabold transition-colors",
-              activeSection === 'song' ? "bg-white/10 border-white/20 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-            )}
-          >
-            Clonar en canción
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSection('voices')}
-            className={cn(
-              "py-3 rounded-full border text-sm font-extrabold transition-colors",
-              activeSection === 'voices' ? "bg-white/10 border-white/20 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-            )}
-          >
-            Mis voces
-          </button>
         </div>
 
         {activeSection === 'song' ? (
