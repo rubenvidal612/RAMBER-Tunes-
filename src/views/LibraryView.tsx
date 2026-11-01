@@ -4213,6 +4213,32 @@ function SongOptionsSheet({
     }
   };
 
+  // Sigue el cover hasta que Replicate termina. Ese endpoint guarda la canción.
+  const seguirCover = async (predictionId: string, token: string) => {
+    const inicio = Date.now();
+    const limite = 6 * 60 * 1000;
+    while (Date.now() - inicio < limite) {
+      await new Promise((r) => setTimeout(r, 6000));
+      try {
+        const r = await fetch(`/api/rvc/cover-status?predictionId=${encodeURIComponent(predictionId)}&nocache=1`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        const out = await r.json().catch(() => ({}));
+        const st = String((out as any)?.status || '').toLowerCase();
+        if (st === 'ready') {
+          onToast?.('¡Listo! La canción con tu voz ya está en Mis canciones.');
+          onRefreshSongs?.();
+          return;
+        }
+        if (st === 'failed') {
+          const detalle = (out as any)?.error ? JSON.stringify((out as any).error).slice(0, 160) : '';
+          onToast?.('No se pudo aplicar la voz.' + (detalle ? ' ' + detalle : ''));
+          return;
+        }
+      } catch {}
+    }
+  };
+
   // Manda la canción al cover RVC con la voz elegida.
   const applyChangeVoice = async () => {
     if (!pickedVoiceId || changeVoiceBusy) return;
@@ -4227,6 +4253,14 @@ function SongOptionsSheet({
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(String((out as any)?.error || (out as any)?.detail || 'No se pudo cambiar la voz'));
+      const predId = String((out as any)?.predictionId || (out as any)?.coverId || '').trim();
+      if (predId) {
+        onToast?.('Aplicando tu voz… te aviso cuando esté lista (2-4 min).');
+        setShowChangeVoice(false);
+        onRefreshSongs?.();
+        seguirCover(predId, t.token).catch(() => {});
+        return;
+      }
       onToast?.('Procesando… cuando esté, aparecerá la versión con la nueva voz.');
       setShowChangeVoice(false);
       onRefreshSongs?.();
