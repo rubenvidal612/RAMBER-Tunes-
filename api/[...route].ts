@@ -2939,10 +2939,10 @@ const sunoHandler = (() => {
               const stillAlive = await verifyTaskExistsSuno(reuseTaskId);
               if (stillAlive) {
                 try {
-                  const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
+                  const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true };
                   const q = await auth.admin.from("suno_tasks").insert([dup]);
                   if (q?.error) {
-                    try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+                    try { await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
                   }
                 } catch (_) {}
                 return send(res, 200, { taskId: reuseTaskId, reused: true });
@@ -2950,7 +2950,7 @@ const sunoHandler = (() => {
                 const retry = await retryGenerateWithoutTaskId();
                 if (retry.ok && retry.taskId) {
                   try {
-                    await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                    await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
                   } catch (_) {}
                   return send(res, 200, { taskId: retry.taskId, retried: true });
                 }
@@ -2959,7 +2959,7 @@ const sunoHandler = (() => {
               const retry = await retryGenerateWithoutTaskId();
               if (retry.ok && retry.taskId) {
                 try {
-                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
                 } catch (_) {}
                 return send(res, 200, { taskId: retry.taskId, retried: true });
               }
@@ -2969,7 +2969,7 @@ const sunoHandler = (() => {
           const retry = await retryGenerateWithoutTaskId();
           if (retry.ok && retry.taskId) {
             try {
-              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
             } catch (_) {}
             return send(res, 200, { taskId: retry.taskId, retried: true });
           }
@@ -3069,10 +3069,10 @@ const sunoHandler = (() => {
             const alive = await verifyTaskExistsSuno2(reuseTaskId);
             if (alive) {
               try {
-                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false };
+                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true };
                 const q = await auth.admin.from("suno_tasks").insert([dup]);
                 if (q?.error) {
-                  try { await auth.admin.from("suno_tasks").update({ consumed: false }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
+                  try { await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
                 }
               } catch (_) {}
               return send(res, 200, { taskId: reuseTaskId, reused: true });
@@ -3080,7 +3080,7 @@ const sunoHandler = (() => {
               const retry = await retryGenerateWithoutTaskId2();
               if (retry.ok && retry.taskId) {
                 try {
-                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
                 } catch (_) {}
                 return send(res, 200, { taskId: retry.taskId, retried: true });
               }
@@ -3089,7 +3089,7 @@ const sunoHandler = (() => {
             const retry = await retryGenerateWithoutTaskId2();
             if (retry.ok && retry.taskId) {
               try {
-                await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+                await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
               } catch (_) {}
               return send(res, 200, { taskId: retry.taskId, retried: true });
             }
@@ -3098,7 +3098,7 @@ const sunoHandler = (() => {
           const retry = await retryGenerateWithoutTaskId2();
           if (retry.ok && retry.taskId) {
             try {
-              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
             } catch (_) {}
             return send(res, 200, { taskId: retry.taskId, retried: true });
           }
@@ -3117,7 +3117,10 @@ const sunoHandler = (() => {
       }
 
       try {
-        await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: false });
+        const insRes = await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+        if (insRes?.error) {
+          console.warn("[handleSeparate] insert suno_tasks falló:", insRes.error.message || insRes.error);
+        }
       } catch (insErr) {
         // Si falla el insert (ej: PK duplicate por retry), continuar; el usuario al menos
         // tiene el taskId para polling. Los créditos se marcan como consumidos en polling SUCCESS.
