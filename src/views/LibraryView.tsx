@@ -4158,6 +4158,12 @@ function SongOptionsSheet({
   const [titleBusy, setTitleBusy] = useState(false);
   const [showStems, setShowStems] = useState(false);
   const [showMp4, setShowMp4] = useState(false);
+  // Cambiar voz con un clon de Replicate (no pide frase, a diferencia de Suno)
+  const [showChangeVoice, setShowChangeVoice] = useState(false);
+  const [changeVoices, setChangeVoices] = useState<Array<{ id: string; name: string }>>([]);
+  const [changeVoicesBusy, setChangeVoicesBusy] = useState(false);
+  const [pickedVoiceId, setPickedVoiceId] = useState('');
+  const [changeVoiceBusy, setChangeVoiceBusy] = useState(false);
   const [mp4Author, setMp4Author] = useState('');
   const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
@@ -4177,6 +4183,59 @@ function SongOptionsSheet({
   const [personaPhoto, setPersonaPhoto] = useState<File | null>(null);
   const coverPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const isMureka = String(song.provider || '').toLowerCase() === 'mureka';
+
+  // Abre el panel con las voces clonadas listas (status "ready").
+  const openChangeVoice = async () => {
+    setShowChangeVoice(true);
+    setPickedVoiceId('');
+    setChangeVoices([]);
+    setChangeVoicesBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error('No autorizado');
+      const r = await fetch('/api/kits/voices', { headers: { authorization: `Bearer ${t.token}` } });
+      const out = await r.json().catch(() => ({}));
+      const list: any[] = Array.isArray((out as any)?.voices) ? (out as any).voices : [];
+      const ready = list
+        .map((v: any) => ({
+          id: String(v?.voice_id || v?.id || '').trim(),
+          name: String(v?.voice_name || v?.name || 'Voz').trim() || 'Voz',
+          status: String(v?.status || '').trim().toLowerCase(),
+        }))
+        .filter((v) => Boolean(v.id) && v.status === 'ready')
+        .map((v) => ({ id: v.id, name: v.name }));
+      setChangeVoices(ready);
+      if (ready.length === 1) setPickedVoiceId(ready[0].id);
+    } catch {
+      onToast?.('No pude cargar tus voces clonadas.');
+    } finally {
+      setChangeVoicesBusy(false);
+    }
+  };
+
+  // Manda la canción al cover RVC con la voz elegida.
+  const applyChangeVoice = async () => {
+    if (!pickedVoiceId || changeVoiceBusy) return;
+    setChangeVoiceBusy(true);
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error('No autorizado');
+      const r = await fetch('/api/suno/create-cover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: song.id, voiceId: pickedVoiceId }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(String((out as any)?.error || (out as any)?.detail || 'No se pudo cambiar la voz'));
+      onToast?.('Procesando… cuando esté, aparecerá la versión con la nueva voz.');
+      setShowChangeVoice(false);
+      onRefreshSongs?.();
+    } catch (e) {
+      onToast?.(e instanceof Error ? e.message : 'No se pudo cambiar la voz');
+    } finally {
+      setChangeVoiceBusy(false);
+    }
+  };
   const [showCoverUrl, setShowCoverUrl] = useState(false);
   const [coverUrlInput, setCoverUrlInput] = useState('');
   const [showTrim, setShowTrim] = useState(false);
@@ -6076,6 +6135,19 @@ function SongOptionsSheet({
                             <ChevronRight className="w-5 h-5 text-slate-500" />
                           </button>
                         ) : null}
+                        <button
+                          className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
+                          onClick={() => {
+                            openChangeVoice().catch(() => {});
+                          }}
+                          disabled={isBusy}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Repeat2 className="w-5 h-5 text-slate-200" />
+                            <span className="text-slate-100 font-semibold">Cambiar voz (clon)</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
                         <button className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <div className="flex items-center gap-3">
                             <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
@@ -6289,6 +6361,16 @@ function SongOptionsSheet({
                             <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover</div>
                           </button>
                         ) : null}
+                        <button
+                          className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
+                          onClick={() => {
+                            openChangeVoice().catch(() => {});
+                          }}
+                          disabled={isBusy}
+                        >
+                          <Repeat2 className="w-5 h-5 text-slate-200" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Cambiar voz (clon)</div>
+                        </button>
                         <button className={cn("rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
                           <div className={cn("mt-3 font-semibold text-sm", isMureka ? "text-slate-500" : "text-slate-100")}>Eliminar voz / Karaoke</div>
@@ -7413,6 +7495,73 @@ function SongOptionsSheet({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChangeVoice && (
+        <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+          <button
+            className="absolute inset-0 w-full h-full"
+            onClick={() => {
+              if (!changeVoiceBusy) setShowChangeVoice(false);
+            }}
+            aria-label="Cerrar"
+          />
+          <div className="relative w-full md:max-w-[560px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="text-white font-extrabold">Cambiar voz (clon)</div>
+              <button
+                onClick={() => {
+                  if (!changeVoiceBusy) setShowChangeVoice(false);
+                }}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-y-auto overscroll-contain">
+              <div className="text-slate-400 text-xs">Usa una voz de tu Clonador. No pide frase.</div>
+
+              {changeVoicesBusy ? (
+                <div className="mt-6 text-slate-400 text-sm">Buscando tus voces…</div>
+              ) : changeVoices.length === 0 ? (
+                <div className="mt-6 text-slate-300 text-sm">Primero clona una voz en el Clonador.</div>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {changeVoices.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setPickedVoiceId(v.id)}
+                      className={cn(
+                        'w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border transition-colors',
+                        pickedVoiceId === v.id ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]',
+                      )}
+                    >
+                      <span className="text-slate-100 font-semibold text-sm truncate">{v.name}</span>
+                      {pickedVoiceId === v.id ? (
+                        <BadgeCheck className="w-5 h-5 text-emerald-300" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-slate-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-white/10 shrink-0">
+              <button
+                className="w-full h-12 rounded-full font-extrabold text-sm bg-gradient-to-r from-emerald-500 to-cyan-500 text-white disabled:opacity-50"
+                disabled={!pickedVoiceId || changeVoiceBusy || changeVoices.length === 0}
+                onClick={() => {
+                  applyChangeVoice().catch(() => {});
+                }}
+              >
+                {changeVoiceBusy ? 'Procesando…' : 'Aplicar'}
+              </button>
             </div>
           </div>
         </div>
