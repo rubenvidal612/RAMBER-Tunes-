@@ -4483,6 +4483,40 @@ const sunoHandler = (() => {
     }
   }
 
+// Convierte cualquier audio (mp3, m4a, ogg…) a WAV 16-bit mono 40 kHz para RVC.
+async function convertAudioToWav(input: Buffer): Promise<Buffer> {
+  const fsmod = await import("node:fs/promises");
+  const os = await import("node:os");
+  const pathmod = await import("node:path");
+  const ffmpegInstaller: any = await import("@ffmpeg-installer/ffmpeg");
+  const ffmpegMod: any = await import("fluent-ffmpeg");
+  const ffmpeg = ffmpegMod?.default || ffmpegMod;
+  if (typeof ffmpeg?.setFfmpegPath === "function" && ffmpegInstaller?.path) {
+    ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+  }
+  const tmp = os.tmpdir();
+  const base = Math.random().toString(36).slice(2, 10);
+  const inPath = pathmod.join(tmp, "clone_in_" + Date.now() + "_" + base + ".bin");
+  const outPath = pathmod.join(tmp, "clone_out_" + Date.now() + "_" + base + ".wav");
+  await fsmod.writeFile(inPath, input);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inPath)
+        .audioChannels(1)
+        .audioFrequency(40000)
+        .audioCodec("pcm_s16le")
+        .format("wav")
+        .on("end", () => resolve())
+        .on("error", (e: any) => reject(e))
+        .save(outPath);
+    });
+    return Buffer.from(await fsmod.readFile(outPath));
+  } finally {
+    try { await fsmod.unlink(inPath); } catch {}
+    try { await fsmod.unlink(outPath); } catch {}
+  }
+}
+
   async function handleCloneVoice(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -4559,13 +4593,24 @@ const sunoHandler = (() => {
         return send(res, 413, { error: "El archivo de audio es demasiado grande (máximo 50 MB)" });
       }
 
-      const head = Buffer.from(audioBuffer.slice(0, 12));
-      const isWav = head.subarray(0, 4).toString("ascii") === "RIFF" && head.subarray(8, 12).toString("ascii") === "WAVE";
-      if (!isWav) {
-        return send(res, 400, {
-          error: "El audio debe ser WAV",
-          detail: "Sube un WAV (o vuelve a subir el audio para que la app lo convierta a WAV automáticamente).",
-        });
+      // Aceptamos cualquier formato: si no es WAV, lo convertimos con ffmpeg.
+      let audioPreparado: Buffer = Buffer.from(audioBuffer);
+      {
+        const head = Buffer.from(audioPreparado.subarray(0, 12));
+        const isWav = head.subarray(0, 4).toString("ascii") === "RIFF" && head.subarray(8, 12).toString("ascii") === "WAVE";
+        if (!isWav) {
+          try {
+            audioPreparado = await convertAudioToWav(audioPreparado);
+          } catch (convErr) {
+            return send(res, 400, {
+              error: "No pude convertir el audio",
+              detail: "Sube MP3, WAV o M4A. Detalle: " + (convErr instanceof Error ? convErr.message : String(convErr)),
+            });
+          }
+          if (!audioPreparado || audioPreparado.byteLength < 44) {
+            return send(res, 400, { error: "El audio convertido quedó vacío" });
+          }
+        }
       }
 
       // Crear un archivo ZIP que contenga el dataset en la estructura que espera Replicate
@@ -4579,7 +4624,7 @@ const sunoHandler = (() => {
           .trim()
           .slice(0, 60);
       const rvcName = sanitizeRvcName(voiceProfileName || voiceName || "voz") || "voz";
-      const wavBuf = Buffer.from(audioBuffer);
+      const wavBuf = Buffer.from(audioPreparado);
       const splitWavs = (() => {
         try {
           if (wavBuf.length < 44) return [wavBuf];
