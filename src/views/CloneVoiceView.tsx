@@ -36,6 +36,26 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
   const [voiceName, setVoiceName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Reproductor del archivo que acabas de subir (para escucharlo antes de clonar).
+  const [selectedFileUrl, setSelectedFileUrl] = useState('');
+  useEffect(() => {
+    if (!selectedFile) {
+      setSelectedFileUrl('');
+      return;
+    }
+    let u = '';
+    try {
+      u = URL.createObjectURL(selectedFile);
+      setSelectedFileUrl(u);
+    } catch {
+      setSelectedFileUrl('');
+    }
+    return () => {
+      try {
+        if (u) URL.revokeObjectURL(u);
+      } catch {}
+    };
+  }, [selectedFile]);
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string>('');
   const [voiceProfileName, setVoiceProfileName] = useState('');
@@ -2301,6 +2321,13 @@ export function CloneVoiceView({ enabled = false }: { enabled?: boolean } = {}) 
                 
                 <div className="text-sm text-slate-300 mb-2 truncate">
                   {selectedFile.name}
+                </div>
+
+                {selectedFileUrl ? (
+                  <audio controls preload="metadata" src={selectedFileUrl} className="w-full mb-2" />
+                ) : null}
+                <div className="text-[11px] text-slate-400 mb-2">
+                  Si no es WAV, se convierte solo al clonar (MP3, M4A, etc.).
                 </div>
                 
                 {audioDuration && (
