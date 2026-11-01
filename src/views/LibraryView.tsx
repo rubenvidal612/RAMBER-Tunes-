@@ -6096,6 +6096,19 @@ function SongOptionsSheet({
                     <div className="pt-2">
                       <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Descargar y crear</div>
                       <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                        <button
+                          className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors"
+                          onClick={() => {
+                            openChangeVoice().catch(() => {});
+                          }}
+                          disabled={isBusy}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Repeat2 className="w-5 h-5 text-emerald-300" />
+                            <span className="text-slate-100 font-semibold">Cambiar voz (clon)</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
                         <button className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors" onClick={download} disabled={isBusy}>
                           <div className="flex items-center gap-3">
                             {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
@@ -6130,24 +6143,12 @@ function SongOptionsSheet({
                           >
                             <div className="flex items-center gap-3">
                               <Sparkles className="w-5 h-5 text-slate-200" />
-                              <span className="text-slate-100 font-semibold">Crear Cover</span>
+                              <span className="text-slate-100 font-semibold">Crear Cover (voz Suno, pide frase)</span>
                             </div>
                             <ChevronRight className="w-5 h-5 text-slate-500" />
                           </button>
                         ) : null}
-                        <button
-                          className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
-                          onClick={() => {
-                            openChangeVoice().catch(() => {});
-                          }}
-                          disabled={isBusy}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Repeat2 className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Cambiar voz (clon)</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
-                        </button>
+
                         <button className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <div className="flex items-center gap-3">
                             <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
@@ -6329,6 +6330,16 @@ function SongOptionsSheet({
                     <div className="mt-6">
                       <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Descargar y crear</div>
                       <div className="mt-3 grid grid-cols-3 gap-3">
+                        <button
+                          className="rounded-3xl border border-emerald-400/30 bg-emerald-400/5 p-4 hover:bg-emerald-400/10 transition-colors text-left"
+                          onClick={() => {
+                            openChangeVoice().catch(() => {});
+                          }}
+                          disabled={isBusy}
+                        >
+                          <Repeat2 className="w-5 h-5 text-emerald-300" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Cambiar voz (clon)</div>
+                        </button>
                         <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={download} disabled={isBusy}>
                           {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
                           <div className="mt-3 text-slate-100 font-semibold text-sm">Descargar MP3</div>
@@ -6358,19 +6369,10 @@ function SongOptionsSheet({
                             disabled={isBusy}
                           >
                             <Sparkles className="w-5 h-5 text-slate-200" />
-                            <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover</div>
+                            <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover (voz Suno, pide frase)</div>
                           </button>
                         ) : null}
-                        <button
-                          className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
-                          onClick={() => {
-                            openChangeVoice().catch(() => {});
-                          }}
-                          disabled={isBusy}
-                        >
-                          <Repeat2 className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Cambiar voz (clon)</div>
-                        </button>
+
                         <button className={cn("rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
                           <div className={cn("mt-3 font-semibold text-sm", isMureka ? "text-slate-500" : "text-slate-100")}>Eliminar voz / Karaoke</div>
