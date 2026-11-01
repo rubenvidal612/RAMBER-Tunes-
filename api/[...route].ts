@@ -5415,7 +5415,11 @@ notify pgrst, 'reload schema';`;
               protect: Math.max(0, Math.min(1, protect)),
               output_format: outputFormat,
             },
-            webhook: absoluteUrlFromReq(req, "/api/webhooks/replicate-cover"),
+            webhook:
+              absoluteUrlFromReq(req, "/api/webhooks/replicate-cover") +
+              "?u=" + encodeURIComponent(user.id) +
+              "&n=" + encodeURIComponent(String(finalTitle || "").slice(0, 120)) +
+              "&f=" + encodeURIComponent(String(outputFormat || "mp3")),
           }),
         });
         const data = await r.json().catch(() => ({}));
@@ -11019,23 +11023,38 @@ const replicateCoverWebhookHandler = (() => {
         .select("*")
         .eq("prediction_id", predictionId)
         .limit(1);
-      if (coverErr) return send(res, 500, { error: "No pude buscar el cover", detail: coverErr.message });
-      const coverRow = Array.isArray(coverRows) ? coverRows[0] : null;
-      if (!coverRow) return send(res, 200, { ok: true, received: true, predictionId, status: newStatus, missing: true });
+      // Si la tabla no existe, seguimos con los datos que vienen en la URL del webhook.
+      const qs = (() => {
+        try {
+          return new URL(String(req.url || ""), "http://localhost").searchParams;
+        } catch {
+          return new URLSearchParams();
+        }
+      })();
+      const fallbackUserId = String(qs.get("u") || "").trim();
+      const fallbackTitle = String(qs.get("n") || "").trim();
+      const fallbackFormat = String(qs.get("f") || "").trim().toLowerCase();
 
-      await admin
-        .from("rvc_covers")
-        .update({
-          status: newStatus,
-          output: output ? JSON.stringify(output) : null,
-          error: error ? JSON.stringify(error) : null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("prediction_id", predictionId);
+      const coverRow = Array.isArray(coverRows) ? coverRows[0] : null;
+      if (!coverRow && !fallbackUserId) {
+        return send(res, 200, { ok: true, received: true, predictionId, status: newStatus, missing: true });
+      }
+
+      if (coverRow) {
+        await admin
+          .from("rvc_covers")
+          .update({
+            status: newStatus,
+            output: output ? JSON.stringify(output) : null,
+            error: error ? JSON.stringify(error) : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("prediction_id", predictionId);
+      }
 
       if (newStatus !== "ready") return send(res, 200, { ok: true, received: true, predictionId, status: newStatus });
 
-      const userId = (coverRow as any)?.user_id ? String((coverRow as any).user_id) : "";
+      const userId = (coverRow as any)?.user_id ? String((coverRow as any).user_id) : fallbackUserId;
       if (!userId) return send(res, 200, { ok: true, received: true, predictionId, status: newStatus });
 
       const externalId = `rvc_${predictionId}`.slice(0, 200);
@@ -11070,14 +11089,14 @@ const replicateCoverWebhookHandler = (() => {
         return send(res, 502, { error: "No pude descargar el audio del cover", detail: e instanceof Error ? e.message : String(e) });
       }
 
-      const fmt = String((coverRow as any)?.output_format || "mp3").trim().toLowerCase();
+      const fmt = String((coverRow as any)?.output_format || fallbackFormat || "mp3").trim().toLowerCase();
       const ext = ["mp3", "wav", "ogg", "aac", "m4a"].includes(fmt) ? fmt : "mp3";
       const contentType = remoteCt || contentTypeForExt(ext);
       const safeId = predictionId.replaceAll(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 120) || "cover";
       const key = `covers/${userId}/${Date.now()}_${safeId}.${ext}`;
       const audioUrl = await uploadToR2(key, buf, contentType);
 
-      const title = String((coverRow as any)?.title || "Cover (voz clonada)").trim().slice(0, 120) || "Cover (voz clonada)";
+      const title = String((coverRow as any)?.title || fallbackTitle || "Cover (voz clonada)").trim().slice(0, 120) || "Cover (voz clonada)";
       const insertRow: any = {
         user_id: userId,
         type: "song",
