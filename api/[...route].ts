@@ -2779,8 +2779,46 @@ const sunoHandler = (() => {
     if (!taskId && !audioId) return send(res, 400, { error: "Falta taskId o audioId" });
     if (!(type === "separate_vocal" || type === "split_stem")) return send(res, 400, { error: "type inválido. Usa 'separate_vocal' o 'split_stem'." });
 
+    // El proveedor de separacion EXIGE audioId ("audioId cannot be empty").
+    // Si la cancion solo trae taskId (canciones viejas o importadas), lo recuperamos
+    // del registro de la generacion antes de pedir la separacion.
+    let effectiveTaskId = taskId;
+    let effectiveAudioId = audioId;
+    if (!effectiveAudioId && effectiveTaskId) {
+      try {
+        const encRec = encodeURIComponent(effectiveTaskId);
+        const recPaths = [
+          `/api/v1/generate/record-info?taskId=${encRec}`,
+          `/api/v1/suno/generate/record-info?taskId=${encRec}`,
+        ];
+        let lastRec: any = null;
+        for (const p of recPaths) {
+          const rr = await sunoFetchJson(p, { method: "GET" });
+          lastRec = rr;
+          if (rr.res.status !== 404) break;
+        }
+        const rootRec = lastRec?.data?.data || lastRec?.data?.data?.data || lastRec?.data || {};
+        const candsRec: any[] = [];
+        if (Array.isArray(rootRec?.response?.sunoData)) candsRec.push(rootRec.response.sunoData);
+        if (Array.isArray(rootRec?.response?.data)) candsRec.push(rootRec.response.data);
+        if (Array.isArray(rootRec?.response)) candsRec.push(rootRec.response);
+        if (Array.isArray(rootRec?.data)) candsRec.push(rootRec.data);
+        const listRec = (candsRec.find((x) => Array.isArray(x) && x.length) as any[]) || [];
+        const firstRec = listRec[0];
+        const recovered = String(
+          firstRec?.id || firstRec?.audio_id || firstRec?.audioId || firstRec?.audioID || ""
+        ).trim();
+        if (recovered) {
+          effectiveAudioId = recovered;
+          console.log("[handleSeparate] audioId recuperado del taskId:", effectiveAudioId);
+        }
+      } catch (recErr) {
+        console.warn("[handleSeparate] no pude recuperar audioId:", recErr instanceof Error ? recErr.message : String(recErr));
+      }
+    }
+
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
-    const body = { taskId, audioId, type, callBackUrl };
+    const body = { taskId: effectiveTaskId, audioId: effectiveAudioId, type, callBackUrl };
 
     const user = auth.user;
     const isAdmin = isAdminEmail(user.email);
@@ -2850,7 +2888,7 @@ const sunoHandler = (() => {
 
         async function retryGenerateWithoutTaskId(): Promise<{ ok: boolean; taskId: string; err?: string }> {
           try {
-            const altBody: any = { audioId, type, callBackUrl, skipCache: 1, nonce: String(Date.now()) };
+            const altBody: any = { audioId: effectiveAudioId, type, callBackUrl, skipCache: 1, nonce: String(Date.now()) };
             const p3 = [
               "/api/v1/vocal-removal/generate",
               "/api/v1/suno/vocal-removal/generate",
@@ -2982,7 +3020,7 @@ const sunoHandler = (() => {
 
         async function retryGenerateWithoutTaskId2(): Promise<{ ok: boolean; taskId: string }> {
           try {
-            const altBody: any = { audioId, type, callBackUrl, skipCache: 1, nonce: String(Date.now()) };
+            const altBody: any = { audioId: effectiveAudioId, type, callBackUrl, skipCache: 1, nonce: String(Date.now()) };
             const p3 = [
               "/api/v1/vocal-removal/generate",
               "/api/v1/suno/vocal-removal/generate",
