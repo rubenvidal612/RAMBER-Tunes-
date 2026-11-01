@@ -4013,8 +4013,11 @@ function StartStep({ data, setData, setToast, handlers }) {
                         type="button"
                         className="persona-card-select"
                         style={{ paddingLeft: 38 }}
-                        disabled={p.status !== 'ready'}
-                        title={p.availabilityReason || (p.status !== 'ready' ? 'Suno no confirmó esta voz. Repite la validación en el Clonador.' : '')}
+                        title={
+                          p.status === 'ready'
+                            ? ''
+                            : 'Suno no la confirmó en el último chequeo, pero puedes intentar: si Suno la rechaza, no se cobra la canción.'
+                        }
                         onClick={() => {
                           updateSelectedPersona({
                             voiceId: p.voiceId,
@@ -4036,10 +4039,10 @@ function StartStep({ data, setData, setToast, handlers }) {
                           {p.status === 'ready' ? null : (
                             <small>
                               {p.status === 'expired'
-                                ? 'Suno informa: expirada · repetir validación'
+                                ? 'Suno dice: expirada · puedes intentar igual'
                                 : p.status === 'unconfirmed'
-                                ? 'Sin confirmar · reabre el selector para comprobar'
-                                : 'No disponible en Suno · repetir validación'}
+                                ? 'Sin confirmar · puedes intentar igual'
+                                : 'Sin confirmar · puedes intentar igual'}
                             </small>
                           )}
                         </span>
