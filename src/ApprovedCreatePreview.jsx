@@ -3843,13 +3843,44 @@ function StartStep({ data, setData, setToast, handlers }) {
                   <span>{personasError}</span>
                 </div>
               ) : personas.length === 0 ? (
-                <div className="persona-empty">
-                  <div className="persona-empty-title">Aún no tienes personajes de voz creados.</div>
-                  <button type="button" className="wizard-next" onClick={goCreatePersona}>
-                    <Users size={18} />
-                    Crear mi primer personaje
-                  </button>
-                </div>
+                <>
+                  <div className="persona-empty">
+                    <div className="persona-empty-title">Aún no tienes personajes de voz creados.</div>
+                    <button type="button" className="wizard-next" onClick={goCreatePersona}>
+                      <Users size={18} />
+                      Crear mi primer personaje
+                    </button>
+                  </div>
+                {cloneVoices.length > 0 ? (
+                  <div style={{ marginBottom: 16 }}>
+                    <div className="persona-empty-title" style={{ marginBottom: 8 }}>
+                      Voces clonadas (se aplican al terminar la cancion)
+                    </div>
+                    <div className="persona-grid">
+                      {cloneVoices.map((v) => (
+                        <div
+                          key={v.id}
+                          className={
+                            data.voiceProfile?.voiceId === v.id && data.voiceProfile?.source === 'replicate'
+                              ? 'persona-card is-selected'
+                              : 'persona-card'
+                          }
+                        >
+                          <button type="button" className="persona-card-select" onClick={() => updateSelectedReplicateVoice(v)}>
+                            <span className="persona-avatar">
+                              <Users size={18} />
+                            </span>
+                            <span className="persona-card-text">
+                              <strong>{v.name}</strong>
+                              <small>Tu clon · voz real</small>
+                            </span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                </>
               ) : (
                 <>
                   <div
