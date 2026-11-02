@@ -5621,15 +5621,19 @@ function ApprovedCreateContent(props) {
     if (draftKey) {
       try { window.localStorage.removeItem(draftKey); } catch {}
     }
+    // El audio ya subido SÍ se conserva: así puedes generar la misma canción en
+    // otros géneros sin volver a subir el archivo.
+    const audioQueSeQueda = {
+      audioSource: data.audioSource,
+      audioInputMode: data.audioInputMode,
+    };
     setBaseSongIds({ taskId: '', audioId: '' });
     setStep(0);
     setCreativity(50);
     setInstruction(50);
     setAudioWeight(25);
     setToast("");
-    setData(makeInitialData());
-    setAudioUploadUrl('');
-    setAudioUploadPath('');
+    setData({ ...makeInitialData(), ...audioQueSeQueda });
     setIsUploadingAudio(false);
     setUploadProgress(0);
     setAudioReuploadNeeded(false);
@@ -6623,7 +6627,7 @@ function ApprovedCreateContent(props) {
     if (typeof onShowAlert === 'function') {
       onShowAlert({
         title: '¿Crear otra canción?',
-        message: 'Se eliminará el borrador actual y comenzarás una canción nueva. Esta acción no se puede deshacer.',
+        message: 'Se limpia la letra y el estilo para empezar otra canción. Tu audio subido se conserva, así puedes hacer la misma canción en otros géneros sin volver a subirlo.',
         tone: 'warning',
         actions: [
           { label: 'Cancelar', kind: 'cancel' },
