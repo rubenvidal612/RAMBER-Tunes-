@@ -16539,6 +16539,7 @@ const adminHandler = (() => {
 
 // Permite que el API del robot reutilice el transcriptor de Gemini.
 let __robotTranscribeFn: any = null;
+let __robotGenerateLyricsFn: any = null;
 const aiHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -17099,6 +17100,8 @@ const aiHandler = (() => {
         "Si sigue igual, revisa que GEMINI_API_KEY esté bien configurada en Vercel y vuelve a intentar.",
     };
   }
+
+  __robotGenerateLyricsFn = generateLyricsWithGemini;
 
   async function generateLyricsWithOpenAI(topic: string, gender: string, style: string) {
     const apiKey = String(process.env.OPENAI_TRANSCRIBE_API_KEY || "").trim();
@@ -23610,6 +23613,24 @@ const integrationsHandler = (() => {
         return sendJson(res, 200, { ok: true, lyrics: txt });
       } catch (e) {
         return sendJson(res, 502, { error: "transcribe_error", message: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (action === "generate-lyrics") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      const glBody: any = (await readJsonBodySafe(req)).value || {};
+      const topic = String(glBody.topic || glBody.story || glBody.prompt || "").trim();
+      if (topic.length < 3) return sendJson(res, 400, { error: "missing_topic", message: "Cuentame de que trata (minimo 3 caracteres)." });
+      const gender = String(glBody.gender || glBody.vocal_gender || "Masculino").trim() || "Masculino";
+      const style = String(glBody.style || glBody.genre || "General").trim() || "General";
+      if (typeof __robotGenerateLyricsFn !== "function") return sendJson(res, 503, { error: "lyrics_unavailable", message: "Generador no configurado." });
+      try {
+        const out: any = await __robotGenerateLyricsFn(topic, gender, style);
+        const lyrics = typeof out === "string" ? out.trim() : String(out?.lyrics || out?.text || "").trim();
+        if (!lyrics) return sendJson(res, 502, { error: "lyrics_failed", message: String(out?.userMessage || out?.error || "No se pudo escribir la letra.") });
+        return sendJson(res, 200, { ok: true, lyrics });
+      } catch (e) {
+        return sendJson(res, 502, { error: "lyrics_error", message: e instanceof Error ? e.message : String(e) });
       }
     }
     return sendJson(res, 404, {
