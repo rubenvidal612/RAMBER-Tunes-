@@ -267,7 +267,11 @@ export function FloatingOrderWidget() {
       {/* Ventanita */}
       {abierto && (
         <div
-          className="fixed z-[95] flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12101d]/95 shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur"
+          className={
+            mini
+              ? 'fixed z-[95] flex flex-col overflow-hidden rounded-2xl bg-[#12101d]/95 backdrop-blur border-2 border-yellow-300/90 ring-2 ring-yellow-300/70 shadow-[0_0_10px_rgba(253,224,71,0.95),0_0_26px_rgba(250,204,21,0.75),0_0_54px_rgba(234,179,8,0.45)]'
+              : 'fixed z-[95] flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12101d]/95 shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur'
+          }
           style={
             maxi
               ? { inset: 8 }
@@ -276,7 +280,7 @@ export function FloatingOrderWidget() {
                   top: pos.y,
                   width: 340,
                   maxWidth: 'calc(100vw - 16px)',
-                  ...(mini ? { height: 44 } : { maxHeight: '70vh' }),
+                  ...(mini ? { height: 48 } : { maxHeight: '70vh' }),
                 }
           }
         >
@@ -290,8 +294,14 @@ export function FloatingOrderWidget() {
           >
             <span className="text-base">📋</span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-extrabold text-white">
-                {cargando ? 'Cargando…' : order?.name || 'Pedido'}
+              <div className="flex items-center gap-2 truncate text-sm font-extrabold text-white">
+                {mini ? (
+                  <span
+                    className="inline-block h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-yellow-300"
+                    style={{ boxShadow: '0 0 10px rgba(253,224,71,1), 0 0 22px rgba(250,204,21,0.8)' }}
+                  />
+                ) : null}
+                <span className="truncate">{cargando ? 'Cargando…' : order?.name || 'Pedido'}</span>
               </div>
               {!cargando && !error && order ? (
                 <div className="truncate text-[11px] text-slate-400">{chipVoz}</div>
