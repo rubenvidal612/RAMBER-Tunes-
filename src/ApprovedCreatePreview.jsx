@@ -732,6 +732,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const [regenPhraseBusy, setRegenPhraseBusy] = useState(false);
   const [wizardNotice, setWizardNotice] = useState(null);
   const [sourceContinueBusy, setSourceContinueBusy] = useState(false);
+  // Aviso de consentimiento antes de cantar la frase (anti-clonación de voces ajenas).
+  const [avisoFrase, setAvisoFrase] = useState(false);
+  const [avisoFraseOk, setAvisoFraseOk] = useState(false);
   const wizardBodyRef = useRef(null);
   const postRejectValidateReqRef = useRef(0);
   const activeClientAttemptIdRef = useRef("");
@@ -2306,6 +2309,55 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       <div className="voice-wizard">
         <div className="wizard-header"><div><span className="eyebrow">CLONACIÓN DE VOZ · PERFIL PERSONAL</span><h2>Crear perfil de voz</h2></div><button className="wizard-close" aria-label="Cerrar creación de perfil" onClick={() => { cancelVerificationFlow(); cleanupPhraseRecording(); cleanupSourcePlayer(); onClose(); }}><X size={23} /></button></div>
         <div className="wizard-progress">{wizardSteps.map((label,index)=><div key={label} className={index === wizardStep ? "active" : index < wizardStep ? "done" : ""}><span>{index < wizardStep ? <Check size={14} weight="bold" /> : index + 1}</span><small>{label}</small></div>)}</div>
+        {avisoFrase ? (
+          <div
+            className="persona-dialog-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Aviso antes de la frase de verificación"
+            style={{ zIndex: 500 }}
+          >
+            <div className="persona-dialog" style={{ maxWidth: 460 }}>
+              <h3>Antes de continuar: vas a cantar una frase</h3>
+              <p>
+                En el siguiente paso te vamos a mostrar una frase corta y tendrás que <strong>cantarla o decirla en voz alta</strong> con
+                tu micrófono. Con eso confirmamos que la voz es tuya.
+              </p>
+              <p style={{ marginTop: 10 }}>
+                <strong>No está permitido</strong> clonar la voz de cantantes famosos, artistas ni de cualquier otra persona sin su
+                permiso. Al continuar confirmas que <strong>la voz del audio es tuya</strong> o que tienes autorización por escrito de
+                su dueño.
+              </p>
+              <div className="persona-dialog-actions">
+                <button
+                  type="button"
+                  className="wizard-back"
+                  onClick={() => setAvisoFrase(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="wizard-next"
+                  onClick={async () => {
+                    setAvisoFrase(false);
+                    setAvisoFraseOk(true);
+                    setSourceContinueBusy(true);
+                    const ok = await startValidate().catch(() => false);
+                    if (ok) {
+                      setWizardStep(2);
+                      return;
+                    }
+                    setSourceContinueBusy(false);
+                  }}
+                >
+                  <Check size={18} weight="bold" /> Entiendo, continuar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="wizard-body" ref={wizardBodyRef}>
           {wizardStep === 0 && <div className="wizard-section"><h3>Datos del perfil</h3><p>Solo ponle un nombre. Suno aprende la voz del audio y de la frase, nada más.</p><label>Nombre de la voz<input value={profile.name} onChange={(e)=>setProfile({...profile,name:e.target.value})} placeholder="Ejemplo: Mi voz principal" /></label><div className="wizard-info"><Info size={19}/><span>Después subirás dos audios distintos: uno para crear la voz y otro para verificarla.</span></div></div>}
           {wizardStep === 1 && (
@@ -2695,6 +2747,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               onClick={async () => {
                 if (wizardStep === 1) {
                   if (sourceContinueBusy) return;
+                  // Primero el aviso (una vez por proceso).
+                  if (!avisoFraseOk) {
+                    setAvisoFrase(true);
+                    return;
+                  }
                   setSourceContinueBusy(true);
                   const ok = await startValidate().catch(() => false);
                   if (ok) {
