@@ -23130,6 +23130,17 @@ const integrationsHandler = (() => {
       });
     }
       const pRoot: any = (last && last.data && typeof last.data === "object") ? last.data : {};
+      const pCode = Number((pRoot as any)?.code || 0);
+      if (pCode >= 400) {
+        const pMsg = String((pRoot as any)?.msg || (pRoot as any)?.message || "").trim();
+        console.log("[voice-phrase] proveedor code=" + pCode + " msg=" + pMsg);
+        return sendJson(res, 502, {
+          error: "provider_busy",
+          message: "Suno no pudo procesar la muestra ahora mismo" + (pMsg ? " (" + pMsg + ")" : "") + ". Intenta de nuevo en un minuto.",
+          providerCode: pCode,
+          retryable: true,
+        });
+      }
       const pInner: any = pRoot.data;
       const pInnerObj: any = (pInner && typeof pInner === "object") ? pInner : {};
       const taskId =
