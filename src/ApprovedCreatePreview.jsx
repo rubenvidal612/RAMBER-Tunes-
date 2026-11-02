@@ -5457,6 +5457,9 @@ function ApprovedCreateContent(props) {
   const draftKey = safeUserId
     ? `ramber.approved_create_draft_v1.uid_${safeUserId}${workspaceId ? `.ws_${workspaceId}` : ''}`
     : '';
+  // Respaldo "último borrador" del usuario: sobrevive a la actualización de la app,
+  // a abrir en otra pestaña y a cerrar el navegador.
+  const latestDraftKey = safeUserId ? `ramber.approved_create_latest_v1.uid_${safeUserId}` : '';
   const [step, setStep] = useState(0);
   const [creativity, setCreativity] = useState(50);
   const [instruction, setInstruction] = useState(50);
@@ -5562,6 +5565,17 @@ function ApprovedCreateContent(props) {
           }
         } catch {}
       }
+      if (!raw && latestDraftKey) {
+        // Actualización de la app o pestaña nueva: recuperamos lo último que escribió.
+        try {
+          const mirrorRaw = window.localStorage.getItem(latestDraftKey);
+          if (mirrorRaw) {
+            const mirror = JSON.parse(mirrorRaw);
+            const age = Date.now() - Number(mirror?.savedAt || 0);
+            if (age >= 0 && age < 24 * 60 * 60 * 1000) raw = mirrorRaw;
+          }
+        } catch {}
+      }
       const parsed = raw ? JSON.parse(raw) : null;
       applyDraftPayload(parsed);
     } catch {}
@@ -5636,11 +5650,51 @@ function ApprovedCreateContent(props) {
           baseSongAudioId: baseSongIds.audioId,
           savedAt: Date.now(),
         };
-        window.localStorage.setItem(draftKey, JSON.stringify(payload));
+        const rawPayload = JSON.stringify(payload);
+        window.localStorage.setItem(draftKey, rawPayload);
+        if (latestDraftKey) window.localStorage.setItem(latestDraftKey, rawPayload);
       } catch {}
     }, 350);
     return () => window.clearTimeout(id);
   }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds]);
+
+  // Guardado inmediato al cerrar o cambiar de app (el debounce de 350 ms puede
+  // llegar tarde si la página se recarga sola por una actualización).
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (!draftKey) return undefined;
+    const flush = () => {
+      try {
+        const safeData = { ...data, file: null };
+        const payload = {
+          step,
+          creativity,
+          instruction,
+          audioWeight,
+          data: safeData,
+          hadAudioReference: Boolean(
+            safeData.audioSource === 'upload' &&
+              (Boolean(data.file) || Boolean(audioUploadUrl) || Number(uploadProgress || 0) > 0),
+          ),
+          audioUploadUrl,
+          audioUploadPath,
+          baseSongTaskId: baseSongIds.taskId,
+          baseSongAudioId: baseSongIds.audioId,
+          savedAt: Date.now(),
+        };
+        const rawPayload = JSON.stringify(payload);
+        window.localStorage.setItem(draftKey, rawPayload);
+        if (latestDraftKey) window.localStorage.setItem(latestDraftKey, rawPayload);
+      } catch {}
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => {
+      flush();
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', flush);
+    };
+  }, [draftKey, latestDraftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds, uploadProgress]);
 
   // Borradores de otras ventanas o de una pestaña que se cerró. No se borra nada:
   // solo se ofrecen para recuperarlos cuando esta ventana está vacía.
