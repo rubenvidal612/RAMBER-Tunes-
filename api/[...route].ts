@@ -23010,7 +23010,11 @@ const integrationsHandler = (() => {
       return sendJson(res, 502, { error: "provider_unavailable", message: "No pude consultar el estado." });
     }
 
-    const d = provider?.data?.data || {};
+      const pRoot: any = (provider && provider.data && typeof provider.data === "object") ? provider.data : {};
+      const d: any = (pRoot.data && typeof pRoot.data === "object") ? pRoot.data : pRoot;
+      if (!d || Object.keys(d).length === 0) {
+        console.log("[voice-status] proveedor sin datos status=" + (provider?.res?.status || 0) + " body=" + JSON.stringify(pRoot).slice(0, 400));
+      }
     const rawStatus = d?.status ?? d?.successFlag ?? provider?.data?.status ?? "";
     const tracks = extractTracks(provider?.data);
     let status = normalizeProviderStatus(rawStatus);
