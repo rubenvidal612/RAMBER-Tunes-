@@ -23633,6 +23633,42 @@ const integrationsHandler = (() => {
         return sendJson(res, 502, { error: "lyrics_error", message: e instanceof Error ? e.message : String(e) });
       }
     }
+
+    // Revisa las voces marcadas como caidas y las revive si Suno ya las tiene
+    // disponibles. Suno puede devolver isAvailable=false mientras la voz se
+    // asienta, y despues true: sin esto se quedaban muertas para siempre.
+    if (action === "voices-revive") {
+      if (method !== "POST" && method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      const adminRv: any = await getAdminClient();
+      if (!adminRv) return sendJson(res, 500, { error: "db_unavailable" });
+      const qRv = await adminRv
+        .from("suno_voices")
+        .select("id,name,suno_voice_id,last_task_id")
+        .in("status", ["unavailable", "expired"])
+        .limit(25);
+      if (qRv.error) return sendJson(res, 500, { error: "db_error", message: qRv.error.message });
+      const filas: any[] = qRv.data || [];
+      const revividas: string[] = [];
+      const siguen: string[] = [];
+      for (const f of filas) {
+        const tid = String(f.last_task_id || f.suno_voice_id || "").trim();
+        if (!tid) { siguen.push(String(f.name || "")); continue; }
+        try {
+          const rv = await providerFetchJson("/api/v1/voice/check-voice", { method: "POST", body: JSON.stringify({ task_id: tid }) });
+          const disp = rv?.data?.data?.isAvailable === true;
+          if (disp) {
+            await adminRv.from("suno_voices").update({ status: "ready", status_checked_at: new Date().toISOString() }).eq("id", f.id);
+            revividas.push(String(f.name || ""));
+          } else {
+            siguen.push(String(f.name || ""));
+          }
+        } catch {
+          siguen.push(String(f.name || ""));
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return sendJson(res, 200, { ok: true, revisadas: filas.length, revividas: revividas.length, nombres: revividas, siguen_caidas: siguen.length });
+    }
     return sendJson(res, 404, {
       error: "not_found",
       message:
