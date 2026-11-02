@@ -2311,48 +2311,6 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           {wizardStep === 1 && (
             <div className="wizard-section">
               <h3>Audio original</h3>
-              <p>¿Cómo quieres proporcionar tu voz?</p>
-
-              <div className="segmented" style={{ marginTop: 10 }}>
-                <button
-                  className={sourceInputMode === "upload" ? "selected" : ""}
-                  type="button"
-                  onClick={() => {
-                    setSourceInputMode("upload");
-                    cleanupSourceRecording();
-                    setSourceRecordedFile(null);
-                  }}
-                >
-                  Subir audio
-                </button>
-                <button
-                  className={sourceInputMode === "sing" ? "selected" : ""}
-                  type="button"
-                  onClick={async () => {
-                    if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
-                      showAlert({ tone: "error", message: "Tu navegador no permite grabar audio. Usa la opción Subir audio." });
-                      return;
-                    }
-                    try {
-                      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                      try {
-                        stream.getTracks().forEach((t) => t.stop());
-                      } catch {}
-                      setSourceInputMode("sing");
-                      setSourceRecording((current) => ({ ...current, error: "" }));
-                    } catch (e) {
-                      const raw = e instanceof Error ? e.message : String(e || "");
-                      const msg = /denied|notallowed|permission/i.test(raw)
-                        ? "Permiso de micrófono rechazado. Puedes usar Subir audio."
-                        : "No pudimos acceder al micrófono. Puedes usar Subir audio.";
-                      showAlert({ tone: "error", message: msg });
-                    }
-                  }}
-                >
-                  Cantar aquí
-                </button>
-              </div>
-
               {sourceInputMode === "upload" ? (
                 <>
                   <p style={{ marginTop: 14 }}>Este es el audio que se utilizará para crear el perfil. Busca una parte con voz clara y poco ruido.</p>
