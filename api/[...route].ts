@@ -23124,8 +23124,24 @@ const integrationsHandler = (() => {
         message: "El proveedor no aceptó la muestra de voz.",
       });
     }
-    const taskId = pickString(last?.data?.data || {}, ["taskId", "task_id"]);
-    if (!taskId) return sendJson(res, 502, { error: "provider_invalid_response", message: "El proveedor no devolvió taskId." });
+      const pRoot: any = (last && last.data && typeof last.data === "object") ? last.data : {};
+      const pInner: any = pRoot.data;
+      const pInnerObj: any = (pInner && typeof pInner === "object") ? pInner : {};
+      const taskId =
+        pickString(pInnerObj, ["taskId", "task_id", "id"]) ||
+        pickString(pRoot, ["taskId", "task_id", "id"]) ||
+        (typeof pInner === "string" ? pInner.trim() : "") ||
+        "";
+      if (!taskId) {
+        const rawBody = JSON.stringify(pRoot).slice(0, 500);
+        console.log("[voice-phrase] sin taskId providerStatus=" + (last?.res?.status || 0) + " body=" + rawBody);
+        return sendJson(res, 502, {
+          error: "provider_invalid_response",
+          message: "El proveedor no devolvio taskId.",
+          providerStatus: last?.res?.status || 0,
+          providerBody: rawBody,
+        });
+      }
 
     try {
       await admin.from("suno_tasks").insert({
