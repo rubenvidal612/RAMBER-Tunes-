@@ -22621,6 +22621,7 @@ const integrationsHandler = (() => {
     if (s.includes("FAIL") || s.includes("ERROR") || s === "SENSITIVE_WORD_ERROR") return "failed";
     if (s.includes("GENERAT") || s.includes("TEXT_SUCCESS") || s.includes("RUNNING")) return "generating";
     if (s.includes("PENDING") || s.includes("CREATE") || s.includes("SUBMIT") || s.includes("QUEUE")) return "pending";
+  if (s.includes("VALIDAT") || s.includes("PROCESS")) return "processing";
     return "unknown";
   }
 
@@ -23300,7 +23301,12 @@ const integrationsHandler = (() => {
       }
     const rawStatus = d?.status ?? d?.successFlag ?? provider?.data?.status ?? "";
     const status = normalizeProviderStatus(rawStatus);
-    const phrase = pickString(d, ["phrase", "verifyPhrase", "verify_phrase", "text", "validationPhrase", "validation_phrase"]);
+    let phrase = pickString(d, ["phrase", "verifyPhrase", "verify_phrase", "text", "validationPhrase", "validation_phrase"]);
+      if (!phrase) {
+        const vinfo: any = d?.validateInfo ?? d?.validate_info;
+        if (typeof vinfo === "string") phrase = vinfo.trim();
+        else if (vinfo && typeof vinfo === "object") phrase = pickString(vinfo, ["phrase", "text", "content", "validationPhrase", "verifyPhrase", "verify_phrase"]);
+      }
     const voiceId = pickString(d, ["voiceId", "voice_id", "id"]);
 
     return sendJson(res, 200, {
