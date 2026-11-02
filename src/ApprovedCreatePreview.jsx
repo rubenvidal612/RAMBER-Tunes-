@@ -2320,8 +2320,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             <div className="persona-dialog" style={{ maxWidth: 460 }}>
               <h3>Antes de continuar: vas a cantar una frase</h3>
               <p>
-                En el siguiente paso te vamos a mostrar una frase corta y tendrás que <strong>cantarla o decirla en voz alta</strong> con
-                tu micrófono. Con eso confirmamos que la voz es tuya.
+                En el siguiente paso te vamos a mostrar una frase corta y tendrás que <strong>cantarla o decirla</strong> con tu
+                micrófono. Con eso confirmamos que la voz es tuya. Busca un lugar <strong>sin ruido ni eco</strong>: así la grabación sale
+                limpia y la voz se clona mejor.
               </p>
               <p style={{ marginTop: 10 }}>
                 <strong>No está permitido</strong> clonar la voz de cantantes famosos, artistas ni de cualquier otra persona sin su
