@@ -16608,6 +16608,9 @@ const aiHandler = (() => {
     };
   }
 
+  // expone el transcriptor al API del robot
+  __robotTranscribeFn = transcribeLyricsWithGemini;
+
   async function transcribeLyricsWithGeminiTranscribe(audioBuf, timeoutMs) {
     const apiKey = String(process.env.GEMINI_TRANSCRIBE_API_KEY || "").trim();
     if (!apiKey) {
@@ -17553,7 +17556,6 @@ const aiHandler = (() => {
     if (a === "generate-lyrics") return handleGenerateLyrics(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
-  __robotTranscribeFn = transcribeLyricsWithGemini;
 })();
 
 const lucianaBotHandler = (() => {
