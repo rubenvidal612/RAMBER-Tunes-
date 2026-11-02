@@ -105,17 +105,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         copies = Number((out as any)?.copies || 0);
       }
     } catch {}
-    if (copies > 0) {
-      setDeleteAsk({ song, copies });
-      return;
-    }
-    try {
-      await onDeleteSong(song.id);
-      onRefreshSongs?.();
-    } catch (error) {
-      console.error('Error al eliminar canción:', error);
-      alert('No se pudo eliminar la canción');
-    }
+    setDeleteAsk({ song, copies });
   };
 
   const [downloadsModalTaskId, setDownloadsModalTaskId] = useState('');
@@ -3616,24 +3606,29 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           <button className="absolute inset-0 w-full h-full" onClick={() => setDeleteAsk(null)} aria-label="Cerrar" />
           <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
             <div className="p-4 border-b border-white/10">
-              <div className="text-white font-extrabold">¿Eliminar también la copia compartida?</div>
+              <div className="text-white font-extrabold">
+                {deleteAsk.copies > 0 ? '¿Eliminar también la copia compartida?' : '¿Eliminar esta canción?'}
+              </div>
             </div>
             <div className="p-4">
               <div className="text-slate-300 text-sm">
-                Esta canción se compartió con {deleteAsk.copies === 1 ? 'otra cuenta' : `${deleteAsk.copies} cuentas`}.
-                ¿Quieres que también desaparezca de {deleteAsk.copies === 1 ? 'esa cuenta' : 'esas cuentas'}?
+                {deleteAsk.copies > 0
+                  ? `Esta canción se compartió con ${deleteAsk.copies === 1 ? 'otra cuenta' : `${deleteAsk.copies} cuentas`}. ¿Quieres que también desaparezca de ${deleteAsk.copies === 1 ? 'esa cuenta' : 'esas cuentas'}?`
+                  : 'Se quitará de tu lista de Mis canciones. Podrás recuperarla desde la papelera.'}
               </div>
-              <button
-                onClick={() => borrarDefinitivo(true).catch(() => {})}
-                className="mt-4 w-full h-12 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold"
-              >
-                Sí, borrar en todas
-              </button>
+              {deleteAsk.copies > 0 ? (
+                <button
+                  onClick={() => borrarDefinitivo(true).catch(() => {})}
+                  className="mt-4 w-full h-12 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold"
+                >
+                  Sí, borrar en todas
+                </button>
+              ) : null}
               <button
                 onClick={() => borrarDefinitivo(false).catch(() => {})}
-                className="mt-2 w-full h-12 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-extrabold"
+                className={`${deleteAsk.copies > 0 ? 'mt-2' : 'mt-4'} w-full h-12 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold`}
               >
-                No, solo en mi cuenta
+                {deleteAsk.copies > 0 ? 'No, solo en mi cuenta' : 'Sí, eliminar'}
               </button>
               <button onClick={() => setDeleteAsk(null)} className="mt-2 w-full h-10 rounded-2xl text-slate-400 text-sm">
                 Cancelar
@@ -6421,7 +6416,7 @@ function SongOptionsSheet({
                     <button
                       className="w-full mt-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 font-extrabold hover:bg-red-500/15 transition-colors flex items-center justify-between"
                       onClick={() => {
-                        if (confirm('¿Seguro que quieres eliminar esta canción?')) onDelete();
+                        onDelete();
                       }}
                       disabled={isBusy}
                     >
@@ -6646,7 +6641,7 @@ function SongOptionsSheet({
                     <button
                       className="mt-6 w-full rounded-3xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-left hover:bg-red-500/15 transition-colors"
                       onClick={() => {
-                        if (confirm('¿Seguro que quieres eliminar esta canción?')) onDelete();
+                        onDelete();
                       }}
                       disabled={isBusy}
                     >
