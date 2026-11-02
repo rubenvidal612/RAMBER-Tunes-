@@ -9092,6 +9092,91 @@ const libraryHandler = (() => {
     return send(res, 200, { song: data, already: false });
   }
 
+  // Comparte una canción con otra cuenta de LucIAna: copia la fila (audio incluido)
+  // a la biblioteca del receptor, marcando quién la compartió.
+  async function handleShare(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const body = parseJsonBody(req);
+    if (!body) return send(res, 400, { error: "Body inválido" });
+
+    const songId = typeof body?.songId === "string" ? body.songId.trim() : "";
+    const rawEmail = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!songId) return send(res, 400, { error: "Falta la canción que quieres compartir" });
+    if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(rawEmail)) return send(res, 400, { error: "Ese correo no parece válido" });
+
+    try {
+      const { data: mine, error: mineErr } = await auth.admin
+        .from(TABLE)
+        .select("id, user_id, title, description, lyrics, gender, audio_url, cover_url, suno_model, provider, model_version, metadata, is_cover")
+        .eq("id", songId)
+        .eq("user_id", auth.user.id)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (mineErr) return send(res, 500, { error: "No pude leer tu canción", detail: mineErr.message });
+      if (!mine) return send(res, 404, { error: "Esa canción no está en tu cuenta" });
+      if (!(mine as any).audio_url) return send(res, 409, { error: "Esa canción todavía no tiene audio" });
+
+      // Receptor: por correo exacto (y si no, comparando sin distinguir mayúsculas)
+      let targetId = "";
+      const exact = await auth.admin.from("profiles").select("id, email").eq("email", rawEmail).maybeSingle();
+      if (!exact?.error && exact?.data?.id) targetId = String(exact.data.id);
+      if (!targetId) {
+        const loose = await auth.admin.from("profiles").select("id, email").ilike("email", rawEmail).limit(5);
+        const rows = Array.isArray(loose?.data) ? loose.data : [];
+        const hit = rows.find((r: any) => String(r?.email || "").trim().toLowerCase() === rawEmail);
+        if (hit?.id) targetId = String(hit.id);
+      }
+      if (!targetId) {
+        return send(res, 404, {
+          error: `La cuenta ${rawEmail} todavía no existe en LucIAna. Pídele que entre una vez con ese Gmail y vuelve a compartir.`,
+        });
+      }
+      if (targetId === String(auth.user.id)) {
+        return send(res, 400, { error: "Ese correo es el tuyo. Escribe el correo de la otra persona." });
+      }
+
+      // Ya compartida antes: no duplicar
+      const { data: ya } = await auth.admin
+        .from(TABLE)
+        .select("id")
+        .eq("user_id", targetId)
+        .eq("metadata->>sharedFrom", String((mine as any).id))
+        .is("deleted_at", null)
+        .limit(1);
+      if (Array.isArray(ya) && ya.length > 0) {
+        return send(res, 200, { ok: true, already: true, to: rawEmail });
+      }
+
+      const senderEmail = String(auth.user.email || "").trim().toLowerCase();
+      const baseMeta = (mine as any).metadata && typeof (mine as any).metadata === "object" ? (mine as any).metadata : {};
+      const meta = { ...baseMeta, sharedFrom: String((mine as any).id), sharedBy: senderEmail, sharedAt: Date.now() };
+
+      const { error: insErr } = await auth.admin.from(TABLE).insert({
+        user_id: targetId,
+        type: ITEM_TYPE,
+        title: String((mine as any).title || "Canción").slice(0, 120),
+        description: String((mine as any).description || "").slice(0, 2000),
+        lyrics: (mine as any).lyrics ?? null,
+        gender: (mine as any).gender ?? null,
+        audio_url: (mine as any).audio_url,
+        cover_url: (mine as any).cover_url ?? null,
+        suno_model: (mine as any).suno_model ?? null,
+        provider: (mine as any).provider ?? null,
+        model_version: (mine as any).model_version ?? null,
+        metadata: meta,
+        is_cover: Boolean((mine as any).is_cover),
+        is_public: false,
+      });
+      if (insErr) return send(res, 500, { error: "No pude compartirla", detail: insErr.message });
+
+      return send(res, 200, { ok: true, to: rawEmail });
+    } catch (e) {
+      return send(res, 500, { error: "Error compartiendo la canción", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   async function handleZipStems(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
     const auth = await requireUser(req);
@@ -9611,6 +9696,7 @@ const libraryHandler = (() => {
     if (a === "create") return handleCreate(req, res);
     if (a === "create-from-r2") return handleCreateFromR2(req, res);
     if (a === "import-audio") return handleImportAudio(req, res);
+    if (a === "share") return handleShare(req, res);
     if (a === "zip-stems") return handleZipStems(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);

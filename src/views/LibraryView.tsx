@@ -4167,6 +4167,10 @@ function SongOptionsSheet({
   const [pickedVoiceId, setPickedVoiceId] = useState('');
   const [changeVoiceBusy, setChangeVoiceBusy] = useState(false);
   const [changeVoiceMsg, setChangeVoiceMsg] = useState('');
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMsg, setShareMsg] = useState('');
   const [mp4Author, setMp4Author] = useState('');
   const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
@@ -4214,6 +4218,41 @@ function SongOptionsSheet({
       onToast?.('No pude cargar tus voces clonadas.');
     } finally {
       setChangeVoicesBusy(false);
+    }
+  };
+
+  // Comparte esta canción con otra cuenta de LucIAna (por correo).
+  const shareSong = async () => {
+    const email = shareEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setShareMsg('Escribe un correo válido.');
+      return;
+    }
+    setShareBusy(true);
+    setShareMsg('');
+    try {
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error('No autorizado');
+      const r = await fetch('/api/library/share', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+        body: JSON.stringify({ songId: String(song.id), email }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(((out as any)?.error || (out as any)?.detail || 'No pude compartir la canción.').toString());
+      }
+      onToast?.(
+        (out as any)?.already
+          ? 'Esa canción ya estaba compartida con ese correo.'
+          : 'Canción compartida: ya aparece en Mis canciones de esa cuenta.',
+      );
+      setShareOpen(false);
+      setShareEmail('');
+    } catch (e) {
+      setShareMsg(e instanceof Error ? e.message : 'No pude compartir la canción.');
+    } finally {
+      setShareBusy(false);
     }
   };
 
@@ -6174,6 +6213,17 @@ function SongOptionsSheet({
                             <ChevronRight className="w-5 h-5 text-slate-500" />
                           </button>
                         ) : null}
+                        <button
+                          className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
+                          onClick={() => { setShareOpen(true); setShareMsg(''); }}
+                          disabled={isBusy}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Share2 className="w-5 h-5 text-sky-300" />
+                            <span className="text-slate-100 font-semibold">Compartir a otra cuenta</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                        </button>
                         <button className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors" onClick={download} disabled={isBusy}>
                           <div className="flex items-center gap-3">
                             {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
@@ -6408,6 +6458,14 @@ function SongOptionsSheet({
                             <div className="mt-3 text-slate-100 font-semibold text-sm">Cambiar voz (clon)</div>
                           </button>
                         ) : null}
+                        <button
+                          className="rounded-3xl border border-sky-400/30 bg-sky-400/5 p-4 hover:bg-sky-400/10 transition-colors text-left"
+                          onClick={() => { setShareOpen(true); setShareMsg(''); }}
+                          disabled={isBusy}
+                        >
+                          <Share2 className="w-5 h-5 text-sky-300" />
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Compartir a otra cuenta</div>
+                        </button>
                         <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={download} disabled={isBusy}>
                           {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
                           <div className="mt-3 text-slate-100 font-semibold text-sm">Descargar MP3</div>
@@ -7569,6 +7627,58 @@ function SongOptionsSheet({
           </div>
         </div>
       )}
+
+          {shareOpen && (
+            <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
+              <button
+                className="absolute inset-0 w-full h-full"
+                onClick={() => {
+                  if (!shareBusy) setShareOpen(false);
+                }}
+                aria-label="Cerrar"
+              />
+              <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+                  <div className="text-white font-extrabold">Compartir a otra cuenta</div>
+                  <button
+                    onClick={() => {
+                      if (!shareBusy) setShareOpen(false);
+                    }}
+                    className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-200"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="p-4">
+                  <div className="text-slate-400 text-xs">
+                    Escribe el Gmail de la otra cuenta de LucIAna. La canción aparecerá en su sección Mis canciones.
+                  </div>
+                  <input
+                    value={shareEmail}
+                    onChange={(e) => setShareEmail(e.target.value)}
+                    placeholder="correo@gmail.com"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    className="mt-3 w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-sky-400/50"
+                  />
+                  {shareMsg ? (
+                    <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-[12px] font-semibold text-rose-100">
+                      {shareMsg}
+                    </div>
+                  ) : null}
+                  <button
+                    onClick={() => shareSong().catch(() => {})}
+                    disabled={shareBusy}
+                    className="mt-4 w-full h-12 rounded-2xl bg-sky-500 hover:bg-sky-400 disabled:opacity-60 text-white font-extrabold flex items-center justify-center gap-2"
+                  >
+                    <Share2 className="w-5 h-5" />
+                    {shareBusy ? 'Compartiendo…' : 'Compartir canción'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
       {showChangeVoice && (
         <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
