@@ -16405,6 +16405,8 @@ const adminHandler = (() => {
   };
 })();
 
+// Permite que el API del robot reutilice el transcriptor de Gemini.
+let __robotTranscribeFn: any = null;
 const aiHandler = (() => {
   function send(res: any, status: number, body: any) {
     res.statusCode = status;
@@ -17551,6 +17553,7 @@ const aiHandler = (() => {
     if (a === "generate-lyrics") return handleGenerateLyrics(req, res);
     return send(res, 404, { error: "Ruta no encontrada" });
   };
+  __robotTranscribeFn = transcribeLyricsWithGemini;
 })();
 
 const lucianaBotHandler = (() => {
@@ -23448,6 +23451,26 @@ const integrationsHandler = (() => {
     if (action === "voice-status") {
       if (method !== "GET") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa GET." });
       return handleVoiceStatus(req, res);
+    }
+
+    if (action === "transcribe-lyrics") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      const tbBody: any = (await readJsonBodySafe(req)).value || {};
+      const tUrl = String(tbBody.audio_url || tbBody.uploadUrl || tbBody.upload_url || "").trim();
+      if (!/^https:\/\//i.test(tUrl)) return sendJson(res, 400, { error: "invalid_audio_url", message: "Falta audio_url (https)." });
+      if (typeof __robotTranscribeFn !== "function") return sendJson(res, 503, { error: "transcribe_unavailable", message: "Transcripcion no configurada." });
+      try {
+        const ar = await fetch(tUrl);
+        if (!ar.ok) return sendJson(res, 502, { error: "audio_unreachable", status: ar.status, message: "No pude descargar el audio." });
+        const buf = await ar.arrayBuffer();
+        const ct = String(tbBody.mime_type || tbBody.mimeType || ar.headers.get("content-type") || "audio/mpeg");
+        const tr: any = await __robotTranscribeFn(buf, ct);
+        const txt = String(tr?.lyrics || tr?.text || "").trim();
+        if (!tr?.ok || !txt) return sendJson(res, 502, { error: "transcribe_failed", message: String(tr?.userMessage || tr?.error || "No se pudo transcribir el audio.") });
+        return sendJson(res, 200, { ok: true, lyrics: txt });
+      } catch (e) {
+        return sendJson(res, 502, { error: "transcribe_error", message: e instanceof Error ? e.message : String(e) });
+      }
     }
     return sendJson(res, 404, {
       error: "not_found",
