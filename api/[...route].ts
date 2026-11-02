@@ -9092,6 +9092,26 @@ const libraryHandler = (() => {
     return send(res, 200, { song: data, already: false });
   }
 
+  // ¿Esta canción mía se compartió con otras cuentas? (para preguntar al borrar)
+  async function handleShareInfo(req: any, res: any) {
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+    const songId = (pickQuery(req, "songId") || "").trim();
+    if (!songId) return send(res, 400, { error: "Falta songId" });
+    try {
+      const { data, error } = await auth.admin
+        .from(TABLE)
+        .select("id")
+        .eq("metadata->>sharedFrom", songId)
+        .is("deleted_at", null);
+      if (error) return send(res, 500, { error: "No pude revisar las copias", detail: error.message });
+      const rows = Array.isArray(data) ? data : [];
+      return send(res, 200, { ok: true, copies: rows.length });
+    } catch (e) {
+      return send(res, 500, { error: "Error revisando copias", detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   // Comparte una canción con otra cuenta de LucIAna: copia la fila (audio incluido)
   // a la biblioteca del receptor, marcando quién la compartió.
   async function handleShare(req: any, res: any) {
@@ -9135,6 +9155,18 @@ const libraryHandler = (() => {
       }
       if (targetId === String(auth.user.id)) {
         return send(res, 400, { error: "Ese correo es el tuyo. Escribe el correo de la otra persona." });
+      }
+
+      // Solo entre cuentas con paquete activo (regla del dueño).
+      const planMio = await getUserPlan(auth.admin, auth.user.id).catch(() => null as any);
+      if (!planMio?.plan_active) {
+        return send(res, 403, { error: "Necesitas un paquete activo para compartir canciones." });
+      }
+      const planDestino = await getUserPlan(auth.admin, targetId).catch(() => null as any);
+      if (!planDestino?.plan_active) {
+        return send(res, 403, {
+          error: `La cuenta ${rawEmail} no tiene un paquete activo. Solo se puede compartir con cuentas que tengan paquete vigente.`,
+        });
       }
 
       // Ya compartida antes: no duplicar
@@ -9296,7 +9328,21 @@ const libraryHandler = (() => {
 
     const { error } = await query;
     if (error) return send(res, 500, { error: "No pude eliminar", detail: error.message });
-    return send(res, 200, { ok: true });
+
+    // Si la canción se compartió y el usuario lo pidió, se borra también en las otras cuentas.
+    const alsoDeleteShared = Boolean(body?.alsoDeleteShared ?? body?.also_delete_shared);
+    if (alsoDeleteShared) {
+      try {
+        await auth.admin
+          .from(TABLE)
+          .update({ deleted_at: new Date().toISOString(), deleted_reason: "shared_owner_deleted" })
+          .eq("type", ITEM_TYPE)
+          .eq("metadata->>sharedFrom", id)
+          .is("deleted_at", null);
+      } catch {}
+    }
+
+    return send(res, 200, { ok: true, alsoDeletedShared: alsoDeleteShared });
   }
 
   async function handleRestore(req: any, res: any) {
@@ -9696,6 +9742,7 @@ const libraryHandler = (() => {
     if (a === "create-from-r2") return handleCreateFromR2(req, res);
     if (a === "import-audio") return handleImportAudio(req, res);
     if (a === "share") return handleShare(req, res);
+    if (a === "share-info") return handleShareInfo(req, res);
     if (a === "zip-stems") return handleZipStems(req, res);
     if (a === "delete") return handleDelete(req, res);
     if (a === "restore") return handleRestore(req, res);

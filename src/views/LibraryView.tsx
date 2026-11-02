@@ -20,7 +20,7 @@ interface LibraryViewProps {
   onPlaySong: (s: SongItem) => void;
   onToast?: (message: string) => void;
   onOpenElenco?: (s: SongItem) => void;
-  onDeleteSong?: (id: string) => void;
+  onDeleteSong?: (id: string, alsoDeleteShared?: boolean) => void;
   onRestoreSong?: (id: string) => void;
   onPurgeSong?: (id: string) => void;
   onRefreshSongs?: () => void;
@@ -76,8 +76,39 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     }
   }, [canciones.length]);
 
+  const [deleteAsk, setDeleteAsk] = useState<{ song: SongItem; copies: number } | null>(null);
+
+  const borrarDefinitivo = async (alsoDeleteShared: boolean) => {
+    const target = deleteAsk?.song ?? null;
+    setDeleteAsk(null);
+    if (!target || !onDeleteSong) return;
+    try {
+      await onDeleteSong(target.id, alsoDeleteShared);
+      onRefreshSongs?.();
+    } catch (error) {
+      console.error('Error al eliminar canción:', error);
+      alert('No se pudo eliminar la canción');
+    }
+  };
+
   const handleDeleteSong = async (song: SongItem | null) => {
     if (!song || !onDeleteSong) return;
+    // Si la canción se compartió, preguntamos si también se borra en la otra cuenta.
+    let copies = 0;
+    try {
+      const t = await getAccessToken();
+      if (t.ok) {
+        const r = await fetch(`/api/library/share-info?songId=${encodeURIComponent(String(song.id))}`, {
+          headers: { authorization: `Bearer ${t.token}` },
+        });
+        const out = await r.json().catch(() => ({}));
+        copies = Number((out as any)?.copies || 0);
+      }
+    } catch {}
+    if (copies > 0) {
+      setDeleteAsk({ song, copies });
+      return;
+    }
     try {
       await onDeleteSong(song.id);
       onRefreshSongs?.();
@@ -3578,6 +3609,38 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             onPurgeSong?.(id);
           }}
         />
+      )}
+
+      {deleteAsk && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-end md:items-center justify-center">
+          <button className="absolute inset-0 w-full h-full" onClick={() => setDeleteAsk(null)} aria-label="Cerrar" />
+          <div className="relative w-full md:max-w-[520px] bg-[#0b0f16] border border-white/10 rounded-t-3xl md:rounded-3xl overflow-hidden">
+            <div className="p-4 border-b border-white/10">
+              <div className="text-white font-extrabold">¿Eliminar también la copia compartida?</div>
+            </div>
+            <div className="p-4">
+              <div className="text-slate-300 text-sm">
+                Esta canción se compartió con {deleteAsk.copies === 1 ? 'otra cuenta' : `${deleteAsk.copies} cuentas`}.
+                ¿Quieres que también desaparezca de {deleteAsk.copies === 1 ? 'esa cuenta' : 'esas cuentas'}?
+              </div>
+              <button
+                onClick={() => borrarDefinitivo(true).catch(() => {})}
+                className="mt-4 w-full h-12 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold"
+              >
+                Sí, borrar en todas
+              </button>
+              <button
+                onClick={() => borrarDefinitivo(false).catch(() => {})}
+                className="mt-2 w-full h-12 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-extrabold"
+              >
+                No, solo en mi cuenta
+              </button>
+              <button onClick={() => setDeleteAsk(null)} className="mt-2 w-full h-10 rounded-2xl text-slate-400 text-sm">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {downloadsModalOpen && (

@@ -3870,7 +3870,7 @@ export default function App() {
     };
   }, [isAuthed]);
 
-  const deleteCancion = async (songId: string) => {
+  const deleteCancion = async (songId: string, alsoDeleteShared = false) => {
     try {
       const t = await getAccessToken();
       if (!t.ok) {
@@ -3880,7 +3880,7 @@ export default function App() {
       const r = await fetch('/api/library/delete', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ id: songId }),
+        body: JSON.stringify({ id: songId, alsoDeleteShared: Boolean(alsoDeleteShared) }),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
