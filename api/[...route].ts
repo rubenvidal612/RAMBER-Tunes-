@@ -23313,6 +23313,9 @@ const integrationsHandler = (() => {
       credits_charged: Number(row.cost || 0) || 0,
       error_code: pickString(d, ["errorCode", "error_code"]) || null,
       error_message: pickString(d, ["errorMessage", "error_message"]) || null,
+      // diagnostico temporal: que responde realmente el proveedor
+      provider_status: provider?.res?.status || 0,
+      provider_raw: phrase ? undefined : JSON.stringify(voRoot || {}).slice(0, 700),
     });
   }
 
