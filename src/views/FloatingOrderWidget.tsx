@@ -280,7 +280,7 @@ export function FloatingOrderWidget() {
                   top: pos.y,
                   width: 340,
                   maxWidth: 'calc(100vw - 16px)',
-                  ...(mini ? { height: 48 } : { maxHeight: '70vh' }),
+                  ...(mini ? { height: confirmando ? 'auto' : 48 } : { maxHeight: '70vh' }),
                 }
           }
         >
@@ -312,7 +312,12 @@ export function FloatingOrderWidget() {
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => setConfirmando(true)}
+              onClick={() => {
+                setMini(false);
+                setMaxi(false);
+                setAbierto(true);
+                setConfirmando(true);
+              }}
               className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-200 hover:bg-red-500/30"
               aria-label="Cerrar"
             >

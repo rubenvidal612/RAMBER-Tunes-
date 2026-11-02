@@ -16639,13 +16639,16 @@ const aiHandler = (() => {
       "Eres un experto en transcripción de audio difícil (con ruido, eco, baja calidad y voces mezcladas). " +
       "Debes limpiar el ruido mentalmente y enfocarte en la coherencia de las frases. " +
       "No inventes contenido: si una palabra no se entiende, usa [inaudible]. " +
-      "Entrega únicamente la letra, sin explicaciones.";
+      "Entrega únicamente la letra ya estructurada con corchetes, sin explicaciones.";
     const prompt =
-      "Transcribe únicamente la letra cantada en este audio. " +
-      "Respeta saltos de línea. " +
-      "Si identificas estructura, usa etiquetas como [Verso], [Coro], [Puente]. " +
-      "Si NO hay voz/canto, responde exactamente: SIN_LETRA. " +
-      "Si el audio es de plano ilegible y no se puede transcribir, responde exactamente: ILEGIBLE.";
+      "Transcribe la letra cantada de este audio y devuélvela SIEMPRE estructurada con corchetes.\n" +
+      "1) Secciones: pon cada parte en corchetes y en su propia línea, por ejemplo [Intro], [Verso 1], [Pre-Coro], [Coro], [Verso 2], [Puente], [Outro].\n" +
+      "2) Debajo de cada sección va su letra, respetando los saltos de línea.\n" +
+      "3) Si escuchas gritos, susurros, risas o partes HABLADAS (no cantadas), márcalo también en corchetes, en su propia línea o dentro de la línea, por ejemplo: [Grito], [Hablando], [Frase hablada], [Susurro], [Risa].\n" +
+      "4) No inventes contenido: si una palabra no se entiende, escribe [inaudible].\n" +
+      "5) No agregues explicaciones ni comentarios fuera de los corchetes.\n" +
+      "Si NO hay voz/canto, responde exactamente: SIN_LETRA.\n" +
+      "Si el audio es de plano ilegible, responde exactamente: ILEGIBLE.";
 
     const mime = normalizeAudioMimeType(mimeType) || "audio/mpeg";
     const baseModels = [
@@ -16945,6 +16948,10 @@ const aiHandler = (() => {
           file,
           language: "es",
           response_format: "text",
+          prompt:
+            "Transcribe la letra cantada. Usa corchetes para las secciones: [Intro], [Verso 1], [Coro], [Puente], [Outro]. " +
+            "Marca en corchetes los gritos o partes habladas: [Grito], [Hablando], [Susurro], [Risa]. " +
+            "Si una palabra no se entiende, escribe [inaudible].",
         }),
         remaining
       );
@@ -17367,6 +17374,16 @@ const aiHandler = (() => {
     }
   }
 
+  // Asegura que la letra salga con corchetes aunque el modelo no los ponga.
+  function estructurarLetra(raw: any) {
+    const t = String(raw || "").replace(/\r\n/g, "\n").trim();
+    if (!t) return t;
+    if (/\[[^\]]+\]/.test(t)) return t;
+    const bloques = t.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+    if (bloques.length <= 1) return "[Verso 1]\n" + t;
+    return bloques.map((b, i) => `[Verso ${i + 1}]\n${b}`).join("\n\n");
+  }
+
   async function handleTranscribeLyrics(req: any, res: any) {
     const method = (req.method || "").toUpperCase();
     let transcribeSource: "create" | "bot" = "create";
@@ -17576,7 +17593,7 @@ const aiHandler = (() => {
               );
               if (primaryKeys) console.log(`[${eid}] transcribe-lyrics primary_keys=${short(primaryKeys, 240)}`);
             } catch {}
-            return safeFinalize(200, "success", { ok: true, lyrics });
+            return safeFinalize(200, "success", { ok: true, lyrics: estructurarLetra(lyrics) });
           }
           const errStr = out && typeof out.error === "string" ? out.error : "";
           primaryErrorMessage = errStr;
