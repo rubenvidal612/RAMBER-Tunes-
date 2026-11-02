@@ -9167,7 +9167,6 @@ const libraryHandler = (() => {
         model_version: (mine as any).model_version ?? null,
         metadata: meta,
         is_cover: Boolean((mine as any).is_cover),
-        is_public: false,
       });
       if (insErr) return send(res, 500, { error: "No pude compartirla", detail: insErr.message });
 
