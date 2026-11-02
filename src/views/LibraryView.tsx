@@ -6316,7 +6316,7 @@ function SongOptionsSheet({
                           >
                             <div className="flex items-center gap-3">
                               <Sparkles className="w-5 h-5 text-slate-200" />
-                              <span className="text-slate-100 font-semibold">Crear Cover (voz Suno, pide frase)</span>
+                              <span className="text-slate-100 font-semibold">Crear Cover (pide frase)</span>
                             </div>
                             <ChevronRight className="w-5 h-5 text-slate-500" />
                           </button>
@@ -6553,7 +6553,7 @@ function SongOptionsSheet({
                             disabled={isBusy}
                           >
                             <Sparkles className="w-5 h-5 text-slate-200" />
-                            <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover (voz Suno, pide frase)</div>
+                            <div className="mt-3 text-slate-100 font-semibold text-sm">Crear Cover (pide frase)</div>
                           </button>
                         ) : null}
 
