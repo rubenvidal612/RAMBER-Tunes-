@@ -23013,7 +23013,7 @@ const integrationsHandler = (() => {
       const pRoot: any = (provider && provider.data && typeof provider.data === "object") ? provider.data : {};
       const d: any = (pRoot.data && typeof pRoot.data === "object") ? pRoot.data : pRoot;
       if (!d || Object.keys(d).length === 0) {
-        console.log("[voice-status] proveedor sin datos status=" + (provider?.res?.status || 0) + " body=" + JSON.stringify(pRoot).slice(0, 400));
+        console.log("[song-status] proveedor sin datos status=" + (provider?.res?.status || 0) + " body=" + JSON.stringify(pRoot).slice(0, 400));
       }
     const rawStatus = d?.status ?? d?.successFlag ?? provider?.data?.status ?? "";
     const tracks = extractTracks(provider?.data);
@@ -23293,7 +23293,11 @@ const integrationsHandler = (() => {
       return sendJson(res, 502, { error: "provider_unavailable", message: "No pude consultar el estado." });
     }
 
-    const d = provider?.data?.data || {};
+      const voRoot: any = (provider && provider.data && typeof provider.data === "object") ? provider.data : {};
+      const d: any = (voRoot.data && typeof voRoot.data === "object") ? voRoot.data : voRoot;
+      if (!d || Object.keys(d).length === 0) {
+        console.log("[voice-status] proveedor sin datos status=" + (provider?.res?.status || 0) + " body=" + JSON.stringify(voRoot).slice(0, 400));
+      }
     const rawStatus = d?.status ?? d?.successFlag ?? provider?.data?.status ?? "";
     const status = normalizeProviderStatus(rawStatus);
     const phrase = pickString(d, ["phrase", "verifyPhrase", "verify_phrase", "text", "validationPhrase", "validation_phrase"]);
