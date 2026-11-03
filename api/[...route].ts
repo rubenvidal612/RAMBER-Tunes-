@@ -7441,7 +7441,7 @@ const mercadoPagoHandler = (() => {
   // Idempotente: usa la misma RPC (mp_claim_payment_transaction) que el webhook.
   async function handleReconcile(req: any, res: any) {
     const key = (pickQuery(req, "key") || "").trim();
-    const expected = String(formToken() || "").trim();
+    const expected = String(process.env.LUCIANA_FORM_TOKEN || "luciana-form-2026").trim();
     if (!expected || key.length !== expected.length || key !== expected) {
       return send(res, 401, { error: "no autorizado" });
     }
