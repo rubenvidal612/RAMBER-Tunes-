@@ -7502,6 +7502,18 @@ const mercadoPagoHandler = (() => {
         .limit(1);
       const batch = Array.isArray((batchQ as any)?.data) ? (batchQ as any).data[0] : null;
 
+      // Los planes (inicio/productor) no crean lote: se marcan con mp_payment_claims.
+      let claimPrevio: any = null;
+      if (!batch) {
+        const cq = await admin
+          .from("mp_payment_claims")
+          .select("payment_id, credits_granted, batch_id")
+          .eq("payment_id", paymentId)
+          .limit(1);
+        claimPrevio = Array.isArray((cq as any)?.data) ? (cq as any).data[0] : null;
+      }
+      const yaAplicado = Boolean(batch) || (claimPrevio && Number(claimPrevio.credits_granted || 0) > 0);
+
       const item: any = {
         fecha: String(p?.date_created || "").slice(0, 16),
         paymentId,
@@ -7511,11 +7523,11 @@ const mercadoPagoHandler = (() => {
         kind,
         packKey,
         credits,
-        yaAcreditado: Boolean(batch),
+        yaAcreditado: yaAplicado,
         accion: "nada",
       };
 
-      if (batch) {
+      if (yaAplicado) {
         yaTienen += 1;
         items.push(item);
         continue;
