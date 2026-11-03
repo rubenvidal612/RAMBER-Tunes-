@@ -22,6 +22,10 @@
     {
       "path": "/api/cron/refresh-suno-voices",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/mercadopago/reconcile?key=luciana-form-2026&dry=0&days=3",
+      "schedule": "0 */6 * * *"
     }
   ],
   "headers": [

@@ -7557,8 +7557,67 @@ const mercadoPagoHandler = (() => {
       }
       const rowsArr = Array.isArray((rpcCall as any)?.data) ? (rpcCall as any).data : [];
       const out: any = rowsArr[0] || {};
+
+      // Verificamos que de verdad haya quedado registrado (la RPC puede devolver
+      // "ok" sin haber guardado nada; ya pasó con dos compras).
+      const batchCheck = await admin
+        .from("credit_batches")
+        .select("id, original_credits")
+        .eq("payment_id", paymentId)
+        .limit(1);
+      const claimCheck = await admin
+        .from("mp_payment_claims")
+        .select("payment_id, credits_granted")
+        .eq("payment_id", paymentId)
+        .limit(1);
+      const batchRow = Array.isArray((batchCheck as any)?.data) ? (batchCheck as any).data[0] : null;
+      const claimRow = Array.isArray((claimCheck as any)?.data) ? (claimCheck as any).data[0] : null;
+      const claimOk = claimRow && Number(claimRow.credits_granted || 0) > 0;
+
+      if (!batchRow && !claimOk && kind === "mini_pack" && credits > 0) {
+        // Acreditación directa (mismo efecto que la RPC para mini_pack).
+        const packQ = await admin
+          .from("credit_packs")
+          .select("id, credits_amount, validity_days")
+          .eq("pack_key", packKey)
+          .limit(1);
+        const pack = Array.isArray((packQ as any)?.data) ? (packQ as any).data[0] : null;
+        const validityD = Number(pack?.validity_days || validityDays || 30);
+        const expIso = new Date(Date.now() + validityD * 24 * 3600 * 1000).toISOString();
+        const insBatch = await admin.from("credit_batches").insert({
+          user_id: userId,
+          pack_id: pack?.id ?? (packId || null),
+          pack_key: packKey || null,
+          payment_id: paymentId,
+          original_credits: credits,
+          remaining_credits: credits,
+          purchased_at: new Date().toISOString(),
+          expires_at: expIso,
+          is_expired: false,
+          amount_mxn: amount || 0,
+          note: "Pago Mercado Pago " + paymentId + " (recuperado)",
+        }).select("id");
+        const newBatch = Array.isArray((insBatch as any)?.data) ? (insBatch as any).data[0] : null;
+        await admin.from("mp_payment_claims").insert({
+          payment_id: paymentId,
+          user_id: userId,
+          kind: "mini_pack",
+          pack_key: packKey || null,
+          pack_id: pack?.id ?? (packId || null),
+          amount_mxn: amount || 0,
+          credits_granted: credits,
+          batch_id: newBatch?.id ?? null,
+          claimed_at: new Date().toISOString(),
+        });
+        acreditados += 1;
+        item.accion = "acreditado (directo)";
+        item.granted = credits;
+        items.push(item);
+        continue;
+      }
+
       acreditados += 1;
-      item.accion = "acreditado";
+      item.accion = batchRow || claimOk ? "acreditado" : "sin rastro (revisar)";
       item.granted = Number(out?.credits_granted || 0) || credits;
       item.already = Boolean(out?.already_processed);
       items.push(item);
