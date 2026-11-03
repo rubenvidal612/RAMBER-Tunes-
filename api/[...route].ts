@@ -21679,7 +21679,12 @@ document.getElementById('send').addEventListener('click',async function(){
 <div class="card" id="saleCard">
   <label>Agregar venta manual</label>
   <div style="display:flex;gap:8px"><input id="saleAmount" placeholder="Monto $" inputmode="decimal" style="margin:0"><input id="saleDesc" placeholder="¿Qué vendiste? (ej. Rola para Juan)" style="margin:0"></div>
-  <div style="display:flex;gap:8px;margin-top:8px"><input id="saleMethod" placeholder="transferencia / efectivo" style="margin:0"><button class="btn sec" id="addSale" style="width:auto;padding:0 14px">Agregar</button></div>
+  <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+    <button type="button" class="btn sec pagoMetodo" data-m="transferencia" style="flex:1;min-width:120px;padding:10px">&#128179; Transferencia</button>
+    <button type="button" class="btn sec pagoMetodo" data-m="efectivo" style="flex:1;min-width:120px;padding:10px">&#128181; Efectivo</button>
+    <button class="btn sec" id="addSale" style="flex:1;min-width:110px;padding:10px">Agregar venta</button>
+  </div>
+  <input type="hidden" id="saleMethod" value="transferencia">
   <div id="saleList" class="small" style="margin-top:10px"></div>
 </div>
 </div>
@@ -22244,14 +22249,34 @@ async function borrarVenta(id){
   await fetch('/api/form/sale?t='+encodeURIComponent(T),{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,me:ME})}).catch(function(){});
   cargarVentas();cargarReporte();
 }
+var _METODO='transferencia';
+function marcarMetodo(m){
+  _METODO=m;
+  document.getElementById('saleMethod').value=m;
+  var bs=document.querySelectorAll('.pagoMetodo');
+  for(var i=0;i<bs.length;i++){
+    var on=bs[i].getAttribute('data-m')===m;
+    bs[i].style.borderColor=on?'#7c3aed':'';
+    bs[i].style.color=on?'#c084fc':'';
+    bs[i].style.fontWeight=on?'800':'';
+    bs[i].style.background=on?'rgba(124,58,237,.16)':'';
+  }
+}
+(function(){
+  var bs=document.querySelectorAll('.pagoMetodo');
+  for(var i=0;i<bs.length;i++){
+    bs[i].addEventListener('click',function(){marcarMetodo(this.getAttribute('data-m'));});
+  }
+  marcarMetodo('transferencia');
+})();
 document.getElementById('addSale').addEventListener('click',function(){
   var a=document.getElementById('saleAmount').value.trim();
   var d=document.getElementById('saleDesc').value.trim();
-  var m=document.getElementById('saleMethod').value.trim()||'transferencia';
+  var m=(_METODO||'transferencia');
   if(!a||!(Number(a)>0))return show('bad','Escribe el monto de la venta.');
   if(!d)return show('bad','Escribe qué vendiste.');
   guardarVenta('',a,d,m);
-  document.getElementById('saleAmount').value='';document.getElementById('saleDesc').value='';document.getElementById('saleMethod').value='';
+  document.getElementById('saleAmount').value='';document.getElementById('saleDesc').value='';marcarMetodo('transferencia');
 });
 cargarVentas();
 cargarVendedores();
