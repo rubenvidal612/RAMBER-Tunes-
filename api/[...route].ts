@@ -20240,6 +20240,7 @@ const formHandler = (() => {
       shared_with: Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [],
       share_whatsapp: Boolean(ex.share_whatsapp),
       error: String(ex.error || ""),
+      deleted: Boolean(ex.deleted),
     };
   }
 
@@ -20366,6 +20367,7 @@ const formHandler = (() => {
     const visibles = rows
       .map(orderView)
       .filter((o: any) => {
+        if (o.deleted) return false; // eliminado del panel, pero conservado para Ventas
         if (!me) return true;
         if (!o.owner_email) return true; // pedidos viejos sin dueño: visibles para todos
         return o.owner_email === me || o.shared_with.includes(me);
@@ -20624,9 +20626,16 @@ const formHandler = (() => {
         await (db as any).storage.from(bucket).remove([ap]);
       }
     } catch {}
-    const del = await db.from("suno_tasks").delete().eq("task_id", rowKey).eq("kind", FORM_ORDER_KIND);
-    if ((del as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
-    return sendJson(res, 200, { ok: true });
+    // Borrado suave: la fila se conserva para que la venta siga apareciendo en el reporte.
+    const cur = await db.from("suno_tasks").select("extra").eq("task_id", rowKey).limit(1);
+    const curEx = (((cur as any)?.data?.[0]?.extra) || {}) as any;
+    const upd = await db
+      .from("suno_tasks")
+      .update({ extra: { ...curEx, deleted: true, deleted_at: new Date().toISOString() } })
+      .eq("task_id", rowKey)
+      .eq("kind", FORM_ORDER_KIND);
+    if ((upd as any)?.error) return sendJson(res, 500, { error: "delete_failed" });
+    return sendJson(res, 200, { ok: true, soft: true });
   }
 
   // POST /api/form/share { t, id, email }  -> comparte un pedido con otra cuenta
