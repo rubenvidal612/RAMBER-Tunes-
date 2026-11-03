@@ -9301,11 +9301,14 @@ const libraryHandler = (() => {
       }
 
       // Solo entre cuentas con paquete activo (regla del dueño).
-      const planMio = await getUserPlan(auth.admin, auth.user.id).catch(() => null as any);
+      // El dueño y los administradores quedan exentos: nunca necesitan paquete.
+      const soyAdmin = isAdminEmail(String(auth.user.email || ""));
+      const planMio = soyAdmin ? ({ plan_active: true } as any) : await getUserPlan(auth.admin, auth.user.id).catch(() => null as any);
       if (!planMio?.plan_active) {
         return send(res, 403, { error: "Necesitas un paquete activo para compartir canciones." });
       }
-      const planDestino = await getUserPlan(auth.admin, targetId).catch(() => null as any);
+      const destinoEsAdmin = isAdminEmail(rawEmail);
+      const planDestino = destinoEsAdmin ? ({ plan_active: true } as any) : await getUserPlan(auth.admin, targetId).catch(() => null as any);
       if (!planDestino?.plan_active) {
         return send(res, 403, {
           error: `La cuenta ${rawEmail} no tiene un paquete activo. Solo se puede compartir con cuentas que tengan paquete vigente.`,
