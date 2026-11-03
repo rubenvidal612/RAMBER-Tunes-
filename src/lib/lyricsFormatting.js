@@ -245,14 +245,35 @@ function wrapLines(text) {
   return out;
 }
 
+// Convierte etiquetas en español a inglés para no duplicar ([Verso 1] -> [Verse 1]).
+function toEnglishTags(text) {
+  const mapOne = (t) => {
+    const k = String(t || '').trim();
+    const low = k.toLowerCase();
+    if (/^verso\b/.test(low)) return k.replace(/verso/i, 'Verse');
+    if (/^pre-?coro\b/.test(low)) return k.replace(/^pre-?coro/i, 'Pre-Chorus');
+    if (/^coro\b/.test(low)) return k.replace(/^coro/i, 'Chorus');
+    if (/^estribillo\b/.test(low)) return k.replace(/^estribillo/i, 'Chorus');
+    if (/^puente\b/.test(low)) return k.replace(/^puente/i, 'Bridge');
+    return k;
+  };
+  return String(text || '')
+    .split('\n')
+    .map((line) => {
+      const m = /^\[([^\]]+)\]\s*$/.exec(String(line || '').trim());
+      if (!m) return line;
+      return '[' + mapOne(m[1]) + ']';
+    })
+    .join('\n');
+}
 function formatLyricsWithSections(raw) {
   try {
     const cleaned = stripLyricsFencesAndNoise(raw);
     const src = String(cleaned || '').trim();
     if (!src) return '';
-    const preExisting = normalizeLyricsTags(src);
+    const preExisting = toEnglishTags(normalizeLyricsTags(src));
     const preLines = preExisting.split('\n').map((s) => s.trim());
-    const hasExistingTags = preLines.some((l) => /^\[(Verse|Chorus|Pre-Chorus|Bridge|Outro|Intro|Instrumental Break|Coro|Estribillo|Puente|Intro|Outro)(\s.*)?\]$/i.test(l));
+    const hasExistingTags = preLines.some((l) => /^\[(Verse|Chorus|Pre-Chorus|Bridge|Outro|Intro|Instrumental Break|Coro|Estribillo|Puente|Verso|Pre-Verso)(\s.*)?\]$/i.test(l));
     if (hasExistingTags) {
       return preExisting;
     }
@@ -388,6 +409,7 @@ function formatLyricsForEditing(raw) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    toEnglishTags,
     normalizeLyricsTags,
     formatLyricsWithSections,
     formatLyricsForEditing,
@@ -397,6 +419,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 export {
+  toEnglishTags,
   normalizeLyricsTags,
   formatLyricsWithSections,
   formatLyricsForEditing,
