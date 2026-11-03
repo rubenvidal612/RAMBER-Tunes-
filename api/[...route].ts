@@ -20503,7 +20503,7 @@ const formHandler = (() => {
     const duenoForm = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
     const enviado = clean(body.owner_email || query(req, "o"), 120).toLowerCase();
     // Si el link no trae correo, el pedido se asigna al dueno. NUNCA se rechaza al cliente.
-    const ownerEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(enviado) ? enviado : duenoForm;
+    const ownerEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(enviado) ? enviado : "";
     if (name.length < 2) return sendJson(res, 400, { error: "missing_name", message: "Escribe tu nombre." });
     if (whatsapp.replace(/\D/g, "").length < 10) {
       return sendJson(res, 400, { error: "missing_whatsapp", message: "Escribe tu WhatsApp (10 dígitos)." });
@@ -20951,6 +20951,34 @@ const formHandler = (() => {
     };
     await db.from("suno_tasks").update({ extra: extra2 }).eq("task_id", rowKey);
     return sendJson(res, 200, { ok: true, status: extra2.status, songs: extra2.songs });
+  }
+
+  // POST /api/form/take { t, id, me } -> el vendedor toma un pedido nuevo
+  async function takeOrder(req: any, res: any) {
+    if (!sameToken(query(req, "t"), formToken())) return sendJson(res, 401, { error: "unauthorized" });
+    const body = await readBody(req);
+    const id = clean(body?.id, 60);
+    if (!id) return sendJson(res, 400, { error: "missing_id" });
+    const me = whoFrom(req, body);
+    const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
+    const db = await admin();
+    if (!db) return sendJson(res, 500, { error: "db_unavailable" });
+    const rowKey = id.startsWith("form_") ? id : `form_${id}`;
+    const q = await db.from("suno_tasks").select("task_id, extra").eq("task_id", rowKey).limit(1);
+    const row = (q as any)?.data?.[0];
+    if (!row) return sendJson(res, 404, { error: "not_found" });
+    const ex = (row.extra && typeof row.extra === "object" ? row.extra : {}) as any;
+    const actual = String(ex.owner_email || "").trim().toLowerCase();
+    if (actual && actual !== dueno && actual !== me) {
+      return sendJson(res, 409, { error: "taken", message: "Ese pedido ya lo tomó otro vendedor." });
+    }
+    const shared = Array.from(new Set([...(Array.isArray(ex.shared_with) ? ex.shared_with : []), me]));
+    const upd = await db
+      .from("suno_tasks")
+      .update({ extra: { ...ex, owner_email: me, transferred_to: me, shared_with: shared, taken_at: new Date().toISOString() } })
+      .eq("task_id", rowKey);
+    if ((upd as any)?.error) return sendJson(res, 500, { error: "update_failed" });
+    return sendJson(res, 200, { ok: true, me });
   }
 
   // POST /api/form/paid { t, id } -> el dueno marca el pedido como pagado
@@ -22180,7 +22208,7 @@ return '<details class="item"'+(ABIERTOS[o.id]?' open':'')+' data-acc="'+esc(o.i
     '<b class="acc-name">'+esc(o.name||'(sin nombre)')+'</b>'+_clone+
     (o.style?'<span class="acc-style">'+esc(o.style)+'</span>':'')+
     '<span class="tag '+st+'" style="'+_pillStyle+'">'+_pillTxt+'</span></summary>'+
-    '<div class="acc-body">'+
+    '<div class="acc-body">'+((!IS_OWNER && ME && !o.owner_email) ? '<button class="btn" data-take="'+esc(o.id)+'" style="margin:10px 0;width:100%">Tomar pedido</button>' : '')+
     '<div class="meta">'+esc(o.whatsapp)+' &middot; '+esc(o.style||'-')+' &middot; voz '+(o.vocal_gender==='m'?'hombre':'mujer')+' &middot; letra: '+esc(o.lyrics_mode)+'</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+chips+'</div>'+hacer+
     (o.error?'<div class="meta" style="color:var(--bad)">'+esc(o.error)+'</div>':'')+
@@ -22515,6 +22543,22 @@ function marcarMetodo(m){
   }
   marcarMetodo('transferencia');
 })();
+document.addEventListener('click',async function(e){
+  var t=e.target&&e.target.closest?e.target.closest('[data-take]'):null;
+  if(!t)return;
+  e.preventDefault();
+  var id=t.getAttribute('data-take');
+  if(!id)return;
+  t.disabled=true;
+  t.textContent='Tomando...';
+  try{
+    var r=await fetch('/api/form/take?t='+encodeURIComponent(T)+'&me='+encodeURIComponent(ME),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,me:ME})});
+    var j=await r.json().catch(function(){return{};});
+    if(!r.ok){show('bad',j.message||j.error||'No pude tomar el pedido.');t.disabled=false;t.textContent='Tomar pedido';return;}
+    show('ok','Pedido tomado. Ya aparece en tus pedidos.');
+    load();
+  }catch(err){show('bad','Error de red.');t.disabled=false;t.textContent='Tomar pedido';}
+});
 document.getElementById('addSale').addEventListener('click',function(){
   var a=document.getElementById('saleAmount').value.trim();
   var d=document.getElementById('saleDesc').value.trim();
@@ -22777,6 +22821,10 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     if (action === "sales" || action === "sale") return sales(req, res);
     if (action === "notes") { if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" }); return setNotes(req, res); }
     if (action === "update") { if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" }); return updateOrder(req, res); }
+    if (action === "take") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      return takeOrder(req, res);
+    }
     if (action === "paid") {
       if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
       return markPaid(req, res);
