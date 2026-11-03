@@ -1963,6 +1963,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           }
           return;
         }
+        // La regeneración falló: hacemos lo mismo que volver al paso 1, que sí funciona.
+        const ok = await startNewValidationTask(nextClientAttemptId);
+        if (ok) {
+          setWizardStep(2);
+          return;
+        }
         const msg = isTemporaryErrorMessage(raw)
           ? "No pudimos preparar la frase. Hubo un problema temporal. Intenta nuevamente."
           : "No pudimos preparar la frase. Intenta nuevamente.";
@@ -2644,16 +2650,6 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 </div>
               ) : null}
 
-              <div className="sample-actions">
-                <button
-                  disabled={!validation.taskId || validation.loading || regenPhraseBusy || phraseCountdown.active || phraseRecording.recording}
-                  onClick={() => handleRegeneratePhrase().catch(() => {})}
-                >
-                  <ArrowRight size={18} /> Regenerar frase
-                </button>
-              </div>
-              <div className="wizard-info"><Info size={19} /><span>Usa Regenerar frase solo si el sistema te pide una frase nueva o si la frase ya no funciona.</span></div>
-
               {phraseRecording.error ? <div className="wizard-info"><Info size={19} /><span>{phraseRecording.error}</span></div> : null}
 
               {phraseCountdown.active ? (
@@ -2678,6 +2674,17 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                   )}
                 </div>
               ) : null}
+
+              <div className="sample-actions" style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  disabled={validation.loading || regenPhraseBusy || phraseCountdown.active || phraseRecording.recording}
+                  onClick={() => handleRegeneratePhrase().catch(() => {})}
+                >
+                  <ArrowRight size={18} /> Regenerar frase
+                </button>
+              </div>
+              <div className="wizard-info"><Info size={19} /><span>Usa Regenerar frase solo si el sistema te pide una frase nueva o si la frase ya no funciona.</span></div>
 
               {phraseRecording.recording && phraseMeterStream ? <VoiceMeter stream={phraseMeterStream} mode="indicator" /> : null}
               {phraseRecording.recording ? <small className="phrase-help">Grabando… {formatTime(phraseRecording.seconds)}</small> : null}
