@@ -7436,6 +7436,148 @@ const mercadoPagoHandler = (() => {
     });
   }
 
+  // GET /api/mercadopago/reconcile?key=TOKEN&dry=1&days=15
+  // Revisa los pagos aprobados de MercadoPago y acredita los que quedaron sin créditos.
+  // Idempotente: usa la misma RPC (mp_claim_payment_transaction) que el webhook.
+  async function handleReconcile(req: any, res: any) {
+    const key = (pickQuery(req, "key") || "").trim();
+    const expected = String(process.env.LUCIANA_FORM_TOKEN || "").trim();
+    if (!expected || key.length !== expected.length || key !== expected) {
+      return send(res, 401, { error: "no autorizado" });
+    }
+
+    const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || "";
+    if (!mpToken) return send(res, 500, { error: "Falta MERCADO_PAGO_ACCESS_TOKEN en Vercel" });
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseService) return send(res, 500, { error: "Faltan variables de Supabase" });
+
+    const createClient = await getSupabaseCreateClient();
+    const admin = createClient(supabaseUrl, supabaseService, { auth: { persistSession: false } });
+
+    const dry = (pickQuery(req, "dry") || "") === "1";
+    const days = Math.min(90, Math.max(1, Number(pickQuery(req, "days") || 15) || 15));
+    const hoy = new Date();
+    const desde = new Date(hoy.getTime() - days * 24 * 3600 * 1000);
+    const iso = (d: Date) => d.toISOString().replace(/\.\d+Z$/, "Z");
+    const url =
+      "https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=100" +
+      "&range=date_created&begin_date=" + encodeURIComponent(iso(desde)) +
+      "&end_date=" + encodeURIComponent(iso(hoy));
+
+    const mpRes = await fetch(url, { headers: { authorization: "Bearer " + mpToken } });
+    const mpJson: any = await mpRes.json().catch(() => ({}));
+    if (!mpRes.ok) {
+      return send(res, 502, { error: "MercadoPago no respondió", code: mpRes.status, detail: mpJson });
+    }
+
+    const results: any[] = Array.isArray(mpJson?.results) ? mpJson.results : [];
+    const items: any[] = [];
+    let aprobados = 0;
+    let yaTienen = 0;
+    let acreditados = 0;
+    let sinMetadata = 0;
+    let errores = 0;
+
+    for (const p of results) {
+      const status = String(p?.status || "");
+      if (status !== "approved") continue;
+      aprobados += 1;
+      const paymentId = String(p?.id ?? "");
+      const meta = p?.metadata || {};
+      const userId = String(meta?.user_id || meta?.userId || "").trim();
+      const kind = String(meta?.kind || "songs");
+      const packKey = String(meta?.pack_key || meta?.packKey || "").toLowerCase();
+      const amount = Number(p?.transaction_amount ?? meta?.amount_mxn ?? 0);
+      const credits = Number(meta?.credits ?? 0);
+      const validityRaw = Number(meta?.validity_days ?? meta?.validityDays);
+      const validityDays = Number.isFinite(validityRaw) && validityRaw > 0 ? validityRaw : 30;
+      const packIdRaw = meta?.pack_id ?? meta?.packId ?? null;
+      const packId = Number.isFinite(Number(packIdRaw)) ? Number(packIdRaw) : 0;
+
+      const batchQ = await admin
+        .from("credit_batches")
+        .select("id, original_credits, remaining_credits")
+        .eq("payment_id", paymentId)
+        .limit(1);
+      const batch = Array.isArray((batchQ as any)?.data) ? (batchQ as any).data[0] : null;
+
+      const item: any = {
+        fecha: String(p?.date_created || "").slice(0, 16),
+        paymentId,
+        status,
+        amount,
+        userId: userId ? userId.slice(0, 8) : "",
+        kind,
+        packKey,
+        credits,
+        yaAcreditado: Boolean(batch),
+        accion: "nada",
+      };
+
+      if (batch) {
+        yaTienen += 1;
+        items.push(item);
+        continue;
+      }
+      if (!userId) {
+        sinMetadata += 1;
+        item.accion = "sin user_id en metadata";
+        items.push(item);
+        continue;
+      }
+      if (kind === "share_unlock") {
+        item.accion = "share_unlock (no da créditos)";
+        items.push(item);
+        continue;
+      }
+      if (dry) {
+        item.accion = "se acreditaría";
+        items.push(item);
+        continue;
+      }
+
+      const rpcCall = await admin.rpc("mp_claim_payment_transaction", {
+        p_payment_id: paymentId,
+        p_user_id: userId,
+        p_kind: kind,
+        p_pack_key: packKey || "unknown",
+        p_pack_id: packId || 0,
+        p_amount_mxn: amount || 0,
+        p_credits_param: credits || 0,
+        p_validity_days: validityDays,
+        p_note: "Reconciliación manual Mercado Pago " + paymentId,
+      });
+      const rpcErr = (rpcCall as any)?.error;
+      if (rpcErr) {
+        errores += 1;
+        item.accion = "error: " + String(rpcErr?.message || rpcErr).slice(0, 160);
+        items.push(item);
+        continue;
+      }
+      const rowsArr = Array.isArray((rpcCall as any)?.data) ? (rpcCall as any).data : [];
+      const out: any = rowsArr[0] || {};
+      acreditados += 1;
+      item.accion = "acreditado";
+      item.granted = Number(out?.credits_granted || 0) || credits;
+      item.already = Boolean(out?.already_processed);
+      items.push(item);
+    }
+
+    return send(res, 200, {
+      ok: true,
+      dry,
+      days,
+      revisados: results.length,
+      aprobados,
+      yaTienenCreditos: yaTienen,
+      acreditadosAhora: acreditados,
+      sinMetadata,
+      errores,
+      items,
+    });
+  }
+
   async function handleWebhook(req: any, res: any) {
     if (!["POST", "GET"].includes((req.method || "").toUpperCase())) return send(res, 405, { error: "Método no permitido" });
 
@@ -7886,6 +8028,7 @@ const mercadoPagoHandler = (() => {
 
     if (a === "create-preference") return handleCreatePreference(req, res);
     if (a === "verify") return handleVerify(req, res);
+    if (a === "reconcile") return handleReconcile(req, res);
     if (a === "webhook") return handleWebhook(req, res);
     if (a === "claim-free") return handleClaimFree(req, res);
 
