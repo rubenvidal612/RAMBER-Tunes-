@@ -9267,7 +9267,11 @@ const libraryHandler = (() => {
     const songId = typeof body?.songId === "string" ? body.songId.trim() : "";
     const rawEmail = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
     if (!songId) return send(res, 400, { error: "Falta la canción que quieres compartir" });
-    if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(rawEmail)) return send(res, 400, { error: "Ese correo no parece válido" });
+    const emailValido = (() => {
+  const partes = String(rawEmail || "").split("@");
+  return partes.length === 2 && partes[0].length > 0 && partes[1].indexOf(".") > 0;
+})();
+if (!emailValido) return send(res, 400, { error: "Ese correo no parece válido" });
 
     try {
       const { data: mine, error: mineErr } = await auth.admin
