@@ -920,6 +920,7 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
     const unlimited = isAdminEmail(profileEmail);
 
     let next = round2(Math.max(0, current + delta));
+    let sobranteSinTope = 0;
     if (delta > 0 && !unlimited) {
       let batchCredits = 0;
       try {
@@ -929,7 +930,11 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
       }
       const cap = round2(MAX_ACCUMULATED_CREDITS);
       const maxProfileAllowed = round2(Math.max(0, cap - round2(batchCredits)));
+      const objetivo = next;
       next = round2(Math.min(next, maxProfileAllowed));
+      // Lo que el tope no deja meter al perfil se guarda en un lote, para no perderlo
+      // (antes un reembolso se recortaba en silencio y el cliente no recibía nada).
+      sobranteSinTope = round2(Math.max(0, objetivo - next));
     }
     
     // Actualizar créditos y fecha de vencimiento si se están agregando créditos
@@ -947,7 +952,27 @@ async function adjustUserCredits(admin: any, userId: string, deltaCredits: numbe
       patch.credits_expires_at = expiresIso;
       
       const { error } = await admin.from("profiles").update(patch).eq("id", userId);
-      if (!error) return { ok: true as const, credits: next };
+      if (!error) {
+        if (sobranteSinTope > 0) {
+          try {
+            const exp = new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString();
+            await admin.from("credit_batches").insert({
+              user_id: userId,
+              pack_id: null,
+              pack_key: "reembolso",
+              payment_id: "refund_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+              original_credits: sobranteSinTope,
+              remaining_credits: sobranteSinTope,
+              purchased_at: new Date().toISOString(),
+              expires_at: exp,
+              is_expired: false,
+              amount_mxn: 0,
+              note: "Reembolso (por tope de 2000)",
+            });
+          } catch (_) {}
+        }
+        return { ok: true as const, credits: next };
+      }
       return { ok: false as const, error: String(error.message || "No pude actualizar créditos.") };
     } else {
       // Para restar créditos, usar la función existente
