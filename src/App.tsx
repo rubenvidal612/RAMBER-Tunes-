@@ -3146,6 +3146,19 @@ export default function App() {
     let busy = false;
     let forceQueued = false;
     let disposed = false;
+    // Al abrir la app se despausan las tareas que quedaron pausadas por errores:
+    // puede que en el servidor ya hayan terminado y el usuario solo vea "en cola".
+    try {
+      const rawP = window.localStorage.getItem(pendingListKey);
+      const parsedP = rawP ? JSON.parse(rawP) : null;
+      if (Array.isArray(parsedP) && parsedP.some((x: any) => x && x.retryPaused)) {
+        window.localStorage.setItem(
+          pendingListKey,
+          JSON.stringify(parsedP.map((x: any) => (x && x.retryPaused ? { ...x, retryPaused: false, failCount: 0 } : x))),
+        );
+      }
+    } catch {}
+
     const readList = () => {
       try {
         const raw = window.localStorage.getItem(pendingListKey);
@@ -3276,7 +3289,13 @@ export default function App() {
 
     const readNextPending = () => {
       const list = migrateLegacyIfNeeded();
-      const item = Array.isArray(list) ? list.find((x: any) => !x.retryPaused) : null;
+      const arr = Array.isArray(list) ? list : [];
+      let item = arr.find((x: any) => !x.retryPaused) || null;
+      if (!item && arr.length > 0) {
+        // Todas pausadas: reintentamos la que lleva más tiempo sin consultarse,
+        // así ninguna tarea se queda "en cola" para siempre.
+        item = [...arr].sort((a: any, b: any) => Number(a?.lastErrorAt || 0) - Number(b?.lastErrorAt || 0))[0];
+      }
       if (!item) return null;
       const taskId = typeof item?.taskId === 'string' ? item.taskId.trim() : '';
       if (!taskId) return null;
