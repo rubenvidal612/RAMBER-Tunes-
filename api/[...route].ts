@@ -24014,6 +24014,40 @@ const integrationsHandler = (() => {
       }
       return sendJson(res, 200, { ok: true, revisadas: filas.length, revividas: revividas.length, nombres: revividas, siguen_caidas: siguen.length });
     }
+
+    // Recupera una cancion que Suno YA termino pero que el webhook nunca guardo:
+    // consulta a Suno y le inyecta el payload al handler del webhook.
+    if (action === "recover-task") {
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed", message: "Usa POST." });
+      const rcBody: any = (await readJsonBodySafe(req)).value || {};
+      const rcTask = String(rcBody.task_id || rcBody.taskId || "").trim();
+      if (!rcTask) return sendJson(res, 400, { error: "missing_task_id", message: "Falta task_id." });
+      const rcProv = await providerFetchJson("/api/v1/generate/record-info?taskId=" + encodeURIComponent(rcTask), { method: "GET" });
+      const rcRoot: any = (rcProv && rcProv.data && typeof rcProv.data === "object") ? rcProv.data : {};
+      const rcD: any = (rcRoot.data && typeof rcRoot.data === "object") ? rcRoot.data : rcRoot;
+      const rcStatus = String(rcD?.status || "").toUpperCase();
+      if (rcStatus !== "SUCCESS") {
+        return sendJson(res, 409, { error: "not_ready", status: rcStatus || "unknown", message: "Suno todavia no termina esta cancion." });
+      }
+      const rcTracks: any[] = Array.isArray(rcD?.response?.sunoData) ? rcD.response.sunoData : [];
+      if (!rcTracks.length) return sendJson(res, 502, { error: "no_audio", message: "Suno no devolvio audios." });
+      const rcPayload = { code: 200, msg: "success", data: { task_id: rcTask, callbackType: "complete", data: rcTracks, images: [] } };
+      const rcCap: any = { status: 0, body: null };
+      const rcRes: any = {
+        statusCode: 200,
+        setHeader() {},
+        end(b: any) {
+          rcCap.status = this.statusCode || 200;
+          try { rcCap.body = JSON.parse(String(b)); } catch { rcCap.body = String(b); }
+        },
+      };
+      try {
+        await sunoWebhookHandler({ method: "POST", body: rcPayload, headers: {} }, rcRes);
+      } catch (e) {
+        return sendJson(res, 502, { error: "recover_failed", message: e instanceof Error ? e.message : String(e) });
+      }
+      return sendJson(res, 200, { ok: true, webhook_status: rcCap.status, resultado: rcCap.body, tracks: rcTracks.length });
+    }
     return sendJson(res, 404, {
       error: "not_found",
       message:
