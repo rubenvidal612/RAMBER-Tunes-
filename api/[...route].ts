@@ -20908,7 +20908,18 @@ const formHandler = (() => {
     const includeWhatsapp = body?.includeWhatsapp === true || body?.includeWhatsapp === "true" || body?.includeWhatsapp === 1;
     await db
       .from("suno_tasks")
-      .update({ extra: { ...ex, shared_with: [email], transferred_to: email, share_whatsapp: includeWhatsapp } })
+      .update({
+        extra: {
+          ...ex,
+          // El pedido queda asignado al vendedor: el anterior deja de verlo y el
+          // dueño lo sigue viendo siempre (es administrador).
+          owner_email: email,
+          shared_with: [email],
+          transferred_to: email,
+          transferred_at: new Date().toISOString(),
+          share_whatsapp: includeWhatsapp,
+        },
+      })
       .eq("task_id", rowKey);
     return sendJson(res, 200, { ok: true, shared_with: [email], share_whatsapp: includeWhatsapp });
   }
