@@ -3717,7 +3717,15 @@ export default function App() {
         if (hasToken) headersS['Authorization'] = `Bearer ${tokenStr}`;
         const out = await fetchPendingTaskJson(`/api/suno/task?taskId=${encodeURIComponent(pending.taskId)}&kind=${encodeURIComponent(pending.kind || "generate")}`, headersS);
         const data = out?.data;
-        const taskState = readSunoTaskState(data);
+        let taskState: { status: string; failed: boolean; error: string };
+        try {
+          taskState = readSunoTaskState(data);
+        } catch {
+          // Respuesta sin estado todavía (la tarea sigue en cola del proveedor):
+          // no es un error, solo hay que volver a preguntar.
+          patchTask(pending.taskId, { lastError: '', failCount: 0, lastErrorAt: null });
+          return;
+        }
         const status = taskState.status;
 
         if (status) {
