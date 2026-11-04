@@ -5628,19 +5628,15 @@ function ApprovedCreateContent(props) {
     if (draftKey) {
       try { window.localStorage.removeItem(draftKey); } catch {}
     }
-    // El audio ya subido SÍ se conserva: así puedes generar la misma canción en
-    // otros géneros sin volver a subir el archivo.
-    const audioQueSeQueda = {
-      audioSource: data.audioSource,
-      audioInputMode: data.audioInputMode,
-    };
     setBaseSongIds({ taskId: '', audioId: '' });
     setStep(0);
     setCreativity(50);
     setInstruction(50);
     setAudioWeight(25);
     setToast("");
-    setData({ ...makeInitialData(), ...audioQueSeQueda });
+    setData(makeInitialData());
+    setAudioUploadUrl('');
+    setAudioUploadPath('');
     setIsUploadingAudio(false);
     setUploadProgress(0);
     setAudioReuploadNeeded(false);
@@ -5684,6 +5680,34 @@ function ApprovedCreateContent(props) {
     }, 350);
     return () => window.clearTimeout(id);
   }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds]);
+
+  // Guarda el borrador ahora mismo (sin esperar los 350 ms del debounce).
+  // Se usa al terminar una generación para no perder letra/audio al navegar.
+  const saveDraftNow = (stepOverride) => {
+    try {
+      if (!draftKey) return;
+      const safeData = { ...data, file: null };
+      const payload = {
+        step: typeof stepOverride === "number" ? stepOverride : step,
+        creativity,
+        instruction,
+        audioWeight,
+        data: safeData,
+        hadAudioReference: Boolean(
+          safeData.audioSource === 'upload' &&
+            (Boolean(data.file) || Boolean(audioUploadUrl) || Number(uploadProgress || 0) > 0),
+        ),
+        audioUploadUrl,
+        audioUploadPath,
+        baseSongTaskId: baseSongIds.taskId,
+        baseSongAudioId: baseSongIds.audioId,
+        savedAt: Date.now(),
+      };
+      const rawPayload = JSON.stringify(payload);
+      window.localStorage.setItem(draftKey, rawPayload);
+      if (latestDraftKey) window.localStorage.setItem(latestDraftKey, rawPayload);
+    } catch {}
+  };
 
   // Guardado inmediato al cerrar o cambiar de app (el debounce de 350 ms puede
   // llegar tarde si la página se recarga sola por una actualización).
@@ -6392,6 +6416,7 @@ function ApprovedCreateContent(props) {
         clearGenerationSession();
         // No se limpia el formulario: el audio y la letra se conservan para poder
         // generar otra version sin volver a subir el audio ni reescribir la letra.
+        saveDraftNow(0);
         setStep(0);
         if (onGoLibrary) onGoLibrary();
         return true;
@@ -6551,6 +6576,7 @@ function ApprovedCreateContent(props) {
       clearGenerationSession();
       // No se limpia el formulario: el audio y la letra se conservan para poder
       // generar otra version sin volver a subir el audio ni reescribir la letra.
+      saveDraftNow(0);
       setStep(0);
       if (onGoLibrary) onGoLibrary();
       return true;
@@ -6634,7 +6660,7 @@ function ApprovedCreateContent(props) {
     if (typeof onShowAlert === 'function') {
       onShowAlert({
         title: '¿Crear otra canción?',
-        message: 'Se limpia la letra y el estilo para empezar otra canción. Tu audio subido se conserva, así puedes hacer la misma canción en otros géneros sin volver a subirlo.',
+        message: 'Se borra todo (letra, estilo y el audio subido) para empezar una canción nueva. Si solo quieres cambiar el género, no uses este botón: cambia el estilo y genera otra vez.',
         tone: 'warning',
         actions: [
           { label: 'Cancelar', kind: 'cancel' },
