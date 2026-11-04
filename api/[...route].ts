@@ -20614,8 +20614,12 @@ const formHandler = (() => {
       .map(orderView)
       .filter((o: any) => {
         if (o.deleted) return false; // eliminado del panel, pero conservado para Ventas
+        // El dueño (administrador) ve SIEMPRE todos los pedidos, incluso los que
+        // ya transfirió a un vendedor. Así recuerda a quién se los dio y puede
+        // reasignarlos a otro sin perderlos de vista.
+        if (esDueno) return true;
         if (!me) return true;
-        if (!o.owner_email) return true; // pedidos viejos sin dueño: visibles para todos
+        if (!o.owner_email) return true; // pedidos nuevos sin dueño: visibles para todos
         return o.owner_email === me || o.shared_with.includes(me);
       })
       // El vendedor solo ve los ultimos 4 digitos del WhatsApp; el dueno ve todo.
