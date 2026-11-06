@@ -20570,6 +20570,22 @@ const formHandler = (() => {
       return sendJson(res, 500, { error: "save_failed", message: "No pude guardar tu pedido." });
     }
 
+    // ===== Híbrido: la canción se genera SOLA en cuanto llega el pedido =====
+    // Si el cliente pidió voz clonada NO se genera: primero hay que crear su personaje.
+    // Si algo falla, el pedido se queda en la lista como siempre (no se le avisa ningún error).
+    try {
+      const planPedido = String(body.plan || "rola").trim().toLowerCase();
+      const puedeAuto = planPedido !== "rola_voz";
+      if (puedeAuto) {
+        const baseGen = absoluteUrlFromReq(req, "/api/form/generate") + "?t=" + encodeURIComponent(formToken());
+        void fetch(baseGen, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id }),
+        }).catch(() => {});
+      }
+    } catch {}
+
     // Aviso a WhatsApp del dueno (no bloquea la respuesta)
     try {
       const aPhone = String(process.env.WHATSAPP_ALERT_PHONE || "5219931520202").replace(/\D/g, "");
@@ -21734,7 +21750,7 @@ ${inner}
     const inner = `
 <h1 id="title">Formulario de tu canci&oacute;n</h1>
 <p class="sub" id="sub">Cu&eacute;ntanos lo que necesitas. En cuanto la tengamos, te la mandamos para escucharla.</p>
-<div class="aviso">&#9888;&#65039; <b>Importante:</b> no puedes usar nombres de canciones famosas ni de artistas, ni subir audios de canciones que ya existen. Tu canci&oacute;n tiene que ser <b>original</b>.</div>
+<div class="aviso">&#9888;&#65039; <b>Importante:</b> no puedes usar nombres de canciones famosas, ni de artistas, ni <b>letras de canciones famosas</b>, ni subir audios de canciones que ya existen. Tu canci&oacute;n tiene que ser <b>original</b>.</div>
 <div class="msg" id="msg"></div>
 <div class="card">
   <label>Tu nombre</label>
