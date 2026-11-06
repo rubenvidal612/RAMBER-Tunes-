@@ -21676,7 +21676,8 @@ ${botones}
     }
   }
   // ---------- paginas HTML (sin tocar la app de React) ----------
-  function page(title: string, inner: string) {
+  function page(title: string, inner: string, tema: "dark" | "light" = "dark") {
+    const luz = tema === "light";
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
@@ -21684,7 +21685,7 @@ ${botones}
 .selchk{display:none;position:absolute;top:8px;right:8px;width:19px;height:19px;accent-color:#ffd54a;margin:0;cursor:pointer}
 #list.selmode .selchk{display:inline-block}
 @keyframes neonPulse{0%,100%{box-shadow:0 0 10px var(--rowc,#ff3b3b),inset 5px 0 0 var(--rowc,#ff3b3b)}50%{box-shadow:0 0 30px var(--rowc,#ff3b3b),inset 5px 0 0 var(--rowc,#ff3b3b)}}
-:root{--bg:#0d0a14;--card:#171221;--line:#2b2340;--gold:#f4c15c;--txt:#f4f1fa;--dim:#a99fc0;--ok:#4fd18b;--bad:#ff6b6b}
+${luz ? ":root{--bg:#f4f5f7;--card:#ffffff;--line:#e4e6eb;--gold:#111827;--txt:#111827;--dim:#6b7280;--ok:#059669;--bad:#dc2626}" : ":root{--bg:#0d0a14;--card:#171221;--line:#2b2340;--gold:#f4c15c;--txt:#f4f1fa;--dim:#a99fc0;--ok:#4fd18b;--bad:#ff6b6b}"}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px}
 .logo{display:flex;align-items:center;gap:10px;margin-bottom:22px}
@@ -21722,6 +21723,7 @@ details.item[open] .acc-arrow{transform:rotate(90deg)}
 .tag.done{color:var(--ok);border-color:#1e5136}
 .tag.failed{color:var(--bad);border-color:#5c2228}
 .small{font-size:13px;color:var(--dim)}
+${luz ? ":root{color-scheme:light};body{background:var(--bg)};.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 1px 3px rgba(16,24,40,.06)};label{color:#111827;font-weight:700;font-size:13px;margin:14px 0 8px};label:first-child{margin-top:0};input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:15px;color:#111827};input::placeholder,textarea::placeholder{color:#9ca3af};.opt{background:#fff;border:1px solid var(--line);border-radius:12px;color:#111827;font-weight:600;padding:12px};.opt.on{border-color:#2563eb;background:#eff4ff;color:#1d4ed8};.btn{background:#111827;color:#fff;border-radius:12px};.btn.sec{background:#fff;color:#111827;border:1px solid var(--line)};.msg.ok{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0};.msg.bad{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca};.tag{border-color:var(--line);color:var(--dim)};.tag.pending{color:#b45309;border-color:#fcd34d};.tag.done{color:#047857;border-color:#a7f3d0};.tag.failed{color:#b91c1c;border-color:#fecaca};h1{font-size:30px;letter-spacing:-.02em;color:#0b1220};p.sub{font-size:15px;color:#6b7280};.small{color:#6b7280}" : ""}
 </style></head><body><div class="wrap">
 <div class="logo"><img src="https://lucianamusic.app/logo-luciana-hd.svg" alt="LuciAna Music" style="height:46px;width:auto"></div>
 ${inner}
@@ -21918,7 +21920,7 @@ document.getElementById('send').addEventListener('click',async function(){
   }catch(e){b.disabled=false;b.textContent='Enviar mi pedido';show('bad','Sin conexi&oacute;n. Intenta de nuevo.');}
 });
 <\/script>`;
-    return page("Tu canción · Luciána Music", inner + js);
+    return page("Tu canción · Luciána Music", inner + js, "light");
   }
 
   function panelPage(token: string, vista: string = "pedidos", me: string = "", f: string = "", e: string = "") {
