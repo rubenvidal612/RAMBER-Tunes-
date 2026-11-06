@@ -20519,7 +20519,7 @@ const formHandler = (() => {
       return sendJson(res, 400, { error: "missing_lyrics", message: "Escribe tu letra (mínimo 20 caracteres)." });
     }
     if (mode === "ia" && story.length < 15) {
-      return sendJson(res, 400, { error: "missing_story", message: "Cuéntanos de qué trata (mínimo 15 caracteres)." });
+      return sendJson(res, 400, { error: "missing_story", message: "Escribe de qué trata tu canción en las instrucciones (mínimo 15 caracteres)." });
     }
     if (mode === "audio" && !audioPath) {
       return sendJson(res, 400, { error: "missing_audio", message: "Sube tu audio a capela." });
