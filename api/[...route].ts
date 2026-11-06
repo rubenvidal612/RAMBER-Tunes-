@@ -21702,6 +21702,7 @@ ${botones}
 #list.selmode .selchk{display:inline-block}
 @keyframes neonPulse{0%,100%{box-shadow:0 0 10px var(--rowc,#ff3b3b),inset 5px 0 0 var(--rowc,#ff3b3b)}50%{box-shadow:0 0 30px var(--rowc,#ff3b3b),inset 5px 0 0 var(--rowc,#ff3b3b)}}
 ${luz ? ":root{--bg:#f4f5f7;--card:#ffffff;--line:#e4e6eb;--gold:#111827;--txt:#111827;--dim:#6b7280;--ok:#059669;--bad:#dc2626}" : ":root{--bg:#0d0a14;--card:#171221;--line:#2b2340;--gold:#f4c15c;--txt:#f4f1fa;--dim:#a99fc0;--ok:#4fd18b;--bad:#ff6b6b}"}
+html,body{overscroll-behavior-y:contain}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:640px;margin:0 auto;padding:20px 16px 60px}
 .logo{display:flex;align-items:center;gap:10px;margin-bottom:22px}
