@@ -20580,7 +20580,7 @@ const formHandler = (() => {
         const baseGen = absoluteUrlFromReq(req, "/api/form/generate") + "?t=" + encodeURIComponent(formToken());
         void fetch(baseGen, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-luciana-internal": formToken() },
           body: JSON.stringify({ id }),
         }).catch(() => {});
       }
@@ -22828,7 +22828,11 @@ document.getElementById('btnOk').addEventListener('click',async function(){
       return linkToken(req, res);
     }
     const PANEL_ONLY = ["list","sale","sales","report","sellers","seller","notes","stage","share","paid","delete","wm","generate","sync"];
-    if (PANEL_ONLY.indexOf(action) >= 0) {
+    // Llamadas internas del propio servidor (generación automática del formulario).
+    const llaveInterna = String((req.headers && (req.headers["x-luciana-internal"] || req.headers["X-Luciana-Internal"])) || "").trim();
+    const esLlamadaInterna = Boolean(llaveInterna) && sameToken(llaveInterna, formToken());
+
+    if (PANEL_ONLY.indexOf(action) >= 0 && !esLlamadaInterna) {
       const pa = await panelAuth(req);
       if (!pa) {
         return sendJson(res, 401, { error: "invalid_link", message: "Este link no es valido. Abre la pantalla desde la app." });
