@@ -21723,7 +21723,7 @@ details.item[open] .acc-arrow{transform:rotate(90deg)}
 .tag.done{color:var(--ok);border-color:#1e5136}
 .tag.failed{color:var(--bad);border-color:#5c2228}
 .small{font-size:13px;color:var(--dim)}
-${luz ? ":root{color-scheme:light}body{background:var(--bg)}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 1px 3px rgba(16,24,40,.06)}label{color:#111827;font-weight:700;font-size:13px;margin:14px 0 8px}label:first-child{margin-top:0}input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:15px;color:#111827}input::placeholder,textarea::placeholder{color:#9ca3af}.opt{background:#fff;border:1px solid var(--line);border-radius:12px;color:#111827;font-weight:600;padding:12px}.opt.on{border-color:#2563eb;background:#eff4ff;color:#1d4ed8}.btn{background:#111827;color:#fff;border-radius:12px}.btn.sec{background:#fff;color:#111827;border:1px solid var(--line)}.msg.ok{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}.msg.bad{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.tag{border-color:var(--line);color:var(--dim)}.tag.pending{color:#b45309;border-color:#fcd34d}.tag.done{color:#047857;border-color:#a7f3d0}.tag.failed{color:#b91c1c;border-color:#fecaca}h1{font-size:30px;letter-spacing:-.02em;color:#0b1220}p.sub{font-size:15px;color:#6b7280}.small{color:#6b7280}" : ""}
+${luz ? ":root{color-scheme:light}body{background:var(--bg)}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 1px 3px rgba(16,24,40,.06)}label{color:#111827;font-weight:700;font-size:13px;margin:14px 0 8px}label:first-child{margin-top:0}input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:15px;color:#111827}input::placeholder,textarea::placeholder{color:#9ca3af}.opt{background:#fff;border:1px solid var(--line);border-radius:12px;color:#111827;font-weight:600;padding:12px}.opt.on{border-color:#2563eb;background:#eff4ff;color:#1d4ed8}.btn{background:#111827;color:#fff;border-radius:12px}.btn.sec{background:#fff;color:#111827;border:1px solid var(--line)}.msg.ok{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}.msg.bad{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.tag{border-color:var(--line);color:var(--dim)}.tag.pending{color:#b45309;border-color:#fcd34d}.tag.done{color:#047857;border-color:#a7f3d0}.tag.failed{color:#b91c1c;border-color:#fecaca}h1{font-size:30px;letter-spacing:-.02em;color:#0b1220}p.sub{font-size:15px;color:#6b7280}.aviso{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:14px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin:0 0 16px;font-weight:500}.foot{text-align:center;color:#9ca3af;font-size:12px;margin:26px 0 8px;letter-spacing:.02em}.small{color:#6b7280}" : ""}
 </style></head><body><div class="wrap">
 <div class="logo"><img src="https://lucianamusic.app/logo-luciana-hd.svg" alt="LuciAna Music" style="height:46px;width:auto"></div>
 ${inner}
@@ -21732,8 +21732,9 @@ ${inner}
 
   function openPage(token: string) {
     const inner = `
-<h1 id="title">&iquest;Qu&eacute; canci&oacute;n te hacemos?</h1>
+<h1 id="title">Formulario de tu canci&oacute;n</h1>
 <p class="sub" id="sub">Cu&eacute;ntanos lo que necesitas. En cuanto la tengamos, te la mandamos para escucharla.</p>
+<div class="aviso">&#9888;&#65039; <b>Importante:</b> no puedes usar nombres de canciones famosas ni de artistas, ni subir audios de canciones que ya existen. Tu canci&oacute;n tiene que ser <b>original</b>.</div>
 <div class="msg" id="msg"></div>
 <div class="card">
   <label>Tu nombre</label>
@@ -21757,14 +21758,10 @@ ${inner}
 <div class="card">
   <label>La letra</label>
   <div class="opts" id="modo">
-  <div class="opt on" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola &middot; se respetan los tiempos del audio como base</span></div>
+  <div class="opt" data-m="audio">Subir mi audio<br><span class="small">Tu letra se escribe sola &middot; se respetan los tiempos del audio como base</span></div>
   <div class="opt" data-m="propia">Yo escribo la letra<br><span class="small">Pega tu letra</span></div>
   <div class="opt" data-m="ia">Tu letra<br><span class="small">Te la escribimos</span></div>
 </div>
-  <div id="campoIA">
-    <label>Cu&eacute;ntanos de qu&eacute; trata</label>
-    <textarea id="story" placeholder="Ej: es para mi mam&aacute; Carmen, cumple 60; le encantan las margaritas, el caf&eacute; de la ma&ntilde;ana y bailar en la cocina con mis hermanos."></textarea>
-  </div>
   <div id="campoLetra" style="display:none">
     <label>Tu letra</label>
     <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
@@ -21804,14 +21801,15 @@ ${inner}
   <div class="small" style="margin:-8px 0 0">Cualquier detalle extra que debamos saber. Puedes dejarlo vac&iacute;o.</div>
 </div>
 <button class="btn" id="send">Enviar mi pedido</button>
-<p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>`;
+<p class="small" style="text-align:center;margin-top:14px">No se cobra nada ahora. Primero la escuchas.</p>
+<p class="foot">Formulario &middot; LuciAna Music</p>`;
     const js = `
 <script>
-var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='m',modo='audio',audioPath='',PLAN='rola_voz';
+var T=${JSON.stringify(token)},OWNER=(new URLSearchParams(location.search).get('o')||'').toLowerCase(),voz='m',modo='',audioPath='',PLAN='rola_voz';
+function _fuente(){var o=(document.getElementById('obs')||{}).value||'';var s=(document.getElementById('style')||{}).value||'';return (o.trim()||s.trim());}
 function aplicarPlan(){
   var suya=PLAN==='rola_voz';
   if(suya){modo='audio';}
-  else if(modo==='audio'){modo='ia';}
   var bv=document.getElementById('boxVoz');if(bv)bv.style.display=suya?'none':'';
   var mm=document.getElementById('modo');
   if(mm){mm.querySelectorAll('.opt').forEach(function(el){
@@ -21819,7 +21817,7 @@ function aplicarPlan(){
     el.style.display=(suya!==esAudio)?'':'none';
     el.classList.toggle('on',el.dataset.m===modo);
   });}
-  document.getElementById('campoIA').style.display=modo==='ia'?'':'none';
+  var cIA=document.getElementById('campoIA');if(cIA)cIA.style.display=modo==='ia'?'':'none';
   document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';
   document.getElementById('campoAudio').style.display=modo==='audio'?'':'none';
   var pn=document.getElementById('planNota');
@@ -21878,7 +21876,7 @@ document.getElementById('audio').addEventListener('change',async function(){
 function seg(id,attr,on){var box=document.getElementById(id);box.querySelectorAll('.opt').forEach(function(el){el.classList.toggle('on',el.dataset[attr]===on);});}
 document.getElementById('voz').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;voz=t.dataset.v;seg('voz','v',voz);});
 document.getElementById('modo').addEventListener('click',function(e){var t=e.target.closest('.opt');if(!t)return;modo=t.dataset.m;seg('modo','m',modo);
-  document.getElementById('campoIA').style.display=modo==='ia'?'':'none';
+  var cIA=document.getElementById('campoIA');if(cIA)cIA.style.display=modo==='ia'?'':'none';
   document.getElementById('campoLetra').style.display=modo==='propia'?'':'none';
   document.getElementById('campoAudio').style.display=modo==='audio'?'':'none';});
 function show(kind,txt){var m=document.getElementById('msg');m.className='msg '+kind;m.innerHTML=txt;try{m.scrollIntoView({block:'nearest'});}catch(e){}}
@@ -21886,7 +21884,8 @@ document.getElementById('send').addEventListener('click',async function(){
   var b=this;var v=function(id){return (document.getElementById(id).value||'').trim();};
   if(v('name').length<2)return show('bad','Escribe tu nombre.');
   if(v('whatsapp').replace(/\\D/g,'').length<10)return show('bad','Escribe tu WhatsApp (10 d&iacute;gitos).');
-  if(modo==='ia'&&v('story').length<15)return show('bad','Cu&eacute;ntanos de qu&eacute; trata (con un poco m&aacute;s de detalle).');
+  if(!modo)return show('bad','Elige c&oacute;mo quieres la letra: subir tu audio, escribirla t&uacute; o que la escribamos nosotros.');
+  if(modo==='ia'&&_fuente().length<15)return show('bad','Escribe en las instrucciones de qu&eacute; trata tu canci&oacute;n (con un poco m&aacute;s de detalle).');
   if(modo==='propia'&&v('lyrics').length<20)return show('bad','Escribe tu letra.');
   if(v('style').trim().length<3)return show('bad','Escribe el g&eacute;nero (ej: Pop, Banda, Balada) y c&oacute;mo lo quieres: con guitarra, m&aacute;s r&aacute;pida, etc.');
   if(modo==='audio'&&!audioPath)return show('bad','Sube tu audio a capela y espera a que aparezca la letra.');
@@ -21896,7 +21895,7 @@ document.getElementById('send').addEventListener('click',async function(){
   try{
     var r=await fetch('/api/form/submit?t='+encodeURIComponent(T),{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({name:v('name'),whatsapp:v('whatsapp'),title:v('title'),style:v('style'),observations:v('obs'),
-        vocal_gender:voz,lyrics_mode:modo,story:v('story'),
+        vocal_gender:voz,lyrics_mode:modo,story:_fuente(),
         plan:PLAN,price_mxn:(PLAN==='rola_voz'?350:200),owner_email:OWNER,
         lyrics:(modo==='audio'?letraAudio:v('lyrics')),audio_path:audioPath})});
     var j=await r.json().catch(function(){return{};});
