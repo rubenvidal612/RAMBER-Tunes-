@@ -22193,7 +22193,7 @@ if(o.observations)det+='<div class="meta" style="margin-top:8px;border-left:3px 
   var hacer='';
   if(o.status!=='done'){
     if(SHOW_HACER){hacer='<button class="btn" style="margin-top:10px;flex:1" data-go="'+esc(o.id)+'">Hacer</button>';}
-    if(IS_OWNER){hacer+='<button class="btn sec" style="margin-top:10px;flex:1" data-manual="'+esc(o.id)+'">Hacer manual</button>';}
+    hacer+='<button class="btn sec" style="margin-top:10px;flex:1" data-manual="'+esc(o.id)+'">Hacer manual</button>';
     if(hacer)hacer='<div style="display:flex;gap:8px;margin-top:10px">'+hacer+'</div>';
   }
   var manual='<button class="btn sec" style="margin-top:8px;border-color:#1e5136;color:#4fd18b" data-paid="'+esc(o.id)+'">Pedido pagado manual</button>';

@@ -5588,14 +5588,24 @@ function ApprovedCreateContent(props) {
           }
         } catch {}
       }
-      if (!raw && latestDraftKey) {
-        // Actualización de la app o pestaña nueva: recuperamos lo último que escribió.
+      // Respaldo "último borrador": se usa si no hay borrador de esta ventana
+      // o si el respaldo es MÁS NUEVO que el de la ventana (antes se restauraba
+      // una canción vieja aunque hubiera una más reciente).
+      if (latestDraftKey) {
         try {
           const mirrorRaw = window.localStorage.getItem(latestDraftKey);
           if (mirrorRaw) {
             const mirror = JSON.parse(mirrorRaw);
             const age = Date.now() - Number(mirror?.savedAt || 0);
-            if (age >= 0 && age < 24 * 60 * 60 * 1000) raw = mirrorRaw;
+            const vigente = age >= 0 && age < 24 * 60 * 60 * 1000;
+            if (vigente) {
+              let actual = 0;
+              try {
+                const parsedRaw = raw ? JSON.parse(raw) : null;
+                actual = Number(parsedRaw?.savedAt || 0);
+              } catch {}
+              if (!raw || Number(mirror?.savedAt || 0) > actual) raw = mirrorRaw;
+            }
           }
         } catch {}
       }
@@ -5628,6 +5638,21 @@ function ApprovedCreateContent(props) {
     if (draftKey) {
       try { window.localStorage.removeItem(draftKey); } catch {}
     }
+    // También se borra el respaldo "último borrador" y los de otras ventanas:
+    // si no, la canción anterior volvía a aparecer al reabrir o al cambiar de pestaña.
+    try {
+      if (latestDraftKey) window.localStorage.removeItem(latestDraftKey);
+      if (legacyDraftKey) window.localStorage.removeItem(legacyDraftKey);
+      if (safeUserId) {
+        const prefijo = 'ramber.approved_create_draft_v1.uid_' + safeUserId;
+        const sobran = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i) || '';
+          if (k.indexOf(prefijo) === 0) sobran.push(k);
+        }
+        sobran.forEach((k) => { try { window.localStorage.removeItem(k); } catch {} });
+      }
+    } catch {}
     setBaseSongIds({ taskId: '', audioId: '' });
     setStep(0);
     setCreativity(50);
