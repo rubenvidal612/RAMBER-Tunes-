@@ -13536,26 +13536,69 @@ const shareSongAudioHandler = (() => {
           );
         });
 
+      // Duración real de la canción y de la marca de agua (para ponerla solo 3 veces).
+      const duracionDe = async (archivo: string): Promise<number> => {
+        return await new Promise<number>((resolve) => {
+          try {
+            const p = cproc.spawn(ffmpegPath, ["-i", archivo], { windowsHide: true });
+            let txt = "";
+            p.stderr?.on("data", (b: any) => { txt += String(b.toString("utf8")); });
+            p.on("close", () => {
+              const m = txt.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+              resolve(m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0);
+            });
+            p.on("error", () => resolve(0));
+          } catch {
+            resolve(0);
+          }
+        });
+      };
+      const durCancion = await duracionDe(inP);
+      const durMarca = (await duracionDe(wmP)) || 3.5;
+
+      // 3 apariciones: inicio, mitad y final.
+      const objetivos: number[] = [];
+      const D = durCancion > 0 ? durCancion : 0;
+      if (D > 0) {
+        objetivos.push(0);
+        objetivos.push(Math.max(0, D / 2));
+        objetivos.push(Math.max(0, D - durMarca - 1));
+      } else {
+        objetivos.push(0);
+      }
+      const unicos = Array.from(new Set(objetivos.map((t) => Math.round(t * 10) / 10))).sort((a, b) => a - b);
+      console.log("[wm] duracion=" + D.toFixed(2) + "s marca=" + durMarca.toFixed(2) + "s puntos=" + unicos.join(","));
+
       const CHUNK = 60;
       const MAX_CHUNKS = 20;
       const parts: string[] = [];
       for (let i = 0; i < MAX_CHUNKS; i++) {
         const startSec = i * CHUNK;
         const partP = pathmod.join(tmp, "part_" + i + ".mp3");
-        const args = [
-          "-y",
-          "-ss", String(startSec),
-          "-t", String(CHUNK),
-          "-i", inP,
-          "-i", wmP,
-          "-f", "lavfi", "-t", "26.52", "-i", "anullsrc=r=44100:cl=mono",
-          "-filter_complex",
-          "[1:a]aresample=44100,volume=4.5[v];[v][2:a]concat=n=2:v=0:a=1[bed];[bed]aloop=loop=-1:size=1323000[w];[0:a][w]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
-          "-map", "[a]",
-          "-threads", "1",
-          "-b:a", "192k",
-          partP,
-        ];
+        const finTrozo = startSec + CHUNK;
+        const enEsteTrozo = unicos.filter((t) => t >= startSec && t < finTrozo);
+        const args: string[] = ["-y", "-ss", String(startSec), "-t", String(CHUNK), "-i", inP];
+        if (enEsteTrozo.length > 0) {
+          // La marca entra solo en los puntos elegidos (no se repite más).
+          args.push("-i", wmP);
+          const cadenas: string[] = [];
+          const entradas: string[] = ["[0:a]"];
+          enEsteTrozo.forEach((t, k) => {
+            const ms = Math.max(0, Math.round((t - startSec) * 1000));
+            cadenas.push("[1:a]aresample=44100,volume=4.5,adelay=" + ms + "|" + ms + "[v" + k + "]");
+            entradas.push("[v" + k + "]");
+          });
+          cadenas.push(
+            entradas.join("") +
+              "amix=inputs=" + entradas.length +
+              ":duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95[a]",
+          );
+          args.push("-filter_complex", cadenas.join(";"), "-map", "[a]");
+        } else {
+          // Trozo limpio: solo se corta y se reencoda igual.
+          args.push("-map", "0:a");
+        }
+        args.push("-threads", "1", "-b:a", "192k", partP);
         try {
           await runFf(args, "chunk_" + i);
         } catch {
