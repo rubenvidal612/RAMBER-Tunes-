@@ -5684,9 +5684,14 @@ function SharedSongPage({ shareId }: { shareId: string }) {
     if (!a || !data?.audioUrl) return;
     try {
       const nextSrc = new URL(data.audioUrl, window.location.origin).toString();
-      if (a.src !== nextSrc) {
+      // Si el audio quedó en error (pasa al adelantar) o no cargó nada, hay que
+      // recargarlo aunque la URL sea la misma: antes se quedaba trabado.
+      const roto = Boolean(a.error) || a.readyState === 0;
+      if (a.src !== nextSrc || roto) {
+        const bust = nextSrc + (nextSrc.includes('?') ? '&' : '?') + 'r=' + Date.now();
         a.src = '';
-        a.src = nextSrc;
+        a.src = roto ? bust : nextSrc;
+        try { a.load(); } catch {}
       }
       if (isPlaying) {
         a.pause();
@@ -5891,6 +5896,15 @@ function SharedSongPage({ shareId }: { shareId: string }) {
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
         onError={() => setIsPlaying(false)}
+        onStalled={() => setIsPlaying(false)}
+        onSeeked={() => {
+          // Si el navegador cortó el audio al adelantar, se reanuda solo.
+          const a = audioRef.current;
+          if (!a) return;
+          if (!Number.isFinite(Number(a.duration))) {
+            try { a.load(); } catch {}
+          }
+        }}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
@@ -6152,9 +6166,14 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
     }
     try {
       const nextSrc = new URL(data.audioUrl, window.location.origin).toString();
-      if (a.src !== nextSrc) {
+      // Si el audio quedó en error (pasa al adelantar) o no cargó nada, hay que
+      // recargarlo aunque la URL sea la misma: antes se quedaba trabado.
+      const roto = Boolean(a.error) || a.readyState === 0;
+      if (a.src !== nextSrc || roto) {
+        const bust = nextSrc + (nextSrc.includes('?') ? '&' : '?') + 'r=' + Date.now();
         a.src = '';
-        a.src = nextSrc;
+        a.src = roto ? bust : nextSrc;
+        try { a.load(); } catch {}
       }
       if (isPlaying) {
         a.pause();
@@ -6409,6 +6428,15 @@ function SharedPreviewPage({ shareId }: { shareId: string }) {
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
         onError={() => setIsPlaying(false)}
+        onStalled={() => setIsPlaying(false)}
+        onSeeked={() => {
+          // Si el navegador cortó el audio al adelantar, se reanuda solo.
+          const a = audioRef.current;
+          if (!a) return;
+          if (!Number.isFinite(Number(a.duration))) {
+            try { a.load(); } catch {}
+          }
+        }}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
@@ -6907,6 +6935,15 @@ function SharedProfilePage({ profileId }: { profileId: string }) {
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
         onError={() => setIsPlaying(false)}
+        onStalled={() => setIsPlaying(false)}
+        onSeeked={() => {
+          // Si el navegador cortó el audio al adelantar, se reanuda solo.
+          const a = audioRef.current;
+          if (!a) return;
+          if (!Number.isFinite(Number(a.duration))) {
+            try { a.load(); } catch {}
+          }
+        }}
         onTimeUpdate={() => {
           const a = audioRef.current;
           if (!a) return;
