@@ -3632,7 +3632,7 @@ function StartStep({ data, setData, setToast, handlers }) {
         </div>
 
         <div className="decision-group">
-          <div className="decision-heading"><span>2</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso.</p></div></div>
+          <div className="decision-heading"><span>2</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso. Para el motor LucIAna V1 el audio puede durar hasta 4:45.</p></div></div>
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
@@ -4536,9 +4536,9 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
             {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'suno').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
             <div className="model-group-label">LucIAna</div>
             {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'treblo').map(([name, detail]) => (
-              <button key={name} type="button" disabled title="Disponible muy pronto" className="soon">
+              <button key={name} type="button" onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}>
                 <span><strong>{name}</strong><small>{detail}</small></span>
-                <span className="soon-tag">PRONTO</span>
+                {data.model === name && <Check size={18} />}
               </button>
             ))}
             <p><Info size={16} /> El motor propio de LucIAna llega con 2 modos: cover y canta con tu voz</p>
@@ -6511,6 +6511,57 @@ function ApprovedCreateContent(props) {
       if (hasSelectedVoice) {
         payload.personaId = String(data.voiceProfile.voiceId || '').trim();
         payload.personaModel = 'voice_persona';
+      }
+
+      // ---------- Motor propio LucIAna V1 ----------
+      // Usa el audio del cliente como muestra de voz y genera una canción nueva.
+      if (data.model === 'LucIAna V1') {
+        if (!audioUploadUrl && !audioUploadPath) {
+          setToast('LucIAna V1 necesita tu voz: sube o graba un audio en el paso 1.');
+          return false;
+        }
+        try {
+          const creado = await fetch('/api/luciana/v1-create', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
+            body: JSON.stringify({
+              audioUrl: audioUploadUrl || undefined,
+              audioPath: audioUploadPath || undefined,
+              prompt: String(payload.style || data.style || '').slice(0, 900) || 'pop latino romantico',
+              lyrics: String(data.lyrics || ''),
+              title: normalizedSongTitle,
+              instrumental: false,
+            }),
+          });
+          const cj = await creado.json().catch(() => ({}));
+          if (!creado.ok || !cj?.taskId) {
+            setToast(cj?.error || 'No se pudo generar con LucIAna V1.');
+            return false;
+          }
+          setToast('LucIAna V1 está creando tu canción con tu voz. Suele tardar 1 a 3 minutos…');
+          for (let i = 0; i < 60; i++) {
+            await new Promise((r) => setTimeout(r, 5000));
+            const sr = await fetch('/api/luciana/v1-status?taskId=' + encodeURIComponent(cj.taskId), {
+              headers: { authorization: `Bearer ${t.token}` },
+            });
+            const sj = await sr.json().catch(() => ({}));
+            if (sj?.status === 'success') {
+              setToast('¡Listo! Tu canción con LucIAna V1 ya está en tu biblioteca.');
+              try { handlers?.onSongCreated?.(); } catch {}
+              try { onSongCreated?.(); } catch {}
+              return true;
+            }
+            if (sj?.status === 'failure') {
+              setToast(sj?.error || 'El motor no pudo generar la canción. Te devolvimos los créditos.');
+              return false;
+            }
+          }
+          setToast('Tu canción sigue en proceso. Revísala en tu biblioteca en unos minutos.');
+          return false;
+        } catch (e) {
+          setToast('No se pudo generar con LucIAna V1. No se cobraron créditos.');
+          return false;
+        }
       }
 
       const submitUrl = hasAudioCover ? '/api/suno/upload-cover' : '/api/suno/generate';
