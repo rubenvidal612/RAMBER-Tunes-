@@ -3623,7 +3623,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           </button>
           <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} onClick={() => setData({ ...data, model: "LucIAna V1", voice: "standard" })}>
             <span className="choice-icon"><MagicWand size={28} /></span>
-            <span><strong>Mi voz (LucIAna V1)</strong><small>Canción nueva cantada con tu voz, sin clonar</small></span>
+            <span><strong>Mi voz (LucIAna V1)</strong><small>Canción nueva cantada con tu voz clonada · no cover</small></span>
             <InfoTip title="LucIAna V1">Usa el audio que subes como muestra de tu voz. No se clona ni se guarda: se usa en cada canción.</InfoTip>
             <span className="radio" />
           </button>
