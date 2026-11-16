@@ -272,7 +272,7 @@ const models = [
   ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
   ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
   // Motor propio de LucIAna (Sonauto por dentro). Visible pero aún no activo.
-  ["LucIAna V1", "Cover y canta con tu voz · 1 toma"],
+  ["LucIAna V1", "Tu voz en una canción nueva · 1 toma"],
 ];
 const VALID_MODEL_NAMES = new Set(models.map(([name]) => name));
 const normalizeModelName = (m) => VALID_MODEL_NAMES.has(m) ? m : "Suno V6";
@@ -3633,6 +3633,14 @@ function StartStep({ data, setData, setToast, handlers }) {
 
         <div className="decision-group">
           <div className="decision-heading"><span>2</span><div><h2>¿Tienes un audio?</h2><p>Si lo subes, obtendremos la letra para el siguiente paso. Para el motor LucIAna V1 el audio puede durar hasta 4:45.</p></div></div>
+          <div className="selection-summary" style={{ alignItems: 'flex-start', marginBottom: 10 }}>
+            <Info size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span style={{ fontSize: 13, lineHeight: 1.5 }}>
+              <strong>Importante:</strong> con <strong>LucIAna V1</strong> tu audio se usa solo como <strong>muestra de tu voz</strong>.
+              No rehacemos tu canción ni su letra: se crea una <strong>canción nueva</strong> con la letra y el estilo que elijas,
+              cantada con tu voz.
+            </span>
+          </div>
           <div className="audio-choice-switcher">
             <label className={audioChoiceMode === "upload" ? "decision-card selected audio-upload-card" : "decision-card audio-upload-card"}>
               <span className="choice-icon teal">{uploading ? <Loader2 size={28} className="animate-spin"/> : <UploadSimple size={28} />}</span>
@@ -4541,7 +4549,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
                 {data.model === name && <Check size={18} />}
               </button>
             ))}
-            <p><Info size={16} /> El motor propio de LucIAna llega con 2 modos: cover y canta con tu voz</p>
+            <p><Info size={16} /> LucIAna V1 usa tu voz para una canción nueva. No rehace tu canción original.</p>
           </div>}
         </div>
         <label className="field-label top-gap">Nombre de la canción <InfoTip title="Nombre de la canción">Este nombre es obligatorio y se usará al generar la canción.</InfoTip></label>
