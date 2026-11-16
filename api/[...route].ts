@@ -1,4 +1,5 @@
 import { isVoiceAvailable, inspectVoiceReadiness, requireVoiceReady, voiceRecordError } from "../src/lib/voiceAvailability.js";
+import { trebloListo, subirAudio, crearCancionConVoz, estadoTarea, descargarPista } from "../src/lib/treblo.js";
 import { authorizeAudioCleanup, cleanupTemporaryAudio } from "../src/lib/temporaryAudioCleanup.js";
 
 const CREDIT_COSTS = {
@@ -326,6 +327,230 @@ async function getR2Client() {
     },
   });
   return cachedR2Client;
+}
+
+/* ================= LucIAna V1 (motor propio · proveedor Sonauto) =================
+ * Endpoints autónomos: no dependen de los helpers internos de cada closure.
+ * Apagados con TREBLO_ENABLED=0 (responden 503).
+ */
+const LUCIANA_V1_COST = 10;
+const LUCIANA_V1_KIND = "treblo-voice";
+
+function v1Responder(res: any, status: number, body: any) {
+  try {
+    res.statusCode = status;
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.setHeader("cache-control", "no-store");
+    res.end(JSON.stringify(body));
+  } catch {
+    /* nada */
+  }
+}
+
+function v1Limpiar(v: any, max: number): string {
+  return String(v ?? "").trim().slice(0, max);
+}
+
+async function v1LeerJson(req: any): Promise<any> {
+  return await new Promise((resolve) => {
+    let bruto = "";
+    let listo = false;
+    const terminar = (valor: any) => {
+      if (listo) return;
+      listo = true;
+      resolve(valor);
+    };
+    try {
+      req.on("data", (c: any) => {
+        bruto += c;
+        if (bruto.length > 8 * 1024 * 1024) {
+          try { req.destroy(); } catch {}
+          terminar(null);
+        }
+      });
+      req.on("end", () => {
+        try { terminar(bruto ? JSON.parse(bruto) : null); } catch { terminar(null); }
+      });
+      req.on("error", () => terminar(null));
+    } catch {
+      terminar(null);
+    }
+  });
+}
+
+async function v1Cliente() {
+  const url = process.env.SUPABASE_URL || "";
+  const llave = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!url || !llave) return null;
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(url, llave, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+async function v1Auth(req: any) {
+  const encabezado = (req.headers?.authorization || "").toString();
+  const token = encabezado.toLowerCase().startsWith("bearer ") ? encabezado.slice(7).trim() : "";
+  if (!token) return { ok: false as const, status: 401, error: "No autorizado" };
+  const url = process.env.SUPABASE_URL || "";
+  const anon = process.env.SUPABASE_ANON_KEY || "";
+  if (!url || !anon) return { ok: false as const, status: 500, error: "Faltan variables de Supabase" };
+  try {
+    const r = await fetch(url + "/auth/v1/user", { headers: { authorization: "Bearer " + token, apikey: anon } });
+    if (!r.ok) return { ok: false as const, status: 401, error: "Sesión no válida" };
+    const u: any = await r.json().catch(() => null);
+    if (!u?.id) return { ok: false as const, status: 401, error: "Sesión no válida" };
+    const db = await v1Cliente();
+    if (!db) return { ok: false as const, status: 500, error: "Base de datos no disponible" };
+    return { ok: true as const, db, user: { id: String(u.id), email: String(u.email || "") } };
+  } catch {
+    return { ok: false as const, status: 401, error: "Sesión no válida" };
+  }
+}
+
+async function v1BajarAudio(db: any, audioUrl: string, audioPath: string): Promise<Buffer | null> {
+  try {
+    if (audioUrl && /^https?:\/\//i.test(audioUrl)) {
+      const r = await fetch(audioUrl, { signal: AbortSignal.timeout(60000) });
+      if (r.ok) return Buffer.from(await r.arrayBuffer());
+    }
+    if (audioPath) {
+      const bucket = String(process.env.SUPABASE_AUDIO_BUCKET || "ramber-tunes");
+      const firmado = await db.storage.from(bucket).createSignedUrl(audioPath, 600);
+      const u = String(firmado?.data?.signedUrl || "");
+      if (u) {
+        const r = await fetch(u, { signal: AbortSignal.timeout(60000) });
+        if (r.ok) return Buffer.from(await r.arrayBuffer());
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function lucianaV1Create(req: any, res: any) {
+  if (!trebloListo()) return v1Responder(res, 503, { error: "El motor LucIAna V1 todavía no está disponible." });
+  if ((req.method || "").toUpperCase() !== "POST") return v1Responder(res, 405, { error: "Método no permitido" });
+  const auth = await v1Auth(req);
+  if (!auth.ok) return v1Responder(res, auth.status, { error: auth.error });
+
+  const body = await v1LeerJson(req);
+  const audioUrl = v1Limpiar(body?.audioUrl, 600);
+  const audioPath = v1Limpiar(body?.audioPath, 600);
+  if (!audioUrl && !audioPath) return v1Responder(res, 400, { error: "Sube el audio con tu voz para usar LucIAna V1." });
+  const prompt = v1Limpiar(body?.prompt, 900) || "pop latino romantico";
+  const lyrics = v1Limpiar(body?.lyrics, 6000);
+  const title = v1Limpiar(body?.title, 100) || "Canción";
+  const instrumental = Boolean(body?.instrumental);
+
+  const bytes = await v1BajarAudio(auth.db, audioUrl, audioPath);
+  if (!bytes || bytes.length < 20 * 1024) return v1Responder(res, 400, { error: "No pude leer el audio. Vuelve a subirlo." });
+
+  let consumido = false;
+  try {
+    const consumo: any = await consumeUserCredits(auth.db, auth.user.id, LUCIANA_V1_COST);
+    if (!consumo?.ok) return v1Responder(res, 402, { error: consumo?.error || "Créditos insuficientes. Recarga para continuar." });
+    consumido = true;
+
+    const uploadId = await subirAudio(bytes, "voz.mp3", "audio/mpeg");
+    const taskId = await crearCancionConVoz({ audioUploadId: uploadId, prompt, lyrics, instrumental });
+    if (!taskId) throw new Error("El proveedor no devolvió tarea");
+
+    await auth.db.from("suno_tasks").insert({
+      task_id: taskId,
+      user_id: auth.user.id,
+      kind: LUCIANA_V1_KIND,
+      cost: LUCIANA_V1_COST,
+      consumed: true,
+      extra: { provider: "treblo", mode: "voice", title, prompt, lyrics, audio_ref: audioPath || audioUrl, status: "processing" },
+    });
+
+    return v1Responder(res, 200, { ok: true, taskId, provider: "treblo", credits: LUCIANA_V1_COST });
+  } catch (e: any) {
+    if (consumido) await adjustUserCredits(auth.db, auth.user.id, LUCIANA_V1_COST);
+    return v1Responder(res, 502, {
+      error: "No pude generar la canción con LucIAna V1. No se cobraron créditos.",
+      detail: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+async function lucianaV1Status(req: any, res: any) {
+  if (!trebloListo()) return v1Responder(res, 503, { error: "El motor LucIAna V1 todavía no está disponible." });
+  const auth = await v1Auth(req);
+  if (!auth.ok) return v1Responder(res, auth.status, { error: auth.error });
+  let taskId = "";
+  try {
+    const u = new URL(req.url, "http://localhost");
+    taskId = v1Limpiar(u.searchParams.get("taskId"), 200);
+  } catch {}
+  if (!taskId) return v1Responder(res, 400, { error: "Falta taskId" });
+
+  const { data: fila } = await auth.db.from("suno_tasks").select("*")
+    .eq("task_id", taskId).eq("user_id", auth.user.id).maybeSingle();
+  if (!fila) return v1Responder(res, 404, { error: "Esa canción no está en tu cuenta" });
+
+  let estado: any;
+  try {
+    estado = await estadoTarea(taskId);
+  } catch (e: any) {
+    return v1Responder(res, 502, { error: "No pude consultar el estado", detail: e instanceof Error ? e.message : String(e) });
+  }
+
+  const extra: any = (() => {
+    try { return typeof (fila as any).extra === "string" ? JSON.parse((fila as any).extra) : ((fila as any).extra || {}); }
+    catch { return {}; }
+  })();
+
+  if (estado.status === "success") {
+    const previos = Array.isArray(extra?.guardado) ? extra.guardado : [];
+    if (previos.length) return v1Responder(res, 200, { ok: true, status: "success", songs: previos });
+
+    const titulo = String(extra?.title || "Canción");
+    const guardados: any[] = [];
+    for (let i = 0; i < estado.songPaths.length; i++) {
+      const origen = estado.songPaths[i];
+      if (!origen) continue;
+      try {
+        const buf = await descargarPista(origen);
+        const base = titulo.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cancion";
+        const key = "imports/" + auth.user.id + "/" + Date.now() + "_" + base + (i ? "_" + (i + 1) : "") + ".mp3";
+        const url = await uploadToR2(key, buf, "audio/mpeg");
+        const ins = await auth.db.from("library_items").insert({
+          user_id: auth.user.id,
+          type: "song",
+          title: i ? titulo + " (" + (i + 1) + ")" : titulo,
+          lyrics: estado.lyrics || extra?.lyrics || "",
+          audio_url: url,
+          is_cover: false,
+          provider: "treblo",
+          model_version: "luciana_v1",
+          suno_task_id: "treblo:" + taskId,
+          suno_audio_id: "treblo-" + taskId + "-" + i,
+        }).select("*").single();
+        if ((ins as any)?.error) throw (ins as any).error;
+        guardados.push({ title: (ins as any)?.data?.title || titulo, audio_url: url, id: (ins as any)?.data?.id || null });
+      } catch (e: any) {
+        console.error("[luciana-v1] no pude archivar la pista", i, e?.message || e);
+      }
+    }
+    await auth.db.from("suno_tasks").update({ extra: { ...extra, status: "success", guardado: guardados } })
+      .eq("task_id", taskId).eq("user_id", auth.user.id);
+    return v1Responder(res, 200, { ok: true, status: "success", songs: guardados });
+  }
+
+  if (estado.status === "failure") {
+    const upd: any = await auth.db.from("suno_tasks")
+      .update({ consumed: false })
+      .eq("task_id", taskId).eq("user_id", auth.user.id).eq("consumed", true)
+      .select("task_id");
+    const reembolsado = Array.isArray(upd?.data) && upd.data.length > 0;
+    if (reembolsado) await adjustUserCredits(auth.db, auth.user.id, LUCIANA_V1_COST);
+    await auth.db.from("suno_tasks").update({ extra: { ...extra, status: "failure", error: estado.error || "El proveedor falló" } })
+      .eq("task_id", taskId).eq("user_id", auth.user.id);
+    return v1Responder(res, 200, { ok: false, status: "failure", refunded: reembolsado, error: estado.error || "El proveedor no pudo generar la canción." });
+  }
+
+  return v1Responder(res, 200, { ok: true, status: estado.status === "pending" ? "pending" : "processing" });
 }
 
 async function uploadToR2(key: string, body: any, contentType: string): Promise<string> {
@@ -30346,6 +30571,8 @@ export default async function handler(req: any, res: any) {
     if (head === "ai") return aiHandler(req, res);
     if (head === "luciana-bot") return lucianaBotHandler(req, res);
     if (head === "luciana" && next === "voice-flow") return lucianaVoiceHandler(req, res);
+    if (head === "luciana" && next === "v1-create") return lucianaV1Create(req, res);
+    if (head === "luciana" && next === "v1-status") return lucianaV1Status(req, res);
     if (head === "affiliates") return affiliatesHandler(req, res);
     if (head === "app") return appHandler(req, res);
     if (head === "social") return socialHandler(req, res);
