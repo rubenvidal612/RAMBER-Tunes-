@@ -4809,15 +4809,23 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
     : Boolean(data.lyrics.trim());
   const usingReferenceAudio = data.audioSource === "upload";
   const hasUploadedReferenceAudio = Boolean(handlers?.hasUploadedAudio);
-  const requirements = [
-    ["Título de la canción", Boolean(data.title.trim())],
-    ["Letra completa", lyricsOk],
-    ["Instrucción o estilo musical", Boolean(data.style.trim())],
-    ["Voz seleccionada", Boolean(data.voice)],
-    ["Voz de hombre o de mujer", Boolean(data.vocalGender)],
-    ...(usingReferenceAudio ? [["Audio MP3 de referencia", hasUploadedReferenceAudio]] : []),
-    ["Perfil de voz clonado", data.voice !== "clone" || Boolean(data.voiceProfile)],
-  ];
+  const esLuciana = data.model === "LucIAna V1";
+  const requirements = esLuciana
+    ? [
+        ["Título de la canción", Boolean(data.title.trim())],
+        ["Letra completa", lyricsOk],
+        ["Instrucción o estilo musical", Boolean(data.style.trim())],
+        ["Audio con tu voz", hasUploadedReferenceAudio || Boolean(data.file) || Boolean(handlers?.uploadedAudioName)],
+      ]
+    : [
+        ["Título de la canción", Boolean(data.title.trim())],
+        ["Letra completa", lyricsOk],
+        ["Instrucción o estilo musical", Boolean(data.style.trim())],
+        ["Voz seleccionada", Boolean(data.voice)],
+        ["Voz de hombre o de mujer", Boolean(data.vocalGender)],
+        ...(usingReferenceAudio ? [["Audio MP3 de referencia", hasUploadedReferenceAudio]] : []),
+        ["Perfil de voz clonado", data.voice !== "clone" || Boolean(data.voiceProfile)],
+      ];
   const isReady = requirements.every(([, complete]) => complete);
   const submitting = Boolean(handlers?.isSubmitting);
   const usingAI = data.lyricsMode === "ai";
@@ -4834,14 +4842,14 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
       <div className="review-grid">
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
         <div className="review-card"><span>Letra · {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
-        <div className="review-card"><span>Motor</span><strong>{data.voice === "clone" ? "Clonar voz" : normalizeModelName(data.model)}</strong><small>{data.voice === "clone" ? "Voz clonada" : "Modelo seleccionado"}</small></div>
+        <div className="review-card"><span>Motor</span><strong>{data.model === "LucIAna V1" ? "LucIAna V1" : data.voice === "clone" ? "Clonar voz" : normalizeModelName(data.model)}</strong><small>{data.model === "LucIAna V1" ? "Canta con tu voz · canción nueva" : data.voice === "clone" ? "Voz clonada" : "Modelo seleccionado"}</small></div>
         <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (hasUploadedReferenceAudio ? "Audio cargado" : usingReferenceAudio ? "Falta subir el audio" : "No estás usando audio")}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
       </div>
       <div className="requirements-box">
-        <div><strong>Antes de generar</strong><span>{submitting ? (MODEL_TO_PROVIDER[data.model] === 'mureka' ? "Enviando a Mureka…" : "Enviando a Suno…") : isReady ? "Todo está completo" : "Completa los elementos pendientes"}</span></div>
+        <div><strong>Antes de generar</strong><span>{submitting ? (data.model === 'LucIAna V1' ? "LucIAna V1 está cantando con tu voz…" : MODEL_TO_PROVIDER[data.model] === 'mureka' ? "Enviando a Mureka…" : "Enviando a Suno…") : isReady ? "Todo está completo" : "Completa los elementos pendientes"}</span></div>
         <ul>{requirements.map(([label, complete]) => <li key={label} className={complete ? "complete" : "pending"}>{complete ? <Check size={18} weight="bold" /> : <X size={17} weight="bold" />}<span>{label}</span></li>)}</ul>
       </div>
       <button className="mock-generate" disabled={submitting || !isReady} onClick={() => handlers?.handleSubmitGenerate?.()}>
@@ -6655,6 +6663,8 @@ function ApprovedCreateContent(props) {
               setToast('¡Listo! Tu canción con LucIAna V1 ya está en tu biblioteca.');
               try { handlers?.onSongCreated?.(); } catch {}
               try { onSongCreated?.(); } catch {}
+              try { onGoLibrary?.(); } catch {}
+              try { window.dispatchEvent(new Event('ramber:refreshLibrary')); } catch {}
               return true;
             }
             if (sj?.status === 'failure') {
