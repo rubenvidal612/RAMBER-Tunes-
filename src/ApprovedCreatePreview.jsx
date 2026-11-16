@@ -3621,6 +3621,12 @@ function StartStep({ data, setData, setToast, handlers }) {
             <InfoTip title="Clonación de Voz">Compatible con todos los modelos. Elige una voz que ya hayas clonado antes.</InfoTip>
             <span className="radio" />
           </button>
+          <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} onClick={() => setData({ ...data, model: "LucIAna V1", voice: "standard" })}>
+            <span className="choice-icon"><MagicWand size={28} /></span>
+            <span><strong>Mi voz (LucIAna V1)</strong><small>Canción nueva cantada con tu voz, sin clonar</small></span>
+            <InfoTip title="LucIAna V1">Usa el audio que subes como muestra de tu voz. No se clona ni se guarda: se usa en cada canción.</InfoTip>
+            <span className="radio" />
+          </button>
           <div className="selection-summary"><Check size={18} weight="bold" /><span>{audioChoiceMode === "record" ? "Quiero cantarlo" : data.audioSource === "upload" ? "Audio MP3" : "Sin audio"} · {data.voice === "clone" ? "Clonar voz" : "Voz estándar"}</span></div>
           {data.voiceProfile && <div className="voice-profile-chip"><Users size={19}/><span><small>Personaje seleccionado</small><strong>{data.voiceProfile.name}</strong></span><button onClick={openClonePicker}>Cambiar</button></div>}
           {typeof handlers?.credits === 'number' && (
@@ -4537,6 +4543,19 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
       <div>
         <div className="section-title"><span className="eyebrow">PASO 3 DE 4</span><h1>Define el estilo de tu canción</h1><p>Elige el motor y describe cómo quieres que suene.</p></div>
         <label className="field-label">Motor y versión <InfoTip title="Motor y versión">Cada versión ofrece una forma distinta de interpretar tu canción.</InfoTip></label>
+        {data.model === 'LucIAna V1' ? (
+          <div className="select-wrap">
+            <div className="select-button" style={{ cursor: 'default' }}>
+              <span>LucIAna V1 · tu voz en una canción nueva</span>
+            </div>
+            <p style={{ margin: '8px 2px 0', fontSize: 12, color: '#9da7b6', display: 'flex', gap: 10, alignItems: 'center' }}>
+              Motor elegido en el paso 1
+              <button type="button" className="translate-button" onClick={() => setData({ ...data, model: 'Suno V6' })}>
+                Cambiar a Suno
+              </button>
+            </p>
+          </div>
+        ) : (
         <div className="select-wrap">
           <button className="select-button" onClick={() => setModelOpen(!modelOpen)}><span>{normalizeModelName(data.model)}</span><SlidersHorizontal size={20} /></button>
           {modelOpen && <div className="model-menu">
@@ -4552,6 +4571,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
             <p><Info size={16} /> LucIAna V1 usa tu voz para una canción nueva. No rehace tu canción original.</p>
           </div>}
         </div>
+        )}
         <label className="field-label top-gap">Nombre de la canción <InfoTip title="Nombre de la canción">Este nombre es obligatorio y se usará al generar la canción.</InfoTip></label>
         <input className="title-input" value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} placeholder="Escribe el nombre de la canción" />
         <div className="field-footer"><span>Obligatorio para generar</span><span>{data.title.length}/100</span></div>
