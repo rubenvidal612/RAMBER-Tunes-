@@ -169,7 +169,24 @@ export async function saldo(): Promise<number | null> {
 
 /** Descarga una pista generada (para archivarla en R2). */
 export async function descargarPista(url: string): Promise<Buffer> {
-  const r = await fetch(url, { signal: AbortSignal.timeout(120000) });
-  if (!r.ok) throw new Error(`No pude descargar la pista (${r.status})`);
-  return Buffer.from(await r.arrayBuffer());
+  const intentos: RequestInit[] = [
+    { headers: { accept: "*/*", "accept-language": "es-MX,es;q=0.9", "user-agent": UA }, signal: AbortSignal.timeout(120000) },
+    { signal: AbortSignal.timeout(120000) },
+  ];
+  let ultimo = "";
+  for (const init of intentos) {
+    try {
+      const r = await fetch(url, init);
+      if (!r.ok) {
+        ultimo = `HTTP ${r.status}`;
+        continue;
+      }
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 2048) return buf;
+      ultimo = "respuesta vacía";
+    } catch (e: any) {
+      ultimo = e instanceof Error ? e.message : String(e);
+    }
+  }
+  throw new Error(`No pude descargar la pista (${ultimo})`);
 }
